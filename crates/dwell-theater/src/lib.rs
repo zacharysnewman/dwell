@@ -8,12 +8,14 @@
 //!   viewer's time of day), every move kind, both faces through `FaceFrame`.
 //! - [`player`]: playing a path with real frame times (speed ramps, smoothed tracking).
 //! - [`preset`]: presets as data (`shared/theater/presets.json`) expanded around a subject.
+//! - [`viewpoint`]: when the client sends the camera's eye as a simulation viewpoint (§7, T-4).
 
 pub mod easing;
 pub mod eval;
 pub mod path;
 pub mod player;
 pub mod preset;
+pub mod viewpoint;
 
 pub use easing::Easing;
 pub use eval::{NoTargets, Pose, Targets, pose_at};

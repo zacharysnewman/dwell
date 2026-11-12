@@ -10,6 +10,8 @@ dev API `__dwell.theater` and the bench's `theater` step). **T-2 and T-3 built**
 camera, the preset and keyframe panels, the timeline, the path store, recording; `client/src/theater/`), except
 the `theaterGuests` world setting (§7, outstanding: the mode is offered to everyone until it lands) and following
 a moving creature by id (the picker aims at its point). T-4 and T-5 planned (§10).
+dev API `__dwell.theater` and the bench's `theater` step). **T-4 built** (the creative simulation viewpoint, §7).
+T-2, T-3 and T-5 planned (§10).
 
 ## 1. The owner's answers (2026-11-12)
 
@@ -201,8 +203,38 @@ A new preset is a data entry (a test adds one from a fixture file no code names)
   sees only what is loaded near the player — no scouting. **The server checks the world's mode, never trusting the
   client**; the viewpoint has a rate limit and counts against the same per-player chunk budget as the body. Theater
   mode itself (paths, presets, keyframes, recording, the hidden HUD) stays available in every mode, adventure
-  included. The viewpoint is not built: adding the ability touches the protocol's modes table and the server's
-  interest sets (T-4).
+  included.
+
+### 7.1 The viewpoint as built (T-4)
+
+- **Data:** the ability `theaterViewpoint` (`shared/modes/modes.json`, `creative` only; `modes::Ability`), the
+  capability `theater.viewpoint` (`shared/protocol/capabilities.json`) and two wire constants in
+  `shared/protocol/constants.json` `world`: `theaterViewpointHz` (4: the most viewpoints a second taken from one
+  player) and `theaterViewpointMaxM` (4096: the cap from the body). A new mode with the camera viewpoint is a data
+  entry naming the ability.
+- **The message:** `TheaterViewpoint` 0x6B, C→S reliable on the control channel: u8 0 (cleared) or 1 then three
+  f64 (world metres, finite). Sent only to a server that announced the capability, so an older server never sees
+  one (it would end the session on an unknown control message); an older client never sends one.
+- **The client** (`dwell_theater::viewpoint::Sender`, `Game::step_theater`): while a camera path plays and the
+  viewpoint is on (the server has the capability and the world's mode the ability, `Session::theater_viewpoint`,
+  set again when the host changes the mode), the eye goes out at most `theaterViewpointHz` a second and only when it
+  moved ½ m; one clear follows when the path stops (or the viewpoint is turned off). T-2's free-fly camera will use
+  the same sender.
+- **The server** (`crates/dwell-sim/src/server/theater.rs`): one viewpoint per player, kept from a client that
+  listed the capability; one arriving sooner than the rate waits for its turn (the newest replaces it, so the last
+  position always lands); a clear is taken at once. `Server::viewpoint_of` uses it only while the world's mode has
+  the ability, the player is joined and on the home grid, pulled within `theaterViewpointMaxM` of the body. Then:
+  - **chunks:** the body's view sphere around it, streamed after the body's own view and the respawn preload from
+    the same per-player budget; kept from unloading while within the view (or render) radius plus the margin;
+    chunk requests within the render radius of it answered; worldgen prefetches and keeps its chunks; when it moves
+    or clears, what neither view holds unloads (`StreamStats::viewpoint_sent` counts its chunks);
+  - **simulation:** `Server::presence_points` (bodies, then viewpoints) for the LOD's propagation order, creature
+    spawning and despawning, the near ecology's groups coming near and staying (`herds::World::near`), the lava's
+    near fields and the water's tick (which today steps every awake chunk anyway);
+  - **not a body:** animals don't see, flee or notice it, NPCs don't look at it or get bumped by it, nothing
+    collides with it, and it carries no edits.
+- **Adventure:** the server keeps nothing it uses: the world stays centred on the body; a chunk request near the
+  camera outside the body's render radius is refused as before.
 
 ## 8. Dev API and the bench (T-1, built)
 
@@ -223,6 +255,14 @@ vertigo dolly holds the subject's size; face B mirrors face A; a midplane crossi
 presets expand; a fixture preset by data alone; bad paths and presets fail with messages; a path round-trips through
 JSON. `src/easing.rs` checks every curve; `client/src/debug/theater.test.ts` the dev API and the HUD rule.
 
+The viewpoint (T-4): `crates/dwell-sim/tests/theater_viewpoint.rs` (both faces) — in creative a viewpoint 640 m
+from the body streams its chunk and the view around it and the fixture creatures spawn and stay there; adventure
+ignores it (no chunks, no creatures, a chunk request there refused); a client without the capability is ignored;
+clearing it unloads its chunks and despawns its creatures; a host's switch to adventure turns it off at once, and a
+far one is capped. `server/theater.rs` checks the rate (the last one arrives) and the cap;
+`dwell_theater::viewpoint` the client's rate, stillness and single clear; `dwell-client` `game_local.rs` that a
+playing path sends viewpoints only where the server takes them.
+
 ## 10. Phases
 
 - **T-1 — the engine (built):** `crates/dwell-theater`, `shared/theater/presets.json`, the client's
@@ -234,6 +274,11 @@ JSON. `src/easing.rs` checks every curve; `client/src/debug/theater.test.ts` the
   rate, the download; the offline frame-exact mode still to come.
 - **T-4 — the simulation viewpoint (creative):** the `theaterViewpoint` ability, the `theater.viewpoint`
   capability and message, the server's interest set and chunk budget for it, tests that adventure ignores it.
+- **T-3 — recording (local):** MediaRecorder, aspect and size, frame rate, the download; the offline frame-exact
+  mode.
+- **T-4 — the simulation viewpoint (creative) (built):** the `theaterViewpoint` ability, the `theater.viewpoint`
+  capability and `TheaterViewpoint` message, the server's interest set and chunk budget for it, tests that adventure
+  ignores it (§7.1). Not yet run in a browser (cloud session).
 - **T-5 — an MCP server (nice to have):** a small local stdio MCP server talking to the open page over a local
   WebSocket the page opens only when the player turns it on (find subjects, time of day, preview/play a path or
   preset, record, list saved paths); our own agents would record through it too.

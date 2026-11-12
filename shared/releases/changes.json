@@ -2,6 +2,30 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.54.127",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.126",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.125",
+      "changes": [
+        "A sword clash's sparks now fly where the blades meet, no longer in the air beside them."
+      ]
+    },
+    {
+      "version": "0.54.124",
+      "changes": [
+        "Three thicker distance-haze settings to compare (?haze=fog-11k, fog-8k, fog-6k); the default haze is unchanged."
+      ]
+    },
+    {
       "version": "0.54.123",
       "changes": [
         "Behind the scenes: the camera engine for the coming theater mode — camera paths with orbits, dollies, tracking shots, drone rises and pans, eased moves, time-lapses of the light",

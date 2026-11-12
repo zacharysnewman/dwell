@@ -30,6 +30,10 @@
     {
       "name": "npcs.swings",
       "description": "An NPC's pose in a Creatures message's NPCs' part may be 3 or 4 (`NPC_STRIKE_POSES`: striking level, striking vertical) while it swings its sword (WORK_QUEUE item 35), and the client plays that swing's clip. Without it the server sends its idle pose instead, as older clients read it."
+    },
+    {
+      "name": "theater.viewpoint",
+      "description": "The client sends `TheaterViewpoint` (docs/THEATER_MODE.md \u00a77, T-4): theater mode's camera position while a camera path plays (at most world.theaterViewpointHz a second), and an empty one when it ends. The server adds it to the player's interest (chunks streamed around it, creatures and NPCs spawned and simulated near it, the near ecology and the water stepped there) only where the world's mode has the `theaterViewpoint` ability (shared/modes/modes.json: creative), within world.theaterViewpointMaxM of the body; elsewhere it ignores it. Without it the client never sends one."
     }
   ]
 }

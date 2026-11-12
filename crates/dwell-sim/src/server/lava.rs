@@ -15,12 +15,14 @@ impl Server {
         if self.lava.is_empty() || !self.tick.is_multiple_of(every) {
             return;
         }
-        let players: Vec<[f64; 3]> = self
+        let bodies: Vec<[f64; 3]> = self
             .sessions
             .values()
             .filter_map(|s| s.handle)
             .map(|h| self.players.position(&self.physics, h).to_array())
             .collect();
+        // Run near the bodies and the theater cameras' viewpoints (THEATER_MODE.md §7).
+        let players = self.presence_points(&bodies);
         let real_s = every as f32 / SIM_HZ as f32;
         let world = &mut self.world;
         let out = self

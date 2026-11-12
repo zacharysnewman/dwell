@@ -650,6 +650,12 @@ pub enum Message {
     /// (WORK_QUEUE item 35, round 2): a strike's outcome on a raised blade, or who holds a raised
     /// guard (`SwordplayMessage`).
     Swordplay(SwordplayMessage),
+    /// C→S reliable, control channel, only to a server with the `theater.viewpoint` capability
+    /// (docs/THEATER_MODE.md §7, T-4): theater mode's camera position (world metres), at most
+    /// `world::THEATER_VIEWPOINT_HZ` a second while a camera path plays; `None` when it ends. The
+    /// server adds it to this player's interest only where the world's mode has the
+    /// `theaterViewpoint` ability. u8 0 (cleared) or 1 then three f64 (finite).
+    TheaterViewpoint(Option<[f64; 3]>),
 }
 
 /// Who fights: a player (its id) or a creature (an NPC, its id).
@@ -1027,6 +1033,7 @@ impl Message {
             M::SteamHello => MessageType::SteamHello,
             M::Capabilities(_) => MessageType::Capabilities,
             M::Swordplay(_) => MessageType::Swordplay,
+            M::TheaterViewpoint(_) => MessageType::TheaterViewpoint,
             M::SwingHello => MessageType::SwingHello,
             M::BitesHello => MessageType::BitesHello,
             M::Steam(_) => MessageType::Steam,
@@ -1738,6 +1745,15 @@ fn write_body(w: &mut ByteWriter, m: &Message) {
         M::VitalsHello => {}
         M::CausesHello(n) => w.u8(*n),
         M::Capabilities(c) => c.write(w),
+        M::TheaterViewpoint(at) => match at {
+            None => w.u8(0),
+            Some(p) => {
+                w.u8(1);
+                for &v in p {
+                    w.f64(v);
+                }
+            }
+        },
         M::CreaturesHello
         | M::DamageHello
         | M::WorldgenRequest
@@ -2355,6 +2371,15 @@ fn read_body(r: &mut ByteReader, t: MessageType) -> Option<Message> {
         T::CausesHello => M::CausesHello(r.u8()),
         T::SteamHello => M::SteamHello,
         T::Capabilities => M::Capabilities(crate::capabilities::Capabilities::read(r)?),
+        T::TheaterViewpoint => M::TheaterViewpoint(match r.u8() {
+            0 => None,
+            1 => {
+                let p = [r.f64(), r.f64(), r.f64()];
+                r.check(p.iter().all(|v| v.is_finite()));
+                Some(p)
+            }
+            _ => return None,
+        }),
         T::SwingHello => M::SwingHello,
         T::BitesHello => M::BitesHello,
         T::Swordplay => M::Swordplay(match r.u8() {

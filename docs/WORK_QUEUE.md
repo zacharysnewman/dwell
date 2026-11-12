@@ -291,6 +291,9 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    self-shadowing toward the sun (a short light march), sky-coloured ambient on the shaded side, a brighter
    sun-facing rim — matched against the old 2D deck's look side by side; and bench shots taken with clouds off
    unless the shot is about clouds.
+   Owner, 2026-11-12, again: **"Also the volumetric clouds still look bad no proper lighting or shading?"** In progress
+   (cloud): a light march toward the sun for self-shadowing, darker bases, sky-coloured ambient, silver lining —
+   matched against the old 2D deck; then the in-game look and cost (local).
 14. **Tall grass grows and spreads** (owner 2026-11-11: "I want tall grass to steadily grow and spread. It
    should probably have a max depending on climate/biome."). **Built** (ADR 0075 T3c, docs/ECOLOGY.md §10):
    `shared/worldgen/grass.json` (the rule as data: the block, the ground, the decoration whose climate
@@ -814,6 +817,16 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    went 256 → 192 m (Ultra keeps 352): 13.88 ms there. Next: a Tall grass setting (a mesher flag; the renderer's cutout switch also hides
    leaves and ladders), a dense-forest spot that reproduces the owner's 31 ms, then (3) impostors.
 
+   Owner, 2026-11-12, on this M1 Air: **"Im seeing on this m1 Mac that im getting sub-60FPS when flying on High. Im
+   wondering if the new trees and volumetric clouds are at fault!"** Next (local, after theater mode's UI): measure
+   flying at High (sky and cloud pass cost at altitude, tree meshing/uploads while streaming, the clouds' volume
+   pass vs the deck), cut what's large.
+   Owner, 2026-11-12: **"Ensure all of our graphics have settings in our graphics menu."** Every visual feature gets a
+   Graphics setting (with preset values), not only the ones with a renderer tier function: tall grass density, far
+   trees / impostors, leaf cards and chamfer, hit shards and particles, far herds, distant shadows (its own),
+   volumetric clouds and plumes, lava crust/glow, bloom, haze extras, water tiers, light shafts, reflections, view
+   distance; the audit test widened from `render/*_for` to every per-feature switch the renderer and mesher read.
+   In progress (cloud).
 31. **Far trees as multi-angle impostors** (owner 2026-11-12: "billboards (maybe from above billboards too,
    possibly a few different angles so we can switch between them like old Mario kart did with carts, and some
    trees too)" and "The farther distant thoughts on billboards are because our low LOD trees look pretty bad and
@@ -929,6 +942,12 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    chop clips (`npcs.swings`). The clash's sparks show, but **about 1.5 m off to the side of the blades,
    in the air** (the clash point looks wrong; to check next). Your own body isn't drawn from a placed
    camera, so the player's side of the duel isn't seen in third person.
+   **Clash point (cloud, 2026-11-12; owner's brief: "the sword clash's sparks appear ~1.5 m to the side of
+   the blades … the closest point between the two blade segments; both faces"):** fixed, BUGS.md #86: the
+   point was the middle of the eye and the defender's body (or the two eyes), never on the blades. Each
+   stance's raised blade is now data (`guard.stances.*.blade`, grip and tip from the feet, fitted to the
+   raised clips and kept in step by a `clip_probe` test), and the point is where the swing's arc meets it.
+   Not yet seen in game (a duel screencast on the local machine).
 36. **A showcase video of the deer and wolves** (owner 2026-11-12: "have you observed the animals simulation? Make
    some clips of the deer/wolves behavior, really showcase it and try to get good angles. Keep it under 2 minutes
    of video. Splice it together into a single video."). Queued (local, after item 30).
@@ -1112,6 +1131,13 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    the body and the camera only sees what's already loaded near the player (no scouting). The server accepts the
    viewpoint only where the world's mode allows it. Owner: **"Still want theater mode for adventure, just without
    camera-relative sim."** — theater mode itself stays available in every mode; only the camera viewpoint is creative-only.
+   **T-4 built (2026-11-12, cloud):** the creative simulation viewpoint (THEATER_MODE.md §7.1): the
+   `theaterViewpoint` ability (creative only, `shared/modes/modes.json`), the `theater.viewpoint` capability and
+   the `TheaterViewpoint` message (the playing path's eye, at most 4 a second, a clear when it ends); the server uses
+   it only in a mode with the ability (checked on the server, never trusted from the client), within 4096 m of the
+   body: chunks streamed around it from the same budget, creatures spawned and kept, the near ecology, lava and
+   water stepped there; animals don't flee it. Tests on both faces (creative streams and simulates, adventure
+   ignores, no capability ignored, a clear ends it). Not yet run in a browser. Next, locally: T-2, T-3.
 
 42. **The sun as a real world** (owner 2026-11-12: "Add this feature to the queue, the sun is an actual world like
    the moon. Follow similar concepts as the moon. The sun is a volcano world. Constant flowing lava, oceans of
