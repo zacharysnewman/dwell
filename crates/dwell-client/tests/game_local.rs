@@ -3308,8 +3308,13 @@ fn a_local_world_created_at_2x_saves_and_reopens_at_2x_and_its_client_follows_th
         "the client joins the 2× world"
     );
     assert_eq!(rig.session.world_size(), two);
-    let g = rig.game.as_ref().unwrap();
+    let g = rig.game.as_mut().unwrap();
     assert_eq!(g.world_bounds(), dwell_world::WorldBounds::of(two));
+    // What bounds an edit (BUGS.md #109): the Place and region pre-checks and the prediction's
+    // world, the world's size's, not the 1× build's.
+    assert_eq!(g.interaction.bounds(), dwell_world::WorldBounds::of(two));
+    assert_eq!(g.region.bounds, dwell_world::WorldBounds::of(two));
+    assert_eq!(g.world().bounds, dwell_world::WorldBounds::of(two));
     assert_eq!(
         g.big_map_levels(),
         dwell_game::minimap::MAP.big_map_levels_sized(two)

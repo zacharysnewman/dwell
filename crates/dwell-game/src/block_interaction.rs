@@ -7,7 +7,7 @@
 use dwell_blocks::{Facing, STATES, StateId, info};
 use dwell_protocol::{BlockEditAction, BlockEditRequest, Message, players};
 use dwell_world::edit::{FACE_DIRS, placeable, raycast_block_in};
-use dwell_world::{FaceFrame, VoxelWorld, inside_build_volume};
+use dwell_world::{FaceFrame, VoxelWorld, WorldBounds};
 
 pub use crate::input::EditAction;
 
@@ -241,6 +241,9 @@ pub struct BlockInteraction {
     /// The face the look was on at the last update.
     face: FaceFrame,
     last_edit_ms: f64,
+    /// The world's disc and build volume ([`set_world`](Self::set_world)): a Place outside them
+    /// is not sent (BUGS.md #109: not the 1× build's, in a bigger world).
+    bounds: WorldBounds,
 }
 
 impl Default for BlockInteraction {
@@ -261,7 +264,18 @@ impl BlockInteraction {
             yaw: 0.0,
             face: FaceFrame::A,
             last_edit_ms: f64::NEG_INFINITY,
+            bounds: WorldBounds::DEFAULT,
         }
+    }
+
+    /// The world's disc and build volume, from its size (`Game::set_world`).
+    pub fn set_world(&mut self, bounds: WorldBounds) {
+        self.bounds = bounds;
+    }
+
+    /// The world's disc and build volume a Place is checked against ([`set_world`](Self::set_world)).
+    pub fn bounds(&self) -> WorldBounds {
+        self.bounds
     }
 
     pub fn palette(&self) -> &[PaletteSlot] {
@@ -407,10 +421,8 @@ impl BlockInteraction {
             EditAction::Break => (BlockEditAction::Break, 0),
             EditAction::Place => {
                 let placement = self.placement();
-                // The server refuses a block outside the build volume (ADR 0025): not sent.
-                if placement.is_some_and(|(c, _)| {
-                    !inside_build_volume(i64::from(c[0]), i64::from(c[1]), i64::from(c[2]))
-                }) {
+                // The server refuses a block outside the world's build volume (ADR 0025): not sent.
+                if placement.is_some_and(|(c, _)| !self.bounds.contains_cell(c)) {
                     return None;
                 }
                 (BlockEditAction::Place, placement.map_or(0, |(_, m)| m))
@@ -751,6 +763,54 @@ mod tests {
         let m = interaction.act(EditAction::Break, 1.0).unwrap();
         assert_eq!(request(&m).cell, [0, top - 1, 0]);
     }
+
+    dwell_world::both_faces!(
+        /// BUGS.md #109: in a 4× or 10× world a player 60 km and ~200 km from the centre (past
+        /// the 1× build's 50 km disc) places and breaks a block; in a 1× world a Place past its
+        /// rim is still not sent.
+        fn places_and_breaks_past_50_km_in_a_big_world(f: FaceFrame) {
+            use dwell_protocol::world_size::WorldSize;
+            let row = 40;
+            let one = WorldBounds::DEFAULT;
+            for (size, x) in [
+                ("4x", 60_000),
+                ("4x", 199_500),
+                ("10x", 60_000),
+                ("10x", 200_000),
+                ("1x", 60_000),
+            ] {
+                let bounds = WorldBounds::of(WorldSize::named(size).unwrap());
+                let mut world = VoxelWorld::new(dwell_world::empty_generator(), None);
+                world.bounds = bounds;
+                let [cx, cy, cz] = f.cell([x, row, 2]);
+                world.set_voxel(cx, cy, cz, f.state(require("dwell:stone")));
+                let mut i = BlockInteraction::new();
+                i.set_world(bounds);
+                select_item(&mut i, "dwell:stone");
+                // Looking +Z at the block's −Z face (5): the place goes in (x, row, 1).
+                let eye = f.point([f64::from(x) + 0.5, dwell_world::m_of_row(row) + 0.25, 0.5]);
+                i.update(&mut world, Some(eye), 0.0, 0.0, f);
+                assert_eq!(
+                    i.placement().map(|(c, _)| c),
+                    Some(f.cell([x, row, 1])),
+                    "{size} at {x} m"
+                );
+                let placed = i.act(EditAction::Place, 0.0);
+                if bounds == one {
+                    assert_eq!(placed, None, "a 1× world's Place past its rim is sent");
+                } else {
+                    let placed = placed.unwrap_or_else(|| panic!("{size}: no Place sent at {x} m"));
+                    assert_eq!(request(&placed).cell, f.cell([x, row, 2]));
+                }
+                let broken = i.act(EditAction::Break, 1_000.0).expect("a Break");
+                assert_eq!(
+                    request(&broken).cell,
+                    f.cell([x, row, 2]),
+                    "{size} at {x} m"
+                );
+            }
+        }
+    );
 
     // Beyond the TS suite: the voxel world is a target source through the shared ray cast.
     #[test]

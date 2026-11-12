@@ -6,13 +6,6 @@ pins it.
 
 ## Open
 
-### 109. In a big world the client won't place a block past 50 km from the centre
-
-Found 2026-11-12 fixing #108 (not reproduced in game): `dwell-game` `block_interaction.rs` drops a Place outside
-the build volume before sending it, testing `inside_build_volume`, the 1× build's (50 km), not the world's
-(`WorldBounds::volume`). In a 4×–10× world, where the spawn is often past 50 km, placing would do nothing while
-breaking works. Fix: give the block interaction the world's volume (`Game::set_world`), with a 4× test.
-
 ### 100. Volumetric clouds look like "crazy triangles"
 
 Owner, 2026-11-12: "the clouds look ridiculous at least the volumetric ones. Look like crazy triangles. Find a
@@ -471,6 +464,34 @@ shallow ramp, maybe same problem with steep ramps too?" Not investigated yet: ta
 face, or the placement check against its shape.
 
 ## Fixed
+
+### 109. In a big world the client won't place a block past 50 km from the centre (fixed after 0.55.9)
+
+Found 2026-11-12 fixing #108 (not reproduced in game): `dwell-game` `block_interaction.rs` drops a Place outside
+the build volume before sending it, testing `inside_build_volume`, the 1× build's (50 km), not the world's
+(`WorldBounds::volume`). In a 4×–10× world, where the spawn is often past 50 km, placing would do nothing while
+breaking works. Fix: give the block interaction the world's volume (`Game::set_world`), with a 4× test.
+
+Cause, wider than the Place: every edit check took the 1× bounds. The client's Place pre-check
+(`BlockInteraction::act`), the region tools' and the drag's box checks and the brush's aim (`region::box_in_world`),
+and the shared checks the server and the client's prediction both run (`edit::check_block_edit`,
+`edit_writes_all`, `unsupported_after`, `region::check_region_edit`) all tested `inside_build_volume` and
+`inside_world_disc`, the 50 km disc and sphere. So past 50 km the server refused every Place as `OutOfWorld` too
+(a Break has no bounds test, so it worked). Fixed: the world's bounds go with its voxels (`VoxelWorld::bounds`,
+set by the server from its size and by the client's `Game::set_world`), the edit checks read them
+(`WorldBounds::contains_cell`, `region::box_in_world_of`, which replaces the 1× `box_in_world`), and
+`Game::set_world` hands them to the block interaction (`set_world`), the region tools and the drag
+(`DragWorld::bounds`). Left at 1× on purpose: the flat test world's generator and LOD (its ground is the 1× disc's),
+test fixtures, and the shaders' and fog's `WORLD_RADIUS` readers (BIG_MAP.md M3).
+
+Tests (both faces; red on main, green after): `dwell-sim` `tests/big_world_edits.rs`
+`a_4x_and_a_10x_world_take_edits_60_and_200_km_out` (a player at 60 km and 199.5 km in a 4× world, 60 km and
+200 km in a 10×, places a stone and breaks it, the server applying both; red: "4x: the place at 60000 m: left
+(OutOfWorld, 0)") and `a_1x_world_still_refuses_a_place_past_its_rim` (green before and after);
+`dwell-game` `places_and_breaks_past_50_km_in_a_big_world` (the client sends the Place and the Break at the same
+spots, and no Place past a 1× world's rim; red with the 1× check: "4x: no Place sent at 60000 m"); the 2× client
+test in `game_local.rs` checks `Game::set_world` gave the bounds to the interaction, the region tools and the
+prediction's world.
 
 ### 106. Trees look like sticks (fixed after 0.55.2)
 

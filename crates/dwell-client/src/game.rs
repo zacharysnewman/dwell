@@ -2990,6 +2990,11 @@ impl<S: Scene> Game<S> {
         self.world_seed = world_seed;
         self.world_bounds = dwell_world::WorldBounds::of(size);
         self.streamer.set_volume(*self.world_bounds.volume());
+        // What bounds an edit: the prediction's checks (the store's), the Place, region and brush
+        // pre-checks; the world's, not the 1× build's (BUGS.md #109).
+        self.streamer.store_mut().bounds = self.world_bounds;
+        self.interaction.set_world(self.world_bounds);
+        self.region.bounds = self.world_bounds;
         if let Some(lod) = &mut self.lod {
             lod.set_world(self.world_bounds);
         }
@@ -5108,8 +5113,9 @@ impl<S: Scene> Game<S> {
                 // Editable: in the world, with every chunk a stroke there reads loaded.
                 let extent = self.brush.read_extent(dwell_world::cell_of_pos(e));
                 let streamer = &self.streamer;
+                let bounds = self.world_bounds;
                 dwell_game::brush_tool::clamp_aim(e, dir, reach, hit, |c| {
-                    dwell_world::region::box_in_world(c, [1, 1, 1])
+                    dwell_world::region::box_in_world_of(&bounds, c, [1, 1, 1])
                         && extent.is_none_or(|(lo, size)| {
                             streamer.box_loaded(std::array::from_fn(|i| c[i] + lo[i]), size)
                         })
@@ -6119,6 +6125,9 @@ impl dwell_game::build_drag::DragWorld for DragCells<'_> {
     }
     fn holds(&mut self, cell: [i32; 3], material: StateId) -> bool {
         dwell_world::edit::held_in_place(self.world, cell, material)
+    }
+    fn bounds(&self) -> dwell_world::WorldBounds {
+        self.world.bounds
     }
     fn settled(&mut self) -> bool {
         self.settled
