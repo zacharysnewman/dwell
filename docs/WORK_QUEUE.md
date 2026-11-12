@@ -365,6 +365,11 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    sunset like our old 2D clouds."** The volume should take the deck's golden-hour tint: the sun's colour low in the
    sky, the warm underside glow and the horizon colour the deck mixed in; compare at sunrise/sunset against
    `?clouds=` the 2D deck (the reference since the lighting rework).
+   Owner, 2026-11-12: **"Also, our new 2D clouds seem to have lost most of their lighting from the original too. Can
+   you compare with our old non-volumetric clouds they were 3d to see what was different about their lighting? They
+   almost looked 3D"** — compare the deck as it was before the volumetric work (before 93fd6c26, e.g. at
+   122b0f0e) with today's deck term by term (fake relief/normals from the noise, self-shadowing toward the sun,
+   rim/silver light, the dark undersides, the sunset ramp) and restore what was lost.
    **Built (2026-11-12, cloud, branch `claude/cloud-golden-hour-zjl391`, CLOUDS.md §9.8):** the tint was lost in
    the ambient: the deck warms its whole colour at a low sun, the volume only the sun's light, and a volume
    sample's light is mostly the cool sky's. Now the shade (sky light and ground bounce) takes the deck's warm
