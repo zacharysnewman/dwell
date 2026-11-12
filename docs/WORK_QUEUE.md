@@ -838,6 +838,14 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    it crosses at contact, with damage, knockback and durability per sword as data (reusing the swing and
    clip_probe systems); in the creative inventory now, adventure recipes later. The models from the owner's
    *3D Low Poly Tools Weapons Containers* pack (NexusArcadeStudios), as the tools were. Queued.
+   Owner, 2026-11-12: **"For the sword we'll use a perpendicular vs parallel defense attack gameplay. Wandering
+   NPCs will get swords. We'll use the Wii Resort sword fighting model, you can only hold the sword vertical or
+   horizontal, and you can choose to block or not. Attacking drops block, if you hit enemy sword within an angle
+   threshold of perpendicular you're blocked, if within an angle of parallel it connects."** So: a sword is held
+   in one of two stances, vertical or horizontal (the same two swings as the axe); holding block raises the
+   sword in its stance; attacking drops the block for the swing; a strike that meets the defender's raised sword
+   within a threshold of perpendicular to it is blocked (a clash, no damage), within a threshold of parallel it
+   slips past and connects; angles and thresholds as data. NPCs carry swords and fight by the same rules (item 38).
 36. **A showcase video of the deer and wolves** (owner 2026-11-12: "have you observed the animals simulation? Make
    some clips of the deer/wolves behavior, really showcase it and try to get good angles. Keep it under 2 minutes
    of video. Splice it together into a single video."). Queued (local, after item 30).
