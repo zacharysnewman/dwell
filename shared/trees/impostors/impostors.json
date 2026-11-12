@@ -6,6 +6,11 @@
   "variants": 4,
   "albedo": { "leaf": "leaf.base", "log": "bark.base" },
   "marginM": 0.25,
+  "leafShade": {
+    "$comment": "How a leaf texel is lit at draw time (BUGS.md #106: the impostor crowns drew lighter than the near crowns, the colour of the grass behind them): ambient the hemisphere light's share (the near leaves take their baked sky light and corner occlusion, which a texel has none of; 1 open sky), albedo a scale on the palette colour (the near leaves' painted tile is darker than its palette base). Fitted on a GPU against ?impostors=0 at 80 and 150 m.",
+    "ambient": 0.6,
+    "albedo": 0.8
+  },
   "far": {
     "$comment": "Where impostors take over from the full-detail trees, per Far trees setting tier (Settings → Graphics → Far trees; the presets pick the tier by name): `draw` `impostor` (one baked quad a tree, the view nearest the camera dithered with the next) or `none` (no far trees); `fromM` the distance (m, from the eye) the hand-over starts, `fadeM` its width (both draw, each pixel showing one by the screen dither; the impostor's share rises 0 → 1 across it), `toM` where far trees stop (0: never).",
     "tiers": {

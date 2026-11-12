@@ -462,6 +462,11 @@ interface DwellDebug {
    */
   impostors(): ImpostorStatus;
   /**
+   * The impostors' debug view (BUGS.md #106): 0 off, 1 the quads solid, 2 the silhouettes solid,
+   * 3 the albedo unlit; `ambient` and `albedo` override impostors.json `leafShade` for tuning.
+   */
+  impostorDebug(mode: number, ambient?: number, albedo?: number): void;
+  /**
    * The finder (WORK_QUEUE item 46): the far herds and packs on the player's face from the last
    * `ecology`, of `kind` (any when omitted), nearest first, with their distance (m) and the yaw
    * facing them (`bearing`, degrees); face-local metres.
@@ -1490,6 +1495,7 @@ async function start(): Promise<App | null> {
     },
     ecology: () => client.ecology() as EcologyReadout | null,
     impostors: () => client.impostorStatus() as ImpostorStatus,
+    impostorDebug: (mode, ambient, albedo) => client.setImpostorDebug(mode, ambient ?? -1, albedo ?? -1),
     herds: (kind) => client.herds(kind === undefined ? '' : `dwell:${kind}`) as HerdFound[],
     goToHerd: (kind, back) =>
       app.loopback?.lavaDev('goToHerd', [

@@ -16,6 +16,10 @@ not drawn (it disabled early depth: the quad writes its own depth, the texel's b
 and fog); no mip-maps yet (texels loaded exactly). Not yet: felled trees left out, shadows cast (I-5), the
 LOD ground under far trees (BUGS.md #95), retiring `lod_trees.rs` (I-4), the phone run. Open questions for the
 owner at the end.
+**BUGS.md #106 (2026-11-12, fixed):** on a GPU the far crowns read as bare sticks: the quad stood at its sphere's
+centre, behind the near tree's own still-drawn trunk and branches, and leaf texels were lit as open sky (lighter than
+the near crowns). The quad now stands at the sphere's near side (`render/impostors.rs` `near_side`) and leaf texels
+take `impostors.json` `leafShade`; `__dwell.impostorDebug` draws the quads or silhouettes solid for checks.
 
 The owner (2026-11-12): "billboards (maybe from above billboards too, possibly a few different angles so we
 can switch between them like old Mario kart did with carts, and some trees too)… We're going to want to have

@@ -31,36 +31,6 @@ the input after the face change. Repro to start from: the take script
 `.claude/skills/record/paths/bifacial-v3/portaltake.js` (`{"noCam": true}` logs the drop, the apex and where it
 ends).
 
-### 106. Trees look like sticks
-
-Owner, 2026-11-12 (on a release after the blocked stretch, ~60 versions newer than the last they played): "What
-happened to the trees, they just look like sticks?" Suspects, all from today: the far-tree impostors (#797) — the
-near crowns fade out from 48 m and hand over to the impostors, but the trunks don't (they show under them), so if
-the impostors don't draw (atlas bake not finished/failed, the Far trees tier, a CPU adapter, a shader error) or draw
-too faint, every tree past ~48 m is a bare trunk; the faded-plant drop (#773/#784) dropping whole cutout chunks;
-the leaf-card face-B packed-normal change (#799).
-Then (owner's screenshot, 0.54.204, a grassy hill of pines): every tree past ~50–60 m is a bare dark trunk; the
-nearest trees are leafy but already dithered; no impostor crowns anywhere. So the near crowns are dropped past the
-hand-over (`card_dropped`: leaf faces past `far_trees.x + .y + 2` when `frame.far_trees.w` is set) while the
-impostors draw nothing. The leaves must not fade out unless the impostors for those trees actually draw (atlas
-uploaded, the tile's instances in), and why the impostors draw nothing on the release needs finding.
-Then (local GPU check, test:starter seed 0, High): past ~48 m (at 80 and 150 m) most trees are thin trunks with
-small, faint crowns, so the impostors do draw, but too small/faint; `?impostors=0` brings back the full crowns at
-40–150 m; at 300 m both look alike.
-**Gate (claude/tree-sticks):** the frame's hand-over (`impostors::drawn`) is the tier's only once the impostors are
-ready about the eye (`impostors::ready`: every atlas layer baked, every tile within `fromM + fadeM + 64` m in, at
-least one tree there); until then the near crowns draw to the full-detail distance, chunk cutouts aren't cut and the
-LOD sections keep their trees (`render/mod.rs` `the_near_crowns_and_lod_trees_stay_until_the_impostors_are_ready`,
-red on main → green). `__dwell.impostors()` reads out ready, layers baked, tiles, instances, drawn and the last
-upload error (a layer of the wrong size used to be dropped silently). **Root cause still open:** the bake matches
-the real trees (radius and side area within ~10–30% for every species' wild trees), and a CPU emulation of
-`imp_fs`'s sampling (quad point, per-pixel view dither, texel) covers 1.02× the real crown's side silhouette with
-0.80 overlap (`dwell-worldgen` `crown_match`), so the shrinkage is on the GPU path not emulated: the vertex stage
-(layer spheres from the layer buffer, the instance foot), MSAA sample masks, lighting/fog darkening the crowns, or
-the near trunks with the dropped crowns. Next: a local GPU session reads `__dwell.impostors()` on the release and
-on test:starter, and screenshots `?impostors=1` with the near trees hidden.
-
-
 ### 100. Volumetric clouds look like "crazy triangles"
 
 Owner, 2026-11-12: "the clouds look ridiculous at least the volumetric ones. Look like crazy triangles. Find a
@@ -519,6 +489,50 @@ shallow ramp, maybe same problem with steep ramps too?" Not investigated yet: ta
 face, or the placement check against its shape.
 
 ## Fixed
+
+### 106. Trees look like sticks (fixed after 0.55.2)
+
+Owner, 2026-11-12 (on a release after the blocked stretch, ~60 versions newer than the last they played): "What
+happened to the trees, they just look like sticks?" Suspects, all from today: the far-tree impostors (#797) — the
+near crowns fade out from 48 m and hand over to the impostors, but the trunks don't (they show under them), so if
+the impostors don't draw (atlas bake not finished/failed, the Far trees tier, a CPU adapter, a shader error) or draw
+too faint, every tree past ~48 m is a bare trunk; the faded-plant drop (#773/#784) dropping whole cutout chunks;
+the leaf-card face-B packed-normal change (#799).
+Then (owner's screenshot, 0.54.204, a grassy hill of pines): every tree past ~50–60 m is a bare dark trunk; the
+nearest trees are leafy but already dithered; no impostor crowns anywhere. So the near crowns are dropped past the
+hand-over (`card_dropped`: leaf faces past `far_trees.x + .y + 2` when `frame.far_trees.w` is set) while the
+impostors draw nothing. The leaves must not fade out unless the impostors for those trees actually draw (atlas
+uploaded, the tile's instances in), and why the impostors draw nothing on the release needs finding.
+Then (local GPU check, test:starter seed 0, High): past ~48 m (at 80 and 150 m) most trees are thin trunks with
+small, faint crowns, so the impostors do draw, but too small/faint; `?impostors=0` brings back the full crowns at
+40–150 m; at 300 m both look alike.
+**Gate (claude/tree-sticks):** the frame's hand-over (`impostors::drawn`) is the tier's only once the impostors are
+ready about the eye (`impostors::ready`: every atlas layer baked, every tile within `fromM + fadeM + 64` m in, at
+least one tree there); until then the near crowns draw to the full-detail distance, chunk cutouts aren't cut and the
+LOD sections keep their trees (`render/mod.rs` `the_near_crowns_and_lod_trees_stay_until_the_impostors_are_ready`,
+red on main → green). `__dwell.impostors()` reads out ready, layers baked, tiles, instances, drawn and the last
+upload error (a layer of the wrong size used to be dropped silently). **Root cause still open:** the bake matches
+the real trees (radius and side area within ~10–30% for every species' wild trees), and a CPU emulation of
+`imp_fs`'s sampling (quad point, per-pixel view dither, texel) covers 1.02× the real crown's side silhouette with
+0.80 overlap (`dwell-worldgen` `crown_match`), so the shrinkage is on the GPU path not emulated: the vertex stage
+(layer spheres from the layer buffer, the instance foot), MSAA sample masks, lighting/fog darkening the crowns, or
+the near trunks with the dropped crowns. Next: a local GPU session reads `__dwell.impostors()` on the release and
+on test:starter, and screenshots `?impostors=1` with the near trees hidden.
+
+**Cause (found on the M1's GPU, 0.55.2, test:starter seed 0, High, `__dwell.impostorDebug`):** two things, neither in
+the bake or the sampling. (1) **Depth:** the impostor quad stood at its bounding sphere's centre, but the near tree's
+logs stay drawn past the hand-over (only its leaves drop), so its trunk and branches, in front of that plane, won the
+depth test over the crown: every far tree showed its branch fork as dark "T"s across a flattened crown, the "sticks".
+The quads were the right size and place (debug 1, solid quads) and the alpha-tested silhouettes were full crowns
+(debug 2, solid silhouettes). (2) **Shading:** a leaf texel was lit as open sky (`open_light()`, ambient 1) with the
+palette's leaf colour, so the crowns came out lighter than the near crowns (which take baked sky light, corner
+occlusion and the darker painted tile), about the grass's colour behind them: the "faint". **Fix:** the quad is moved
+to its sphere's near side, scaled toward the eye so it covers the same pixels (`impostors::near_side`, WGSL
+`imp_near_side`; `the_quad_stands_in_front_of_everything_in_its_sphere`, red with the quad at the centre, green
+after), and leaf texels take `impostors.json` `leafShade` (ambient 0.6, albedo x 0.8, fitted against
+`?impostors=0`). Before / after / `?impostors=0` shots at 50-200 m: the crowns match the full-detail ones in size,
+density and colour, no branch forks. `__dwell.impostorDebug(mode, ambient?, albedo?)` stays as the debug view
+(DEV_TOOLS.md).
 
 ### 102. A bright horizontal band in face B's sky seen from beyond the rim (fixed after 0.54.191)
 

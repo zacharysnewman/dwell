@@ -210,6 +210,14 @@ pub fn tint_ratio(tree: &FarTree, leaf: [f32; 3]) -> [f32; 3] {
     ]
 }
 
+/// The scale toward the eye that moves a quad whose sphere centre is `dist` m away to the sphere's
+/// near side (radius `r`) while it covers the same pixels (the WGSL twin `imp_near_side`): drawn at
+/// the centre, the near tree's trunk and branches (still drawn past the hand-over) stood in front
+/// of the crown and showed as bare sticks (BUGS.md #106).
+pub fn near_side(dist: f32, r: f32) -> f32 {
+    ((dist - r) / dist.max(1e-3)).clamp(0.05, 1.0)
+}
+
 /// The impostors' WGSL: the layout's constants from the data and the entry points `imp_vs` and
 /// `imp_fs`, appended to the scene module (they use its frame, lighting and noise).
 pub fn wgsl(config: &Config) -> String {
@@ -242,6 +250,10 @@ struct ImpostorScene {
     eye: vec4f,
     far: vec4f,
     leaf: vec4f,
+    // x: the debug view (`__dwell.impostorDebug`, BUGS.md #106): 0 off, 1 the whole quad solid,
+    // 2 the alpha-tested silhouette solid, 3 the albedo unlit. y, z: a leaf texel's ambient share
+    // and albedo scale (impostors.json `leafShade`).
+    debug: vec4f,
 };
 @group(3) @binding(20) var<uniform> imp: ImpostorScene;
 @group(3) @binding(21) var imp_albedo: texture_2d_array<f32>;
@@ -355,6 +367,12 @@ fn imp_share(dist: f32) -> f32 {
     return clamp((dist - imp.far.x) / max(imp.far.y, 1e-3), 0.0, 1.0);
 }
 
+// The scale toward the eye that moves a quad at `dist` m to the near side of its sphere of
+// radius `r` (render/impostors.rs `near_side`).
+fn imp_near_side(dist: f32, r: f32) -> f32 {
+    return clamp((dist - r) / max(dist, 1e-3), 0.05, 1.0);
+}
+
 @vertex
 fn imp_vs(v: ImpIn, @builtin(vertex_index) vi: u32) -> ImpOut {
     var o: ImpOut;
@@ -387,7 +405,10 @@ fn imp_vs(v: ImpIn, @builtin(vertex_index) vi: u32) -> ImpOut {
     let up = cross(n, right);
     o.local = (right * corner.x + up * corner.y) * r;
     let rel = centre + face_vector(face, imp_turn(o.local, q));
-    o.clip = frame.view_proj * vec4f(rel, 1.0);
+    // The quad stands at the bounding sphere's near side, scaled toward the eye so it covers the
+    // same pixels (BUGS.md #106): at the centre the near tree's trunk and branches, which stay
+    // drawn, stood in front of its crown and showed as bare sticks.
+    o.clip = frame.view_proj * vec4f(rel * imp_near_side(dist, r), 1.0);
     return o;
 }
 
@@ -408,6 +429,14 @@ fn imp_fs(i: ImpOut) -> ImpOutFs {
     let up = cross(vk, right);
     let u = dot(i.local, right) / r;
     let v = dot(i.local, up) / r;
+    let dbg = u32(imp.debug.x);
+    if (dbg == 1u) {
+        var q: ImpOutFs;
+        q.color = vec4f(1.0, 0.0, 1.0, 1.0);
+        q.depth = frame_depth(view_depth(i.centre), true);
+        q.mask = 0xffffffffu;
+        return q;
+    }
     if (abs(u) >= 1.0 || abs(v) >= 1.0) {
         discard;
     }
@@ -417,6 +446,13 @@ fn imp_fs(i: ImpOut) -> ImpOutFs {
     let a = textureLoad(imp_albedo, cell + t, i.layer, 0);
     if (a.a < 0.5) {
         discard;
+    }
+    if (dbg == 2u) {
+        var q: ImpOutFs;
+        q.color = vec4f(1.0, 0.0, 1.0, 1.0);
+        q.depth = frame_depth(view_depth(i.centre), true);
+        q.mask = 0xffffffffu;
+        return q;
     }
     let nd = textureLoad(imp_normal, cell + t, i.layer, 0);
     // The texel's real point: on the view's plane at the sphere's near side, moved back by its depth.
@@ -442,13 +478,15 @@ fn imp_fs(i: ImpOut) -> ImpOutFs {
         discard;
     }
     var albedo = a.rgb;
+    var light = open_light();
     if (distance(a.rgb, imp.leaf.rgb) < 0.02) {
-        albedo *= i.tint;
+        albedo *= i.tint * imp.debug.z;
+        light.ambient = imp.debug.y;
     }
     let n = normalize(face_vector(face, imp_turn(nd.rgb * 2.0 - 1.0, i.turns)));
-    let lit = scene_out(albedo, n, rel, 1.0, open_light());
+    let lit = scene_out(albedo, n, rel, 1.0, light);
     var o: ImpOutFs;
-    o.color = lit.color;
+    o.color = select(lit.color, vec4f(albedo, 1.0), dbg == 3u);
     o.depth = frame_depth(lit.depth, true);
     o.mask = mask;
     return o;
@@ -477,6 +515,12 @@ pub struct Impostors {
     pub far: Option<Far>,
     /// Bakes asked for (the game sends them once).
     pub requested: bool,
+    /// The debug view (`__dwell.impostorDebug`, BUGS.md #106): 0 off, 1 the quads solid, 2 the
+    /// silhouettes solid, 3 the albedo unlit.
+    pub debug: u32,
+    /// A leaf texel's ambient share and albedo scale (`Config::leaf_ambient`, `leaf_albedo`;
+    /// `__dwell.impostorDebug`'s tuning overrides them).
+    pub leaf_shade: [f32; 2],
     /// Layers uploaded (of `layers.len()`).
     baked: u32,
     /// The last upload or bake that went wrong ([`Status::last_error`]).
@@ -528,7 +572,7 @@ impl Impostors {
         });
         let uniform = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("impostor scene"),
-            size: 48,
+            size: 64,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -694,6 +738,8 @@ impl Impostors {
             dirty: false,
             far: None,
             requested: false,
+            debug: 0,
+            leaf_shade: [config.leaf_ambient, config.leaf_albedo],
             baked: 0,
             last_error: String::new(),
         }
@@ -842,7 +888,7 @@ impl Impostors {
         });
         let lin = |c: f32| dwell_look::srgb_to_linear(f64::from(c)) as f32;
         let leaf = self.config.leaf.map(|c| lin((c * 255.0).round() / 255.0));
-        let u: [f32; 12] = [
+        let u: [f32; 16] = [
             eye[0] as f32,
             eye[1] as f32,
             eye[2] as f32,
@@ -855,6 +901,10 @@ impl Impostors {
             leaf[1],
             leaf[2],
             self.px as f32,
+            self.debug as f32,
+            self.leaf_shade[0],
+            self.leaf_shade[1],
+            0.0,
         ];
         queue.write_buffer(&self.uniform, 0, super::floats(&u));
         if self.layers_dirty {
@@ -959,6 +1009,41 @@ mod tests {
         let on = c.far("on").expect("on");
         assert!(reach(&on) > on.from + on.fade);
         assert!(reach(&on) <= MAX_REACH_M);
+    }
+
+    /// BUGS.md #106: the quad stood at its sphere's centre, so the near tree's logs (inside the
+    /// sphere, drawn past the hand-over) won the depth test over its crown and every far tree
+    /// read as a bare trunk with branches. Every quad point, scaled by `near_side`, lies on the
+    /// same ray from the eye (same pixel) and no farther than where that ray enters the sphere,
+    /// so nothing of the tree stands in front of it. Red with no scale (the centre's plane).
+    #[test]
+    fn the_quad_stands_in_front_of_everything_in_its_sphere() {
+        // face-a-only: eye-relative geometry, no face.
+        let dot = |a: [f32; 3], b: [f32; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+        for &(dist, r) in &[(50.0f32, 8.0f32), (80.0, 13.0), (150.0, 13.0), (300.0, 6.0)] {
+            let centre = [0.0, 0.0, dist];
+            let s = near_side(dist, r);
+            for &(cx, cy) in &[(0.0, 0.0), (0.5, 0.0), (0.0, -0.7), (0.6, 0.6), (-0.3, 0.2)] {
+                let p = [cx * r, cy * r, dist];
+                let q = p.map(|c| c * s);
+                let len = dot(q, q).sqrt();
+                let ray = q.map(|c| c / len);
+                // The same pixel: the scaled point on the unscaled point's ray.
+                let pl = dot(p, p).sqrt();
+                assert!((dot(ray, p.map(|c| c / pl)) - 1.0).abs() < 1e-5);
+                // Where the ray enters the sphere (if it does): t² − 2t(ray·c) + |c|² − r² = 0.
+                let b = dot(ray, centre);
+                let disc = b * b - (dot(centre, centre) - r * r);
+                if disc >= 0.0 {
+                    let enter = b - disc.sqrt();
+                    assert!(
+                        len <= enter + 1e-3,
+                        "dist {dist} r {r} at ({cx}, {cy}): the quad at {len} m, the sphere from {enter} m"
+                    );
+                }
+            }
+        }
+        assert!(IMPOSTOR_WGSL.contains("rel * imp_near_side(dist, r)"));
     }
 
     dwell_world::both_faces!(

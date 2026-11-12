@@ -1175,6 +1175,10 @@ distance). `forest-edge` is the edge alone (6 s) for quick A/Bs.
 draws the far trees as before (the LOD sections' tree cells, near leaves to the full-detail distance); `npm run
 bench -- --warm --compare --configs impostors-off forest-perf` is the before/after. `gpu.frame` p95, off → on (48 m
 hand-over): inside 15.5 → 15.5, edge 25.8 → 23.4, above 15.6 → 12.3. Telemetry: `impostor.ktris`.
+`__dwell.impostors()` reads out whether they draw (ready, layers baked, tiles, instances, the last upload error);
+`__dwell.impostorDebug(mode, ambient?, albedo?)` is their debug view (BUGS.md #106): 1 draws every quad solid
+magenta (size and place), 2 the alpha-tested silhouettes solid (the crown's shape), 3 the albedo unlit, 0 off;
+`ambient` and `albedo` override `impostors.json` `leafShade` live, for fitting it against `?impostors=0`.
 
 Cloud sessions have no GPU: there it is not run; `cargo test --release -p dwell-worldgen --test forest_world`
 checks the world (every column old-growth, the density in range on both faces, deterministic), and its
