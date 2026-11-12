@@ -606,6 +606,12 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    eats into the bright area, so the bright part reads smaller than the old evenly lit disc. Next (local): a
    side-by-side with the old moon at the same zoom and time; keep the full moon lit to its edge (limb darkening
    only on the dark side of the terminator, rim albedo evened) so the bright disc matches the old size.
+   **Fixed 2026-11-12** (branch `claude/moon-size`): the disc reflects by Lommel-Seeliger, the regolith's law
+   (`moon.lunarLambert` 1, `celestial::moon_shade`, shared by sky.wgsl and the lit share), so the full moon is lit
+   evenly to its edge. Measured (seed 7, midnight, full, the 50% radius of the bright disc): ×8 old 0.54.33 92 px,
+   the Lambert ball 76 px, now 91 px; ×1 12 / 11 / 13 px. The bake's rim was already filled (outside texels the
+   mean albedo, `render/moon.rs` `pack`): no dark ring. Left: the baked albedo's maria read faint next to the old
+   procedural ones (the full moon near white), a look question for the owner.
 
 ## Done
 
