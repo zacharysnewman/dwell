@@ -362,6 +362,32 @@ impl Server {
     /// The near ecology (docs/ECOLOGY.md §8): records near players become individuals, those far
     /// from all fold back, and the individuals decide; a grazer's eaten block is written here (the
     /// only world change, near players only).
+    /// Dev tools (the local world's `spawnHerd`, docs/DEV_TOOLS.md): a far record of `species`
+    /// (`"dwell:deer"`, `"dwell:wolf"`: the ecology's names) of `size` head, fed and rested, put
+    /// `offset_m` along +x (face-local) from `feet` (world) on its face, where the near ecology
+    /// brings it in as individuals on its next tick, as a herd or pack walking up would be. Its
+    /// record's id, or an error (the ecology off, no such species).
+    pub fn spawn_group_dev(
+        &mut self,
+        species: &str,
+        feet: [f64; 3],
+        size: f64,
+        offset_m: f64,
+    ) -> Result<u32, String> {
+        let s = DATA
+            .find(species)
+            .ok_or_else(|| format!("no species {species:?} in shared/ecology"))?;
+        let f = dwell_world::FaceFrame::at_height(feet[1]);
+        let local = f.point(feet);
+        let k = usize::from(f.is_b());
+        let faces = self
+            .ecology
+            .faces
+            .as_mut()
+            .ok_or_else(|| "the ecology is not running".to_owned())?;
+        Ok(faces[k].push(s, local[0] + offset_m, local[2], size.max(1.0), 0.0, 1.0))
+    }
+
     pub(super) fn step_herds(&mut self) {
         let running =
             self.ecology.enabled && self.ecology.unread.is_none() && self.ecology.faces.is_some();

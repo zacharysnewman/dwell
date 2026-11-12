@@ -105,6 +105,19 @@ impl GuardInput {
     }
 }
 
+/// The raised-block role a fighter holding `tool` (an item name) shows in its stance
+/// (`vertical`, else level) while `raised`: its weapon's `guard.stances.*.raisedPose`; None when
+/// lowered or not a weapon (WORK_QUEUE item 35: others' and NPCs' guards, from `Swordplay`).
+pub fn guard_role(tool: &str, vertical: bool, raised: bool) -> Option<&'static str> {
+    if !raised {
+        return None;
+    }
+    dwell_protocol::chopping::tool(tool)?
+        .weapon?
+        .guard
+        .raised_pose(vertical)
+}
+
 /// What a clash shows on this client.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ClashShow {
@@ -204,8 +217,8 @@ mod tests {
         i.frame(&g, 1000.0);
         assert!(i.blocking(false));
         assert!(!i.blocking(true), "a swing drops the block");
-        assert_eq!(i.pose(&g, false, false), Some("fp_guard_level"));
-        assert_eq!(i.pose(&g, true, false), Some("fp_guard_vertical"));
+        assert_eq!(i.pose(&g, false, false), Some("guard_level"));
+        assert_eq!(i.pose(&g, true, false), Some("guard_vertical"));
         assert_eq!(i.pose(&g, true, true), None, "mid-swing: the swing's clip");
         // Still held after the swing: the block is back.
         assert!(i.blocking(false));
@@ -260,5 +273,18 @@ mod tests {
             recoil_camera(t, true, 0.0).size() > 0.0,
             "the vertical stance's kick"
         );
+    }
+
+    // WORK_QUEUE item 35: another fighter's raised guard (the server's `Guards`) shows its
+    // stance's role; lowered, or with no weapon, the hold.
+    #[test]
+    fn a_raised_guard_names_its_stances_role() {
+        assert_eq!(guard_role("dwell:sword", false, true), Some("guard_level"));
+        assert_eq!(
+            guard_role("dwell:sword", true, true),
+            Some("guard_vertical")
+        );
+        assert_eq!(guard_role("dwell:sword", true, false), None);
+        assert_eq!(guard_role("dwell:stone_axe", false, true), None);
     }
 }

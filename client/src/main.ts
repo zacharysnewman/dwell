@@ -47,6 +47,7 @@ import { rememberTrust, showRegistryPrompt, trustedHash } from './ui/registryPro
 import { showUpgradePrompt } from './ui/upgradePrompt';
 import { compatibilityLine, sameLine } from './version/semver';
 import {
+  feetOf,
   GENERATORS,
   isSpawn,
   parseLocalWorld,
@@ -306,6 +307,9 @@ interface DwellDebug {
    * null outside a local world.
    */
   spawnNpcs(n: number, radius?: number, variant?: number): Promise<string | null>;
+  /** A deer herd (`'deer'`) or a wolf pack (`'wolf'`) of `size` put `offset` m along +x from the
+   * local player, brought in by the near ecology (a local world; docs/DEV_TOOLS.md). */
+  spawnHerd(kind: 'deer' | 'wolf', size?: number, offset?: number): Promise<string | null>;
   /**
    * The run-time cloud plumes (docs/CLOUDS.md §8.7; JSON back): `list`; `add` [name, x, y, z,
    * radius?, height?, density?, riseMps?] a steam plume based at a world point; `near` [name, dx,
@@ -1332,11 +1336,14 @@ async function start(): Promise<App | null> {
     waterReport: (x, y, z, radius) =>
       app.loopback?.waterReport([x, y, z], radius ?? WATER_REPORT_RADIUS) ?? Promise.resolve(null),
     lava: (op, args) => app.loopback?.lavaDev(op ?? 'report', args ?? []) ?? Promise.resolve(null),
+    spawnHerd: (kind, size, offset) =>
+      app.loopback?.lavaDev('spawnHerd', [kind === 'wolf' ? 1 : 0, size ?? 5, offset ?? 12]) ??
+      Promise.resolve(null),
     spawnNpcs: (n, radius, variant) =>
       app.loopback?.lavaDev('spawnNpcs', [n, radius ?? 3, variant ?? 0]) ?? Promise.resolve(null),
     plume: (op, args) => {
       const [name, ...nums] = args ?? [];
-      return client.plumeDev(op ?? 'list', name ?? '', Float64Array.from(nums as number[]));
+      return client.plumeDev(op ?? 'list', name ?? '', Float64Array.from(nums));
     },
     die: () => {
       app.loopback?.postToWorker({ t: 'kill' });
@@ -1385,7 +1392,11 @@ async function start(): Promise<App | null> {
 
 /** Moves the local player's feet (a local world; the dev tools' `goto`). */
 function teleport(app: App, feet: Vec3): boolean {
-  app.loopback?.postToWorker({ t: 'teleport', at: feet });
+  // BUGS.md #84: a point that is not three finite numbers is an error here, not a silent no-op.
+  const at = feetOf(feet);
+  if (at === null)
+    throw new Error(`teleport: feet must be [x, y, z] (metres), not ${JSON.stringify(feet)}`);
+  app.loopback?.postToWorker({ t: 'teleport', at });
   return app.loopback !== null;
 }
 

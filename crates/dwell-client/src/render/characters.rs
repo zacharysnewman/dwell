@@ -714,7 +714,18 @@ pub fn creature_draw(
     // on top, so the sword sits in the hand as in a player's; each NPC at its own phase.
     let rig_pose = npc.map(|_| {
         let item = item_shown(character, held).and_then(|n| character.item(n));
-        npc_rig_pose(character, c.role, now_s + f64::from(c.id % 97) * 0.37, item)
+        let t = now_s + f64::from(c.id % 97) * 0.37;
+        match npc.and_then(|n| n.guard).and_then(|g| character.clip(g)) {
+            // A raised block over its pose (WORK_QUEUE item 35), as a player's is, the item's
+            // turns on top.
+            Some(g) => {
+                let mut pose = npc_rig_pose(character, c.role, t, None);
+                let raised = dwell_characters::anim::sample(TABLES.clip(g), 0.0);
+                dwell_characters::anim::layer(&mut pose, &raised, 1.0);
+                with_item(&pose, item)
+            }
+            None => npc_rig_pose(character, c.role, t, item),
+        }
     });
     let draw = super::skinned::SkinnedDraw {
         model: c.model,

@@ -464,6 +464,26 @@ impl LocalCore {
                     Err(e) => format!(r#"{{"error":{e:?}}}"#),
                 }
             }
+            ("spawnHerd", [kind, size, offset]) => {
+                // A herd (`kind` 0, deer) or a pack (1, wolves) of `size` put `offset` m along +x
+                // from the local player, brought in by the near ecology (DEV_TOOLS.md).
+                let Some(feet) = self
+                    .server
+                    .player_of_session(LOCAL_SESSION)
+                    .and_then(|p| self.server.feet_of(p))
+                else {
+                    return r#"{"error":"no local player"}"#.into();
+                };
+                let species = if *kind >= 1.0 {
+                    "dwell:wolf"
+                } else {
+                    "dwell:deer"
+                };
+                match self.server.spawn_group_dev(species, feet, *size, *offset) {
+                    Ok(id) => format!(r#"{{"record":{id}}}"#),
+                    Err(e) => format!(r#"{{"error":{e:?}}}"#),
+                }
+            }
             ("spawnNpcs", [n, radius, variant]) => {
                 // Not lava: the local server's dev ops share this channel. `n` villagers in a
                 // ring `radius` m round the local player's feet (DEV_TOOLS.md).

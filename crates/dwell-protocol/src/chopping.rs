@@ -27,8 +27,26 @@ pub mod fixture {
 pub use crate::damage::{BlockDamageDef, CarveProfile, Cracks, DamageLook, DamageLookKind};
 pub use table::{
     BLOCK_DAMAGE, BREAK_CLASSES, BREAK_TOOLS, BREAK_WITH, CHOP2_DEFAULT, CREATIVE_WEAR, DURABILITY,
-    TOOLS, WEAR_BREAK_SOUND, WOODS,
+    HINTS, TOOLS, WEAR_BREAK_SOUND, WOODS,
 };
+
+/// The on-screen hint for a tool of `kind` held in a stance (`vertical` or level), in `table`
+/// (`hints` in shared/tools/tools.json: one line per kind and stance).
+pub fn hint_in(
+    table: &[(ToolKind, &'static str, &'static str)],
+    kind: ToolKind,
+    vertical: bool,
+) -> Option<&'static str> {
+    table
+        .iter()
+        .find(|(k, _, _)| *k == kind)
+        .map(|&(_, level, vert)| if vertical { vert } else { level })
+}
+
+/// [`hint_in`] over the build's data.
+pub fn hint(kind: ToolKind, vertical: bool) -> Option<&'static str> {
+    hint_in(HINTS, kind, vertical)
+}
 
 /// The hits tool item `item` survives (`durability.items`; owner, 2026-11-11), in `table`; `None`:
 /// it never wears.
@@ -1053,6 +1071,26 @@ impl Cuts {
 #[cfg(test)]
 mod weapon_tests {
     use super::*;
+
+    // BUGS.md: the sword showed the axe's hint ("Axe: level swing …"); the hint is the kind's data.
+    #[test]
+    fn each_tool_shows_its_own_kinds_hint() {
+        let sword = tool("dwell:sword").expect("the sword");
+        let axe = tool("dwell:stone_axe").expect("the axe");
+        let s = hint(sword.kind, false).expect("a weapon hint");
+        assert!(s.starts_with("Sword"), "{s}");
+        assert!(hint(sword.kind, true).unwrap().contains("vertical stance"));
+        assert!(hint(axe.kind, false).unwrap().starts_with("Axe: level"));
+        assert!(hint(axe.kind, true).unwrap().starts_with("Axe: vertical"));
+        // Every tool in the data, the fixture's too, has its kind's hint.
+        for t in TOOLS.iter().chain(fixture::TOOLS) {
+            assert!(
+                hint_in(fixture::HINTS, t.kind, false).is_some() || hint(t.kind, false).is_some(),
+                "{}",
+                t.name
+            );
+        }
+    }
 
     fn sword() -> WeaponDef {
         tool("dwell:sword")

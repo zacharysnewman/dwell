@@ -345,13 +345,9 @@ impl Chopping {
         self.cuts.extend(m.cuts);
     }
 
-    /// The hint shown while the axe is held.
-    pub fn hint(&self) -> &'static str {
-        if self.vertical {
-            "Axe: vertical swing (right click: level)"
-        } else {
-            "Axe: level swing (right click: vertical)"
-        }
+    /// The hint shown while a tool of `kind` is held, in the current stance (the kind's `hints`).
+    pub fn hint(&self, kind: dwell_protocol::chopping::ToolKind) -> Option<&'static str> {
+        dwell_protocol::chopping::hint(kind, self.vertical)
     }
 }
 

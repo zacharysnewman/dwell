@@ -28,6 +28,7 @@ pub fn remote_input(v: &RemoteView, holding: bool) -> MoveInput {
         holding,
         foot_ground: [0.0; 2],
         jumped: v.jumped,
+        guard: None,
     }
 }
 
@@ -64,6 +65,7 @@ pub fn local_input(
         holding: true,
         foot_ground: [0.0; 2],
         jumped: false,
+        guard: None,
     }
 }
 
@@ -180,6 +182,8 @@ pub struct Bodies {
     /// A swing held at a clip time on your arms and every remote body (the bench's `clip-strip`:
     /// `__dwell.holdSwing`), or none.
     held_swing: Option<(Swing, f32)>,
+    /// Each remote player's raised-block role this frame (the server's guards; WORK_QUEUE item 35).
+    pub guards: HashMap<u16, &'static str>,
 }
 
 /// Plays swing `s` on `a` held at clip time `t` (starting it if another action or none plays).
@@ -204,6 +208,7 @@ impl Default for Bodies {
             ramp: config.step_view.into(),
             max_lift: f64::from(config.max_step_lift()),
             held_swing: None,
+            guards: HashMap::default(),
         }
     }
 }
@@ -289,6 +294,7 @@ impl Bodies {
         );
         let drawn = local[1] + body.steps.offset();
         let mut input = remote_input(v, held != Held::Empty);
+        input.guard = self.guards.get(&v.player_id).copied();
         if grounded {
             // Each foot's place in the world: the body's frame (render/characters.rs
             // `body_frame`: on face B its left turns over).

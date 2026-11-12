@@ -58,6 +58,10 @@ pub struct MoveInput {
     /// A jump started since the last frame (a remote's snapshots, `RemoteView::jumped`): the jump
     /// plays even when this frame comes after its rise, or after the whole jump (a slow page).
     pub jumped: bool,
+    /// A raised block's role (a sword's `guard.stances.*.raisedPose`, shared/tools: `guard_level`),
+    /// played in place of the hold while no swing plays (attacking drops the block; WORK_QUEUE
+    /// item 35). A character without the role's clip shows its hold.
+    pub guard: Option<&'static str>,
 }
 
 impl Default for MoveInput {
@@ -73,6 +77,7 @@ impl Default for MoveInput {
             holding: false,
             foot_ground: [0.0; 2],
             jumped: false,
+            guard: None,
         }
     }
 }
@@ -296,6 +301,12 @@ impl Animator {
         {
             layer(&mut pose, &sample(self.clip(hold), base.t), 1.0);
         }
+        // The raised block over the gait (and the hold), on the body and the arms alike.
+        if self.action.is_none()
+            && let Some(guard) = i.guard.and_then(|g| self.clip_of(g))
+        {
+            layer(&mut pose, &sample(self.clip(guard), base.t), 1.0);
+        }
         let driven = self.driven;
         if let Some(a) = &mut self.action {
             match driven {
@@ -387,6 +398,38 @@ impl Animator {
 mod tests {
     use super::*;
     use crate::{TABLES, player};
+
+    // WORK_QUEUE item 35: a raised block shows its stance's clip on the body and the arms, by the
+    // role's data; a swing drops it; an unknown role shows the hold.
+    #[test]
+    fn a_raised_guard_plays_its_stance_on_the_body_and_the_arms_until_a_swing() {
+        for space in [Space::Body, Space::Arms] {
+            let arm = player().bone("arm_r").unwrap();
+            let pose_of = |guard: Option<&'static str>, swing: bool| {
+                let mut a = Animator::new(&TABLES, player(), space);
+                if swing {
+                    a.swing(Swing::ChopLevel);
+                }
+                let i = MoveInput {
+                    holding: true,
+                    guard,
+                    ..MoveInput::default()
+                };
+                a.update(&i, 0.01).rot[arm]
+            };
+            let held = pose_of(None, false);
+            let level = pose_of(Some("guard_level"), false);
+            let vertical = pose_of(Some("guard_vertical"), false);
+            assert_ne!(held, level, "{space:?}: the level block raises the arm");
+            assert_ne!(level, vertical, "{space:?}: each stance its own");
+            assert_eq!(pose_of(Some("no_such_role"), false), held, "{space:?}");
+            assert_eq!(
+                pose_of(Some("guard_level"), true),
+                pose_of(None, true),
+                "{space:?}: a swing drops the block"
+            );
+        }
+    }
 
     fn input(state: PlayerState, v: [f32; 3]) -> MoveInput {
         MoveInput {

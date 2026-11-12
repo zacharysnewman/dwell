@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  feetOf,
   GENERATORS,
   parseLocalWorld,
   sizeOptions,
@@ -127,5 +128,16 @@ describe('local world options', () => {
     expect(spawnOptions('b')).toEqual({ spawnFaceB: true });
     expect(spawnOptions('portal')).toEqual({ spawnPortal: true });
     expect(spawnOptions('portal-b')).toEqual({ spawnFaceB: true, spawnPortal: true });
+  });
+});
+
+describe('feetOf (BUGS.md #84)', () => {
+  it('takes [x, y, z] or { x, y, z } of finite numbers, and nothing else', () => {
+    expect(feetOf([1, 2, 3])).toEqual([1, 2, 3]);
+    expect(feetOf({ x: 1, y: 2, z: 3 })).toEqual([1, 2, 3]);
+    expect(feetOf([1, 2])).toBeNull();
+    expect(feetOf([1, Number.NaN, 3])).toBeNull();
+    expect(feetOf({ x: 1, y: 2 })).toBeNull();
+    expect(feetOf('1,2,3')).toBeNull();
   });
 });
