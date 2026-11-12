@@ -1894,6 +1894,16 @@ pub struct ChunkFlags {
     /// Leaf cards (shared/look/leaves.json `cards`) are meshed: false on a CPU adapter, the
     /// cheapest tier of everything (`dwell-client` `render::cards_for`).
     pub cards: bool,
+    /// The share of cross plants (tall grass, flowers) meshed, in percent (0–100; the Graphics
+    /// → Tall grass setting, WORK_QUEUE item 30): a plant is kept where its cell's hash is under
+    /// it, so a lower density thins the same plants out evenly and a higher one adds them back.
+    pub plants: u8,
+}
+
+/// Whether the cross plant at world cell `world` is meshed at a density of `percent` (0–100):
+/// all at 100 or more, none at 0, otherwise those whose cell hash falls under it.
+pub fn plant_kept(world: [i64; 3], percent: u8) -> bool {
+    percent >= 100 || cell_noise(world, 9) * 100.0 < f64::from(percent)
 }
 
 impl Default for ChunkFlags {
@@ -1901,6 +1911,7 @@ impl Default for ChunkFlags {
         Self {
             water_tops: true,
             cards: true,
+            plants: 100,
         }
     }
 }
@@ -2474,14 +2485,17 @@ fn mesh_cells(
                     // light itself).
                     let light = vertex_light(AO_OPEN, cells.lattice_rays([cx, cy, cz], 2));
                     let flood = cells.flood.cell([cx, cy, cz]);
-                    cross_voxel(
-                        target,
-                        &k.style,
-                        world,
-                        [cx, cy, cz],
-                        support,
-                        (light, flood),
-                    );
+                    // The Tall grass setting thins the cross plants (`ChunkFlags::plants`).
+                    if plant_kept(world, flags.plants) {
+                        cross_voxel(
+                            target,
+                            &k.style,
+                            world,
+                            [cx, cy, cz],
+                            support,
+                            (light, flood),
+                        );
+                    }
                     if k.style.render == RenderMode::Translucent {
                         target.tag_fluid(k.style.fluid);
                     }

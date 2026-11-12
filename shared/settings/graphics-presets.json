@@ -1,5 +1,5 @@
 {
-  "$comment": "Graphics presets (ARCHITECTURE.md §6, the settings row; docs/DEV_TOOLS.md, Graphics presets). Settings → Graphics's Preset slider runs through `presets` in order, cheapest first; moving it applies one, and any graphics setting changed by hand shows Custom. Each preset sets every field of the fixed vocabulary the loader knows (client/src/ui/graphicsPresets.ts `PRESET_FIELDS`), by name: `renderScale` one of shared/render/upscale.json's scales and `upscaler` one of its upscalers, `water` a Settings water tier of shared/look/watertiers.json (low/medium), `shadows` and `torchShadows` off/low/high, `shafts` off/low/high, `bloom` off/low/high (the glow round self-lit surfaces; off on Low and Mobile: a phone never draws it, the owner plays on Low on an iPhone), `clouds` off/low/medium/high (High, the half-resolution volume, only on Ultra: over its GPU budget from above, docs/CLOUDS.md §8.3), `leafCards` on/off (shared/look/leaves.json `cards`; off on Low, owner 2026-11-11, who plays on Low: BUGS.md #72; a phone never draws them whatever this says), `distanceM`/`pixelError`/`memoryMb` the detail sliders (a phone clamps them to its ranges). The cuts are ordered by GPU time saved per beauty lost, from the measured costs (docs/DEV_TOOLS.md, Cost profile and Water cost): the render scale first, then torch shadows, sun shadows, light shafts, clouds, and the draw distance last (High 256 → 192 m on 2026-11-12: the starter's mixed forest read 17.05 ms on an M1 at High, full detail 256 → 128 m saves 2.4 ms, BUGS.md #78; 256 m and beyond are Ultra's); water Medium (the whole look) is kept down to Medium, and Low and Mobile keep the see-through Low (blended with no scene copy, so no pass split on a phone's tile GPU; caustic lines on the water, one ripple layer, no land reflections or flow streaks; owner, 2026-11-07). `default` names the preset a new player starts on, per device.",
+  "$comment": "Graphics presets (ARCHITECTURE.md §6, the settings row; docs/DEV_TOOLS.md, Graphics presets). Settings → Graphics's Preset slider runs through `presets` in order, cheapest first; moving it applies one, and any graphics setting changed by hand shows Custom. Each preset sets every field of the fixed vocabulary the loader knows (client/src/ui/graphicsPresets.ts `PRESET_FIELDS`), by name: `renderScale` one of shared/render/upscale.json's scales and `upscaler` one of its upscalers, `water` a Settings water tier of shared/look/watertiers.json (low/medium), `shadows` and `torchShadows` off/low/high, `shafts` off/low/high, `bloom` off/low/high (the glow round self-lit surfaces; off on Low and Mobile: a phone never draws it, the owner plays on Low on an iPhone), `clouds` off/low/medium/high (High, the half-resolution volume, only on Ultra: over its GPU budget from above, docs/CLOUDS.md §8.3), `leafCards` on/off (shared/look/leaves.json `cards`; off on Low, owner 2026-11-11, who plays on Low: BUGS.md #72; a phone never draws them whatever this says), `tallGrass`, `hitShards` and `particles` a 0–1 share of the grass and small plants, a hit's flying shards, and the chips, sparks, leaves and steam, `farTrees`, `distantShadows` and `farHerds` on/off (the features with no setting before WORK_QUEUE item 30, client/src/ui/featureSettings.ts; every preset keeps what was drawn before: all of them, distant shadows at the Shadows tier), `distanceM`/`pixelError`/`memoryMb` the detail sliders (a phone clamps them to its ranges). The cuts are ordered by GPU time saved per beauty lost, from the measured costs (docs/DEV_TOOLS.md, Cost profile and Water cost): the render scale first, then torch shadows, sun shadows, light shafts, clouds, and the draw distance last (High 256 → 192 m on 2026-11-12: the starter's mixed forest read 17.05 ms on an M1 at High, full detail 256 → 128 m saves 2.4 ms, BUGS.md #78; 256 m and beyond are Ultra's); water Medium (the whole look) is kept down to Medium, and Low and Mobile keep the see-through Low (blended with no scene copy, so no pass split on a phone's tile GPU; caustic lines on the water, one ripple layer, no land reflections or flow streaks; owner, 2026-11-07). `default` names the preset a new player starts on, per device.",
   "presets": [
     {
       "id": "low",
@@ -14,6 +14,12 @@
         "bloom": "off",
         "clouds": "off",
         "leafCards": "off",
+        "tallGrass": 1,
+        "farTrees": "on",
+        "distantShadows": "on",
+        "hitShards": 1,
+        "particles": 1,
+        "farHerds": "on",
         "distanceM": 96,
         "pixelError": 3,
         "memoryMb": 64
@@ -32,6 +38,12 @@
         "bloom": "off",
         "clouds": "low",
         "leafCards": "on",
+        "tallGrass": 1,
+        "farTrees": "on",
+        "distantShadows": "on",
+        "hitShards": 1,
+        "particles": 1,
+        "farHerds": "on",
         "distanceM": 128,
         "pixelError": 3,
         "memoryMb": 96
@@ -50,6 +62,12 @@
         "bloom": "low",
         "clouds": "medium",
         "leafCards": "on",
+        "tallGrass": 1,
+        "farTrees": "on",
+        "distantShadows": "on",
+        "hitShards": 1,
+        "particles": 1,
+        "farHerds": "on",
         "distanceM": 192,
         "pixelError": 3,
         "memoryMb": 192
@@ -68,6 +86,12 @@
         "bloom": "high",
         "clouds": "medium",
         "leafCards": "on",
+        "tallGrass": 1,
+        "farTrees": "on",
+        "distantShadows": "on",
+        "hitShards": 1,
+        "particles": 1,
+        "farHerds": "on",
         "distanceM": 192,
         "pixelError": 3,
         "memoryMb": 256
@@ -86,11 +110,20 @@
         "bloom": "high",
         "clouds": "high",
         "leafCards": "on",
+        "tallGrass": 1,
+        "farTrees": "on",
+        "distantShadows": "on",
+        "hitShards": 1,
+        "particles": 1,
+        "farHerds": "on",
         "distanceM": 352,
         "pixelError": 3,
         "memoryMb": 512
       }
     }
   ],
-  "default": { "desktop": "high", "mobile": "mobile" }
+  "default": {
+    "desktop": "high",
+    "mobile": "mobile"
+  }
 }

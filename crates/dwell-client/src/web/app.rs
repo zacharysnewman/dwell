@@ -280,6 +280,8 @@ struct Inner {
     falls_shown: bool,
     /// The Explosions settings (docs/EXPLOSIVES.md §4): flash, smoke and dust, screen shake.
     blast_settings: crate::blasts::BlastSettings,
+    /// Graphics → Effects (`setEffects`), applied to each game as it starts.
+    effects: crate::game::EffectSettings,
     /// Input events for the shell (toggles, hotbar changes, flight), drained by `takeEvents`.
     shell_events: Vec<JsValue>,
     /// The F3 overlay is on: kept here so it holds for a game started later (`?debug=1`).
@@ -440,6 +442,7 @@ impl Client {
             flow_particles: true,
             falls_shown: true,
             blast_settings: crate::blasts::BlastSettings::default(),
+            effects: crate::game::EffectSettings::default(),
             lod_settings: LodSettings {
                 pixel_error: 2.0,
                 cache_bytes: 256 << 20,
@@ -2012,6 +2015,40 @@ impl Client {
         s.flow_particles = particles;
         s.falls_shown = falls;
     }
+    /// Graphics → Effects (WORK_QUEUE item 30): the share of a hit's flying shards (0–1), of the
+    /// chips, sparks, leaves and steam (0–1), and whether the far herds are drawn.
+    #[wasm_bindgen(js_name = setEffects)]
+    pub fn set_effects(&self, hit_shards: f64, particles: f64, far_herds: bool) {
+        let mut s = self.inner.borrow_mut();
+        s.effects = crate::game::EffectSettings {
+            hit_shards: crate::effect_share::Share::new(hit_shards),
+            particles: crate::effect_share::Share::new(particles),
+            far_herds,
+        };
+        let e = s.effects;
+        if let Some(g) = &mut s.game {
+            g.set_effects(e);
+        }
+    }
+    /// Graphics → Tall grass (0–1, the share of grass and small plants drawn) and Far trees (the
+    /// distant terrain's trees): chunks and sections meshed from then on follow them.
+    #[wasm_bindgen(js_name = setTerrainDetail)]
+    pub fn set_terrain_detail(&self, tall_grass: f64, far_trees: bool) {
+        self.inner
+            .borrow()
+            .renderer
+            .borrow_mut()
+            .set_terrain_detail(tall_grass, far_trees);
+    }
+    /// Graphics → Distant shadows: the distant terrain's sun shadows, on at the Shadows tier or off.
+    #[wasm_bindgen(js_name = setDistantShadows)]
+    pub fn set_distant_shadows(&self, on: bool) {
+        self.inner
+            .borrow()
+            .renderer
+            .borrow_mut()
+            .set_distant_shadows(on);
+    }
     /// Which blast effects show (docs/EXPLOSIVES.md §4, the Explosions settings): the flash, smoke
     /// and dust, the screen shake.
     #[wasm_bindgen(js_name = setExplosions)]
@@ -3384,6 +3421,7 @@ impl Inner {
         game.set_flow_particles(self.flow_particles);
         game.set_falls_shown(self.falls_shown);
         game.set_blast_settings(self.blast_settings_now());
+        game.set_effects(self.effects);
         self.game = Some(game);
     }
 

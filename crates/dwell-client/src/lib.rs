@@ -12,6 +12,7 @@ pub mod chop;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod clip_probe;
 pub mod creatures;
+pub mod effect_share;
 pub mod far_herds;
 pub mod find;
 pub mod flecks;

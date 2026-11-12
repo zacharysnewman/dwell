@@ -1079,6 +1079,10 @@ async function start(): Promise<App | null> {
     client.setFov(s.fovDeg);
     client.setShowArms(s.showArms);
     client.setDetail(s.detail.distanceM, s.detail.pixelError, s.detail.memoryMb);
+    // The features with no tier of their own before WORK_QUEUE item 30 (ui/featureSettings.ts).
+    client.setTerrainDetail(s.features.tallGrass, s.features.farTrees);
+    client.setDistantShadows(s.features.distantShadows);
+    client.setEffects(s.features.hitShards, s.features.particles, s.features.farHerds);
     reportSettings = {
       renderScale: rs.scale,
       upscaler: rs.upscaler,
