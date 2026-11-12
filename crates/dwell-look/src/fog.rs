@@ -7,7 +7,7 @@ use dwell_protocol::world;
 
 #[path = "fog.gen.rs"]
 mod generated;
-pub use generated::{DENSITY_RANGE, DISTANCE_RANGE, FOG, HEIGHT_RANGE};
+pub use generated::{DENSITY_RANGE, DISTANCE_RANGE, FOG, HEIGHT_RANGE, PRESETS, VEIL_HALF_RANGE};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct FogSettings {
@@ -17,6 +17,93 @@ pub struct FogSettings {
     pub density: f64,
     /// Scale height (m).
     pub height_m: f64,
+    /// The air colour is the sky's at least this many degrees above the horizon (0: the horizon's).
+    pub air_elevation_deg: f64,
+    /// How far the air colour is multiplied toward `warm` facing the sun, `cool` away (0: none).
+    pub sun_tint: f64,
+    pub warm: [f64; 3],
+    pub cool: [f64; 3],
+    /// The distance (m) at which half the veil's most is lost.
+    pub veil_half_m: f64,
+    /// The most saturation far land loses before the haze hides it (0: none).
+    pub veil_saturation: f64,
+    /// The most its darks fill with the air (0: none).
+    pub veil_contrast: f64,
+}
+
+impl FogSettings {
+    /// Whether the air colour or the veil differs from the plain fade to the horizon's colour
+    /// (false for today's data: the shader then draws the plain fade, unchanged).
+    pub fn aerial(&self) -> bool {
+        self.air_elevation_deg > 0.0
+            || self.sun_tint > 0.0
+            || self.veil_saturation > 0.0
+            || self.veil_contrast > 0.0
+    }
+}
+
+static ACTIVE: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+/// Picks the fog the renderer draws by its preset's name (`?haze=<name>`, a dev tool to compare
+/// fog.json's `presets`; "" or an unknown name: [`FOG`]). Set before the renderer is built (its
+/// shaders bake the fog in). Returns whether the name was a preset.
+pub fn select(name: &str) -> bool {
+    let at = PRESETS.iter().position(|(n, _)| *n == name);
+    ACTIVE.store(
+        at.map_or(0, |i| i + 1),
+        std::sync::atomic::Ordering::Relaxed,
+    );
+    at.is_some()
+}
+
+/// The fog the renderer draws: [`FOG`], or the preset [`select`] picked.
+pub fn active() -> &'static FogSettings {
+    match ACTIVE.load(std::sync::atomic::Ordering::Relaxed) {
+        0 => &FOG,
+        i => &PRESETS[i - 1].1,
+    }
+}
+
+/// The direction whose sky colour a ray `dir` (unit, face-local +y up) fades toward: lifted to at
+/// least `air_elevation_deg` above the horizon in its azimuth (unchanged for 0 or a ray above it).
+/// `haze_air` in the composite.
+pub fn air_direction(fog: &FogSettings, dir: [f64; 3]) -> [f64; 3] {
+    let lift = fog.air_elevation_deg.to_radians().sin();
+    if dir[1] >= lift {
+        return dir;
+    }
+    let len = dir[0].hypot(dir[2]);
+    if len < 1e-9 {
+        return dir;
+    }
+    let c = (1.0 - lift * lift).sqrt() / len;
+    [dir[0] * c, lift, dir[2] * c]
+}
+
+/// The air colour's multiplier for a ray whose level direction makes cosine `toward` (−1 to 1)
+/// with the sun's: warm toward it, cool away, by `sun_tint` (1 for 0).
+pub fn air_tint(fog: &FogSettings, toward: f64) -> [f64; 3] {
+    let t = (0.5 + 0.5 * toward).clamp(0.0, 1.0);
+    std::array::from_fn(|i| {
+        1.0 + fog.sun_tint * (fog.cool[i] + (fog.warm[i] - fog.cool[i]) * t - 1.0)
+    })
+}
+
+fn luma(c: [f64; 3]) -> f64 {
+    0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]
+}
+
+/// A colour `c` (output colour) `distance` m off, veiled before the haze over it: toward its grey
+/// by `veil_saturation`, its darks toward the air colour `air` by `veil_contrast`, each reaching
+/// half at `veil_half_m`. `c` unchanged for 0s. `haze_veiled` in the composite.
+pub fn veiled(fog: &FogSettings, c: [f64; 3], air: [f64; 3], distance: f64) -> [f64; 3] {
+    let k = 1.0 - (-distance / fog.veil_half_m).exp2();
+    let grey = luma(c);
+    let s = fog.veil_saturation * k;
+    let d: [f64; 3] = std::array::from_fn(|i| c[i] + (grey - c[i]) * s);
+    let dark = (1.0 - luma(d) / luma(air).max(1e-3)).clamp(0.0, 1.0);
+    let w = fog.veil_contrast * k * dark;
+    std::array::from_fn(|i| d[i] + (air[i] - d[i]) * w)
 }
 
 /// Extinction coefficient at sea level (per m): haze before the cap reaches ½ at `distance_m`.
@@ -52,6 +139,7 @@ mod tests {
         distance_m: 100_000.0,
         density: 0.6,
         height_m: 1500.0,
+        ..FOG
     };
     const RADIUS: f64 = world::WORLD_RADIUS as f64;
     /// High above the world: flight has no ceiling (ADR 0025 D3).
@@ -98,9 +186,13 @@ mod tests {
             FogSettings {
                 distance_m: 16_000.0,
                 density: 0.95,
-                height_m: 1800.0
+                height_m: 1800.0,
+                ..FOG
             }
         );
+        // Aerial perspective is off in the data every client draws (WORK_QUEUE item 29: the owner
+        // picks a preset); the composite then draws the plain fade, unchanged.
+        assert!(!FOG.aerial());
         // A hill 2.5 mi off stays crisp; the far coast is clearly hazy; 40 mi (a Rainier) is mostly haze.
         assert!(haze_amount(&FOG, EYE, 0.0, 4000.0) < 0.2);
         assert!(haze_amount(&FOG, EYE, 0.0, 25_000.0) > 0.55);
@@ -109,6 +201,65 @@ mod tests {
             assert!(haze_amount(&FOG, TOP, 0.0, r.hypot(TOP)) < FOG.density / 3.0);
             assert!(haze_amount(&THIN, TOP, 0.0, r.hypot(TOP)) < 0.05);
         }
+    }
+
+    #[test]
+    fn todays_fog_output_is_pinned() {
+        // Golden values of today's haze (WORK_QUEUE item 29 added the aerial fields; these must
+        // not move until the owner picks a preset).
+        for (d, want) in [
+            (1000.0, 0.040_966),
+            (4000.0, 0.153_565),
+            (16_000.0, 0.480_722),
+            (64_000.0, 0.893_435),
+        ] {
+            let got = haze_amount(&FOG, EYE, 0.0, d);
+            assert!((got - want).abs() < 1e-5, "{d} m: {got}");
+        }
+        // With today's zeros the air is the horizon's and the veil leaves colours alone.
+        let c = [0.2, 0.5, 0.1];
+        assert_eq!(veiled(&FOG, c, [0.8, 0.85, 0.9], 50_000.0), c);
+        // (below the horizon the sky reads the horizon in that azimuth, as `dwell_sky` does)
+        assert_eq!(air_direction(&FOG, [0.6, -0.8, 0.0]), [1.0, 0.0, 0.0]);
+        assert_eq!(air_tint(&FOG, 1.0), [1.0; 3]);
+    }
+
+    #[test]
+    fn presets_by_data_alone_reach_the_aerial_look() {
+        // Every preset is a full fog over the data; picking one by name makes it the active one.
+        assert!(!PRESETS.is_empty());
+        for (name, p) in PRESETS {
+            assert!(select(name));
+            assert_eq!(active(), p);
+        }
+        assert!(!select("no-such-haze"));
+        assert_eq!(active(), &FOG);
+        let fog = FogSettings {
+            air_elevation_deg: 4.0,
+            sun_tint: 1.0,
+            veil_saturation: 0.5,
+            veil_contrast: 0.5,
+            ..FOG
+        };
+        assert!(fog.aerial());
+        // The air colour is the sky's 4° up for a ray at or below that, the azimuth kept.
+        let lifted = air_direction(&fog, [1.0, 0.0, 0.0]);
+        assert!((lifted[1] - 4f64.to_radians().sin()).abs() < 1e-12 && lifted[2] == 0.0);
+        assert!((lifted[0].hypot(lifted[1]) - 1.0).abs() < 1e-12);
+        assert_eq!(air_direction(&fog, [0.0, 0.5, 0.866]), [0.0, 0.5, 0.866]);
+        // Warm toward the sun (more red than blue), cool away.
+        let (toward, away) = (air_tint(&fog, 1.0), air_tint(&fog, -1.0));
+        assert!(toward[0] > toward[2] && away[2] > away[0]);
+        // The veil greys far colour and fills its darks with the air; half of it by halfM.
+        let green = [0.1, 0.4, 0.05];
+        let air = [0.7, 0.8, 0.95];
+        let near = veiled(&fog, green, air, 10.0);
+        let far = veiled(&fog, green, air, 40_000.0);
+        let spread = |c: [f64; 3]| {
+            c.iter().cloned().fold(0.0, f64::max) - c.iter().cloned().fold(1.0, f64::min)
+        };
+        assert!(spread(far) < spread(near) && spread(near) <= spread(green) + 1e-12);
+        assert!(luma(far) > luma(near));
     }
 
     // face-a-only: a numeric-range check of the fog data at face A's heights (TOP, the
@@ -125,6 +276,7 @@ mod tests {
                     distance_m,
                     density: DENSITY_RANGE.1,
                     height_m,
+                    ..FOG
                 };
                 for (cam, point) in [(TOP, mid), (mid, mid), (mid, TOP)] {
                     let haze = haze_amount(&fog, cam, point, 2.0 * RADIUS);

@@ -7,9 +7,66 @@ pub const FOG: FogSettings = FogSettings {
     distance_m: 16000.0,
     density: 0.95,
     height_m: 1800.0,
+    air_elevation_deg: 0.0,
+    sun_tint: 0.0,
+    warm: [1.08, 1.0, 0.86],
+    cool: [0.9, 0.97, 1.08],
+    veil_half_m: 8000.0,
+    veil_saturation: 0.0,
+    veil_contrast: 0.0,
 };
+
+/// The named variants (fog.json `presets`, each over [`FOG`]), picked with `?haze=<name>`.
+pub const PRESETS: &[(&str, FogSettings)] = &[
+    (
+        "thicker",
+        FogSettings {
+            distance_m: 10000.0,
+            density: 0.95,
+            height_m: 1200.0,
+            air_elevation_deg: 0.0,
+            sun_tint: 0.0,
+            warm: [1.08, 1.0, 0.86],
+            cool: [0.9, 0.97, 1.08],
+            veil_half_m: 8000.0,
+            veil_saturation: 0.0,
+            veil_contrast: 0.0,
+        },
+    ),
+    (
+        "aerial",
+        FogSettings {
+            distance_m: 10000.0,
+            density: 0.95,
+            height_m: 1200.0,
+            air_elevation_deg: 4.0,
+            sun_tint: 0.0,
+            warm: [1.08, 1.0, 0.86],
+            cool: [0.9, 0.97, 1.08],
+            veil_half_m: 8000.0,
+            veil_saturation: 0.45,
+            veil_contrast: 0.35,
+        },
+    ),
+    (
+        "aerial-sun",
+        FogSettings {
+            distance_m: 10000.0,
+            density: 0.95,
+            height_m: 1200.0,
+            air_elevation_deg: 4.0,
+            sun_tint: 1.0,
+            warm: [1.08, 1.0, 0.86],
+            cool: [0.9, 0.97, 1.08],
+            veil_half_m: 8000.0,
+            veil_saturation: 0.45,
+            veil_contrast: 0.35,
+        },
+    ),
+];
 
 /// The validator's ranges (shared/look/fog.mjs `FOG_RANGES`): the shader stays finite over them.
 pub const DISTANCE_RANGE: (f64, f64) = (1000.0, 100000.0);
 pub const DENSITY_RANGE: (f64, f64) = (0.0, 1.0);
 pub const HEIGHT_RANGE: (f64, f64) = (50.0, 50000.0);
+pub const VEIL_HALF_RANGE: (f64, f64) = (100.0, 100000.0);

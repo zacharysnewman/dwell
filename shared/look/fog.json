@@ -1,6 +1,35 @@
 {
-  "$comment": "The height fog (ARCHITECTURE.md §6.6): one fixed haze for every client, not a player setting (owner, 2026-10-21: the 0.22.7 defaults made hard). distanceM: at sea level, the distance (m) at which the haze reaches half its maximum. density: the most the haze can hide the far distance, 0 (no fog) to 1. heightM: the scale height (m); the air's haze halves every heightM·ln 2 of height. The time of day's fogDensity (daynight.json) multiplies the density. Run `node shared/look/fog.mjs` after editing; CI fails if crates/dwell-look/src/fog.gen.rs is stale.",
+  "$comment": "The height fog (ARCHITECTURE.md §6.6; docs/DAY_NIGHT.md): one fixed haze for every client, not a player setting (owner, 2026-10-21: the 0.22.7 defaults made hard). distanceM: at sea level, the distance (m) at which the haze reaches half its maximum. density: the most the haze can hide the far distance, 0 (no fog) to 1. heightM: the scale height (m); the air's haze halves every heightM·ln 2 of height. The time of day's fogDensity (daynight.json) multiplies the density. air: the colour far land fades toward (aerial perspective, WORK_QUEUE item 29): elevationDeg the sky's colour at least that many degrees above the horizon in the ray's azimuth (0: the horizon's, as before), sunTint how far it is multiplied toward warm (facing the sun) or cool (facing away; both per channel), 0 none. veil: before the haze hides it, far land loses saturation and its darks fill with the air: saturation and contrast the most of each lost (0: none), halfM the distance (m) at which half of that is lost. presets: named variants over these values (any subset), picked in the page with ?haze=<name> to compare (docs/DEV_TOOLS.md); the values above are what every client draws. Run `node shared/look/fog.mjs` after editing; CI fails if crates/dwell-look/src/fog.gen.rs is stale.",
   "distanceM": 16000,
   "density": 0.95,
-  "heightM": 1800
+  "heightM": 1800,
+  "air": {
+    "elevationDeg": 0,
+    "sunTint": 0,
+    "warm": [1.08, 1.0, 0.86],
+    "cool": [0.9, 0.97, 1.08]
+  },
+  "veil": {
+    "halfM": 8000,
+    "saturation": 0,
+    "contrast": 0
+  },
+  "presets": {
+    "thicker": {
+      "distanceM": 10000,
+      "heightM": 1200
+    },
+    "aerial": {
+      "distanceM": 10000,
+      "heightM": 1200,
+      "air": { "elevationDeg": 4 },
+      "veil": { "saturation": 0.45, "contrast": 0.35 }
+    },
+    "aerial-sun": {
+      "distanceM": 10000,
+      "heightM": 1200,
+      "air": { "elevationDeg": 4, "sunTint": 1 },
+      "veil": { "saturation": 0.45, "contrast": 0.35 }
+    }
+  }
 }

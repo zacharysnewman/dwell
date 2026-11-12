@@ -318,6 +318,9 @@ another generator) opens that seed's world file. Add:
 - `at=x,y,z` — the player starts at that world point (feet, metres), the world's spawn moved there,
   however the world was left (`LocalCore::create_spawning`'s `at`).
 - `time=0.45` (the time of day), `debug=1`, `lod=off` and the other page parameters as usual.
+- `haze=<preset>` draws a distance-haze preset from `shared/look/fog.json` `presets` (`thicker`,
+  `aerial`, `aerial-sun`) instead of the fog every client draws, to compare them (DAY_NIGHT.md §4,
+  WORK_QUEUE item 29); a bench scenario passes it in its `query`.
 
 For example `?local=1&seed=0&fresh=1&at=2364.5,142,7443.5&time=0.45` opens a new seed 0 world at
 the owner's dam site; then `__dwell.fly(true)`, `__dwell.tool('cornerA@…')`, `tool('fill')` and

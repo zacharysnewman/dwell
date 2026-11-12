@@ -603,6 +603,45 @@ fn fog_amount(rel: vec3f) -> f32 {
     return dwell_haze(cam, cam + face_rise(face, rel), length(rel), frame.eye.w);
 }
 
+// The air colour a point at `rel` from the eye fades toward (aerial perspective, dwell-look
+// fog.rs `air_direction` and `air_tint`): its clear sky `clear`, or with the fog's aerial look the
+// sky at least HAZE_LIFT (a sine) above the horizon in its azimuth, warmer toward the sun and cooler
+// away by HAZE_SUN_TINT. HAZE_AERIAL is a constant: off, this is `clear`, the fade as before.
+fn haze_air(rel: vec3f, clear: vec3f) -> vec3f {
+    if (!HAZE_AERIAL) {
+        return clear;
+    }
+    let up = face_up(frame.eye.y);
+    let dir = normalize(rel);
+    let e = dot(dir, up);
+    let level = dir - e * up;
+    let len = length(level);
+    var air = clear;
+    if (e < HAZE_LIFT && len > 1e-6) {
+        air = sky(level / len * sqrt(1.0 - HAZE_LIFT * HAZE_LIFT) + HAZE_LIFT * up);
+    }
+    let sun = frame.day.sun.xyz;
+    let sh = sun - dot(sun, up) * up;
+    let lens = length(sh) * len;
+    let toward = select(0.0, dot(level, sh) / max(lens, 1e-6), lens > 1e-6);
+    let tint = mix(HAZE_COOL, HAZE_WARM, clamp(0.5 + 0.5 * toward, 0.0, 1.0));
+    return air * (1.0 + HAZE_SUN_TINT * (tint - 1.0));
+}
+
+// `c` (output colour) `dist` m off veiled before the haze (dwell-look fog.rs `veiled`): toward its
+// grey by HAZE_VEIL_SATURATION and its darks toward the air colour `air` by HAZE_VEIL_CONTRAST, half
+// of each by HAZE_VEIL_HALF metres. Off (HAZE_AERIAL false), `c`.
+fn haze_veiled(c: vec3f, air: vec3f, dist: f32) -> vec3f {
+    if (!HAZE_AERIAL) {
+        return c;
+    }
+    let k = 1.0 - exp2(-dist / HAZE_VEIL_HALF);
+    let lum = vec3f(0.2126, 0.7152, 0.0722);
+    let d = mix(c, vec3f(dot(c, lum)), HAZE_VEIL_SATURATION * k);
+    let dark = clamp(1.0 - dot(d, lum) / max(dot(air, lum), 1e-3), 0.0, 1.0);
+    return mix(d, air, HAZE_VEIL_CONTRAST * k * dark);
+}
+
 // `c` (output colour) at `rel` from the eye, fogged as the world is, not the viewer
 // (docs/DAY_NIGHT.md §13): toward the eye's face's clear sky `clear` by its fog over the part of
 // the ray in its air, and where the ray crosses the midplane (a point seen down a shaft or past the
@@ -613,7 +652,8 @@ fn fogged(c: vec3f, rel: vec3f, clear: vec3f) -> vec3f {
     let mid = face_y(face, FACE_MIDPLANE_Y);
     let rise = face_rise(face, rel);
     if (cam + rise >= mid || rise >= 0.0) {
-        return mix(c, clear, fog_amount(rel));
+        let air = haze_air(rel, clear);
+        return mix(haze_veiled(c, air, length(rel)), air, fog_amount(rel));
     }
     let dist = length(rel);
     let near = clamp((cam - mid) / -rise, 0.0, 1.0);

@@ -39,3 +39,29 @@ test('bad entries fail with their path named', () => {
     assert.throws(() => validateFog(d), message);
   }
 });
+
+test('a preset added by data alone is generated over the fog', () => {
+  const d = data();
+  d.presets = { misty: { density: 0.5, air: { sunTint: 0.25 }, veil: { contrast: 0.1 } } };
+  const rs = fogRust(validateFog(d));
+  assert.match(rs, /"misty",\n\s+FogSettings \{\n\s+distance_m: 16000\.0,\n\s+density: 0\.5,/);
+  assert.match(rs, /sun_tint: 0\.25,/);
+  assert.match(rs, /veil_contrast: 0\.1,/);
+});
+
+test('bad aerial entries and presets fail with their path named', () => {
+  const cases = [
+    [(d) => (d.air.elevationDeg = 45), /\(root\)\.air\.elevationDeg must be a number in \[0, 30\]/],
+    [(d) => (d.air.warm = [1, 1]), /\(root\)\.air\.warm must be \[r, g, b\]/],
+    [(d) => (d.veil.saturation = -0.1), /\(root\)\.veil\.saturation must be a number in \[0, 1\]/],
+    [(d) => delete d.veil, /missing entry \(root\)\.veil/],
+    [(d) => (d.presets.thicker.heightM = 10), /presets\.thicker\.heightM must be a number/],
+    [(d) => (d.presets.thicker.glow = 1), /unknown entry presets\.thicker\.glow/],
+    [(d) => (d.presets.Bad = {}), /presets\.Bad: a name is lower-case/],
+  ];
+  for (const [edit, message] of cases) {
+    const d = data();
+    edit(d);
+    assert.throws(() => validateFog(d), message);
+  }
+});

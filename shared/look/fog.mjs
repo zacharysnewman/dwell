@@ -20,42 +20,145 @@ export const FOG_RANGES = {
   heightM: [50, 50_000],
 };
 
+/** The air colour's fields → [min, max] (`warm`, `cool`: per channel). */
+export const AIR_RANGES = {
+  elevationDeg: [0, 30],
+  sunTint: [0, 1],
+  warm: [0.5, 1.5],
+  cool: [0.5, 1.5],
+};
+
+/** The veil's fields → [min, max]. */
+export const VEIL_RANGES = {
+  halfM: [100, 2 * worldRadius],
+  saturation: [0, 1],
+  contrast: [0, 1],
+};
+
 const fail = (m) => {
   throw new Error(`fog.json: ${m}`);
 };
 
-/** Checks the fog; returns it. Throws naming the entry. */
-export function validateFog(data) {
-  if (typeof data !== 'object' || data === null || Array.isArray(data)) fail('(root) must be an object');
-  const keys = Object.keys(FOG_RANGES);
-  for (const k of Object.keys(data)) if (k !== '$comment' && !keys.includes(k)) fail(`unknown entry (root).${k}`);
-  for (const k of keys) if (!(k in data)) fail(`missing entry (root).${k}`);
-  for (const [k, [lo, hi]] of Object.entries(FOG_RANGES)) {
-    const v = data[k];
-    if (typeof v !== 'number' || !Number.isFinite(v) || v < lo || v > hi) {
-      fail(`${k} must be a number in [${lo}, ${hi}], got ${JSON.stringify(v)}`);
+const isObject = (v) => typeof v === 'object' && v !== null && !Array.isArray(v);
+
+function checkNumber(path, v, [lo, hi]) {
+  if (typeof v !== 'number' || !Number.isFinite(v) || v < lo || v > hi) {
+    fail(`${path} must be a number in [${lo}, ${hi}], got ${JSON.stringify(v)}`);
+  }
+}
+
+// One group's entries against its ranges; `partial` (a preset's) may leave any out.
+function checkGroup(path, data, ranges, partial) {
+  if (!isObject(data)) fail(`${path} must be an object`);
+  for (const k of Object.keys(data)) if (k !== '$comment' && !(k in ranges)) fail(`unknown entry ${path}.${k}`);
+  for (const [k, range] of Object.entries(ranges)) {
+    if (!(k in data)) {
+      if (partial) continue;
+      fail(`missing entry ${path}.${k}`);
     }
+    const v = data[k];
+    if (k === 'warm' || k === 'cool') {
+      if (!Array.isArray(v) || v.length !== 3) fail(`${path}.${k} must be [r, g, b], got ${JSON.stringify(v)}`);
+      v.forEach((c, i) => checkNumber(`${path}.${k}[${i}]`, c, range));
+    } else {
+      checkNumber(`${path}.${k}`, v, range);
+    }
+  }
+}
+
+function checkFog(path, data, partial) {
+  if (!isObject(data)) fail(`${path} must be an object`);
+  const top = [...Object.keys(FOG_RANGES), 'air', 'veil'];
+  for (const k of Object.keys(data)) {
+    if (k === '$comment' || (path === '(root)' && k === 'presets')) continue;
+    if (!top.includes(k)) fail(`unknown entry ${path}.${k}`);
+  }
+  for (const [k, range] of Object.entries(FOG_RANGES)) {
+    if (!(k in data)) {
+      if (partial) continue;
+      fail(`missing entry ${path}.${k}`);
+    }
+    checkNumber(`${path}.${k}`, data[k], range);
+  }
+  for (const [k, ranges] of [
+    ['air', AIR_RANGES],
+    ['veil', VEIL_RANGES],
+  ]) {
+    if (!(k in data)) {
+      if (partial) continue;
+      fail(`missing entry ${path}.${k}`);
+    }
+    checkGroup(`${path}.${k}`, data[k], ranges, partial);
+  }
+}
+
+/** Checks the fog and its presets; returns it. Throws naming the entry. */
+export function validateFog(data) {
+  if (!isObject(data)) fail('(root) must be an object');
+  checkFog('(root)', data, false);
+  const presets = data.presets ?? {};
+  if (!isObject(presets)) fail('(root).presets must be an object');
+  for (const [name, p] of Object.entries(presets)) {
+    if (!/^[a-z][a-z0-9-]*$/.test(name)) fail(`presets.${name}: a name is lower-case letters, digits and -`);
+    checkFog(`presets.${name}`, p, true);
   }
   return data;
 }
 
+/** The fog with a preset's values over it (a full fog). */
+export function withPreset(data, preset) {
+  return {
+    distanceM: preset.distanceM ?? data.distanceM,
+    density: preset.density ?? data.density,
+    heightM: preset.heightM ?? data.heightM,
+    air: { ...data.air, ...(preset.air ?? {}) },
+    veil: { ...data.veil, ...(preset.veil ?? {}) },
+  };
+}
+
 const rf = (v) => (Number.isInteger(v) ? `${v}.0` : `${v}`);
+
+function settingsRust(f, indent) {
+  const i = ' '.repeat(indent);
+  const v3 = (a) => `[${a.map(rf).join(', ')}]`;
+  return [
+    'FogSettings {',
+    `${i}    distance_m: ${rf(f.distanceM)},`,
+    `${i}    density: ${rf(f.density)},`,
+    `${i}    height_m: ${rf(f.heightM)},`,
+    `${i}    air_elevation_deg: ${rf(f.air.elevationDeg)},`,
+    `${i}    sun_tint: ${rf(f.air.sunTint)},`,
+    `${i}    warm: ${v3(f.air.warm)},`,
+    `${i}    cool: ${v3(f.air.cool)},`,
+    `${i}    veil_half_m: ${rf(f.veil.halfM)},`,
+    `${i}    veil_saturation: ${rf(f.veil.saturation)},`,
+    `${i}    veil_contrast: ${rf(f.veil.contrast)},`,
+    `${i}}`,
+  ].join('\n');
+}
 
 /** The Rust source for a validated fog. */
 export function fogRust(data) {
   const rs = [`// ${header}`, '', 'use crate::fog::FogSettings;', ''];
   rs.push('/// The height fog every client draws (shared/look/fog.json).');
-  rs.push('pub const FOG: FogSettings = FogSettings {');
-  rs.push(`    distance_m: ${rf(data.distanceM)},`);
-  rs.push(`    density: ${rf(data.density)},`);
-  rs.push(`    height_m: ${rf(data.heightM)},`);
-  rs.push('};');
+  rs.push(`pub const FOG: FogSettings = ${settingsRust(data, 0)};`);
+  rs.push('');
+  rs.push('/// The named variants (fog.json `presets`, each over [`FOG`]), picked with `?haze=<name>`.');
+  rs.push('pub const PRESETS: &[(&str, FogSettings)] = &[');
+  for (const [name, p] of Object.entries(data.presets ?? {})) {
+    rs.push('    (');
+    rs.push(`        ${JSON.stringify(name)},`);
+    rs.push(`        ${settingsRust(withPreset(data, p), 8)},`);
+    rs.push('    ),');
+  }
+  rs.push('];');
   rs.push('');
   rs.push("/// The validator's ranges (shared/look/fog.mjs `FOG_RANGES`): the shader stays finite over them.");
   for (const [k, [lo, hi]] of Object.entries(FOG_RANGES)) {
     const name = k.replace(/M$/, '').toUpperCase();
     rs.push(`pub const ${name}_RANGE: (f64, f64) = (${rf(lo)}, ${rf(hi)});`);
   }
+  rs.push(`pub const VEIL_HALF_RANGE: (f64, f64) = (${rf(VEIL_RANGES.halfM[0])}, ${rf(VEIL_RANGES.halfM[1])});`);
   rs.push('');
   return rs.join('\n');
 }
