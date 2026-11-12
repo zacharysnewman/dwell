@@ -3949,7 +3949,11 @@ impl TerrainGenerator {
                 let name = &DECORATIONS[*i].name;
                 match listed {
                     Some(d) => d.contains(name),
-                    None => self.biomes.list.iter().any(|b| b.decorations.contains(name)),
+                    None => self
+                        .biomes
+                        .list
+                        .iter()
+                        .any(|b| b.decorations.contains(name)),
                 }
             })
             .filter(|(_, p)| !ramp || p.on_ramps())

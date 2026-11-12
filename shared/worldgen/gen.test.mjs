@@ -57,7 +57,7 @@ test('an entry added by data alone is emitted', () => {
     height: [0, 50],
   });
   const rs = decorationsRust(validateDecorations(d, blocks));
-  assert.match(rs, /DECORATIONS: \[Decoration; 2\]/);
+  assert.ok(rs.includes(`DECORATIONS: [Decoration; ${d.decorations.length}]`));
   assert.match(rs, /name: "dirt_tufts", block: "dwell:tall_grass", on: &\["dwell:dirt"\], density: 0\.1, patch_wavelength: 0, patch_coverage: 1\.0, max_slope: 2, min_height: 0, max_height: 50, on_ramps: false/);
 });
 
