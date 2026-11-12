@@ -193,7 +193,7 @@ mono AAC 64 kbps, 44.1 kHz, leading and trailing silence trimmed; about 0.8 MB i
 | `dynamite_boom` | `EXPLOSION_Medium_Blast_Scatter_Debris`, `EXPLOSION_Short_Dark_Debris`, `EXPLOSION_Medium_Fast_with_Rock_Debris` |
 | `chop_bark` / `chop_wood` / `chop_creak` | `AXE_Chop_Tree_01_RR1–3` / `AXE_Chop_Wood_01_RR1–3` / `CREAK_Wood_01–03` |
 | `axe_clank` / `axe_swish` | `PICKAXE_Impact_Metal_01_RR1–3` / `WHOOSH_Air_Blade_RR1–3` |
-| `deny` | `UI_Error_Tone_01` |
+| `deny` | `UI_Click_Tap_Knock_Subtle_Darker` (owner, 2026-11-12: the old `UI_Error_Tone_01` was "way to loud and jarring"; a soft dull 30 ms knock played ~12 dB under it, ±1 semitone) |
 
 Still procedural: the slides and slide stops, `rise`, `dive`, `crouch_on`/`off`, `sprint`,
 `respawn`, `axe_rustle`, the torch's place and break, the fuse, the loops (fire, fuse fizz,
@@ -207,12 +207,15 @@ Owner (2026-11-10): wind stronger up high and in open ground, the sea near the c
 streams near moving water, birds in daytime forests and quieter at night, leaves near trees —
 *"Ongoing/ambient/looping sounds should be quieter so they're not really disruptive, more flavor
 than function."* ([ADR 0077](./adr/0077-ambience-beds.md).)
+Owner (2026-11-12): **"let's disable the wind for now it doesn't seem right like should just be for flying or high
+altitude only."** So the wind bed reads the eye's `height` above the ground (silent below 12 m, full at 60 m), not its
+altitude above the sea: nothing on the ground, even on a mountain; it comes in flying.
 
 ```json
 "ambience": { "volume": 0.35, "fadeS": 2.5, "cap": 0.4,
   "probe": {"radiusM": 16, "trees": ["dwell:leaves", "dwell:snowy_leaves", "dwell:log"]},
   "beds": { "wind": {"files": ["wind-loop-1.m4a"], "gain": 0.3, "when": [
-    {"input": "altitude", "from": 0, "full": 60, "floor": 0.2}, {"input": "open", "from": 0.2, "full": 1}]} } }
+    {"input": "height", "from": 12, "full": 60}, {"input": "open", "from": 0.2, "full": 1}]} } }
 ```
 
 - `volume`: the **Ambience** volume's default (Settings → Sound; the beds' own bus, per browser in
@@ -332,6 +335,25 @@ Effects also feed a small room (a `ConvolverNode` with a generated 0.55 s stereo
 reflections and a darkening tail), at each sound's `reverb` send (kept low: the world is outdoors).
 Envelopes hold their gain at 0 before they start (a param's intrinsic 1 would pass a source's first
 sample as a click).
+
+### 3a. Under water (BUGS.md #104, 2026-11-12)
+
+With the eye under a fluid's drawn surface the world is heard muffled. The test is the renderer's own
+(`dwell_world::fluid::eye_fluid`, face-local; `dwell_game::ambience::hears_underwater`), so the muffle starts and
+ends with the underwater fog; the client hands it over each frame (`underwater()`), and as the ambience's tenth
+input (`underwater`, 0/1). The data's `underwater` section: `buses` (the mixer's buses that reach the master through
+the muffle: `effects` and `ambience`; the `ui` and `music` buses go straight in and are never muffled), `lowpassHz`
+and `q` (one shared `BiquadFilterNode`, 800 Hz, Q 0.7, under water), `gain` (their level under water, 0.6), `easeS`
+(0.25 s: the cutoff glides exponentially, the level linearly, only at a crossing) and `openHz` (20 kHz in air,
+transparent). The ambience bed `underwater` (the sea loop, through the same filter) fades in under water.
+
+**Swim strokes** pick their sound by the head's depth: with the body's submerged share at the vitals' `headFraction`
+(0.9, the line drowning counts from; another player's from the block at its head line) a stroke plays the set's
+`swim_under`, else its `swim` (`swim_under` has `fallback: false`: a set without one plays nothing). Water's are the
+same `water-swim-*.m4a` recordings: `water_swim_under` an octave down (`shift` −12) through a 600 Hz low-pass,
+`water_swim` quieter, 2 semitones down through a 2.5 kHz low-pass. A sample's `shift` (semitones, every play) and
+`lowpassHz` (a low-pass on every play) are optional fields of `samples` (§2b). The swim gait strokes once per 3 m: a
+stroke a second at the 3 m/s swim speed.
 
 **Levels** were set from the renders: each sound's `gain` was tuned to an A-weighted loudness
 target for its category (footsteps quieter than landings and breaks, hits and player sounds

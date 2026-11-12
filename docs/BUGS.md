@@ -6,13 +6,44 @@ pins it.
 
 ## Open
 
-### 104. Swimming underwater sounds like swimming at the surface; underwater sound isn't muffled
+### 108. Worlds bigger than 2× stop drawing terrain past a stepped edge (it's there to walk on)
 
-Owner, 2026-11-12: "swimming underwater sounds like swimming on the water surface, when underwater sounds should be
-muffled, high pass filter maybe?" Underwater, the swim strokes play the surface splash sounds, and the world's sounds
-aren't filtered. Expected: underwater strokes their own soft, deep sounds; everything heard with the head
-underwater through a low-pass filter (muffled: highs cut, ~500–1000 Hz) with a little reverb/volume drop, eased in
-and out at the surface crossing.
+Owner, 2026-11-12 (two screenshots, a >2× world from the air): "worlds bigger than 2x seem to give up loading
+chunks at some point, and just cutoff. The full minimap shows the whole world, and the terrain is playable. It just
+doesn't show up. It even has collision on the chunks that didn't load in." The far ground ends in a jagged edge of
+square steps (LOD section boundaries) with open sea/sky beyond, while the map has land there and walking onto it
+collides. So the server/collision side has the chunks; the client's drawing (LOD sections and/or near meshes) stops.
+Suspects: the LOD tree's root/levels or a section budget sized for 1×–2× (a fixed max section count, a memory cap,
+an f32 coordinate or index overflow in section keys at large radius), the LOD's bounds tied to the 50 km radius, or
+the client's mesh budget (BUGS #76, memory at big sizes) silently refusing new sections.
+
+### 107. In the browser a player dropped into a portal doesn't come out beside face B's hole (the exit push)
+
+Found recording showcase #1 v3 (2026-11-12, 0.54.205's tree). Seed 7's portal (`?fresh=1&seed=7&spawn=portal`,
+axis 1779.5, 20690.5; `top` A 51.0, B 44.5): walked in on the diagonal (yaw 45) and dropped, the player rises ~12 m
+out of face B's hole (feet to y −56.3), gets no sideways push, falls straight back and swings on; on the return the
+push **does** act on face A (lands ~6.7 m from the axis on face A's ground). 5 of 5 browser drops the same, with and
+without the theater camera, with the look held at yaw 45 or let go after the crossing, from yaw 45 or 135. Natively
+the same shaft works: `drop_in` (`crates/dwell-physics/tests/portal_exit.rs`) on seed 7's nearest shaft from face A
+lands on face B 5.96 m from the axis after one crossing. Suspects: something in the browser path on face B only —
+the look the client sends after the crossing (`look_yaw`), the client's prediction against the local server, or
+the input after the face change. Repro to start from: the take script
+`.claude/skills/record/paths/bifacial-v3/portaltake.js` (`{"noCam": true}` logs the drop, the apex and where it
+ends).
+
+### 106. Trees look like sticks
+
+Owner, 2026-11-12 (on a release after the blocked stretch, ~60 versions newer than the last they played): "What
+happened to the trees, they just look like sticks?" Suspects, all from today: the far-tree impostors (#797) — the
+near crowns fade out from 48 m and hand over to the impostors, but the trunks don't (they show under them), so if
+the impostors don't draw (atlas bake not finished/failed, the Far trees tier, a CPU adapter, a shader error) or draw
+too faint, every tree past ~48 m is a bare trunk; the faded-plant drop (#773/#784) dropping whole cutout chunks;
+the leaf-card face-B packed-normal change (#799).
+Then (owner's screenshot, 0.54.204, a grassy hill of pines): every tree past ~50–60 m is a bare dark trunk; the
+nearest trees are leafy but already dithered; no impostor crowns anywhere. So the near crowns are dropped past the
+hand-over (`card_dropped`: leaf faces past `far_trees.x + .y + 2` when `frame.far_trees.w` is set) while the
+impostors draw nothing. The leaves must not fade out unless the impostors for those trees actually draw (atlas
+uploaded, the tile's instances in), and why the impostors draw nothing on the release needs finding.
 
 ### 103. Walking through tall grass is loud, fast and crackly; the first-person legs step too fast
 
@@ -24,26 +55,6 @@ grass with tall grass (the footstep on the grass block, a brush sound per tall-g
 own sound — possibly all three, each per cell or per tick rather than per step), their volume and rate; the crackle
 (clipping from stacked sounds, or a sound restarted every tick); the first-person body's walk clip speed against the
 walk speed (stride length 1.6 m a loop vs the controller's speed — too high a playback rate).
-
-### 101. Clouds draw in the void beyond the world's rim, under a far camera
-
-Found 2026-11-12 recording the bifacial showcase (seed 7, a theater camera 140 km from the centre, 11 km up,
-looking at the disc, time 0.29). With clouds on, a cloud layer fills the void below the camera out there, where
-there is no world: on **Low** (the 2D deck) a flat sheet of hard-edged white blotches from the frame's bottom to the
-horizon; on **High** (volumetric) rows of tall, thin grey spires with noisy, jagged edges — "crazy triangles" from a
-distance — standing in front of the stars. Neither tier draws anything visible over the island itself from there.
-At 120 km out and 3 km up the camera sits inside the layer and the frame is a wall of grey smears. The clouds seem
-to be a layer around the camera, not clipped to the disc (or to its face's sky). Off, the frame is clean. Expected:
-no clouds beyond the rim (a cloud field bounded by the disc, fading out at the edge). Stills: the bifacial v2
-deliverables (`outline_clouds_off/low/high.png`). Showcase work uses clouds off meanwhile.
-
-### 102. A bright horizontal band in face B's sky seen from beyond the rim
-
-Found 2026-11-12 with #101's camera, clouds off: a soft white-grey band a few degrees wide crosses the whole frame
-below the disc (in face B's half of the sky, between the disc and the stars), and stays there while the camera
-pushes in, orbits and rises; from under face B it shows below the disc the same way. It reads as a glow stripe
-that isn't anything in the world: likely face B's sky horizon/haze glow drawn at its own horizon for a camera far
-outside the disc. Cosmetic; it shows in every far shot of the outline.
 
 ### 100. Volumetric clouds look like "crazy triangles"
 
@@ -503,6 +514,90 @@ shallow ramp, maybe same problem with steep ramps too?" Not investigated yet: ta
 face, or the placement check against its shape.
 
 ## Fixed
+
+### 102. A bright horizontal band in face B's sky seen from beyond the rim (fixed after 0.54.191)
+
+Found 2026-11-12 with #101's camera, clouds off: a soft white-grey band a few degrees wide crosses the whole frame
+below the disc (in face B's half of the sky, between the disc and the stars), and stays there while the camera
+pushes in, orbits and rises; from under face B it shows below the disc the same way. It reads as a glow stripe
+that isn't anything in the world: likely face B's sky horizon/haze glow drawn at its own horizon for a camera far
+outside the disc. Cosmetic; it shows in every far shot of the outline.
+
+Cause: the atmosphere's limb (`atmosphere.json`: the horizon's colour gathered into a band `limbWidthDeg` wide at
+`−atan(height / limbDistanceM)`, the rim as seen from over the disc), drawn for any viewer above the atmosphere's
+base wherever it was: 11 km up it sits at −12.4°, under the disc, in both the eye's sky and the other face's (whose
+limb, flipped into its frame, lands on the same rows). Out past the rim there is no world to make one. Fixed: the
+limb fades out for a viewer past the rim over `limbFadeM` (10 km; `Atmosphere::limb_weight`, `Air::limb_weight`,
+`DaySky.space.z`, the renderer's `day_in_air` with the eye's distance from the axis); over the disc it is as before.
+Test (`lib.rs`, both faces): `no_bright_band_under_the_disc_from_far_past_the_rim` — the sky across the rows 2–22°
+below the horizon from the reported view has no row brighter than the rows 2° either side (red before: "a band at
+11° below the horizon: 0.479 over 0.446"), the limb still there for an eye over the disc, and the sky above the
+horizon unchanged. The look is still to be checked on the Mac.
+
+### 101. Clouds draw in the void beyond the world's rim, under a far camera (fixed after 0.54.191)
+
+Found 2026-11-12 recording the bifacial showcase (seed 7, a theater camera 140 km from the centre, 11 km up,
+looking at the disc, time 0.29). With clouds on, a cloud layer fills the void below the camera out there, where
+there is no world: on **Low** (the 2D deck) a flat sheet of hard-edged white blotches from the frame's bottom to the
+horizon; on **High** (volumetric) rows of tall, thin grey spires with noisy, jagged edges — "crazy triangles" from a
+distance — standing in front of the stars. Neither tier draws anything visible over the island itself from there.
+At 120 km out and 3 km up the camera sits inside the layer and the frame is a wall of grey smears. The clouds seem
+to be a layer around the camera, not clipped to the disc (or to its face's sky). Off, the frame is clean. Expected:
+no clouds beyond the rim (a cloud field bounded by the disc, fading out at the edge). Stills: the bifacial v2
+deliverables (`outline_clouds_off/low/high.png`). Showcase work uses clouds off meanwhile.
+
+Cause: the deck (a sphere under the eye) and the volume's march (out to `volume.maxDistanceM` along the ray) were
+both a layer round the eye, with nothing tying them to the world; from 140 km out the deck's horizon (~86 km) and
+the march's 22 km reach all lay in the void, so the clouds drew there and none over the island. Fixed: both are
+masked to the world's radius (its size's, `Renderer::set_world_radius` at the join) plus `deck.rimMarginM` (2 km)
+from the disc's axis, fading out over the last `deck.rimFadeM` (6 km) — the frame's `cloud_disc` uniform,
+`dwell_cloud_rim` on the deck's hit and on each march sample's cover, and `cloud_rim_span` cutting the march to the
+part of the ray over the disc, so a far eye's march takes no samples. The eye-in-cloud fog is masked the same way.
+The density function is untouched (#100). Tests (`clouds.rs` `rim_tests`, both faces, the CPU twins `rim_cover` /
+`rim_span`): `a_far_eye_sees_no_deck_beyond_the_rim` and `a_far_eye_marches_nothing_in_the_void` (red with the mask
+off: cloud 88.9 km from the axis), `over_the_island_the_clouds_are_as_before`, and
+`the_shader_masks_the_deck_and_the_march_by_the_rim`. The look from the showcase's camera is still to be checked on
+the Mac (cloud sessions have no GPU).
+
+### 105. The "no" sound for clicking at nothing is too loud and jarring (fixed after 0.54.205)
+
+Owner, 2026-11-12: "The 'no' sound effect for clicking when nothing is there is way to loud and jarring and generally
+a bad sound effect for it. Read the names and waveform to find a good one from our package." The `deny` sound (Break
+or Place with nothing targeted) played Universal Sound FX's `UI_Error_Tone_01`: a 0.18 s buzzy error tone peaking at
+−0.5 dBFS, at sample gain 0.4 (~−8.5 dBFS as played). Fix: candidates picked by name (UI clicks and taps, errors,
+denied notifications, toggles, subtle thuds and knocks) and measured (duration, peak, RMS, attack, spectral centroid,
+energy above 2 kHz); the pick is `UI_Click_Tap_Knock_Subtle_Darker`, a dull 30 ms knock (centroid ~260 Hz, no
+energy above 2 kHz, peak −6.1 dBFS) at gain 0.2 with ±1 semitone: ~12 dB under the old tone's peak, ~16 dB under its
+loudness. The procedural fallback's gain went from 0.879 to 0.3. Test: samples.test.ts "keeps the deny sound soft"
+(red on the old data, green on the new).
+
+### 104. Swimming underwater sounds like swimming at the surface; underwater sound isn't muffled (fixed; the listening check is the owner's)
+
+Owner, 2026-11-12: "swimming underwater sounds like swimming on the water surface, when underwater sounds should be
+muffled, high pass filter maybe?" Underwater, the swim strokes play the surface splash sounds, and the world's sounds
+aren't filtered. Expected: underwater strokes their own soft, deep sounds; everything heard with the head
+underwater through a low-pass filter (muffled: highs cut, ~500–1000 Hz) with a little reverb/volume drop, eased in
+and out at the surface crossing.
+Owner, 2026-11-12, more: "Swimming in the surface is too loud and high even then, like a kid learning to swim
+splashing." So the surface strokes too: much quieter and lower/softer (a calm stroke, not a splash), fewer/longer
+strokes matching the swim stroke's rate, slight pitch/volume variation, a softer asset or the current one filtered.
+
+**Fix.** A stroke is chosen by the head's depth (`dwell_game::sound::head_under`: the body's submerged share at the
+vitals' `headFraction`, 0.9, the line drowning counts from; another player's read at its head line,
+`Surroundings::submerged`): head under plays the set's new `swim_under` (`dwell:water_swim_under`: the
+`water-swim-*.m4a` recordings an octave down, `shift` −12, through a 600 Hz low-pass); at the surface `swim`
+(`dwell:water_swim`: the same recordings quieter, 0.6 → 0.32, 2 semitones down, ±1.5 semitones of variation, a 2.5 kHz
+low-pass; the procedural form lost its bright droplet plinks). The swim gait is one stroke per 3 m (was 2.4: a stroke a
+second at the 3 m/s swim speed) at gain 0.45 (was 0.7). With the eye under a fluid's surface (the renderer's own test,
+`hears_underwater` over `eye_fluid`, face-local) the data's buses (`underwater.buses`: effects and ambience; never
+the UI or music) go through a low-pass at 800 Hz and drop to 0.6, gliding over 0.25 s at the crossing, and the
+`underwater` ambience bed (the sea loop, heard through the filter) fades in. All data (`shared/sounds/dwell.json`
+`underwater`, samples `shift`/`lowpassHz`, AUDIO.md §3a). Tests: `a_swim_stroke_is_chosen_by_how_deep_the_head_is`
+(both faces; red before: 13 surface strokes and none deep with the head under),
+`surface_strokes_sound_once_a_stroke_about_once_a_second` (red before: 25 strokes in 20 s),
+`another_swimmers_depth_is_read_at_its_head_line` and `the_listener_hears_underwater_only_with_the_eye_under_the_surface`
+(both faces), `client/src/audio/underwater.test.ts` (the filter's targets and glide, the UI and music buses dry, the
+strokes' bounded gains, red before: 0.7 × 0.6 = 0.42 over the 0.2 bound). The listening check is the owner's.
 
 ### 92. Downhill water shows edge triangles and thin lines at its ½ m level steps (fixed after 0.54.142; the browser check left local)
 

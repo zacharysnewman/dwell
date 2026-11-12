@@ -1429,6 +1429,12 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    ridiculous, at least the volumetric ones. Look like crazy triangles."** — clouds off for every shot unless on
    clearly reads better. Checked: from beyond the rim both tiers draw a cloud layer in the void under the camera
    (BUGS.md #101), so v2 is clouds off throughout.
+   Owner, 2026-11-12: **"fix BUGS.md #101 (clouds draw in the empty space beyond the disc's rim) and #102 (a bright
+   horizontal band in face B's sky in every far shot)"** — clouds only over the disc (masked to the world's radius
+   plus a margin as data, fading out near the rim), and the band's source found and fixed. Done (after 0.54.191):
+   the deck and the volume stop at the rim (`clouds.json` `deck.rimMarginM`/`rimFadeM`); the band was the
+   atmosphere's limb, now faded out past the rim (`atmosphere.json` `limbFadeM`). The look from the far camera is
+   still to be checked on the Mac; far shots can take clouds on again once #100's shapes are in.
    **Video 1 v2 recorded 2026-11-12** (48.7 s, 6 clips, 17.8 MB): (1) the disc's outline from 160 → 118 km out,
    9–13 km up, a slow push; (2) an orbit-crane from over face A through the midplane to under face B at night; (3)
    first person walking between the monument's pillars to the hole and dropping in (no ladder); (4) the fall past the
@@ -1436,6 +1442,14 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    up out of it, hovers, flies out and lands; (6) a drone rise from the player on face B past the monument and the
    coast to the whole disc from beneath. Paths kept with the plan (the record skill's lessons). Seed 7's portal
    at (1780.5, 20690.5) (`?spawn=portal`).
+   **Video 1 v3 recorded 2026-11-12** (51.4 s, 6 clips, 17.9 MB, clouds off throughout, no flight): (1) the outline
+   push as v2; (2) the crane over face A and under to face B with `"up": "a"`; (3) first person walking to the hole
+   and dropping in; (4) the motes at 0.35×; (5) a hard cut to a wide 22 m out on face B with `"up": "a"`: face B's
+   ground overhead, the monument's pillars hanging down, the player rising head-down out of the hole by momentum
+   alone, then falling back in; (6) a drone rise from face B's hole (face A's up held) out under the disc and round
+   the rim to the face-A outline, closing the loop on shot 1. Not in it: the landing beside face B's hole — in the
+   browser the exit push never acts on face B (BUGS.md #107; natively the same shaft lands 6 m out), so the clip
+   ends as the player falls back. Paths in `.claude/skills/record/paths/bifacial-v3/`.
 41. **Theater mode** (owner 2026-11-12: "We should use full camera tools to do the things you were doing and expand
    this tool set as you go, we could call it theater mode. Even make it available ingame as a feature that could be
    toggled on for any world type."). Answers: **both** presets (pick a target and a move: orbit, dolly, track,
@@ -1496,6 +1510,13 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    client side (M-7c) so it reuses the finished travel.
 
 ## Done
+
+- **Underwater audio (owner 2026-11-12: "swimming underwater sounds like swimming on the water surface, when
+  underwater sounds should be muffled, high pass filter maybe?"; and "Swimming in the surface is too loud and high
+  even then, like a kid learning to swim splashing."):** BUGS.md #104. Strokes by the head's depth (a soft, deep
+  `swim_under` with the head under, a calm, filtered `swim` at the surface, one a second); the world's buses muffled
+  by a low-pass with the eye under water, eased at the crossing, plus an underwater bed; all data (AUDIO.md §3a). The
+  listening check is the owner's.
 
 - **dwell-mesh's face-B parity test green (owner's brief 2026-11-12: "a_chunk_meshes_the_same_face_local_on_either_face::b
   fails on main (\"cutout plants\"), reported by two sessions … fix the cause at the source so face B's plants are face
@@ -1831,6 +1852,10 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    `__dwell.goToHerd(kind?, back?)` (local worlds) and the bench step `herd` (scenario `herds`). Near
    creature limits (`limits.max` 64, `spawnChunks`) unchanged: at ~3 deer a km² a player meets a herd or
    two at a time. Not yet: in-game screenshots and the frame cost from the bench (no GPU in the cloud).
+
+47. **Wind only when flying** (owner 2026-11-12: "let's disable the wind for now it doesn't seem right like should just be
+   for flying or high altitude only." / "Wind SFX"). Built: the wind bed reads the eye's height above the ground
+   (silent below 12 m, full at 60 m) instead of altitude above the sea.
 
 ## Future (needs owner answers)
 

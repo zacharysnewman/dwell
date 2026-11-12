@@ -693,6 +693,56 @@ mod tests {
         }
     );
 
+    both_faces!(
+        fn no_bright_band_under_the_disc_from_far_past_the_rim(f: FaceFrame) {
+            // BUGS.md #102: the bifacial showcase's camera, 140 km from the axis and 11 km up, at
+            // time 0.29, looking at the disc. The limb (the horizon's glow gathered at the rim, for
+            // a viewer over the disc) sat at −atan(11 / 50) ≈ −12.4°, under the disc, a bright band
+            // across the whole frame. Out there no world makes one: the sky across those rows is
+            // smooth, the other face's under the eye's haze, as face A's sky above reads.
+            let radius = dwell_protocol::world::WORLD_RADIUS as f64;
+            let alt = 11_000.0;
+            let eye_y = f.y(dwell_world::SEA_LEVEL_M + alt);
+            let day = DAY_NIGHT
+                .state(0.0, Some(0.29), None)
+                .at_eye(alt, 140_000.0, radius);
+            // Toward the disc's axis (from +x), its rows from 2° to 22° below the horizon.
+            let row = |deg: f64| {
+                let e = -deg.to_radians();
+                luma(sky_behind(f.vector([-e.cos(), e.sin(), 0.0]), eye_y, &day))
+            };
+            let rows: Vec<(f64, f64)> = (8..=88)
+                .map(|i| f64::from(i) / 4.0)
+                .map(|d| (d, row(d)))
+                .collect();
+            for &(d, l) in &rows {
+                let around = (row(d - 2.0) + row(d + 2.0)) / 2.0;
+                assert!(
+                    l - around < 0.01,
+                    "a band at {d}° below the horizon: {l:.3} over {around:.3} around it"
+                );
+            }
+            // Over the disc the limb is still there (and the far eye's view is the same as before
+            // above the horizon).
+            let over = DAY_NIGHT
+                .state(0.0, Some(0.29), None)
+                .at_eye(alt, 0.0, radius);
+            assert_eq!(over.air, atmosphere::ATMOSPHERE.air(alt));
+            let limb = -(over.air.limb.asin().to_degrees());
+            let at = |day: &DayState, deg: f64| {
+                let e = -deg.to_radians();
+                luma(sky_behind(f.vector([-e.cos(), e.sin(), 0.0]), eye_y, day))
+            };
+            assert!(
+                at(&over, limb) - (at(&over, limb - 3.0) + at(&over, limb + 3.0)) / 2.0 > 0.05,
+                "the limb over the disc"
+            );
+            for deg in [-30.0, -5.0, 0.0] {
+                assert_eq!(at(&over, deg), at(&day, deg), "above the horizon at {deg}°");
+            }
+        }
+    );
+
     #[test]
     fn the_shader_sky_is_valid_wgsl_with_the_uniform_block() {
         let src = format!(

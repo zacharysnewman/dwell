@@ -49,6 +49,7 @@ export const SET_EVENTS = [
   "explode",
   "impact",
   "brush",
+  "swim_under",
 ];
 /** An event's part in a continuous (looped) sound: start a voice, update it, stop it. */
 export const LOOP_PARTS = ["start", "update", "stop"];
@@ -108,6 +109,7 @@ const TOP_KEYS = [
   "controls",
   "ambient",
   "ambience",
+  "underwater",
   "creatures",
   "sounds",
 ];
@@ -124,7 +126,10 @@ export const AMBIENCE_INPUTS = [
   "trees",
   "day",
   "fireM",
+  "underwater",
 ];
+/** The mixer's buses (AUDIO.md §3); the underwater filter names the ones it muffles. */
+export const BUSES = ["effects", "ambience", "ui", "music"];
 
 function fail(where, message) {
   throw new Error(`shared/sounds: ${where}: ${message}`);
@@ -319,7 +324,7 @@ export function validateSound(where, s) {
   s.layers.forEach((l, i) => validateLayer(`${where}.layers[${i}]`, l, loop));
   if (s.samples !== undefined) {
     const sm = s.samples;
-    keysIn(`${where}.samples`, sm, ["files", "gain", "pitch", "reverb"]);
+    keysIn(`${where}.samples`, sm, ["files", "gain", "pitch", "shift", "lowpassHz", "reverb"]);
     if (loop) fail(`${where}.samples`, "loop sounds are procedural only");
     if (
       !Array.isArray(sm.files) ||
@@ -336,6 +341,8 @@ export function validateSound(where, s) {
     number(`${where}.samples.gain`, sm.gain, 0, 4, { optional: true });
     number(`${where}.samples.pitch`, sm.pitch, 0, 12, { optional: true });
     number(`${where}.samples.reverb`, sm.reverb, 0, 1, { optional: true });
+    number(`${where}.samples.shift`, sm.shift, -24, 12, { optional: true });
+    number(`${where}.samples.lowpassHz`, sm.lowpassHz, 100, 20000, { optional: true });
   }
   if (s.play !== undefined) {
     oneOf(`${where}.play`, s.play, PLAY_MODES);
@@ -451,6 +458,32 @@ function resolveSamples(sounds, dir, beds = {}) {
  * `radiusM`, the nearest `max`, at full level by their flow at `fullM3s` (docs/WATER_SURFACE_GRID.md §2e). (No wind loop: removed, owner
  * 2026-10-21; no night crickets: removed, owner 2026-10-28.)
  */
+/**
+ * The underwater muffle (AUDIO.md §3a, BUGS.md #104): `buses` (which of the mixer's go through
+ * the low-pass), `lowpassHz` and `q` (the filter under water), `gain` (their level under water),
+ * `easeS` (the glide at the crossing) and `openHz` (the filter's frequency in air: transparent).
+ */
+export function validateUnderwater(u) {
+  keysIn("underwater", u, ["$comment", "buses", "lowpassHz", "q", "gain", "easeS", "openHz"]);
+  if (!Array.isArray(u.buses) || u.buses.length === 0) fail("underwater.buses", "must list buses");
+  for (const b of u.buses) oneOf("underwater.buses", b, BUSES);
+  if (new Set(u.buses).size !== u.buses.length) fail("underwater.buses", "lists a bus twice");
+  number("underwater.lowpassHz", u.lowpassHz, 100, 8000);
+  number("underwater.q", u.q, 0.1, 10);
+  number("underwater.gain", u.gain, 0, 1);
+  number("underwater.easeS", u.easeS, 0.01, 2);
+  number("underwater.openHz", u.openHz, 4000, 24000);
+  if (u.openHz <= u.lowpassHz) fail("underwater.openHz", "must be above lowpassHz");
+  return {
+    buses: u.buses,
+    lowpassHz: u.lowpassHz,
+    q: u.q,
+    gain: u.gain,
+    easeS: u.easeS,
+    openHz: u.openHz,
+  };
+}
+
 function validateAmbient(a) {
   keysIn("ambient", a, ["fire", "falls"]);
   keysIn("ambient.fire", a.fire, ["radiusM", "max"]);
@@ -483,6 +516,7 @@ export function resolveSounds(files, samplesDir = SAMPLES_DIR) {
     controls: {},
     ambient: undefined,
     ambience: undefined,
+    underwater: undefined,
     creatures: undefined,
     sounds: {},
   };
@@ -614,8 +648,13 @@ export function resolveSounds(files, samplesDir = SAMPLES_DIR) {
       if (out.ambient) fail("ambient", "given twice");
       out.ambient = validateAmbient(file.ambient);
     }
+    if (file.underwater !== undefined) {
+      if (out.underwater) fail("underwater", "given twice");
+      out.underwater = validateUnderwater(file.underwater);
+    }
   }
   if (!out.ambient) fail("ambient", "missing (the fire and night tunables)");
+  if (!out.underwater) fail("underwater", "missing (the underwater muffle)");
   // Creatures (AUDIO.md §2d): each model's stride and sounds.
   for (const file of sorted) {
     const c = file.creatures;

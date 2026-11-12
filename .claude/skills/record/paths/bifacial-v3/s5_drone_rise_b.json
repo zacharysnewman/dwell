@@ -1,0 +1,12 @@
+{ "formatVersion": 1, "name": "bifacial v3 s5: drone rise from face B's hole (face A's up held) out under the disc, round the rim to the outline",
+  "keyframes": [
+    { "t": 0, "position": [1794.5, -62, 20704.5], "target": [1780.5, -50, 20690.5], "fov": 60, "timeOfDay": 0.29, "up": "a" },
+    { "t": 4, "position": [1840, -200, 20760], "target": [1780.5, -45, 20690.5], "fov": 58 },
+    { "t": 14, "position": [24000, -16000, 165000], "target": [0, 0, 0], "fov": 50 },
+    { "t": 22, "position": [24000, 13000, 165000], "target": [0, 0, 0], "fov": 50 }
+  ],
+  "segments": [
+    { "move": "crane", "upEasing": "inOutSine" },
+    { "move": "ease", "easing": "inOutCubic" },
+    { "move": "orbit", "around": [0, 0, 0], "easing": "inOutSine" }
+  ] }

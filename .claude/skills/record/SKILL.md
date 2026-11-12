@@ -182,3 +182,17 @@ preview and the driver, remove any `client/node_modules` symlink or built `clien
   face B's frame (`"auto"`) and the player rising out of face B's hole looks upright; with `"up": "a"` it keeps
   face A's up, so face B and the player hang under the disc, and a crane through the midplane doesn't turn over.
   Its `look` is read in face A's frame too (or aim with `target`). Presets take it in `params` (`"up": "a"`).
+- 2026-11-12, the bifacial world v3 (portrait, 6 clips, 51.4 s, 17.9 MB, all takes ~59 fps; paths, take script and
+  splice plan in `paths/bifacial-v3/`; the whole video took ~15 min of recording). **`"up": "a"` works:** the face-B
+  wide 22 m out and ~17 m off the ground (`[cx+14, −66, cz+14]`, fov 62, target the player) shows face B's ground
+  overhead, the pillars hanging down and the player head-down under the hole — it reads upside down at once; a
+  camera 37 m out showed the player too small. The crane and the closing drone rise hold `"up": "a"` too; the drone
+  ends with an `orbit` round the rim from under face B back to the face-A outline (a loop with shot 1). **Find the
+  hard cut by luminance**, not by the script's clock: the take's log time and the splice's time differ by ~0.07 s
+  (splice uses the average frame rate: time = frame index / fps); the cut frame is where the mean brightness jumps.
+  **The driver's `/eval` takes an expression**, not statements: wrap a take script as
+  `(globalThis.__args = {...}, (async () => {…})())` (a small node wrapper that reads the file and posts it).
+  **Seed 7's shaft axis is 1779.5, 20690.5** (`portal_shafts_for_sized`; v2's notes said 1780.5); `d.voxel(x, y, z)`
+  takes **½ m cell rows** for y (row 104 = 52 m), so probe columns with that in mind. **The exit push didn't act on
+  face B in the browser** (BUGS.md #107): no landing beside the hole yet; the clip ends on the rise and fall-back.
+  A `?fresh=1` link with no `seed` stops on the title screen (no `__dwell`): give a `seed` (or `worldgen=test:starter&seed=0`).
