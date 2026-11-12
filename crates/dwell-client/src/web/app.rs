@@ -2896,6 +2896,26 @@ impl Client {
         o.into()
     }
 
+    /// The far trees' impostors now (`__dwell.impostors()`, BUGS.md #106): `{ made, tierOn, ready,
+    /// baked, layers, requested, tiles, instances, drawn, lastError }`. `ready` false: the frame
+    /// draws the near crowns to the full-detail distance and the LOD sections keep their trees.
+    #[wasm_bindgen(js_name = impostorStatus)]
+    pub fn impostor_status(&self) -> JsValue {
+        let st = self.inner.borrow().renderer.borrow().impostor_status();
+        let o = Object::new();
+        set(&o, "made", st.made);
+        set(&o, "tierOn", st.tier_on);
+        set(&o, "ready", st.ready);
+        set(&o, "baked", st.baked);
+        set(&o, "layers", st.layers);
+        set(&o, "requested", st.requested);
+        set(&o, "tiles", st.tiles);
+        set(&o, "instances", st.instances);
+        set(&o, "drawn", st.drawn);
+        set(&o, "lastError", st.last_error.as_str());
+        o.into()
+    }
+
     /// The streaming report's game part as JSON (`Game::streaming_report`, docs/DEV_TOOLS.md), or
     /// "null" before playing: the shell adds the device, settings and world and copies it.
     #[wasm_bindgen(js_name = streamingReport)]

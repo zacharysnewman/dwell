@@ -44,6 +44,21 @@ nearest trees are leafy but already dithered; no impostor crowns anywhere. So th
 hand-over (`card_dropped`: leaf faces past `far_trees.x + .y + 2` when `frame.far_trees.w` is set) while the
 impostors draw nothing. The leaves must not fade out unless the impostors for those trees actually draw (atlas
 uploaded, the tile's instances in), and why the impostors draw nothing on the release needs finding.
+Then (local GPU check, test:starter seed 0, High): past ~48 m (at 80 and 150 m) most trees are thin trunks with
+small, faint crowns, so the impostors do draw, but too small/faint; `?impostors=0` brings back the full crowns at
+40–150 m; at 300 m both look alike.
+**Gate (claude/tree-sticks):** the frame's hand-over (`impostors::drawn`) is the tier's only once the impostors are
+ready about the eye (`impostors::ready`: every atlas layer baked, every tile within `fromM + fadeM + 64` m in, at
+least one tree there); until then the near crowns draw to the full-detail distance, chunk cutouts aren't cut and the
+LOD sections keep their trees (`render/mod.rs` `the_near_crowns_and_lod_trees_stay_until_the_impostors_are_ready`,
+red on main → green). `__dwell.impostors()` reads out ready, layers baked, tiles, instances, drawn and the last
+upload error (a layer of the wrong size used to be dropped silently). **Root cause still open:** the bake matches
+the real trees (radius and side area within ~10–30% for every species' wild trees), and a CPU emulation of
+`imp_fs`'s sampling (quad point, per-pixel view dither, texel) covers 1.02× the real crown's side silhouette with
+0.80 overlap (`dwell-worldgen` `crown_match`), so the shrinkage is on the GPU path not emulated: the vertex stage
+(layer spheres from the layer buffer, the instance foot), MSAA sample masks, lighting/fog darkening the crowns, or
+the near trunks with the dropped crowns. Next: a local GPU session reads `__dwell.impostors()` on the release and
+on test:starter, and screenshots `?impostors=1` with the near trees hidden.
 
 
 ### 100. Volumetric clouds look like "crazy triangles"
