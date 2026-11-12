@@ -174,8 +174,9 @@ pub struct Animator {
     from: Option<(Playing, f32, f32)>,
     action: Option<Playing>,
     /// The swing's clip time set from outside (a melee swing's hit-stop and pull-back,
-    /// `dwell-client` chop.rs), instead of advancing with the frame.
-    driven: Option<f32>,
+    /// `dwell-client` chop.rs), instead of advancing with the frame, and its weight over the
+    /// pose under it (1: the clip's pose; the pull-out fades it to the arms' rest).
+    driven: Option<(f32, f32)>,
 }
 
 impl Animator {
@@ -220,7 +221,20 @@ impl Animator {
     /// Drives the swing playing to clip time `t` (s) each frame from now on, or lets it run with the
     /// frame again (none).
     pub fn drive_action(&mut self, t: Option<f32>) {
-        self.driven = t;
+        self.driven = t.map(|t| (t, 1.0));
+    }
+
+    /// Drives the swing playing to clip time `t` (s), laid over the pose under it at `weight`
+    /// (0..1): a hit's pull-out holds the contact's pose and fades it out, straight back to rest.
+    pub fn drive_action_weighted(&mut self, t: f32, weight: f32) {
+        self.driven = Some((t, weight.clamp(0.0, 1.0)));
+    }
+
+    /// Ends the swing playing, whatever its clip time (a driven swing that is over: it must not
+    /// play on from where it was left; BUGS.md #93).
+    pub fn stop_action(&mut self) {
+        self.action = None;
+        self.driven = None;
     }
 
     /// Starts a swing (an edit's break or place) on the action layer.
@@ -309,17 +323,23 @@ impl Animator {
         }
         let driven = self.driven;
         if let Some(a) = &mut self.action {
-            match driven {
-                Some(t) => a.t = t,
-                None => a.t += dt,
-            }
+            let weight = match driven {
+                Some((t, w)) => {
+                    a.t = t;
+                    w
+                }
+                None => {
+                    a.t += dt;
+                    1.0
+                }
+            };
             let c = self.tables.clip(a.clip);
             if a.t > c.duration {
                 self.action = None;
             } else {
                 debug_assert_eq!(c.layer, Layer::Action);
                 let a = *a;
-                layer(&mut pose, &sample(c, a.t), 1.0);
+                layer(&mut pose, &sample(c, a.t), weight);
             }
         }
         if self.space == Space::Body {

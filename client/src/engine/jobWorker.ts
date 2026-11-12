@@ -27,7 +27,11 @@ type BuildMap = {
 
 interface WorkerScope {
   postMessage(
-    message: ArrayBuffer | { memory: number } | { map?: Uint8Array; error?: string },
+    message:
+      | ArrayBuffer
+      | { memory: number }
+      | { map?: Uint8Array; error?: string }
+      | { step: number; fraction: number },
     transfer?: Transferable[],
   ): void;
   onmessage: ((e: MessageEvent<ArrayBuffer | Init | BuildMap>) => void) | null;
@@ -66,6 +70,10 @@ scope.onmessage = (e) => {
           msg.face,
           msg.worldgen || undefined,
           msg.radiusScale ?? undefined,
+          // Each step as it runs (BUGS.md #91): the loading screen's "rivers (5/6)".
+          (step: number, fraction: number) => {
+            scope.postMessage({ step, fraction });
+          },
         );
         scope.postMessage({ map }, [map.buffer as ArrayBuffer]);
       } catch (err) {

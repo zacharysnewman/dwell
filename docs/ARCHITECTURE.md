@@ -3108,12 +3108,20 @@ chunks), keeps the last selection (`LodSystem::update`; ~1 ms a frame standing s
   samples, resolution divisor, history blend; 0 steps is the 2D deck: Low). On Medium (desktops'
   default, ¼ resolution) and High (opt-in, ½) a **clouds pass** before the composite ray-marches a
   layer between `volume.baseM` and `topM` (`clouds_fs` → `dwell_cloud_march`, jittered per pixel and
-  frame, early exit at 98 % opacity) into a reduced `rgba16float` buffer (premultiplied colour, cover)
-  and an `r16float` first-cloud distance, blended with the last frame's buffer reprojected by
-  direction (a `CloudPrev` uniform with the last camera; reset on new buffers or a jump), then copied
-  to the history. The composite upsamples it in place of the eye's deck (`upsampled_clouds`,
-  depth-aware: hidden where the scene is nearer than the four texels' nearest first cloud). Density:
-  the deck's noise as a weather map (the same coverage uniform), a cut rising with height, 3D detail;
+  frame by a baked blue-noise tile, early exit at 98 % opacity) into a reduced `rgba16float` buffer
+  (premultiplied colour, cover) and an `rgba16float` scene span and first-cloud distance; a **resolve**
+  (`clouds_resolve_fs`, BUGS.md #90) then blends it with the last frame's buffer reprojected by
+  direction (a `CloudPrev` uniform with the last camera; reset on new buffers or a jump), the history
+  clamped into the box of this frame's 3 × 3 matching neighbours, and the result is copied to the
+  history. Near or in the layer a tier takes its `nearSteps` and `nearDivisor`. The composite
+  upsamples it in place of the eye's deck (`upsampled_clouds`, depth-aware by the texels' scene
+  spans, §8.9). **Shape** (`CLOUDS.md` §9): the deck's noise as the weather map (cover, cloud type
+  along `cloudTypes`' axis, precipitation), height profiles per cloud type as data (stratus to
+  cumulonimbus with an anvil), the base shape from a baked tiling 3D Perlin–Worley texture remapped by
+  the cover, its edges eroded by a baked Worley detail texture distorted by curl noise, sheared
+  downwind; the two textures (`form.baseSize`³, `form.detailSize`³ RGBA8, group 3 bindings 6–8 with a
+  repeating sampler) baked once in the job workers (`Job::CloudNoise` slabs) when a volume tier first
+  draws, the deck standing in until they are whole. The light march samples the base shape only.
   Beer and powder lighting; no samples at all with no coverage. **Run-time plumes** (`CLOUDS.md`
   §8.7): columns of cloud (steam, smoke, ash) the game adds, moves and removes by name in a list
   (`dwell_look::plumes::PlumeList`, `plumeSlots` of them, `clouds.json`'s `plumes` its defaults),

@@ -22,7 +22,7 @@ const TOP_FIELDS = ['formatVersion', 'tools', 'woods', 'breaking', 'durability',
 const CHOP2_TOOL_FIELDS = ['bite'];
 const CHOP2_WOOD_FIELDS = ['fellFraction', 'along', 'fellWedgeTrunk'];
 const CHOP2_FIELDS = ['enabled'];
-const TOOL_FIELDS = ['name', 'kind', 'swingSeconds', 'biteM', 'bindM', 'across', 'along', 'sharpness', 'held', 'heldVertical', 'swing', 'clears', 'chop2', 'weapon'];
+const TOOL_FIELDS = ['name', 'kind', 'repeatOnHold', 'swingSeconds', 'biteM', 'bindM', 'across', 'along', 'sharpness', 'held', 'heldVertical', 'swing', 'clears', 'chop2', 'weapon'];
 /** An axe's cutting fields: a weapon has none (it cuts no wood). */
 const AXE_FIELDS = ['biteM', 'bindM', 'across', 'along', 'sharpness', 'clears', 'chop2'];
 /** A weapon's strike (WORK_QUEUE item 35): damage and knockback per hit, the most creatures a
@@ -180,6 +180,10 @@ export function validateTools(data, items, blocks, heldItems = loadHeldItems(), 
     names.add(t.name);
     if (!KINDS.includes(t.kind)) fail(`${at}.kind must be one of ${KINDS.join(', ')}`);
     inRange(t, 'swingSeconds', 0, 10, at, true);
+    // Holding the use button keeps swinging (owner, 2026-11-12: "I wanted you to be able to hold the
+    // key down for tools like the axe"): each swing a full one, the next as soon as it may start.
+    t.repeatOnHold = t.repeatOnHold ?? false;
+    if (typeof t.repeatOnHold !== 'boolean') fail(`${at}.repeatOnHold must be true or false`);
     let weapon = null;
     if (t.kind === 'weapon') {
       for (const k of AXE_FIELDS) if (t[k] !== undefined) fail(`${at}.${k}: a weapon cuts no wood (no ${AXE_FIELDS.join(', ')})`);
@@ -390,6 +394,10 @@ export function validateTools(data, items, blocks, heldItems = loadHeldItems(), 
     breakWith.push({ block: name, kind: def.breakWith });
   }
   const breaking = validateBreaking(data.breaking, items, blocks);
+  // A chopping tool's hold is its swing's (`tools[].repeatOnHold`), not a break tool's.
+  for (const b of data.breaking?.tools ?? []) {
+    if (b.repeatOnHold !== undefined && tools.some((t) => t.name === b.item)) fail(`breaking.tools: ${b.item} swings as a tool (tools.${b.item}); its repeatOnHold goes there`);
+  }
   const chop2 = { enabled: false, ...(data.chop2 ?? {}) };
   known(data.chop2 ?? {}, [...CHOP2_FIELDS, '$comment'], 'chop2');
   if (typeof chop2.enabled !== 'boolean') fail('chop2.enabled must be true or false');
@@ -565,7 +573,7 @@ export function validateBreaking(b, items, blocks) {
   const seen = new Set();
   const tools = b.tools.map((t, i) => {
     const at = `breaking.tools[${i}]`;
-    known(t, ['item', 'class', 'tier', 'contactS'], at);
+    known(t, ['item', 'class', 'tier', 'contactS', 'repeatOnHold', 'repeatS'], at);
     if (!items.has(t.item)) fail(`${at}: no item ${JSON.stringify(t.item)} (shared/inventory or a block)`);
     if (seen.has(t.item)) fail(`${at}: ${t.item} is listed twice`);
     seen.add(t.item);
@@ -575,7 +583,13 @@ export function validateBreaking(b, items, blocks) {
     // then, on the server and the client. Optional: 0, at once.
     const contactS = t.contactS ?? 0;
     if (typeof contactS !== 'number' || !(contactS >= 0 && contactS <= 2)) fail(`${at}: contactS is seconds in [0, 2]`);
-    return { item: t.item, class: t.class, tier: t.tier, ...tierOf(t.tier), contactS };
+    // Held, the break repeats every `repeatS` (default 0.5 s; never before its contact).
+    const repeatOnHold = t.repeatOnHold ?? false;
+    if (typeof repeatOnHold !== 'boolean') fail(`${at}: repeatOnHold must be true or false`);
+    if (!repeatOnHold && t.repeatS !== undefined) fail(`${at}: repeatS without repeatOnHold`);
+    const repeatS = repeatOnHold ? (t.repeatS ?? 0.5) : null;
+    if (repeatS !== null && (typeof repeatS !== 'number' || !(repeatS >= Math.max(contactS, 0.1) && repeatS <= 5))) fail(`${at}: repeatS is seconds in [max(contactS, 0.1), 5]`);
+    return { item: t.item, class: t.class, tier: t.tier, ...tierOf(t.tier), contactS, repeatS };
   });
   return { classes, tools };
 }
@@ -655,7 +669,7 @@ export function toolsRust(d) {
   for (const t of d.tools) {
     const kind = t.kind[0].toUpperCase() + t.kind.slice(1);
     rs.push(
-      `    ToolDef { name: "${t.name}", kind: ToolKind::${kind}, held: ${t.held === null ? 'None' : `Some("${t.held}")`}, swing_seconds: ${f64(t.swingSeconds)}, bite_m: ${f64(t.biteM)}, bind_m: ${f64(t.bindM)}, across: ${f64(t.across)}, along: ${f64(t.along)}, sharpness: ${f64(t.sharpness)}, held_vertical: ${optStr(t.heldVertical)}, swing: ${swingRust(t.swing)}, clears: &[${t.clears.map((b) => `"${b}"`).join(', ')}], chop2_bite: ${f64(t.chop2.bite)}, weapon: ${t.weapon === null ? 'None' : `Some(WeaponDef { damage: ${f64(t.weapon.damage)}, knockback_m: ${f64(t.weapon.knockbackM)}, knockback_mps: ${f64(t.weapon.knockbackMps)}, lift_mps: ${f64(t.weapon.liftMps)}, max_targets: ${t.weapon.maxTargets}, guard: GuardDef { level_roll_deg: ${f64(t.weapon.guard.levelRollDeg)}, vertical_roll_deg: ${f64(t.weapon.guard.verticalRollDeg)}, block_within_deg: ${f64(t.weapon.guard.blockWithinDeg)}, connect_within_deg: ${f64(t.weapon.guard.connectWithinDeg)}, glance_damage: ${f64(t.weapon.guard.glanceDamage)}, recoil_s: ${f64(t.weapon.guard.recoilS)}, front_deg: ${f64(t.weapon.guard.frontDeg)}, raise_after_s: ${f64(t.weapon.guard.raiseAfterS)}, level_pose: ${optStr(t.weapon.guard.levelPose)}, vertical_pose: ${optStr(t.weapon.guard.verticalPose)}, level_blade: ${bladeRust(t.weapon.guard.levelBlade)}, vertical_blade: ${bladeRust(t.weapon.guard.verticalBlade)}, clash: ClashLook { sound: ${optStr(t.weapon.guard.clash.sound)}, hear_m: ${f64(t.weapon.guard.clash.hearM)}, sparks: ${chipsOpt(t.weapon.guard.clash.sparks)}, glance_share: ${f64(t.weapon.guard.clash.glanceShare)} } } })`} },`,
+      `    ToolDef { name: "${t.name}", kind: ToolKind::${kind}, held: ${t.held === null ? 'None' : `Some("${t.held}")`}, swing_seconds: ${f64(t.swingSeconds)}, bite_m: ${f64(t.biteM)}, bind_m: ${f64(t.bindM)}, across: ${f64(t.across)}, along: ${f64(t.along)}, sharpness: ${f64(t.sharpness)}, held_vertical: ${optStr(t.heldVertical)}, swing: ${swingRust(t.swing)}, clears: &[${t.clears.map((b) => `"${b}"`).join(', ')}], chop2_bite: ${f64(t.chop2.bite)}, weapon: ${t.weapon === null ? 'None' : `Some(WeaponDef { damage: ${f64(t.weapon.damage)}, knockback_m: ${f64(t.weapon.knockbackM)}, knockback_mps: ${f64(t.weapon.knockbackMps)}, lift_mps: ${f64(t.weapon.liftMps)}, max_targets: ${t.weapon.maxTargets}, guard: GuardDef { level_roll_deg: ${f64(t.weapon.guard.levelRollDeg)}, vertical_roll_deg: ${f64(t.weapon.guard.verticalRollDeg)}, block_within_deg: ${f64(t.weapon.guard.blockWithinDeg)}, connect_within_deg: ${f64(t.weapon.guard.connectWithinDeg)}, glance_damage: ${f64(t.weapon.guard.glanceDamage)}, recoil_s: ${f64(t.weapon.guard.recoilS)}, front_deg: ${f64(t.weapon.guard.frontDeg)}, raise_after_s: ${f64(t.weapon.guard.raiseAfterS)}, level_pose: ${optStr(t.weapon.guard.levelPose)}, vertical_pose: ${optStr(t.weapon.guard.verticalPose)}, level_blade: ${bladeRust(t.weapon.guard.levelBlade)}, vertical_blade: ${bladeRust(t.weapon.guard.verticalBlade)}, clash: ClashLook { sound: ${optStr(t.weapon.guard.clash.sound)}, hear_m: ${f64(t.weapon.guard.clash.hearM)}, sparks: ${chipsOpt(t.weapon.guard.clash.sparks)}, glance_share: ${f64(t.weapon.guard.clash.glanceShare)} } } })`}, repeat_on_hold: ${t.repeatOnHold} },`,
     );
   }
   rs.push('];');
@@ -701,7 +715,7 @@ export function toolsRust(d) {
   rs.push('');
   rs.push("/// Each tool item's class, tier and that tier's break speed (`breaking.tools`).");
   rs.push('pub static BREAK_TOOLS: &[BreakTool] = &[');
-  for (const t of d.breaking.tools) rs.push(`    BreakTool { item: "${t.item}", class: "${t.class}", tier: "${t.tier}", speed: ${f64(t.speed)}, chunk: ${f64(t.chunk)}, contact_s: ${f64(t.contactS)} },`);
+  for (const t of d.breaking.tools) rs.push(`    BreakTool { item: "${t.item}", class: "${t.class}", tier: "${t.tier}", speed: ${f64(t.speed)}, chunk: ${f64(t.chunk)}, contact_s: ${f64(t.contactS)}, repeat_s: ${t.repeatS === null ? 'None' : `Some(${f64(t.repeatS)})`} },`);
   rs.push('];');
   rs.push('');
   return rs.join('\n');

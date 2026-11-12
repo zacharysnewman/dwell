@@ -364,7 +364,7 @@ impl Harness {
         game.set_capabilities(region_edits, brushes);
         game.set_world(generator_version, world_seed, self.session.world_size());
         if let Some(w) = self.session.world_settings() {
-            game.set_world_clock(w.clock);
+            game.set_world_settings(&w);
         }
         // The bench's pages show the loading screen as players do.
         game.set_loading_screen(true);

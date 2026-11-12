@@ -39,6 +39,17 @@ The running order across the items below; each line names its item, where the ow
    cell's outline (item 18 lever 3); half the hit shards on phones (the flag nothing sets yet).
 9. **Big worlds (BIG_MAP.md)** — BUGS.md #76 (browser memory grows with world size) before 8×/10×; #77 (bigger
    islands lose their ranges, speckled lakes: an owner look question); region maps built ahead with no hitches.
+   **10× world creation (BUGS.md #91, owner 2026-11-12):** "I tried to start a 10x world … up to 3 minutes so far
+   on 'Shaping the world map...' 0/2. Doesn't indicate well what it's doing."; then "started the server 200+
+   seconds in … almost 1 minute looking for a place to stand … still 0/2 280+ seconds in"; then "Loaded in 300s
+   in, but I can only see the skies of both faces, no world." / "Can't move." Target: a 10× world playable in
+   well under 30 s on a fast Mac, with progress inside each face's map build.
+   Then (owner): the empty-sky world shows "Could not connect to 10x…": the client must wait for the local server's
+   ready signal, not a fixed timeout, and a dead worker must report its error clearly.
+   **Fixed natively (2026-11-12):** the uplift and the channels' index grew with the radius (a 10× face 43.7 s and a
+   12.4 GB server natively); now a 10× face is 3.1 s (1×: 1.9 s) and its server 6.2 s at 484 MB; the map stage shows
+   each face's steps; a dying server worker says why (BUGS.md #91, BIG_MAP.md §3.1). **Next: the owner tries 10× in
+   the browser again.**
 10. **Realistic R5–R6 (item 15)** — geology by plate history with today's blocks; the World option.
 
 ### Waiting on the owner (each with what it means and the default meanwhile)
@@ -324,6 +335,36 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    (coverage, cloud type, precipitation), height profiles per cloud type (flat-based cumulus with billowing tops,
    stratus sheets, towering cumulonimbus with anvils), base-shape remapping and edge erosion with curl distortion,
    wind and shear; within the High-on-M1 budget.
+   **Built (2026-11-12, branch `claude/cloud-shapes`, CLOUDS.md §9):** the research (Schneider 2015/2017/2022,
+   Hillaire 2016, Bauer 2019, Häggström 2018) in §9.1; the shape model as data: a weather map from the deck's
+   noise (cover, cloud type, precipitation; `weather`), height profiles per cloud type (`cloudTypes`: stratus,
+   stratocumulus, cumulus, cumulonimbus with an anvil; a new type is a list entry), a Perlin–Worley base (64³)
+   and Worley detail (32³) baked once in the job workers (`Job::CloudNoise`, the deck until whole), the base
+   remapped by the cover, the edges eroded by curl-distorted detail (wispy bases, billowy tops; the core stays),
+   wind shear; the light march on the base shape only. CPU twin and tests (flat base, rounded top, anvil,
+   coverage 0, edge-only erosion, tiling, a fixture type by data, both faces, naga). Cost read from the shader:
+   Medium ≤ 7.4k ALU a texel (was 5.3k), High ≤ 10.5k (was 7.6k).
+   Owner, 2026-11-12 (BUGS.md #90): **"The clouds also look really badly dithered when they overlap? I think
+   mostly when you get to their level? Looks very pixelated."** Asked for in the same work: blue-noise jitter, a
+   depth-aware bilateral upsample, neighbourhood clamping instead of history rejection near the layer, more
+   resolution or steps near or inside the layer by data per tier, a CPU test of a sharp silhouette and stability
+   under the jitter. **Built (same branch, CLOUDS.md §9.6).** Next (local): the in-game look (sun high, low sun,
+   from above, night, through the layer) against the old blobs and the bench before/after; tune by the data.
+   Owner, 2026-11-12: **"I wonder if the clouds would look better and be cheaper if they were opaque to each other,
+   like you can't see through them to the ones behind?"** Finding: the march already stops once a ray is 98 % blocked
+   (`trans < 0.02`), but `volume.extinction` is 0.006 /m, so a ray needs ~650 m of dense cloud to get there: clouds stay
+   see-through, march their full length and self-shadow weakly (part of the flat white look). Real cumulus is ~0.05 /m.
+   Next, in the in-game cloud check: an A/B of extinction 0.006 → ~0.03–0.05 (data), measuring the look and
+   `gpu.clouds`; keep soft eroded edges so higher opacity doesn't read as solid blobs.
+   Owner, clarifying: **"to be clear, light should still go through the clouds, but what is looking bad is the
+   clouds behind the one in front and you usually can't see other separate clouds blocked behind ones in front of
+   you?"** So: raise the view ray's opacity (`volume.extinction`, what hides a cloud behind another) and leave the
+   light's path as it is (`light.absorption`, the sun through the cloud: lit edges, silver lining, glow); they are
+   separate numbers already.
+   Owner, 2026-11-12: **"Another thing about the clouds is that they don't look pretty and tinted during sunrise and
+   sunset like our old 2D clouds."** The volume should take the deck's golden-hour tint: the sun's colour low in the
+   sky, the warm underside glow and the horizon colour the deck mixed in; compare at sunrise/sunset against
+   `?clouds=` the 2D deck (the reference since the lighting rework).
 14. **Tall grass grows and spreads** (owner 2026-11-11: "I want tall grass to steadily grow and spread. It
    should probably have a max depending on climate/biome."). **Built** (ADR 0075 T3c, docs/ECOLOGY.md §10):
    `shared/worldgen/grass.json` (the rule as data: the block, the ground, the decoration whose climate
@@ -337,6 +378,14 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    makes a ½ m ramp of its ground ground too (validated as decorations' `onRamps`: the ramp exists and
    the tuft's `placeOn` allows it), so a tuft on a ramp that is eaten or cut regrows and spreading
    reaches ramp cells, under the same climate cap; never a 1 m ramp's pieces (tests on both faces).
+   Owner, 2026-11-12: **"Seems like tall grass isn't growing in height like I expected. I thought it would get
+   taller over time?"** (the built growth only spreads; every tuft is 0.85 m from the start). Answers: max height
+   **depends on climate**; **4+ stages, slower** (a week or more of game time to full height); **cutting resets it**
+   (cut or eaten grass goes back to a sprout and regrows); **more drops when tall**; the hide mechanic: "I like the
+   hide mechanic idea, save this for later" (tall grass hiding a crouched player from animals/NPCs — Future).
+   Plan: a growth-stage property on the plant (a new property, default the full stage, so not breaking, ADR 0063),
+   stages and days per stage as data in grass.json, each stage's height from the block's look, the climate share
+   capping the top stage, drops per stage; one cell (≤ ~1 m) first, a two-cell top for the tallest climates later.
 
 15. **Realistic world** (owner 2026-11-11: "The realistic world should come from our systems (which may not be
    properly defined or built yet to support this) the seed should determine tectonic plates, rain shadow,
@@ -510,6 +559,14 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    Owner, 2026-11-12: **"I wanted you to be able to hold the key down for tools like the axe."** Holding the use
    button keeps swinging a tool (axe, pick, shovel, sword) at its swing rate until released, each swing hitting
    what is targeted then; data per tool (`repeatOnHold`). Also bug #93: vertical swings play twice.
+   Owner, 2026-11-12, on #93: **"The animation double swings"** (the clip itself, not two hits).
+   **Status (swings-hold):** built: #93 fixed (a hit's pull-out played the clip backwards over the shoulder and
+   then let it run on, a second swing; now the contact pose fades to rest and the clip stops at the swing's end;
+   `clip_probe` stroke-count test red → green); hold to keep swinging (ITEMS.md "Hold to keep swinging"): per-tool
+   `repeatOnHold` (both axes and the sword in `tools`, the pickaxes and shovels with `repeatS` in
+   `breaking.tools`), validated in the generator with a fixture by data alone, each repeat a whole new swing sent
+   as a click's (others see each by its swing count; wear on a hit only), mouse, controller and touch (a still
+   hold in Break mode with such a tool). Left: the feel in game (no GPU in the cloud).
 18. **Digging marks that look carved** (owner 2026-11-11: "the 'chunks' of dirt aren't at all what we
    discussed. It should be like a normal map change (do we support normal/bump maps)? It's completely flat
    should look like mesh deformation (preferably without actually doing it for performance)"; "That part was
@@ -1082,6 +1139,11 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    held item on `hand.R`; `?fparms=rigid` keeps the old arms for comparison (CHARACTERS.md §11.10). Round 2: the fist round
    a handle as data (`grips`), the arm turned about the hand to show more forearm, and the held item on
    other players' skinned hands turned once, not twice.
+   Owner, 2026-11-12: **"Im noticing my hands look like the new model, but my legs/body doesn't? What's up with
+   that?"** Your own body seen in first person (CHARACTERS.md §5.1: legs, feet, torso when looking down or sliding)
+   is still the old rigid parts (§11.5 "Still rigid"); only the arms moved to the Peasant. Next: draw your own body
+   in first person from the Peasant too (the skinned body minus head, the arm cut hidden where the fp arms draw,
+   the same clips as your shadow), the rigid body retired; `?fparms=rigid` keeps both old for comparison.
 38. **Wandering NPCs** (owner 2026-11-12: "Another item to queue up, wandering NPCs. They'll use the same player
    character model."). People using the Peasant model who wander the world like the animals do. Owner's answers
    (2026-11-12): wander, idle (look around, sit), turn to look at a nearby player, step aside when bumped — no
@@ -1514,6 +1576,9 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
   the in-game editor and a biome choice in the New world form.
 
 ## Future (needs owner answers)
+
+- **Tall grass hides you** (owner 2026-11-12: "I like the hide mechanic idea, save this for later."): tall grass
+  hides a crouched player from animals and NPCs (and deer bed down in it).
 
 - **Geography presets for Realistic worlds** (owner 2026-11-12: "Let's hold that for a possible future feature."):
   Mixed (today), Archipelago (oceanic plates only plus more hotspots: Hawaii-style chains and Japan-style arcs),

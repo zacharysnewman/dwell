@@ -113,6 +113,22 @@ projects each held model in the arms' idle at the arms' FOV (16:9 and 2.18:1): i
 view's area 4 (full size, not shrunk), and through the break and both axe swings nothing in view
 comes inside the arms' near plane (`ARMS_NEAR` + 1 cm).
 
+**Hold to keep swinging (WORK_QUEUE item 17).** Owner, 2026-11-12: "I wanted you to be able to hold
+the key down for tools like the axe." Holding the use (Break) button with a tool whose data says
+`repeatOnHold` swings it again and again until let go: a chopping tool (`tools[].repeatOnHold` in
+`shared/tools/tools.json`: both axes, the sword) as soon as the last swing is over (its whole length and
+`swingSeconds`), a break tool (`breaking.tools[].repeatOnHold` and `repeatS`, default 0.5 s and never
+before its `contactS`: the pickaxes, the shovels) every `repeatS`. Each repeat is a whole new swing,
+aimed and swept when it starts (what is targeted then), sent as a click's is, so others see every swing
+by its swing count; it lands one contact, and a tool wears only on a hit. Letting go stops the repeats;
+the swing under way plays out. The mouse, the controller's Break and, in touch Break mode with such a
+tool, a still hold on the view (`TouchControls::hold_breaks`) all hold it, each releasing its own
+(`dwell-client` `held_use.rs`). The generator validates the fields (a boolean; `repeatS` in
+[max(contactS, 0.1), 5] and only with `repeatOnHold`; a chopping tool's hold set in `tools`, never in
+`breaking.tools`); the fixture stick club repeats by data alone. Tests: `held_use.rs` (n swings for a
+hold of n swing lengths, one contact each; let go mid-swing: that swing ends, no other), `gen.test.mjs`,
+the touch hold (`dwell-game` `touch.rs`).
+
 **Wear.** The stone axe, the stone pickaxe and the wooden shovel survive 32 hits each
 (`shared/tools/tools.json` `durability`; owner, 2026-11-11: "stone pick wears too like axe, same with
 shovel"); the metal axe, pickaxe and shovel 64 each (owner, 2026-11-12: metal tools "have double

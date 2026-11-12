@@ -2,6 +2,72 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.54.161",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.160",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.159",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.158",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.157",
+      "changes": [
+        "Hold the use button to keep swinging an axe, sword, pickaxe or shovel: each swing hits whatever you aim at then, until you let go.",
+        "An axe or sword swing that hits something no longer plays its animation twice: it pulls straight back to rest."
+      ]
+    },
+    {
+      "version": "0.54.156",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.155",
+      "changes": [
+        "Behind the scenes: the native perf harness builds again"
+      ]
+    },
+    {
+      "version": "0.54.154",
+      "changes": [
+        "Bigger worlds (up to 10×) now shape their world map in seconds instead of minutes, and no longer run out of memory starting up.",
+        "The loading screen shows each step of the world map as it's shaped, like \"rivers (5/6), face 1 of 2\", with the bar moving through it.",
+        "If a world's server stops (for example, out of memory), the game now says so instead of only \"Could not connect\"."
+      ]
+    },
+    {
+      "version": "0.54.153",
+      "changes": [
+        "Volumetric clouds take real cloud shapes: flat bases, billowing rounded tops, wispy undersides, leaning in the wind.",
+        "Cloud types by weather: thin stratus sheets, stratocumulus, cumulus and the odd towering cumulonimbus with an anvil.",
+        "Clouds no longer look dithered or pixelated when you fly up to them: smoother sampling, steadier frames and more detail near the cloud layer."
+      ]
+    },
+    {
+      "version": "0.54.152",
+      "changes": [
+        "Forests run much faster: tall grass past its fade-out distance is no longer drawn at all",
+        "Behind the scenes: the far-tree impostors' hand-over distances and view picking (not drawn yet)"
+      ]
+    },
+    {
       "version": "0.54.151",
       "changes": [
         "Behind the scenes: bug notes"

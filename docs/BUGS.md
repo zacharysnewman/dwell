@@ -6,13 +6,16 @@ pins it.
 
 ## Open
 
-### 93. Vertical swings (axe, sword, …) play twice for one swing
+### 94. Jumping into a tree's leaves rubber-bands you toward the ground until you back out
 
-Owner, 2026-11-12: "For vertical swings on axe, sword, etc, it sort of double swings." One vertical swing shows two
-down-strokes (or a stroke, a snap back and a second stroke). Suspects: the vertical clip's keyframes loop or include a
-second stroke; the swing restarted by a second trigger (the click and the hit event, or the server's echo of the
-swing re-starting the local one); the level/vertical choice flipping mid-swing. Check with `clip_probe` and the
-swing's trace, both faces.
+Owner, 2026-11-12: "A bug I just found seems to be a mismatch between server and client for leaves collision.
+Jumping into the leaves of a tree makes you rubberband falling to the ground endlessly until you back out of the
+leaves." Suspects: the client's predicted controller and the server's disagree about leaves — one treats leaf cells
+as solid (or as a climbable/slowing medium) and the other as passable, so every snapshot corrects the predicted
+position and prediction falls again; candidates: leaves' collision shape or `solid` flag read from different data
+(block registry vs the mesher's leaf cards / leaf density), trees composed at chunk load on one side only
+(TREE_GROWTH layer, tombstones/growers) so the server or client has no leaf blocks there, or leaves' `flooded`/state
+aliasing differing across the registry sync.
 
 ### 92. Downhill water shows edge triangles and thin lines at its ½ m level steps
 
@@ -27,7 +30,7 @@ are averaged differently, so a corner shared by three levels leaves a sliver or 
 smoothing across a step (T-junction cracks showing the sky/specular through). Expected: a downhill river reads as
 one continuous sloped surface (or clean steps), with no wedges or cracks.
 
-### 91. A 10× world sits for minutes on "Shaping the world map… 0/2" with no sign of progress
+### 91. A 10× world sits for minutes on "Shaping the world map… 0/2" with no sign of progress (fixed natively after 0.54.143; the owner's browser check outstanding)
 
 Owner, 2026-11-12 (M4 Max MacBook Pro): "I tried to start a 10x world … And it's up to 3 minutes so far on 'Shaping the
 world map...' 0/2. Doesn't indicate well what it's doing." At 10× the world map runs at a 1 km cell (about 1 M cells
@@ -47,6 +50,26 @@ Then: "Oh I see, 'Could not connect to 10x...'" — the empty sky is the join fa
 "Could not connect to …" status), not missing terrain: the in-browser server either died (memory, #76) or didn't
 answer within the client's connect timeouts (`transport.rs` CONNECT_TIMEOUT_MS 8 s, `peer.ts` 20 s) while still busy.
 
+**Cause and fix (2026-11-12, measured natively, BIG_MAP.md §3.1).** Two steps of a face's map grew with the
+radius, not the cell count: the uplift measured every land cell against every segment of every range (300 ranges at
+10×: 17 s), and the channels' index listed each ~1 km river segment in thousands of 64 m squares (21 s and a **12.4 GB**
+index). One 10× face took 43.7 s natively (1×: 1.9 s) and a native 10× server 114 s at a 12.4 GB peak. In the browser
+that is past the 4 GB of WebAssembly memory: the map workers never finished (so the stage stayed at 0/2: no face's
+event was lost, none arrived), the local server built its own maps inside its "Finding a place to stand" stage (the spawn search itself is
+at most 1.2 s natively at every size) and its worker died, and the page said "Could not
+connect" over an empty sky. The local world has no connect timeout (the loopback waits for the worker's `ready`), so
+no timeout was to blame. Now: the spines are indexed by where they reach and the channels' square follows the cell
+(both exact: the 1× goldens are unchanged); a 10× face is 3.1 s and a 10× server starts in 6.2 s at 484 MB.
+`dwell-worldgen/tests/map_build_budget.rs` pins the op counts per cell at 1× and 10× on both faces (red on the old code:
+21 322 segment tests a land cell at 10× against 208 at 1×). The map builder reports its steps (`progress.rs`, the labels
+`loading.json` `mapSteps`) through the map worker to the stage ("Shaping the world map — rivers (5/6), face 1 of 2", the
+bar moving inside each face; `ui/mapProgress.ts`, Vitest in `mapProgress.test.ts` and `worldMaps.test.ts`); a failed map
+build ends the stage saying so; a dying local world worker says it ran out of memory (`workerFailure`,
+`loopback.test.ts`) and closes the session with why, also once playing. `tests/world_size.rs`
+`a_10x_world_s_spawn_stands_on_its_ground` (both faces) checks the 10× spawn is on the disc with its feet on solid
+ground. Not checked here (no GPU in the cloud session): the 10× world in the browser, walking there, and its memory
+(#76); the 10× channel index still holds ~16 M entries.
+
 ### 90. Volumetric clouds look badly dithered and pixelated where they overlap, mostly at cloud level
 
 Owner, 2026-11-12: "The clouds also look really badly dithered when they overlap? I think mostly when you get to their
@@ -55,6 +78,13 @@ accumulation; near or inside the layer the reprojection fails (the camera moves 
 fast), so the history is rejected and the raw jittered low-res result shows, then a plain upsample makes it blocky.
 Fixes to weigh: blue-noise jitter, a depth-aware (bilateral) upsample, neighbourhood clamping instead of history
 rejection, more steps or full resolution when the eye is in or near the layer.
+**Fixed in code (2026-11-12, branch `claude/cloud-shapes`, CLOUDS.md §9.6), the look to check locally:** the jitter
+is a baked blue-noise tile; a resolve pass clamps the history into the texel's 3 × 3 neighbourhood (matching scene
+only) instead of dropping it as the eye moves; near or in the layer a tier takes its `nearSteps`/`nearDivisor`
+(Medium ½ and 14 steps, High 24 steps); the composite keeps §8.9's depth-aware upsample. Tests (`dwell-look`
+`shape_tests`): the resolve's variance under the jitter sequence with the eye moving is under a quarter of the raw
+march's (the old pass showed the raw march there), stale history is clamped, a silhouette stays sharp, the near tier
+comes from the data. Move to Fixed once the owner's look at cloud level confirms it.
 
 ### 89. Sub-60 fps flying at High on the owner's M1 MacBook Air (measured; partial)
 
@@ -402,6 +432,25 @@ face, or the placement check against its shape.
 
 
 ## Fixed
+
+### 93. Vertical swings (axe, sword, …) play twice for one swing (fixed after 0.54.14x; the look in game left local)
+
+Owner, 2026-11-12: "For vertical swings on axe, sword, etc, it sort of double swings." One vertical swing shows two
+down-strokes (or a stroke, a snap back and a second stroke). Suspects: the vertical clip's keyframes loop or include a
+second stroke; the swing restarted by a second trigger (the click and the hit event, or the server's echo of the
+swing re-starting the local one); the level/vertical choice flipping mid-swing. Check with `clip_probe` and the
+swing's trace, both faces.
+Owner, 2026-11-12, clarifying: **"The animation double swings"**: the vertical swing's animation itself (the arms and
+tool show two strokes per swing), not two hits.
+Cause (`clip_probe`, a swing played frame by frame through the arms' animator as `game.rs` drives it): the miss's clip
+has one stroke; a **hit** drew three. After the hit-stop the pull-out played the clip backwards from contact to its start,
+so the head went back up over the shoulder (screen y +3.3) and came down to rest again, and when the swing ended the
+clip was let go at that start (`drive_action(None)`) and ran on by itself: the whole swing a second time. The level
+swing did the same, reading as a pull back and a second chop. Fixed: the contact's pose is held and faded straight
+back to the arms' rest over `recoverHitS` (`SwingRun::clip_weight`, `Animator::drive_action_weighted`), and an ended
+swing stops its clip (`ArmsDrive::Release` → `Animator::stop_action`). Test: `clip_probe`
+`one_swing_draws_one_stroke_hit_or_miss` (vertical and level, a hit at the arc's middle, an early hit and a miss: one
+stroke, back at rest), red on the unfixed code (vertical hit: 3 down-strokes) → green.
 
 ### 88. Volumetric clouds z-fight against tall terrain (fixed after 0.54.135; the browser check left local)
 

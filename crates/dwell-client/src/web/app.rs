@@ -593,7 +593,9 @@ impl Client {
         if s.game.is_none() {
             s.start_game();
         }
-        // A still hold on the view in Place mode places and builds on (docs/ITEMS.md §5).
+        // A still hold on the view in Place mode places and builds on (docs/ITEMS.md §5); in
+        // Break mode with a tool that keeps swinging, it swings on (WORK_QUEUE item 17).
+        s.touch.hold_breaks = s.game.as_ref().is_some_and(|g| g.use_repeats());
         if let Some(e) = s.touch.hold_due(now_ms) {
             s.on_touch_event(e, now_ms);
         }
@@ -1081,6 +1083,7 @@ impl Client {
         // A button released while the window was away sends no mouseup here.
         if let Some(g) = &mut s.game {
             g.release_place(Holder::Mouse);
+            g.release_use(Holder::Mouse);
         }
     }
     /// Presses or releases a key programmatically (tests and automation).
@@ -1098,6 +1101,7 @@ impl Client {
         s.input.pointer_locked = locked;
         if !locked && let Some(g) = &mut s.game {
             g.release_place(Holder::Mouse);
+            g.release_use(Holder::Mouse);
         }
     }
     #[wasm_bindgen(js_name = mouseMove)]
@@ -1126,14 +1130,18 @@ impl Client {
             s.edit_held(action, Holder::Mouse, now_ms);
         }
     }
-    /// A `mouseup`: letting go of Place stops building on (docs/ITEMS.md §5).
+    /// A `mouseup`: letting go of Place stops building on (docs/ITEMS.md §5), of Break a held
+    /// tool's swinging on (WORK_QUEUE item 17).
     #[wasm_bindgen(js_name = mouseUp)]
     pub fn mouse_up(&self, button: i16) {
         let mut s = self.inner.borrow_mut();
-        if s.input.mouse_down(button) == Some(EditAction::Place)
-            && let Some(g) = &mut s.game
-        {
-            g.release_place(Holder::Mouse);
+        let action = s.input.mouse_down(button);
+        if let Some(g) = &mut s.game {
+            match action {
+                Some(EditAction::Place) => g.release_place(Holder::Mouse),
+                Some(EditAction::Break) => g.release_use(Holder::Mouse),
+                None => {}
+            }
         }
     }
     /// The build mode's label (`Line`, `Flat`; data), for the HUD and the touch Build button.
@@ -1194,7 +1202,7 @@ impl Client {
         for a in actions {
             match a {
                 A::Break => {
-                    s.edit(EditAction::Break, now_ms);
+                    s.edit_held(EditAction::Break, Holder::Gamepad, now_ms);
                 }
                 A::Place => {
                     s.edit_held(EditAction::Place, Holder::Gamepad, now_ms);
@@ -1238,6 +1246,12 @@ impl Client {
             && let Some(g) = &mut s.game
         {
             g.release_place(Holder::Gamepad);
+        }
+        // Break let go (or a menu opened): a held tool stops swinging on.
+        if (!playing || !s.input.gamepad.down(A::Break))
+            && let Some(g) = &mut s.game
+        {
+            g.release_use(Holder::Gamepad);
         }
         shell
     }
@@ -3190,11 +3204,17 @@ impl Inner {
                 self.edit(action, now_ms);
             }
             TouchEvent::Hold => {
-                self.edit_held(EditAction::Place, Holder::Touch, now_ms);
+                // Place mode builds on; Break mode keeps a held tool swinging (WORK_QUEUE item 17).
+                let action = self
+                    .game
+                    .as_ref()
+                    .map_or(EditAction::Break, |g| g.interaction.touch_action);
+                self.edit_held(action, Holder::Touch, now_ms);
             }
             TouchEvent::HoldEnd => {
                 if let Some(g) = &mut self.game {
                     g.release_place(Holder::Touch);
+                    g.release_use(Holder::Touch);
                 }
             }
             TouchEvent::BuildMode => self.cycle_build_mode(),

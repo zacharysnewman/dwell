@@ -14,6 +14,20 @@ export type GuestOutput = Extract<FromWorker, { session: number }>;
 export type StageReport = (id: string, phase: 'begin' | 'end', atMs: number) => void;
 
 /**
+ * What the player reads when the local world's worker failed (BUGS.md #91: a 10× world's server
+ * ran out of WebAssembly memory and the page said only "Could not connect"): a WebAssembly trap or
+ * allocation failure is named as the server running out of memory, with the browser's words kept.
+ */
+export function workerFailure(message: string): string {
+  const m = message.trim() || 'it stopped without saying why';
+  const memory =
+    /out of memory|memory access out of bounds|unreachable|could not allocate|capacity overflow|allocation failed|Maximum call stack|WebAssembly\.Memory/i;
+  return memory.test(m)
+    ? `The world's server ran out of memory and stopped (${m}). A smaller world size may fit.`
+    : `The world's server stopped (${m}).`;
+}
+
+/**
  * Transport to the integrated server running in a local-mode worker (ARCHITECTURE.md §8.1).
  * Carries the same protocol bytes as the network transports.
  */
@@ -43,6 +57,10 @@ export class LoopbackTransport implements Transport {
   private constructor(private readonly worker: Worker) {
     worker.onmessage = (e: MessageEvent<FromWorker>) => {
       this.onWorkerMessage(e.data);
+    };
+    // A worker that dies once playing (out of memory) closes the session with why, not silently.
+    worker.onerror = (e) => {
+      if (!this.closed) this.finish(workerFailure(e.message));
     };
   }
 
@@ -82,7 +100,7 @@ export class LoopbackTransport implements Transport {
         }
       };
       worker.onerror = (e) => {
-        reject(new Error(e.message || 'local world worker failed'));
+        reject(new Error(workerFailure(e.message)));
       };
       worker.postMessage({
         t: 'start',

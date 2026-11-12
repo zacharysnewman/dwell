@@ -159,6 +159,116 @@ pub fn clouds_for(device_type: wgpu::DeviceType, quality: CloudQuality) -> Cloud
     }
 }
 
+/// The clouds' baked shape noise on the GPU (docs/CLOUDS.md §9.3): the base and detail 3D textures
+/// at the data's sizes (`form.baseSize`, `form.detailSize`; RGBA8), made empty at start and filled
+/// slab by slab from the job workers' bakes (`Job::CloudNoise`), and their repeating trilinear
+/// sampler. The volume draws once every slab of both has arrived.
+pub struct CloudNoise {
+    base: (wgpu::Texture, wgpu::TextureView),
+    detail: (wgpu::Texture, wgpu::TextureView),
+    sampler: wgpu::Sampler,
+    /// The slices of each texture written so far (base, detail).
+    written: [u32; 2],
+    /// The bake was handed to the game (`Renderer::take_cloud_noise_request`).
+    requested: bool,
+}
+
+impl CloudNoise {
+    fn new(device: &wgpu::Device, t: &dwell_look::clouds::CloudTunables) -> Self {
+        let make = |label, size: u32| {
+            let texture = device.create_texture(&wgpu::TextureDescriptor {
+                label: Some(label),
+                size: wgpu::Extent3d {
+                    width: size,
+                    height: size,
+                    depth_or_array_layers: size,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D3,
+                format: wgpu::TextureFormat::Rgba8Unorm,
+                usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+                view_formats: &[],
+            });
+            let view = texture.create_view(&Default::default());
+            (texture, view)
+        };
+        let repeat = wgpu::AddressMode::Repeat;
+        Self {
+            base: make("cloud base noise", t.form.base_size),
+            detail: make("cloud detail noise", t.form.detail_size),
+            sampler: device.create_sampler(&wgpu::SamplerDescriptor {
+                label: Some("cloud noise"),
+                address_mode_u: repeat,
+                address_mode_v: repeat,
+                address_mode_w: repeat,
+                mag_filter: wgpu::FilterMode::Linear,
+                min_filter: wgpu::FilterMode::Linear,
+                ..Default::default()
+            }),
+            written: [0, 0],
+            requested: false,
+        }
+    }
+
+    /// Both textures are whole.
+    fn ready(&self) -> bool {
+        self.written[0] >= self.base.0.size().depth_or_array_layers
+            && self.written[1] >= self.detail.0.size().depth_or_array_layers
+    }
+
+    fn write(&mut self, queue: &wgpu::Queue, detail: bool, z0: u32, texels: &[u8]) {
+        let (tex, k) = if detail {
+            (&self.detail.0, 1)
+        } else {
+            (&self.base.0, 0)
+        };
+        let n = tex.size().width;
+        let slices = (texels.len() / (4 * (n * n) as usize)) as u32;
+        if slices == 0 || z0 + slices > n {
+            return;
+        }
+        queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: tex,
+                mip_level: 0,
+                origin: wgpu::Origin3d { x: 0, y: 0, z: z0 },
+                aspect: wgpu::TextureAspect::All,
+            },
+            texels,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(4 * n),
+                rows_per_image: Some(n),
+            },
+            wgpu::Extent3d {
+                width: n,
+                height: n,
+                depth_or_array_layers: slices,
+            },
+        );
+        self.written[k] += slices;
+    }
+}
+
+/// The clouds' shape-noise bake as worker jobs (`Job::CloudNoise`): (detail, z0, z1) slabs of at
+/// most `slices` slices each, the base's then the detail's.
+pub fn cloud_noise_slabs(
+    t: &dwell_look::clouds::CloudTunables,
+    slices: u32,
+) -> Vec<(bool, u32, u32)> {
+    let mut out = Vec::new();
+    for (detail, size) in [(false, t.form.base_size), (true, t.form.detail_size)] {
+        let mut z = 0;
+        while z < size {
+            let z1 = (z + slices.max(1)).min(size);
+            out.push((detail, z, z1));
+            z = z1;
+        }
+    }
+    out
+}
+
 /// The volumetric clouds' buffer size for a drawing buffer of `size` at `tier` (its resolution
 /// divisor, rounded up); 1 × 1 without the volume.
 pub fn cloud_buffer_size(
@@ -1335,6 +1445,13 @@ pub struct Renderer {
     /// The volumetric clouds pass (docs/CLOUDS.md §8.6): its group layout, uniform, pipeline, the
     /// last frame's camera (right, up, forward, tangents; the eye) and the frame count (jitter).
     cloud_layout: wgpu::BindGroupLayout,
+    /// The clouds' march group's layout and the baked shape noise (docs/CLOUDS.md §9.3).
+    cloud_march_layout: wgpu::BindGroupLayout,
+    cloud_noise: CloudNoise,
+    /// The resolve (BUGS.md #90): this frame's march with the clamped history.
+    cloud_resolve_pipeline: pipeline::Lazy,
+    /// Whether the eye was near the cloud layer last frame (`near_layer`'s band).
+    cloud_near: std::cell::Cell<bool>,
     cloud_prev_buffer: wgpu::Buffer,
     /// The run-time plumes' uniform (docs/CLOUDS.md §8.7), written each frame from `plumes`.
     cloud_plume_buffer: wgpu::Buffer,
@@ -2070,6 +2187,8 @@ impl Renderer {
         // The volumetric clouds pass (docs/CLOUDS.md §8.6): the march into the clouds buffer and
         // its distances, at the tier's reduced size, over the last frame's (group 3).
         let cloud_layout = frame::cloud_history_layout(&device);
+        let cloud_march_layout = frame::cloud_march_layout(&device);
+        let cloud_noise = CloudNoise::new(&device, &CLOUDS);
         let cloud_prev_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("cloud history"),
             size: frame::CLOUD_PREV_BYTES,
@@ -2088,7 +2207,7 @@ impl Renderer {
                 Some(&frame_layout),
                 Some(&draw_layout),
                 Some(&scene_read_layout),
-                Some(&cloud_layout),
+                Some(&cloud_march_layout),
             ],
             immediate_size: 0,
         });
@@ -2112,6 +2231,46 @@ impl Renderer {
                             entry_point: Some("clouds_fs"),
                             compilation_options: Default::default(),
                             targets: &[Some(frame::CLOUDS.into()), Some(frame::CLOUD_DIST.into())],
+                        }),
+                        primitive: Default::default(),
+                        depth_stencil: None,
+                        multisample: Default::default(),
+                        multiview_mask: None,
+                        cache: None,
+                    },
+                )
+            })
+        };
+        let cloud_resolve_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("clouds resolve"),
+            bind_group_layouts: &[
+                Some(&frame_layout),
+                Some(&draw_layout),
+                Some(&scene_read_layout),
+                Some(&cloud_layout),
+            ],
+            immediate_size: 0,
+        });
+        let cloud_resolve_pipeline = {
+            let (device, module, layout) =
+                (device.clone(), module.clone(), cloud_resolve_layout.clone());
+            pipeline::Lazy::new(move || {
+                crate::render::pipeline::create(
+                    &device,
+                    &wgpu::RenderPipelineDescriptor {
+                        label: Some("clouds resolve"),
+                        layout: Some(&layout),
+                        vertex: wgpu::VertexState {
+                            module: &module,
+                            entry_point: Some("sky_vs"),
+                            compilation_options: Default::default(),
+                            buffers: &[],
+                        },
+                        fragment: Some(wgpu::FragmentState {
+                            module: &module,
+                            entry_point: Some("clouds_resolve_fs"),
+                            compilation_options: Default::default(),
+                            targets: &[Some(frame::CLOUDS.into())],
                         }),
                         primitive: Default::default(),
                         depth_stencil: None,
@@ -2331,6 +2490,10 @@ impl Renderer {
             bloom_layout,
             bloom_pipelines,
             cloud_layout,
+            cloud_march_layout,
+            cloud_noise,
+            cloud_resolve_pipeline,
+            cloud_near: std::cell::Cell::new(false),
             cloud_prev_buffer,
             cloud_plume_buffer,
             plumes: dwell_look::plumes::PlumeList::new(&CLOUDS),
@@ -2668,7 +2831,30 @@ impl Renderer {
     /// The volumetric clouds' tier this frame draws (`clouds_for`, then the data's `tiers`); none
     /// for the 2D deck or no clouds.
     fn cloud_tier(&self) -> Option<dwell_look::clouds::VolumeTier> {
-        Some(clouds_for(self.adapter, self.clouds).volume(&CLOUDS)).filter(|t| t.steps > 0)
+        Some(self.clouds_now().volume(&CLOUDS))
+            .filter(|t| t.steps > 0)
+            .map(|t| t.at(self.cloud_near.get()))
+    }
+    /// The Clouds setting this frame draws (`clouds_for`): the 2D deck (Low) while a volume tier's
+    /// shape noise is still baking (docs/CLOUDS.md §9.4).
+    fn clouds_now(&self) -> CloudQuality {
+        let q = clouds_for(self.adapter, self.clouds);
+        if q.volume(&CLOUDS).steps > 0 && !self.cloud_noise.ready() {
+            CloudQuality::Low
+        } else {
+            q
+        }
+    }
+    /// Whether the clouds' shape noise is wanted and not yet asked for: the game then bakes it in
+    /// its job workers ([`Self::cloud_noise_slab`]). Asking marks it asked.
+    pub fn take_cloud_noise_request(&mut self) -> bool {
+        let wanted = clouds_for(self.adapter, self.clouds).volume(&CLOUDS).steps > 0;
+        wanted && !std::mem::replace(&mut self.cloud_noise.requested, true)
+    }
+    /// A baked slab of the clouds' shape noise (`detail`: the detail texture, else the base; slices
+    /// `z0..`) into its texture; the volume draws once both are whole.
+    pub fn cloud_noise_slab(&mut self, detail: bool, z0: u32, texels: &[u8]) {
+        self.cloud_noise.write(&self.queue, detail, z0, texels);
     }
     /// The clouds pass's uniform (`CloudPrev`) for this frame's camera `view` (right, up, forward,
     /// tangents) and eye, and the tier's history blend: the last frame's camera, the share of the
@@ -2679,7 +2865,10 @@ impl Renderer {
         let prev = self.cloud_prev.replace(Some((view, eye)));
         let n = self.cloud_frames.get().wrapping_add(1);
         self.cloud_frames.set(n);
-        cloud_prev_block(prev, view, eye, blend, n)
+        let mut block = cloud_prev_block(prev, view, eye, blend, n);
+        // The pass's divisor: the scene span's footprint per texel (cloud_scene_span).
+        block[4][3] = self.cloud_tier().map_or(1, |t| t.divisor) as f32;
+        block
     }
     /// The Model detail setting (ADR 0070 §10): every skinned model at `level`
     /// (`dwell_models::DETAIL_LEVELS`).
@@ -2889,6 +3078,7 @@ impl Renderer {
         }
         if self.cloud_tier().is_some() {
             set.push(&self.clouds_pipeline);
+            set.push(&self.cloud_resolve_pipeline);
         }
         if self.shaft_tier().is_some() {
             set.push(&self.shafts_pipeline);
@@ -3259,14 +3449,18 @@ impl Renderer {
             self.eye[0].rem_euclid(WIND_PERIOD) as f32,
             self.eye[2].rem_euclid(WIND_PERIOD) as f32,
         ]);
-        let clouds = cloud_uniforms(
+        let mut clouds = cloud_uniforms(
             &CLOUDS,
             self.eye,
             self.face,
             self.cloud_seconds,
-            clouds_for(self.adapter, self.clouds),
+            self.clouds_now(),
             self.cloud_coverage,
         );
+        // Near or in the layer the tier's near steps (BUGS.md #90).
+        if let Some(t) = self.cloud_tier() {
+            clouds[2][3] = t.steps as f32 + t.light_steps as f32 / 8.0;
+        }
         put(&clouds[0]);
         put(&clouds[1]);
         put(&clouds[2]);
@@ -3276,7 +3470,7 @@ impl Renderer {
             self.eye,
             self.face.other(),
             self.cloud_seconds,
-            clouds_for(self.adapter, self.clouds),
+            self.clouds_now(),
             self.cloud_coverage,
         );
         put(&other[0]);
@@ -3890,6 +4084,13 @@ impl Renderer {
     /// The frame's targets, made again when the size changes or the water starts or stops
     /// reading the scene.
     fn ensure_targets(&mut self) {
+        // Near or in the cloud layer, a tier marches with its near steps and divisor (BUGS.md #90).
+        let eye_h = self.face.y(self.eye[1]) - dwell_protocol::world::SEA_LEVEL_M;
+        self.cloud_near.set(dwell_look::clouds::near_layer(
+            &CLOUDS.volume,
+            eye_h,
+            self.cloud_near.get(),
+        ));
         // The under-water copy only where the water reads the scene (Medium and High).
         let under = self.water().reads_scene();
         // The shafts' buffer at the tier's size (1 × 1 with none).
@@ -3926,6 +4127,12 @@ impl Renderer {
                 cloud_layout: &self.cloud_layout,
                 cloud_prev: &self.cloud_prev_buffer,
                 cloud_plumes: &self.cloud_plume_buffer,
+                cloud_march_layout: &self.cloud_march_layout,
+                cloud_noise: (
+                    &self.cloud_noise.base.1,
+                    &self.cloud_noise.detail.1,
+                    &self.cloud_noise.sampler,
+                ),
                 bloom,
                 bloom_layout: &self.bloom_layout,
             },
@@ -4543,7 +4750,7 @@ impl Renderer {
                 self.eye,
                 self.face,
                 self.cloud_seconds,
-                clouds_for(self.adapter, self.clouds),
+                self.clouds_now(),
             );
             self.queue
                 .write_buffer(&self.cloud_plume_buffer, 0, floats(&plumes));
@@ -4557,7 +4764,7 @@ impl Renderer {
                     label: Some("clouds"),
                     color_attachments: &[
                         Some(wgpu::RenderPassColorAttachment {
-                            view: &targets.clouds.1,
+                            view: &targets.cloud_raw.1,
                             depth_slice: None,
                             resolve_target: None,
                             ops: clear,
@@ -4575,8 +4782,28 @@ impl Renderer {
                 pass.set_bind_group(0, &self.frame_groups[scene_passes - 1], &[]);
                 pass.set_bind_group(1, &self.draw_group, &[]);
                 pass.set_bind_group(2, &targets.scene_read, &[]);
-                pass.set_bind_group(3, &targets.cloud_group, &[]);
+                pass.set_bind_group(3, &targets.cloud_march_group, &[]);
                 pass.set_pipeline(&self.clouds_pipeline);
+                pass.draw(0..3, 0..1);
+                calls += 1;
+            }
+            // The resolve (BUGS.md #90): the raw march with the history, clamped to its neighbours.
+            {
+                let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("clouds resolve"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: &targets.clouds.1,
+                        depth_slice: None,
+                        resolve_target: None,
+                        ops: clear,
+                    })],
+                    ..Default::default()
+                });
+                pass.set_bind_group(0, &self.frame_groups[scene_passes - 1], &[]);
+                pass.set_bind_group(1, &self.draw_group, &[]);
+                pass.set_bind_group(2, &targets.scene_read, &[]);
+                pass.set_bind_group(3, &targets.cloud_group, &[]);
+                pass.set_pipeline(&self.cloud_resolve_pipeline);
                 pass.draw(0..3, 0..1);
                 calls += 1;
             }
@@ -6061,6 +6288,12 @@ impl crate::game::Scene for Renderer {
     fn set_lod_map(&mut self, map: Option<&crate::lod_map::LodMap>) {
         self.lod_map = map.filter(|_| self.lod_map_supported()).cloned();
     }
+    fn take_cloud_noise_request(&mut self) -> bool {
+        Renderer::take_cloud_noise_request(self)
+    }
+    fn cloud_noise_slab(&mut self, detail: bool, z0: u32, texels: &[u8]) {
+        Renderer::cloud_noise_slab(self, detail, z0, texels);
+    }
     fn lod_map_tile(&mut self, ring: usize, rect: crate::lod_map::Rect, rgba: &[u8]) {
         if !self.lod_map_supported() {
             return;
@@ -7507,6 +7740,8 @@ mod tests {
             divisor,
             history_blend: 0.2,
             plume_steps: 8,
+            near_steps: 24,
+            near_divisor: 1,
         };
         assert_eq!(cloud_buffer_size((1280, 720), Some(tier(2))), (640, 360));
         assert_eq!(cloud_buffer_size((1281, 721), Some(tier(4))), (321, 181));
