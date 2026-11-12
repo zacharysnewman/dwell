@@ -550,6 +550,58 @@ fn the_lod_cache_is_dropped_when_the_registry_changes() {
 }
 
 #[test]
+fn the_lod_cache_is_dropped_when_it_was_saved_under_another_octree_root() {
+    // BIG_MAP.md M1: the root grew from level 12 to 15, so a saved LOD row's key (counted from the
+    // root's corner) means another section. A world saved before (no `lod_root`) or under another
+    // root opens with its LOD cache dropped (rebuilt from the chunks), its meta kept.
+    let path = temp_path("lod-root");
+    let row = SavedLodSection {
+        coord: LodCoord::new(1, 0, 0, 0),
+        revision: 1,
+        dirty: false,
+        encoded: vec![7],
+    };
+    for old in [None, Some(12u64)] {
+        {
+            let db = WorldDb::open(&path).expect("creates");
+            db.save(&SaveBatch {
+                meta: Some(meta()),
+                lod_sections: vec![row.clone()],
+                ..Default::default()
+            })
+            .expect("save");
+        }
+        assert_eq!(
+            WorldDb::open(&path).unwrap().lod_sections(8).0.len(),
+            1,
+            "same root: kept"
+        );
+        {
+            let raw = Database::create(&path).expect("raw");
+            let txn = raw.begin_write().expect("write");
+            {
+                let mut t = txn.open_table(META).expect("table");
+                match old {
+                    None => {
+                        t.remove("lod_root").expect("remove");
+                    }
+                    Some(v) => {
+                        t.insert("lod_root", v.to_le_bytes().as_slice())
+                            .expect("insert");
+                    }
+                }
+            }
+            txn.commit().expect("commit");
+        }
+        let db = WorldDb::open(&path).expect("reopens");
+        assert!(db.lod_sections(8).0.is_empty(), "{old:?}: dropped");
+        assert!(db.load_meta().is_some(), "only the cache goes");
+        drop(db);
+        let _ = std::fs::remove_file(&path);
+    }
+}
+
+#[test]
 fn peeking_a_world_files_meta_writes_nothing() {
     let path = temp_path("untouched");
     {

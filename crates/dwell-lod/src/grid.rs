@@ -16,7 +16,7 @@ pub type Vec3 = [f64; 3];
 pub const ORIGIN: Vec3 = [ORIGIN_X as f64, ORIGIN_Y as f64, ORIGIN_Z as f64];
 
 /// The deepest level whose sections never straddle the midplane: it lies on their boundaries
-/// (level 11, 65,536 m sections; only the root holds both faces).
+/// (level 14 since BIG_MAP.md M1's root, 524,288-row sections; only the root holds both faces).
 pub const MAX_ALIGNED_LEVEL: i32 = max_aligned_level();
 
 const fn max_aligned_level() -> i32 {
@@ -116,8 +116,9 @@ mod tests {
         }
         assert!(in_world(lc(MAX_LEVEL, 0, 0, 0)));
         assert!(!in_world(lc(MAX_LEVEL, 1, 0, 0)));
-        assert_eq!(MAX_LEVEL, 12);
-        assert_eq!(section_size(MAX_LEVEL), 1 << 17);
+        // BIG_MAP.md M1: the root holds the largest world size's disc (10×, 500 km).
+        assert_eq!(MAX_LEVEL, 15);
+        assert_eq!(section_size(MAX_LEVEL), 1 << 20);
         assert_eq!(
             ancestor(
                 lod_of_chunk(ChunkCoord::new(-1563, MIN_CHUNK_Y, 1562)),
@@ -129,10 +130,15 @@ mod tests {
 
     #[test]
     fn the_root_is_centred_on_the_origin_rows_span_the_build_sphere() {
-        assert_eq!(ORIGIN, [-65_536.0; 3]);
+        assert_eq!(ORIGIN, [-524_288.0; 3]);
         let rows = |level: i32| last_row(level) - first_row(level) + 1;
-        assert_eq!([rows(0), rows(6), rows(8), rows(12)], [3126, 50, 14, 1]);
-        assert_eq!(first_row(12), 0);
+        // The build sphere's rows (today's: the bounds radius is the 1× disc's) at each level: the
+        // root's corner moved, its levels up to 11 kept their counts.
+        assert_eq!(
+            [rows(0), rows(6), rows(8), rows(12), rows(15)],
+            [3126, 50, 14, 2, 1]
+        );
+        assert_eq!(first_row(15), 0);
         let bottom = ChunkCoord::new(0, MIN_CHUNK_Y, 0);
         assert_eq!(lod_of_chunk(bottom).j, first_row(0));
         assert!(in_world(lod_of_chunk(bottom)));
@@ -147,17 +153,18 @@ mod tests {
             MAX_CHUNK_Y + 1,
             0
         ))));
-        let j8 = first_row(8);
-        assert!(in_world(lc(8, 8, j8, 8)));
-        assert!(in_world(lc(8, 8, j8 + 13, 8)));
-        assert!(!in_world(lc(8, 8, j8 - 1, 8)));
-        assert!(!in_world(lc(8, 8, j8 + 14, 8)));
+        // The level-8 column at the origin (the root's corner is 2^(MAX_LEVEL-1-8) of them away).
+        let (j8, o8) = (first_row(8), 1 << (MAX_LEVEL - 9));
+        assert!(in_world(lc(8, o8, j8, o8)));
+        assert!(in_world(lc(8, o8, j8 + 13, o8)));
+        assert!(!in_world(lc(8, o8, j8 - 1, o8)));
+        assert!(!in_world(lc(8, o8, j8 + 14, o8)));
         // Inside the rows but wholly outside the sphere: not in the world (ADR 0025).
         // (The sphere is in cells: 45,000 rows is 22.5 km up.)
         assert!(!in_world(section_at(4, [30_000.0, 22_500.0, 0.0])));
         assert!(in_world(section_at(4, [20_000.0, 22_500.0, 0.0])));
-        // Up to level 11 a section lies wholly on one face; only the root holds the midplane.
-        assert_eq!(MAX_ALIGNED_LEVEL, 11);
+        // Up to level 14 a section lies wholly on one face; only the root holds the midplane.
+        assert_eq!(MAX_ALIGNED_LEVEL, 14);
         let mid = dwell_world::MIDPLANE_M;
         for level in 0..=MAX_ALIGNED_LEVEL {
             let s = section_at(level, [0.0, mid, 0.0]);
@@ -172,18 +179,20 @@ mod tests {
 
     #[test]
     fn numbers_sections_uniquely_ids_differ_across_rows_and_fall_outside_the_world() {
+        // The column at the origin (the root's corner is 2^(MAX_LEVEL-1) chunks away).
+        const C: i32 = 1 << (MAX_LEVEL - 1);
         let mut ids = std::collections::HashSet::new();
         for j in first_row(0)..=last_row(0) {
-            ids.insert(lod_id(0, 2048, j, 2048));
+            ids.insert(lod_id(0, C, j, 2048));
         }
         assert_eq!(ids.len(), 3126);
         assert!(!ids.contains(&-1));
-        assert_eq!(lod_id(0, 2048, first_row(0) - 1, 2048), -1);
-        assert_eq!(lod_id(0, 2048, last_row(0) + 1, 2048), -1);
-        assert_eq!(lod_id(0, 4096, first_row(0), 0), -1);
+        assert_eq!(lod_id(0, C, first_row(0) - 1, 2048), -1);
+        assert_eq!(lod_id(0, C, last_row(0) + 1, 2048), -1);
+        assert_eq!(lod_id(0, 2 * C, first_row(0), 0), -1);
         assert_ne!(lod_id(1, 0, first_row(1), 0), lod_id(0, 0, first_row(0), 0));
         // Exact in a double (the TS kept ids as numbers).
-        let top = lod_id(0, 4095, last_row(0), 4095);
+        let top = lod_id(0, 2 * C - 1, last_row(0), 2 * C - 1);
         assert!(top > 0 && top < 1 << 53);
     }
 
@@ -252,7 +261,11 @@ mod tests {
         assert!(!is_face_b_section(a));
         assert!(is_face_b_section(b));
         assert!(is_face_b_section(section_at(11, [0.0, -3000.0, 0.0])));
-        assert!(!is_face_b_section(section_at(12, [0.0, -3000.0, 0.0]))); // straddles
+        assert!(is_face_b_section(section_at(14, [0.0, -3000.0, 0.0])));
+        assert!(!is_face_b_section(section_at(
+            MAX_LEVEL,
+            [0.0, -3000.0, 0.0]
+        ))); // straddles
         // The mirror of the section's top is the mirrored section's bottom.
         let top = section_origin(b).y + section_size(2);
         assert_eq!(mirror_section_origin(b), FaceFrame::B.span(top, 0));

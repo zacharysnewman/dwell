@@ -2459,14 +2459,19 @@ high above the disc — is drawn, at a detail that drops with distance.
 
 **Grid.** A 3D octree of **sections**. At level L a cell is a 2^L m cube and a section is 32³
 cells (32 × 2^L m on a side); **level 0 is the chunk grid**. Section coordinates `(L, i, j, k)`
-count from the root's corner (−2¹⁶, −2¹⁶, −2¹⁶), so cells of consecutive levels nest exactly and
-one root section at `LOD_MAX_LEVEL` = 12 (131 km), centred on the origin, holds the whole disc and
-build volume (**Phase 16**; 19 and 16,777 km before). Sections wholly outside the build volume are
+count from the root's corner (−2¹⁹, −2¹⁹, −2¹⁹), so cells of consecutive levels nest exactly and
+one root section at `LOD_MAX_LEVEL` = 15 (1,049 km), centred on the origin, holds the whole disc and
+build volume of the largest world size (**[built, BIG_MAP.md M1]**, protocol v23: `lod.maxLevel` is
+checked by `shared/protocol/gen.mjs` against `worldSizes`, 10× = 500 km; a world's own top level is
+`WorldSize::lod_max_level`, 12 for today's 50 km; levels 13–15 over a 1× disc are a handful of
+coarse sections; **Phase 16** had 12 and 131 km, 19 and 16,777 km before that). A saved world's LOD
+rows carry the root they were keyed under (`meta.lod_root`): rows from another root (a world saved
+before M1) are dropped at open and rebuilt from the chunks. Sections wholly outside the build volume are
 not in the world (`in_world`): never generated, stored or requested; the rows of a level are those
 the volume's height reaches (3,126 at level 0, one at the root). Section ids pack (level, i, row, k)
-in 12 bits each (`dwell-lod` `lod_id`). **Phase 13:** a row belongs to the face of its centre.
+in 15 bits each (`dwell-lod` `lod_id`, exact in a double). **Phase 13:** a row belongs to the face of its centre.
 **Phase 16:** with the midplane at 0, a section boundary at every level below the root, sections up
-to `MAX_ALIGNED_LEVEL` = 11 lie wholly on one face (the only straddling section is the root, each
+to `MAX_ALIGNED_LEVEL` = 14 (11 before M1) lie wholly on one face (the only straddling section is the root, each
 of its cells taking the face of its centre). **The thin crust:** a face's crust is its 10-layer
 core plus the ground (≥ 20 layers in all), thinner than one cell from level 4 up; a cell is filled
 from its bottom voxel, so a face's section by the midplane is solid in its bottom row and its apron
@@ -2486,6 +2491,7 @@ Column bounds carry both faces (`LodBounds`: `lo`/`hi` and, in face-local terms,
 | 1–4 | 2–16 m | 64–512 m | From the edge of the streamed view to ~5.6 km |
 | 5–8 | 32–256 m | 1–8 km | 5.6–90 km; level 8 is the LOD index level |
 | 9–12 | 512 m–4 km | 16–131 km | Beyond 90 km: the whole disc from altitude, the root from far out |
+| 13–15 | 8–32 km | 262–1,049 km | Only from far out over a 1× disc; a bigger world's far levels (BIG_MAP.md M1) |
 
 (Level L is drawn from about 176 × 2^L m under those settings; the world is flat, so from the
 ground the view reaches the rim wherever terrain does not block it. `LOD_PIXEL_ERROR` was 2 px
@@ -3803,7 +3809,7 @@ in the code yet.
 | `STREAM_MESH_SHARE` (client, `stream_budget.rs`) | 0.4 | The budget's share the light leaves to the mesh starts while chunks wait to be meshed |
 | **LOD (§6.6), Phase 4** | | |
 | `LOD_SECTION_CELLS` | 32 | Cells per LOD section edge (level 0 = a chunk) |
-| `LOD_MAX_LEVEL` | 12 | Root level (131 km); one section holds the whole disc and build volume (Phase 16, was 19) |
+| `LOD_MAX_LEVEL` | 15 | Root level (1,049 km); one section holds the largest world size's disc and build volume (BIG_MAP.md M1, protocol v23; Phase 16 had 12, before it 19) |
 | `LOD_INDEX_LEVEL` | 8 | Level of the modified-section index sent to clients |
 | `LOD_PIXEL_ERROR` | 4 px (desktop) / 8 px (mobile), CSS pixels; a setting (1–16) | Refine a node while its cells project larger than this (ADR 0012's 2 px drew ~3× the sections, §6.6), times the error scale below |
 | LOD error scale (client, `dwell-lod` `system.rs`) | ×1.15 steps finer, ×√(in use / budget) in 1.15–2 coarser (`MAX_COARSER_STEP`), 1–16 | Coarser (≤ 1/s) while the view's sections exceed `LOD_CACHE_MB`, finer (≤ 1/10 s) under 60% of it; an overflowing finer step is retried after 512 m (§6.6) |

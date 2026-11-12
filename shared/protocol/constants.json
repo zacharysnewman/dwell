@@ -1,6 +1,6 @@
 {
   "$comment": "Single source of truth for protocol constants (ARCHITECTURE.md §7.4, §8). Run `node shared/protocol/gen.mjs` after editing; CI fails if generated files are stale.",
-  "protocolVersion": 22,
+  "protocolVersion": 23,
   "simHz": 60,
   "snapshotHz": 20,
   "maxDatagramBytes": 1200,
@@ -56,7 +56,7 @@
   "bounds": { "shape": "sphere", "center": [0, 0, 0], "radius": 50000 },
   "lod": {
     "sectionCells": 32,
-    "maxLevel": 12,
+    "maxLevel": 15,
     "indexLevel": 8,
     "pixelErrorDesktop": 3,
     "pixelErrorMobile": 3,

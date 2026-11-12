@@ -2,6 +2,25 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.53.1",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.53.0",
+      "changes": [
+        "A new compatibility line: the far view's map of the world now reaches a world ten times as wide (for the coming bigger worlds), so 0.52 and 0.53 players can't join each other",
+        "Saved worlds rebuild their far view once when first opened"
+      ]
+    },
+    {
+      "version": "0.52.117",
+      "changes": [
+        "Behind the scenes: work queue notes on digging, mining and chopping marks"
+      ]
+    },
+    {
       "version": "0.52.116",
       "changes": [
         "Digging now carves a real-looking hollow into dirt, sand and snow: a rounded scoop with a crumbly rim, shaded walls and a damp floor, merging into one hole as you keep digging."

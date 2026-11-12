@@ -280,6 +280,12 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    pixel (merged bowls, rim with crumbs, bent normal, parallax march on Medium, rim shadow, damp floor), data
    `rim`/`parallax`/`darken`, tests on the CPU copy. Left: the owner's look review (bench `dirt-relief`),
    stone shards on the same function.
+   **Owner, later 2026-11-11: "Remember with the digging, mining, chopping it should be a real 3D chunk, not a 2D
+   decal"**; asked what should be real 3D (the block's mesh carved, or a real piece knocked off), the owner
+   chose **both**. So: (a) each hit cuts real geometry out of the block's face (a bowl in soil, angular facets
+   in stone, the notch in wood), seen from every angle and at the edges, collision still the full block;
+   (b) each hit also knocks off a real 3D piece (clod, shard, wood chip) that falls and is picked up as
+   today's per-hit drops are. 0.52.11x's per-pixel relief (built) is the stopgap until (a) lands.
 19. **Lava glow, remaining** (owner 2026-11-11: "Lava should have bloom glow"; "Lava looks dark red instead of
    bright red/orange"; "It should darken as it solidifies though"). Built 0.52.107: colour by heat stops, heat in
    cells. Left: the bloom pass (keyed on emissive; tiers, off on CPU/Low); the crust covering less of hot lava
@@ -292,6 +298,8 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    grass ramps (~40 % of the meadow), drawn pale. Denser patches or tufts on ramps change the default world's
    terrain (a new compatibility line); a less pale tuft is a look change only. Asked the owner which.
 
+   Owner, 2026-11-11, asked whether it rides along with 0.53: "What's this meadow grass change?" — explained;
+   waiting on the answer.
 22. **Settings and version buttons look like web links** (owner 2026-11-11: "I thought we had settings and
    version buttons changed queued, is that true?" — it wasn't recorded anywhere; then "The buttons should be
    aligned to match the design of the others instead of looking like web links"). Restyle them as the menu's
@@ -464,7 +472,8 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
   sizes 1×/2×/4×/8×/10× as data. At 10× radius the whole-map grids run at a coarser cell (~1 km) until the
   regional maps. **M0 built:** the size is a per-world setting (optional tag, today's worlds unchanged) and the
   LOD levels, big map cells, hydrology cell (≤ 1 M cells at every size), island shape and uplift counts derive
-  from it. Next: M1 (the LOD root per size).
+  from it. **M1 built:** the LOD root (level 15) holds every size; protocol v23, so it needs a new
+  compatibility line (the owner's call). Next: M2 (the generators read the world's size; 2× first).
 
 - **Sharing saved structures between players** (owner 2026-11-11: "eventually shareable").
 

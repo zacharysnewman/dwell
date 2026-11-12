@@ -14,6 +14,10 @@ use crate::codec::*;
 /// 0028: a new compatibility line, so the SQLite formats of the C++ builds are not read). A newer
 /// file is refused: worlds are version-locked, not converted (RELEASES.md §6).
 pub const FORMAT_VERSION: u64 = 1;
+/// The LOD octree's root level the saved LOD rows are keyed under (`meta.lod_root`, BIG_MAP.md M1):
+/// rows saved under another root (or before the scalar, root 12) are dropped at open and rebuilt
+/// from the chunks, as after a registry change.
+pub const LOD_ROOT: u64 = dwell_world::lod::MAX_LEVEL as u64;
 /// File extension of world files (and of the export format: the database itself).
 pub const WORLD_EXTENSION: &str = ".dwellworld";
 
@@ -461,6 +465,7 @@ impl WorldDb {
         let value = |k: &str| meta.get(k).ok().flatten().map(|v| u64_of(v.value()));
         value("format_version") == Some(FORMAT_VERSION)
             && value("registry_hash") == Some(REGISTRY_HASH)
+            && value("lod_root") == Some(LOD_ROOT)
             && txn.open_table(SETTINGS).is_ok()
             && txn.open_table(CHUNKS).is_ok()
             && txn.open_table(LOD_SECTIONS).is_ok()
@@ -502,6 +507,17 @@ impl WorldDb {
                 meta.insert("registry_hash", REGISTRY_HASH.to_le_bytes().as_slice())
                     .map_err(err)?;
             }
+            // And when it was saved under another octree root (BIG_MAP.md M1: its section keys
+            // count from the root's corner; a file without the scalar is from before, root 12).
+            let same_root = meta
+                .get("lod_root")
+                .map_err(err)?
+                .is_some_and(|v| u64_of(v.value()) == LOD_ROOT);
+            if !same_root {
+                meta.insert("lod_root", LOD_ROOT.to_le_bytes().as_slice())
+                    .map_err(err)?;
+            }
+            let same = same && same_root;
             txn.open_table(SETTINGS).map_err(err)?;
             txn.open_table(CHUNKS).map_err(err)?;
             let lod = txn.open_table(LOD_SECTIONS).map_err(err)?;

@@ -19,9 +19,9 @@
 //! - the uplift layer's counts ([`WorldSize::uplift_count`]: × the area, the same density of
 //!   ranges and plates).
 //!
-//! What the build can't hold yet: the LOD octree's root is compiled (`lod::MAX_LEVEL`), so a world
-//! larger than its root ([`WorldSize::fits_lod_root`] false: every size but 1× today) needs BIG_MAP.md
-//! M1's root rework before it can be played.
+//! The LOD octree's root is compiled (`lod::MAX_LEVEL`) to hold the largest named size (BIG_MAP.md
+//! M1, checked by `shared/protocol/gen.mjs`), so every named size fits it
+//! ([`WorldSize::fits_lod_root`]); a world's own top level is [`WorldSize::lod_max_level`].
 
 use crate::constants::{lod, world, world_sizes};
 
@@ -49,6 +49,18 @@ impl Default for WorldSize {
 impl WorldSize {
     /// Today's size: `worldSizes.default` (checked by `shared/protocol/gen.mjs` to be scale 1).
     pub const DEFAULT: Self = Self { radius_scale: 1 };
+    /// The largest named size (`lod.maxLevel` holds its disc).
+    pub const LARGEST: Self = {
+        let mut i = 0;
+        let mut max = 1;
+        while i < world_sizes::SIZES.len() {
+            if world_sizes::SIZES[i].1 > max {
+                max = world_sizes::SIZES[i].1;
+            }
+            i += 1;
+        }
+        Self { radius_scale: max }
+    };
 
     /// A size of a whole scale (a newer build's unnamed scale is still a size this build can derive).
     pub fn scaled(radius_scale: u32) -> Result<Self, SizeError> {
@@ -98,8 +110,8 @@ impl WorldSize {
         }
         level
     }
-    /// Whether this build's compiled LOD root holds the disc. False for every size above today's
-    /// until BIG_MAP.md M1 reworks the root (the section keys and `CHUNK_OFFSET_Y`).
+    /// Whether this build's compiled LOD root holds the disc: every named size since BIG_MAP.md M1;
+    /// an unnamed scale above the largest does not (a newer build's world this one can't draw).
     pub const fn fits_lod_root(self) -> bool {
         self.lod_max_level() as i64 <= lod::MAX_LEVEL
     }
@@ -154,11 +166,7 @@ mod tests {
         let d = WorldSize::DEFAULT;
         assert_eq!(d.world_radius_m(), world::WORLD_RADIUS);
         assert_eq!(d.island_radius_m(), world::ISLAND_RADIUS);
-        assert_eq!(
-            i64::from(d.lod_max_level()),
-            lod::MAX_LEVEL,
-            "today's maxLevel"
-        );
+        assert_eq!(d.lod_max_level(), 12, "today's top level");
         assert!(d.fits_lod_root());
         assert_eq!(
             (
@@ -230,14 +238,6 @@ mod tests {
     }
 
     #[test]
-    fn only_todays_size_fits_the_compiled_lod_root_until_m1() {
-        for (n, s) in WorldSize::all() {
-            assert_eq!(s.fits_lod_root(), s.is_default(), "{n}");
-        }
-    }
-
-    #[test]
-    #[ignore = "BIG_MAP.md M1: the LOD root (lod.maxLevel, the section keys, CHUNK_OFFSET_Y) is compiled for 1x"]
     fn every_named_size_fits_the_lod_root() {
         for (n, s) in WorldSize::all() {
             assert!(
@@ -246,6 +246,14 @@ mod tests {
                 s.lod_max_level()
             );
         }
+        // The root is the largest size's, no bigger: one level fewer would not hold it.
+        assert_eq!(
+            i64::from(WorldSize::LARGEST.lod_max_level()),
+            lod::MAX_LEVEL
+        );
+        assert_eq!(WorldSize::LARGEST.name(), Some("10x"));
+        let beyond = WorldSize::scaled(world_sizes::MAX_RADIUS_SCALE).unwrap();
+        assert!(!beyond.fits_lod_root(), "16x needs level 16");
     }
 
     #[test]
