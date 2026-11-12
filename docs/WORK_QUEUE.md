@@ -4,12 +4,40 @@ The owner's ordered queue of work, with the decisions behind each item, so it su
 ending. Update it in the same change that starts, finishes, re-orders or re-scopes an item. The phase
 status lives in `docs/IMPLEMENTATION_PLAN.md`; this file is the order and the owner's words.
 
+**Shots (owner, 2026-11-12):** bench screenshots are taken with clouds off unless the shot is about clouds ("The
+clouds make those screenshots hard to read").
+
 **Rule (owner, 2026-11-11: "This is why we need to be documenting these as we go"):** every request, answer
 or decision the owner gives goes into this file **in the same turn it arrives**, before or alongside starting
 the work, quoting the owner's words; never only in a session's memory or an agent's brief. An item nobody
 recorded doesn't exist for the next session.
 
 Last updated: 2026-11-11 (0.52.108).
+
+## Queued next, in order (2026-11-12)
+
+The running order across the items below; each line names its item, where the owner's words and details are.
+
+1. **High at 60 fps on the M1 Air (item 30, P0)** — running locally: measure each feature at High, cull leaf cards
+   inside crowns and on the far side, pull their range in, a Trees group and a setting for every costly feature.
+2. **Distance haze tuning (item 29)** — only the height fog's three numbers, ground-level and hilltop shots, clouds off.
+3. **Cloud lighting (item 13)** — shaded bases and self-shadowing, matched against the old 2D deck.
+4. **Far-tree impostors (item 31)** — the bake in the cloud now; drawing them locally after, replacing lod_trees.
+5. **Dense forest reference (item 32)** — in the cloud now: `old_growth`, `test:forest`, the `forest-perf` bench.
+6. **The moon, client side (item 27, M-7c)** — the client follows a player onto the moon (its chunks in the moon's
+   frame, the view rolled to its down, `grid.frames` turned on); then M-5 (LOD per grid), M-8 (moon spawns A/B),
+   the bake in a worker + cached, `MOON_PHASE` wired, the disc oriented by `moon_axes`.
+7. **Orbits O1–O3 (item 15)** — in the cloud now; then O4–O5 (seasons).
+8. **Chopping follow-ups (items 24, 26)** — see bites round 2 and the kept gash in game; stone chips that break the
+   cell's outline (item 18 lever 3); half the hit shards on phones (the flag nothing sets yet).
+9. **Big worlds (BIG_MAP.md)** — BUGS.md #76 (browser memory grows with world size) before 8×/10×; #77 (bigger
+   islands lose their ranges, speckled lakes: an owner look question); region maps built ahead with no hitches.
+10. **Realistic R5–R6 (item 15)** — geology by plate history with today's blocks; the World option.
+
+Waiting on the owner: the cold desert and tropical rainforest biomes (REALISTIC_WORLD.md q9); §8.10 q4–q5 (the two
+faces' climates, the gradient across the disc); the haze settings once shot; trying 2× on the desktop; the iPhone
+while moving on the latest build; metal tools' "double efficiency" (speed or durability); palm fronds (cards or
+blocks); the Chisel editor and textures-tab extras (design input).
 
 ## Next, in order
 
@@ -548,7 +576,7 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    at 0.85; the stump's `dwell:log_ramp` is chopped as the log (a bite, a wear), never cleared, and comes
    down only when cut through, dropping wood. Not done: the stump's bites aren't drawn (recorded only).
    BLOCK_DAMAGE.md §6.4 "Round 2", ADR 0067 note.
-27. **A felled trunk landing on its chopper flings them (BUGS.md #52)** (the owner's brief, 2026-11-12: fix the
+26b. **A felled trunk landing on its chopper flings them (BUGS.md #52)** (the owner's brief, 2026-11-12: fix the
    cause, "we shouldn't be capping player kick like that" (2026-11-08): no cap on the kick; a trunk hitting a
    player at speed must still knock them as physics says). **Built 2026-11-12** (branch `claude/pinch-fling`):
    a piece's contact pressing a player down takes the piece's friction (`physics::PinchGrip`, a Rapier contact
@@ -708,6 +736,13 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    pick a preset (or ask for a stronger C: e.g. elevationDeg 8, saturation 0.6) and its values move to the
    top level of fog.json.
 
+   Variants built (0.54.x, `?haze=thicker|aerial|aerial-sun`; defaults unchanged). Owner, 2026-11-12, on the sheet:
+   **"The clouds make those screenshots hard to read."**; **"Also don't we just have an atmospheric distance fog
+   that thins as you ascend? Something like that?"**; **"Shouldn't that be what's tuned, your screenshots seem to
+   describe a lot of other effects?"** So: tune only the existing height fog's three numbers (fog.json
+   `distanceM`, `density`, `heightM`); shoot a few settings from ground level and a hilltop (not from 3000 m,
+   above the haze) with clouds off; the extra aerial-perspective mechanisms stay off. Queued (local, after
+   item 30).
 30. **Desktop frame rate on the M1 and hidden graphics settings (P0)** (owner 2026-11-12: "It seems like we're
    hiding some performance settings. I don't see 'tree' options in our settings for graphics. I think cards are
    killing my m1 mac too." / "Running 26fps." / "GPU at 31ms"). The desktop default preset is High (leaf cards
