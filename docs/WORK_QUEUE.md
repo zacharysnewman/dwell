@@ -67,6 +67,13 @@ The running order across the items below; each line names its item, where the ow
    12.4 GB server natively); now a 10× face is 3.1 s (1×: 1.9 s) and its server 6.2 s at 484 MB; the map stage shows
    each face's steps; a dying server worker says why (BUGS.md #91, BIG_MAP.md §3.1). **Next: the owner tries 10× in
    the browser again.**
+   **Terrain stops drawing past a stepped edge (BUGS.md #108, owner 2026-11-12):** "worlds bigger than 2x seem to
+   give up loading chunks at some point, and just cutoff. The full minimap shows the whole world, and the terrain is
+   playable. It just doesn't show up. It even has collision on the chunks that didn't load in." Then: "Sizes 8x and
+   10x for the map spawn you in the void where there's no terrain only collision." **Fixed (2026-11-12):** the
+   LOD classified sections by the 1× disc, so everything past 50 km read as empty space at every size; it now
+   classifies in the world's own disc (`kind_from_bounds_of`), and `__dwell.debug().lod` counts what the view wants,
+   has built, draws as nothing and the budget dropped. Next: the owner flies a 4× and spawns in an 8×/10× world.
 10. **Realistic R5–R6 (item 15)** — geology by plate history with today's blocks; the World option.
 
 ### Waiting on the owner (each with what it means and the default meanwhile)

@@ -2656,7 +2656,9 @@ the LOD system's scenario test — so the defaults are 4 px desktop, 8 px mobile
 `dwell-lod` `grid.rs` adds the client's float helpers), downsampling, LOD generation for every
 generator (the terrain's in `dwell-worldgen` `terrain.rs` and `bifacial.rs`; the flat world's in
 `dwell-world` `lod.rs`) and the column bounds that classify sections without generating them
-(`lod_bounds_at`, `kind_from_bounds`). The client runs them in its generation workers (§5.1).
+(`lod_bounds_at`, `kind_from_bounds`; a sized world's with `kind_from_bounds_of` and its own
+`WorldBounds`, so a section past the 1× disc is not empty in a bigger world, BUGS.md #108). The client
+runs them in its generation workers (§5.1).
 
 **Content.** A section is 34³ `u16` materials: its 32³ cells and a one-cell apron from its
 neighbours for culling border faces, in layer order (x fastest, then z, then y — the chunk
@@ -2873,7 +2875,7 @@ chunks), keeps the last selection (`LodSystem::update`; ~1 ms a frame standing s
   (a playtest regression: frame time and RTT climbing while standing still). *(Playtest fix: caves deep inside the world were streamed and collidable but
   never drawn; only sections at the rim, whose bounds are open below, showed their caves.)*
 - Empty and buried sections come from their column's bounds (one `lodBounds` job per column of
-  sections), the rest from LOD generation in the generation workers (a queue behind chunk jobs) and
+  sections; in the world's own disc and volume, `LodSystem::set_world`), the rest from LOD generation in the generation workers (a queue behind chunk jobs) and
   meshing in the meshing workers, with at most the pools' capacities in flight. Jobs go in order of
   **projected cell size** (largest first): a parent always before its children, coarse before
   fine and near before far — ADR 0012's "coarsest first, then nearest" globally left the camera's

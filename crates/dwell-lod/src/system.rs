@@ -25,7 +25,7 @@ use dwell_protocol::{
 };
 use dwell_world::lod::{
     INDEX_LEVEL, LodBounds, LodCoord, LodKind, MAX_LEVEL, SECTION_CELLS, cell_index, cell_size,
-    child, chunk_of_lod, in_world_of, kind_from_bounds, lod_of_chunk, parent, row_face,
+    child, chunk_of_lod, in_world_of, kind_from_bounds_of, lod_of_chunk, parent, row_face,
     section_size,
 };
 use dwell_world::{CHUNK_EXTENT_M, ChunkCoord, Face, FaceFrame, chunk_of_pos, chunk_origin_m};
@@ -255,6 +255,14 @@ pub struct LodStats {
     /// ring's (the full-detail distance, schedule) means the full detail behind is there
     /// (`until nearBehind`).
     pub waiting: [usize; 3],
+    /// Sections the view wants that are not ready yet (this frame's traversal).
+    pub wanted: usize,
+    /// Sections meshed and held (built), drawn or not.
+    pub built: usize,
+    /// Leaves of the selection known to hold nothing (empty or buried): drawn as nothing.
+    pub empty: usize,
+    /// Sections dropped from the cache by its budget since the start (BUGS.md #108's counter).
+    pub evicted: u64,
 }
 
 impl Default for LodStats {
@@ -272,6 +280,10 @@ impl Default for LodStats {
             bytes_per_second: 0,
             fades: FadeStats::default(),
             waiting: [0, 0, 0],
+            wanted: 0,
+            built: 0,
+            empty: 0,
+            evicted: 0,
         }
     }
 }
@@ -567,6 +579,8 @@ pub struct LodSystem {
     skipped: u64,
     /// When the last selection ran (ms; `update`'s clock), for the streaming report.
     selected_ms: Option<f64>,
+    /// Sections the cache budget has dropped (`LodStats::evicted`).
+    evicted: u64,
 }
 
 impl LodSystem {
@@ -633,6 +647,7 @@ impl LodSystem {
             selections: 0,
             skipped: 0,
             selected_ms: None,
+            evicted: 0,
         };
         s.request_credit = s.rate();
         s
@@ -1912,7 +1927,8 @@ impl LodSystem {
                 return;
             }
         };
-        let kind = kind_from_bounds(c, &b);
+        // The world's own disc and volume (BUGS.md #108: the 1× test emptied a big world past 50 km).
+        let kind = kind_from_bounds_of(c, &b, &self.world);
         if kind != LodKind::Content && !self.neighbour_modified(c) {
             self.nodes.get_mut(&id).expect("node").kind = Some(kind);
             return;
@@ -2132,6 +2148,7 @@ impl LodSystem {
                 .and_then(|n| n.kids.take())
                 .unwrap_or_default();
             for kid in kids {
+                self.evicted += 1;
                 self.remove(kid, view);
             }
         }
@@ -2174,6 +2191,16 @@ impl LodSystem {
             bytes_per_second: self.received.iter().map(|&(_, b)| b).sum(),
             fades: self.fade.stats(),
             waiting: self.waiting(frustum),
+            wanted: {
+                let mut seen = HashSet::default();
+                self.wanted
+                    .iter()
+                    .filter(|&&id| !self.ready(id) && seen.insert(id))
+                    .count()
+            },
+            built: self.nodes.values().filter(|n| n.meshed).count(),
+            empty: self.selection.empty.len(),
+            evicted: self.evicted,
         }
     }
 

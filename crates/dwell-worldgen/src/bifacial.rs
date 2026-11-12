@@ -335,7 +335,8 @@ impl BifacialTerrain {
                 &|r| lod::SECTION_CELLS - 1 - r,
             );
         }
-        let kind = lod::kind_from_bounds(c, &bounds);
+        // Classified in this world's own disc and volume (BUGS.md #108).
+        let kind = lod::kind_from_bounds_of(c, &bounds, &self.world());
         // A section the bounds decide is canonical whatever the passes generated.
         match kind {
             LodKind::Empty => cells.fill(M.air),

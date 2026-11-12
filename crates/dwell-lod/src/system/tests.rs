@@ -5,7 +5,9 @@ use super::*;
 use crate::grid::{MAX_ALIGNED_LEVEL, is_face_b_section, origin_m};
 use dwell_world::FaceFrame;
 use dwell_world::inside_build_volume;
-use dwell_world::lod::{PAD, VOLUME, ancestor, mirror_row_bottom, section_origin};
+use dwell_world::lod::{
+    PAD, VOLUME, ancestor, kind_from_bounds, mirror_row_bottom, section_origin,
+};
 
 /// A deterministic PRNG (mulberry32), as the TS tests use.
 fn rng(seed: u32) -> impl FnMut() -> f64 {
@@ -58,8 +60,13 @@ const SURFACE_LEN: usize = (PAD * PAD) as usize * SURFACE_STRIDE;
 
 /// The bifacial test world at LOD: both faces flat, as `bifacial_bounds` says.
 fn bifacial_section(c: LodCoord) -> GeneratedSection {
+    bifacial_section_in(c, &dwell_world::WorldBounds::DEFAULT)
+}
+
+/// [`bifacial_section`] in a world of these bounds (its own disc, as the worker's generator is).
+fn bifacial_section_in(c: LodCoord, world: &dwell_world::WorldBounds) -> GeneratedSection {
     let mut cells = vec![0u16; VOLUME];
-    let kind = kind_from_bounds(c, &bifacial_bounds());
+    let kind = dwell_world::lod::kind_from_bounds_of(c, &bifacial_bounds(), world);
     let y0 = section_origin(c).y;
     let size = cell_size(c.level);
     if kind != LodKind::Empty {
@@ -217,6 +224,8 @@ struct Host {
     arriving: Vec<ChunkCoord>,
     /// The chunks' revision (None: unknown, the LOD selects every frame).
     drawn_rev: Option<u64>,
+    /// The world the generator builds (its size's disc; 1× by default).
+    world: dwell_world::WorldBounds,
 }
 
 impl Host {
@@ -339,7 +348,7 @@ fn finish(lod: &mut LodSystem, h: &mut Host, random: &mut dyn FnMut() -> f64, sh
                 let mut s = if let Some(t) = &h.terrain {
                     terrain_section(t, c)
                 } else if h.bifacial {
-                    bifacial_section(c)
+                    bifacial_section_in(c, &h.world)
                 } else {
                     flat_section_at(c, h.flat_top)
                 };
@@ -1540,6 +1549,7 @@ fn formats_the_overlay_lines() {
         bytes_per_second: 2048,
         fades: Default::default(),
         waiting: [0, 0, 0],
+        ..LodStats::default()
     };
     assert_eq!(
         format_lod_stats(&s),
@@ -2333,3 +2343,190 @@ fn a_fresh_view_far_over_the_cache_budget_fits_it_within_seconds_not_tens_of_the
         lod.debug_stats().error_scale
     );
 }
+
+// --- big worlds (BUGS.md #108) -------------------------------------------------------------------
+
+/// A world of a named size (BIG_MAP.md).
+fn sized_world(name: &str) -> dwell_world::WorldBounds {
+    dwell_world::WorldBounds::of(
+        dwell_protocol::world_size::WorldSize::named(name).expect("a named size"),
+    )
+}
+
+/// The bifacial test world at `world`'s size, every chunk drawable, settled for a camera at `cam`:
+/// frames until no job is left (at most `frames`).
+fn settle_big(
+    world: dwell_world::WorldBounds,
+    cam: &LodCamera,
+    detail_m: Option<f64>,
+    frames: usize,
+) -> (LodSystem, Host) {
+    let mut host = Host::with_chunks(|_| true);
+    host.bifacial = true;
+    host.world = world;
+    host.mesh_bytes = 16 * 1024;
+    let mut lod = system(4.0, BIG_BUDGET_MB, 16, 16);
+    lod.set_world(world);
+    lod.set_detail_distance(detail_m);
+    let mut now = 0.0;
+    for _ in 0..frames {
+        lod.update(cam, now, &mut host);
+        if lod.active && host.pending.is_empty() && lod.nothing_waiting() {
+            break;
+        }
+        finish(&mut lod, &mut host, &mut zero, 1.0);
+        now += 50.0;
+    }
+    // Past the forced chunks' grace period, then once more with everything answered.
+    for _ in 0..40 {
+        lod.update(cam, now, &mut host);
+        finish(&mut lod, &mut host, &mut zero, 1.0);
+        now += 50.0;
+    }
+    lod.update(cam, now, &mut host);
+    (lod, host)
+}
+
+const BIG_BUDGET_MB: usize = 256;
+
+/// The bifacial test world's ground on face `f` (its face-local top is row `CRUST`): a point just
+/// under the surface at (x, z).
+fn ground_at(f: FaceFrame, x: f64, z: f64) -> Vec3 {
+    [x, f.y(dwell_world::m_of_row(CRUST as i32) - 0.01), z]
+}
+
+/// How a ground point is drawn by the selection: (by drawn leaves, chunks or stand-ins; by
+/// leaves known to hold nothing).
+fn ground_cover(s: &Selection, p: Vec3) -> (usize, usize) {
+    (
+        covering(&leaves(s, true), p) - covering(&s.empty, p),
+        covering(&s.empty, p),
+    )
+}
+
+fn big_world_tiles_the_view(f: FaceFrame, size: &str) {
+    // Owner, 2026-11-12: "worlds bigger than 2x seem to give up loading chunks at some point, and
+    // just cutoff". A camera 300 m over the ground three quarters of the way to a big world's rim
+    // (far past a 1× world's 50 km): every ground column from under it out to 60 km is drawn by
+    // exactly one level, and the sections stay within the cache budget.
+    let world = sized_world(size);
+    let r = 0.75 * world.radius() as f64;
+    let cam_at = [r, f.y(300.0), 0.5];
+    let cam = camera(cam_at, 90.0, -10.0 * f.sign_f64());
+    let (lod, host) = settle_big(world, &cam, None, 4000);
+    assert!(lod.active, "{size}: the root is ready");
+    let s = lod.last_selection();
+    let mut checked = 0;
+    for d in [
+        0.0, 40.0, 150.0, 600.0, 2_500.0, 10_000.0, 30_000.0, 60_000.0,
+    ] {
+        for a in 0..16 {
+            let t = f64::from(a) * std::f64::consts::TAU / 16.0;
+            let (x, z) = (r + d * t.cos(), 0.5 + d * t.sin());
+            if x.hypot(z) > world.radius() as f64 - 2_000.0 {
+                continue; // the rim's own shape is not this test's
+            }
+            let p = ground_at(f, x, z);
+            let (drawn, empty) = ground_cover(s, p);
+            assert_eq!(
+                (drawn, empty),
+                (1, 0),
+                "{size} {:?}: the ground {d} m out at {p:?} is drawn by {drawn} leaves, {empty} empty",
+                f.face
+            );
+            checked += 1;
+        }
+    }
+    assert!(checked > 100, "{checked}");
+    let st = lod.debug_stats();
+    let budget = BIG_BUDGET_MB * 1_048_576;
+    assert!(
+        st.cache_bytes <= budget,
+        "{size}: cache {} over {budget}",
+        st.cache_bytes
+    );
+    assert!(
+        st.in_use_bytes <= budget,
+        "{size}: in use {} over {budget}",
+        st.in_use_bytes
+    );
+    assert!(!host.shown.is_empty());
+    // The counters (`__dwell.debug().lod`): nothing left wanted, and every drawn section built.
+    let drawn: usize = st.drawn.iter().sum();
+    assert_eq!(st.wanted, 0, "{size}: wanted");
+    assert!(
+        drawn > 0 && st.built >= drawn,
+        "{size}: built {} for {drawn} drawn",
+        st.built
+    );
+    assert_eq!(st.empty, s.empty.len());
+}
+
+dwell_world::both_faces!(
+    fn a_4x_world_s_lod_tiles_the_view_out_to_60_km_with_no_holes(f: FaceFrame) {
+        big_world_tiles_the_view(f, "4x");
+    }
+);
+
+dwell_world::both_faces!(
+    fn a_10x_world_s_lod_tiles_the_view_out_to_60_km_with_no_holes(f: FaceFrame) {
+        big_world_tiles_the_view(f, "10x");
+    }
+);
+
+fn big_world_draws_the_near_ring(f: FaceFrame, size: &str) {
+    // Owner, 2026-11-12: "Sizes 8x and 10x for the map spawn you in the void where there's no
+    // terrain only collision." Standing on the ground far out in a big world (where its spawn is),
+    // every ground chunk within the full-detail distance is drawn as chunks.
+    let world = sized_world(size);
+    let r = 0.8 * world.radius() as f64;
+    let feet = ground_at(f, r, 0.5);
+    let eye = [
+        feet[0],
+        f.y(dwell_world::m_of_row(CRUST as i32) + 1.6),
+        feet[2],
+    ];
+    let detail = 48.0;
+    let cam = camera(eye, 0.0, -10.0 * f.sign_f64());
+    let (lod, _) = settle_big(world, &cam, Some(detail), 4000);
+    assert!(lod.active, "{size}: the root is ready");
+    let mut checked = 0;
+    for dz in -3..=3 {
+        for dx in -3..=3 {
+            let c = chunk_of_pos([
+                feet[0] + f64::from(dx) * CHUNK_EXTENT_M[0],
+                feet[1],
+                feet[2] + f64::from(dz) * CHUNK_EXTENT_M[2],
+            ]);
+            let lo = chunk_origin_m(c);
+            let hi: Vec3 = std::array::from_fn(|a| lo[a] + CHUNK_EXTENT_M[a]);
+            if box_distance(eye, lo, hi) > detail {
+                continue;
+            }
+            assert!(
+                lod.chunk_visible(c),
+                "{size} {:?}: the ground chunk {c:?} {} m away is not drawn",
+                f.face,
+                box_distance(eye, lo, hi)
+            );
+            assert!(
+                !lod.shows_nothing_at(c),
+                "{size}: {c:?} read as holding nothing"
+            );
+            checked += 1;
+        }
+    }
+    assert!(checked >= 9, "{checked}");
+}
+
+dwell_world::both_faces!(
+    fn an_8x_world_draws_the_chunks_round_a_far_out_player(f: FaceFrame) {
+        big_world_draws_the_near_ring(f, "8x");
+    }
+);
+
+dwell_world::both_faces!(
+    fn a_10x_world_draws_the_chunks_round_a_far_out_player(f: FaceFrame) {
+        big_world_draws_the_near_ring(f, "10x");
+    }
+);
