@@ -6957,6 +6957,8 @@ mod tests {
 
     #[test]
     fn the_near_crowns_and_lod_trees_stay_until_the_impostors_are_ready() {
+        // face-a-only: the gate's ready/unready switch, not its face crossing (`impostors::ready`
+        // keys tiles by the eye's face through `FaceFrame::point`).
         // BUGS.md #106 (red before: with the Far trees tier "on" the frame dropped every leaf past
         // the hand-over and the LOD sections their trees, though no impostor had been baked or
         // placed, so every far tree was a bare trunk).
