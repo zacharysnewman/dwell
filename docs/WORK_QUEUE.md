@@ -49,6 +49,7 @@ the two"** — palm fronds as leaf blocks vs frond cards side by side: built in 
 (`docs/prototypes/tree-growth.html`, *Palm fronds* → *Split*, or `?species=palm&fronds=split`; to be republished to its link).
 
 Still open:
+0. **Which showcase recordings first** (item 40's list).
 1. **Pick a haze setting** (item 29), once the ground-level and hilltop shots (clouds off) are taken. Default:
    today's fog.
 2. ~~**The in-game Chisel editor and the textures tab extras**~~ — **approved (owner, 2026-11-12: "these all seem
@@ -877,6 +878,23 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    villager holds the sword as its guard from its spawn, lowered, and turns on its striker: item 38's
    `fightBack`; the sword in its drawn hand is item 38's renderer work); wolves biting back (no creature damage
    to players yet).
+   **Round 2 (owner's brief, 2026-11-12):** a strike outcome event behind a capability (`weapons.clash`) with
+   the clash's sound, sparks and the striker's recoil on clients; the player's block input (hold right-click / a
+   gamepad button / a touch button, bindings as data) raising the sword in the stance, attacking drops it, the
+   server knowing the player's guard and telling others; minimal NPC combat AI by data rules (face the attacker,
+   pick a stance random/counter, raise the block on the wind-up, strike back on the recovery, give up after N
+   seconds); NPCs never hurt players (open question for the owner: should NPCs be able to hurt players?).
+   **Built (server, wire, client logic, tests; 2026-11-12):** `Swordplay` (clash outcomes to capable clients
+   within `guard.clash.hearM`, raised guards of players and NPCs), `ChopAction::Guard`; the clash's sound
+   (`guard.clash.sound`, the metal `axe_clank`), sparks (`guard.clash.sparks`, chips by data) and recoil;
+   Place held past `guard.raiseAfterS` raises the block (a tap still turns the stance; the existing Place
+   bindings of mouse, controller and touch), the stance's raised pose named by data (`raisedPose`); NPCs'
+   `npc.fight` rules (`stance` counter/random, `raiseOnWindup`, `strikeBack`, `strikeWithinM`, `cooldownS`,
+   `giveUpS`); an NPC's blow is resolved against the player's block but never hurts (owner's question open).
+   Found along the way: the villager was 2 rows (1 m) tall, so a level slash at eye height passed over it; now 4.
+   **Outstanding (local):** the raised-pose clips (`fp_guard_level`, `fp_guard_vertical`) and drawing the
+   raised sword on others and NPCs (`Game::guard_pose`, `Game::remote_guards`); the owner's answer on NPCs
+   hurting players.
 36. **A showcase video of the deer and wolves** (owner 2026-11-12: "have you observed the animals simulation? Make
    some clips of the deer/wolves behavior, really showcase it and try to get good angles. Keep it under 2 minutes
    of video. Splice it together into a single video."). Queued (local, after item 30).
@@ -909,7 +927,8 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    sidestep, held, disposition, combat hook `fightBack`, colour parts), rules' `spacingM` and `biomes`, the
    server's behaviour, the `creatures.npcs` capability's NPC part on `Creatures`, the client's pose roles and
    colours; CHARACTERS.md §11.11. Left (local): the colour remap and held item in the renderer, sit/look
-   clips, combat with the swords.
+   clips. Combat with the swords built in item 35's round 2 (`npc.fight`: an NPC blocks its foe's wind-up by
+   its stance rule, strikes back on the recovery, gives up after `giveUpS`; it never hurts a player).
 
 39. **Livelier animals** (owner 2026-11-12, after the video had no chase or fleeing — on day one every pack is
    kilometres from any herd and players can't scare deer): chose **deer flee from players** (they notice a player
@@ -924,6 +943,57 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    faces and a fixture species by data alone. Left (local, GPU): drawing the poses — the GLBs have only
    idle/walk/run clips, so the poses go on the wire (a capability-gated part like the NPCs') and are built from
    the rig as data in models.json —, then a new video.
+   Owner on the first video: **"The recording was a really good start. I'd like to record at 9:16 1080/1920."** —
+   the next video (after this item lands) is portrait 1080×1920, framed for portrait, with a chase and fleeing.
+
+40. **Showcase recordings** (owner 2026-11-12: "We have a lot of visual features, list features that we could
+   showcase with recordings. Ideally recordings are 1 minute or less. Don't include any text or anything in the
+   video."). Made with the `record` skill (`.claude/skills/record/`): 9:16 at 1080×1920, h264 30 fps, a minute or
+   less, no text of any kind, no music, clouds off unless the shot is about clouds, footage deleted after sending.
+   Waiting on the owner to pick which come first. The list (suggested first: 1, 10, 3, 6, 11, 2 — the most striking
+   that work today; 14 and 15 after item 39 and the swords/NPC work land; 5 after the moon trip is playable):
+   1. Volcano and lava — the summit lava lake at night with bloom, crust plates and orange seams, steam where lava
+      meets water, a lava river cooling from bright to dark.
+   2. Rainier-style peak — a drone rise up the cone past snow lines, cleavers and the glacier cap, ranges fading
+      into the haze.
+   3. Day to night — a time-lapse from golden sunset to night, the moon rising with its glow, stars appearing.
+   4. The moon up close — spyglass crescent, half and full, crater rims lit along the terminator.
+   5. Flying to space (and the moon) — the sky thinning to black with stars by day; later the flight to the moon
+      and landing at ⅙ g (after M-7c, the client side).
+   6. Biomes tour — low passes over the red mesa canyons and arches, pine forest, palm coast, meadow tall grass,
+      steppe, the old-growth forest.
+   7. Water — rivers to the sea, waves on the coast, the underwater view up through the surface.
+   8. Volumetric clouds — through and above the deck at sunrise (after the cloud lighting rework, item 13).
+   9. A tree growing — sapling to mature oak, pine and palm in time-lapse, the trunk thickening.
+   10. Chopping and felling — axe bites into a notch, chips, the tree tipping, the V gash, the trunk settling.
+   11. Digging and mining — shovel scoops, pickaxe hits shattering stone into shards, cracks spreading.
+   12. Dynamite — a fuse, the blast, blocks flung as pieces, a chain reaction.
+   13. Building — placing blocks and a saved structure from its ghost preview.
+   14. Deer and wolves — a grazing herd, deer bolting from the player, a wolf pack hunting (after item 39).
+   15. Villagers — wandering in their outfits, turning to look at you, a sword duel showing block vs connect
+       (after the NPC look and swords round 2).
+   Owner, 2026-11-12: **"Some of these would look good as full timelapses, or partial timelapses. There's older
+   features we haven't showcased yet too like the bifacial world, The underwater. It's probably ideal to include
+   the player in the videos when possible. Rivers flowing from mountains to the sea."** So: time-lapse where it
+   suits (a whole clip sped up, or a normal-speed shot that speeds up mid-way: day to night, tree growth, lava
+   cooling, grass spreading, clouds); the player in frame when possible (a third-person camera on the player's
+   body, or first person with the arms and held item); and three more:
+   16. The bifacial world — flying out past the rim and over the edge to face B, gravity turning, the other
+       face's sky, the world seen from beneath.
+   17. Underwater — diving in a lake or the sea, the surface from below with the sky through it, light shafts;
+       with the water transition itself (owner 2026-11-12: "Water transition as part of the underwater showcase."):
+       the camera passing through the surface going in and coming back out.
+   18. Rivers from mountains to the sea — a long follow down a river from the peaks through valleys to its
+       mouth (partly time-lapsed).
+   19. Multiplayer (owner 2026-11-12: "Multiplayer we haven't showcased.") — two or three players in one world
+       (a friend world or a local server, each a browser page): building together, one chopping while another
+       carries, a sword duel between players' stances (no damage between players), seen from a third camera.
+   20. World scale, measuring a mountain (owner 2026-11-12: "A video with mountains showing the full world scale
+       showing like a measuring of a tall mountain. (Text could be in that as part of the "measure" effect, just
+       no description or titles)."): the player at the foot of the tallest peak (~5000 m), a measuring line or
+       ruler rising up the mountain with height numbers ticking as part of the effect (the only text allowed),
+       pulling back to the whole range and the island's scale. The text exception is the measuring effect's
+       numbers only — no titles or descriptions. Owner: "Measure in meters" (e.g. 1000 m, 2000 m … ticking up).
 
 ## Done
 

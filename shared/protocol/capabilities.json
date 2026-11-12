@@ -18,6 +18,10 @@
     {
       "name": "creatures.npcs",
       "description": "A Creatures message ends with its NPCs' part (WORK_QUEUE item 38, CHARACTERS.md \u00a711.11): per NPC its id, kind name, idle pose (stand, look, sit) and palette variant seed, from which the client picks the NPC's colours by shared/creatures/creatures.json. Without it the server leaves the part out, and an NPC is drawn as its model's plain creature."
+    },
+    {
+      "name": "weapons.clash",
+      "description": "Swordplay on the wire (WORK_QUEUE item 35, round 2): the server sends `Swordplay` (each strike's outcome, blocked / glanced / connected, where, and both stances, to clients within the weapon's `clash.hearM`; and who holds a raised guard in which stance, players and NPCs), and the client says its raised block with `ChopAction::Guard`. Without it neither is sent: an older client sees no clash and no raised swords, and an older server is never sent a guard."
     }
   ]
 }

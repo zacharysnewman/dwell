@@ -27,12 +27,29 @@ const LEAF_CELLS_MAX: usize = 512;
 const CHIP_GRAVITY: f64 = 9.0;
 
 /// Every chip look, in the index a [`Chip`]'s `wood` holds: the woods' (`WOODS` order, a swing's
-/// chips), then each block's `damage.chips` (a hit's: stone grey chips, soil clods; shared/blocks).
+/// chips), then each block's `damage.chips` (a hit's: stone grey chips, soil clods; shared/blocks),
+/// then each weapon's clash sparks (`guard.clash.sparks`, shared/tools; WORK_QUEUE item 35).
 pub fn chip_looks() -> impl Iterator<Item = &'static ChipLook> {
     WOODS
         .iter()
         .map(|w| &w.chips)
         .chain(BLOCK_DAMAGE.iter().filter_map(|d| d.chips.as_ref()))
+        .chain(weapon_sparks().map(|(_, c)| c))
+}
+
+/// The weapons with clash sparks, in `TOOLS` order: the weapon's item name and its sparks.
+fn weapon_sparks() -> impl Iterator<Item = (&'static str, &'static ChipLook)> {
+    dwell_protocol::chopping::TOOLS.iter().filter_map(|t| {
+        let s = t.weapon.as_ref()?.guard.clash.sparks.as_ref()?;
+        Some((t.name, s))
+    })
+}
+
+/// The chip look a clash of weapon `weapon` (by name) sparks with, if its data gives sparks.
+pub fn spark_chips_of(weapon: &str) -> Option<usize> {
+    weapon_sparks()
+        .position(|(n, _)| n == weapon)
+        .map(|i| WOODS.len() + BLOCK_DAMAGE.iter().filter(|d| d.chips.is_some()).count() + i)
 }
 
 /// Chip look `i` ([`chip_looks`]).
@@ -127,6 +144,21 @@ impl Chips {
     /// `normal`, world) at `point` (world), scattered and a little up, now (`now_s`);
     /// docs/BLOCK_DAMAGE.md §6.
     pub fn hit_burst(&mut self, look: usize, normal: [f64; 3], point: [f64; 3], now_s: f64) {
+        let raw = chip_look(look).map_or(0, |w| w.count as usize);
+        self.burst_n(look, raw, normal, point, now_s);
+    }
+
+    /// `n` chips of look `look` out along `normal` (world) at `point` (world): a hit's, or a
+    /// clash's sparks (their count by the outcome; a CPU adapter a third).
+    pub fn burst_n(
+        &mut self,
+        look: usize,
+        chips: usize,
+        normal: [f64; 3],
+        point: [f64; 3],
+        now_s: f64,
+    ) {
+        let count = if self.cpu { chips.div_ceil(3) } else { chips };
         let Some(w) = chip_look(look) else {
             return;
         };
@@ -136,7 +168,7 @@ impl Chips {
             ^ ((point[1] * 613.0) as i32 as u32).wrapping_mul(0x85eb_ca6b)
             ^ ((point[2] * 331.0) as i32 as u32).wrapping_mul(0xc2b2_ae35)
             ^ (now_s * 1000.0) as u32;
-        for k in 0..self.count(look) as u32 {
+        for k in 0..count as u32 {
             let r: [f64; 3] = std::array::from_fn(|j| hash(seed, k * 3 + j as u32) * 2.0 - 1.0);
             let s = w.speed * (0.7 + 0.6 * hash(seed, 101 + k));
             let d = norm(std::array::from_fn(|j| {

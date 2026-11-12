@@ -16,7 +16,7 @@
       "walkSpeed": 1.1,
       "wanderM": 12,
       "idleSeconds": [4, 10],
-      "rows": 2,
+      "rows": 4,
       "climbRows": 1,
       "dropRows": 2,
       "npc": {
@@ -27,6 +27,7 @@
         "held": "dwell:sword",
         "disposition": "neutral",
         "combat": "fightBack",
+        "fight": { "stance": "counter", "raiseOnWindup": true, "strikeBack": true, "strikeWithinM": 2.4, "cooldownS": 1.2, "giveUpS": 8 },
         "idles": [
           { "pose": "stand", "weight": 3, "seconds": [3, 8] },
           { "pose": "look", "weight": 2, "seconds": [4, 8] },

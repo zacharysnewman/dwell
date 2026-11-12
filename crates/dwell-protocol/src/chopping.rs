@@ -299,6 +299,37 @@ pub struct GuardDef {
     pub recoil_s: f64,
     /// The raised blade guards strikes from within this arc round the holder's facing (degrees).
     pub front_deg: f64,
+    /// How long Place (right-click, the controller's and the touch Place) is held before the block
+    /// rises (s); let go sooner it is a tap, turning the stance (the swing's plane) as before.
+    pub raise_after_s: f64,
+    /// The first-person pose clip each stance's raised block shows (None: the default hold).
+    pub level_pose: Option<&'static str>,
+    pub vertical_pose: Option<&'static str>,
+    /// What clients show of a clash (the `weapons.clash` capability).
+    pub clash: ClashLook,
+}
+
+/// A clash's sound and sparks on the clients (round 2 of WORK_QUEUE item 35): the sound event, how
+/// far the clash is sent and heard (m), its sparks (drawn as chips), and a glance's share of the
+/// sparks and the volume (a connect shows none of them: the creature's own reaction shows).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ClashLook {
+    pub sound: Option<&'static str>,
+    pub hear_m: f64,
+    pub sparks: Option<Chips>,
+    pub glance_share: f64,
+}
+
+impl ClashLook {
+    /// The share of the look (sound volume, sparks) a clash of `k` shows: all for a block, the
+    /// glance share for a glance, none for a connect.
+    pub fn share(&self, k: Clash) -> f64 {
+        match k {
+            Clash::Blocked => 1.0,
+            Clash::Glanced => self.glance_share,
+            Clash::Connected => 0.0,
+        }
+    }
 }
 
 /// What a strike that meets a raised blade does.
@@ -313,6 +344,23 @@ pub enum Clash {
 }
 
 impl GuardDef {
+    /// A stance's raised-block pose clip (first person), if its data names one.
+    pub fn raised_pose(&self, vertical: bool) -> Option<&'static str> {
+        if vertical {
+            self.vertical_pose
+        } else {
+            self.level_pose
+        }
+    }
+
+    /// The stance that blocks a strike of swing kind `strike_vertical` best (its blade nearest
+    /// perpendicular to the strike's): an NPC's `counter` stance.
+    pub fn counter(&self, strike_vertical: bool, strike: &GuardDef) -> bool {
+        let r = strike.roll(strike_vertical);
+        let a = |v: bool| Self::blade_angle(r, self.roll(v));
+        a(true) >= a(false)
+    }
+
     /// A stance's blade roll.
     pub fn roll(&self, vertical: bool) -> f64 {
         if vertical {
