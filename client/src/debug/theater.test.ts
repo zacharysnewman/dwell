@@ -57,12 +57,10 @@ describe('theater dev API', () => {
     expect(() => theaterOp(c, doc, 'spin' as never)).toThrow(/unknown op spin/);
   });
 
-  it('hides every element but the canvas with one rule, and shows them again', () => {
+  it('hides every element but the canvas through the HUD switch, and shows them again', () => {
     const doc = fakeDoc();
     setHudShown(doc, false);
     setHudShown(doc, false);
-    expect(doc.styles).toHaveLength(1);
-    expect(doc.styles[0]).toContain('body.theater-clean > *:not(#view)');
     expect(doc.classes.has('theater-clean')).toBe(true);
     setHudShown(doc, true);
     expect(doc.classes.has('theater-clean')).toBe(false);

@@ -214,11 +214,13 @@ amendment records the decision. Built in two rounds the same day: the march and 
 - **Extra sources: plumes,** at run time (§8.7): vertical columns (steam over lava, a volcano's ash,
   a smoke stack) the game adds, moves and removes, marched apart from the layer. `clouds.json`'s
   `plumes` are the list's defaults (empty as shipped).
-- **Light.** The sun or the moon, whichever is over the face, as the deck. At each step with cloud,
-  `lightSteps` samples toward the light (without the detail) give the optical depth; Beer's law over
-  it, a powder term (`powder`) darkening thin unlit edges, mixed between the deck's shade and lit
-  colours (`ambient` the floor). The low sun's warmth, the silver lining and the far haze toward the
-  clear sky are the deck's.
+- **Light** (§8.8): the sun or the moon, whichever is over the face, as the deck. At each step with
+  cloud, `lightSteps` growing samples toward the light give the optical depth (Beer with a
+  multiple-scattering floor and a powder term), a dual-lobe Henyey–Greenstein phase gives the silver
+  lining toward the light, and the ambient is the sky's light from above and the ground's darker
+  bounce from below, each dimmed by the cloud over or under the sample: shaded bases, lit tops. The
+  colours are the deck's (its shade and lit, the low sun's warmth, the moon's at night), and the far
+  haze toward the clear sky is the deck's.
 - **Inside.** Flying into a cloud, the march starts at the eye, so the view fogs by the density
   around it. The deck's CPU in-cloud fog (`insideFog`) is turned off on a volume tier
   (`cloud_uniforms`' third vector's x is 0) so the two don't stack.
@@ -229,14 +231,17 @@ amendment records the decision. Built in two rounds the same day: the march and 
 
 ### 8.2 Tiers
 
-`tiers` gives each Clouds setting value its march: steps (0: the 2D deck), light samples per step,
+`tiers` gives each Clouds setting value its march: steps (0: the 2D deck), light samples per step
+(at most 6, `MAX_LIGHT_STEPS`; a lower setting never takes more than a higher one, the generator
+checks; 0: the cloud above the sample along the light's slant stands for its path; until 2026-11-12
+High took 1 and Medium none, §8.8),
 the resolution divisor of the clouds pass (§8.6) and the share of each new frame in the accumulated
 picture (`historyBlend`):
 
 | Setting | Steps | Light samples | Resolution | Blend | Who |
 |---|---|---|---|---|---|
-| High | 16 | 1 | ½ | 0.2 | opt-in (the Ultra preset) |
-| Medium | 10 | 0 (the step's own density) | ¼ | 0.2 | desktops' default (and the Medium and High presets) |
+| High | 16 | 6 | ½ | 0.2 | opt-in (the Ultra preset) |
+| Medium | 10 | 4 | ¼ | 0.2 | desktops' default (and the Medium and High presets) |
 | Low | 0 (the 2D deck) | — | — | — | touch devices' default |
 | Off | — | — | — | — | |
 
@@ -376,3 +381,62 @@ A plume the ray crosses costs `plumeSteps` × ~140 ALU (Medium: ~0.8k) on the te
 The march's resolution and step counts were already by tier (§8.2). Left: the trace on a GPU of the
 pass's start and copy (§8.5).
 
+
+### 8.8 Lighting (2026-11-12)
+
+The owner (WORK_QUEUE item 13): "the lighting on the new clouds just looks like it's all bright white so the
+actual shape is difficult or impossible to read. Our old 2D clouds had better lighting, use that as a
+reference", and again: "the volumetric clouds still look bad no proper lighting or shading?". The cause:
+Medium (the desktops' default) took no light samples, so a sample's light was its own density's
+(`exp(−1.06 d)` at most), mixed from the deck's shade colour to its lit one, which are both near
+white; the deck had a sample toward the sun and its whole fBm's contrast. Every sample now takes
+(`volume` in `clouds.json`, the CPU twin in `dwell_look::clouds`: `light_depth`, `sample_light`,
+`sample_colour`, `cloud_phase`, `soft_clip`; the shader's `cloud_vol_light`):
+
+- **The sun's light:** `lightSteps` samples toward the light (the tier's), the first `lightStepM`
+  (160 m) long and each `lightStepGrowth` (1.6) times the last, so Medium's 4 reach 1.5 km, the
+  layer's depth; the path stops where it leaves the layer (an overhead sun from a top takes one or
+  two). Their optical depth through Beer's law (`light.absorption`, `extinction`) with
+  `multiScatter` the floor a wider, weaker Beer keeps (light scattered many times still reaches the
+  inside), a powder term (`powder`, strongest looking away from the light), and the **phase**: a
+  dual-lobe Henyey–Greenstein (`phaseForward` 0.5, `phaseBack` −0.2 at `phaseBackWeight` 0.3,
+  shaping the light by `phaseStrength` 0.6), so thin cloud toward the sun glows (the silver lining:
+  ~4× the side-on light) and the light behind the viewer lifts a little; times `sunStrength`, the lit
+  colour. It replaces the deck's added rim on the volume.
+- **The ambient:** the shade colour (the sky's light) at `skyAmbient` from above and at
+  `groundBounce`, tinted by `bounceTint` (a warm grey), from below, each dimmed by e every
+  `ambientDepthM` (400 m) of cloud over or under the sample. That cloud is read from the sample's
+  own weather noise at no cost: the coverage's cut rises with height, so the column's top is where
+  it passes the noise (`volume_column_top`), half dense on average. With no light samples it also
+  stands for the light's path along the light's slant.
+- **The colours** stay the deck's palette (`light.shade` × the day sky's hue, `light.sunlit` × the
+  sun's, the sunset warmth, the moon's and the night sky's at night), so the volume reads like the
+  deck did, with its shape: from the CPU twin with the shipped data, a broad cloud lit from overhead
+  goes from ~0.47 luminance at its base to ~0.97 at its top, and a low sun's 0.40 to 0.80 (side-on),
+  up to 1.1 looking toward it. The brightest roll off a little over white (`soft_clip`).
+- **Plumes** take the same light, with their own radius toward the light and their column over and
+  under the sample.
+
+**Cost, read from the shader** (§8.7's counting: a 2D value-noise look-up ~45 ALU, a 3D one ~100). The
+march reuses its noise: one warp per view sample, its light samples reuse it and take only the
+two-octave weather noise (2 look-ups, ~90 ALU, half of the old light sample's 4) with no detail; the
+phase and the powder's strength are once per ray; the lighting is ~40 ALU a cloudy sample (four
+`exp`). A march stops once 98 % opaque (~7 dense samples), so per texel:
+
+| Tier | Before (empty – cloudy texel) | After (empty – cloudy texel) |
+|---|---|---|
+| Medium ¼, 10 steps | 1.8k – 2.6k (no light samples) | 1.8k – 5.3k (4 light samples) |
+| High ½, 16 steps | 2.9k – 4.8k (1 light sample of 4 look-ups) | 2.9k – 7.6k (6 light samples of 2) |
+
+At 1280 × 720 that is at most ~0.3 G ALU a frame on Medium (~0.1 ms on an M1) and ~1.75 G on High
+(opt-in): Medium stays inside its budget as the pass's fixed part dominates (§8.7). The GPU timings
+(`npm run bench -- --warm`, the §8.3 views, before and after) and the in-game look against the old
+deck side by side are for a local session; tune by the data (`lightSteps`, `ambientDepthM`,
+`sunStrength`) if Medium from above goes over.
+
+Tests (`crates/dwell-look/src/clouds.rs`, `volume_tests`): a cloud's sun-facing top is brighter than
+its base on every tier's light samples (and the base not black); deeper from the sun is darker; the
+phase brightens toward the sun (and is even with no strength); the tiers' light samples come from
+the data and the shader's loop bound is the cap; the march reuses one warp per sample; the light is
+face-local (both faces); the shaders validate with naga. `clouds.test.mjs` checks the new entries'
+ranges and the tiers' order.

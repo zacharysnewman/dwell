@@ -6,7 +6,7 @@ pins it.
 
 ## Open
 
-### 88. Sub-60 fps flying at High on the owner's M1 MacBook Air (measured; partial)
+### 89. Sub-60 fps flying at High on the owner's M1 MacBook Air (measured; partial)
 
 Reported 2026-11-12 (owner): "Im seeing on this m1 Mac that im getting sub-60FPS when flying on High. Im wondering
 if the new trees and volumetric clouds are at fault!" Target (WORK_QUEUE item 30): High at 60 fps on an M1 Air.
@@ -24,6 +24,13 @@ shadows ~2 ms more. Speed effects' motion pass costs ~0.5 ms; bloom and shafts n
 Outstanding: no cut yet (45-minute box). The levers: a Tall grass setting (a mesher flag, #78's outstanding item),
 the far trees as impostors (WORK_QUEUE item 31), and High's sun shadows over forest; a vsync run of `high-fly` for
 the dropped-frame count and a faster flight (level 6+) for the streaming at speed.
+### 88. Volumetric clouds z-fight against tall terrain
+
+Owner, 2026-11-12: "a bug with volumetric clouds z fighting against tall terrain like mountains." Where a mountain
+rises into the cloud layer, the cloud volume and the terrain flicker against each other. Suspects: the volume pass's
+depth test against the low-resolution (½/¼ res) depth or its temporal reprojection mixing samples across the
+terrain's silhouette; the march not stopping at the scene depth (or comparing depth in a different space/precision
+far away); the far pass's depth range at mountain distance.
 
 ### 87. An NPC's raised vertical block leans the blade back over its shoulder
 

@@ -44,7 +44,7 @@
     "topLight": 0.9
   },
   "volume": {
-    "$comment": "The volumetric layer (docs/CLOUDS.md §8): ray-marched between baseM and topM above sea level on the viewer's face, when the Clouds setting's tier has steps (tiers). Density: the deck's 2D shape as a weather map (the coverage) its coverage cut rising with height (rounded tops over flat bases; topFloor: how far up the layer a cloud of the cutoff's density reaches, the densest the top), eroded by 3D value noise of detailCellM cells (scaleM must be a whole multiple of it) by detailErosion. extinction: the light lost per metre at density 1. lightStepM: the spacing of the light samples toward the sun or moon. powder: the dark-edge (powder) term's strength. ambient: how lit the shade is (0: the shade colour, 1: fully lit). maxDistanceM: the march's reach along the ray (the deck's fade still hazes it). plumeBillow: how much rising 3D noise (cells the plume's own width, scrolled up at its riseMps) breaks a plume's density up (0: smooth).",
+    "$comment": "The volumetric layer (docs/CLOUDS.md §8): ray-marched between baseM and topM above sea level on the viewer's face, when the Clouds setting's tier has steps (tiers). Density: the deck's 2D shape as a weather map (the coverage) its coverage cut rising with height (rounded tops over flat bases; topFloor: how far up the layer a cloud of the cutoff's density reaches, the densest the top), eroded by 3D value noise of detailCellM cells (scaleM must be a whole multiple of it) by detailErosion. extinction: the light lost per metre at density 1. maxDistanceM: the march's reach along the ray (the deck's fade still hazes it). plumeBillow: how much rising 3D noise (cells the plume's own width, scrolled up at its riseMps) breaks a plume's density up (0: smooth). The light (§8.8): each sample is the sun's (or moon's) light plus the ambient. Sun: the tier's lightSteps samples toward the light, the first lightStepM long and each lightStepGrowth times the last (4 cover the layer's depth), give the optical depth; Beer's law over it (light.absorption), with multiScatter the floor of light that still reaches deep inside (a wider, weaker Beer for light scattered many times), a powder term (powder: thin edges facing away from the light a little darker), a dual-lobe Henyey–Greenstein phase (phaseForward the forward lobe's g: the silver lining toward the light, phaseBack the back lobe's g, phaseBackWeight its share, phaseStrength how much the phase shapes the light, 0: even all round) times sunStrength. Ambient: the shade colour (the sky's light) from above, skyAmbient at a cloud's top, dimming with the cloud above the sample (half every ambientDepthM × ln 2 of cloud), and groundBounce of it tinted by bounceTint from below, dimming with the cloud under the sample: so bases are darker than tops. With no light samples the cloud above the sample stands for the light's path.",
     "baseM": 1350,
     "topM": 2700,
     "topFloor": 0.4,
@@ -52,23 +52,33 @@
     "detailErosion": 0.55,
     "extinction": 0.006,
     "lightStepM": 160,
-    "powder": 0.3,
-    "ambient": 0.2,
+    "lightStepGrowth": 1.6,
+    "multiScatter": 0.5,
+    "powder": 0.5,
+    "phaseForward": 0.5,
+    "phaseBack": -0.2,
+    "phaseBackWeight": 0.3,
+    "phaseStrength": 0.6,
+    "sunStrength": 1.3,
+    "skyAmbient": 0.4,
+    "groundBounce": 0.45,
+    "bounceTint": "#a8a094",
+    "ambientDepthM": 400,
     "maxDistanceM": 22000,
     "plumeBillow": 0.6
   },
   "tiers": {
-    "$comment": "Per Clouds setting value: the march's steps per pixel (0: the 2D deck, as before), the light samples per step (0-4), the march's resolution divisor (1 full, 2 half, 4 quarter: the march draws into a buffer that size, accumulated over frames and upsampled by the composite) and how much of each new frame goes into the accumulated picture (historyBlend: lower is smoother, slower to follow). The CPU adapter draws no clouds (clouds_for). plumeSteps: the samples through each plume the ray crosses (0: no plumes; docs/CLOUDS.md §8.7).",
+    "$comment": "Per Clouds setting value: the march's steps per pixel (0: the 2D deck, as before), the light samples per step toward the sun or moon (0-6; 0: the cloud above the sample stands for the light's path), the march's resolution divisor (1 full, 2 half, 4 quarter: the march draws into a buffer that size, accumulated over frames and upsampled by the composite) and how much of each new frame goes into the accumulated picture (historyBlend: lower is smoother, slower to follow). The CPU adapter draws no clouds (clouds_for). plumeSteps: the samples through each plume the ray crosses (0: no plumes; docs/CLOUDS.md §8.7).",
     "high": {
       "steps": 16,
-      "lightSteps": 1,
+      "lightSteps": 6,
       "divisor": 2,
       "historyBlend": 0.2,
       "plumeSteps": 8
     },
     "medium": {
       "steps": 10,
-      "lightSteps": 0,
+      "lightSteps": 4,
       "divisor": 4,
       "historyBlend": 0.2,
       "plumeSteps": 6

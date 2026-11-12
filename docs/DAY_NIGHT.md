@@ -187,7 +187,9 @@ colours, each face's lights, and the other face's sky colours and fog density). 
 Water's reflection uses `sky()`, which is `dwell_sky` with the frame's `DaySky`, so it follows the
 cycle; its glint takes the face's sun and moon light from the block too. The clouds (Phase 31) take
 their light from the same block (`cloud_lighting_for`: the deck's own face's sun, moon and sky light;
-day or night by the sun's height over that face).
+day or night by the sun's height over that face). The volumetric clouds light with the same colours
+from that block: the sun's or moon's light through a short light march, the sky's light from above and a
+darker ground bounce from below (CLOUDS.md §8.8), so at sunset they warm and at night they take the moon.
 
 ## 6. Dev controls
 

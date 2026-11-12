@@ -8282,7 +8282,7 @@
     },
     {
       "name": "high-fly",
-      "notes": "WORK_QUEUE item 30, BUGS.md #88: the High preset flying (level 4) from the starter's mixed forest east toward the tall cone, each suspect switched off in turn mid-flight with High recorded between (clouds Low, speed effects, cards and tall grass, shadows Low, bloom and shafts), 4 s recorded each; run --unthrottled on the M1 for gpu.frame and frame.cpu per feature (docs/DEV_TOOLS.md, Flying at High on the M1).",
+      "notes": "WORK_QUEUE item 30, BUGS.md #89: the High preset flying (level 4) from the starter's mixed forest east toward the tall cone, each suspect switched off in turn mid-flight with High recorded between (clouds Low, speed effects, cards and tall grass, shadows Low, bloom and shafts), 4 s recorded each; run --unthrottled on the M1 for gpu.frame and frame.cpu per feature (docs/DEV_TOOLS.md, Flying at High on the M1).",
       "window": { "width": 1280, "height": 800, "pixelRatio": 2 },
       "query": { "worldgen": "test:starter", "seed": "0", "fresh": "1", "preset": "high", "at": "-18100.5,140,-6500.5" },
       "steps": [
