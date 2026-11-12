@@ -653,3 +653,57 @@ checks. `dwell-client`: the codec carries the new job, the shaders' wiring.
 Left: the in-game look (sun high, low sun, from above, night, flying through the layer) and the GPU cost
 (local bench, §9.5); the weather map's type and precipitation as run-time uniforms for a weather system; the
 clouds' shadows on the ground; adaptive steps; plumes taking the base noise for their billows.
+
+### 9.8 The low sun's tint and the view's opacity (2026-11-12, WORK_QUEUE item 13)
+
+The owner: "they don't look pretty and tinted during sunrise and sunset like our old 2D clouds", and on
+opacity: "light should still go through the clouds, but what is looking bad is the clouds behind the one in
+front and you usually can't see other separate clouds blocked behind ones in front of you".
+
+**What the deck tints at a low sun, and what the volume did.** Every term of the 2D deck (`dwell_cloud_layer`)
+that warms a cloud at a low sun:
+
+| Term | The deck | The volume before | Now |
+|---|---|---|---|
+| The sun's colour by elevation | `light.sunlit` × the hue of the day/night's `sunLight` (`#ff9a5c` at sunrise) | the same, the lit colour | the same |
+| The golden-hour ramp | `low` = `light.sunWarmth` × (1 − smoothstep(0.02, 0.4, sun's sine)): all of it up to ~1°, none from ~24° | the same ramp, on the lit colour only | one function for both (`cloud_low_sun`, `low_sun`) |
+| The warm tint | the **whole** colour toward `light.sunset` × mix(0.75, 1, lit) by `low` × lit: shaded sides warm at 0.75 | only the sun's light toward `sunset`; the shade (the sky's light and the ground's bounce) untinted | the shade too, toward `sunset` × 0.75 (the deck's shaded side) by `low` × `volume.sunsetShade` (1.5, the mix capped at 1) |
+| The sky's colour | the shade colour × half the hue of the hemisphere sky (`hemiSky`, a cool lavender at sunrise) | the same | the same, then warmed as above |
+| The horizon colour by distance | `mix(col, sky behind, 0.85 × smoothstep(0, deck.fadeEndM, distance))` | the same expression, by the first cloud's distance | one function for both (`cloud_far_haze`, `far_haze`): far clouds fade into the horizon and the low sun's band |
+| Tone mapping | both composite in display colour, the same path | — | no change needed |
+
+So the tint was lost in the ambient, not in the sun's colour or the tone mapping: a volume sample's light is
+mostly the sky's (the CPU twin: at 3° the sun reaches a lit top through ~1.5 km of cloud, so the sky's light,
+cool lavender, is ~70 % of it), where the deck's is 50–90 % the sun's hue. The lit side read warm in hue but
+grey: its warmth (red over blue) 1.38 against the deck's 1.73 at a lit 0.7 side; its base 1.14, near white.
+Now (`day_shading`, the shader's `cloud_shading`): the lit side 1.69 (within 8 % of the deck's), the base 1.51
+(peach-pink); at noon the ramp is 0 and the shading is exactly what it was.
+
+**The view's opacity, apart from the light's.** Before, the light march's Beer took `volume.extinction` too
+(`tau = light.absorption × volume.extinction × od`), so a more opaque view would also have darkened the light
+through the cloud. Now: `volume.extinction` (0.03 /m, was 0.006) is the view ray's alone, `volume.lightExtinction`
+(0.006, the old value) the light's path (lit edges, the silver lining, the glow: unchanged), and
+`volume.plumeExtinction` (0.006) the plumes' view (unchanged). For the owner's A/B, `?cloudExtinction=0.006`
+(or `0.05`) overrides the view's live, through the clouds pass's uniform (`CloudPrev.tan.z`; 0 the data's),
+and `__dwell.cloudExtinction(x)` changes it mid-run.
+
+**What it does (CPU twin).** An eroded mid cloud (density 0.25) at High's and the near tier's ~300 m steps:
+at 0.006 a ray takes 7 samples through a 2 km bank and still sees ~4 % of what is behind (a cloud behind 400 m
+of it shows at 55 %); at 0.03 and at 0.05 two samples end the march (that cloud behind at 5 % and 0.7 %). A dense core at
+Medium's ~900 m steps was one sample before and is still. A thin eroded edge (density 0.05 over 50 m) still
+lets 93 % through, so the edges stay soft. **Cost** (§9.5's counting, ~1 k ALU a cloudy Medium sample with its
+4 light samples): a cloudy texel that met mid-density cloud ends up to 5 samples sooner, up to ~−5 k of
+Medium's 7.4 k worst case and of High's 10.5 k (about −40 % to −65 %); empty texels are unchanged. Measured cost (`gpu.clouds`) is
+for the local bench, before and after.
+
+Tests (`volume_tests`): at a sun 3° up (from the day/night data) the volume's lit side has the deck's tint
+within 8 % and its base warms (both failed with the old shading: red → green, the lit side 20 % short); noon
+is unchanged and differs from sunrise; `sunWarmth` 0 is no tint; the haze and the ramp are one function each
+on the deck and the volume; the light's Beer takes `lightExtinction` and the view the run-time value (the
+data's by default), the plumes theirs; a sample's light doesn't move with the view's opacity; the early exit
+at 0.006 / 0.03 / 0.05; both faces (the tint from the sun's face-local up part). `clouds.test.mjs`: the new
+entries' ranges.
+
+Left (local, no GPU in the cloud session): the look at sunrise and sunset against `?clouds=` the deck, and the
+A/B of `?cloudExtinction=0.006` / `0.03` / `0.05` with `gpu.clouds`; tune by `volume.sunsetShade`,
+`light.sunWarmth` and `volume.extinction`.

@@ -1,0 +1,6 @@
+{
+  "changes": [
+    "Volumetric clouds glow warm at sunrise and sunset like the old flat clouds: warm tops, peach-pink bases, far clouds fading into the horizon",
+    "Volumetric clouds hide the clouds behind them instead of showing them through, while sunlight still shines through their edges"
+  ]
+}
