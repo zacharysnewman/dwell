@@ -595,7 +595,10 @@ mod tests {
             .filter(|s| s.sapling.is_none())
             .map(|s| s.name)
             .collect();
-        assert_eq!(wild, ["dwell:old_oak", "dwell:old_pine", "dwell:tall_broadleaf"]);
+        assert_eq!(
+            wild,
+            ["dwell:old_oak", "dwell:old_pine", "dwell:tall_broadleaf"]
+        );
         for (i, s) in SPECIES.iter().enumerate() {
             let Some(p) = s.sapling else { continue };
             assert_eq!(of_sapling(p.item), Some(i), "{}", s.name);
