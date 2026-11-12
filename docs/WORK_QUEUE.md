@@ -850,8 +850,10 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    their skin weights), driven by the first-person clips (the swings fitted with clip_probe) mapped onto its arm
    bones, held items on its `hand.R`; the rigid arms retired. Priority: next after item 30.
 38. **Wandering NPCs** (owner 2026-11-12: "Another item to queue up, wandering NPCs. They'll use the same player
-   character model."). People using the Peasant model who wander the world like the animals do. Design questions
-   asked; queued.
+   character model."). People using the Peasant model who wander the world like the animals do. Owner's answers
+   (2026-11-12): wander, idle (look around, sit), turn to look at a nearby player, step aside when bumped — no
+   talking or trading yet; a few near players by a data rule (count, spacing, biomes), simulated only nearby, like
+   the animals; colour variations of the Peasant per NPC (palette remaps, seeded, data). In progress (cloud).
 
 ## Done
 
