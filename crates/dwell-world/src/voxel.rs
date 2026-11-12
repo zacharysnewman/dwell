@@ -890,43 +890,44 @@ impl VoxelWorld {
         }
         let n = CHUNK_SIZE;
         let [ax, ay, az] = apron;
-        let (ex, ey, ez) = (n + 2 * ax, n + 2 * ay, n + 2 * az);
+        let (ex, ez) = (n + 2 * ax, n + 2 * az);
         let at =
             |dx: i32, dy: i32, dz: i32| ChunkCoord::new(coord.x + dx, coord.y + dy, coord.z + dz);
-        let missing = |dx: i32, dy: i32, dz: i32| {
-            (dx, dz) != (0, 0) && !self.chunks.contains_key(&at(dx, dy, dz))
+        // Each neighbour looked up once, and only the missing ones' parts of the apron visited
+        // (BUGS.md #72: a lookup per voxel of the 44 × 64 × 44 sky volume, at every chunk on the
+        // streamed view's edge, made `padded_box` the main thread's largest cost while moving).
+        // The part of the padded block along an axis on side `d` (-1, 0, 1) of the chunk.
+        let range = |d: i32, pad: i32| match d {
+            -1 => (0, pad),
+            0 => (pad, pad + n),
+            _ => (pad + n, n + 2 * pad),
         };
-        if !(-1..=1).any(|dy| (-1..=1).any(|dz| (-1..=1).any(|dx| missing(dx, dy, dz)))) {
-            return;
-        }
-        let side = |v: i32| -> i32 {
-            if v < 0 {
-                -1
-            } else if v >= n {
-                1
-            } else {
-                0
-            }
-        };
-        for py in 0..ey {
-            let y = py - ay;
-            let dy = side(y);
+        for dy in -1..=1 {
             let Some(own) = self.chunks.get(&at(0, dy, 0)) else {
                 continue;
             };
-            let ly = y - dy * n;
-            for pz in 0..ez {
-                let z = pz - az;
-                for px in 0..ex {
-                    let x = px - ax;
-                    let (dx, dz) = (side(x), side(z));
-                    if !missing(dx, dy, dz) {
+            let (y0, y1) = range(dy, ay);
+            for dz in -1..=1 {
+                for dx in -1..=1 {
+                    if (dx, dz) == (0, 0) || self.chunks.contains_key(&at(dx, dy, dz)) {
                         continue;
                     }
-                    let v = own.voxels()[local_index(x.clamp(0, n - 1), ly, z.clamp(0, n - 1))];
-                    let info = dwell_blocks::info(v);
-                    if info.liquid || info.flooded {
-                        out[((pz + ez * py) * ex + px) as usize] = v;
+                    let (x0, x1) = range(dx, ax);
+                    let (z0, z1) = range(dz, az);
+                    for py in y0..y1 {
+                        let ly = py - ay - dy * n;
+                        for pz in z0..z1 {
+                            let lz = (pz - az).clamp(0, n - 1);
+                            let row = (pz + ez * py) * ex;
+                            for px in x0..x1 {
+                                let lx = (px - ax).clamp(0, n - 1);
+                                let v = own.voxels()[local_index(lx, ly, lz)];
+                                let info = dwell_blocks::info(v);
+                                if info.liquid || info.flooded {
+                                    out[(row + px) as usize] = v;
+                                }
+                            }
+                        }
                     }
                 }
             }
