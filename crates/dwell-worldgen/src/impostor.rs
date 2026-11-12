@@ -725,6 +725,12 @@ fn march(
     }
 }
 
+/// The seed variant `v` of every species and stage is baked from: a fixed spread, so the variants
+/// differ (a tree's own seed only picks one, [`Config::baked_for`]).
+pub fn variant_seed(v: u32) -> u32 {
+    v.wrapping_mul(0x9E37_79B9).wrapping_add(0x7F4A_7C15)
+}
+
 /// A species tree in a far tree list (proposal I-2): what an impostor instance is built from. Its
 /// anchor is face-local (the voxel above the ground it stands on); `species` indexes
 /// [`crate::species::SPECIES`]; `seed` and `stage` are the placement's (ADR 0079), so the near
@@ -761,6 +767,31 @@ impl Config {
         u32::from(species) * self.layers_per_species() + slot as u32 * self.variants + variant
     }
 
+    /// How many baked trees the atlas holds: every species' [`Config::layers_per_species`].
+    pub fn layer_count(&self) -> u32 {
+        crate::species::SPECIES.len() as u32 * self.layers_per_species()
+    }
+
+    /// What array layer `layer` holds: (species index, the growth stage baked, the seed baked),
+    /// the inverse of [`Config::layer`]'s blocks (the stage clamped to the species' last; variant
+    /// `v` baked from seed `v`'s [`variant_seed`]). `None` past [`Config::layer_count`].
+    pub fn layer_tree(&self, layer: u32) -> Option<(u16, u32, u32)> {
+        let per = self.layers_per_species();
+        let species = crate::species::SPECIES.get((layer / per.max(1)) as usize)?;
+        let within = layer % per;
+        let (slot, variant) = (within / self.variants, within % self.variants);
+        let stage = self.stages[slot as usize].min(species.stages.saturating_sub(1));
+        Some(((layer / per) as u16, stage, variant_seed(variant)))
+    }
+
+    /// Bakes array layer `layer` at `px` texels a view (the drawer's bake job; `None` past the
+    /// layers).
+    pub fn bake_layer(&self, layer: u32, px: u32) -> Option<Impostor> {
+        let (species, stage, seed) = self.layer_tree(layer)?;
+        let sp = &crate::species::SPECIES[species as usize];
+        Some(bake(sp, seed, stage, self, px))
+    }
+
     /// The instances of `trees` (a section's list), in the list's order.
     pub fn instances(&self, trees: &[FarTree]) -> Vec<Instance> {
         trees
@@ -788,6 +819,29 @@ mod tests {
         let mut c = Config::get().clone();
         c.view_px = [32, 16, 8];
         c
+    }
+
+    #[test]
+    fn every_layer_names_the_tree_its_instances_draw() {
+        // face-a-only: data only.
+        let c = small();
+        assert_eq!(c.layer_count(), SPECIES.len() as u32 * c.layers_per_species());
+        for species in 0..SPECIES.len() as u16 {
+            for seed in [1u32, 77, 4096, 123_456] {
+                for stage in 0..8 {
+                    let layer = c.layer(species, seed, stage);
+                    let (s, baked_stage, _) = c.layer_tree(layer).expect("in range");
+                    assert_eq!(s, species);
+                    let (slot, _) = c.baked_for(seed, stage);
+                    let last = SPECIES[species as usize].stages.saturating_sub(1);
+                    assert_eq!(baked_stage, c.stages[slot].min(last));
+                }
+            }
+        }
+        assert_eq!(c.layer_tree(c.layer_count()), None);
+        let one = c.bake_layer(0, 8).expect("layer 0");
+        assert_eq!(one.px, 8);
+        assert!(one.albedo.iter().any(|t| t[3] == 255), "a tree, not an empty atlas");
     }
 
     #[test]
