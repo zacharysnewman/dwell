@@ -20,8 +20,8 @@ pub mod island;
 pub mod sim;
 
 pub use data::{
-    Data, Diet, Disperse, Flee, GroundDef, GroupRules, IslandParams, NearDef, NearFlee, NearGraze,
-    NearHunt, NearMate, NearParams, NearSleep, SpeciesDef,
+    Data, Diet, Disperse, Flee, GroundDef, GroupRules, HurtReact, IslandParams, NearDef, NearFlee,
+    NearGraze, NearHunt, NearHurt, NearMate, NearParams, NearSleep, SpeciesDef,
 };
 pub use island::{Ground, Island};
 pub use sim::{Activity, Ecosystem, Group, step};

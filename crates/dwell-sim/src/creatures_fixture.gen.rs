@@ -5,8 +5,8 @@ use crate::creatures::{CreatureDef, Limits, MixPart, SpawnRule};
 pub const LIMITS: Limits = Limits { spawn_chunks: 0, despawn_m: 40.0, max: 8 };
 
 pub const CREATURES: [CreatureDef; 2] = [
-    CreatureDef { name: "test:walker", model: "penguin", walk_speed: 2.0, wander_m: 6.0, idle_seconds: [0.5, 1.0], rows: 2, climb_rows: 1, drop_rows: 1 },
-    CreatureDef { name: "test:leader", model: "penguin", walk_speed: 2.0, wander_m: 6.0, idle_seconds: [0.5, 1.0], rows: 2, climb_rows: 1, drop_rows: 1 },
+    CreatureDef { name: "test:walker", model: "penguin", walk_speed: 2.0, wander_m: 6.0, idle_seconds: [0.5, 1.0], rows: 2, climb_rows: 1, drop_rows: 1, health: 5.0, hit_radius_m: 0.3, drops: &[("dwell:stick", 2, 2)] },
+    CreatureDef { name: "test:leader", model: "penguin", walk_speed: 2.0, wander_m: 6.0, idle_seconds: [0.5, 1.0], rows: 2, climb_rows: 1, drop_rows: 1, health: 0.0, hit_radius_m: 0.4, drops: &[] },
 ];
 
 pub const RULES: [SpawnRule; 1] = [

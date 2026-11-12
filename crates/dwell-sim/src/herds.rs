@@ -18,7 +18,7 @@
 //! seeded from (world seed, record id, member).
 
 use crate::creatures::{Creatures, Get, feet_row, feet_y, group_kinds};
-use dwell_ecology::{Activity, Data, Diet, Ecosystem, Group, Island, NearDef};
+use dwell_ecology::{Activity, Data, Diet, Ecosystem, Group, HurtReact, Island, NearDef};
 use dwell_protocol::SIM_HZ;
 use dwell_world::{Face, FaceFrame, cell_of_pos, m_of_row};
 
@@ -73,6 +73,10 @@ pub struct Member {
     pub z: f64,
     /// Seconds left asleep.
     sleep_s: f64,
+    /// Seconds left reacting to a hit (its species' `near.hurt`), and where (face-local x, z) the
+    /// striker stood.
+    pub hurt_s: f64,
+    pub hurt_from: [f64; 2],
     rng: u64,
 }
 
@@ -300,7 +304,7 @@ impl Near {
         if !now.is_multiple_of(every) {
             return Vec::new();
         }
-        self.refresh(creatures);
+        self.refresh(w, creatures);
         self.far_losses(w, creatures);
         self.fold_far(w, creatures);
         self.spawn_near(w, creatures);
@@ -347,17 +351,31 @@ impl Near {
         }
     }
 
-    /// Every member's place from its creature.
-    fn refresh(&mut self, creatures: &Creatures) {
+    /// Every member's place from its creature; a member whose creature is gone (killed by a
+    /// weapon, WORK_QUEUE item 35) is a death; a hit since the last decision starts its reaction.
+    fn refresh(&mut self, w: &World, creatures: &mut Creatures) {
         for g in &mut self.groups {
             let f = FaceFrame::of(FACES[g.face]);
+            let before = g.members.len();
+            g.members.retain(|m| creatures.get(m.creature).is_some());
+            g.deaths += (before - g.members.len()) as u32;
+            let hurt = w.data.species[g.record.species].near.and_then(|n| n.hurt);
             for m in &mut g.members {
-                if let Some(c) = creatures.get(m.creature) {
+                if let Some(c) = creatures.get_mut(m.creature) {
                     let l = f.point(c.position);
                     (m.x, m.z) = (l[0], l[2]);
+                    if let Some(from) = c.take_hurt()
+                        && let Some(h) = hurt
+                    {
+                        let p = f.point(from);
+                        m.hurt_s = h.seconds;
+                        m.hurt_from = [p[0], p[2]];
+                        m.sleep_s = 0.0;
+                    }
                 }
             }
         }
+        self.groups.retain(|g| !g.members.is_empty());
     }
 
     fn fold_far(&mut self, w: &mut World, creatures: &mut Creatures) {
@@ -466,6 +484,8 @@ impl Near {
                             x: at[0],
                             z: at[2],
                             sleep_s: 0.0,
+                            hurt_s: 0.0,
+                            hurt_from: [0.0; 2],
                             rng,
                         });
                     }
@@ -539,9 +559,13 @@ impl Near {
                 if m.mind != Mind::Sleeping {
                     m.energy = (m.energy - def.energy_per_s * dt).max(0.0);
                 }
+                let health = creatures
+                    .get(m.creature)
+                    .map_or(1.0, |c| c.health_share(&creatures.table));
                 decide(
                     DecideIn {
                         def: &def,
+                        health,
                         diet: sp.diet,
                         flee_from: sp.flee.map(|fl| fl.from).unwrap_or(&[]),
                         me,
@@ -654,6 +678,8 @@ impl Near {
                 x: at[0],
                 z: at[1],
                 sleep_s: 0.0,
+                hurt_s: 0.0,
+                hurt_from: [0.0; 2],
                 rng,
             });
         }
@@ -732,6 +758,8 @@ fn eat_block(
 
 struct DecideIn<'a> {
     def: &'a NearDef,
+    /// Its health as a share of its whole.
+    health: f64,
     diet: Diet,
     flee_from: &'a [usize],
     me: Seen,
@@ -756,6 +784,29 @@ type Nearest<'a> = &'a dyn Fn(&dyn Fn(&Seen) -> bool) -> Option<(Seen, f64)>;
 /// living member on its face that `pick` accepts, with its distance.
 fn decide(i: DecideIn, m: &mut Member, nearest: Nearest) -> Act {
     let (def, me) = (i.def, i.me);
+    // 0. Hurt (a weapon's hit, WORK_QUEUE item 35): flee from the striker, or fight (close on it)
+    //    unless too hurt, by the species' `near.hurt`.
+    if let Some(h) = def.hurt
+        && m.hurt_s > 0.0
+    {
+        m.hurt_s -= i.dt;
+        m.sleep_s = 0.0;
+        let [hx, hz] = m.hurt_from;
+        let (dx, dz) = (me.x - hx, me.z - hz);
+        let d = dx.hypot(dz);
+        let fight = h.react == HurtReact::Fight && i.health >= h.flee_below_health;
+        if fight {
+            m.mind = Mind::Chasing;
+            return Act::Go(Go::To([hx, hz], h.pace));
+        }
+        m.mind = Mind::Fleeing;
+        let (ax, az) = if d > 1e-6 {
+            (dx / d, dz / d)
+        } else {
+            (1.0, 0.0)
+        };
+        return Act::Go(Go::To([me.x + ax * h.run_m, me.z + az * h.run_m], h.pace));
+    }
     // 1. Flee what its species flees, within the radius.
     if let Some(fl) = def.flee
         && let Some((o, d)) = nearest(&|o| i.flee_from.contains(&o.species))
@@ -1105,6 +1156,55 @@ mod tests {
             assert_eq!(deer.members[0].mind, Mind::Fleeing);
             s.run(&[(0.0, 0.0)], 4.0, |_| {});
             assert!(gap(&s) > start + 4.0, "ran off: {start} → {}", gap(&s));
+        }
+    );
+
+    /// The mind and the distance from face-local `(x, z)` of the one creature after a hit from
+    /// there and `secs` more (WORK_QUEUE item 35).
+    fn after_a_hit(s: &mut Scene, from: (f64, f64), health: f64, secs: f64) -> (Mind, f64, f64) {
+        let f = s.f;
+        let c = &mut s.creatures.list[0];
+        let before = f.point(c.position);
+        c.health = health;
+        c.hurt_from = Some(f.point([from.0, m_of_row(10), from.1]));
+        s.run(&[(-30.0, 0.0)], secs, |_| {});
+        let mind = s.near.groups[0].members[0].mind;
+        let now = f.point(s.creatures.list[0].position);
+        let d = |p: [f64; 3]| (p[0] - from.0).hypot(p[2] - from.1);
+        (mind, d(before), d(now))
+    }
+
+    both_faces!(
+        fn a_hurt_deer_flees_and_a_hurt_wolf_fights_unless_badly_hurt(f: FaceFrame) {
+            // A lone, fed doe and a lone, fed wolf; a hit from 2 m to their -x.
+            let mut s = Scene::new(f, &[("dwell:deer", 0.0, 0.0, 1.0, 0.0)], 9);
+            s.run(&[(-30.0, 0.0)], 0.6, |_| {});
+            let at = f.point(s.creatures.list[0].position);
+            let (mind, d0, d1) = after_a_hit(&mut s, (at[0] - 2.0, at[2]), 1.0, 2.0);
+            assert_eq!(mind, Mind::Fleeing, "the deer's data: flee");
+            assert!(d1 > d0 + 2.0, "ran off: {d0} → {d1}");
+            let mut s = Scene::new(f, &[("dwell:wolf", 0.0, 0.0, 1.0, 0.0)], 9);
+            s.run(&[(-30.0, 0.0)], 0.6, |_| {});
+            let at = f.point(s.creatures.list[0].position);
+            let whole = s.creatures.table.creatures[s.creatures.list[0].kind].health;
+            let (mind, d0, d1) = after_a_hit(&mut s, (at[0] - 4.0, at[2]), whole, 1.0);
+            assert_eq!(mind, Mind::Chasing, "the wolf's data: fight");
+            assert!(d1 < d0 - 1.0, "closed on the striker: {d0} → {d1}");
+            // Under its fleeBelowHealth it flees instead.
+            let (mind, ..) = after_a_hit(&mut s, (at[0] - 4.0, at[2]), 0.1 * whole, 1.0);
+            assert_eq!(mind, Mind::Fleeing);
+        }
+    );
+
+    both_faces!(
+        fn a_member_killed_leaves_its_group_as_a_death(f: FaceFrame) {
+            let mut s = Scene::new(f, &[("dwell:deer", 0.0, 0.0, 3.0, 0.6)], 4);
+            s.run(&[(-20.0, 0.0)], 0.6, |_| {});
+            let id = s.creatures.list[0].id;
+            s.creatures.remove(id);
+            s.run(&[(-20.0, 0.0)], 0.6, |_| {});
+            let g = &s.near.groups[0];
+            assert_eq!((g.members.len(), g.deaths), (2, 1));
         }
     );
 

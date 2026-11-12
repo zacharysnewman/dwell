@@ -116,6 +116,24 @@ comes inside the arms' near plane (`ARMS_NEAR` + 1 cm).
 (`shared/tools/tools.json` `durability`; owner, 2026-11-11: "stone pick wears too like axe, same with
 shovel"); the metal tools never wear, and nothing wears in creative (`creativeWear` false).
 
+### 1a′. Weapons: the sword (WORK_QUEUE item 35)
+
+Owner, 2026-11-12: "we'll want to bring in the swords from the model pack we got the tools from as
+weapons." The sword (`dwell:sword`, shared/inventory, a model look `katanas_swords` from the same
+*3D Low Poly Tools Weapons Containers* pack) is a tool of kind **`weapon`** in `shared/tools/tools.json`
+and an item of the creative inventory's **Weapons** group (`items.json` `category: weapons`); in
+adventure it will come by recipe later. Held, it swings as the axe does (Use toggles level and vertical,
+its `held`/`heldVertical` holds `sword` and `sword_vertical` in shared/characters), and its swing
+strikes the animals its arc crosses at contact (never a player): damage, knockback, the most creatures
+a swing hits and its durability are its `weapon` data, its swordplay (blocking by blade angle) its
+`weapon.guard` (ARCHITECTURE.md "Weapons"). It cuts no wood: a log stops the blade as stone does.
+A weapon wears once a creature struck (the sword 120, by `weapon.durability`; not in creative).
+
+**Outstanding (local):** the `katanas_swords` GLB is the pack's swords joined; picking one sword
+(`objects`) and measuring its `grip` and `handle` (§1a) needs the FBX, on the owner's machine
+(`node shared/models/import.mjs --props --from <unpacked pack>`). Until then the hand holds the
+joined model at its centre.
+
 ### 1b. Saplings (ADR 0079 S4)
 
 A tree species (`shared/trees/*.json`) names its sapling: `sapling: { "item", "plantOn", "dropChance" }`.

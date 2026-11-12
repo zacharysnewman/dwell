@@ -54,6 +54,8 @@ mod growth;
 mod items;
 mod lava;
 mod vitals;
+mod weapons;
+pub use weapons::StrikeLog;
 
 use crate::app_version::APP_VERSION;
 use crate::entropy::Entropy;
@@ -1021,6 +1023,8 @@ pub struct Server {
     loose_moved: HashSet<u32>,
     /// The creatures wandering near players (ADR 0073).
     creatures: crate::creatures::Creatures,
+    /// The last strikes of players' weapons on creatures (WORK_QUEUE item 35).
+    strike_log: Vec<StrikeLog>,
     /// The wood cells cut by axes (ADR 0067).
     cuts: dwell_protocol::chopping::Cuts,
     cuts_unread: bool,
@@ -1210,6 +1214,7 @@ impl Server {
             loose: Default::default(),
             loose_moved: HashSet::default(),
             creatures: Default::default(),
+            strike_log: Vec::new(),
             cuts: Default::default(),
             cuts_unread: false,
             damage: Default::default(),

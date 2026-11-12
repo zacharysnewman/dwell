@@ -254,6 +254,16 @@ The arms are a **separate view** of the same character, as first-person games do
   recovery); a hit drives them (`Animator::drive_action`): held through the hit-stop, then played
   back to the rest.
 
+**The sword (WORK_QUEUE item 35).** A `weapon` tool swings through the same arms clips as the axe
+(`chop_level` right to left, `chop_vertical` top to bottom, fitted with `clip_probe --fit`), so its
+`swing` keeps the axe's timings (0.3 s wind-up, 0.12 s arc, 0.36 s recovery after a miss), the contact
+at the clips' strike. Its holds are `sword` and `sword_vertical` (shared/characters `items`: no parts,
+the prop drawn as its model; the poses lean it as the axe's). **Outstanding (local):** slash clips of
+its own (`fp_slash_level`, `fp_slash_vertical` and the bodies', the blade's edge leading, fitted with
+`clip_probe --fit` and pinned by the probe's direction and edge tests, the clip named per tool), once the
+single sword's grip is measured from the FBX (ITEMS.md §1a′); and the block's raised pose (§ ARCHITECTURE.md
+"Weapons": players can't be struck yet, so a player's block is only a look).
+
 ### 5.1 Your own body in first person **[built, C1b]**
 
 The owner (2026-10-21): "I want to see legs in first person, particularly when sliding." The

@@ -4,7 +4,7 @@ use crate::build_drag::{BuildModeDef, DragKind};
 use crate::items::{ItemDef, ItemDrag, ItemFacing};
 
 /// The creative hotbar's items, in its order (shared/items/items.json).
-pub const ITEMS: [ItemDef; 29] = [
+pub const ITEMS: [ItemDef; 30] = [
     ItemDef { name: "dwell:stone", label: "Stone", block: "dwell:stone", tool: None, rows: 1, drag: ItemDrag::Modes, state: &[], facing: ItemFacing::None, upper: &[] },
     ItemDef { name: "dwell:stone_slope", label: "Stone slope", block: "dwell:stone_ramp", tool: None, rows: 1, drag: ItemDrag::Modes, state: &[("flooded", "false"), ("half", "bottom"), ("shape", "ramp")], facing: ItemFacing::Toward, upper: &[] },
     ItemDef { name: "dwell:stone_steep_slope", label: "Stone steep slope", block: "dwell:stone_ramp", tool: None, rows: 2, drag: ItemDrag::Modes, state: &[("flooded", "false"), ("half", "bottom"), ("shape", "steep_lower")], facing: ItemFacing::Toward, upper: &[("shape", "steep_upper")] },
@@ -19,6 +19,7 @@ pub const ITEMS: [ItemDef; 29] = [
     ItemDef { name: "dwell:metal_pickaxe", label: "Metal pickaxe", block: "", tool: Some("dwell:metal_pickaxe"), rows: 1, drag: ItemDrag::None, state: &[], facing: ItemFacing::None, upper: &[] },
     ItemDef { name: "dwell:wooden_shovel", label: "Wooden shovel", block: "", tool: Some("dwell:wooden_shovel"), rows: 1, drag: ItemDrag::None, state: &[], facing: ItemFacing::None, upper: &[] },
     ItemDef { name: "dwell:metal_shovel", label: "Metal shovel", block: "", tool: Some("dwell:metal_shovel"), rows: 1, drag: ItemDrag::None, state: &[], facing: ItemFacing::None, upper: &[] },
+    ItemDef { name: "dwell:sword", label: "Sword", block: "", tool: Some("dwell:sword"), rows: 1, drag: ItemDrag::None, state: &[], facing: ItemFacing::None, upper: &[] },
     ItemDef { name: "dwell:leaves", label: "Leaves", block: "dwell:leaves", tool: None, rows: 1, drag: ItemDrag::Modes, state: &[], facing: ItemFacing::None, upper: &[] },
     ItemDef { name: "dwell:oak_sapling", label: "Oak sapling", block: "dwell:oak_sapling", tool: None, rows: 1, drag: ItemDrag::None, state: &[], facing: ItemFacing::None, upper: &[] },
     ItemDef { name: "dwell:pine_sapling", label: "Pine sapling", block: "dwell:pine_sapling", tool: None, rows: 1, drag: ItemDrag::None, state: &[], facing: ItemFacing::None, upper: &[] },

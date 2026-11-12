@@ -149,6 +149,22 @@ impl Server {
             return;
         }
         let contact = match &a {
+            // A weapon (a sword) strikes creatures: its contact is the first one its head meets.
+            ChopAction::Sweep { look, vertical, .. } if t.is_weapon() => {
+                let len = look
+                    .iter()
+                    .map(|v| f64::from(*v).powi(2))
+                    .sum::<f64>()
+                    .sqrt();
+                if !(0.5..=1.5).contains(&len) {
+                    return;
+                }
+                let look = look.map(|v| f64::from(v) / len);
+                let eye = self.eye_of(h);
+                self.weapon_contact(t, eye, look, *vertical)
+            }
+            // A weapon cuts no wood: an aimed swing with one is refused.
+            ChopAction::Swing { .. } if t.is_weapon() => return,
             ChopAction::Sweep { look, vertical, .. } if !self.config.chop2 => {
                 let len = look
                     .iter()
@@ -222,6 +238,13 @@ impl Server {
                     point,
                     vertical,
                 } => self.swing(id, &tool, cell, face, point.map(f64::from), vertical),
+                ChopAction::Sweep {
+                    tool,
+                    look,
+                    vertical,
+                } if chop::tool(&tool).is_some_and(|t| t.is_weapon()) => {
+                    self.weapon_sweep(id, &tool, look.map(f64::from), vertical)
+                }
                 ChopAction::Sweep {
                     tool,
                     look,
@@ -492,7 +515,7 @@ impl Server {
         point: [f64; 3],
         vertical: bool,
     ) {
-        let Some(t) = chop::tool(tool) else {
+        let Some(t) = chop::tool(tool).filter(|t| !t.is_weapon()) else {
             return;
         };
         let uses_items = self.uses_items();

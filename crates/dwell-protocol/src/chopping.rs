@@ -17,6 +17,13 @@ mod table {
     include!("tools.gen.rs");
 }
 
+/// The fixture tools (shared/tools/fixtures/tools.json; tests only): a weapon added by data alone.
+#[rustfmt::skip]
+#[allow(dead_code, unused_imports)]
+pub mod fixture {
+    include!("tools_fixture.gen.rs");
+}
+
 pub use crate::damage::{BlockDamageDef, CarveProfile, Cracks, DamageLook, DamageLookKind};
 pub use table::{
     BLOCK_DAMAGE, BREAK_CLASSES, BREAK_TOOLS, BREAK_WITH, CHOP2_DEFAULT, CREATIVE_WEAR, DURABILITY,
@@ -253,6 +260,102 @@ impl WoodDef {
 pub enum ToolKind {
     /// Chops the woods.
     Axe,
+    /// Strikes creatures (WORK_QUEUE item 35: a sword): its swing's arc hurts the animals it
+    /// crosses at contact by its [`WeaponDef`], never a player, and cuts no wood.
+    Weapon,
+}
+
+/// A weapon's strike (`weapon` in shared/tools/tools.json; WORK_QUEUE item 35): what one hit does
+/// to a creature its arc crosses. Its wear is `durability` (merged into [`DURABILITY`]).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct WeaponDef {
+    /// Health taken from a creature per hit (the creature's `health`, shared/creatures).
+    pub damage: f64,
+    /// How far a hit pushes the creature away from the striker (metres, along the ground).
+    pub knockback_m: f64,
+    /// The most creatures one swing hits (in the order the arc reaches them).
+    pub max_targets: u32,
+    /// Its swordplay (owner, 2026-11-12: the perpendicular-vs-parallel defence).
+    pub guard: GuardDef,
+}
+
+/// A sword's swordplay (`weapon.guard`; WORK_QUEUE item 35, owner 2026-11-12: "you can only hold
+/// the sword vertical or horizontal, and you can choose to block or not. Attacking drops block, if
+/// you hit enemy sword within an angle threshold of perpendicular you're blocked, if within an
+/// angle of parallel it connects"). Each stance's blade is a line at a roll in the holder's view
+/// (0 level, 90 upright); a strike's blade is its swing kind's stance.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct GuardDef {
+    /// The blade's roll held level and upright (degrees in the holder's view, 0 level).
+    pub level_roll_deg: f64,
+    pub vertical_roll_deg: f64,
+    /// A strike within this of perpendicular to the raised blade is blocked (degrees).
+    pub block_within_deg: f64,
+    /// A strike within this of parallel to it slips past and connects (degrees).
+    pub connect_within_deg: f64,
+    /// Between the two: a glance, this share of the damage.
+    pub glance_damage: f64,
+    /// A blocked strike's recoil: the striker's swing stops and it may swing again after this.
+    pub recoil_s: f64,
+    /// The raised blade guards strikes from within this arc round the holder's facing (degrees).
+    pub front_deg: f64,
+}
+
+/// What a strike that meets a raised blade does.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Clash {
+    /// Near perpendicular: blocked (no damage; a clash, the striker recoils).
+    Blocked,
+    /// Between the thresholds: a glance (`glance_damage` of the damage).
+    Glanced,
+    /// Near parallel: it slips past and connects (full damage).
+    Connected,
+}
+
+impl GuardDef {
+    /// A stance's blade roll.
+    pub fn roll(&self, vertical: bool) -> f64 {
+        if vertical {
+            self.vertical_roll_deg
+        } else {
+            self.level_roll_deg
+        }
+    }
+
+    /// The angle (0..=90 degrees) between a strike's blade at roll `strike` in the striker's view
+    /// and a raised blade at roll `guard` in its holder's view, the two facing each other (the
+    /// holder's roll is mirrored in the striker's view).
+    pub fn blade_angle(strike: f64, guard: f64) -> f64 {
+        let a = (strike + guard).rem_euclid(180.0);
+        a.min(180.0 - a)
+    }
+
+    /// A strike at roll `strike` on a raised blade at roll `guard`, by this weapon's thresholds.
+    pub fn clash_at(&self, strike: f64, guard: f64) -> Clash {
+        let a = Self::blade_angle(strike, guard);
+        if a >= 90.0 - self.block_within_deg - 1e-9 {
+            Clash::Blocked
+        } else if a <= self.connect_within_deg + 1e-9 {
+            Clash::Connected
+        } else {
+            Clash::Glanced
+        }
+    }
+
+    /// A strike of swing kind `strike_vertical` on a blade raised in stance `guard_vertical` (each
+    /// stance's roll from its own weapon: `guard` the defender's).
+    pub fn clash(&self, strike_vertical: bool, guard: &GuardDef, guard_vertical: bool) -> Clash {
+        self.clash_at(self.roll(strike_vertical), guard.roll(guard_vertical))
+    }
+
+    /// The share of a strike's damage that lands after `clash`.
+    pub fn damage_share(&self, clash: Clash) -> f64 {
+        match clash {
+            Clash::Blocked => 0.0,
+            Clash::Glanced => self.glance_damage,
+            Clash::Connected => 1.0,
+        }
+    }
 }
 
 /// A tool (an item, by name) and how it cuts.
@@ -283,9 +386,15 @@ pub struct ToolDef {
     /// The chopping prototype (`chop2.bite`): the share of the cross-section a chop across the
     /// grain removes ([`Cut::chop2`]).
     pub chop2_bite: f64,
+    /// A weapon's strike (`kind` weapon); None for an axe.
+    pub weapon: Option<WeaponDef>,
 }
 
 impl ToolDef {
+    /// Whether it is a weapon (strikes creatures, chops nothing).
+    pub fn is_weapon(&self) -> bool {
+        self.kind == ToolKind::Weapon
+    }
     /// Whether its swing clears the block of this name on its way.
     pub fn clears_block(&self, block: &str) -> bool {
         self.clears.contains(&block)
@@ -887,6 +996,68 @@ impl Cuts {
         }
         let cells = order.into_iter().collect();
         (r.ok() && r.at_end()).then_some(Cuts { cells })
+    }
+}
+
+#[cfg(test)]
+mod weapon_tests {
+    use super::*;
+
+    fn sword() -> WeaponDef {
+        tool("dwell:sword")
+            .and_then(|t| t.weapon)
+            .expect("the sword is a weapon")
+    }
+
+    // Owner, 2026-11-12: "if you hit enemy sword within an angle threshold of perpendicular you're
+    // blocked, if within an angle of parallel it connects".
+    #[test]
+    fn a_strike_across_a_raised_blade_is_blocked_and_one_along_it_connects() {
+        let w = sword();
+        let g = w.guard;
+        // A level slash on an upright blade: perpendicular, blocked; on a level blade: parallel.
+        assert_eq!(g.clash(false, &g, true), Clash::Blocked);
+        assert_eq!(g.clash(true, &g, false), Clash::Blocked);
+        assert_eq!(g.clash(false, &g, false), Clash::Connected);
+        assert_eq!(g.clash(true, &g, true), Clash::Connected);
+        // By the data's thresholds: within blockWithinDeg of 90 blocks, within connectWithinDeg
+        // of 0 connects, between glances.
+        let edge = 90.0 - g.block_within_deg;
+        assert_eq!(g.clash_at(edge + 1.0, 0.0), Clash::Blocked);
+        assert_eq!(
+            g.clash_at(g.connect_within_deg - 1.0, 0.0),
+            Clash::Connected
+        );
+        assert_eq!(g.clash_at(45.0, 0.0), Clash::Glanced);
+        assert_eq!(g.damage_share(Clash::Blocked), 0.0);
+        assert_eq!(g.damage_share(Clash::Glanced), g.glance_damage);
+        // The angle is between lines, folded to 0..90, the holder's roll mirrored.
+        assert!((GuardDef::blade_angle(170.0, 0.0) - 10.0).abs() < 1e-9);
+        assert!((GuardDef::blade_angle(30.0, -30.0)).abs() < 1e-9);
+    }
+
+    #[test]
+    fn the_sword_is_a_weapon_by_data_that_cuts_no_wood_and_wears() {
+        let t = tool("dwell:sword").unwrap();
+        assert!(t.is_weapon() && t.clears.is_empty());
+        let w = sword();
+        assert!(w.damage > 0.0 && w.knockback_m > 0.0 && w.max_targets >= 1);
+        assert!(durability("dwell:sword").is_some(), "it wears");
+    }
+
+    // A weapon added by data alone (shared/tools/fixtures/tools.json): the stick as a club.
+    #[test]
+    fn a_fixture_weapon_by_data_alone() {
+        let t = fixture::TOOLS
+            .iter()
+            .find(|t| t.name == "dwell:stick")
+            .unwrap();
+        assert_eq!(t.kind, ToolKind::Weapon);
+        let w = t.weapon.unwrap();
+        assert_eq!((w.damage, w.knockback_m, w.max_targets), (3.0, 0.25, 1));
+        assert_eq!(durability_in(fixture::DURABILITY, "dwell:stick"), Some(4));
+        // Its guard took the defaults: level 0, upright 90, 45 / 45.
+        assert_eq!(w.guard.clash(false, &w.guard, true), Clash::Blocked);
     }
 }
 

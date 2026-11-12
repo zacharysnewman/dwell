@@ -129,6 +129,27 @@ pub struct NearDef {
     pub company_m: f64,
     /// The farthest it wanders a walk.
     pub wander_m: f64,
+    /// How it reacts when hurt (a weapon's hit; WORK_QUEUE item 35); None: it doesn't.
+    pub hurt: Option<NearHurt>,
+}
+
+/// A hurt individual's reaction (`near.hurt`): flee from the striker or fight (turn on it), for
+/// `seconds` at `pace` × its walk; a fighter under `flee_below_health` of its health flees.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct NearHurt {
+    pub react: HurtReact,
+    pub seconds: f64,
+    pub pace: f64,
+    pub flee_below_health: f64,
+    /// How far a flight runs from the striker each decision (m).
+    pub run_m: f64,
+}
+
+/// The reactions a hurt individual may have (a fixed vocabulary; the data picks one).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HurtReact {
+    Flee,
+    Fight,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]

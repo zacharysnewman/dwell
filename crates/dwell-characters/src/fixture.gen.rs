@@ -1038,6 +1038,10 @@ pub static CHARACTERS: &[Character] = &[
                 Part { id: "axe_blade", bone: 9, kind: Kind::RoundBox, size: [0.028, 0.08, 0.14], at: [0.0, -0.215, 0.35], rot: [0.0, 0.0, 0.0], round: 0.2, tip: 0.0, side_v: [0.0, 1.0], view: View::Both, material: 21 },
                 Part { id: "axe_lashing", bone: 9, kind: Kind::Box, size: [0.062, 0.06, 0.07], at: [0.0, -0.08, 0.35], rot: [0.0, 0.0, 0.0], round: 0.0, tip: 0.0, side_v: [0.0, 1.0], view: View::Both, material: 6 },
             ] },
+            Item { name: "sword", light: None, socket: (9, [0.0, -0.1, 0.02]), pose: &[(9, [0.0, 0.0, -50.0]), (8, [0.0, -10.0, 0.0])], parts: &[
+            ] },
+            Item { name: "sword_vertical", light: None, socket: (9, [0.0, -0.1, 0.02]), pose: &[(8, [-14.0, 0.0, 0.0]), (9, [-12.0, 0.0, 0.0])], parts: &[
+            ] },
             Item { name: "brush", light: None, socket: (9, [0.0, -0.1, 0.02]), pose: &[], parts: &[
                 Part { id: "brush_handle", bone: 9, kind: Kind::Cylinder, size: [0.04, 0.32, 0.04], at: [0.0, -0.08, 0.08], rot: [90.0, 0.0, 0.0], round: 0.0, tip: 0.0, side_v: [0.0, 1.0], view: View::Both, material: 19 },
                 Part { id: "brush_pommel", bone: 9, kind: Kind::Ellipsoid, size: [0.06, 0.06, 0.06], at: [0.0, -0.08, -0.08], rot: [0.0, 0.0, 0.0], round: 0.0, tip: 0.0, side_v: [0.0, 1.0], view: View::Both, material: 7 },
