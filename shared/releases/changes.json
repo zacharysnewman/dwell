@@ -2,6 +2,36 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.54.34",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.33",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.32",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.31",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.30",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
       "version": "0.54.29",
       "changes": [
         "New world → More options has a World size on desktop: make a world 2×, 4×, 8× or 10× as wide as today's (an early test of bigger maps; a bigger world takes longer to create).",

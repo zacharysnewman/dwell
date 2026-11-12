@@ -207,6 +207,10 @@ Last updated: 2026-11-11 (0.52.108).
    32³, which the server validates as any paste; a `structures` mode ability (creative only). Sharing:
    FUTURE.md. Open: the server can't refuse a structure placement as such outside creative (both
    capability flag bytes are full; a paste there is paid in items), the anchor, a ghost of the blocks.
+   Owner, 2026-11-12, on the server not refusing placements outside creative because `welcome_flags` and
+   `inventory_flags` are full: **"Sounds like we need a new flags field for server protocol."** In progress
+   (cloud): an extendable capability field, then the server refuses a structure placement where the mode lacks
+   the `structures` ability.
 13. **Volumetric clouds** (owner 2026-11-11: "volumetric clouds in the sky. These clouds will likely be
    useful for weather sim, and volcano smoke. So they need to be performant."). **Built (branch
    `claude/volumetric-clouds`, CLOUDS.md §8):** a ray-marched layer in its own reduced-resolution pass
@@ -214,7 +218,15 @@ Last updated: 2026-11-11 (0.52.108).
    desktop default, Low the 2D deck); plumes with a colour by data; the cheap deck kept for Snell's
    window and reflections. Bench from above: High +1.5 ms (budget 1.5), Medium +0.9 ms (budget 0.8).
    Next: trace the clouds pass's fixed cost; plumes as run-time uniforms for a volcano or weather
-   system.
+   system. **Built (2026-11-12, CLOUDS.md §8.7):** plumes as a run-time list by name
+   (`dwell_look::plumes`, `plumeSlots` 8 as data) packed each frame into one uniform and marched apart
+   from the layer over each crossed plume's own span (`plumeSteps` per tier: High 8, Medium 6, none on
+   Low/Off/CPU), so a plume is a buffer write, not a pipeline; the first source a faint steam plume
+   over each world lava vent's top molten cell (`sources.lavaVent`, both faces); `__dwell.plume(op,
+   args)`. The pass's cost read from the shader: the march's arithmetic is ~0.15 G ALU a frame on
+   Medium, so the measured 0.8–0.9 ms is the pass's fixed part; cut the sky per texel, the plumes in
+   every layer step and the layer's samples with no coverage. Left: timing those cuts and tracing the
+   pass's start and history copy on a GPU (local bench).
 
 Cloud sessions: logic-only items can run as `claude --cloud` sessions in parallel (verified 2026-11-11).
 
@@ -346,6 +358,9 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    faces). An older client never asks and plays `break`; an older server never sends kinds. Tests: the
    server's (hello → the kind, no hello → plain break, red → green), the body's clip (red → green), the
    hello's schedule, wire vectors. Left: a look in game with two clients (no GPU in the cloud).
+   Owner, 2026-11-12: **"Level chop with off screen is fine. We can save loosening the stiff body for later."**
+   The level wind-up stays off the right edge; the body's hip twist moves to Future. Left: the blue sleeve blob at
+   the bottom of the screen mid-swing.
 18. **Digging marks that look carved** (owner 2026-11-11: "the 'chunks' of dirt aren't at all what we
    discussed. It should be like a normal map change (do we support normal/bump maps)? It's completely flat
    should look like mesh deformation (preferably without actually doing it for performance)"; "That part was
@@ -471,12 +486,39 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    hit carves a bite the size of the axe head where it struck (a wedge into the wood, like the dirt bowl and stone
    facets), the bites growing together into the notch as the chop goes on; cracks/splits along the grain from
    the cracks work. Next after item 24 (same code).
+   Owner, 2026-11-12: **"Yes axe bites proposal looks good."** (head-sized V bites where each hit lands, joining
+   into the notch; grain cracks around them; felling unchanged at ~11 swings, leaving the V gash). In progress
+   (cloud).
 27. **A felled trunk landing on its chopper flings them (BUGS.md #52)** (the owner's brief, 2026-11-12: fix the
    cause, "we shouldn't be capping player kick like that" (2026-11-08): no cap on the kick; a trunk hitting a
    player at speed must still knock them as physics says). **Built 2026-11-12** (branch `claude/pinch-fling`):
    a piece's contact pressing a player down takes the piece's friction (`physics::PinchGrip`, a Rapier contact
    hook; PLAYER_CONTROLLER.md §6.6), so the frictionless capsule is pinned, not squeezed out; side hits stay
    frictionless and uncapped. The repro is un-ignored (0.4–0.5 m, was 155–160 m; both faces).
+
+27. **The moon as a real bifacial world** (owner 2026-11-12: "we're going to make the moon a real bifacial world
+   like the current world, with simple gray dirt across the whole thing for now. Farthest LOD, AKA the one you
+   can see now, should be a simple lighting normal map based on the actual terrain. It should glow like it is
+   now and cast light like it does now, and it should be the same size in the sky as it is now."). Owner's
+   answers: travel and landing later, but design for it now (the moon's terrain is the one you'd stand on);
+   about ¼ of our disc (~12.5 km radius); terrain from the world's seed with moon rules (cratered plains, ridges,
+   maria), gray dirt everywhere for now — every world its own moon; today's motion, size in the sky, glow and
+   moonlight kept, the face shown follows its orbit. Design first (docs/proposals/MOON_WORLD.md), then build.
+   Owner, 2026-11-12: **"This moon is potentially an extension of our 'other' buildable surfaces that aren't
+   always oriented the same way like our physics objects."** So the moon is designed as one case of a general
+   system: a voxel grid with its own transform (position, orientation, its own up/gravity), like the built
+   bodies and physics pieces (docs/BUILT_BODIES.md) — the home world being the one at rest — so moons, ships
+   and other buildable surfaces share one frame abstraction, one streamer, one mesher and one collider.
+   Owner, 2026-11-12: **"Could we make it so you can fly to the moon, when you get close enough you begin
+   following its position, locked to it, gravity shifts to align like the underside of the bifacial world.
+   Gravity is lower on the moon."** So travel is by flight: past a capture distance (data) the player's frame
+   switches to the moon's grid (moving with it, locked to its position and orientation), gravity turns to the
+   moon's local down the way crossing to face B turns it, and the moon's gravity is weaker (data per grid).
+   Leaving the capture distance hands the player back to the home frame.
+   Owner, 2026-11-12: **"The earth should use the same normal map kinda technique when far enough away, when on
+   the moon."** So the far view is symmetric: any grid seen from far enough (the home world from the moon, the
+   moon from home) is drawn as a disc with a normal map and albedo baked from its real terrain, lit by the sun;
+   one far-body renderer for every grid.
 
 ## Done
 
@@ -669,6 +711,9 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
   the in-game editor and a biome choice in the New world form.
 
 ## Future (needs owner answers)
+
+- **A looser body in the chops** (owner 2026-11-12: "We can save loosening the stiff body for later"): the
+  hips and legs turning into a level chop seen from behind, not the chest alone.
 
 - **Active volcanoes, lava and eruptions** — docs/proposals/VOLCANOES.md (owner 2026-11-11), all 5 questions answered.
   Phase V1 (lava as a fluid) moved into the queue (item 8); the later phases (volcano states, eruptions,

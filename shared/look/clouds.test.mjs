@@ -18,6 +18,7 @@ const ASH = {
   topM: 3500,
   density: 1,
   color: '#6e6a66',
+  riseMps: 4,
 };
 const data = () => JSON.parse(readFileSync(join(here, 'clouds.json'), 'utf8'));
 
@@ -58,6 +59,15 @@ test('bad entries fail with their path named', () => {
     [(d) => d.plumes.push({ ...ASH, name: 'Bad Name' }), /plumes\[0\]\.name must be a name/],
     [(d) => d.plumes.push(ASH, ASH), /plumes\[1\]\.name test:ash is used twice/],
     [(d) => d.plumes.push({ ...ASH, heat: 1 }), /unknown entry plumes\[0\]\.heat/],
+    [(d) => (d.plumeSlots = 0), /plumeSlots must be a number in \[1, 32\]/],
+    [(d) => (d.plumeSlots = 1) && d.plumes.push(ASH, { ...ASH, name: 'b' }), /at most plumeSlots/],
+    [
+      (d) => (d.tiers.high.plumeSteps = 17),
+      /tiers\.high\.plumeSteps must be a number in \[0, 16\]/,
+    ],
+    [(d) => delete d.sources.lavaVent.heightM, /missing entry sources\.lavaVent\.heightM/],
+    [(d) => (d.sources.geyser = d.sources.lavaVent), /unknown entry sources\.geyser/],
+    [(d) => (d.sources.lavaVent.color = 'steam'), /sources\.lavaVent\.color must be a colour/],
   ];
   for (const [edit, message] of cases) {
     const d = data();
@@ -75,4 +85,16 @@ test('a plume and a tier added by data reach the Rust', () => {
   assert.match(rs, /radius_m: 200\.0,/);
   assert.match(rs, /color: \[0\.431373, 0\.415686, 0\.4\],/);
   assert.match(rs, /steps: 32,/);
+  assert.match(rs, /rise_mps: 4\.0,/);
+});
+
+test("the plume slots, a tier's plume samples and a source's look by data reach the Rust", () => {
+  const d = data();
+  d.plumeSlots = 12;
+  d.tiers.medium.plumeSteps = 3;
+  d.sources.lavaVent.heightM = 250;
+  const rs = cloudsRust(validateClouds(d));
+  assert.match(rs, /plume_slots: 12,/);
+  assert.match(rs, /plume_steps: 3,/);
+  assert.match(rs, /height_m: 250\.0,/);
 });
