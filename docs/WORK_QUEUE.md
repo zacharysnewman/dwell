@@ -579,6 +579,12 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    (`FarBake::water`, the share of the texel in the sea or a lake) — at `grids.json`'s home `bake.size` 256: 576 KiB
    and ~0.17 s a face natively; 10 tests on both faces; `examples/home_bake.rs` writes preview PNGs
    (MOON_WORLD.md §5). Clouds out of scope. Not drawn yet: drawing it from the moon comes with M-5/M-7.
+   Owner, 2026-11-12, after M-2: **"The moon looks smaller I think compared to the old moon?"** The disc's angular
+   radius in the shader is unchanged (`MOON_RADIUS`, the same edge test), so the cause is how it's lit: the full
+   ball shape darkens the limb, and the baked terrain's rim (craters cut by the disc's edge, darker rim albedo)
+   eats into the bright area, so the bright part reads smaller than the old evenly lit disc. Next (local): a
+   side-by-side with the old moon at the same zoom and time; keep the full moon lit to its edge (limb darkening
+   only on the dark side of the terminator, rim albedo evened) so the bright disc matches the old size.
 
 ## Done
 
