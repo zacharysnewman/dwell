@@ -1,7 +1,0 @@
-{
-  "changes": [
-    "Realistic test world: each seed now picks a climate band (subtropical, temperate or subarctic) with its prevailing wind",
-    "Realistic test world: rain falls on the windward side of the seed's mountains and their lee is dry, so rivers run bigger on the wet side",
-    "Realistic test world terrain changes with this release (it is still a test world)"
-  ]
-}
