@@ -45,7 +45,7 @@ pub const ATLAS_SIZE: usize = CELL * ATLAS_CELLS;
 pub const ATLAS_TILES: usize = ATLAS_CELLS * ATLAS_CELLS;
 
 /// The tiles in atlas order (the registry's texture names).
-pub const TILE_ORDER: [&str; 53] = [
+pub const TILE_ORDER: [&str; 54] = [
     "plain",
     "grass",
     "grassSide",
@@ -97,6 +97,8 @@ pub const TILE_ORDER: [&str; 53] = [
     "glacierIceSide",
     // Red sandstone, the mesa's bedded rock (0.52.66).
     "redSandstone",
+    // The moon's gray dust (docs/proposals/MOON_WORLD.md M-1).
+    "moonDust",
     // The leaf cards' painted clump (shared/look/leaves.json `cards.tile`).
     "leafCard",
     // The crack stages a damaged block's faces are multiplied by (shared/textures/cracks.json,

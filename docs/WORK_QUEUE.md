@@ -486,6 +486,24 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    about ¼ of our disc (~12.5 km radius); terrain from the world's seed with moon rules (cratered plains, ridges,
    maria), gray dirt everywhere for now — every world its own moon; today's motion, size in the sky, glow and
    moonlight kept, the face shown follows its orbit. Design first (docs/proposals/MOON_WORLD.md), then build.
+   Owner's further lines (2026-11-12), each folded into MOON_WORLD.md:
+   - "This moon is potentially an extension of our "other" buildable surfaces that aren't always oriented
+     the same way like our physics objects." → the moon is one **grid** with its own frame (like built
+     bodies); the home world the grid at rest (§2); the data a list of grids from the first slice.
+   - "Could we make it so you can fly to the moon, when you get close enough you begin following its
+     position, locked to it, gravity shifts to align like the underside of the bifacial world. Gravity is
+     lower on the moon." → §7: flight (no portal), capture by `captureM`, gravity per grid (moon ⅙), the
+     server owning the player's frame; ~597 km out, so a far-flight speed is proposed.
+   - "The earth should use the same normal map kinda technique when far enough away, when on the moon."
+     → §5: one far-body renderer and one bake (`FarSource`) for every grid; the home bake from its world map.
+   - "Add a moon starting spawn too side A and B." → §8: a spawn search per face (built), the choice later.
+   - "We may need to consider a new model for the sun, world, and moon positions in order to get moon
+     phases." → §6: a celestial model (supersedes "today's motion" for the moon); phases from geometry.
+   **M-1 built 2026-11-12** (branch `claude/moon-world-design-build-8k9duh`): `shared/worldgen/grids.json`
+   (home and moon), the `cratered` generator on both faces (`dwell-worldgen` `grids.rs`: craters by size
+   class, maria, ridges), `dwell:moon_dust`, the generic far-body bake (normal/height + albedo RGBA per
+   face, 256²: ~0.1 s, 512 KiB a face), the moon spawn search; 20 tests on both faces. Not in the game yet
+   (M-2 draws it in the sky). Open questions in MOON_WORLD.md §12.
 
 ## Done
 
