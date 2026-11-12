@@ -49,6 +49,7 @@ pub fn pose(
     data: &ModelData,
     character: &Character,
     pose: &Pose,
+    item: Option<&str>,
 ) -> Option<(Vec<Mat4>, Mat4)> {
     data.first_person?;
     let map = data.retarget?;
@@ -70,7 +71,12 @@ pub fn pose(
         root: [0.0; 3],
         hip_m: 1.0,
     };
-    let globals = anim::globals(model, &retarget::pose(model, data, &map, &rig));
+    let mut local = retarget::pose(model, data, &map, &rig);
+    // The hand closed on what it holds (models.json `grips`).
+    if let Some(g) = item.and_then(|i| data.grip(i)) {
+        crate::grip::apply(model, g, &mut local);
+    }
+    let globals = anim::globals(model, &local);
     let node_of = |b: usize| {
         let name = character.bones[b].name;
         let j = map.bones.iter().find(|m| m.bone == name)?.joint;
@@ -150,7 +156,7 @@ mod tests {
             for n in 0..=8 {
                 let t = c.duration * n as f32 / 8.0;
                 let p = dwell_characters::anim::sample(c, t);
-                let (g, place) = pose(model, data, ch, &p).unwrap();
+                let (g, place) = pose(model, data, ch, &p, None).unwrap();
                 let skinned = mm::point(&mm::mul(&place, &g[hand_node]), [0.0; 3]);
                 let rigid = arm_transforms(ch, &p)[hand_bone].t;
                 let d = (0..3)
