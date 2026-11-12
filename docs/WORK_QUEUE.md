@@ -1425,6 +1425,11 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
 
 ## Future (needs owner answers)
 
+- **Geography presets for Realistic worlds** (owner 2026-11-12: "Let's hold that for a possible future feature."):
+  Mixed (today), Archipelago (oceanic plates only plus more hotspots: Hawaii-style chains and Japan-style arcs),
+  Continental (mostly continental plates); plate counts scaling with world size so big worlds get real continents.
+  Today every seed has at least one oceanic and one continental plate (plates.json `kinds.min`).
+
 - **A looser body in the chops** (owner 2026-11-12: "We can save loosening the stiff body for later"): the
   hips and legs turning into a level chop seen from behind, not the chest alone.
 
