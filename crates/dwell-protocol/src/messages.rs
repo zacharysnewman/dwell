@@ -695,7 +695,26 @@ pub const MAX_MODEL_NAME: usize = 64;
 pub struct CreaturesMessage {
     pub creatures: Vec<CreatureNet>,
     pub gone: Vec<u32>,
+    /// The NPCs' part (WORK_QUEUE item 38), after `gone`: only to a client with the
+    /// `creatures.npcs` capability, so an older one (which refuses trailing bytes) never gets it;
+    /// `None` writes nothing.
+    pub npcs: Option<Vec<NpcNet>>,
 }
+
+/// An NPC's part of a `Creatures` message (CHARACTERS.md §11.10): its creature's `id`, its kind's
+/// name (`"dwell:villager"`, in shared/creatures/creatures.json), its idle `pose` (0 stand, 1 look
+/// around, 2 sit: `NPC_POSES`) and its palette `variant` seed (the client picks its colours by the
+/// kind's data from it).
+#[derive(Clone, Debug, PartialEq)]
+pub struct NpcNet {
+    pub id: u32,
+    pub kind: String,
+    pub pose: u8,
+    pub variant: u32,
+}
+
+/// The idle poses an NPC is sent in, by `NpcNet::pose`.
+pub const NPC_POSES: [&str; 3] = ["stand", "look", "sit"];
 
 /// The local player's stamina and oxygen as of its input `seq` (`Message::Vitals`).
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -1682,6 +1701,16 @@ fn write_body(w: &mut ByteWriter, m: &Message) {
             for &id in &m.gone[..n] {
                 w.u32(id);
             }
+            if let Some(npcs) = &m.npcs {
+                let n = npcs.len().min(MAX_CREATURES_PER_MESSAGE);
+                w.u16(n as u16);
+                for c in &npcs[..n] {
+                    w.u32(c.id);
+                    w.str(crate::bytes::clamp_str(&c.kind, MAX_MODEL_NAME));
+                    w.u8(c.pose);
+                    w.u32(c.variant);
+                }
+            }
         }
         M::Vitals(m) => {
             w.u32(m.seq);
@@ -2277,7 +2306,31 @@ fn read_body(r: &mut ByteReader, t: MessageType) -> Option<Message> {
                 }
                 gone.push(r.u32());
             }
-            M::Creatures(CreaturesMessage { creatures, gone })
+            let npcs = (!r.at_end()).then(|| {
+                let n = usize::from(r.u16());
+                r.check(n <= MAX_CREATURES_PER_MESSAGE);
+                let mut npcs = Vec::new();
+                for _ in 0..n {
+                    if !r.ok() {
+                        break;
+                    }
+                    let (id, kind) = (r.u32(), r.str(MAX_MODEL_NAME));
+                    let pose = r.u8();
+                    r.check(usize::from(pose) < NPC_POSES.len());
+                    npcs.push(NpcNet {
+                        id,
+                        kind,
+                        pose,
+                        variant: r.u32(),
+                    });
+                }
+                npcs
+            });
+            M::Creatures(CreaturesMessage {
+                creatures,
+                gone,
+                npcs,
+            })
         }
         T::Vitals => {
             let m = VitalsMessage {
@@ -2623,6 +2676,7 @@ mod creature_tests {
                 speed: 1.3,
             }],
             gone: vec![2, 5],
+            npcs: None,
         });
         let b = m.encode();
         assert_eq!(Message::decode(&b), Some(m.clone()));
@@ -2634,5 +2688,42 @@ mod creature_tests {
         let at = nan.len() - 2 - 8 - 4;
         nan[at..at + 4].copy_from_slice(&f32::NAN.to_le_bytes());
         assert_eq!(Message::decode(&nan), None);
+    }
+
+    // WORK_QUEUE item 38: the NPCs' part rides after `gone`, written only when present (for a
+    // client with `creatures.npcs`); without it the bytes are the old message's, byte for byte.
+    #[test]
+    fn the_npcs_part_is_optional_trailing_and_checked() {
+        let plain = CreaturesMessage {
+            creatures: vec![CreatureNet {
+                id: 3,
+                model: "peasant".into(),
+                position: [0.5, 10.0, 0.5],
+                yaw: 0.0,
+                speed: 0.0,
+            }],
+            gone: vec![],
+            npcs: None,
+        };
+        let with = CreaturesMessage {
+            npcs: Some(vec![NpcNet {
+                id: 3,
+                kind: "dwell:villager".into(),
+                pose: 2,
+                variant: 0xdead_beef,
+            }]),
+            ..plain.clone()
+        };
+        let (a, b) = (
+            Message::Creatures(plain.clone()).encode(),
+            Message::Creatures(with.clone()).encode(),
+        );
+        assert_eq!(b[..a.len()], a[..], "the old message, then the part");
+        assert_eq!(Message::decode(&a), Some(Message::Creatures(plain)));
+        assert_eq!(Message::decode(&b), Some(Message::Creatures(with)));
+        assert_eq!(Message::decode(&b[..b.len() - 1]), None, "truncated");
+        let mut bad = b.clone();
+        bad[b.len() - 5] = NPC_POSES.len() as u8; // the pose byte, before the u32 variant
+        assert_eq!(Message::decode(&bad), None, "an unknown pose");
     }
 }

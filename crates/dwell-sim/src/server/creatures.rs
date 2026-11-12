@@ -1,9 +1,14 @@
 //! The server's side of creatures (docs/adr/0073-creatures.md): each tick they spawn near the
 //! living players, wander and despawn far from all of them; clients that said `CreaturesHello`
-//! are told every `SEND_EVERY` ticks (all of them: at most `limits.max`, 64, ~2 KB).
+//! are told every `SEND_EVERY` ticks (all of them: at most `limits.max`, 64, ~2 KB). NPCs
+//! (WORK_QUEUE item 38) are creatures too; a client with the `creatures.npcs` capability also gets
+//! their part (kind, pose, palette variant) at the end of each message.
 
 use super::{Server, SessionId};
-use dwell_protocol::{Channel, CreatureNet, CreaturesMessage, MAX_CREATURES_PER_MESSAGE, Message};
+use dwell_protocol::capability_names::CREATURES_NPCS;
+use dwell_protocol::{
+    Channel, CreatureNet, CreaturesMessage, MAX_CREATURES_PER_MESSAGE, Message, NpcNet,
+};
 use dwell_world::chunk_of;
 
 /// Ticks between sends of the creatures' points (10 a second at 60 Hz).
@@ -17,15 +22,33 @@ impl Server {
             return;
         };
         s.creatures_hello = true;
+        let npcs = s.capabilities.has(CREATURES_NPCS);
         let table = self.creatures.table;
         let all: Vec<CreatureNet> = self.creatures.list.iter().map(|c| c.net(&table)).collect();
         for part in all.chunks(MAX_CREATURES_PER_MESSAGE) {
-            let m = Message::Creatures(CreaturesMessage {
+            let m = CreaturesMessage {
                 creatures: part.to_vec(),
                 gone: Vec::new(),
-            });
+                npcs: None,
+            };
+            let m = Message::Creatures(self.with_npcs(m, npcs));
             self.send_reliable(id, &m, Channel::World);
         }
+    }
+
+    /// `m` with its creatures' NPC part, for a client with `creatures.npcs` (`npcs`); as it is
+    /// for one without.
+    fn with_npcs(&self, mut m: CreaturesMessage, npcs: bool) -> CreaturesMessage {
+        if npcs {
+            let table = self.creatures.table;
+            let part: Vec<NpcNet> = m
+                .creatures
+                .iter()
+                .filter_map(|c| self.creatures.get(c.id)?.npc_net(&table))
+                .collect();
+            m.npcs = Some(part);
+        }
+        m
     }
 
     pub(super) fn living_points(&self) -> Vec<[f64; 3]> {
@@ -44,17 +67,29 @@ impl Server {
         if players.is_empty() && self.creatures.list.is_empty() {
             return;
         }
+        let before = self.creatures.list.len();
+        if self.tick.is_multiple_of(SPAWN_EVERY) {
+            // The rules' biomes from the world's terrain, once its maps are in (none: unchecked).
+            let terrain = self.grass_terrain();
+            let world = &self.world;
+            let get = |c: [i32; 3]| {
+                world.find(chunk_of(c[0], c[1], c[2]))?;
+                Some(world.get_voxel_if_loaded(c))
+            };
+            let biome = |f: dwell_world::FaceFrame, [x, z]: [i32; 2]| {
+                let t = terrain.as_ref()?.local(f.face);
+                let i = t.biome_mix(i64::from(x), i64::from(z)).chosen;
+                t.biomes().get(usize::from(i)).map(|b| b.name)
+            };
+            self.creatures
+                .spawn_near_in(&players, &get, self.config.world_seed, &biome);
+        }
         let world = &self.world;
         let get = |c: [i32; 3]| {
             world.find(chunk_of(c[0], c[1], c[2]))?;
             Some(world.get_voxel_if_loaded(c))
         };
-        let before = self.creatures.list.len();
-        if self.tick.is_multiple_of(SPAWN_EVERY) {
-            self.creatures
-                .spawn_near(&players, &get, self.config.world_seed);
-        }
-        self.creatures.step(&get);
+        self.creatures.step_near(&get, &players);
         self.creatures.despawn_far(&players);
         let gone = std::mem::take(&mut self.creatures.removed);
         let spawned = self.creatures.list.len() > before;
@@ -67,29 +102,33 @@ impl Server {
         if moving.is_empty() && gone.is_empty() {
             return;
         }
-        let hello: Vec<SessionId> = self
+        let hello: Vec<(SessionId, bool)> = self
             .sessions
             .iter()
             .filter(|(_, s)| s.joined() && s.creatures_hello)
-            .map(|(&id, _)| id)
+            .map(|(&id, s)| (id, s.capabilities.has(CREATURES_NPCS)))
             .collect();
         let mut msgs = Vec::new();
         for part in moving.chunks(MAX_CREATURES_PER_MESSAGE) {
             msgs.push(CreaturesMessage {
                 creatures: part.to_vec(),
                 gone: Vec::new(),
+                npcs: None,
             });
         }
         for part in gone.chunks(MAX_CREATURES_PER_MESSAGE) {
             msgs.push(CreaturesMessage {
                 creatures: Vec::new(),
                 gone: part.to_vec(),
+                npcs: None,
             });
         }
         for m in msgs {
-            let m = Message::Creatures(m);
-            for &id in &hello {
-                self.send_reliable(id, &m, Channel::World);
+            // Built once each way: with the NPCs' part, and as older clients read it.
+            let with = Message::Creatures(self.with_npcs(m.clone(), true));
+            let without = Message::Creatures(m);
+            for &(id, npcs) in &hello {
+                self.send_reliable(id, if npcs { &with } else { &without }, Channel::World);
             }
         }
     }

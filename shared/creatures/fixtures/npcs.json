@@ -1,0 +1,34 @@
+{
+  "$comment": "The fixture NPC (tests only): added by data alone, on stone, always spawning one a column, kept 20 m from another of its kind, two colour parts and two idle poses, holding the stone axe and fighting back.",
+  "formatVersion": 1,
+  "limits": { "spawnChunks": 1, "despawnM": 40, "max": 16 },
+  "creatures": [
+    {
+      "name": "test:person",
+      "model": "peasant",
+      "walkSpeed": 1,
+      "wanderM": 6,
+      "idleSeconds": [1, 2],
+      "rows": 2,
+      "climbRows": 1,
+      "dropRows": 1,
+      "npc": {
+        "lookAtM": 5,
+        "turnDegPerS": 180,
+        "bumpM": 0.8,
+        "sidestepM": 1.5,
+        "held": "dwell:stone_axe",
+        "combat": "fightBack",
+        "idles": [
+          { "pose": "look", "weight": 1, "seconds": [1, 2] },
+          { "pose": "sit", "weight": 1, "seconds": [1, 2] }
+        ],
+        "colours": [
+          { "part": "shirt", "from": "wool_green", "to": ["wool_red", "wool_blue", "wool_yellow"] },
+          { "part": "hair", "from": "hair_brown", "to": ["hair_black", "hair_ginger"] }
+        ]
+      }
+    }
+  ],
+  "rules": [{ "creature": "test:person", "on": ["dwell:stone"], "chance": 1, "group": [1, 1], "spacingM": 20 }]
+}
