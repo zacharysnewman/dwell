@@ -254,9 +254,11 @@ dwell_world::both_faces!(
 );
 
 dwell_world::both_faces!(
-    fn a_metal_tool_breaks_in_about_half_the_hits_with_marks_twice_the_size(f: FaceFrame) {
+    fn a_metal_tool_breaks_in_about_half_the_hits_with_bigger_bites(f: FaceFrame) {
         // Owner, 2026-11-12: "Metal tools break double sized bigger chunks off and reach 50%
         // broken faster, which is when the blocks break. Also have double durability."
+        // A mark's chunk is its hit's bite (BLOCK_DAMAGE.md §10): 0.5 × the cell ÷ the hits, in
+        // sixteenths of a 1-in-8 bite: 26 for 5 hits, 43 for 3 (the metal tool's 5/3 the stone's).
         for (stone_tool, metal_tool, cell) in [
             ("dwell:stone_pickaxe", "dwell:metal_pickaxe", STONE),
             ("dwell:wooden_shovel", "dwell:metal_shovel", DIRT),
@@ -265,7 +267,7 @@ dwell_world::both_faces!(
             hold(&mut fx, "adventure", stone_tool);
             hit(&mut fx, f, cell);
             let d = fx.server.damage_of(f.cell(cell)).expect("damaged").clone();
-            assert_eq!(d.marks[0].chunk, 16, "{stone_tool}: a ×1 piece");
+            assert_eq!(d.marks[0].chunk, 26, "{stone_tool}: a 5-hit bite");
             let s = 1 + hits_to_break(&mut fx, f, cell);
             assert_eq!(
                 wear_of(&fx, stone_tool),
@@ -277,7 +279,7 @@ dwell_world::both_faces!(
             hold(&mut fx, "adventure", metal_tool);
             hit(&mut fx, f, cell);
             let d = fx.server.damage_of(f.cell(cell)).expect("damaged").clone();
-            assert_eq!(d.marks[0].chunk, 32, "{metal_tool}: a piece twice the size");
+            assert_eq!(d.marks[0].chunk, 43, "{metal_tool}: a 3-hit bite");
             // Half-way to breaking after half as many hits.
             assert!(
                 f64::from(d.hits) / f64::from(d.need) >= 0.3,
@@ -637,8 +639,8 @@ fn a_marks_chunk_reaches_only_a_client_that_lists_damage_chunks() {
     let newer = seen(3);
     assert!(newer.chunks);
     assert_eq!(
-        newer.cells[0].1.marks[0].chunk, 32,
-        "the metal pickaxe's ×2"
+        newer.cells[0].1.marks[0].chunk, 43,
+        "the metal pickaxe's 3-hit bite"
     );
 }
 

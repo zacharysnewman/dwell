@@ -592,8 +592,11 @@ pub const BITE_LOOK: BiteLook = BiteLook {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Chips {
     pub count: u32,
-    /// Real 3D fragments a hit flings (visual only, short-lived; data `shards`, 0–8).
+    /// Real 3D fragments a hit flings (visual only, short-lived; data `shards`, 0–8), together the
+    /// hit's bite (BLOCK_DAMAGE.md §10).
     pub shards: u32,
+    /// The item whose look they are drawn with (data `piece`; default `dwell:rock_shard`).
+    pub piece: &'static str,
     /// sRGB.
     pub color: [u8; 3],
     /// Their speed out of the cut (m/s).
@@ -611,9 +614,6 @@ pub struct BreakTool {
     pub tier: &'static str,
     /// The tier's break speed, a multiple of the bare hand's.
     pub speed: f64,
-    /// How big a piece each hit takes off (×; the tier's `chunk`, 1 for stone, 2 for metal): the
-    /// hit mark's size and depth in the carve (`HitMark::chunk`).
-    pub chunk: f64,
     /// When its swing's head meets the block (s after the click; `contactS`, 0: at once): a hit
     /// with it lands then (WORK_QUEUE item 25).
     pub contact_s: f64,
@@ -686,6 +686,28 @@ pub fn wood(block: &str) -> Option<&'static WoodDef> {
 /// chopped as its wood and never cleared: WORK_QUEUE item 26, the stump keeps its gash).
 pub fn chopped_wood(block: &str) -> Option<&'static WoodDef> {
     wood(block).or_else(|| WOODS.iter().find(|w| w.fell_wedge == Some(block)))
+}
+
+/// The level swings `tool` takes to fell a standing (grain y) cell of `wood` at one aim, as the
+/// server lands them (each into the side's open band, [`Cut::open_band`], at the tool's `across`
+/// share): the hits to break of the bite rule for chopping (BLOCK_DAMAGE.md §10).
+pub fn swings_to_fell(tool: &ToolDef, wood: &WoodDef) -> u32 {
+    let mut c = Cut::default();
+    for i in 1..=255 {
+        let band = c.open_band(0, 0);
+        c.swing(tool, 1, 0, band, tool.across);
+        if c.cross(1) >= wood.fell_fraction {
+            return i;
+        }
+    }
+    255
+}
+
+/// The bite (m³) one chop of `tool` takes out of `wood` (WORK_QUEUE item 18: "50% of the block's
+/// volume / number of swings required to break it"): [`crate::damage::bite_m3`] of a cell over
+/// [`swings_to_fell`]. The chips a chop throws total it.
+pub fn chop_bite_m3(tool: &ToolDef, wood: &WoodDef) -> f64 {
+    crate::damage::bite_m3(crate::damage::CELL_M3, swings_to_fell(tool, wood))
 }
 
 /// Sides of a wood cell: the faces across its grain.
@@ -1231,7 +1253,6 @@ mod tests {
             class: "trowel",
             tier: "bronze",
             speed: 2.0,
-            chunk: 1.0,
             contact_s: 0.4,
             repeat_s: None,
         }];
@@ -1254,7 +1275,6 @@ mod tests {
             class: "trowel",
             tier: "bronze",
             speed: 2.0,
-            chunk: 1.0,
             contact_s: 0.4,
             repeat_s: None,
         }];
@@ -1321,6 +1341,24 @@ mod tests {
             }
         }
         panic!("never fell");
+    }
+
+    /// The axe's bite rule: a chop takes 0.5 × the cell ÷ the swings to fell, so the swings to
+    /// the fall total half the cell; the metal axe's fewer swings take bigger bites.
+    #[test]
+    fn a_chop_bites_half_the_cell_over_the_swings_to_fell() {
+        let log = wood("dwell:log").unwrap();
+        let (stone, metal) = (
+            tool("dwell:stone_axe").unwrap(),
+            tool("dwell:metal_axe").unwrap(),
+        );
+        assert_eq!(super::swings_to_fell(stone, log), 11);
+        assert_eq!(super::swings_to_fell(metal, log), 5);
+        for t in [stone, metal] {
+            let n = f64::from(super::swings_to_fell(t, log));
+            assert!((chop_bite_m3(t, log) * n - 0.5 * crate::damage::CELL_M3).abs() < 1e-12);
+        }
+        assert!(chop_bite_m3(metal, log) > 2.0 * chop_bite_m3(stone, log));
     }
 
     #[test]
