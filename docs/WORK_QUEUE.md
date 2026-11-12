@@ -527,6 +527,9 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    class, maria, ridges), `dwell:moon_dust`, the generic far-body bake (normal/height + albedo RGBA per
    face, 256²: ~0.1 s, 512 KiB a face), the moon spawn search; 20 tests on both faces. Not in the game yet
    (M-2 draws it in the sky). Open questions in MOON_WORLD.md §12; the owner's lines above are folded in (§2 grids, §5 far body, §6 sky model, §7 travel, §8 moon spawn).
+   Design: docs/proposals/MOON_WORLD.md; M-1 built (grids.json, the moon's cratered generator on both faces, the
+   generic far-body bake, `dwell:moon_dust`). Owner's answers to §12 (2026-11-12): tidally locked; physical phases
+   (no dome bias); "A darker floor but a minimum still." for new-moon nights; ~1–1.5 minutes to fly there.
 
 ## Done
 
