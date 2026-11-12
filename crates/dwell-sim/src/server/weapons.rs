@@ -159,22 +159,27 @@ impl Server {
         }
         let look = look.map(|v| v / len);
         let eye = self.eye_of(h);
-        let (_, crossed) = self.weapon_path(t, eye, look, vertical);
+        let (path, crossed) = self.weapon_path(t, eye, look, vertical);
         let mut blocked = false;
         for (creature, step) in crossed {
             let table = self.creatures.table;
             let pre = self
                 .creatures
                 .get(creature)
-                .map(|c| (c.guard, c.position, table.creatures[c.kind].rows));
+                .map(|c| (c.guard, c.position, c.yaw, table.creatures[c.kind].rows));
             let Some(strike) = self.creatures.strike(creature, &w, vertical, eye) else {
                 continue;
             };
             self.creatures.set_foe_player(creature, player_id);
             blocked |= strike.clash == Some(Clash::Blocked);
             // The outcome to the clients near (a strike on a creature holding no block connects).
-            if let Some((guard, feet, rows)) = pre {
-                let point = clash_point(eye, feet, rows);
+            if let Some((guard, feet, yaw, rows)) = pre {
+                // Where the blades met: the creature's raised blade when it clashed, else its body.
+                let theirs = guard
+                    .filter(|_| strike.clash.is_some())
+                    .and_then(|g| Some((chop::tool(g.weapon)?.weapon?.guard, g.vertical)))
+                    .map(|(g, v)| raised_blade(g.blade(v), feet, yaw));
+                let point = clash_point(eye, &path, theirs, body_post(feet, rows));
                 self.send_clash(
                     ClashNet {
                         striker: Fighter::Player(player_id),
@@ -509,11 +514,24 @@ impl Server {
             if k == Clash::Blocked {
                 self.creatures.recoil(sw.npc, w.guard.recoil_s);
             }
-            let point = [
-                (sw.eye[0] + eye[0]) / 2.0,
-                (sw.eye[1] + eye[1]) / 2.0,
-                (sw.eye[2] + eye[2]) / 2.0,
-            ];
+            // Where the blades met: the NPC's arc toward the player's eye against the player's
+            // raised blade when it clashed, else the player's body.
+            let feet = self.feet_of(sw.player).unwrap_or(eye);
+            let look = std::array::from_fn(|i| (eye[i] - sw.eye[i]) / d.max(1e-9));
+            let path = dwell_world::swing::reaches(
+                &mut self.world,
+                sw.eye,
+                look,
+                sw.vertical,
+                &dwell_world::swing::Arc::of(t),
+            );
+            let yaw = f64::from(self.players.controller(h).input.look_yaw);
+            let theirs = (k != Clash::Connected)
+                .then(|| self.sessions[&id].held_tool.as_ref())
+                .flatten()
+                .and_then(|(n, _)| chop::tool(n)?.weapon)
+                .map(|x| raised_blade(x.guard.blade(defender_vertical), feet, yaw));
+            let point = clash_point(sw.eye, &path, theirs, (feet, eye));
             self.send_clash(
                 ClashNet {
                     striker: Fighter::Creature(sw.npc),
@@ -539,19 +557,113 @@ impl Server {
     }
 }
 
-/// Where a strike from `eye` (world) meets a creature standing at `feet` (world) `rows` tall: the
-/// middle of its body's post, face-locally (world out).
-fn clash_point(eye: [f64; 3], feet: [f64; 3], rows: i32) -> [f64; 3] {
+/// A stance's raised blade `b` (from the holder's feet, right / up / ahead) held by one standing at
+/// `feet` (world) facing `yaw_deg` (0 faces +z): its grip and tip in the world. Face-local, crossed
+/// through the face's frame: a body on face B is turned over, so its right is the frame's left.
+fn raised_blade(b: chop::RaisedBlade, feet: [f64; 3], yaw_deg: f64) -> ([f64; 3], [f64; 3]) {
     let f = FaceFrame::at_height(feet[1]);
     let l = f.point(feet);
-    let mid = f.point([
-        l[0],
-        l[1] + f64::from(rows) * dwell_world::CELL_H * 0.6,
-        l[2],
-    ]);
-    [
-        (eye[0] + mid[0]) / 2.0,
-        (eye[1] + mid[1]) / 2.0,
-        (eye[2] + mid[2]) / 2.0,
-    ]
+    let (s, c) = yaw_deg.to_radians().sin_cos();
+    let right = [f.handed(-c), 0.0, f.handed(s)];
+    let ahead = [s, 0.0, c];
+    let at = |p: [f64; 3]| {
+        f.point([
+            l[0] + right[0] * p[0] + ahead[0] * p[2],
+            l[1] + p[1],
+            l[2] + right[2] * p[0] + ahead[2] * p[2],
+        ])
+    };
+    (at(b.grip), at(b.tip))
+}
+
+/// A creature's body post standing at `feet` (world) `rows` tall: its feet and its top (world).
+fn body_post(feet: [f64; 3], rows: i32) -> ([f64; 3], [f64; 3]) {
+    let f = FaceFrame::at_height(feet[1]);
+    let l = f.point(feet);
+    (
+        feet,
+        f.point([l[0], l[1] + f64::from(rows) * dwell_world::CELL_H, l[2]]),
+    )
+}
+
+/// The nearest points of the segments `a0`–`a1` and `b0`–`b1` (on each, in that order).
+fn nearest_points(a0: [f64; 3], a1: [f64; 3], b0: [f64; 3], b1: [f64; 3]) -> ([f64; 3], [f64; 3]) {
+    let sub = |x: [f64; 3], y: [f64; 3]| [x[0] - y[0], x[1] - y[1], x[2] - y[2]];
+    let dot = |x: [f64; 3], y: [f64; 3]| x[0] * y[0] + x[1] * y[1] + x[2] * y[2];
+    let at = |o: [f64; 3], d: [f64; 3], t: f64| [o[0] + d[0] * t, o[1] + d[1] * t, o[2] + d[2] * t];
+    let (d1, d2, r) = (sub(a1, a0), sub(b1, b0), sub(a0, b0));
+    let (a, e, f) = (dot(d1, d1), dot(d2, d2), dot(d2, r));
+    let eps = 1e-12;
+    let (s, t) = if a <= eps && e <= eps {
+        (0.0, 0.0)
+    } else if a <= eps {
+        (0.0, (f / e).clamp(0.0, 1.0))
+    } else {
+        let c = dot(d1, r);
+        if e <= eps {
+            ((-c / a).clamp(0.0, 1.0), 0.0)
+        } else {
+            let b = dot(d1, d2);
+            let denom = a * e - b * b;
+            let mut s = if denom > eps {
+                ((b * f - c * e) / denom).clamp(0.0, 1.0)
+            } else {
+                0.0
+            };
+            let mut t = (b * s + f) / e;
+            if t < 0.0 {
+                t = 0.0;
+                s = (-c / a).clamp(0.0, 1.0);
+            } else if t > 1.0 {
+                t = 1.0;
+                s = ((b - c) / a).clamp(0.0, 1.0);
+            }
+            (s, t)
+        }
+    };
+    (at(a0, d1, s), at(b0, d2, t))
+}
+
+/// The sub-steps between two arc steps a clash's point is looked for in (the arc's own steps are
+/// ~9° apart: ~0.3 m at a sword's reach).
+const CLASH_SUBSTEPS: u32 = 8;
+
+/// Where a swing's blade met (BUGS.md #86): its head sweeps `path` (each step a segment from `eye`
+/// along its direction out to its reach, world) and it met the raised blade `theirs` (grip, tip;
+/// world), the middle of the two blades' nearest points where the sweep comes nearest it; with no
+/// raised blade, the point of the striking blade nearest the defender's `body` (a segment, world).
+fn clash_point(
+    eye: [f64; 3],
+    path: &[([f64; 3], f64)],
+    theirs: Option<([f64; 3], [f64; 3])>,
+    body: ([f64; 3], [f64; 3]),
+) -> [f64; 3] {
+    let (t0, t1) = theirs.unwrap_or(body);
+    let mut best: Option<(f64, [f64; 3], [f64; 3])> = None;
+    let mut consider = |d: [f64; 3], reach: f64| {
+        let len = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt().max(1e-12);
+        let head = std::array::from_fn(|i| eye[i] + d[i] / len * reach);
+        let (p, q) = nearest_points(eye, head, t0, t1);
+        let gap: f64 = (0..3).map(|i| (p[i] - q[i]).powi(2)).sum();
+        if best.is_none_or(|b| gap < b.0) {
+            best = Some((gap, p, q));
+        }
+    };
+    for (i, &(d, r)) in path.iter().enumerate() {
+        consider(d, r);
+        if let Some(&(d2, r2)) = path.get(i + 1) {
+            for k in 1..CLASH_SUBSTEPS {
+                let u = f64::from(k) / f64::from(CLASH_SUBSTEPS);
+                consider(
+                    std::array::from_fn(|j| d[j] + (d2[j] - d[j]) * u),
+                    r + (r2 - r) * u,
+                );
+            }
+        }
+    }
+    match best {
+        Some((_, p, q)) if theirs.is_some() => std::array::from_fn(|i| (p[i] + q[i]) / 2.0),
+        Some((_, p, _)) => p,
+        None => eye,
+    }
 }

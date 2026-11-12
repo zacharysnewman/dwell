@@ -323,8 +323,20 @@ pub struct GuardDef {
     /// The first-person pose clip each stance's raised block shows (None: the default hold).
     pub level_pose: Option<&'static str>,
     pub vertical_pose: Option<&'static str>,
+    /// Each stance's raised blade as others see it (where a clash's blades meet, BUGS.md #86).
+    pub level_blade: RaisedBlade,
+    pub vertical_blade: RaisedBlade,
     /// What clients show of a clash (the `weapons.clash` capability).
     pub clash: ClashLook,
+}
+
+/// A stance's raised blade as others see it (BUGS.md #86): its grip and tip, metres from the
+/// holder's feet in its facing frame (right, up, ahead; face-local), fitted to the third-person
+/// raised pose (`guard_level`, `guard_vertical`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct RaisedBlade {
+    pub grip: [f64; 3],
+    pub tip: [f64; 3],
 }
 
 /// A clash's sound and sparks on the clients (round 2 of WORK_QUEUE item 35): the sound event, how
@@ -362,6 +374,15 @@ pub enum Clash {
 }
 
 impl GuardDef {
+    /// A stance's raised blade (its grip and tip from the holder's feet, right / up / ahead).
+    pub fn blade(&self, vertical: bool) -> RaisedBlade {
+        if vertical {
+            self.vertical_blade
+        } else {
+            self.level_blade
+        }
+    }
+
     /// A stance's raised-block pose clip (first person), if its data names one.
     pub fn raised_pose(&self, vertical: bool) -> Option<&'static str> {
         if vertical {

@@ -425,17 +425,31 @@ test('a bad weapon fails naming it and the problem', () => {
   bad((t) => (t.weapon.guard.clash.sound = 'kazoo'), /guard\.clash\.sound: no sound event "kazoo"/);
   bad((t) => (t.weapon.guard.clash.sparks.color = 'gold'), /clash\.sparks\.color must be #rrggbb/);
   bad((t) => (t.weapon.guard.raiseAfterS = 2), /raiseAfterS must be a number/);
-  bad((t) => (t.weapon.guard.stances.vertical.raisedPose = 'Up Guard'), /raisedPose must be a clip name/);
+  bad((t) => (t.weapon.guard.stances.vertical.raisedPose = 'Up Guard'), /raisedPose must be a role name/);
+  bad((t) => (t.weapon.guard.stances.vertical.blade = { grip: [0, 1.3, 0.4] }), /stances\.vertical\.blade\.tip must be \[right, up, ahead\]/);
+  bad((t) => (t.weapon.guard.stances.level.blade = { grip: [0, 1.3, 0.4], tip: [0, 1.3, 0.45] }), /stances\.level\.blade: the tip must be at least 0\.1 m from the grip/);
+  bad((t) => (t.weapon.guard.stances.level.blade.edge = 1), /blade: unknown field edge/);
+});
+
+test('each stance’s raised blade is emitted, a weapon naming none taking the defaults (BUGS.md #86)', () => {
+  const rs = toolsRust(validateTools(...fresh()));
+  assert.match(rs, /name: "dwell:sword"[^\n]*level_blade: RaisedBlade \{ grip: \[0\.06, 1\.3, 0\.44\], tip: \[-0\.72, 1\.38, 0\.53\] \}, vertical_blade: RaisedBlade \{ grip: \[0\.5, 1\.38, 0\.33\]/);
+  const [data, items, blocks] = fresh();
+  items.add('test:club');
+  data.tools.push({ name: 'test:club', kind: 'weapon', swingSeconds: 0.4, weapon: { damage: 3, knockbackM: 0.2, guard: { stances: { vertical: { rollDeg: 90, blade: { grip: [0, 1, 0.5], tip: [0, 2, 0.5] } } } } } });
+  const club = toolsRust(validateTools(data, items, blocks)).split('\n').find((l) => l.includes('"test:club"'));
+  assert.match(club, /level_blade: RaisedBlade \{ grip: \[0\.06, 1\.3, 0\.44\]/, 'the default level blade');
+  assert.match(club, /vertical_blade: RaisedBlade \{ grip: \[0\.0, 1\.0, 0\.5\], tip: \[0\.0, 2\.0, 0\.5\] \}/, 'its own');
 });
 
 test('the sword’s clash look, raise timing and raised poses are emitted (round 2)', () => {
   const rs = toolsRust(validateTools(...fresh()));
-  assert.match(rs, /name: "dwell:sword"[^\n]*raise_after_s: 0\.15, level_pose: Some\("fp_guard_level"\), vertical_pose: Some\("fp_guard_vertical"\), clash: ClashLook \{ sound: Some\("axe_clank"\), hear_m: 32\.0, sparks: Some\(Chips \{ count: 12/);
+  assert.match(rs, /name: "dwell:sword"[^\n]*raise_after_s: 0\.15, level_pose: Some\("guard_level"\), vertical_pose: Some\("guard_vertical"\), level_blade: [^\n]*?, clash: ClashLook \{ sound: Some\("axe_clank"\), hear_m: 32\.0, sparks: Some\(Chips \{ count: 12/);
   // A weapon naming none: no sound, no sparks, no poses.
   const [data, items, blocks] = fresh();
   items.add('test:club');
   data.tools.push({ name: 'test:club', kind: 'weapon', swingSeconds: 0.4, weapon: { damage: 3, knockbackM: 0.2 } });
-  assert.match(toolsRust(validateTools(data, items, blocks)), /name: "test:club"[^\n]*level_pose: None, vertical_pose: None, clash: ClashLook \{ sound: None, hear_m: 32\.0, sparks: None, glance_share: 0\.5 \}/);
+  assert.match(toolsRust(validateTools(data, items, blocks)), /name: "test:club"[^\n]*level_pose: None, vertical_pose: None, level_blade: [^\n]*?, clash: ClashLook \{ sound: None, hear_m: 32\.0, sparks: None, glance_share: 0\.5 \}/);
 });
 
 test('each tool kind has its own hint, as data; a kind without one fails', () => {

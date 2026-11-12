@@ -1245,6 +1245,39 @@ mod chop_swing_tests {
             .collect()
     }
 
+    // BUGS.md #86: the server puts a clash where the blades meet, from each stance's raised blade in
+    // the sword's data (shared/tools `guard.stances.*.blade`: grip and tip from the feet, right / up /
+    // ahead). Those must be where the third-person raised pose draws the blade (within 0.1 m).
+    // face-a-only: the body's frame (from the feet) is the same on both faces.
+    #[test]
+    fn the_raised_blades_data_is_where_the_raised_poses_draw_it() {
+        let g = dwell_protocol::chopping::tool("dwell:sword")
+            .and_then(|t| t.weapon)
+            .expect("the sword")
+            .guard;
+        for vertical in [false, true] {
+            let role = g.raised_pose(vertical).expect("a raised pose");
+            let mut p = Probe::new(role);
+            p.item = Some("dwell:sword");
+            p.points = vec![Point::Grip, Point::ToolTip];
+            p.samples = 2;
+            let r = probe(&p).expect("probe");
+            let s = &r.samples[0];
+            let b = g.blade(vertical);
+            for (name, want, got) in [("grip", b.grip, s.at[0].body), ("tip", b.tip, s.at[1].body)]
+            {
+                let d = (0..3)
+                    .map(|k| (want[k] - f64::from(got[k])).powi(2))
+                    .sum::<f64>()
+                    .sqrt();
+                assert!(
+                    d <= 0.1,
+                    "{role} {name}: the data's {want:?} is {d:.2} m from the pose's {got:?}"
+                );
+            }
+        }
+    }
+
     // WORK_QUEUE item 35: the sword's level block lies across the view and across the body: the
     // blade within 20° of level, its tip well left of the grip (on screen, and on the body).
     // face-a-only: the screen and the body's frame are the same on both faces.
