@@ -465,7 +465,7 @@ face, or the placement check against its shape.
 
 ## Fixed
 
-### 109. In a big world the client won't place a block past 50 km from the centre (fixed after 0.55.5)
+### 109. In a big world the client won't place a block past 50 km from the centre (fixed after 0.55.9)
 
 Found 2026-11-12 fixing #108 (not reproduced in game): `dwell-game` `block_interaction.rs` drops a Place outside
 the build volume before sending it, testing `inside_build_volume`, the 1× build's (50 km), not the world's
