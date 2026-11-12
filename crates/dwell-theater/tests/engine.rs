@@ -343,6 +343,7 @@ fn the_games_presets_expand_on_both_faces() {
         let ctx = Context {
             subject: Some((TargetRef::Player, s)),
             camera: Pose::new(at(f, 0.0, 2.0, -10.0), f.vector([0.0, 0.0, 1.0])),
+            up: None,
         };
         for p in &presets {
             let path = p.expand(&ctx, &[]).unwrap_or_else(|e| panic!("{e}"));
@@ -364,6 +365,7 @@ dwell_world::both_faces!(
         let ctx = Context {
             subject: Some((TargetRef::Point(s), s)),
             camera: Pose::new(at(f, 0.0, 0.0, -50.0), [0.0, 0.0, 1.0]),
+            up: None,
         };
         let path = ring.expand(&ctx, &[]).unwrap_or_else(|e| panic!("{e}"));
         assert_eq!(path.duration(), 40.0);
@@ -455,6 +457,13 @@ fn bad_data_fails_with_a_message() {
             ),
             "keyframes[0].timeOfDay",
         ),
+        (
+            base(
+                json!([{ "t": 0, "position": [0, 0, 0] }, { "t": 1, "up": "down" }]),
+                json!([]),
+            ),
+            "keyframes[1].up must be \"a\", \"b\" or \"auto\"",
+        ),
     ] {
         let err = Path::parse(&v).err().unwrap_or_default();
         assert!(err.contains(want), "{v}: {err:?} lacks {want:?}");
@@ -466,24 +475,124 @@ fn bad_data_fails_with_a_message() {
         err.contains("preset x.params: a orbit preset has no parameter zoomM"),
         "{err}"
     );
+    let err = parse_presets(r#"{"formatVersion":1,"presets":[{"name":"x","move":"pan","up":1,"params":{"seconds":{"default":5,"min":1,"max":9}}}]}"#)
+        .err()
+        .unwrap_or_default();
+    assert!(err.contains("preset x.up must be"), "{err}");
 }
 
 /// A path written out reads back the same (export / import).
 #[test]
 fn a_path_round_trips_through_json() {
+    // both-faces: the data round trip names both faces' `up` itself; no face-local geometry.
     let p = path(json!({ "formatVersion": 1, "name": "tour", "loop": true,
         "keyframes": [
             { "t": 0, "position": [1, 100, 2], "look": [10, -5], "fov": 50, "timeOfDay": 0.25 },
             { "t": 3, "position": [4, 105, 6], "target": { "creature": 7 }, "speed": 2 },
-            { "t": 6, "position": [9, 120, 6], "target": "player" },
-            { "t": 9 }
+            { "t": 6, "position": [9, 120, 6], "target": "player", "up": "b" },
+            { "t": 9, "up": "auto" },
+            { "t": 12, "up": "a" }
         ],
         "segments": [
             { "move": "dolly", "at": [0, 100, 0], "vertigo": true, "days": 1 },
             { "move": "track", "target": { "npc": 3 }, "offset": [1, 2, 3], "smoothingS": 0.2 },
             { "move": "crane", "upEasing": "inQuad", "easing": "outSine" }
         ] }));
+    // `up` carries over like the other fields, and an "auto" after a held one is written out.
+    let ups: Vec<_> = p.keyframes.iter().map(|k| k.up).collect();
+    assert_eq!(
+        ups,
+        [None, None, Some(FaceFrame::B), None, Some(FaceFrame::A)]
+    );
     let again = Path::parse(&p.to_json()).unwrap_or_else(|e| panic!("{e}"));
     assert_eq!(p, again);
     assert_eq!(segment_at(&p, 4.0), (1, 1.0 / 3.0));
 }
+
+dwell_world::both_faces!(
+    /// A keyframe's `up` (WORK_QUEUE item 40): held to a face, the camera keeps that face's frame
+    /// on the other face's side (its look read in it, its yaw and pitch given in it), where
+    /// "auto" (the default) takes the face it is over; a look carried across a held up isn't
+    /// continued (`look_across`) since its frame doesn't change, and under "auto" still is.
+    fn a_held_up_keeps_its_frame_across_the_midplane(f: FaceFrame) {
+        let name = if f.is_b() { "b" } else { "a" };
+        let (here, there) = (at(f, 0.0, 0.0, 0.0), f.other().point([20.0, 100.0, 0.0]));
+        let make = |up: Option<&str>| {
+            let mut k0 = json!({ "t": 0, "position": here, "look": [90, -30] });
+            if let Some(u) = up {
+                k0["up"] = json!(u);
+            }
+            path(json!({ "formatVersion": 1,
+                "keyframes": [k0, { "t": 4, "position": there }],
+                "segments": [{ "move": "linear" }] }))
+        };
+        let (held, auto) = (make(Some(name)), make(None));
+        assert_eq!(held.keyframes[1].up, Some(f), "carried over");
+        assert_eq!(auto.keyframes[1].up, None);
+        assert_eq!(make(Some("auto")), auto, "\"auto\" is the default");
+        let h = pose_at(&held, 4.0, &NoTargets);
+        let a = pose_at(&auto, 4.0, &NoTargets);
+        assert!(FaceFrame::at_height(h.position[1]) == f.other());
+        // Held: the same face-local look as written, in the held face's frame, and the same world
+        // look as at the start.
+        assert_eq!(h.up, Some(f));
+        assert_eq!(h.frame(), f);
+        assert!((h.yaw_deg - 90.0).abs() < 1e-9 && (h.pitch_deg + 30.0).abs() < 1e-9);
+        assert!(angle_deg(h.direction, f.look(90.0, -30.0)) < 1e-9);
+        // Auto: the other face's frame, the look continued across (the same world direction).
+        assert_eq!(a.up, None);
+        assert_eq!(a.frame(), f.other());
+        let (yaw, pitch) = FaceFrame::look_across(90.0, -30.0);
+        assert!((a.yaw_deg - yaw).abs() < 1e-9 && (a.pitch_deg - pitch).abs() < 1e-9);
+        assert!(angle_deg(a.direction, h.direction) < 1e-9);
+        // A look written on a held key is read in its face's frame wherever the key is.
+        let p = path(json!({ "formatVersion": 1, "keyframes": [
+            { "t": 0, "position": there, "look": [0, 45], "up": name }, { "t": 1 }
+        ] }));
+        let d = pose_at(&p, 0.0, &NoTargets).direction;
+        assert!(angle_deg(d, f.look(0.0, 45.0)) < 1e-9, "{d:?}");
+        // Played frame by frame, a track keeps the held up too.
+        let track = path(json!({ "formatVersion": 1, "keyframes": [
+            { "t": 0, "position": there, "target": "player", "up": name }, { "t": 2 }
+        ], "segments": [{ "move": "track", "target": "player" }] }));
+        let mut player = Player::new(track);
+        let standing = Standing {
+            at: f.other().point([0.0, 100.0, 0.0]),
+        };
+        for _ in 0..10 {
+            assert_eq!(player.step(0.1, &standing).up, Some(f));
+        }
+    }
+);
+
+dwell_world::both_faces!(
+    /// A preset's `up` (data, or the expansion's override) goes on its first keyframe and the
+    /// shot holds it; a pan turns from the camera's look in that frame.
+    fn a_preset_holds_an_up(f: FaceFrame) {
+        let presets = dwell_theater::presets();
+        let s = f.other().point([0.0, 100.0, 0.0]);
+        let camera = Pose::new(f.other().point([0.0, 102.0, -10.0]), [0.0, 0.0, 1.0]);
+        for p in &presets {
+            let ctx = Context {
+                subject: Some((TargetRef::Player, s)),
+                camera,
+                up: Some(f),
+            };
+            let path = p.expand(&ctx, &[]).unwrap_or_else(|e| panic!("{e}"));
+            assert!(path.keyframes.iter().all(|k| k.up == Some(f)), "{}", p.name);
+            let pose = pose_at(&path, path.duration(), &Standing { at: s });
+            assert_eq!(pose.frame(), f, "{}", p.name);
+        }
+        let mut data: Value = serde_json::from_str(dwell_theater::preset::PRESETS_JSON).unwrap();
+        data["presets"][0]["up"] = json!(if f.is_b() { "b" } else { "a" });
+        let orbit = &parse_presets(&data.to_string()).unwrap_or_else(|e| panic!("{e}"))[0];
+        assert_eq!(orbit.up, Some(f));
+        let ctx = Context {
+            subject: Some((TargetRef::Player, s)),
+            camera,
+            up: None,
+        };
+        let path = orbit.expand(&ctx, &[]).unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(path.keyframes[0].up, Some(f));
+    }
+);

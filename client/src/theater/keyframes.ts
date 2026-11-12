@@ -13,7 +13,16 @@ export interface Keyframe {
   fov?: number;
   timeOfDay?: number;
   speed?: number;
+  /**
+   * The face whose up the camera holds wherever it is ('a' or 'b': from the other face's side the
+   * world upside down), and the frame `look` is in; left out, 'auto' (the face it is over).
+   */
+  up?: Up;
 }
+
+/** A keyframe's `up` (dwell_theater `parse_up`). */
+export type Up = 'a' | 'b' | 'auto';
+export const UPS: readonly Up[] = ['auto', 'a', 'b'];
 
 export interface Segment {
   move: string;
@@ -135,6 +144,8 @@ export class KeyframeEditor {
         if (k.fov !== undefined) o.fov = k.fov;
         if (k.timeOfDay !== undefined) o.timeOfDay = k.timeOfDay;
         if (k.speed !== undefined) o.speed = k.speed;
+        // Written on every key once any key holds one: a key left out carries the one before's.
+        if (this.keys.some((x) => x.up !== undefined && x.up !== 'auto')) o.up = k.up ?? 'auto';
         return o;
       }),
       segments: this.segments.map((s) => ({ ...s })),
@@ -158,6 +169,12 @@ export class KeyframeEditor {
       for (const f of ['fov', 'timeOfDay', 'speed'] as const) {
         const v = raw[f];
         if (typeof v === 'number') k[f] = v;
+      }
+      const up = raw.up ?? last?.up;
+      if (up !== undefined) {
+        if (!UPS.includes(up as Up))
+          throw new Error(`keyframe ${String(i)}: up must be "a", "b" or "auto"`);
+        if (up !== 'auto') k.up = up as Up;
       }
       keys.push(k);
       last = k;

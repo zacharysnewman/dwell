@@ -151,6 +151,40 @@ describe('the keyframe editor', () => {
     expect(f.toPath()).toEqual(p);
   });
 
+  it('writes a held up on every key once one holds it, and reads it back (WORK_QUEUE 40)', () => {
+    const e = new KeyframeEditor('under');
+    e.add(at(0));
+    e.add({ ...at(1), up: 'a' });
+    e.add(at(2));
+    const p = e.toPath();
+    expect(p.keyframes.map((k) => k.up)).toEqual(['auto', 'a', 'auto']);
+    const f = new KeyframeEditor();
+    f.load(JSON.parse(JSON.stringify(p)) as PathJson);
+    expect(f.keys.map((k) => k.up)).toEqual([undefined, 'a', undefined]);
+    expect(f.toPath()).toEqual(p);
+    // Left out, a key carries the one before's, as the engine reads it.
+    f.load({
+      formatVersion: 1,
+      name: 'x',
+      keyframes: [{ t: 0, position: [0, -40, 0], up: 'a' }, { t: 2 }],
+      segments: [],
+    });
+    expect(f.keys.map((k) => k.up)).toEqual(['a', 'a']);
+    expect(() => {
+      f.load({
+        formatVersion: 1,
+        name: 'x',
+        keyframes: [{ t: 0, position: [0, 0, 0], up: 'down' }],
+        segments: [],
+      });
+    }).toThrow(/up must be/);
+    // Without one, no key writes it.
+    expect(new KeyframeEditor().toPath().keyframes).toEqual([]);
+    const plain = new KeyframeEditor();
+    plain.add(at(0));
+    expect(plain.toPath().keyframes[0]).not.toHaveProperty('up');
+  });
+
   it('reads a hand-written path whose keys carry fields over', () => {
     const e = new KeyframeEditor();
     e.load({

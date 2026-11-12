@@ -81,6 +81,36 @@ pub struct Keyframe {
     pub time_of_day: Option<f64>,
     /// Playback rate here (path seconds per real second; > 1 a time-lapse of the move).
     pub speed: f64,
+    /// The face whose up the camera holds (`up`: `"a"`/`"b"`), wherever it is: its up, its roll
+    /// and this keyframe's `look` are that face's frame, so from face B's side in face A's frame
+    /// the world reads upside down. `None` (`"auto"`, the default): the face the camera is over.
+    pub up: Option<FaceFrame>,
+}
+
+impl Keyframe {
+    /// The frame this keyframe's `look` is in: its `up` face's, else its position's face.
+    pub fn look_frame(&self) -> FaceFrame {
+        self.up
+            .unwrap_or_else(|| FaceFrame::at_height(self.position[1]))
+    }
+}
+
+/// An `up` value's data name (`"a"`, `"b"`, `"auto"`).
+pub fn up_name(up: Option<FaceFrame>) -> &'static str {
+    match up {
+        None => "auto",
+        Some(f) if f.is_b() => "b",
+        Some(_) => "a",
+    }
+}
+/// Reads an `up` value (`"a"`, `"b"` or `"auto"`; `at` names it in the message).
+pub fn parse_up(v: &Value, at: &str) -> Result<Option<FaceFrame>, String> {
+    match v.as_str() {
+        Some("a") => Ok(Some(FaceFrame::A)),
+        Some("b") => Ok(Some(FaceFrame::B)),
+        Some("auto") => Ok(None),
+        _ => Err(format!("{at} must be \"a\", \"b\" or \"auto\"")),
+    }
 }
 
 /// How the camera moves between two keyframes: a small fixed vocabulary (§3.2).
@@ -276,7 +306,12 @@ impl Path {
 
     /// The path as JSON (what [`Path::parse`] reads back to the same path).
     pub fn to_json(&self) -> Value {
-        let keyframes: Vec<Value> = self.keyframes.iter().map(Keyframe::to_json).collect();
+        let keyframes: Vec<Value> = self
+            .keyframes
+            .iter()
+            .enumerate()
+            .map(|(i, k)| k.to_json(i.checked_sub(1).map(|j| &self.keyframes[j])))
+            .collect();
         let segments: Vec<Value> = self.segments.iter().map(Segment::to_json).collect();
         let mut o = Map::new();
         o.insert("formatVersion".into(), json!(FORMAT_VERSION));
@@ -293,7 +328,7 @@ impl Path {
 }
 
 const PATH_FIELDS: [&str; 5] = ["formatVersion", "name", "loop", "keyframes", "segments"];
-const KEYFRAME_FIELDS: [&str; 7] = [
+const KEYFRAME_FIELDS: [&str; 8] = [
     "t",
     "position",
     "look",
@@ -301,6 +336,7 @@ const KEYFRAME_FIELDS: [&str; 7] = [
     "fov",
     "timeOfDay",
     "speed",
+    "up",
 ];
 const SEGMENT_FIELDS: [&str; 11] = [
     "upEasing",
@@ -339,6 +375,11 @@ impl Keyframe {
                 .map(|p| p.position)
                 .ok_or_else(|| format!("{at}.position is required on the first keyframe"))?,
         };
+        let up = match o.get("up") {
+            Some(u) => parse_up(u, &format!("{at}.up"))?,
+            None => prev.and_then(|p| p.up),
+        };
+        let look_frame = up.unwrap_or_else(|| FaceFrame::at_height(position[1]));
         let aim = match (o.get("look"), o.get("target")) {
             (Some(_), Some(_)) => return Err(format!("{at}: look or target, not both")),
             (Some(l), None) => match l.as_array().map(Vec::as_slice) {
@@ -349,12 +390,11 @@ impl Keyframe {
                 _ => return Err(format!("{at}.look must be [yaw, pitch] (degrees)")),
             },
             (None, Some(t)) => Aim::At(TargetRef::from_json(t, &format!("{at}.target"))?),
-            // Kept from the keyframe before; a look carried over the midplane keeps its world
-            // direction (`FaceFrame::look_across`).
-            (None, None) => match prev.map(|p| (p.aim.clone(), p.position)) {
-                Some((Aim::Look { yaw_deg, pitch_deg }, before))
-                    if FaceFrame::at_height(before[1]) != FaceFrame::at_height(position[1]) =>
-                {
+            // Kept from the keyframe before; a look carried into another frame (over the
+            // midplane, or to another `up`) keeps its world direction (`FaceFrame::look_across`).
+            // A held `up` keeps one frame across the midplane: nothing to carry.
+            (None, None) => match prev.map(|p| (p.aim.clone(), p.look_frame())) {
+                Some((Aim::Look { yaw_deg, pitch_deg }, before)) if before != look_frame => {
                     let (yaw_deg, pitch_deg) = FaceFrame::look_across(yaw_deg, pitch_deg);
                     Aim::Look { yaw_deg, pitch_deg }
                 }
@@ -396,9 +436,12 @@ impl Keyframe {
             fov_deg,
             time_of_day,
             speed,
+            up,
         })
     }
-    fn to_json(&self) -> Value {
+    /// The keyframe as JSON; `prev` (the keyframe before) decides whether an `"auto"` up has to be
+    /// written (after a held one, which a left-out `up` would carry on).
+    fn to_json(&self, prev: Option<&Keyframe>) -> Value {
         let mut o = Map::new();
         o.insert("t".into(), json!(self.t));
         o.insert("position".into(), json!(self.position));
@@ -415,6 +458,9 @@ impl Keyframe {
             o.insert("timeOfDay".into(), json!(d));
         }
         o.insert("speed".into(), json!(self.speed));
+        if self.up.is_some() || prev.is_some_and(|p| p.up.is_some()) {
+            o.insert("up".into(), json!(up_name(self.up)));
+        }
         Value::Object(o)
     }
 }

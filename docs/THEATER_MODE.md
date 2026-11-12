@@ -91,13 +91,25 @@ A path is JSON (`formatVersion` 1), read by `dwell_theater::Path::parse` with a 
 ### 3.1 Keyframes
 
 - `t` — path seconds, increasing. `position` — world metres (f64), required on the first keyframe.
-- The aim: `look` `[yaw, pitch]` (degrees, face-local to the keyframe's face as `placeCamera` takes them) **or**
-  `target`: a point `[x, y, z]`, `"player"`, `{"creature": id}` or `{"npc": id}`.
+- The aim: `look` `[yaw, pitch]` (degrees, face-local to the keyframe's face as `placeCamera` takes them, or to
+  its `up` face when it holds one) **or** `target`: a point `[x, y, z]`, `"player"`, `{"creature": id}` or
+  `{"npc": id}`.
+- `up` — `"a"`, `"b"` or `"auto"` (the default): the face whose up the camera holds (WORK_QUEUE item 40, owner:
+  "The camera shouldn't flip on the wide shot, show it's upside down."). Under `"auto"` the camera takes the frame
+  of the face it is over, as it always has, so a camera on face B's side sees face B upright. With `"a"` (or `"b"`)
+  the camera's up, its roll and the keyframe's `look` stay that face's frame wherever the camera is: from face B's
+  side in face A's frame face B and a player on it hang upside down under the disc, and crossing the midplane
+  doesn't turn the camera over. Within a segment the up is the first keyframe's (a change turns the camera over at
+  the next keyframe, as crossing the midplane does under `"auto"`). Orbits' and tracks' offsets stay face-local to
+  the target's face; `up` changes only the camera's frame.
 - `fov` — vertical degrees [5, 150]; unset: the viewer's setting. `timeOfDay` — 0–1 (0 midnight); unset: the
   world's. `speed` — the playback rate there (path seconds per real second, (0, 1000]): 1 is real time, 4 a 4×
   time-lapse of the move. Between keyframes it ramps linearly: a shot that speeds up part way is a speed ramp.
-- **A field left out keeps the keyframe before's**, so a pan's second keyframe needs only its look. A look carried
-  over the midplane keeps its world direction (`FaceFrame::look_across`).
+- **A field left out keeps the keyframe before's** (`up` included), so a pan's second keyframe needs only its look.
+  A look carried into another frame — over the midplane under `"auto"`, or to another `up` — keeps its world
+  direction (`FaceFrame::look_across`); under a held `up` the frame doesn't change and the look is carried as is.
+  Written out (`Path::to_json`), a keyframe writes `up` when it holds one or when the one before did (an `"auto"`
+  after a held one, which a left-out `up` would carry on).
 
 ### 3.2 Moves (the fixed vocabulary)
 
@@ -127,7 +139,8 @@ and arrive at rest, so chained eased segments don't jerk at the joins.
 ### 3.4 Evaluation
 
 `dwell_theater::pose_at(path, t, targets)` → `Pose { position (world, f64), direction (world unit), yaw_deg,
-pitch_deg (face-local, for placeCamera), fov_deg?, time_of_day? }`. The time of day runs **forward** from one
+pitch_deg (face-local to `Pose::frame`: the held `up` face's, else the eye's, for placeCamera), fov_deg?,
+time_of_day?, up? }`. The time of day runs **forward** from one
 keyframe's to the next's (through midnight when the next is earlier), plus a segment's whole `days`, linear in
 path time: a day-to-night time-lapse is two keyframes.
 
@@ -139,10 +152,19 @@ through the frame, so a path plays the same at 30 or 144 frames a second (tests 
 before each frame (`Game::step_theater`) and places the view, the field of view and the viewer's time of day
 (`theater_time`, over the dev `setTime` override); `theaterStop` or `releaseCamera` returns to the player's eyes.
 
+**The held up in the client.** The placed view (`game::ViewOverride`) carries the pose's `up`; its yaw and pitch
+are in that frame (`ViewOverride::face`, which the free-fly and the LOD's world pitch use). The renderer still gets
+the **eye's** face, since the sky, fog, clouds, water and shadows are the air the eye is in: a held up on the other
+face's side is drawn as the same look continued across (`look_across`) with half a turn of roll
+(`ViewOverride::camera`), the same roll the midplane crossing's flip uses (BIFACIAL_WORLD.md §6). The sky is drawn
+per world ray, so upside down it is simply where it is: under the disc in face A's frame, face B's sky (its night
+and stars) fills the bottom of the frame and the disc's underside the top; nothing in it assumes the camera's up.
+`theaterUp(up)` holds the free camera's up (the look kept), so the editor's keys are in the frame they say.
+
 ### 3.6 Both faces
 
 Paths are world positions; every up-dependent part goes through `dwell_world::FaceFrame` (BIFACIAL_WORLD.md §11):
-looks are face-local to the keyframe's face, an orbit's angle/radius/height and a track's offset are face-local to
+looks are face-local to the keyframe's face (or its held `up` face), an orbit's angle/radius/height and a track's offset are face-local to
 the target's face, a pose's yaw and pitch are face-local to the eye's face. So a path written on face A and mapped
 through face B's frame is A's mirror image (`face_b_mirrors_face_a`), and a path that crosses the midplane keeps its
 world look as the eye passes (`a_path_across_the_midplane_keeps_its_world_look`). An orbit's "left" on face B is the
@@ -157,6 +179,9 @@ move also takes `seconds`, `fov`, `timeFrom`/`timeTo` (the viewer's time of day)
 (`Preset::expand`) around a **subject** (a target and where it is) from **where the camera is** (an orbit, dolly,
 track or rise starts on the camera's side of the subject) into an ordinary two-keyframe path, which can then be
 edited, saved and shared like any other. The game's presets: `orbit`, `dolly`, `track`, `rise` (a crane), `pan`.
+A preset may hold an `up` (`"a"`, `"b"`, `"auto"` the default), and an expansion can override it
+(`Context::up`; the `params` of `theaterPreset` and `__dwell.theater('preset')` take `"up": "a"`): it goes on the
+first keyframe and the shot holds it; a pan turns from the camera's look in that frame.
 A new preset is a data entry (a test adds one from a fixture file no code names).
 
 ## 5. Saving and sharing paths (T-2)
@@ -251,9 +276,14 @@ A new preset is a data entry (a test adds one from a fixture file no code names)
 keyframes; a multi-move path at 60 fps has no jumps (per-frame move and turn bounded, the joins included); an orbit
 keeps its radius and height and looks at its centre; a track keeps a walking target centred and settles at the
 offset; tracking matches at 30 and 144 fps; a speed ramp's real duration and the time of day through midnight; the
-vertigo dolly holds the subject's size; face B mirrors face A; a midplane crossing keeps its world look; the game's
+vertigo dolly holds the subject's size; face B mirrors face A; a midplane crossing keeps its world look; a held
+`up` keeps its frame (look, yaw, pitch) on the other face's side where `"auto"` continues the look across, and a
+track keeps it; a preset holds an `up` (data or override); the game's
 presets expand; a fixture preset by data alone; bad paths and presets fail with messages; a path round-trips through
-JSON. `src/easing.rs` checks every curve; `client/src/debug/theater.test.ts` the dev API and the HUD rule.
+JSON (`up` and an `"auto"` after a held one included). `game.rs`
+`a_held_up_keeps_its_face_up_across_the_midplane` (both faces): a path with the held face's up on the other face's
+side gives that face's camera up (+y world for face A) where `"auto"` gives the face it is over, the forward the
+same, the sky's face the eye's. `src/easing.rs` checks every curve; `client/src/debug/theater.test.ts` the dev API and the HUD rule.
 
 The viewpoint (T-4): `crates/dwell-sim/tests/theater_viewpoint.rs` (both faces) — in creative a viewpoint 640 m
 from the body streams its chunk and the view around it and the fixture creatures spawn and stay there; adventure
