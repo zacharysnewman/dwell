@@ -462,6 +462,28 @@ fn mesh_section_above(
             got: cells.len(),
         });
     }
+    // The ground is meshed as if the section's trees weren't there (BUGS.md #95): a tree cell
+    // neither hides the ground's top under it nor holds the column's surface, so the ground is
+    // closed under every trunk and crown, whether the tree pass draws them (`lod_trees`, over the
+    // ground) or leaves them out (Far trees off, the impostors standing on it). Every tree cell
+    // was skipped by the ground pass already; the near chunks are meshed apart and unchanged.
+    let tree_cells = cells;
+    let ground: Vec<u16>;
+    let cells = if cells.iter().any(|&m| crate::lod_trees::tree_kind(m) != 0) {
+        ground = cells
+            .iter()
+            .map(|&m| {
+                if crate::lod_trees::tree_kind(m) != 0 {
+                    0
+                } else {
+                    m
+                }
+            })
+            .collect();
+        &ground[..]
+    } else {
+        cells
+    };
     let water_drop = options.water_drop;
     let mut opaque = Builder::default();
     let mut water_mesh = Builder::default();
@@ -496,10 +518,6 @@ fn mesh_section_above(
                     let wc = col(c[0], c[2]);
                     // A column's surface cell: its top and sides are drawn at the surface (below).
                     let sy = i32::from(special.y[wc]);
-                    // Leaves and logs are drawn whole as the chunks draw them (`lod_trees`).
-                    if sy != c[1] && crate::lod_trees::tree_kind(m) != 0 {
-                        continue;
-                    }
                     if face != 3 && sy == c[1] {
                         continue;
                     }
@@ -635,8 +653,9 @@ fn mesh_section_above(
         }
     }
     if trees {
+        // Leaves and logs are drawn whole as the chunks draw them, over the closed ground.
         crate::lod_trees::tree_cells(
-            cells,
+            tree_cells,
             |x, y, z| i32::from(special.y[col(x, z)]) == y,
             lod_color,
             &mut opaque.m,

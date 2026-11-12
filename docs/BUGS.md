@@ -26,25 +26,6 @@ the hat repaint (`repaint` hair_brown → wool_yellow with minY/beyond/above) ca
 table missing an entry (index out of range → black); or the face's normals inverted at the default model detail.
 Check whether your own body/other players (the same model, no recolour) show it too.
 
-### 95. Far trees seen from above have holes through to the sky below
-
-Owner, 2026-11-12 (screenshot at night, looking straight down from high up): "looking down at trees from high up,
-where you can first make out individual trees, they seem to have visible holes through them into the ground (sky on
-the other side). This is most obvious at night, so the day sky shines through the ground." In the shot each far
-tree (the LOD's crownless trees: dark crosses and squares on the grass) shows bright light-blue pixels at its
-centre — through the tree and the ground under it, the other face's (day) sky shows. Suspects: the LOD terrain
-leaves a hole (or an unfilled cell) under each far tree's trunk/column (the tree cells cut from the LOD's ground and
-not filled), or T-junction cracks where the far tree's mesh meets the LOD ground; at that distance the gap is a
-pixel or two and the sky behind the disc shows through.
-
-Looked at 2026-11-12 (impostors session, not fixed): with the impostors on (`claude/impostors-gpu`) the LOD sections
-mesh **no** tree cells (`mesh_section_trees(…, false)`). The section's surface pass draws a column's top cell only
-(`lod_mesher.rs` ~l. 499 skips tree cells above the surface, `special.y`); where a column's top is a tree cell (a
-trunk, a crown) the ground cell under it is not the column's top and gets no top face, so without the tree cells
-there is a hole in the ground the size of the trunk's column — the likely cause, and with impostors the holes show
-between the far trees from above. Fix: the generator's "ground without trees" for the section's surface (proposal
-I-4), with a watertightness test (every column of a forest section has a top face at its ground).
-
 ### 92. Downhill water shows edge triangles and thin lines at its ½ m level steps
 
 Owner, 2026-11-12 (screenshot + block dump): "I'm seeing some edge triangles and thin lines at slope transitions on
@@ -460,6 +441,37 @@ face, or the placement check against its shape.
 
 
 ## Fixed
+
+### 95. Far trees seen from above have holes through to the sky below (fixed after 0.54.175)
+
+Owner, 2026-11-12 (screenshot at night, looking straight down from high up): "looking down at trees from high up,
+where you can first make out individual trees, they seem to have visible holes through them into the ground (sky on
+the other side). This is most obvious at night, so the day sky shines through the ground." In the shot each far
+tree (the LOD's crownless trees: dark crosses and squares on the grass) shows bright light-blue pixels at its
+centre — through the tree and the ground under it, the other face's (day) sky shows. Suspects: the LOD terrain
+leaves a hole (or an unfilled cell) under each far tree's trunk/column (the tree cells cut from the LOD's ground and
+not filled), or T-junction cracks where the far tree's mesh meets the LOD ground; at that distance the gap is a
+pixel or two and the sky behind the disc shows through.
+
+Looked at 2026-11-12 (impostors session, not fixed): with the impostors on (`claude/impostors-gpu`) the LOD sections
+mesh **no** tree cells (`mesh_section_trees(…, false)`). The section's surface pass draws a column's top cell only
+(`lod_mesher.rs` ~l. 499 skips tree cells above the surface, `special.y`); where a column's top is a tree cell (a
+trunk, a crown) the ground cell under it is not the column's top and gets no top face, so without the tree cells
+there is a hole in the ground the size of the trunk's column — the likely cause, and with impostors the holes show
+between the far trees from above. Fix: the generator's "ground without trees" for the section's surface (proposal
+I-4), with a watertightness test (every column of a forest section has a top face at its ground).
+
+Fixed 2026-11-12 (`claude/far-ground-holes`): the cause was as suspected, and it held with the trees drawn too.
+The section's ground pass took a tree cell as solid: the log over a trunk's ground cell hid that cell's top, and
+with the surface data the column's topmost solid cell was the tree's, so its ground found no surface. The tree
+pass draws a log as an octagon (its corners open) and a leaf chamfered, so even with Far trees on the sky showed
+through beside each trunk; with them off (the impostors) the whole trunk column was a hole. Now
+`mesh_section_above` meshes the ground from the section's cells with the tree cells cleared (the tree pass still
+draws them, over the ground); the near chunks are unchanged. Test `lod_mesher_tests.rs` `far_ground_under_trees`
+(crowned and crownless trees, on the section's edge and corner too, with and without surface data, trees on and
+off: every column's top covered at the ground's height, and trees off meshes exactly as the treeless ground, so no
+seam a neighbour section's LOD meets changes), on both faces: red (holes at every trunk) → green. Not checked:
+the in-game look from high up at night (local, a GPU).
 
 ### 94. Jumping into a tree's leaves rubber-bands you toward the ground until you back out (fixed after 0.54.14x)
 
