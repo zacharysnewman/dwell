@@ -309,6 +309,11 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    in the deck's palette; night and sunset tints kept; the light samples reuse the sample's warp (half the old
    cost each). A CPU twin with tests (top brighter than base, deeper darker, phase toward the sun, tier caps from
    data, both faces). Read from the shader: Medium ≤ ~5.3k ALU a texel (was 2.6k), High ≤ 7.6k (was 4.8k).
+   Owner, 2026-11-12: **"a bug with volumetric clouds z fighting against tall terrain like mountains."** (BUGS.md #88)
+   **Fixed (2026-11-12, cloud, CLOUDS.md §8.9):** each texel marches only to the farthest scene pixel under it, keeps
+   that scene span (not the jittered first cloud), and the composite and history weigh texels by it in metres;
+   CPU twin tests (no cloud behind the rock, no flip over the jitter, silhouettes, both faces). Next (local): the look
+   at a mountain in the layer and the pass's timings.
    Next (local): the in-game look side by side with the old deck (sun high, low sun, from above, night) and the
    bench before/after at the §8.3 views; tune by the data.
 14. **Tall grass grows and spreads** (owner 2026-11-11: "I want tall grass to steadily grow and spread. It

@@ -24,29 +24,6 @@ shadows ~2 ms more. Speed effects' motion pass costs ~0.5 ms; bloom and shafts n
 Outstanding: no cut yet (45-minute box). The levers: a Tall grass setting (a mesher flag, #78's outstanding item),
 the far trees as impostors (WORK_QUEUE item 31), and High's sun shadows over forest; a vsync run of `high-fly` for
 the dropped-frame count and a faster flight (level 6+) for the streaming at speed.
-### 88. Volumetric clouds z-fight against tall terrain
-
-Owner, 2026-11-12: "a bug with volumetric clouds z fighting against tall terrain like mountains." Where a mountain
-rises into the cloud layer, the cloud volume and the terrain flicker against each other. Suspects: the volume pass's
-depth test against the low-resolution (½/¼ res) depth or its temporal reprojection mixing samples across the
-terrain's silhouette; the march not stopping at the scene depth (or comparing depth in a different space/precision
-far away); the far pass's depth range at mountain distance.
-
-Read in the code (2026-11-12, `claude/fly-high-m1`, not reproduced on the GPU yet; after the lighting rework #754):
-the clouds pass (`clouds_fs`, render/shaders.rs) marches the whole layer, not to the scene (`max_t` 1e9), and
-writes the distance to the first cloud sample (`dist`) beside the colour; the composite's `upsampled_clouds` hides a
-pixel's clouds where the scene is nearer than the nearest of four texels' `first`, through a ±5 % band
-(`smoothstep(0.95, 1.05, first / scene)`). Two things make that flicker where a mountain stands inside the layer:
-(1) `first` is the current frame's alone, jittered every frame by `cloud_jitter` by up to a step (the layer's path
-over 10 steps at Medium: hundreds of metres, often more than 5 % of the mountain's distance), while the colour is
-blended with the history; so the test flips frame to frame on the slope; (2) the colour holds the whole layer's
-cloud, the part behind the mountain too, so the cut is all or nothing at `first` rather than the cloud in front of
-the rock. Likely fix: march each texel only to the scene (a reduced depth, the farthest of its full-resolution
-texels, as `max_t`) so the colour is the cloud in front, and keep the composite's test only for the upsampling at
-silhouettes; or at least use an unjittered `first` (the layer entry) and a band in metres of a step. A test: the
-march's `first` stable under the jitter, and the cloud in front of a fixture slope inside the layer the same
-across jitter values (`dwell-look` clouds.rs twins).
-
 ### 87. An NPC's raised vertical block leans the blade back over its shoulder
 
 Found fixing #86 (2026-11-12), not reported: `clip_probe` puts the third-person `guard_vertical` pose's
@@ -375,6 +352,26 @@ face, or the placement check against its shape.
 
 
 ## Fixed
+
+### 88. Volumetric clouds z-fight against tall terrain (fixed after 0.54.135; the browser check left local)
+
+Owner, 2026-11-12: "a bug with volumetric clouds z fighting against tall terrain like mountains." Where a mountain
+rises into the cloud layer, the cloud volume and the terrain flickered against each other. Cause (read in the code):
+the clouds pass (`clouds_fs`) marched the whole layer, not to the scene, and kept the distance to its first cloud,
+jittered every frame by `cloud_jitter` by up to a step (hundreds of metres at Medium); the composite's
+`upsampled_clouds` cut the clouds against the scene by a ±5 % band of that distance, so on a slope inside the layer
+the cut flipped frame to frame; and the colour held the cloud behind the rock too.
+
+Fixed (docs/CLOUDS.md §8.9): the pass reads the scene's depth under each texel (nearest and farthest of its
+full-resolution pixels) and marches only to the farthest (the whole layer where any of it is sky): no cloud behind
+a texel's rock. It keeps that span beside the colour instead of the jittered first cloud, and the composite and the
+history's reprojection weigh the four texels round a pixel by whether their march ended at the pixel's scene, within
+a band in metres of the texel's depth range (3–15 % of the distance, `volume.depthBand`/`depthBandRange`): depths
+alone decide, so nothing flips with the jitter. Tests: `crates/dwell-look/src/clouds.rs` `depth_tests` (a CPU model of
+the pass and composite, red before: the cut swung 0 → 0.79 over the jitter's 16 frames, samples went past the rock),
+both faces; `dwell-client` `shaders.rs` pins the wiring and naga validates the module. Not checked on a GPU (cloud
+session): the look at a mountain in the layer and the `gpu.clouds`/`gpu.composite` timings are for a local
+`npm run bench -- --warm`.
 
 ### 86. A sword clash's sparks show ~1.5 m beside the blades, in the air (fixed after 0.54.123)
 

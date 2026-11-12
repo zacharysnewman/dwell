@@ -1,0 +1,7 @@
+{
+  "changes": [
+    "Volumetric clouds no longer flicker against mountains that rise into them",
+    "Clouds behind a mountain no longer show through it; the cloud in front still does",
+    "Behind the scenes: a stale bench scenario test now accepts the Medium clouds tier"
+  ]
+}

@@ -64,6 +64,8 @@ pub const CLOUDS: CloudTunables = CloudTunables {
         bounce_tint: [0.658824, 0.627451, 0.580392],
         ambient_depth_m: 400.0,
         max_distance_m: 22000.0,
+        depth_band: 0.03,
+        depth_band_range: 0.15,
         plume_billow: 0.6,
     },
     tiers: VolumeTiers {

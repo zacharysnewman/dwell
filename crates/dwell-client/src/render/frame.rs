@@ -251,8 +251,9 @@ impl BloomChain {
 }
 
 /// The clouds pass's own group (3; binding 0 is the motion pass's `finished`): the accumulated
-/// clouds of the last frame, a filtering sampler, the last frame's camera (`CloudPrev`) and the
-/// run-time plumes (`CloudPlumes`, docs/CLOUDS.md §8.7).
+/// clouds of the last frame, a filtering sampler, the last frame's camera (`CloudPrev`), the
+/// run-time plumes (`CloudPlumes`, docs/CLOUDS.md §8.7) and the last frame's scene span per texel
+/// (`CLOUD_DIST`, §8.9).
 pub fn cloud_history_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
     device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         label: Some("cloud history"),
@@ -284,6 +285,7 @@ pub fn cloud_history_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
                 },
                 count: None,
             },
+            filterable(5),
         ],
     })
 }
@@ -300,8 +302,9 @@ pub const CLOUD_PREV_BYTES: u64 = 5 * 16;
 
 /// The volumetric clouds' buffer's format: premultiplied colour and cover.
 pub const CLOUDS: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
-/// The distance to each texel's first cloud (m; 65000: none).
-pub const CLOUD_DIST: wgpu::TextureFormat = wgpu::TextureFormat::R16Float;
+/// The scene under each texel (docs/CLOUDS.md §8.9): its nearest and farthest pixel's distance
+/// along the ray (m; the sky and past the reach: the march's reach), where its march ended.
+pub const CLOUD_DIST: wgpu::TextureFormat = wgpu::TextureFormat::Rg16Float;
 
 fn filterable(binding: u32) -> wgpu::BindGroupLayoutEntry {
     wgpu::BindGroupLayoutEntry {
@@ -363,6 +366,7 @@ pub struct Targets {
     pub clouds: Target,
     pub cloud_dist: Target,
     pub cloud_history: Target,
+    pub cloud_dist_history: Target,
     pub cloud_group: wgpu::BindGroup,
     /// Bloom's chain (its tier's size; 1 × 1 with bloom off).
     pub bloom: BloomChain,
@@ -469,7 +473,18 @@ impl Targets {
             groups.clouds,
             read | wgpu::TextureUsages::COPY_SRC,
         );
-        let cloud_dist = small(CLOUD_DIST, "cloud distance", groups.clouds, read);
+        let cloud_dist = small(
+            CLOUD_DIST,
+            "cloud distance",
+            groups.clouds,
+            read | wgpu::TextureUsages::COPY_SRC,
+        );
+        let cloud_dist_history = small(
+            CLOUD_DIST,
+            "cloud distance history",
+            groups.clouds,
+            wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+        );
         let cloud_history = small(
             CLOUDS,
             "cloud history",
@@ -495,6 +510,10 @@ impl Targets {
                 wgpu::BindGroupEntry {
                     binding: 4,
                     resource: groups.cloud_plumes.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: wgpu::BindingResource::TextureView(&cloud_dist_history.1),
                 },
             ],
         });
@@ -586,6 +605,7 @@ impl Targets {
             clouds,
             cloud_dist,
             cloud_history,
+            cloud_dist_history,
             cloud_group,
             bloom,
         }
@@ -621,6 +641,7 @@ impl Drop for Targets {
         self.clouds.0.destroy();
         self.cloud_dist.0.destroy();
         self.cloud_history.0.destroy();
+        self.cloud_dist_history.0.destroy();
         self.bloom.texture.destroy();
         if let Some(((t, _), _)) = &self.under {
             t.destroy();
