@@ -829,6 +829,13 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    volumetric clouds and plumes, lava crust/glow, bloom, haze extras, water tiers, light shafts, reflections, view
    distance; the audit test widened from `render/*_for` to every per-feature switch the renderer and mesher read.
    In progress (cloud).
+   Owner, 2026-11-12: **"It would be sweet if we could see in realtime on graphics menu exactly or approximately what %
+   of performance is being used by each setting."** Plan: the renderer's GPU pass timings (the `gpu.*` telemetry,
+   timestamp queries where the browser allows them) mapped to the settings that drive each pass (data: setting →
+   passes), shown live beside each setting as ms and % of the frame budget (16.7 ms at 60 fps); settings without
+   their own pass (e.g. tall grass, cards inside the terrain pass) estimated by a quick on/off A/B when the menu
+   opens, labelled "≈"; a total bar; works without timestamp queries by falling back to the A/B estimate. Queued
+   (local, after the setting-for-everything work lands).
 31. **Far trees as multi-angle impostors** (owner 2026-11-12: "billboards (maybe from above billboards too,
    possibly a few different angles so we can switch between them like old Mario kart did with carts, and some
    trees too)" and "The farther distant thoughts on billboards are because our low LOD trees look pretty bad and
