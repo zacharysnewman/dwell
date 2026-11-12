@@ -810,6 +810,11 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    Built (cloud, needs the owner's look in game): tool data `contactS` (pickaxes, shovels 0.26 s; the axe its
    swing's), the server lands hits at contact and drops cancelled ones, the client's sound and chips at
    contact, a bounce wears once and leaves alone don't (docs/BLOCK_DAMAGE.md §8).
+   Owner, 2026-11-12, follow-up (BUGS.md #111): "I've noticed on tool hits they don't check where they're aimed at
+   hit time, if I click on a block, and move my cursor to aim at the block below it, I'll see and hear the tool
+   hit, but it won't be on the block I'm aiming at, it'll be the one I clicked on first before the hit played."
+   Built: the hit is aimed at its contact, the target what the crosshair holds then, a miss there landing
+   nothing (capability `hits.at_contact`; docs/BLOCK_DAMAGE.md §11). The axe's committed arc is unchanged.
 26. **Axe bites like the other tools' marks** (owner 2026-11-12: "The tree chopping slice doesn't match the other
    tools style. It cuts a line all the way across which is much bigger than the tool head. It should align more
    with the dirt and stone ones."). Today an axe hit cuts a kerf slit across the log's whole width. Wanted: each

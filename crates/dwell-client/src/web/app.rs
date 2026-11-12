@@ -629,6 +629,9 @@ impl Client {
                 game.set_swordplay(
                     session.capability(dwell_protocol::capability_names::WEAPONS_CLASH),
                 );
+                game.set_hits_at_contact(
+                    session.capability(dwell_protocol::capability_names::HITS_AT_CONTACT),
+                );
                 // The theater camera as a simulation viewpoint (THEATER_MODE.md §7): creative
                 // on a server that takes it.
                 game.set_theater_viewpoint(
@@ -3547,6 +3550,9 @@ impl Inner {
                 s.capability(dwell_protocol::capability_names::STRUCTURES_PLACE),
             );
             game.set_swordplay(s.capability(dwell_protocol::capability_names::WEAPONS_CLASH));
+            game.set_hits_at_contact(
+                s.capability(dwell_protocol::capability_names::HITS_AT_CONTACT),
+            );
             game.set_theater_viewpoint(
                 s.capability(dwell_protocol::capability_names::THEATER_VIEWPOINT)
                     && s.theater_viewpoint(),

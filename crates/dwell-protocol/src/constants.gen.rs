@@ -679,6 +679,8 @@ pub mod capability_names {
     pub const NPCS_SWINGS: &str = "npcs.swings";
     /// The client sends `TheaterViewpoint` (docs/THEATER_MODE.md §7, T-4): theater mode's camera position while a camera path plays (at most world.theaterViewpointHz a second), and an empty one when it ends. The server adds it to the player's interest (chunks streamed around it, creatures and NPCs spawned and simulated near it, the near ecology and the water stepped there) only where the world's mode has the `theaterViewpoint` ability (shared/modes/modes.json: creative), within world.theaterViewpointMaxM of the body; elsewhere it ignores it. Without it the client never sends one.
     pub const THEATER_VIEWPOINT: &str = "theater.viewpoint";
+    /// A breaking tool's hit (one with a `contactS`, shared/tools/tools.json; docs/BLOCK_DAMAGE.md §11) is sent at its swing's contact, aimed at what the crosshair targets then, and the server lands it on arrival (reach, line of sight and the edit rate checked from the eye at that tick) instead of `contactS` after it arrives. Without it (either side) the client sends the hit at the click, at the cell clicked, and the server lands it `contactS` after it arrives.
+    pub const HITS_AT_CONTACT: &str = "hits.at_contact";
     /// Every capability this build knows, in the table's order.
-    pub const ALL: &[&str] = &[STRUCTURES_PLACE, GRID_FRAMES, DAMAGE_CHUNKS, CREATURES_NPCS, WEAPONS_CLASH, CREATURES_POSES, NPCS_SWINGS, THEATER_VIEWPOINT];
+    pub const ALL: &[&str] = &[STRUCTURES_PLACE, GRID_FRAMES, DAMAGE_CHUNKS, CREATURES_NPCS, WEAPONS_CLASH, CREATURES_POSES, NPCS_SWINGS, THEATER_VIEWPOINT, HITS_AT_CONTACT];
 }

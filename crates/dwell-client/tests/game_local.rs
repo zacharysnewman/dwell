@@ -3237,6 +3237,220 @@ fn a_pickaxe_hit_marks_the_stone_at_its_contact_not_on_the_click() {
     assert_eq!(host_voxel(&mut rig, p), stone, "one hit of five: it stands");
 }
 
+/// Two ½ m stones on the sandbox's floor, `a` ahead (yaw 0°) and `b` beside it (yaw 35°), both 35° down, the
+/// stone pickaxe in hand and `hits.at_contact` on as the session announced it; the player's id.
+fn two_stones_and_a_pickaxe(rig: &mut Rig) -> ([i32; 3], [i32; 3], u16) {
+    use dwell_protocol::capability_names::HITS_AT_CONTACT;
+    let SessionState::Joined { player_id, .. } = rig.session.state().clone() else {
+        panic!("joined")
+    };
+    let on = rig.session.capability(HITS_AT_CONTACT);
+    assert!(on, "the local server announces hits.at_contact");
+    let stone = dwell_blocks::require("dwell:stone");
+    let palette = dwell_game::block_interaction::palette();
+    let half = palette
+        .iter()
+        .position(|s| s.item == "dwell:stone")
+        .expect("a ½ m stone");
+    let pick = palette
+        .iter()
+        .position(|s| s.tool == Some("dwell:stone_pickaxe"))
+        .expect("the stone pickaxe on the palette");
+    let g = rig.game.as_mut().unwrap();
+    g.set_hits_at_contact(on);
+    g.interaction.select(half as i64);
+    let mut placed = Vec::new();
+    for yaw in [0.0, B_YAW] {
+        let floor = target_at(rig, yaw, -35.0);
+        let p = [floor[0], floor[1] + 1, floor[2]];
+        assert!(rig.game.as_mut().unwrap().edit(EditAction::Place, rig.now));
+        assert!(rig.run_until(120, |r| r.game.as_ref().unwrap().prediction.pending() == 0));
+        assert_eq!(
+            server_voxel(rig, p),
+            stone,
+            "placed at {yaw}° {floor:?} → {p:?}"
+        );
+        placed.push(p);
+    }
+    let (a, b) = (placed[0], placed[1]);
+    assert_ne!(a, b);
+    rig.game.as_mut().unwrap().interaction.select(pick as i64);
+    for _ in 0..10 {
+        rig.frame();
+    }
+    assert_eq!(target_at(rig, 0.0, -35.0), a, "a at yaw 0°");
+    assert_eq!(target_at(rig, B_YAW, -35.0), b, "b at yaw 35°");
+    (a, b, player_id)
+}
+
+/// Where stone B is from the player.
+const B_YAW: f64 = 35.0;
+
+fn pickaxe_contact_ms() -> f64 {
+    dwell_protocol::chopping::break_contact_s(Some("dwell:stone_pickaxe")) * 1000.0
+}
+
+fn hits_heard(rig: &mut Rig) -> usize {
+    rig.game
+        .as_mut()
+        .unwrap()
+        .take_sounds()
+        .iter()
+        .filter(|e| e.kind == dwell_game::sound::SoundKind::Hit)
+        .count()
+}
+
+/// BUGS.md #111 (owner, 2026-11-12: "if I click on a block, and move my cursor to aim at the block
+/// below it, I'll see and hear the tool hit, but it won't be on the block I'm aiming at, it'll be
+/// the one I clicked on first before the hit played"): clicked on stone A, aimed at stone B by the
+/// swing's contact, the hit (the server's damage, the mark, the sound) is B's and A is untouched;
+/// the server takes it as sent (nothing refused, nothing replayed).
+// face-a-only: the sandbox's floor and aim; the server's side is both faces' (dwell-sim damage).
+#[test]
+fn a_pickaxe_hit_lands_on_what_is_aimed_at_its_contact_not_the_block_clicked() {
+    let mut rig = predicting_rig(2);
+    let (a, b, player_id) = two_stones_and_a_pickaxe(&mut rig);
+    assert_eq!(target_at(&mut rig, 0.0, -35.0), a);
+    hits_heard(&mut rig);
+    let before = rig.core.server().stats_of(player_id).unwrap();
+    let click = rig.now;
+    assert!(rig.game.as_mut().unwrap().edit(EditAction::Break, click));
+    // The aim moves to B before the contact.
+    rig.input.look.yaw = B_YAW;
+    let mut heard = 0;
+    while rig.now + 1000.0 / 60.0 < click + pickaxe_contact_ms() {
+        rig.frame();
+        heard += hits_heard(&mut rig);
+    }
+    assert_eq!(heard, 0, "no hit before the contact");
+    assert!(rig.run_until(60, |r| r.game.as_ref().unwrap().damage_at(b).is_some()));
+    heard += hits_heard(&mut rig);
+    for _ in 0..30 {
+        rig.frame();
+        heard += hits_heard(&mut rig);
+    }
+    assert_eq!(heard, 1, "one hit sound, at the contact");
+    let server = rig.core.server();
+    assert_eq!(
+        server.damage_of(b).map(|d| d.hits),
+        Some(1),
+        "B took the hit"
+    );
+    assert!(server.damage_of(a).is_none(), "A untouched (server)");
+    let after = server.stats_of(player_id).unwrap();
+    assert_eq!(
+        after.edits_applied,
+        before.edits_applied + 1,
+        "one hit landed"
+    );
+    assert_eq!(after.edits_rejected, before.edits_rejected, "none refused");
+    let g = rig.game.as_ref().unwrap();
+    assert!(g.damage_at(a).is_none(), "A untouched (client)");
+    assert_eq!(
+        g.prediction.pending(),
+        0,
+        "nothing left waiting on the server"
+    );
+}
+
+/// A swing whose contact finds only air (the aim moved off the stone clicked) is a miss: nothing
+/// sent, no mark, no hit sound (and so no wear).
+// face-a-only: the sandbox's floor and aim; the server's side is both faces' (dwell-sim damage).
+#[test]
+fn a_pickaxe_swing_aimed_at_air_by_its_contact_is_a_miss() {
+    let mut rig = predicting_rig(2);
+    let (a, b, player_id) = two_stones_and_a_pickaxe(&mut rig);
+    assert_eq!(target_at(&mut rig, 0.0, -35.0), a);
+    hits_heard(&mut rig);
+    let before = rig.core.server().stats_of(player_id).unwrap();
+    let click = rig.now;
+    assert!(rig.game.as_mut().unwrap().edit(EditAction::Break, click));
+    rig.input.look.pitch = 30.0; // the sky
+    let mut heard = 0;
+    while rig.now < click + pickaxe_contact_ms() + 1000.0 {
+        rig.frame();
+        heard += hits_heard(&mut rig);
+    }
+    assert!(
+        rig.game.as_ref().unwrap().debug_state().target.is_none(),
+        "aimed at air"
+    );
+    assert_eq!(heard, 0, "no hit sound");
+    let server = rig.core.server();
+    assert!(
+        server.damage_of(a).is_none() && server.damage_of(b).is_none(),
+        "no mark"
+    );
+    let after = server.stats_of(player_id).unwrap();
+    assert_eq!(
+        (after.edits_applied, after.edits_rejected),
+        (before.edits_applied, before.edits_rejected),
+        "nothing sent"
+    );
+}
+
+/// Break held with the pickaxe (`repeatOnHold`): each swing strikes what is aimed at its own
+/// contact (WORK_QUEUE item 17: "each swing hitting what is targeted then"). Each swing starts at one
+/// stone and is turned to the other before its contact: the first lands on B, the second on A.
+// face-a-only: the sandbox's floor and aim; the server's side is both faces' (dwell-sim damage).
+#[test]
+fn a_held_pickaxe_swing_strikes_what_is_aimed_at_each_contact() {
+    let mut rig = predicting_rig(2);
+    let (a, b, _) = two_stones_and_a_pickaxe(&mut rig);
+    let dwell_client::held_use::Repeat::Every(repeat_s) =
+        dwell_client::held_use::Repeat::of_break(Some("dwell:stone_pickaxe"))
+    else {
+        panic!("the pickaxe repeats on hold")
+    };
+    let contact = pickaxe_contact_ms();
+    assert!(
+        repeat_s * 1000.0 > contact + 50.0,
+        "a gap between contact and the next swing"
+    );
+    assert_eq!(target_at(&mut rig, 0.0, -35.0), a);
+    let click = rig.now;
+    let holder = dwell_game::build_drag::Holder::Mouse;
+    assert!(
+        rig.game
+            .as_mut()
+            .unwrap()
+            .edit_held(EditAction::Break, holder, click)
+    );
+    // The first swing, started at A, turned to B.
+    rig.input.look.yaw = B_YAW;
+    assert!(rig.run_until(60, |r| r.core.server().damage_of(b).is_some()
+        || r.core.server().damage_of(a).is_some()));
+    assert!(
+        rig.core.server().damage_of(a).is_none(),
+        "the first swing lands on B, not A where it started"
+    );
+    // The second starts at B (`repeatS` after the first) and is turned back to A before its contact.
+    while rig.now < click + repeat_s * 1000.0 + 1000.0 / 30.0 {
+        rig.frame();
+    }
+    assert!(
+        rig.now < click + repeat_s * 1000.0 + contact - 50.0,
+        "before the contact"
+    );
+    rig.input.look.yaw = 0.0;
+    assert!(rig.run_until(60, |r| r.core.server().damage_of(a).is_some()));
+    rig.game.as_mut().unwrap().release_use(holder);
+    for _ in 0..60 {
+        rig.frame();
+    }
+    let server = rig.core.server();
+    assert_eq!(
+        server.damage_of(b).map(|d| d.hits),
+        Some(1),
+        "B by the first swing"
+    );
+    assert_eq!(
+        server.damage_of(a).map(|d| d.hits),
+        Some(1),
+        "A by the second"
+    );
+}
+
 /// A local world as the browser's worker opens it at `size` (BIG_MAP.md M2b): the page's maps for
 /// that size installed first (`buildWorldMap` with the scale), its jobs in the server-jobs worker.
 fn sized_core(
