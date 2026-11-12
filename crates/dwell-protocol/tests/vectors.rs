@@ -211,6 +211,45 @@ fn decoded_fields_are_the_vectors_values() {
     assert_eq!(r.cells, [1, 1, 1, 1, 4, 0, 4, 0, 0, 0, 0, 0]);
     // Layer order: x fastest, then z, then y.
     assert_eq!(r.cells[RegionEdit::cell_index(r.size, 0, 1, 1)], 4);
+    // A structure placement: Paste's body under its own op (STRUCTURES.md §9).
+    let Some(Message::RegionEdit(st)) = Message::decode(&get("region_edit_structure")) else {
+        panic!("region_edit_structure")
+    };
+    assert_eq!(st.op, RegionEditOp::Structure);
+    assert_eq!((st.min, st.size, &st.cells), (r.min, r.size, &r.cells));
+    // Capabilities (ARCHITECTURE.md §8.3): the client's message, and the server's settings field.
+    let Some(Message::Capabilities(c)) = Message::decode(&get("capabilities")) else {
+        panic!("capabilities")
+    };
+    assert_eq!(
+        c.names().collect::<Vec<_>>(),
+        [capability_names::STRUCTURES_PLACE, "mymod:wet"]
+    );
+    let Some(Message::Capabilities(none)) = Message::decode(&get("capabilities_none")) else {
+        panic!("capabilities_none")
+    };
+    assert!(none.is_empty());
+    let Some(Message::WorldSettings(f)) = Message::decode(&get("world_settings_capabilities"))
+    else {
+        panic!("world_settings_capabilities")
+    };
+    assert_eq!(f.capabilities(), Some(c));
+    // An older build skips the optional field: the same settings as without it.
+    let Some(Message::WorldSettings(plain)) = Message::decode(&get("world_settings")) else {
+        panic!("world_settings")
+    };
+    assert_eq!(plain.capabilities(), None);
+    let d = world_settings::WorldSettings {
+        clock: world_settings::WorldClock {
+            day_s: 1.0,
+            night_s: 1.0,
+            start_hour: 0.0,
+        },
+        water_speed: 9.0,
+        mode: "creative",
+        size: dwell_protocol::world_size::WorldSize::DEFAULT,
+    };
+    assert_eq!(f.settings(d), plain.settings(d));
     let Some(Message::RegionEdit(r)) = Message::decode(&get("region_edit_paste_keep")) else {
         panic!("region_edit_paste_keep")
     };

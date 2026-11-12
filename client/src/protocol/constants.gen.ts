@@ -150,6 +150,7 @@ export const MessageType = {
   Ecology: 102,
   SteamHello: 103,
   Steam: 104,
+  Capabilities: 105,
 } as const;
 export type MessageType = (typeof MessageType)[keyof typeof MessageType];
 
@@ -236,6 +237,7 @@ export const RegionEditOp = {
   Replace: 2,
   Hollow: 3,
   Paste: 4,
+  Structure: 5,
 } as const;
 export type RegionEditOp = (typeof RegionEditOp)[keyof typeof RegionEditOp];
 
@@ -326,4 +328,11 @@ export const WorldSizes = {
     { name: '8x', radiusScale: 8 },
     { name: '10x', radiusScale: 10 },
   ],
+} as const;
+
+/** The capabilities (shared/protocol/capabilities.json): optional features named by string. */
+export const Capabilities = {
+  maxNames: 64,
+  maxNameBytes: 48,
+  names: ['structures.place'],
 } as const;

@@ -515,6 +515,8 @@ pub struct SessionStats {
     /// Failed validation, over the cell rate, too many queued, or no permission.
     pub region_edits_rejected: u32,
     pub last_region_check: RegionCheck,
+    /// Of `region_edits_applied`, saved structures' placements (`RegionEditOp::Structure`).
+    pub structure_edits_applied: u32,
     /// Cells region edits changed.
     pub region_cells_changed: u64,
     /// Chunks re-sent on the client's request (§6.3).
@@ -535,6 +537,7 @@ impl Default for SessionStats {
             region_edits_applied: 0,
             region_edits_rejected: 0,
             last_region_check: RegionCheck::Ok,
+            structure_edits_applied: 0,
             region_cells_changed: 0,
             resyncs: 0,
         }
@@ -665,6 +668,9 @@ struct Session {
     ecology_hello: bool,
     /// Whether its client draws steam (`SteamHello`, VOLCANOES.md §6.3).
     steam_hello: bool,
+    /// The capabilities its client said it has (`Capabilities`, ARCHITECTURE.md §8.3); empty for a
+    /// client that never sent the message (an older build).
+    capabilities: dwell_protocol::capabilities::Capabilities,
     /// The tool it holds (item name, the hold's plane), from `ChopAction::Held`; having sent one,
     /// it understands `HeldTools` (ADR 0067).
     held_tool: Option<(String, bool)>,
@@ -732,6 +738,7 @@ impl Session {
             damage_hello: false,
             ecology_hello: false,
             steam_hello: false,
+            capabilities: Default::default(),
             held_tool: None,
             primed: false,
             low_water: usize::MAX,
@@ -1685,6 +1692,7 @@ impl Server {
             Message::DamageHello => self.damage_hello(id),
             Message::EcologyHello => self.ecology_hello(id),
             Message::SteamHello => s.steam_hello = true,
+            Message::Capabilities(c) => s.capabilities = c,
             Message::WorldgenRequest => {
                 let m = Message::WorldgenConfig(self.worldgen_text.clone());
                 self.send_reliable(id, &m, Channel::Control);
@@ -2595,6 +2603,19 @@ impl Server {
     fn may_fly_by_policy(&self, s: &Session) -> bool {
         self.allowed(self.config.flight, s)
     }
+    /// The capabilities this server has (ARCHITECTURE.md §8.3), announced in the join's settings.
+    pub fn capabilities(&self) -> dwell_protocol::capabilities::Capabilities {
+        dwell_protocol::capabilities::Capabilities::this_build()
+    }
+
+    /// The capabilities a session's client said it has (empty: it never sent `Capabilities`).
+    pub fn client_capabilities(
+        &self,
+        id: SessionId,
+    ) -> Option<&dwell_protocol::capabilities::Capabilities> {
+        self.sessions.get(&id).map(|s| &s.capabilities)
+    }
+
     fn brushes_allowed(&self) -> bool {
         self.settings.allows(Ability::Brushes)
     }
@@ -2647,6 +2668,8 @@ impl Server {
         // Blocks gone into bodies this tick: (body, its new cell; none: a new body), the block.
         let mut bodies_built: Vec<BodyBuilt> = Vec::new();
         let brushes = self.brushes_allowed();
+        // Saved structures are placed only where the mode has the ability (STRUCTURES.md §9).
+        let structures = self.settings.allows(Ability::Structures);
         let reach = region_reach(brushes);
         // Without unlimited blocks (ADR 0066): placing takes an item, breaking drops the block's.
         let uses_items = self.uses_items();
@@ -2857,8 +2880,15 @@ impl Server {
                 };
                 s.region_credit -= cost;
                 // A brush stroke's KEEP cells only in a mode with brushes (ADR 0065).
-                let outcome = if !brushes
-                    && edit.op == dwell_protocol::RegionEditOp::Paste
+                let outcome = if edit.op == dwell_protocol::RegionEditOp::Structure && !structures {
+                    // A structure placement as such, outside a mode with `structures`.
+                    dwell_world::region::RegionOutcome::fail(RegionCheck::NotInMode)
+                } else if !brushes
+                    && matches!(
+                        edit.op,
+                        dwell_protocol::RegionEditOp::Paste
+                            | dwell_protocol::RegionEditOp::Structure
+                    )
                     && edit.cells.contains(&dwell_world::region::KEEP)
                 {
                     dwell_world::region::RegionOutcome::fail(RegionCheck::NotPlaceable)
@@ -2920,6 +2950,8 @@ impl Server {
                     continue;
                 }
                 s.stats.region_edits_applied += 1;
+                s.stats.structure_edits_applied +=
+                    u32::from(edit.op == dwell_protocol::RegionEditOp::Structure);
                 s.stats.region_cells_changed += outcome.changes.len() as u64;
                 let cells: Vec<[i32; 3]> = outcome.changes.iter().map(|(c, _)| *c).collect();
                 for (cell, m) in outcome.changes {
@@ -3884,7 +3916,9 @@ impl Server {
     fn join_settings(&self) -> SettingsFields {
         let hash = (!self.worldgen_text.is_empty())
             .then(|| dwell_worldgen::config::worldgen_hash(&self.worldgen_text));
-        self.settings_fields.with_worldgen(hash)
+        self.settings_fields
+            .with_worldgen(hash)
+            .with_capabilities(Some(&self.capabilities()))
     }
 
     /// The world's worldgen config text (ADR 0074 B7): `""` for the build's ground.

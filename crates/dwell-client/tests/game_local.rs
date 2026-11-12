@@ -656,6 +656,62 @@ fn a_region_fill_comes_back_from_the_server_and_undo_restores_it() {
     );
 }
 
+/// ARCHITECTURE.md §8.3 "Capabilities", STRUCTURES.md §9: the local server announces
+/// `structures.place` at join, the client answers with its own, and a saved structure's paste
+/// goes as a structure placement, which the creative world places.
+#[test]
+fn a_saved_structure_goes_as_a_structure_placement_to_a_server_that_announced_it() {
+    use dwell_protocol::capability_names::STRUCTURES_PLACE;
+    let mut rig = Rig::new();
+    assert!(rig.run_until(60 * 30, |r| {
+        r.game
+            .as_ref()
+            .is_some_and(|g| g.debug_state().terrain_ready)
+    }));
+    let SessionState::Joined {
+        region_edits,
+        player_id,
+        ..
+    } = rig.session.state().clone()
+    else {
+        panic!("joined")
+    };
+    assert!(
+        rig.session.capability(STRUCTURES_PLACE),
+        "the server announced it"
+    );
+    let theirs = rig
+        .core
+        .server()
+        .client_capabilities(LOCAL_SESSION)
+        .cloned()
+        .expect("joined");
+    assert!(theirs.has(STRUCTURES_PLACE), "the client answered");
+    let structures = rig.session.structures();
+    assert!(structures, "a creative world places structures");
+    let game = rig.game.as_mut().unwrap();
+    game.region.enabled = region_edits;
+    game.set_structures(structures);
+    game.set_structure_ops(rig.session.capability(STRUCTURES_PLACE));
+    rig.input.look.pitch = -40.0;
+    assert!(rig.run_until(30, |r| {
+        r.game.as_ref().unwrap().debug_state().target.is_some()
+    }));
+    let stone = dwell_blocks::require("dwell:stone");
+    let game = rig.game.as_mut().unwrap();
+    game.region
+        .load_clipboard([1, 1, 1], vec![stone], Vec::new(), "Test")
+        .expect("loads in creative");
+    assert!(game.tool(ToolAction::Paste, rig.now), "the paste is sent");
+    let placed = |r: &mut Rig| {
+        r.core
+            .server()
+            .stats_of(player_id)
+            .is_some_and(|s| s.structure_edits_applied == 1)
+    };
+    assert!(rig.run_until(60, placed), "placed as a structure");
+}
+
 #[test]
 fn a_brush_stroke_in_the_sandbox_comes_back_from_the_server_and_undoes_as_one_step() {
     let mut rig = Rig::with_generator(GENERATOR_SANDBOX);

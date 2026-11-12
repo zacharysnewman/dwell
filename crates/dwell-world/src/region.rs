@@ -40,6 +40,9 @@ pub enum RegionCheck {
     /// Fill, Hollow, Replace: the block is neither air nor in the palette. Replace's `from`, or a
     /// pasted state, is an unknown id or an unbreakable block.
     NotPlaceable,
+    /// The world's mode doesn't allow this kind of edit (a `Structure` placement without the
+    /// `structures` ability, STRUCTURES.md §9).
+    NotInMode,
 }
 
 /// The cells a valid region edit changes, and the cells it leaves alone.
@@ -141,7 +144,8 @@ fn check_region_edit_with(
     if size
         .iter()
         .any(|&s| s < 1 || s as usize > region_edit::MAX_SIDE)
-        || (request.op == RegionEditOp::Paste && request.cells.len() != request.volume())
+        || (matches!(request.op, RegionEditOp::Paste | RegionEditOp::Structure)
+            && request.cells.len() != request.volume())
     {
         return RegionOutcome::fail(RegionCheck::BadSize);
     }
@@ -151,7 +155,7 @@ fn check_region_edit_with(
             may_put(request.material) && known(request.from) && !unbreakable(request.from)
         }
         // A `KEEP` cell (a brush stroke's, BRUSHES.md) leaves its cell as it is.
-        RegionEditOp::Paste => request
+        RegionEditOp::Paste | RegionEditOp::Structure => request
             .cells
             .iter()
             .all(|&m| m == KEEP || (known(m) && !unbreakable(m))),
@@ -189,7 +193,7 @@ fn check_region_edit_with(
                         flooded_for(request.material, existing)
                     }
                     RegionEditOp::Replace => continue,
-                    RegionEditOp::Paste => {
+                    RegionEditOp::Paste | RegionEditOp::Structure => {
                         let m = request.cells[RegionEdit::cell_index(
                             request.size,
                             x as usize,

@@ -2553,6 +2553,13 @@ impl<S: Scene> Game<S> {
         self.region.structures = on;
     }
 
+    /// Whether the server takes structure placements as such (the `structures.place` capability,
+    /// ARCHITECTURE.md §8.3): a library structure's paste goes as `RegionEditOp::Structure`, which
+    /// it refuses outside a mode with `structures`; without it, plain pastes (STRUCTURES.md §9).
+    pub fn set_structure_ops(&mut self, on: bool) {
+        self.region.structure_ops = on;
+    }
+
     /// The hits the server will take to break `block` with what is held now.
     fn hits_to_break(&self, block: &str) -> Option<u32> {
         dwell_protocol::damage::hits_to_break_for(
