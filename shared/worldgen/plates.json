@@ -1,5 +1,5 @@
 {
-  "$comment": "The plate layout a Realistic world's seed draws (docs/proposals/REALISTIC_WORLD.md §3.1, phase R1; owner 2026-11-11: plates decide land and sea, face B its own plates from its own face seed). Read by crates/dwell-worldgen/src/plates.rs; not wired into any world yet, so nothing here changes the terrain a seed generates. `count` [min, max]: the seed picks how many plates (3–5 for the first region, the proposal's default; Q1 not answered). `reach`: plates and hotspots lie within this many m of the disc's centre, and the layout covers that disc; `seaMargin`: the outer m of it are sea whatever the plate (the disc must end in sea). `spacing`: the least distance between two plates' centres (m), tried at up to `attempts` seeded points. `kinds`: each plate kind (code vocabulary: oceanic, continental) has a draw `weight` and a `min` count the layout keeps (oceanic plate = sea, continental = land). `speed` [min, max] cm/yr and `age` [min, max] Myr are drawn uniformly per plate. `warp`: the boundaries curve by `amplitude` m of noise at `wavelength` m. `transformBelow`: a boundary is transform where the closing (or opening) rate across it is less than this share of the plates' relative speed, else convergent (closing) or divergent (opening). `hotspots`: `count` [min, max] points fixed in the mantle within `within` m of the centre; the chain runs back along the overlying plate's motion. `fixtures`: two-plate layouts by data with the boundary each must give (`kind`, and `subducts`: the index of the plate that dives, or null) — the tests check every entry. Run `node shared/worldgen/gen.mjs` after editing; CI fails on stale output.",
+  "$comment": "The plate layout a Realistic world's seed draws (docs/proposals/REALISTIC_WORLD.md §3.1, phase R1; owner 2026-11-11: plates decide land and sea, face B its own plates from its own face seed). Read by crates/dwell-worldgen/src/plates.rs and plate_tectonics.rs; only a world with terrain.json tectonics.plates 1 (the Realistic test world, worlds/realistic.json, R2) reads it, so nothing here changes the default's or the starter's terrain. `count` [min, max]: the seed picks how many plates (3–5 for the first region, the proposal's default; Q1 not answered). `reach`: plates and hotspots lie within this many m of the disc's centre, and the layout covers that disc; `seaMargin`: the outer m of it are sea whatever the plate (the disc must end in sea). `spacing`: the least distance between two plates' centres (m), tried at up to `attempts` seeded points. `kinds`: each plate kind (code vocabulary: oceanic, continental) has a draw `weight` and a `min` count the layout keeps (oceanic plate = sea, continental = land). `speed` [min, max] cm/yr and `age` [min, max] Myr are drawn uniformly per plate. `warp`: the boundaries curve by `amplitude` m of noise at `wavelength` m. `transformBelow`: a boundary is transform where the closing (or opening) rate across it is less than this share of the plates' relative speed, else convergent (closing) or divergent (opening). `hotspots`: `count` [min, max] points fixed in the mantle within `within` m of the centre; the chain's older islands lie along the overlying plate's motion. `fixtures`: two-plate layouts by data with the boundary each must give (`kind`, and `subducts`: the index of the plate that dives, or null) — the tests check every entry. Run `node shared/worldgen/gen.mjs` after editing; CI fails on stale output.",
   "count": [3, 5],
   "reach": 25000,
   "seaMargin": 2000,
@@ -25,6 +25,59 @@
   "hotspots": {
     "count": [0, 2],
     "within": 22000
+  },
+  "uplift": {
+    "$comment": "The uplift from the boundaries (phase R2, plate_tectonics.rs; a world reads it with terrain.json tectonics.plates 1). Each boundary kind's landform by rule: `range` on the overriding side of a subducting boundary (`height` m, `width` m half-wide, centred `distance` m behind the line), `trench` on the diving side (`height` its depth), `collision` astride a convergent boundary of two continents, `rift` along a divergent one (`height` its depth, with shoulders `riftShoulder` of it either side), `transform` a low ridge along a transform. Each is scaled by the boundary's rate (closing, opening or slip, cm/yr) over `speedRef`, clamped to `speedScale` [min, max]. The polylines join scan points within `link` m and keep vertices `segment` m apart; the landforms are summed on a coarse grid of `cell` m (at least 500: no new 100 m whole-map grid) and read bilinearly. `arc`: on a subducting boundary's overriding side, `distance` m behind the line, one dormant cone per `spacing` m of a polyline at least `minLength` m long (at most `maxCones`), `coneHeight` m (× the rate's scale) and `coneRadius` m with a crater `craterRadius` m wide and `craterDepth` m deep, hardened against the erosion by `hardness` (0..1). `hotspot`: each hotspot's chain of `islands` shields `spacing` m apart along its plate's motion (older that way), the youngest `height` m and `radius` m, each older one `decay` of the last's height and `widen` broader.",
+    "speedRef": 5,
+    "speedScale": [0.5, 1.6],
+    "link": 1300,
+    "segment": 1000,
+    "cell": 500,
+    "range": {
+      "height": 700,
+      "width": 3500,
+      "distance": 4000
+    },
+    "trench": {
+      "height": 60,
+      "width": 1500,
+      "distance": 1500
+    },
+    "collision": {
+      "height": 900,
+      "width": 5000,
+      "distance": 0
+    },
+    "rift": {
+      "height": 160,
+      "width": 2500,
+      "distance": 0
+    },
+    "riftShoulder": 0.3,
+    "transform": {
+      "height": 60,
+      "width": 1500,
+      "distance": 0
+    },
+    "arc": {
+      "distance": 9000,
+      "spacing": 10000,
+      "minLength": 6000,
+      "maxCones": 4,
+      "coneHeight": 900,
+      "coneRadius": 3500,
+      "craterRadius": 350,
+      "craterDepth": 60,
+      "hardness": 0.6
+    },
+    "hotspot": {
+      "islands": 4,
+      "spacing": 5000,
+      "height": 420,
+      "radius": 2600,
+      "decay": 0.65,
+      "widen": 0.12
+    }
   },
   "fixtures": [
     {

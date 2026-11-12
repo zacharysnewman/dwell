@@ -399,14 +399,43 @@ pub fn generate_with_height(
     p: &HydrologyParams,
     h: crate::terrain::HeightField,
 ) -> HydrologyMap {
-    let base = BaseField::with_height(seed, h);
+    if h.tectonics.from_plates() {
+        let plates = crate::plate_tectonics::PlateTectonics::for_seed(seed);
+        return generate_with_plates(seed, p, h, &plates);
+    }
+    tectonic_map(seed, p, h, BaseField::with_height(seed, h), None)
+}
+
+/// [`generate_with_height`] for a Realistic world (`tectonics.plates` 1, R2) over a given plate
+/// tectonics (the face seed's, or a test's): the plates' coast is the base field's, and every
+/// boundary's landform, arc cone and hotspot island is added as the hand-placed boundary's are.
+pub fn generate_with_plates(
+    seed: u64,
+    p: &HydrologyParams,
+    h: crate::terrain::HeightField,
+    plates: &crate::plate_tectonics::PlateTectonics,
+) -> HydrologyMap {
+    let layout = std::sync::Arc::new(plates.layout.clone());
+    let base = BaseField::with_plates(seed, h, Some(layout));
+    tectonic_map(seed, p, h, base, Some(plates))
+}
+
+fn tectonic_map(
+    seed: u64,
+    p: &HydrologyParams,
+    h: crate::terrain::HeightField,
+    base: BaseField,
+    plates: Option<&crate::plate_tectonics::PlateTectonics>,
+) -> HydrologyMap {
     let (grid, x0, hs) = sample_field(&base, p.cell);
     if !h.tectonics.enabled() {
         return from_heights(grid, f64::from(p.cell), x0, &hs, seed, p);
     }
-    // Tectonics (systemic terrain T5): the boundary's landform and the volcanoes on each cell.
+    // Tectonics (systemic terrain T5): the boundary's landform and the volcanoes on each cell;
+    // with plates (R2) every boundary's, arc's and chain's too.
     let t = h.tectonics;
     let volcanoes = t.volcanoes();
+    let hand = t.kind != crate::tectonics::NONE || t.hotspot_count > 0;
     let n = grid.n;
     let (mut extra, mut rising) = (vec![0.0; grid.len()], vec![0.0; grid.len()]);
     let mut shield = vec![0.0; grid.len()];
@@ -416,10 +445,17 @@ pub fn generate_with_height(
             x0 + (i / n) as f64 * f64::from(p.cell),
         );
         if hs[i].is_finite() {
-            let coast = f64::from(base.coast_at(x as i64, z as i64));
-            extra[i] = t.height(&volcanoes, x, z, coast);
-            rising[i] = t.boundary(x, z, coast);
-            shield[i] = t.shield(&volcanoes, x, z);
+            if hand {
+                let coast = f64::from(base.coast_at(x as i64, z as i64));
+                extra[i] = t.height(&volcanoes, x, z, coast);
+                rising[i] = t.boundary(x, z, coast);
+                shield[i] = t.shield(&volcanoes, x, z);
+            }
+            if let Some(pt) = plates {
+                extra[i] += pt.height(x, z);
+                rising[i] += pt.boundary(x, z);
+                shield[i] = shield[i].max(pt.shield(x, z));
+            }
         }
     }
     from_heights_with(
