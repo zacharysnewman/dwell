@@ -222,7 +222,8 @@ decal"; asked whether the block's mesh should be carved or a real piece knocked 
   no longer emitted. Decision: a carved cell is ~200 triangles in the chunk's own opaque mesh, cheaper on
   Low and the CPU adapter than a per-pixel march, and real from every angle; the far LOD draws no damage.
   The shader's relief code (`dent_*`) is unreached and kept until the owner's look review, then removed.
-- **Cracks** are not drawn on carved faces (they were decals over a now curved surface).
+- **Cracks** are not drawn as decals on carved faces (they were decals over a now curved surface); §6.3's
+  crack overlay draws them on every face, carved or not.
 - **Chopping:** the axe's notches and kerfs on logs were already real carved geometry (`carve.rs`, ADR
   0067 §11): unchanged. No block uses the `chips` look today; one would carve facets by default.
 - **(b) The pieces:** each hit's drops (§5, §7: a stone pickaxe's hits drop one rock shard each, dirt's
@@ -247,6 +248,55 @@ decal"; asked whether the block's mesh should be carved or a real piece knocked 
 - **Not done:** no browser check (cloud session, no GPU): the look of the carve and the shard in game is
   for the owner's review (bench `dirt-relief` shows the same digs); the T-junction seams are not measured
   on screen.
+
+### 6.3 Cracks spreading over the block (WORK_QUEUE item 18)
+
+Owner, 2026-11-12: "Perhaps we also show a 'cracking' texture around the block too as you do more
+damage." Built, in addition to the carve (not instead of it):
+
+- **The tiles** (data, PAINTERLY_TEXTURES.md "Crack tiles"): `shared/textures/cracks.json` lists crack
+  sets, each a material family's stages, hairline to branching (`stone`, `soil` drier fissures, `wood`
+  splits along the grain; four tiles each), painted by the stroke generator from `materials.json` into
+  the atlas (53 of its 64 slots): white multiply masks with dark strokes, centred on the tile's middle.
+- **Per block** (`damage.look.cracks`, validated by `shared/tools/gen.mjs`): `set` (a set of
+  cracks.json), `stages` (the damage fraction each of its tiles starts at, ascending in (0, 1], one a
+  tile), `strength` (0–1, how far a crack darkens the face). Stone, red sandstone, basalt, obsidian and
+  ice: `stone` at 0.15 / 0.4 / 0.6 / 0.8, strength 0.75; dirt, grass, snowy grass, sand and snow: `soil`
+  at 0.2 / 0.45 / 0.65 / 0.85, strength 0.6. The stage is the last whose start the fraction reached
+  (`Cracks::stage`; none below the first).
+- **The mesh** (`mesher/damage_mesh.rs` `CrackLayer`): once its stage is reached, a damaged opaque cube
+  leaves the greedy merge on **every** exposed face, not only the struck ones: struck faces are carved
+  (§6.2), the others drawn as one flat quad each (with the corner light the greedy quad had). Each
+  vertex carries the crack overlay in the opaque mesh's `cracks` stream, four unorm bytes: the crack
+  tile's (s, t), its atlas slot + 1 (0: none) and the strength. The tile is centred on the newest hit
+  on that face, else the hit nearest the face's plane, so a crack struck into the top runs over the
+  edge and down the sides from where it reached them (consistent across the cell's faces); it spans
+  `span` (1.5 m) in world metres on every face (a ½ m side shows the tile's middle strip), a side's t
+  running up (wood's grain), mirrored per cell so neighbours differ. On a carved face the (s, t) come
+  from the vertex's place on the face before the carve, so the cracks follow the dent. Packed over
+  [−½, 1½] of the tile; past the tile (a far corner from the hit) no crack.
+- **The shader** (`terrain_fs` `crack_shade`): one atlas lookup on cracked faces only (a branch
+  constant over each face), the face's albedo multiplied by `mix(1, tile, strength)`, the tile's mip
+  level from its own uv's footprint. The same on every tier (a texture lookup, no pass); the CPU adapter
+  too. Chunks without cracks send no stream; the terrain buffer fills the slot with 0 (its vertex
+  72 → 76 bytes, every chunk).
+- **Measured** (native, the test profile, `damage_mesh::tests::fifty_damaged_cells_cost`, all 50 cells
+  past the first stage): 12,296 opaque triangles against 1,674 undamaged (+212 a cell; §6.2's
+  measurement was +213), meshed in 6.0 ms against 2.6 ms. The pillars' unstruck faces were one quad each
+  already; where a cracked cell sits in a flat wall its faces now cost 2 triangles each instead of a
+  share of a merged quad.
+- **Tests:** `dwell-mesh` `damage_mesh`: `the_crack_stage_follows_the_damage_fraction` (thresholds
+  inclusive, none below the first, every carved look cracks), `every_exposed_face_of_a_cracked_cell_carries_the_overlay`
+  (both faces: the five exposed faces of a struck stone cell at the stage's tile and strength, not its
+  hidden bottom, none on an undamaged neighbour), `no_cracks_without_damage_or_below_the_first_stage`
+  (both faces), `cracks_centre_on_the_hit_and_run_round_the_corner`, `the_crack_tiles_are_in_the_atlas_and_grow`,
+  `a_fixture_material_by_data_alone_gets_its_cracks`; `dwell-client` `terrain_vertices_carry_the_crack_bytes`
+  and the naga validation of the shader; `shared/textures/gen.test.mjs` (the sets painted, white where
+  uncracked, each stage covering more; bad sets fail by name), `shared/tools/gen.test.mjs` (a fixture's
+  cracks by data alone; a bad set, stage count, order, range or strength fails by name).
+- **Not done:** no browser check (cloud session, no GPU): the look in game is for the owner's review;
+  the wasm32 clippy and the Vitest files were not run here (no wasm target or `node_modules` in the
+  container). The wood set waits for a wood block with a `damage.look`.
 
 ## 7. Pieces (0.52.46)
 

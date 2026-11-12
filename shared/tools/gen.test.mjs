@@ -230,7 +230,7 @@ test("block damage: the data's hits reach Rust and TS; a fixture block by data a
   blocks.set('test:clay', { damage: { default: 3, look: { kind: 'scoops', size: 0.3, color: '#806040', crack: '#302010' } } });
   assert.match(
     toolsRust(validateTools(data, items, blocks)),
-    /block: "test:clay", .*look: Some\(DamageLook \{ kind: DamageLookKind::Scoops, size: 0\.3, color: \[128, 96, 64\], crack: \[48, 32, 16\], depth: 0\.1, rim: 0\.012, parallax: 6, darken: 0\.35, profile: CarveProfile::Bowl, facets: 5, grid: 8, triangles: 256 \}\)/,
+    /block: "test:clay", .*look: Some\(DamageLook \{ kind: DamageLookKind::Scoops, size: 0\.3, color: \[128, 96, 64\], crack: \[48, 32, 16\], depth: 0\.1, rim: 0\.012, parallax: 6, darken: 0\.35, profile: CarveProfile::Bowl, facets: 5, grid: 8, triangles: 256, cracks: None \}\)/,
   );
   bad({ default: 3, look: { kind: 'dents', size: 0.3, color: '#806040', crack: '#302010' } }, /test:clay\.damage\.look\.kind must be one of shards, scoops, chips/);
   bad({ default: 3, look: { kind: 'scoops', size: 0.3, color: '#806040', crack: '#302010', depth: 0.9 } }, /test:clay\.damage\.look\.depth must be a number in \[0, 0\.5\]/);
@@ -240,13 +240,28 @@ test("block damage: the data's hits reach Rust and TS; a fixture block by data a
   bad({ default: 3, look: { kind: 'scoops', size: 0.3, color: '#806040', crack: '#302010', darken: -1 } }, /test:clay\.damage\.look\.darken must be a number in \[0, 1\]/);
   // The carved mesh's data (§6.2): a fixture's facets by data alone, bad values failing by name.
   blocks.set('test:clay', { damage: { default: 3, look: { kind: 'chips', size: 0.3, color: '#806040', crack: '#302010', profile: 'facets', facets: 7, grid: 6, triangles: 160 } } });
-  assert.match(toolsRust(validateTools(data, items, blocks)), /block: "test:clay", .*profile: CarveProfile::Facets, facets: 7, grid: 6, triangles: 160 \}\)/);
+  assert.match(toolsRust(validateTools(data, items, blocks)), /block: "test:clay", .*profile: CarveProfile::Facets, facets: 7, grid: 6, triangles: 160, cracks: None \}\)/);
   bad({ default: 3, look: { kind: 'scoops', size: 0.3, color: '#806040', crack: '#302010', profile: 'spiky' } }, /test:clay\.damage\.look\.profile must be one of bowl, facets/);
   bad({ default: 3, look: { kind: 'scoops', size: 0.3, color: '#806040', crack: '#302010', facets: 2 } }, /test:clay\.damage\.look\.facets must be a whole number from 3 to 8/);
   bad({ default: 3, look: { kind: 'scoops', size: 0.3, color: '#806040', crack: '#302010', grid: 40 } }, /test:clay\.damage\.look\.grid must be a whole number from 2 to 16/);
   bad({ default: 3, look: { kind: 'scoops', size: 0.3, color: '#806040', crack: '#302010', triangles: 64 } }, /test:clay\.damage\.look\.triangles must be a whole number from 128 to 2048/);
   bad({ default: 3, look: { kind: 'shards', size: 2, color: '#806040', crack: '#302010' } }, /test:clay\.damage\.look\.size must be a number/);
   bad({ default: 3, look: { kind: 'shards', size: 0.3, color: 'red', crack: '#302010' } }, /test:clay\.damage\.look\.color must be a #rrggbb colour/);
+  // The crack overlay (BLOCK_DAMAGE.md §6.3): a fixture's set, stages and strength by data alone,
+  // resolved to the set's tiles; bad ones fail naming them.
+  const look = { kind: 'scoops', size: 0.3, color: '#806040', crack: '#302010' };
+  blocks.set('test:clay', { damage: { default: 3, look: { ...look, cracks: { set: 'wood', stages: [0.1, 0.3, 0.5, 0.9], strength: 0.4 } } } });
+  assert.match(
+    toolsRust(validateTools(data, items, blocks)),
+    /block: "test:clay", .*cracks: Some\(Cracks \{ tiles: &\["crackWood1", "crackWood2", "crackWood3", "crackWood4"\], stages: &\[0\.1, 0\.3, 0\.5, 0\.9\], strength: 0\.4, span: 1\.5 \}\) \}\)/,
+  );
+  assert.match(toolsRust(d), /block: "dwell:stone", .*cracks: Some\(Cracks \{ tiles: &\["crackStone1",/);
+  bad({ default: 3, look: { ...look, cracks: { set: 'glass', stages: [0.5], strength: 0.4 } } }, /test:clay\.damage\.look\.cracks\.set must be a crack set of shared\/textures\/cracks\.json/);
+  bad({ default: 3, look: { ...look, cracks: { set: 'wood', stages: [0.5], strength: 0.4 } } }, /test:clay\.damage\.look\.cracks\.stages must list 4 damage fractions/);
+  bad({ default: 3, look: { ...look, cracks: { set: 'wood', stages: [0.1, 0.5, 0.4, 0.9], strength: 0.4 } } }, /test:clay\.damage\.look\.cracks\.stages must ascend/);
+  bad({ default: 3, look: { ...look, cracks: { set: 'wood', stages: [0, 0.5, 0.6, 0.9], strength: 0.4 } } }, /test:clay\.damage\.look\.cracks\.stages\[0\] must be a damage fraction in \(0, 1\]/);
+  bad({ default: 3, look: { ...look, cracks: { set: 'wood', stages: [0.1, 0.3, 0.5, 0.9], strength: 2 } } }, /test:clay\.damage\.look\.cracks\.strength must be a number in \[0, 1\]/);
+  bad({ default: 3, look: { ...look, cracks: { set: 'wood', stages: [0.1, 0.3, 0.5, 0.9], strength: 0.4, glow: 1 } } }, /test:clay\.damage\.look\.cracks/);
   // Its hit's chips (sounds round 2b) by data alone, and a bad one fails naming it.
   blocks.set('test:clay', { damage: { default: 3, chips: { count: 5, color: '#806040', speed: 1.5, size: 0.05 } } });
   assert.match(

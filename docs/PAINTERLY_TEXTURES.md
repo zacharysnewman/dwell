@@ -54,8 +54,28 @@ The design questions (CLAUDE.md, "Ask before designing"), answered by the owner'
     - `over`: paint another material first (e.g. `grass_side` is painted over `soil`).
     - `layers`: the layers, painted in order (§3).
   - `tiles`: atlas tile name → the block material that paints it. Every atlas tile is mapped, and
-    nothing else: the registry's `textures` names (`shared/blocks/dwell.json`) and the engine's
-    utility tiles (`ENGINE_TILES` in `gen.mjs`: `plain` and `missing`).
+    nothing else: the registry's `textures` names (`shared/blocks/dwell.json`), the engine's
+    utility tiles (`ENGINE_TILES` in `gen.mjs`: `plain` and `missing`), the woods' cut tiles, the
+    looks' tiles and the crack sets' tiles (below).
+
+**Crack tiles** (WORK_QUEUE item 18, owner 2026-11-12: "Perhaps we also show a 'cracking' texture
+around the block too as you do more damage"; BLOCK_DAMAGE.md §6.3). `shared/textures/cracks.json`
+lists crack tile **sets**, one per material family, each its stages in order (1–8 tiles; `span`: the
+metres a tile covers round the hit, 1.5), validated by `gen.mjs` `validateCracks` (a tile in two sets, a
+bad name or span fails by name); their tiles join the atlas (`crackTiles`, so `tiles` must paint them).
+A crack tile is a **multiply mask**: `chalk` white where uncracked, dark strokes in the cracks, painted
+with `"wrap": false` and centred on the tile's middle (the hit); each stage paints `over` the one before
+(the cracks grow, never move). The sets (prototype content, like the materials):
+
+- `stone` (`crack_stone_1`–`4`, `ink_soft`): three hairline `blade`s from the middle, then longer ones,
+  then branches off them, then branching cracks to the tile's edge;
+- `soil` (`crack_soil_1`–`4`, `soil.shadow`): two short dry fissures, wider ones, then a loose network
+  of `streak`s round the hit as drying mud splits;
+- `wood` (`crack_wood_1`–`4`, `bark.shadow`): a split along the grain (the tile's v, up a side) through
+  the hit, growing to three splits the tile's length. No block uses it yet (logs are chopped by the
+  axe's cuts, which have no `damage.look`).
+
+A block names a set in its `damage.look.cracks` (`shared/tools/gen.mjs`).
 
 **Utility tiles.** Three tiles are not content, and their materials (`plain`, `grid`, `missing`)
 use the palette's `chalk` ramp and `missing_*` swatches, outside the content albedo range:

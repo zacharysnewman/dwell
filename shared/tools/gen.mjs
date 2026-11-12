@@ -9,6 +9,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { loadBlocks, loadInventory } from '../inventory/gen.mjs';
+import { loadCracks } from '../textures/gen.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, '..', '..');
@@ -318,7 +319,22 @@ const LOOKS = ['shards', 'scoops', 'chips'];
 /** A carved mark's height field (BLOCK_DAMAGE.md §6.2): a smooth bowl, or angular facets. */
 const PROFILES = ['bowl', 'facets'];
 
-export function validateDamage(blocks, items, breaking) {
+/** A damage look's `cracks` against the crack tile sets (shared/textures/cracks.json): resolved to its tiles. */
+export function validateCracksLook(c, at, crackSets) {
+  if (c === null || typeof c !== 'object' || Array.isArray(c)) fail(`${at} must be an object`);
+  known(c, ['set', 'stages', 'strength'], at);
+  const tiles = crackSets.sets[c.set];
+  if (typeof c.set !== 'string' || !tiles) fail(`${at}.set must be a crack set of shared/textures/cracks.json (${Object.keys(crackSets.sets).join(', ')}), not ${JSON.stringify(c.set)}`);
+  if (!Array.isArray(c.stages) || c.stages.length !== tiles.length) fail(`${at}.stages must list ${tiles.length} damage fractions, one for each of set ${c.set}'s tiles`);
+  c.stages.forEach((v, i) => {
+    if (!(num(v) && v > 0 && v <= 1)) fail(`${at}.stages[${i}] must be a damage fraction in (0, 1]`);
+    if (i > 0 && !(v > c.stages[i - 1])) fail(`${at}.stages must ascend (stage ${i} at ${v} is not past ${c.stages[i - 1]})`);
+  });
+  if (!(num(c.strength) && c.strength >= 0 && c.strength <= 1)) fail(`${at}.strength must be a number in [0, 1]`);
+  return { set: c.set, tiles, stages: c.stages, strength: c.strength, span: crackSets.span };
+}
+
+export function validateDamage(blocks, items, breaking, crackSets = loadCracks()) {
   const classes = new Set(Object.keys(breaking?.classes ?? {}).filter((k) => k[0] !== '$'));
   const hits = (v, at) => {
     if (!(Number.isInteger(v) && v >= 1 && v <= 255)) fail(`${at} is a hit count from 1 to 255, not ${JSON.stringify(v)}`);
@@ -350,7 +366,7 @@ export function validateDamage(blocks, items, breaking) {
     if (d.look !== undefined) {
       const lat = `${at}.look`;
       if (d.look === null || typeof d.look !== 'object' || Array.isArray(d.look)) fail(`${lat} must be an object`);
-      known(d.look, ['kind', 'size', 'color', 'crack', 'depth', 'rim', 'parallax', 'darken', 'profile', 'facets', 'grid', 'triangles'], lat);
+      known(d.look, ['kind', 'size', 'color', 'crack', 'depth', 'rim', 'parallax', 'darken', 'profile', 'facets', 'grid', 'triangles', 'cracks'], lat);
       if (!LOOKS.includes(d.look.kind)) fail(`${lat}.kind must be one of ${LOOKS.join(', ')}`);
       if (!(num(d.look.size) && d.look.size >= 0.05 && d.look.size <= 0.9)) fail(`${lat}.size must be a number in [0.05, 0.9]`);
       for (const c of ['color', 'crack']) if (!/^#[0-9a-f]{6}$/i.test(d.look[c] ?? '')) fail(`${lat}.${c} must be a #rrggbb colour`);
@@ -365,8 +381,13 @@ export function validateDamage(blocks, items, breaking) {
       whole('facets', 3, 8);
       whole('grid', 2, 16);
       whole('triangles', 128, 2048);
+      // The crack overlay (BLOCK_DAMAGE.md §6.3, WORK_QUEUE item 18): `cracks` (optional) `set` a
+      // crack tile set of shared/textures/cracks.json, `stages` the damage fraction each of its tiles
+      // starts at (ascending in (0, 1], one a tile), `strength` (0–1) how far a crack darkens the face.
+      const cracks = d.look.cracks === undefined ? null : validateCracksLook(d.look.cracks, `${lat}.cracks`, crackSets);
       look = {
         ...d.look,
+        cracks,
         depth: d.look.depth ?? 0.1,
         rim: d.look.rim ?? 0.012,
         parallax: d.look.parallax ?? 6,
@@ -471,7 +492,7 @@ const swingRust = (s) =>
   `SwingDef { windup_s: ${f64(s.windupS)}, active_s: ${f64(s.activeS)}, hit_stop_s: ${f64(s.hitStopS)}, recover_hit_s: ${f64(s.recoverHitS)}, recover_miss_s: ${f64(s.recoverMissS)}, reach_m: ${f64(s.reachM)}, arc_deg: ${f64(s.arcDeg)}, samples: ${s.samples}, camera_level: ${cameraRust(s.camera.level)}, camera_vertical: ${cameraRust(s.camera.vertical)}, stamina_cost: ${f64(s.staminaCost)}, swish: ${optStr(s.swish)}, bounce: ${optStr(s.bounce)}, rustle: ${optStr(s.rustle)}, rustle_leaves: ${s.rustleLeaves} }`;
 
 export function toolsRust(d) {
-  const rs = [`// ${header}`, '', 'use crate::chopping::{BlockDamageDef, BreakTool, CameraKey, CameraKick, CameraOffset, CarveProfile, DamageLook, DamageLookKind, Chips, CutLook, Leaves, Sway, SwingCamera, SwingDef, ToolDef, ToolKind, WoodDef, Chop2Wood};', 'use crate::inventory::{DropChoice, DropRule};', ''];
+  const rs = [`// ${header}`, '', 'use crate::chopping::{BlockDamageDef, BreakTool, CameraKey, CameraKick, CameraOffset, CarveProfile, Cracks, DamageLook, DamageLookKind, Chips, CutLook, Leaves, Sway, SwingCamera, SwingDef, ToolDef, ToolKind, WoodDef, Chop2Wood};', 'use crate::inventory::{DropChoice, DropRule};', ''];
   rs.push('/// Whether the chopping prototype (`chop2`, WORK_QUEUE item 7) is on by default.');
   rs.push(`pub const CHOP2_DEFAULT: bool = ${d.chop2.enabled};`);
   rs.push('');
@@ -509,7 +530,7 @@ export function toolsRust(d) {
   rs.push('');
   rs.push("/// Each block's hits to destroy (its `damage`): by bare hands, and by tool class or item.");
   rs.push('pub static BLOCK_DAMAGE: &[BlockDamageDef] = &[');
-  for (const b of d.damage) rs.push(`    BlockDamageDef { block: "${b.block}", default: ${b.default === null ? 'None' : `Some(${b.default})`}, tools: &[${b.tools.map((t) => `("${t.tool}", ${t.hits})`).join(', ')}], look: ${b.look === null ? 'None' : `Some(DamageLook { kind: DamageLookKind::${b.look.kind[0].toUpperCase() + b.look.kind.slice(1)}, size: ${f64(b.look.size)}, color: [${rgb(b.look.color).join(', ')}], crack: [${rgb(b.look.crack).join(', ')}], depth: ${f64(b.look.depth)}, rim: ${f64(b.look.rim)}, parallax: ${b.look.parallax}, darken: ${f64(b.look.darken)}, profile: CarveProfile::${b.look.profile[0].toUpperCase() + b.look.profile.slice(1)}, facets: ${b.look.facets}, grid: ${b.look.grid}, triangles: ${b.look.triangles} })`}, chips: ${b.chips === null ? 'None' : `Some(Chips { count: ${b.chips.count}, color: [${rgb(b.chips.color).join(', ')}], speed: ${f64(b.chips.speed)}, size: ${f64(b.chips.size)} })`} },`);
+  for (const b of d.damage) rs.push(`    BlockDamageDef { block: "${b.block}", default: ${b.default === null ? 'None' : `Some(${b.default})`}, tools: &[${b.tools.map((t) => `("${t.tool}", ${t.hits})`).join(', ')}], look: ${b.look === null ? 'None' : `Some(DamageLook { kind: DamageLookKind::${b.look.kind[0].toUpperCase() + b.look.kind.slice(1)}, size: ${f64(b.look.size)}, color: [${rgb(b.look.color).join(', ')}], crack: [${rgb(b.look.crack).join(', ')}], depth: ${f64(b.look.depth)}, rim: ${f64(b.look.rim)}, parallax: ${b.look.parallax}, darken: ${f64(b.look.darken)}, profile: CarveProfile::${b.look.profile[0].toUpperCase() + b.look.profile.slice(1)}, facets: ${b.look.facets}, grid: ${b.look.grid}, triangles: ${b.look.triangles}, cracks: ${b.look.cracks === null ? 'None' : `Some(Cracks { tiles: &[${b.look.cracks.tiles.map((t) => `"${t}"`).join(', ')}], stages: &[${b.look.cracks.stages.map(f64).join(', ')}], strength: ${f64(b.look.cracks.strength)}, span: ${f64(b.look.cracks.span)} })`} })`}, chips: ${b.chips === null ? 'None' : `Some(Chips { count: ${b.chips.count}, color: [${rgb(b.chips.color).join(', ')}], speed: ${f64(b.chips.speed)}, size: ${f64(b.chips.size)} })`} },`);
   rs.push('];');
   rs.push('');
   rs.push('/// Tools that wear (`durability.items`): (item, hits it survives).');
