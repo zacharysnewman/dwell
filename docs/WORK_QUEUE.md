@@ -673,6 +673,15 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    top (clouds.mjs) and run-time plumes cut there; today's sky exactly on the ground (a golden pin), both
    faces. **Left:** the browser check (local, a GPU), the home world drawn from far (M-6's bake).
 
+29. **Thicker, more realistic distance haze** (owner 2026-11-12: "I think our atmospheric distance fog should be a
+   little thicker, it doesn't seem quite realistic in farther mountains, hills looking whiter. What do you
+   propose?"). Today (shared/look/fog.json) the haze reaches half at 16 km at sea level, density 0.95, scale
+   height 1800 m, fading far terrain to the horizon's (pale, warm) colour. Proposed: aerial perspective — far
+   land fades toward a bluer air colour (the sky a little above the horizon, warmer toward the sun, bluer away),
+   loses contrast and saturation before it disappears, the haze half-distance shorter (~10 km) and the scale
+   height lower (~1200 m) so valleys haze and peaks stand clearer. Next (local): side-by-side variants for the
+   owner to pick.
+
 ## Done
 
 - **Axe swing directions and animation tools (owner 2026-11-11: "The axe animations are still trash.
