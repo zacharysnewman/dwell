@@ -32,6 +32,21 @@ depth test against the low-resolution (½/¼ res) depth or its temporal reprojec
 terrain's silhouette; the march not stopping at the scene depth (or comparing depth in a different space/precision
 far away); the far pass's depth range at mountain distance.
 
+Read in the code (2026-11-12, `claude/fly-high-m1`, not reproduced on the GPU yet; after the lighting rework #754):
+the clouds pass (`clouds_fs`, render/shaders.rs) marches the whole layer, not to the scene (`max_t` 1e9), and
+writes the distance to the first cloud sample (`dist`) beside the colour; the composite's `upsampled_clouds` hides a
+pixel's clouds where the scene is nearer than the nearest of four texels' `first`, through a ±5 % band
+(`smoothstep(0.95, 1.05, first / scene)`). Two things make that flicker where a mountain stands inside the layer:
+(1) `first` is the current frame's alone, jittered every frame by `cloud_jitter` by up to a step (the layer's path
+over 10 steps at Medium: hundreds of metres, often more than 5 % of the mountain's distance), while the colour is
+blended with the history; so the test flips frame to frame on the slope; (2) the colour holds the whole layer's
+cloud, the part behind the mountain too, so the cut is all or nothing at `first` rather than the cloud in front of
+the rock. Likely fix: march each texel only to the scene (a reduced depth, the farthest of its full-resolution
+texels, as `max_t`) so the colour is the cloud in front, and keep the composite's test only for the upsampling at
+silhouettes; or at least use an unjittered `first` (the layer entry) and a band in metres of a step. A test: the
+march's `first` stable under the jitter, and the cloud in front of a fixture slope inside the layer the same
+across jitter values (`dwell-look` clouds.rs twins).
+
 ### 87. An NPC's raised vertical block leans the blade back over its shoulder
 
 Found fixing #86 (2026-11-12), not reported: `clip_probe` puts the third-person `guard_vertical` pose's
