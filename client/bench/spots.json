@@ -192,6 +192,30 @@
       "yaw": 180,
       "pitch": -40,
       "openY": 300
+    },
+    "forest:inside": {
+      "notes": "THE tree performance reference, inside: standing in the forest world's densest stand (49 trees in the 40 m square round it, ~220 a hectare; shared/worldgen/worlds/forest.json, WORK_QUEUE item 32), the eye at a player's height looking along the trunks (forest_world.rs spots)",
+      "world": "test:forest",
+      "above": [40.5, -39.5, 1.7],
+      "yaw": 45,
+      "pitch": 4,
+      "openY": 60
+    },
+    "forest:edge": {
+      "notes": "The tree performance reference, across the canopy: from 32 m over the forest world's highest ground (a low rise 440 m south of the stand), just over the tallest crowns, looking north across the canopy to the far trees and the haze",
+      "world": "test:forest",
+      "above": [24.5, -479.5, 32],
+      "yaw": 0,
+      "pitch": -6,
+      "openY": 60
+    },
+    "forest:above": {
+      "notes": "The tree performance reference, from above: flying 150 m over the densest stand, looking north and down over the forest to the horizon (every LOD level of trees in view)",
+      "world": "test:forest",
+      "above": [40.5, -39.5, 150],
+      "yaw": 0,
+      "pitch": -35,
+      "openY": 170
     }
   }
 }

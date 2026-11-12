@@ -4436,7 +4436,10 @@ structure's placement as `RegionEdit`'s `Structure` op, below). The second is `g
 the grid's space), and `ChunkData`/`ChunkUnload` end with their grid's byte when not home (a trailing
 0 is malformed). The server lists it; this build's client doesn't say it yet
 (`capabilities::CLIENT_PENDING`: its predictor and renderer don't follow another grid), so a player
-off home is sent its world position, as an older client is.
+off home is sent its world position, as an older client is. The third is `damage.chunks`
+(BLOCK_DAMAGE.md §9): `Damage` ends with `0xC4` and each cell's hit marks' chunks (a byte a mark, the
+piece's size in sixteenths of the block's mark; a metal tool's 32), only to a client that listed it;
+without it every mark is ×1.
 ```
 S→C  WorldSettings field 0x85 (optional): u8 count (≤ 64), each str name (≤ 48 bytes, no repeat)
 C→S  Capabilities 0x69, control: the same form — the client's capabilities, once after Welcome,

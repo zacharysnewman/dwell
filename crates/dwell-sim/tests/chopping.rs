@@ -98,13 +98,26 @@ fn swing(
     at: [f64; 3],
     vertical: bool,
 ) {
+    swing_with(fx, f, AXE, cell, normal, at, vertical);
+}
+
+/// [`swing`] with axe `tool` (held).
+fn swing_with(
+    fx: &mut Fixture,
+    f: FaceFrame,
+    tool: &str,
+    cell: [i32; 3],
+    normal: [f64; 3],
+    at: [f64; 3],
+    vertical: bool,
+) {
     let n = f.vector(normal);
     let axis = n.iter().position(|v| v.abs() > 0.5).expect("an axis");
     let p = f.point(at);
     fx.send(
         1,
         Message::Chop(ChopAction::Swing {
-            tool: AXE.into(),
+            tool: tool.into(),
             cell: f.cell(cell),
             face: (axis * 2) as u8 + u8::from(n[axis] > 0.0),
             point: p.map(|v| v as f32),
@@ -118,8 +131,20 @@ fn swing(
 
 /// A swing at the trunk's −x side (facing the player) in band `band` (0 lower, 1 upper).
 fn at_trunk(fx: &mut Fixture, f: FaceFrame, band: usize, vertical: bool) {
+    at_trunk_with(fx, f, AXE, band, vertical);
+}
+
+fn at_trunk_with(fx: &mut Fixture, f: FaceFrame, tool: &str, band: usize, vertical: bool) {
     let y = m_of_row(AT) + if band == 0 { 0.12 } else { 0.37 };
-    swing(fx, f, [3, AT, 0], [-1.0, 0.0, 0.0], [3.0, y, 0.5], vertical);
+    swing_with(
+        fx,
+        f,
+        tool,
+        [3, AT, 0],
+        [-1.0, 0.0, 0.0],
+        [3.0, y, 0.5],
+        vertical,
+    );
 }
 
 fn cell_is(fx: &mut Fixture, f: FaceFrame, cell: [i32; 3]) -> u16 {
@@ -135,8 +160,20 @@ fn swings_to_fell(
     limit: usize,
     band_of: impl Fn(usize) -> usize,
 ) -> Option<usize> {
+    swings_to_fell_with(fx, f, AXE, vertical, limit, band_of)
+}
+
+/// [`swings_to_fell`] with axe `tool` (held).
+fn swings_to_fell_with(
+    fx: &mut Fixture,
+    f: FaceFrame,
+    tool: &str,
+    vertical: bool,
+    limit: usize,
+    band_of: impl Fn(usize) -> usize,
+) -> Option<usize> {
     for i in 0..limit {
-        at_trunk(fx, f, band_of(i), vertical);
+        at_trunk_with(fx, f, tool, band_of(i), vertical);
         // Felled: the log is gone (the stump's wedge in its place, Phase 55 T2).
         if cell_is(fx, f, [3, AT, 0]) != log(f, "y") {
             return Some(i + 1);
@@ -144,6 +181,47 @@ fn swings_to_fell(
     }
     None
 }
+
+dwell_world::both_faces!(
+    fn a_metal_axe_fells_in_about_half_the_stone_axes_swings_and_wears_half_as_fast(f: FaceFrame) {
+        // Owner, 2026-11-12: "Metal tools break double sized bigger chunks off and reach 50%
+        // broken faster, which is when the blocks break. Also have double durability."
+        const METAL: &str = "dwell:metal_axe";
+        let mut fx = scene(f, "adventure", true);
+        let stone = swings_to_fell(&mut fx, f, false, 20, |i| i % 2).expect("felled");
+        let mut fx = scene(f, "adventure", true);
+        fx.server.give(1, METAL, 1);
+        let slot = fx
+            .server
+            .inventory_of(1)
+            .unwrap()
+            .slots
+            .iter()
+            .position(|s| s.as_ref().is_some_and(|s| s.item == METAL))
+            .expect("given") as u8;
+        fx.send(
+            1,
+            Message::InventoryAction(InventoryAction::Select { slot }),
+        );
+        for _ in 0..2 {
+            fx.server.step();
+        }
+        let metal = swings_to_fell_with(&mut fx, f, METAL, false, 20, |i| i % 2).expect("felled");
+        assert!(
+            metal <= stone.div_ceil(2) + 1 && 2 * metal + 2 >= stone,
+            "metal {metal} swings against stone {stone}"
+        );
+        let wear = fx.server.inventory_of(1).unwrap().slots[usize::from(slot)]
+            .as_ref()
+            .map(|s| s.wear);
+        assert_eq!(wear, Some(metal as u16), "a wear a swing");
+        assert_eq!(
+            chopping::durability(METAL),
+            chopping::durability(AXE).map(|h| 2 * h),
+            "double durability"
+        );
+    }
+);
 
 dwell_world::both_faces!(
     fn notching_fells_a_trunk_in_about_ten_swings_toward_the_notch(f: FaceFrame) {

@@ -68,10 +68,10 @@ export interface CompareOptions {
   run: (sc: Scenario, dir: string, params: Record<string, string>) => Promise<ScenarioReport>;
 }
 
-/** The `shot` names of `steps`, in order. */
+/** The `shot` and `spot` names of `steps` (each saves `<name>.png`), in order. */
 function shots(steps: readonly Step[]): string[] {
   return steps.flatMap((s) =>
-    s.do === 'shot' ? [s.name] : s.do === 'repeat' ? shots(s.steps) : [],
+    s.do === 'shot' || s.do === 'spot' ? [s.name] : s.do === 'repeat' ? shots(s.steps) : [],
   );
 }
 

@@ -63,14 +63,15 @@ axe (`dwell:stone_axe`) sits after the log: held in creative, left click swings 
 toggles level and vertical swings, as the inventory's axe does in adventure. Owner, 2026-11-08.
 
 The six tools (0.52.21; owner, 2026-11-10: "pickaxe, shovel, and axe. Stone and Metal variants")
-follow it: the metal axe (a chopping tool of its own, biting 0.2 m to the stone axe's 0.12), the
+follow it: the metal axe (a chopping tool of its own, biting 0.2 m to the stone axe's 0.1), the
 stone and metal pickaxe and the wooden and metal shovel. A `tool` may also name a **breaking tool**
 (`shared/tools/tools.json` `breaking.tools`): it places nothing (Place is refused) and Break breaks as
 a bare hand does. Every tool's item has a model look (`shared/inventory` `look.model`, a prop of
 `shared/models/props.json`), so the hotbar, the backpack, a loose item and the hand all show its
 model (`Held::Model`: the axe in its swing's hold, the others in the axe's level hold). `breaking`
 gives each tool a class (`pickaxe`: stone; `shovel`: dirt, grass, sand; `axe`: wood) and a tier
-(`stone` 1.5, `metal` 2.5, a multiple of the bare hand's speed); `break_speed(block, held)` is that
+(`stone` 1.5, `metal` 3, a multiple of the bare hand's speed, and each a `chunk`: stone 1, metal 2, the size of
+the piece a hit takes off; BLOCK_DAMAGE.md §9); `break_speed(block, held)` is that
 speed for the right class and 1 otherwise. **Block damage (0.52.28, ADR 0078, docs/BLOCK_DAMAGE.md):**
 a block's `damage` (block data) gives its hits to break by bare hands (`default`; `null`: can't) and per
 tool class or item; a class's count is divided by the held tool's tier speed. Stone takes 5 hits with the
@@ -114,7 +115,8 @@ comes inside the arms' near plane (`ARMS_NEAR` + 1 cm).
 
 **Wear.** The stone axe, the stone pickaxe and the wooden shovel survive 32 hits each
 (`shared/tools/tools.json` `durability`; owner, 2026-11-11: "stone pick wears too like axe, same with
-shovel"); the metal tools never wear, and nothing wears in creative (`creativeWear` false).
+shovel"); the metal axe, pickaxe and shovel 64 each (owner, 2026-11-12: metal tools "have double
+durability"), and nothing wears in creative (`creativeWear` false).
 
 ### 1b. Saplings (ADR 0079 S4)
 
@@ -375,8 +377,10 @@ placements overlay shows the ground items in their looks' colours beside the str
   axe, or the same inputs → a stone pickaxe (the player picks).
 - **Tool wear** (owner, 2026-11-11: the stone axe "should survive 32 hits of durability"):
   `shared/tools/tools.json` `durability` (`items`: tool item → hits; `creativeWear`; `breakSound`),
-  validated and emitted (`DURABILITY`, `CREATIVE_WEAR`, `WEAR_BREAK_SOUND`). The stone axe 32; every
-  other tool unlimited (the owner named only the axe). A hit that counts uses one: a chop, or a block
+  validated and emitted (`DURABILITY`, `CREATIVE_WEAR`, `WEAR_BREAK_SOUND`). The stone axe, stone
+  pickaxe and wooden shovel 32; the metal axe, pickaxe and shovel 64 (owner, 2026-11-12: metal tools
+  "have double durability"; they also break in about half the hits with pieces twice the size,
+  BLOCK_DAMAGE.md §9). A hit that counts uses one: a chop, or a block
   break hit (one the server takes, refused ones don't) with the tool held; at none left the tool is
   gone from its slot and the client plays `stick_snap`. Creative: `creativeWear` false, tools don't
   wear. The wear is a slot's `Stack::wear`, carried by moves; it rides in the inventory record as

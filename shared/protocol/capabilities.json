@@ -10,6 +10,10 @@
     {
       "name": "grid.frames",
       "description": "The player's grid travels on the wire (docs/proposals/MOON_WORLD.md \u00a77.2): a snapshot ends with the local player's grid (its index in shared/worldgen/grids.json, 0 the home grid) and, off home, the grid's frame (origin, rotation); the other grids' chunks arrive as ChunkData and ChunkUnload ending with their grid byte. Without it the server sends neither, and a player off home is seen at their world position."
+    },
+    {
+      "name": "damage.chunks",
+      "description": "A Damage message's cells end with each hit mark's chunk (docs/BLOCK_DAMAGE.md \u00a79: how big a piece the hit took off, in sixteenths of the block's mark; a metal tool's 32, owner 2026-11-12 \"Metal tools break double sized bigger chunks off\"). Without it the server sends none and the client draws every mark at \u00d71."
     }
   ]
 }

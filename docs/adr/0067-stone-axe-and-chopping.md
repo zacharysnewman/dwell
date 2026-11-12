@@ -388,3 +388,12 @@ cut model (§2) and felling at 11 swings are unchanged. BLOCK_DAMAGE.md §6.4 "R
 - A new tool is an item and a `tools` entry; a new wood a block with an `axis` and a `woods` entry;
   a new tool kind (a pick, a saw) is code with its data.
 - Reversing it: drop the flag; the `cuts` table stays, unread.
+
+**Note (2026-11-12, metal tools twice as good; BLOCK_DAMAGE.md §9).** Owner: "Metal tools break double
+sized bigger chunks off and reach 50% broken faster, which is when the blocks break. Also have double
+durability." The metal axe already bit twice as deep as the stone axe (`biteM` 0.2 to 0.1) and fells a
+standing trunk at one aim in 5 swings to 11 (`tests/chopping.rs`
+`a_metal_axe_fells_in_about_half_the_stone_axes_swings_and_wears_half_as_fast`, both faces); the fell rule
+(`fellFraction`) is unchanged. The chopping prototype's metal `chop2.bite` is now twice the stone axe's
+(0.09, was 0.075). The metal axe now wears: 64 hits, twice the stone axe's 32 (before: never). The breaking
+tiers (`breaking.tiers`) gain a `chunk`, metal's 2, which sizes the pickaxe's and shovel's marks.
