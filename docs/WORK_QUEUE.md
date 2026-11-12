@@ -1753,7 +1753,10 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    (`placements.rs`) anchor a tree at its anchor column's top + 1 and test the slope only by the height field's
    gradient over ±2 m (`maxSlopeDeg` up to 44°); the other trunk columns (thick old-growth trunks) and ½ m ramps under
    the trunk are not levelled, so a trunk's downhill side stands over a ramp or a drop. Options, analysis and the
-   owner's pick follow.
+   owner's pick follow. Options shown (https://claude.ai/artifact/ChMv9xuaABdEGfzRPVLDM9): today floating, A trunk
+   reaches down, B level a pad, C flare + small fill. Owner: **"For now let's just do level pad, can just be the the
+   tree width, 1m."** — fill the cells under the trunk's footprint only (no ring) up to the trunk's base; a change
+   to the terrain a seed generates, so a new compatibility line (0.55, the owner raises it).
 
 45. **Floating trees drift, leaves let water through** (owner 2026-11-12: **"Also, trees they are floating in water should
    never settle, it causes them to block up rivers randomly instead of floating downstream. And leaves also should
