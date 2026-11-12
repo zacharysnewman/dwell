@@ -394,6 +394,20 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    is the view's, `volume.lightExtinction` (0.006) the light's, plumes keep theirs; a dev knob
    `?cloudExtinction=` / `__dwell.cloudExtinction(x)` for the A/B. Next (local): the look at sunrise/sunset
    against `?clouds=` the deck, the A/B of 0.006 / 0.03 / 0.05 and `gpu.clouds`; tune by the data.
+   Owner, 2026-11-12: **"the clouds look ridiculous at least the volumetric ones. Look like crazy triangles"**,
+   **"The more recent volumetric shape change for the clouds make them look like 3 sided pyramids"** (BUGS.md
+   #100), and **"In terms of color too, the clouds seem gloomy and dark like not-quite storm clouds."** (asked:
+   fair-weather stratocumulus/cumulus bright white on their sunlit tops and light grey underneath at noon, only
+   cumulonimbus/precipitation darker, checked against the papers).
+   **Fixed in code (2026-11-12, branch `claude/cloud-pyramids`, CLOUDS.md §9.9):** the papers' model
+   (`docs/reference/cloud-papers.md`): the cloud type and the cover as regional fields (16 km, 8 km;
+   `typeFromCoverage` 0), the single clouds cut by the 3D Perlin–Worley (Nubis's remap, base tile 2 km), the
+   profile fading from just over the base, erosion 0.25, view extinction 0.015 (a cloud behind 400 m of cloud
+   9 % visible); the light samples reuse the column's cover (cheaper). The gloom was the same cause: every
+   core lit as a cumulonimbus. CPU-twin tests red on main → green: cloud-top median slope 4.1/2.6 → 0.7–1.0,
+   the patch's median noon base 0.44 → 0.77 of the sunlit white, cumulus top ≥ 1.0 / base 0.57, cumulonimbus
+   base 0.23. Not done: distance-adaptive steps with HZD's cheap/full switch. Next (local): the in-game look at
+   noon, low sun, from above and through the layer, `?cloudExtinction=` 0.01–0.03, and `gpu.clouds`.
 14. **Tall grass grows and spreads** (owner 2026-11-11: "I want tall grass to steadily grow and spread. It
    should probably have a max depending on climate/biome."). **Built** (ADR 0075 T3c, docs/ECOLOGY.md §10):
    `shared/worldgen/grass.json` (the rule as data: the block, the ground, the decoration whose climate
