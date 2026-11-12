@@ -236,9 +236,12 @@ The arms are a **separate view** of the same character, as first-person games do
   wind-up (the tool's `windupS`) draws the hands back to the right shoulder at eye height (level) or
   up over the head (vertical), then a fast 0.12 s strike (`activeS`) carries the hands across in front
   to the left, or down to the waist, with the head; the keys, first person and body alike, are fitted
-  with `clip_probe --fit` to grip, head and blade-facing targets (DEV_TOOLS.md), so the edge leads. Remote players still see the body's `break`: the wire's
-  swing byte (`swing_flags`) carries break or place only, so naming the chop and its direction on it
-  is a protocol change for later. The held axe is the `stone_axe` item (a stick handle, a knapped
+  with `clip_probe --fit` to grip, head and blade-facing targets (DEV_TOOLS.md), so the edge leads. Remote players
+  play the chop too (WORK_QUEUE item 17): the server steps the swinger's swing count on each chop as
+  a break and sends its kind (`SwingKind`: `chop_level`, `chop_vertical`) to clients that said
+  `SwingHello` (ARCHITECTURE.md §8.3), whose remote body starts `biped_chop_level` or
+  `biped_chop_vertical` as the count steps (`bodies.rs` `swing_of`); an older client, or any
+  client of an older server, plays the body's `break`. The held axe is the `stone_axe` item (a stick handle, a knapped
   flint head across its tip, its edge `axe_blade`, a leather lashing), named by the tool's `held` in
   `shared/tools/tools.json`; the vertical swing's hold is `stone_axe_vertical` (`heldVertical`: the
   same parts, another `pose`), so toggling the swing changes the grip (0.50.39). The blade faces away

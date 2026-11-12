@@ -9,7 +9,7 @@ use dwell_characters::animator::{Animator, MoveInput, Space, Swing};
 use dwell_characters::{Character, TABLES};
 use dwell_game::eye::{Step, StepRamp, StepSample, StepSmoother};
 use dwell_game::remotes::RemoteView;
-use dwell_protocol::{controller_flags, held_item, player_flags, swing_flags};
+use dwell_protocol::{SwingKind, controller_flags, held_item, player_flags, swing_flags};
 use dwell_world::hash::HashMap;
 use dwell_world::{CELL_H, FaceFrame, VoxelWorld, m_of_row, row_of_m};
 
@@ -110,11 +110,18 @@ pub fn held_to_wire(held: Held, to_server: impl Fn(u16) -> Option<u16>) -> u16 {
     }
 }
 
-/// The swing a changed swing byte starts (none for the first one seen: that edit was before).
-pub fn swing_of(last: Option<u8>, now: u8) -> Option<Swing> {
+/// The swing a changed swing byte starts (none for the first one seen: that edit was before):
+/// the chop `kind` names (`SwingKind`, from a server that sends the kinds), else the break or
+/// place the byte says (a kind this build doesn't know, or none, is that too).
+pub fn swing_of(last: Option<u8>, now: u8, kind: u8) -> Option<Swing> {
     let changed = last.is_some_and(|l| l != now);
     if !changed || now & swing_flags::COUNT_MASK == last.unwrap_or(0) & swing_flags::COUNT_MASK {
         return None;
+    }
+    match SwingKind::from_u8(kind) {
+        Some(SwingKind::ChopLevel) => return Some(Swing::ChopLevel),
+        Some(SwingKind::ChopVertical) => return Some(Swing::ChopVertical),
+        Some(SwingKind::Plain) | None => {}
     }
     if now & swing_flags::BREAK != 0 {
         Some(Swing::Break)
@@ -261,7 +268,7 @@ impl Bodies {
                 stepped: None,
                 feet_xz: [[0.0; 2]; 2],
             });
-        if let Some(s) = swing_of(body.swing, v.swing) {
+        if let Some(s) = swing_of(body.swing, v.swing, v.swing_kind) {
             body.animator.swing(s);
         }
         hold_swing_on(&mut body.animator, self.held_swing);
@@ -488,6 +495,7 @@ mod tests {
             flags: player_flags::GROUNDED | dwell_physics::net::face_bit(f, player_flags::FACE_B),
             held: 0,
             swing: 0,
+            swing_kind: 0,
             jumped: false,
         }
     }
@@ -627,6 +635,7 @@ mod tests {
                         | dwell_physics::net::face_bit(f, player_flags::FACE_B),
                     held: 0,
                     swing: 0,
+                    swing_kind: 0,
                     jumped: false,
                 };
                 let view = bodies.remote(&v, Held::Empty, dt, &mut ground);
@@ -660,6 +669,7 @@ mod tests {
                 flags: player_flags::GROUNDED,
                 held: 0,
                 swing: 0,
+                swing_kind: 0,
                 jumped: false,
             };
             b.remote(&v, Held::Empty, 1.0 / 60.0, &mut ground);
@@ -712,6 +722,7 @@ mod tests {
                     flags: flags | dwell_physics::net::face_bit(f, player_flags::FACE_B),
                     held: 0,
                     swing: 0,
+                    swing_kind: 0,
                 }
             };
             let tick_ms = 1000.0 / f64::from(SIM_HZ);
@@ -746,17 +757,56 @@ mod tests {
         }
     );
 
+    dwell_world::both_faces!(
+        /// WORK_QUEUE item 17: another player's chop plays the body's chop clip by its direction
+        /// (`biped_chop_level`, `biped_chop_vertical`) on the frame its swing count steps, from a
+        /// snapshot carrying the kind (`SwingHello`); without the kind (an older server) the same
+        /// step is a `break`. Red before: every stepped break swing played `break`.
+        fn a_remote_chop_plays_the_body_chop_clip_of_its_direction(f: FaceFrame) {
+            let ch = dwell_characters::player();
+            let mut ground = |_: FaceFrame, _: [f64; 3]| Some(40.0);
+            let mut b = Bodies::default();
+            let mut v = grounded_remote(f, PlayerState::Idle, [0.0; 3]);
+            v.swing = swing_flags::BREAK | 7;
+            b.remote(&v, Held::Empty, 0.05, &mut ground);
+            assert_eq!(
+                b.roles()[0].action,
+                None,
+                "the first swing byte seen started before"
+            );
+            for (kind, role, clip) in [
+                (SwingKind::ChopLevel, "chop_level", "biped_chop_level"),
+                (
+                    SwingKind::ChopVertical,
+                    "chop_vertical",
+                    "biped_chop_vertical",
+                ),
+                (SwingKind::Plain, "break", "biped_break"),
+            ] {
+                v.swing = swing_flags::BREAK | ((v.swing + 1) & swing_flags::COUNT_MASK);
+                v.swing_kind = kind as u8;
+                b.remote(&v, Held::Empty, 0.0, &mut ground);
+                assert_eq!(b.roles()[0].action, Some(role), "{kind:?}");
+                let i = ch.clip(role).expect("the body has the clip");
+                assert_eq!(TABLES.clip(i).name, clip);
+            }
+            // A kind this build doesn't know is the break the byte says.
+            let next = swing_flags::BREAK | ((v.swing + 1) & swing_flags::COUNT_MASK);
+            assert_eq!(swing_of(Some(v.swing), next, 200), Some(Swing::Break));
+        }
+    );
+
     #[test]
     fn a_changed_swing_count_starts_a_swing_and_the_first_seen_does_not() {
         let place = swing_flags::PLACE | 3;
-        assert_eq!(swing_of(None, place), None);
-        assert_eq!(swing_of(Some(place), place), None);
+        assert_eq!(swing_of(None, place, 0), None);
+        assert_eq!(swing_of(Some(place), place, 0), None);
         assert_eq!(
-            swing_of(Some(place), swing_flags::BREAK | 4),
+            swing_of(Some(place), swing_flags::BREAK | 4, 0),
             Some(Swing::Break)
         );
         assert_eq!(
-            swing_of(Some(place), swing_flags::PLACE | 4),
+            swing_of(Some(place), swing_flags::PLACE | 4, 0),
             Some(Swing::Place)
         );
     }

@@ -26,6 +26,7 @@ PF = c["playerFlags"]
 PS = c["playerStates"]
 HI = c["heldItem"]
 SW = c["swingFlags"]
+SK = c["swingKinds"]
 GK = c["groundKinds"]
 EK = c["playerEventKinds"]
 DC = c["damageCauses"]
@@ -316,6 +317,12 @@ vectors = {
     "player_input": PLAYER_INPUT,
     "physics_snapshot": SNAPSHOT,
     "physics_snapshot_min": SNAPSHOT_MIN,
+    # WORK_QUEUE item 17: to a client that said SwingHello, the snapshot ends with each remote's
+    # swing kind (u8 count, the remotes' own, then a u8 each), here a level chop and plain.
+    "physics_snapshot_swing_kinds": SNAPSHOT
+    + struct.pack("<BBB", 2, SK["ChopLevel"], SK["Plain"]),
+    "physics_snapshot_min_swing_kinds": SNAPSHOT_MIN + struct.pack("<B", 0),
+    "swing_hello": struct.pack("<B", T["SwingHello"]),
     "entity_spawn": ENTITY_SPAWN,
     "entity_despawn": struct.pack("<BI", T["EntityDespawn"], 7),
     "body_edit_request_break": body_edit_request(9, (0, 3, -1), 5, BA["Break"]),
@@ -438,6 +445,9 @@ malformed = {
     "!unknown_type": bytes([0xEE]),
     "!truncated_ping": vectors["ping"][:-1],
     "!trailing_byte": vectors["welcome"] + b"\x00",
+    # The swing kinds' count must be the remotes' (2), and nothing may follow them.
+    "!swing_kinds_count": SNAPSHOT + struct.pack("<BB", 1, SK["ChopLevel"]),
+    "!swing_kinds_trailing": SNAPSHOT + struct.pack("<BBBB", 2, 1, 0, 0),
     "!bad_utf8": struct.pack("<BH", T["ClientHello"], 1)
     + struct.pack("<H", 2) + b"\xC3\x28" + PK + s("Zack"),
     "!name_too_long": struct.pack("<BH", T["ClientHello"], 1)

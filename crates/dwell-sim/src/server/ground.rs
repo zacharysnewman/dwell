@@ -123,7 +123,7 @@ impl Server {
             return false;
         }
         let s = self.sessions.get_mut(&id).expect("session");
-        s.swing = super::next_swing(s.swing, true);
+        s.swung(true, dwell_protocol::SwingKind::Plain);
         self.ground.cells.insert(cell);
         self.broadcast_ground_gone(vec![cell]);
         if self.uses_items() {
