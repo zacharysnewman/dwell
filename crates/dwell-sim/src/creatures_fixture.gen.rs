@@ -3,11 +3,11 @@
 #[allow(unused_imports)]
 use crate::creatures::{ColourSlot, Combat, CreatureDef, Disposition, FightDef, FightStance, Idle, Limits, MixPart, NpcDef, Pose, SpawnRule};
 
-pub const LIMITS: Limits = Limits { spawn_chunks: 0, despawn_m: 40.0, max: 8 };
+pub const LIMITS: Limits = Limits { spawn_chunks: 0, despawn_m: 40.0, max: 8, gap_m: 0.2, push_mps: 1.0 };
 
 pub const CREATURES: [CreatureDef; 2] = [
-    CreatureDef { name: "test:walker", model: "penguin", walk_speed: 2.0, wander_m: 6.0, idle_seconds: [0.5, 1.0], rows: 2, climb_rows: 1, drop_rows: 1, npc: None, health: 5.0, hit_radius_m: 0.3, drops: &[("dwell:stick", 2, 2)] },
-    CreatureDef { name: "test:leader", model: "penguin", walk_speed: 2.0, wander_m: 6.0, idle_seconds: [0.5, 1.0], rows: 2, climb_rows: 1, drop_rows: 1, npc: None, health: 0.0, hit_radius_m: 0.4, drops: &[] },
+    CreatureDef { name: "test:walker", model: "penguin", walk_speed: 2.0, wander_m: 6.0, idle_seconds: [0.5, 1.0], rows: 2, climb_rows: 1, drop_rows: 1, npc: None, health: 5.0, hit_radius_m: 0.3, body_radius_m: 0.3, drops: &[("dwell:stick", 2, 2)] },
+    CreatureDef { name: "test:leader", model: "penguin", walk_speed: 2.0, wander_m: 6.0, idle_seconds: [0.5, 1.0], rows: 2, climb_rows: 1, drop_rows: 1, npc: None, health: 0.0, hit_radius_m: 0.4, body_radius_m: 0.3, drops: &[] },
 ];
 
 pub const RULES: [SpawnRule; 1] = [

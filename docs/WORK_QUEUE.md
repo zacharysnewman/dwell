@@ -903,6 +903,12 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    cliff at evening). Not in it: a chase or deer fleeing (on day 0 every pack is kilometres from any herd and
    players can't scare deer), far herds (none seen from above, unconfirmed), grazing (no grazing pose). Bugs found:
    BUGS.md (a herd popping up in size, deer overlapping, a wolf in a cliff, `?at=` into the ground).
+
+   Owner, 2026-11-12: "fix four bugs found filming the deer and wolves" (BUGS.md #79–#82): births or a double
+   spawn; no spacing; creature movement not keeping the body radius out of solid cells; `?at=`/teleport into the
+   ground. Fixed (cloud, after 0.54.101): births paced by data (`near.mate.restS`, `groupEveryS`; no double spawn),
+   bodies kept apart (`bodyRadiusM`, `limits.gapM`/`pushMps`) and out of walls, a buried player lifted onto the
+   ground above.
 37. **First-person arms from the player model** (owner 2026-11-12: "I thought we were going to swap out the AI
    generated first person character model? We discussed this yesterday."). The Peasant (the owner's Asset Store
    model) became other players' body and your shadow in 0.52.35 (CHARACTERS.md §11.5), but "Still rigid: your
@@ -952,6 +958,8 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    less, no text of any kind, no music, clouds off unless the shot is about clouds, footage deleted after sending.
    Waiting on the owner to pick which come first. The list (suggested first: 1, 10, 3, 6, 11, 2 — the most striking
    that work today; 14 and 15 after item 39 and the swords/NPC work land; 5 after the moon trip is playable):
+   Owner, 2026-11-12: **"Preferably some of each recording should be gameplay, player perspective."** — every
+   video mixes cinematic shots with first-person gameplay (the arms and held item, actually playing).
    1. Volcano and lava — the summit lava lake at night with bloom, crust plates and orange seams, steam where lava
       meets water, a lava river cooling from bright to dark.
    2. Rainier-style peak — a drone rise up the cone past snow lines, cleavers and the glacier cap, ranges fading
@@ -994,6 +1002,24 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
        ruler rising up the mountain with height numbers ticking as part of the effect (the only text allowed),
        pulling back to the whole range and the island's scale. The text exception is the measuring effect's
        numbers only — no titles or descriptions. Owner: "Measure in meters" (e.g. 1000 m, 2000 m … ticking up).
+
+41. **Theater mode** (owner 2026-11-12: "We should use full camera tools to do the things you were doing and expand
+   this tool set as you go, we could call it theater mode. Even make it available ingame as a feature that could be
+   toggled on for any world type."). Answers: **both** presets (pick a target and a move: orbit, dolly, track,
+   rise, pan, with sliders) and keyframes (free-fly the camera, drop keyframes with position, look, time of day and
+   speed, choose the move between them, preview and play; paths saved as data to replay and share); **record to a
+   file** in the browser (the canvas without the HUD, 9:16 or 16:9, chosen frame rate, downloadable); in
+   multiplayer **their camera only** (the world keeps running, their character stays put, time of day and
+   time-lapse apply to their view only); **anyone, any world** (a Settings toggle or a key; the host can disable it
+   for guests). The `record` skill drives the same tools (a bench `camera` step plays a path and records it), and
+   the tool set grows with each video. In progress: design + logic (cloud), then the UI and recording (local).
+   Owner, 2026-11-12: **"For players to use it would be cool if it had an MCP server so they could use an LLM agent to
+   handle the recording complexities, not sure if that would help us at all but it's a to have."** A nice-to-have,
+   after the in-game tools: an MCP server exposing theater mode's operations (find subjects, set time of day,
+   place/preview/play a path or preset, start/stop recording, list saved paths) so a player's LLM agent can direct
+   shots. It would help us too: our own agents could record through the same tools instead of bench scripts.
+   Likely shape: a small local MCP server (stdio) that talks to the open game page over a local WebSocket the page
+   opens only when the player turns it on; nothing reachable from outside the machine.
 
 ## Done
 

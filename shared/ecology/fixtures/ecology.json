@@ -41,7 +41,7 @@
         "energyPerS": 0,
         "sleep": { "belowEnergy": 0, "nightChancePerS": 0, "nightBelowHunger": 0, "gainPerS": 0.1, "wakeAboveEnergy": 0.5, "wakeAboveHunger": 0.5, "minS": 1 },
         "hunt": { "aboveHunger": 0.9, "senseM": 10, "sprint": 2, "reachM": 1, "feedsPackM": 10, "feedsPack": 0.5 },
-        "mate": { "belowHunger": 0, "aboveEnergy": 1, "radiusM": 1, "reachM": 1, "chance": 0, "cost": 0, "tired": 0 },
+        "mate": { "belowHunger": 0, "aboveEnergy": 1, "radiusM": 1, "reachM": 1, "chance": 0, "cost": 0, "tired": 0, "restS": 60, "groupEveryS": 60 },
         "companyM": 30,
         "wanderM": 4,
         "players": { "react": "flee", "noticeM": 15, "crouchM": 3, "runM": 10, "pace": 2, "calmS": 3 },

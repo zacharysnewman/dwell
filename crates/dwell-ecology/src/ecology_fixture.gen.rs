@@ -53,7 +53,7 @@ pub const DATA: Data = Data {
                 graze: None,
                 hunt: Some(NearHunt { above_hunger: 0.9, sense_m: 10.0, sprint: 2.0, reach_m: 1.0, feeds_pack_m: 10.0, feeds_pack: 0.5, track_m: 0.0 }),
                 flee: None,
-                mate: NearMate { below_hunger: 0.0, above_energy: 1.0, radius_m: 1.0, reach_m: 1.0, chance: 0.0, cost: 0.0, tired: 0.0 },
+                mate: NearMate { below_hunger: 0.0, above_energy: 1.0, radius_m: 1.0, reach_m: 1.0, chance: 0.0, cost: 0.0, tired: 0.0, rest_s: 60.0, group_every_s: 60.0 },
                 company_m: 30.0,
                 wander_m: 4.0,
                 hurt: None,
