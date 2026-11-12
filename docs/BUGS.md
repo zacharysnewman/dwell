@@ -22,6 +22,9 @@ loading after ~300 s but no terrain drew (only the sky of both faces, as if the 
 no chunks arrived) and the player can't move (no ground chunks, so the controller waits; or the spawn point is
 invalid at 10×, e.g. outside the generated area or NaN). Likely related to #76 (memory at big sizes) or the spawn
 search's result at 10×.
+Then: "Oh I see, 'Could not connect to 10x...'" — the empty sky is the join failing (`client/src/main.ts`'s
+"Could not connect to …" status), not missing terrain: the in-browser server either died (memory, #76) or didn't
+answer within the client's connect timeouts (`transport.rs` CONNECT_TIMEOUT_MS 8 s, `peer.ts` 20 s) while still busy.
 
 ### 90. Volumetric clouds look badly dithered and pixelated where they overlap, mostly at cloud level
 
