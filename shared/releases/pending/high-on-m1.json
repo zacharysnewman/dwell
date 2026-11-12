@@ -1,6 +1,7 @@
 {
   "changes": [
     "Forests draw faster: leaf cards hidden inside a tree's crown, on its far side or past their distance are no longer drawn, and they now fade out from 24 to 40 m (was 48 to 64 m)",
+    "The High preset draws full detail to 192 m (was 256 m) to stay smooth in forests on an M1 MacBook Air; Ultra still draws farther",
     "Settings → Graphics has a Trees group; the Leaf cards switch moved there from View"
   ]
 }
