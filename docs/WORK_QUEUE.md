@@ -511,6 +511,10 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    switches to the moon's grid (moving with it, locked to its position and orientation), gravity turns to the
    moon's local down the way crossing to face B turns it, and the moon's gravity is weaker (data per grid).
    Leaving the capture distance hands the player back to the home frame.
+   Owner, 2026-11-12: **"The earth should use the same normal map kinda technique when far enough away, when on
+   the moon."** So the far view is symmetric: any grid seen from far enough (the home world from the moon, the
+   moon from home) is drawn as a disc with a normal map and albedo baked from its real terrain, lit by the sun;
+   one far-body renderer for every grid.
 
 ## Done
 
