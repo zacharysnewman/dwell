@@ -374,6 +374,14 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    makes a ½ m ramp of its ground ground too (validated as decorations' `onRamps`: the ramp exists and
    the tuft's `placeOn` allows it), so a tuft on a ramp that is eaten or cut regrows and spreading
    reaches ramp cells, under the same climate cap; never a 1 m ramp's pieces (tests on both faces).
+   Owner, 2026-11-12: **"Seems like tall grass isn't growing in height like I expected. I thought it would get
+   taller over time?"** (the built growth only spreads; every tuft is 0.85 m from the start). Answers: max height
+   **depends on climate**; **4+ stages, slower** (a week or more of game time to full height); **cutting resets it**
+   (cut or eaten grass goes back to a sprout and regrows); **more drops when tall**; the hide mechanic: "I like the
+   hide mechanic idea, save this for later" (tall grass hiding a crouched player from animals/NPCs — Future).
+   Plan: a growth-stage property on the plant (a new property, default the full stage, so not breaking, ADR 0063),
+   stages and days per stage as data in grass.json, each stage's height from the block's look, the climate share
+   capping the top stage, drops per stage; one cell (≤ ~1 m) first, a two-cell top for the tallest climates later.
 
 15. **Realistic world** (owner 2026-11-11: "The realistic world should come from our systems (which may not be
    properly defined or built yet to support this) the seed should determine tectonic plates, rain shadow,
@@ -1548,6 +1556,9 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
   the in-game editor and a biome choice in the New world form.
 
 ## Future (needs owner answers)
+
+- **Tall grass hides you** (owner 2026-11-12: "I like the hide mechanic idea, save this for later."): tall grass
+  hides a crouched player from animals and NPCs (and deer bed down in it).
 
 - **Geography presets for Realistic worlds** (owner 2026-11-12: "Let's hold that for a possible future feature."):
   Mixed (today), Archipelago (oceanic plates only plus more hotspots: Hawaii-style chains and Japan-style arcs),
