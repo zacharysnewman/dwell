@@ -345,7 +345,15 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    hitches" — region maps built ahead of the player.
    Orbits by seed (REALISTIC_WORLD.md §8), owner 2026-11-12: orbits first, seasons after; "a great setting to have
    default with some presets. Like proposed ranges, fixed day, day varies, more extreme with hotter/colder."; the
-   moon's orbit by seed too (size kept); Realistic worlds only. O1–O3 in progress (cloud).
+   moon's orbit by seed too (size kept); Realistic worlds only ("We'll likely roll orbits out to regular worlds too,
+   but for now it's a good reference point to compare to."); q4/q5 open (the proposal's defaults). **O1–O2 built
+   (2026-11-12):** `shared/look/orbits.json` (presets Default, Day varies, Extreme; limits) → `orbits.gen.rs` and
+   `skyPresets.gen.ts`; `dwell-look` `orbits.rs` (`Orbit::roll`, `Orbit::today`, `day_night_for`); the optional
+   `CELESTIAL` world setting (0x86); the server rolls it at creation for a Sky preset (`--sky`, the browser's New
+   world → More options → Sky, shown for a world whose climate reads the sky, and `&sky=` on a `?worldgen=test:realistic`
+   link); the sky (server and clients) draws the world's orbit; default and starter today's sky exactly (golden).
+   Realistic is not in the World list yet (R6), so the Sky field shows once it is. **O3 not built** (the climate
+   reading the orbit needs it carried to the map workers): next.
 16. **Phone frame rate (P0)** (owner 2026-11-11, iPhone 17, Safari, setting Low: "I'm only getting ~23 fps on
    mobile, seeing lots of z-fighting on tree trunks with the leaf cards. What might be dropping frames since the
    last while. Used to get 60 fps"). Suspect: leaf cards are on in every tier but CPU, Low included; cards lying

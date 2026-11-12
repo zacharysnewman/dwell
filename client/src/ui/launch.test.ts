@@ -139,6 +139,7 @@ describe('where routes open', () => {
       mode: '',
       worldgen: '',
       size: '',
+      sky: '',
     });
     // New world → More options' World size (BIG_MAP.md M2b); the made world's route drops it.
     expect(launchOf('?new=1&name=Big&seed=1&type=terrain&size=2x')).toMatchObject({

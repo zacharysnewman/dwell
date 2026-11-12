@@ -320,6 +320,11 @@ pub struct ServerConfig {
     /// A new world's game mode (ADR 0065, `shared/modes/modes.json`; a name not there is the
     /// default, creative). A saved world keeps its own; one saved before modes is creative.
     pub mode: String,
+    /// A new world's Sky preset (`shared/look/orbits.json` `presets`, docs/proposals/REALISTIC_WORLD.md
+    /// §8): Some rolls the world's orbit from its seed at creation and saves it with the world
+    /// (`CELESTIAL`, its clock and moon's phase); None (the default and starter worlds), today's sky.
+    /// A name not there is the `default` preset. A saved world keeps its own.
+    pub sky: Option<String>,
     /// A new world's size (`dwell_protocol::world_size`, BIG_MAP.md M0): saved with it and sent at
     /// join (`WorldSettings` tag `WORLD_SIZE`). A saved world keeps its own; one saved before sizes
     /// is the default, today's. The generators don't read it yet (BIG_MAP.md M1–M2): only the
@@ -361,6 +366,7 @@ pub fn default_settings(water_speed: f64) -> WorldSettings {
         mode: dwell_protocol::modes::DEFAULT_MODE,
         size: dwell_protocol::world_size::WorldSize::DEFAULT,
         moon_phase: None,
+        orbit: None,
     }
 }
 
@@ -384,12 +390,21 @@ fn saved_world_size(
         })
 }
 
-/// A new world's settings under `config`: [`default_settings`] with its water speed and mode.
+/// A new world's settings under `config`: [`default_settings`] with its water speed and mode, and
+/// its orbit rolled from its seed when it has a Sky preset (REALISTIC_WORLD.md §8).
 fn new_world_settings(config: &ServerConfig) -> WorldSettings {
-    WorldSettings {
+    let s = WorldSettings {
         mode: dwell_protocol::modes::mode_or_default(&config.mode).name,
         size: config.world_size,
         ..default_settings(config.water_speed)
+    };
+    match &config.sky {
+        Some(name) => {
+            use dwell_look::orbits::{ORBITS, Orbit};
+            let preset = ORBITS.preset(name).unwrap_or(&ORBITS.presets[0]);
+            Orbit::roll(config.world_seed, preset, &ORBITS.limits).into_settings(s)
+        }
+        None => s,
     }
 }
 
@@ -428,6 +443,7 @@ impl Default for ServerConfig {
             growth_speed: 1.0,
             water: crate::water::host::Placement::Inline,
             mode: dwell_protocol::modes::DEFAULT_MODE.into(),
+            sky: None,
             world_size: dwell_protocol::world_size::WorldSize::DEFAULT,
             one_hit_breaks: false,
             chop2: dwell_protocol::chopping::CHOP2_DEFAULT,
@@ -1297,7 +1313,7 @@ impl Server {
         server.grids = grids::Grids::new(
             server.config.world_seed,
             dwell_world::WorldBounds::of(server.config.world_size).radius() as f64,
-            server.settings.moon_phase.map(f64::from),
+            dwell_look::celestial::Celestial::for_world(&server.settings),
             server.config.store.as_ref().map(|s| s.db().as_ref()),
         );
         server
@@ -4578,6 +4594,7 @@ impl Server {
                     mode: dwell_protocol::modes::DEFAULT_MODE,
                     size: dwell_protocol::world_size::WorldSize::DEFAULT,
                     moon_phase: None,
+                    orbit: None,
                     ..self.settings
                 };
                 match f.settings(before) {
