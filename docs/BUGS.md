@@ -461,7 +461,7 @@ face, or the placement check against its shape.
 
 ## Fixed
 
-### 97. `dwell-mesh`'s face-parity test fails on face B at a leaf card's packed normal (fixed after 0.54.173)
+### 98. `dwell-mesh`'s face-parity test fails on face B at a leaf card's packed normal (fixed after 0.54.173)
 
 Owner's brief, 2026-11-12: "`cargo test -p dwell-mesh` a_chunk_meshes_the_same_face_local_on_either_face::b fails on
 main (\"cutout plants\"), reported by two sessions." Suspected: 6578783's Tall grass density (a per-cell hash not
