@@ -1811,6 +1811,16 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    natural raft afloat is predicted without snaps, water beyond a wall of leaves stands as with none (both
    faces).
 
+46. **Animals easier to find, and more of them** (owner 2026-11-12: **"Im having a hard time finding animals, are they
+   visible from high up?"**). Today each face's island starts with 8 deer herds (6 head) and 2 wolf packs (4), caps 40
+   and 8; far herds are dots fading out by 700 m (wolves 550 m). Answers: **see herds from farther**, **more
+   animals**, **a way to find them for testing**, and **"Even more animals. What's a reasonable amount for a real
+   world this size?"** Real densities: deer ~5–20 per km² in good range, grey wolves ~1 per 50–100 km² (packs of
+   4–8). A face's island (~20–30 km radius, ~1,000–2,000 km² of land) would hold ~5,000–20,000 deer and 20–40 wolves
+   (4–8 packs). Plan: deer at the low end of real (~2–4/km² of grazing land, herds of 4–12: a few hundred herds,
+   capped by the grazing's carrying capacity), wolves at real (~1 per 60 km²: 4–8 packs), as data; far herds
+   visible to ~2.5 km and growing with distance; a test/dev command to list herds and go to the nearest.
+
 ## Future (needs owner answers)
 
 - **Waterlogging** (owner 2026-11-12: "Eventually we'll want to make it so some blocks if they don't move for a little
