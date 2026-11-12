@@ -1013,6 +1013,13 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    shots. It would help us too: our own agents could record through the same tools instead of bench scripts.
    Likely shape: a small local MCP server (stdio) that talks to the open game page over a local WebSocket the page
    opens only when the player turns it on; nothing reachable from outside the machine.
+   Owner, 2026-11-12: **"There may be a feature we need for theater mode that it uses the camera's position for
+   simulation, perhaps only available in creative mode. Sets us free from the player but can't be used for cheating
+   in adventure."** So: in creative (a mode ability as data), the theater camera becomes a simulation viewpoint —
+   the server streams chunks and LOD around it, spawns and simulates creatures and NPCs near it, and runs the near
+   ecology and water there — so a shot can be far from the player's body; in adventure the world stays centred on
+   the body and the camera only sees what's already loaded near the player (no scouting). The server accepts the
+   viewpoint only where the world's mode allows it.
 
 ## Done
 
