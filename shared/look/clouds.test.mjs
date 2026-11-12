@@ -60,10 +60,38 @@ test("bad entries fail with their path named", () => {
     [(d) => (d.shape.wrapM = 2 * d.shape.scaleM), /at least 4 × shape\.scaleM/],
     [(d) => (d.deck.fadeEndM = 10), /fadeEndM must be greater/],
     [(d) => (d.volume.topM = d.volume.baseM), /volume\.topM must be greater/],
+    [(d) => (d.form.baseTileM = 3000), /whole multiple of form\.baseTileM/],
+    [(d) => (d.form.baseSize = 48), /form\.baseSize must be a power of two/],
     [
-      (d) => (d.volume.detailCellM = 300),
-      /whole multiple of volume\.detailCellM/,
+      (d) => (d.tiers.medium.nearSteps = 2),
+      /tiers\.medium\.nearSteps must be at least its steps/,
     ],
+    [
+      (d) => (d.tiers.medium.nearDivisor = 4) && (d.tiers.medium.divisor = 2),
+      /tiers\.medium\.nearDivisor must not exceed its divisor/,
+    ],
+    [
+      (d) => (d.tiers.low.nearSteps = 4),
+      /tiers\.low\.nearSteps must be 0 on a tier with no steps/,
+    ],
+    [(d) => (d.cloudTypes = []), /cloudTypes must be a list of 1 to 8/],
+    [
+      (d) => (d.cloudTypes[1].at = d.cloudTypes[0].at),
+      /cloudTypes\[1\]\.at must be greater/,
+    ],
+    [
+      (d) => (d.cloudTypes[2].top = [0.5, 0.4]),
+      /cloudTypes\[2\]\.top must be \[from, to\]/,
+    ],
+    [
+      (d) => (d.cloudTypes[2].top = [0.01, 0.4]),
+      /cloudTypes\[2\]\.top must start at or above the end of its base/,
+    ],
+    [
+      (d) => (d.cloudTypes[3].name = d.cloudTypes[0].name),
+      /cloudTypes\[3\]\.name stratus is used twice/,
+    ],
+    [(d) => (d.cloudTypes[0].hail = 1), /unknown entry cloudTypes\[0\]\.hail/],
     [
       (d) => (d.tiers.high.steps = 65),
       /tiers\.high\.steps must be a number in \[0, 64\]/,
@@ -168,6 +196,7 @@ test("a plume and a tier added by data reach the Rust", () => {
   const d = data();
   d.plumes.push(ASH);
   d.tiers.high.steps = 32;
+  d.tiers.high.nearSteps = 40;
   const rs = cloudsRust(validateClouds(d));
   assert.match(rs, /name: "test:ash",/);
   assert.match(rs, /radius_m: 200\.0,/);
@@ -185,4 +214,27 @@ test("the plume slots, a tier's plume samples and a source's look by data reach 
   assert.match(rs, /plume_slots: 12,/);
   assert.match(rs, /plume_steps: 3,/);
   assert.match(rs, /height_m: 250\.0,/);
+});
+
+test("a cloud type and the weather by data reach the Rust", () => {
+  const d = data();
+  d.cloudTypes.push({
+    name: "test:tower",
+    at: 1,
+    base: [0, 0.05],
+    top: [0.9, 1],
+    anvil: 0.5,
+    density: 2,
+    darkening: 0.5,
+  });
+  d.cloudTypes[3].at = 0.9;
+  d.weather.precipitation = 0.25;
+  d.tiers.medium.nearDivisor = 1;
+  const rs = cloudsRust(validateClouds(d));
+  assert.match(
+    rs,
+    /name: "test:tower",\n\s+at: 1\.0,\n\s+base: \[0\.0, 0\.05\],\n\s+top: \[0\.9, 1\.0\],/,
+  );
+  assert.match(rs, /precipitation: 0\.25,/);
+  assert.match(rs, /near_divisor: 1,/);
 });

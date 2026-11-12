@@ -8,6 +8,7 @@ pub mod ambient;
 pub mod atmosphere;
 pub mod bloom;
 pub mod celestial;
+pub mod cloud_noise;
 pub mod clouds;
 #[path = "clouds.gen.rs"]
 mod clouds_gen;

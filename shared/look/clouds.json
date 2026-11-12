@@ -44,12 +44,9 @@
     "topLight": 0.9
   },
   "volume": {
-    "$comment": "The volumetric layer (docs/CLOUDS.md §8): ray-marched between baseM and topM above sea level on the viewer's face, when the Clouds setting's tier has steps (tiers). Density: the deck's 2D shape as a weather map (the coverage) its coverage cut rising with height (rounded tops over flat bases; topFloor: how far up the layer a cloud of the cutoff's density reaches, the densest the top), eroded by 3D value noise of detailCellM cells (scaleM must be a whole multiple of it) by detailErosion. extinction: the light lost per metre at density 1. maxDistanceM: the march's reach along the ray (the deck's fade still hazes it). Against the scene (§8.9): each texel marches only to the farthest scene pixel under it, and the composite takes a texel's cloud at a pixel where the texel ended within a band of the pixel's scene: the texel's depth range, at least depthBand and at most depthBandRange of the distance (soft out to twice the band). plumeBillow: how much rising 3D noise (cells the plume's own width, scrolled up at its riseMps) breaks a plume's density up (0: smooth). The light (§8.8): each sample is the sun's (or moon's) light plus the ambient. Sun: the tier's lightSteps samples toward the light, the first lightStepM long and each lightStepGrowth times the last (4 cover the layer's depth), give the optical depth; Beer's law over it (light.absorption), with multiScatter the floor of light that still reaches deep inside (a wider, weaker Beer for light scattered many times), a powder term (powder: thin edges facing away from the light a little darker), a dual-lobe Henyey–Greenstein phase (phaseForward the forward lobe's g: the silver lining toward the light, phaseBack the back lobe's g, phaseBackWeight its share, phaseStrength how much the phase shapes the light, 0: even all round) times sunStrength. Ambient: the shade colour (the sky's light) from above, skyAmbient at a cloud's top, dimming with the cloud above the sample (half every ambientDepthM × ln 2 of cloud), and groundBounce of it tinted by bounceTint from below, dimming with the cloud under the sample: so bases are darker than tops. With no light samples the cloud above the sample stands for the light's path.",
+    "$comment": "The volumetric layer (docs/CLOUDS.md §8): ray-marched between baseM and topM above sea level on the viewer's face, when the Clouds setting's tier has steps (tiers). Density: the shape model (form, weather, cloudTypes; docs/CLOUDS.md §9). nearM: within this of the layer (or inside it) a tier marches with its nearSteps at its nearDivisor (BUGS.md #90). extinction: the light lost per metre at density 1. maxDistanceM: the march's reach along the ray (the deck's fade still hazes it). Against the scene (§8.9): each texel marches only to the farthest scene pixel under it, and the composite takes a texel's cloud at a pixel where the texel ended within a band of the pixel's scene: the texel's depth range, at least depthBand and at most depthBandRange of the distance (soft out to twice the band). plumeBillow: how much rising 3D noise (cells the plume's own width, scrolled up at its riseMps) breaks a plume's density up (0: smooth). The light (§8.8): each sample is the sun's (or moon's) light plus the ambient. Sun: the tier's lightSteps samples toward the light, the first lightStepM long and each lightStepGrowth times the last (4 cover the layer's depth), give the optical depth; Beer's law over it (light.absorption), with multiScatter the floor of light that still reaches deep inside (a wider, weaker Beer for light scattered many times), a powder term (powder: thin edges facing away from the light a little darker), a dual-lobe Henyey–Greenstein phase (phaseForward the forward lobe's g: the silver lining toward the light, phaseBack the back lobe's g, phaseBackWeight its share, phaseStrength how much the phase shapes the light, 0: even all round) times sunStrength. Ambient: the shade colour (the sky's light) from above, skyAmbient at a cloud's top, dimming with the cloud above the sample (half every ambientDepthM × ln 2 of cloud), and groundBounce of it tinted by bounceTint from below, dimming with the cloud under the sample: so bases are darker than tops. With no light samples the cloud above the sample stands for the light's path.",
     "baseM": 1350,
-    "topM": 2700,
-    "topFloor": 0.4,
-    "detailCellM": 256,
-    "detailErosion": 0.55,
+    "topM": 4500,
     "extinction": 0.006,
     "lightStepM": 160,
     "lightStepGrowth": 1.6,
@@ -67,30 +64,95 @@
     "maxDistanceM": 22000,
     "depthBand": 0.03,
     "depthBandRange": 0.15,
-    "plumeBillow": 0.6
+    "plumeBillow": 0.6,
+    "nearM": 600
   },
+  "form": {
+    "$comment": "The clouds' shape (docs/CLOUDS.md §9, after Schneider's Nubis): tiling 3D noise baked once when a volume tier first draws (in the job workers): the base texture baseSize³ (RGBA8: a Perlin-Worley and three octaves of Worley fBm) repeating every baseTileM, the detail texture detailSize³ (a finer Worley fBm, the curl across, a blue-noise tile for the march's jitter) repeating every detailTileM (the curl's field every curlTileM). Base shape: remap(Perlin-Worley, -(1 - Worley fBm), 1) × the cloud type's height profile, then remap(·, 1 - cover, 1) × cover, the weather map's cover (the deck's noise soft-cut by the coverage over coverageSoftness). Edges eroded by the detail fBm × detailErosion (the core stays), the fBm inverted above wispHeight of the layer (wispy bases, billowy tops) and its point moved by the curl up to curlM metres (most at the base). shear: how far (m) the shape leans downwind per metre up (wind.directionDeg). The tiles must divide shape.wrapM.",
+    "baseSize": 64,
+    "detailSize": 32,
+    "baseTileM": 4096,
+    "detailTileM": 512,
+    "curlTileM": 2048,
+    "curlM": 90,
+    "detailErosion": 0.4,
+    "wispHeight": 0.12,
+    "shear": 0.25,
+    "coverageSoftness": 0.3
+  },
+  "weather": {
+    "$comment": "The weather map (docs/CLOUDS.md §9.2), per column from the deck's noise: cover (the deck's coverage, soft-cut over form.coverageSoftness), the cloud type (0-1 along cloudTypes' at: type, plus typeFromCoverage × how far the column's noise is past the coverage's cut, so a cloud's core towers higher than its edges, plus typeVariation × a second noise, -1 to 1) and precipitation (0-1: thicker, darker cloud, × each type's darkening at its base). A weather system will drive these at run time; today they are the data's.",
+    "type": 0.42,
+    "typeVariation": 0.18,
+    "typeFromCoverage": 0.9,
+    "precipitation": 0.0
+  },
+  "cloudTypes": [
+    {
+      "name": "stratus",
+      "at": 0.0,
+      "base": [0.0, 0.02],
+      "top": [0.04, 0.1],
+      "anvil": 0.0,
+      "density": 0.6,
+      "darkening": 0.2
+    },
+    {
+      "name": "stratocumulus",
+      "at": 0.3,
+      "base": [0.0, 0.03],
+      "top": [0.08, 0.2],
+      "anvil": 0.0,
+      "density": 0.8,
+      "darkening": 0.3
+    },
+    {
+      "name": "cumulus",
+      "at": 0.6,
+      "base": [0.0, 0.04],
+      "top": [0.15, 0.42],
+      "anvil": 0.0,
+      "density": 1.0,
+      "darkening": 0.4
+    },
+    {
+      "name": "cumulonimbus",
+      "at": 1.0,
+      "base": [0.0, 0.03],
+      "top": [0.82, 0.97],
+      "anvil": 0.8,
+      "density": 1.4,
+      "darkening": 0.8
+    }
+  ],
   "tiers": {
-    "$comment": "Per Clouds setting value: the march's steps per pixel (0: the 2D deck, as before), the light samples per step toward the sun or moon (0-6; 0: the cloud above the sample stands for the light's path), the march's resolution divisor (1 full, 2 half, 4 quarter: the march draws into a buffer that size, accumulated over frames and upsampled by the composite) and how much of each new frame goes into the accumulated picture (historyBlend: lower is smoother, slower to follow). The CPU adapter draws no clouds (clouds_for). plumeSteps: the samples through each plume the ray crosses (0: no plumes; docs/CLOUDS.md §8.7).",
+    "$comment": "Per Clouds setting value: the march's steps per pixel (0: the 2D deck, as before), the light samples per step toward the sun or moon (0-6; 0: the cloud above the sample stands for the light's path), the march's resolution divisor (1 full, 2 half, 4 quarter: the march draws into a buffer that size, accumulated over frames and upsampled by the composite) and how much of each new frame goes into the accumulated picture (historyBlend: lower is smoother, slower to follow). The CPU adapter draws no clouds (clouds_for). plumeSteps: the samples through each plume the ray crosses (0: no plumes; docs/CLOUDS.md §8.7). nearSteps/nearDivisor: the steps and divisor while the eye is within volume.nearM of the layer or in it (more samples and resolution where the clouds are close: BUGS.md #90); at least steps, at most divisor.",
     "high": {
       "steps": 16,
       "lightSteps": 6,
       "divisor": 2,
       "historyBlend": 0.2,
-      "plumeSteps": 8
+      "plumeSteps": 8,
+      "nearSteps": 24,
+      "nearDivisor": 1
     },
     "medium": {
       "steps": 10,
       "lightSteps": 4,
       "divisor": 4,
       "historyBlend": 0.2,
-      "plumeSteps": 6
+      "plumeSteps": 6,
+      "nearSteps": 16,
+      "nearDivisor": 2
     },
     "low": {
       "steps": 0,
       "lightSteps": 0,
       "divisor": 1,
       "historyBlend": 1,
-      "plumeSteps": 0
+      "plumeSteps": 0,
+      "nearSteps": 0,
+      "nearDivisor": 1
     }
   },
   "plumeSlots": 8,
