@@ -68,23 +68,95 @@ pub(crate) fn plane_axes(axis: usize) -> (usize, usize) {
     ((axis + 1) % 3, (axis + 2) % 3)
 }
 
-/// The height field of a face's marks, in the face's (u, v) metres (`relief::Carve`).
+/// The height field of a face's marks at damage `fraction`, the look's own size grown with it
+/// (`relief::Carve`; the shape alone: [`carve_for`] sizes it to the bite rule's volume).
+#[cfg(test)]
 pub(crate) fn carve_of(face: usize, marks: &[&HitMark], look: &DamageLook, fraction: f64) -> Carve {
+    let grow = 0.55 + 0.45 * fraction;
+    carve_sized(face, marks, look, grow, grow, 0.45)
+}
+
+/// How deep a carve may go, as a share of the cell along the face's normal.
+pub(crate) const DEEPEST: f64 = 0.9;
+
+/// The volume (m³) a face's carve takes out: its height field integrated over the face.
+pub(crate) fn carve_volume(face: usize, carve: &Carve) -> f64 {
+    const S: usize = 64;
+    let (u, v) = plane_axes(face / 2);
+    let (eu, ev) = (ext(u), ext(v));
+    let (du, dv) = (eu / S as f64, ev / S as f64);
+    let mut sum = 0.0;
+    for i in 0..S {
+        for j in 0..S {
+            sum -= carve.height([(i as f64 + 0.5) * du, (j as f64 + 0.5) * dv]);
+        }
+    }
+    sum * du * dv
+}
+
+/// The height field of a face's marks carving exactly `target_m3` (the bite rule: its share of
+/// [`dwell_protocol::damage::carved_m3`]; WORK_QUEUE item 18, BLOCK_DAMAGE.md §10): the look's
+/// shape (its `size`, `depth`, profile), deepened to the volume, and once as deep as
+/// [`DEEPEST`] allows, widened.
+pub(crate) fn carve_for(
+    face: usize,
+    marks: &[&HitMark],
+    look: &DamageLook,
+    target_m3: f64,
+) -> Carve {
+    let (mut r, mut d) = (1.0, 1.0);
+    let mut carve = carve_sized(face, marks, look, r, d, DEEPEST);
+    if target_m3 <= 0.0 {
+        return carve_sized(face, marks, look, r, 0.0, DEEPEST);
+    }
+    let cap = DEEPEST * ext(face / 2);
+    for _ in 0..24 {
+        let got = carve_volume(face, &carve);
+        if got <= 0.0 {
+            break;
+        }
+        let ratio = target_m3 / got;
+        if (ratio - 1.0).abs() < 0.01 {
+            break;
+        }
+        if ratio > 1.0 && carve.depth() >= cap * 0.999 {
+            // As deep as it goes: wider (a face's worth at most).
+            r = (r * ratio.sqrt()).min(4.0 / look.size);
+        } else {
+            d *= ratio;
+        }
+        carve = carve_sized(face, marks, look, r, d, DEEPEST);
+    }
+    carve
+}
+
+/// The height field of a face's marks with the look's radius × `rmul` and depth × `dmul`, each mark
+/// weighed by its chunk (its bite against the others'), no deeper than `deepest` of the cell.
+fn carve_sized(
+    face: usize,
+    marks: &[&HitMark],
+    look: &DamageLook,
+    rmul: f64,
+    dmul: f64,
+    deepest: f64,
+) -> Carve {
     let axis = face / 2;
     let (u, v) = plane_axes(axis);
     let (eu, ev) = (ext(u), ext(v));
-    let grow = 0.55 + 0.45 * fraction;
-    let radius = 0.5 * look.size * grow;
-    let depth = look.depth * grow;
-    // Each mark scaled by its chunk (a metal tool's ×2, `HitMark::chunk`; owner, 2026-11-12:
-    // "break double sized bigger chunks off"), its depth kept inside the cell.
-    let deepest = 0.45 * ext(axis);
-    let sized = |m: &HitMark| (radius * m.scale(), (depth * m.scale()).min(deepest));
+    let radius = 0.5 * look.size * rmul;
+    let depth = look.depth * dmul;
+    // Each mark scaled by its chunk (its bite against the others', `HitMark::chunk`), its depth
+    // kept inside the cell.
+    let deepest = deepest * ext(axis);
+    let mean =
+        marks.iter().take(4).map(|m| m.scale()).sum::<f64>() / marks.len().clamp(1, 4) as f64;
+    let rel = |m: &HitMark| m.scale() / mean.max(1e-6);
+    let sized = |m: &HitMark| (radius * rel(m), (depth * rel(m)).min(deepest));
     // The soils' merged hollow has one radius: its biggest mark's.
     let big = marks
         .iter()
         .take(4)
-        .map(|m| m.scale())
+        .map(|m| rel(m))
         .fold(0.0, f64::max)
         .max(1.0);
     let (bowl_r, bowl_d) = (radius * big, (depth * big).min(deepest));
@@ -739,15 +811,13 @@ mod tests {
                     f == FaceFrame::B,
                 );
                 let ms: Vec<_> = v.marks.iter().collect();
-                let carve = carve_of(2, &ms, &look, 1.0);
+                // The bite rule's volume at the break (one mark: all of it on the top).
+                let carve = carve_for(2, &ms, &look, dwell_protocol::damage::carved_m3(block, 1.0));
                 let top = f64::from(local[1] + 1);
                 let mut deepest: f64 = 0.0;
-                for p in pts
-                    .iter()
-                    .filter(|p| p[1] > top - 0.5 * look.depth / CELL_H - 0.5)
-                {
-                    // A top vertex (y near the top, not a side's lower ones).
-                    if p[1] < top - 0.45 {
+                for p in &pts {
+                    // A top vertex (y near the top, not the bottom's).
+                    if p[1] < top - 0.95 {
                         continue;
                     }
                     let below = (top - p[1]) * CELL_H;
@@ -762,52 +832,93 @@ mod tests {
                     deepest = deepest.max(below);
                 }
                 assert!(
-                    deepest > 0.8 * look.depth && deepest <= look.depth + 1e-6,
-                    "{block}: as deep as its data: {deepest} of {}",
-                    look.depth
+                    deepest > 0.05 && deepest <= DEEPEST * CELL_H + 1e-6,
+                    "{block}: as deep as its bite, inside the cell: {deepest} of {}",
+                    carve.depth()
                 );
             }
         }
     );
 
+    #[test]
+    fn the_bite_rules_cell_is_the_worlds() {
+        // face-a-only: a volume.
+        assert_eq!(dwell_protocol::damage::CELL_M3, CELL_H);
+    }
+
     dwell_world::both_faces!(
-        /// A metal tool's hit takes off a piece twice the size (owner, 2026-11-12: metal tools
-        /// "break double sized bigger chunks off"; `HitMark::chunk` 32): the carve into the top is
-        /// twice as wide and twice as deep as a stone tool's, for a soil's bowl and stone's spall,
-        /// face-locally on both faces.
-        fn a_metal_tools_mark_is_twice_the_size_of_a_stone_tools(f: FaceFrame) {
+        /// The bite rule (owner, 2026-11-12: "the chunks that fly off and show chunked off the
+        /// blocks should be equivalent to 50% of the block's volume / number of swings required
+        /// to break it"): after k of a block's n hits with a tool, the meshed cell has lost
+        /// k × 0.5 × V ÷ n (its closed mesh's volume, within 8 %: the mesh's grid against the field), half at the break;
+        /// a metal pickaxe's 3 hits bite 5/3 of the stone one's 5; on both faces.
+        fn the_carve_removes_half_the_block_over_its_hits_k_bites_after_k_hits(f: FaceFrame) {
             let local = [3, 5, 4];
             let py = |y: u8| if f == FaceFrame::B { 255 - y } else { y };
-            let top = f64::from(local[1] + 1);
-            // The deepest point below the top and the carve's width along x (m).
-            let measure = |block: &str, chunk: u8| -> (f64, f64) {
-                let (pts, _) = mesh_sized(f, block, local, &[(2u8, [128, py(255), 128])], 0, chunk);
-                let cut: Vec<_> = pts
+            let spots = [
+                [128, 255, 128],
+                [70, 255, 90],
+                [180, 255, 170],
+                [100, 255, 190],
+            ];
+            let cell = CELL_H;
+            let carved = |block: &str, k: u32, n: u32| -> f64 {
+                let marks: Vec<_> = spots
                     .iter()
-                    .filter(|p| p[1] > top - 0.45 && (top - p[1]) * CELL_H > 1e-4)
+                    .cycle()
+                    .take(k.min(4) as usize)
+                    .map(|p| (2u8, [p[0], py(p[1]), p[2]]))
                     .collect();
-                assert!(!cut.is_empty(), "{block}: carved");
-                let deepest = cut
+                let frac = (255.0 * f64::from(k) / f64::from(n)).round() as u8;
+                let (pts, tris) = mesh_sized(f, block, local, &marks, frac, HitMark::ONE);
+                // The closed mesh's volume (divergence theorem), y in cells.
+                let v: f64 = tris
                     .iter()
-                    .map(|p| (top - p[1]) * CELL_H)
-                    .fold(0.0, f64::max);
-                let (lo, hi) = cut.iter().fold((f64::MAX, f64::MIN), |(lo, hi), p| {
-                    (lo.min(p[0]), hi.max(p[0]))
-                });
-                (deepest, hi - lo)
+                    .map(|t| {
+                        let [a, b, c] = t.map(|i| pts[i as usize]);
+                        let bc = [
+                            b[1] * c[2] - b[2] * c[1],
+                            b[2] * c[0] - b[0] * c[2],
+                            b[0] * c[1] - b[1] * c[0],
+                        ];
+                        (a[0] * bc[0] + a[1] * bc[1] + a[2] * bc[2]) / 6.0
+                    })
+                    .sum::<f64>()
+                    .abs()
+                    * cell;
+                cell - v
             };
-            for block in ["dwell:dirt", "dwell:stone"] {
-                let (d1, w1) = measure(block, HitMark::ONE);
-                let (d2, w2) = measure(block, 2 * HitMark::ONE);
-                assert!(
-                    (d2 / d1 - 2.0).abs() < 0.1,
-                    "{block}: twice as deep: {d2} against {d1}"
+            for (block, tool, n) in [
+                ("dwell:dirt", "dwell:wooden_shovel", 5),
+                ("dwell:dirt", "dwell:metal_shovel", 3),
+                ("dwell:stone", "dwell:stone_pickaxe", 5),
+                ("dwell:stone", "dwell:metal_pickaxe", 3),
+            ] {
+                assert_eq!(
+                    dwell_protocol::damage::hits_to_break(block, Some(tool)),
+                    Some(n)
                 );
+                let bite = dwell_protocol::damage::bite_m3_of(block, Some(tool)).unwrap();
+                for k in 1..n {
+                    let got = carved(block, k, n);
+                    let want = f64::from(k) * bite;
+                    assert!(
+                        (got - want).abs() < 0.08 * want,
+                        "{block} {tool}: {k} of {n} hits carved {got:.4} m³, the rule {want:.4}"
+                    );
+                }
+                let at_break = carved(block, n, n);
                 assert!(
-                    w2 / w1 > 1.6 && w2 / w1 < 2.4,
-                    "{block}: about twice as wide: {w2} against {w1}"
+                    (at_break - 0.5 * cell).abs() < 0.08 * 0.5 * cell,
+                    "{block} {tool}: half the block at the break: {at_break:.4}"
                 );
             }
+            let one = |tool| carved("dwell:stone", 1, if tool == "metal" { 3 } else { 5 });
+            let r = one("metal") / one("stone");
+            assert!(
+                (r - 5.0 / 3.0).abs() < 0.12,
+                "a metal bite 5/3 of a stone one: {r}"
+            );
         }
     );
 

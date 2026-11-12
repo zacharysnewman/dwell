@@ -1,12 +1,13 @@
-//! A hit's flying stone fragments (docs/BLOCK_DAMAGE.md §6.4, WORK_QUEUE item 18: "elongated low
-//! poly shards"): `damage.chips.shards` real 3D pieces a pickaxe hit flings out of the struck face,
-//! each the rock shard's `shard` look at half size (6 triangles), tumbling under gravity and gone
+//! A hit's flying pieces (docs/BLOCK_DAMAGE.md §6.4, §10; WORK_QUEUE item 18): `chips.shards` real
+//! 3D pieces a hit flings out of the struck face (stone's elongated shards, soil's clods, the axe's
+//! wood chips), each its `chips.piece` item's look scaled so that together they are the hit's bite
+//! (the bite rule: 0.5 × the block's volume ÷ its hits to break), tumbling under gravity and gone
 //! after [`LIFE_S`]. Draw-only, through the pieces' renderer (no physics, no item): the one
 //! picked-up shard a hit drops is the server's loose item. None on a CPU adapter; half on a phone.
 //!
 //! Face-local: they fall toward the face's ground (`FaceFrame`).
 
-use dwell_protocol::chopping::BLOCK_DAMAGE;
+use dwell_protocol::chopping::{BLOCK_DAMAGE, Chips, WOODS};
 use dwell_world::FaceFrame;
 
 /// The fragments' ids in the pieces' renderer: under the loose items' (0xC000_0000), over bodies'.
@@ -17,8 +18,6 @@ pub const MAX: u32 = 48;
 pub const LIFE_S: f64 = 1.0;
 /// Gravity on a fragment (m/s²), toward the face's ground.
 const GRAVITY: f64 = 9.0;
-/// A fragment's size against the rock shard item's.
-pub const SCALE: f32 = 0.5;
 
 /// One fragment in flight.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -64,11 +63,7 @@ impl HitShards {
     /// How many fragments a hit on `block` (by name) flings: its data's, none on a CPU adapter,
     /// half (at least one) on a phone, then the Hit shards setting's share of that.
     pub fn count_of(&self, block: &str) -> usize {
-        let n = BLOCK_DAMAGE
-            .iter()
-            .find(|d| d.block == block)
-            .and_then(|d| d.chips)
-            .map_or(0, |c| c.shards as usize);
+        let n = chips_of(block).map_or(0, |c| c.shards as usize);
         let n = if self.cpu || n == 0 {
             0
         } else if self.phone {
@@ -91,11 +86,7 @@ impl HitShards {
         let n = self.count_of(block);
         let f = FaceFrame::at_height(point[1]);
         let nl = f.vector(normal);
-        let speed = BLOCK_DAMAGE
-            .iter()
-            .find(|d| d.block == block)
-            .and_then(|d| d.chips)
-            .map_or(2.5, |c| c.speed);
+        let speed = chips_of(block).map_or(2.5, |c| c.speed);
         let seed = (point[0] * 977.0) as i32 as u32
             ^ ((point[1] * 613.0) as i32 as u32).wrapping_mul(0x85eb_ca6b)
             ^ ((point[2] * 331.0) as i32 as u32).wrapping_mul(0xc2b2_ae35)
@@ -163,16 +154,66 @@ impl HitShards {
     }
 }
 
-/// A fragment's meshes: the rock shard item's look at [`SCALE`] (6 triangles), face-mirrored as
-/// the loose item is.
-pub fn fragment_meshes(face: FaceFrame) -> Option<(Vec<dwell_mesh::ChunkMeshes>, f64)> {
-    let (mut meshes, size) = crate::loose_items::item_meshes("dwell:rock_shard", face)?;
-    for m in &mut meshes {
-        for p in m.opaque.positions.iter_mut() {
-            *p *= SCALE;
+/// The chips data of a block hit or a wood chopped (its `damage.chips`, or the wood's `chips`).
+pub fn chips_of(block: &str) -> Option<Chips> {
+    BLOCK_DAMAGE
+        .iter()
+        .find(|d| d.block == block)
+        .and_then(|d| d.chips)
+        .or_else(|| {
+            WOODS
+                .iter()
+                .find(|w| w.block == block || w.fell_wedge == Some(block))
+                .map(|w| w.chips)
+        })
+}
+
+/// A closed mesh's volume (m³; the divergence theorem over its opaque triangles).
+pub fn mesh_volume(meshes: &[dwell_mesh::ChunkMeshes]) -> f64 {
+    let mut v = 0.0;
+    for m in meshes {
+        let p = |i: u32| {
+            let i = i as usize * 3;
+            let q = &m.opaque.positions;
+            [f64::from(q[i]), f64::from(q[i + 1]), f64::from(q[i + 2])]
+        };
+        for t in m.opaque.indices.chunks_exact(3) {
+            let (a, b, c) = (p(t[0]), p(t[1]), p(t[2]));
+            v += (a[0] * (b[1] * c[2] - b[2] * c[1])
+                + a[1] * (b[2] * c[0] - b[0] * c[2])
+                + a[2] * (b[0] * c[1] - b[1] * c[0]))
+                / 6.0;
         }
     }
-    Some((meshes, size * f64::from(SCALE)))
+    v.abs()
+}
+
+/// The linear scale on `block`'s piece look that makes its data's `shards` pieces total
+/// `bite_m3` (the bite rule; BLOCK_DAMAGE.md §10): ∛(bite ÷ (count × the look's volume)).
+pub fn piece_scale(block: &str, bite_m3: f64, unit_m3: f64) -> f64 {
+    let n = chips_of(block).map_or(0, |c| c.shards);
+    if n == 0 || unit_m3 <= 0.0 {
+        return 0.0;
+    }
+    (bite_m3 / (f64::from(n) * unit_m3)).cbrt()
+}
+
+/// A hit's pieces' meshes: `block`'s piece item's look scaled so its data's `shards` of them total
+/// `bite_m3`, face-mirrored as the loose item is; none for a block without pieces.
+pub fn fragment_meshes(
+    block: &str,
+    bite_m3: f64,
+    face: FaceFrame,
+) -> Option<(Vec<dwell_mesh::ChunkMeshes>, f64)> {
+    let piece = chips_of(block)?.piece;
+    let (mut meshes, size) = crate::loose_items::item_meshes(piece, face)?;
+    let k = piece_scale(block, bite_m3, mesh_volume(&meshes));
+    for m in &mut meshes {
+        for p in m.opaque.positions.iter_mut() {
+            *p *= k as f32;
+        }
+    }
+    Some((meshes, size * k))
 }
 
 #[cfg(test)]
@@ -218,8 +259,53 @@ mod tests {
         }
     );
 
+    /// The bite rule (owner, 2026-11-12): a hit's pieces together are its bite, 0.5 × the block's
+    /// volume ÷ its hits to break, for stone's shards, soil's clods and the axe's wood chips; the
+    /// metal pickaxe's 3 hits' pieces are 5/3 of the stone one's 5 hits'.
     #[test]
-    fn none_on_a_cpu_adapter_half_on_a_phone_none_from_soil() {
+    fn a_hits_pieces_total_its_bite() {
+        // face-a-only: volumes, the same mirrored (a mirror keeps a volume).
+        use dwell_protocol::damage::bite_m3_of;
+        let total = |block: &str, bite: f64| {
+            let n = f64::from(chips_of(block).unwrap().shards);
+            let (m, _) = fragment_meshes(block, bite, FaceFrame::A).expect("pieces");
+            n * mesh_volume(&m)
+        };
+        for (block, tool) in [
+            ("dwell:stone", "dwell:stone_pickaxe"),
+            ("dwell:stone", "dwell:metal_pickaxe"),
+            ("dwell:dirt", "dwell:wooden_shovel"),
+            ("dwell:grass", "dwell:metal_shovel"),
+        ] {
+            let bite = bite_m3_of(block, Some(tool)).unwrap();
+            let got = total(block, bite);
+            assert!(
+                (got - bite).abs() < 1e-3 * bite,
+                "{block} {tool}: {got} vs {bite}"
+            );
+        }
+        let log = dwell_protocol::chopping::wood("dwell:log").unwrap();
+        let axe = dwell_protocol::chopping::tool("dwell:stone_axe").unwrap();
+        let bite = dwell_protocol::chopping::chop_bite_m3(axe, log);
+        assert!(
+            (total("dwell:log", bite) - bite).abs() < 1e-3 * bite,
+            "wood chips"
+        );
+        // Bigger, not more: the same count, each ∛(5/3) the size.
+        let s = |t| bite_m3_of("dwell:stone", Some(t)).unwrap();
+        let (a, b) = (
+            fragment_meshes("dwell:stone", s("dwell:metal_pickaxe"), FaceFrame::A)
+                .unwrap()
+                .1,
+            fragment_meshes("dwell:stone", s("dwell:stone_pickaxe"), FaceFrame::A)
+                .unwrap()
+                .1,
+        );
+        assert!((a / b - (5.0f64 / 3.0).cbrt()).abs() < 1e-6, "{a} {b}");
+    }
+
+    #[test]
+    fn none_on_a_cpu_adapter_half_on_a_phone_none_without_data() {
         // face-a-only: counts, before anything face-dependent.
         let n = HitShards::default().count_of("dwell:stone");
         let cpu = HitShards {
@@ -232,7 +318,7 @@ mod tests {
         };
         assert_eq!(cpu.count_of("dwell:stone"), 0);
         assert_eq!(phone.count_of("dwell:stone"), n.div_ceil(2));
-        assert_eq!(HitShards::default().count_of("dwell:dirt"), 0);
+        assert_eq!(HitShards::default().count_of("dwell:sky"), 0);
     }
 
     #[test]

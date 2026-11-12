@@ -6,6 +6,16 @@ pins it.
 
 ## Open
 
+### 97. Light shafts draw a pixelated dither pattern
+
+Owner, 2026-11-12 (screenshot: low sun behind clouds, a tree in front): "Volumetric lighting also has some weird
+dithering where the light shafts look pixelated. Not sure if this is a bug, a blending problem, or something else."
+A fine diagonal crosshatch covers the trees, ground and sky around the sun, strongest in the shafts behind the tree.
+Suspects: the light-shaft pass marches at reduced resolution with a per-pixel dither (interleaved gradient or a
+Bayer pattern) and is composited without a blur, temporal accumulation or a depth-aware upsample, so the dither
+pattern itself shows; or its accumulation's history is rejected every frame. Fix like #90's clouds: blue-noise
+jitter, temporal accumulation with a clamped history, a depth-aware (bilateral) blur/upsample.
+
 ### 96. Villagers' faces are jet black, not their skin colour
 
 Owner, 2026-11-12: "Why do all the villagers look like their faces are jet black? Not even matching the rest of
