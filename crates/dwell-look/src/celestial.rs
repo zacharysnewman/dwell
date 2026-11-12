@@ -58,12 +58,39 @@ fn unit(a: V3) -> V3 {
 /// Grid cells a side over the disc for [`disc_lit`]'s average.
 const DISC_CELLS: usize = 24;
 
+/// The moon's light at one point of its disc (sky.wgsl `dwell_moon` draws the same): `shape` the
+/// disc's smooth normal there (flat blended `moon.domeBias` toward a ball's), `n` that normal tilted
+/// by the baked slopes, `sun` toward the sun, all in the disc's frame (z toward the viewer). Blended
+/// `lunar` (`moon.lunarLambert`) from Lambert (N·L: a ball darkens toward its limb even at full) to
+/// Lommel-Seeliger, the regolith's law (2 μ₀ / (μ₀ + μ) over the smooth shape, eased past 1: lit
+/// evenly to its edge where it faces the sun, dark past the terminator), the slopes' shading kept
+/// as N·L over the shape's. Owner, 2026-11-12: "The moon looks smaller I think compared to the old
+/// moon?": the Lambert ball's bright part at full ends at 0.87 of the disc's radius.
+pub fn moon_shade(shape: V3, n: V3, sun: V3, lunar: f64) -> f64 {
+    let mu0 = dot(n, sun).max(0.0);
+    let f = 2.0 * mu0 / (dot(shape, sun).max(0.0) + shape[2].max(0.0)).max(0.05);
+    // Past 1 (a crescent's limb) eased toward 1.5 (2 − 1/f: smooth at 1, so the lit share has no
+    // kink at full).
+    let seeliger = if f > 1.0 { 2.0 - 1.0 / f } else { f };
+    mu0 + (seeliger - mu0) * lunar.clamp(0.0, 1.0)
+}
+
+/// The smooth normal of the moon's disc at `(x, y)` on its unit disc, blended `dome` from flat to a
+/// ball's (sky.wgsl `dwell_moon`'s `shape`).
+pub fn moon_shape(x: f64, y: f64, dome: f64) -> V3 {
+    let r2 = (x * x + y * y).min(1.0);
+    let ball = [x, y, (1.0 - r2).sqrt()];
+    unit(std::array::from_fn(|k| {
+        dome * ball[k] + (1.0 - dome) * [0.0, 0.0, 1.0][k]
+    }))
+}
+
 /// The lit share of the moon's face seen, by the cosine `cos_a` between its flat normal and the
-/// sun: the disc's mean N·L with each point's normal blended `dome` toward a sphere's
-/// (`moon.domeBias`, the sky's `MOON_DOME`: 0 the flat disc, n·s; 1 a ball, (1 + cos a) / 2), over
-/// the same at full, so a full moon is 1 and a new one 0. The drawn moon (sky.wgsl `dwell_moon`)
-/// blends its normals the same way, so the halo and the moonlight follow what is drawn.
-pub fn disc_lit(cos_a: f64, dome: f64) -> f64 {
+/// sun: the disc's mean [`moon_shade`] (`dome` the `moon.domeBias`, the sky's `MOON_DOME`; `lunar`
+/// the `moon.lunarLambert`, `MOON_LUNAR`), over the same at full, so a full moon is 1 and a new one
+/// 0. The drawn moon (sky.wgsl `dwell_moon`) shades the same way, so the halo and the moonlight
+/// follow what is drawn.
+pub fn disc_lit(cos_a: f64, dome: f64, lunar: f64) -> f64 {
     let c = cos_a.clamp(-1.0, 1.0);
     let s = (1.0 - c * c).max(0.0).sqrt();
     let mean = |sun: V3| {
@@ -72,15 +99,11 @@ pub fn disc_lit(cos_a: f64, dome: f64) -> f64 {
             for i in 0..DISC_CELLS {
                 let x = (i as f64 + 0.5) / DISC_CELLS as f64 * 2.0 - 1.0;
                 let y = (j as f64 + 0.5) / DISC_CELLS as f64 * 2.0 - 1.0;
-                let r2 = x * x + y * y;
-                if r2 > 1.0 {
+                if x * x + y * y > 1.0 {
                     continue;
                 }
-                let ball = [x, y, (1.0 - r2).sqrt()];
-                let nrm = unit(std::array::from_fn(|k| {
-                    dome * ball[k] + (1.0 - dome) * [0.0, 0.0, 1.0][k]
-                }));
-                sum += dot(nrm, sun).max(0.0);
+                let shape = moon_shape(x, y, dome);
+                sum += moon_shade(shape, shape, sun, lunar);
                 n += 1;
             }
         }
@@ -232,7 +255,11 @@ impl Celestial {
         let phase = -lon / std::f64::consts::TAU;
         MoonView {
             face,
-            lit: disc_lit(dot(normal, sun), self.day.moon.dome_bias),
+            lit: disc_lit(
+                dot(normal, sun),
+                self.day.moon.dome_bias,
+                self.day.moon.lunar_lambert,
+            ),
             phase: phase.rem_euclid(1.0),
             direction,
         }
