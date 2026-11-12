@@ -149,11 +149,27 @@ pub struct ChunkData {
     pub coord: ChunkCoordNet,
     pub revision: u32,
     pub voxels: Vec<u16>,
+    /// The grid the chunk is of (its index in `shared/worldgen/grids.json`; 0 the home grid), in
+    /// that grid's own space (MOON_WORLD.md §7.2). Optional on the wire, a byte at the end, written
+    /// only when not 0: sent only to a client with the `grid.frames` capability.
+    pub grid: u8,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct ChunkUnload {
     pub coords: Vec<ChunkCoordNet>,
+    /// The grid the chunks are of (as `ChunkData::grid`; a byte at the end when not 0).
+    pub grid: u8,
+}
+
+/// The local player's grid in a snapshot (MOON_WORLD.md §7.2, the `grid.frames` capability): the
+/// snapshot's `local` position and velocity are in this grid's space, and off home the grid's frame
+/// at the snapshot's tick (its origin in the world, its rotation `[x, y, z, w]`).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct GridView {
+    pub grid: u8,
+    pub origin: [f64; 3],
+    pub rotation: [f64; 4],
 }
 
 /// C→S: break the targeted cell, or place `material` against its `face` (0 +X, 1 −X, 2 +Y, 3 −Y,
@@ -411,6 +427,10 @@ pub struct PhysicsSnapshot {
     /// only to a client that said `SwingHello`, so an older one (which refuses trailing bytes)
     /// never gets it; an older server never writes it.
     pub swing_kinds: bool,
+    /// The local player's grid (MOON_WORLD.md §7.2), after the swing kinds (which are written,
+    /// empty or not, whenever this is): only to a client with the `grid.frames` capability, which
+    /// says `SwingHello` too.
+    pub grid: Option<GridView>,
 }
 
 /// A falling piece's pose and motion in a snapshot: its origin (posfix), its rotation (each
@@ -1354,11 +1374,18 @@ fn write_body(w: &mut ByteWriter, m: &Message) {
                     w.f16(v);
                 }
             }
-            if m.swing_kinds {
+            if m.swing_kinds || m.grid.is_some() {
                 let count = m.remotes.len().min(255);
                 w.u8(count as u8);
                 for p in &m.remotes[..count] {
                     w.u8(p.swing_kind);
+                }
+            }
+            if let Some(g) = &m.grid {
+                w.u8(g.grid);
+                if g.grid != 0 {
+                    g.origin.iter().for_each(|&v| w.f64(v));
+                    g.rotation.iter().for_each(|&v| w.f64(v));
                 }
             }
         }
@@ -1385,8 +1412,16 @@ fn write_body(w: &mut ByteWriter, m: &Message) {
             if m.form == ChunkForm::Explicit {
                 write_voxels(w, &m.voxels);
             }
+            if m.grid != 0 {
+                w.u8(m.grid);
+            }
         }
-        M::ChunkUnload(m) => write_coords(w, &m.coords, 0xFFFF),
+        M::ChunkUnload(m) => {
+            write_coords(w, &m.coords, 0xFFFF);
+            if m.grid != 0 {
+                w.u8(m.grid);
+            }
+        }
         M::BlockEditRequest(m) => {
             w.u8(m.action as u8);
             write_coord(w, &m.cell);
@@ -1933,6 +1968,20 @@ fn read_body(r: &mut ByteReader, t: MessageType) -> Option<Message> {
                     p.swing_kind = r.u8();
                 }
             }
+            // Optional: the local player's grid (`grid.frames`).
+            let grid = (r.ok() && !r.at_end()).then(|| {
+                let grid = r.u8();
+                let mut g = GridView {
+                    grid,
+                    ..GridView::default()
+                };
+                if grid != 0 {
+                    g.origin = [r.f64(), r.f64(), r.f64()];
+                    r.check(g.origin.iter().all(|v| v.is_finite()));
+                    g.rotation = [r.f64(), r.f64(), r.f64(), r.f64()];
+                }
+                g
+            });
             M::PhysicsSnapshot(PhysicsSnapshot {
                 server_tick,
                 ack_input_seq,
@@ -1940,6 +1989,7 @@ fn read_body(r: &mut ByteReader, t: MessageType) -> Option<Message> {
                 remotes,
                 pieces,
                 swing_kinds,
+                grid,
             })
         }
         T::PlayerEvent => {
@@ -1980,11 +2030,16 @@ fn read_body(r: &mut ByteReader, t: MessageType) -> Option<Message> {
             } else {
                 Vec::new()
             };
+            // Optional: the grid (`grid.frames`), a byte at the end, never 0 (home is no byte).
+            let tail = r.ok() && !r.at_end();
+            let grid = if tail { r.u8() } else { 0 };
+            r.check(!tail || grid != 0);
             M::ChunkData(ChunkData {
                 form,
                 coord,
                 revision,
                 voxels,
+                grid,
             })
         }
         T::HostStatus => M::HostStatus(HostState::from_u8(r.u8())?),
@@ -2377,9 +2432,13 @@ fn read_body(r: &mut ByteReader, t: MessageType) -> Option<Message> {
             }
             M::RegionEdit(m)
         }
-        T::ChunkUnload => M::ChunkUnload(ChunkUnload {
-            coords: read_coords(r, 0xFFFF),
-        }),
+        T::ChunkUnload => {
+            let coords = read_coords(r, 0xFFFF);
+            let tail = r.ok() && !r.at_end();
+            let grid = if tail { r.u8() } else { 0 };
+            r.check(!tail || grid != 0);
+            M::ChunkUnload(ChunkUnload { coords, grid })
+        }
         T::BlockEditRequest => {
             let action = BlockEditAction::from_u8(r.u8())?;
             let cell = read_coord(r);

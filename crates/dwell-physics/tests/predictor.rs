@@ -65,6 +65,7 @@ impl Server {
             remotes: Vec::new(),
             pieces: Vec::new(),
             swing_kinds: false,
+            grid: None,
         }
     }
 }
