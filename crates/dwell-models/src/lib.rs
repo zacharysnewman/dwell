@@ -4,6 +4,7 @@
 //! ([`PLAYER_GLB`]); the others (the animals) are data for the viewer until they spawn.
 
 pub mod anim;
+pub mod first_person;
 pub mod glb;
 pub mod math;
 pub mod retarget;
@@ -18,6 +19,7 @@ pub use table::{
 
 /// The fixture table (shared/models/fixtures): a model added by data alone, for tests.
 #[rustfmt::skip]
+#[allow(unused_imports)]
 pub mod fixture {
     include!("fixture.gen.rs");
 }
@@ -83,6 +85,15 @@ pub struct Retarget {
     pub bones: &'static [RetargetBone],
 }
 
+/// Your first-person arms drawn from a model (models.json `firstPerson`, docs/CHARACTERS.md §11.10).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct FirstPerson {
+    /// The arm's skin joints (indices into the skin's joints).
+    pub joints: &'static [usize],
+    /// The least share of a vertex's skin weight on `joints` that puts it in the arm.
+    pub weight: f32,
+}
+
 /// One model's data.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ModelData {
@@ -101,6 +112,8 @@ pub struct ModelData {
     pub hand: Option<Hand>,
     /// Its joints driven by the characters rig's pose; None: it plays its own clips only.
     pub retarget: Option<Retarget>,
+    /// Your first-person arms drawn from it; None: it draws none.
+    pub first_person: Option<FirstPerson>,
 }
 
 impl ModelData {
