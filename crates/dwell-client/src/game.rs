@@ -119,6 +119,11 @@ pub trait Scene: TerrainRenderer {
     fn upload_budget_bytes(&self) -> u64 {
         u64::MAX
     }
+    /// A chunk mesh is still being written a slice a frame (`render/staged.rs`): no more are
+    /// handed over until it is done.
+    fn uploads_waiting(&self) -> bool {
+        false
+    }
     /// Rewrites chunk `coord`'s heightfield tile alone (none: its water is gone), its meshes kept.
     fn set_water_tile(
         &mut self,
@@ -1898,8 +1903,16 @@ impl<S: Scene> Game<S> {
     /// Hands this frame's share of the finished chunk meshes to the scene: oldest first, as many
     /// as fit the scene's byte budget (the first always); the rest wait for the next frame.
     fn upload_meshes(&mut self) {
-        let budget = self.scene.borrow().upload_budget_bytes();
-        for (c, token, mut m) in self.mesh_uploads.take(budget) {
+        let (budget, waiting) = {
+            let s = self.scene.borrow();
+            (s.upload_budget_bytes(), s.uploads_waiting())
+        };
+        let take = if waiting {
+            Vec::new()
+        } else {
+            self.mesh_uploads.take(budget)
+        };
+        for (c, token, mut m) in take {
             let ground = std::mem::take(&mut m.ground);
             self.keep_ground_density(c, ground);
             self.streamer.on_meshed(c, token, *m);

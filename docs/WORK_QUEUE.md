@@ -254,6 +254,11 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    (`shared/render/streaming.json`), one loading item past the deadline a frame, a faster `interleave`, bench record
    budgets and the `phone-moving` scenario. Left: the flood light off the main thread, the sky volume's copy
    (`padded_box`), a chunk's upload split across frames, the minimap's tiles; a real iPhone check while moving.
+   **Status (fps-moving-2):** built: the sky volume's fluid continuation only where a neighbour is missing
+   (`padded_box` 0.44 → 0.12 s in a 4× flight), mesh job messages in one buffer, a chunk mesh over the phone's
+   budget written over several frames; at 6× the three routes drop 77 frames where they dropped 115 (BUGS.md #72
+   round 4). Left: the flood light off the main thread (the largest main-thread cost; one chunk's light is the
+   worst frames at 6×), then a real iPhone check while moving.
 17. **Axe swing directions and animation tools** (owner 2026-11-11: "The axe animations are still trash. They
    don't swing in the right direction at all. Make yourself some tools to properly observe animations, movement
    directions, positions over time, etc. Should swing right to left for horizontal and up to down for vertical";
@@ -381,12 +386,24 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    side' facing the cut."). Restated to the owner: the stump an upright ramp low at the notch side, the trunk's
    new bottom an upside-down ramp thin at the notch side, opening a V gash toward the side chopped (the data's
    `fellWedgeTrunk: open`, today `matching`), lined up with the notch and the fall. Owner, 2026-11-12: "Yes that
-   was the shape I meant." Also BUGS.md #73: a trunk settled diagonally up a slope loses most of its cells into the
+   was the shape I meant too." Also BUGS.md #73: a trunk settled diagonally up a slope loses most of its cells into the
    ground. **Built 2026-11-12** (branch `claude/fell-gash`), waiting on the owner's look: the log's
    `fellWedgeTrunk` is `open` (the notch's side from the deepest cut, any of the four, both faces;
    `tests/chopping.rs` `felled_from_each_side_the_cut_opens_a_gash_toward_the_notch`, red on `matching`); a trunk
    at rest tilted settles column by column along its pose, a blocked column rising to free rows, no wood lost
    (BUGS.md #73 Fixed; docs/FELLING.md §4).
+25. **Marks appear at contact, not on click** (owner 2026-11-12: "the gashes in blocks from tools show up on
+   click instead of when the animation lines up with the block. We want that timing."). Every tool's hit (axe
+   chop, pickaxe, shovel; the carve, cracks, chips, drops and sound) lands when the swing's head reaches the
+   block (the swing's contact time from its data), not when the button is pressed. In progress (cloud).
+   Owner, 2026-11-12: **"Tools should only consume durability on hit."** Added to the same work: wear once per
+   landed hit (wood, a bounce, a pickaxe or shovel hit), at contact; never a miss or a cancelled swing.
+26. **Axe bites like the other tools' marks** (owner 2026-11-12: "The tree chopping slice doesn't match the other
+   tools style. It cuts a line all the way across which is much bigger than the tool head. It should align more
+   with the dirt and stone ones."). Today an axe hit cuts a kerf slit across the log's whole width. Wanted: each
+   hit carves a bite the size of the axe head where it struck (a wedge into the wood, like the dirt bowl and stone
+   facets), the bites growing together into the notch as the chop goes on; cracks/splits along the grain from
+   the cracks work. Next after item 24 (same code).
 
 ## Done
 
