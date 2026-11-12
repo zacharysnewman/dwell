@@ -34,7 +34,10 @@ pub fn arm_triangles(model: &Model, level: usize, fp: &FirstPerson) -> Vec<u32> 
 }
 
 fn dist(a: &Mat4, b: &Mat4) -> f32 {
-    (0..3).map(|k| (a[3][k] - b[3][k]).powi(2)).sum::<f32>().sqrt()
+    (0..3)
+        .map(|k| (a[3][k] - b[3][k]).powi(2))
+        .sum::<f32>()
+        .sqrt()
 }
 
 /// The arms posed by `pose` (a first-person clip's, with the held item's turns): every node's
@@ -110,7 +113,10 @@ mod tests {
             let all = model.level(level).indices.len();
             let arm = arm_triangles(model, level, &fp);
             assert!(!arm.is_empty() && arm.len() % 3 == 0, "level {level}");
-            assert!(arm.len() * 5 < all, "level {level}: the arm is a small part of the body");
+            assert!(
+                arm.len() * 5 < all,
+                "level {level}: the arm is a small part of the body"
+            );
         }
         // Every arm vertex lies on the right of the body (x < 0 faces +z: the rig's right is −x)
         // and above the waist: nothing of the legs, the chest or the left arm is in it.
@@ -119,7 +125,10 @@ mod tests {
         let shoulder = model.skin[data.hand.unwrap().joint];
         for &v in &arm_triangles(model, 0, &fp) {
             let p = m.positions[v as usize];
-            assert!(p[0] * rest[shoulder][3][0] > 0.0, "vertex {v} at {p:?} is on the other side");
+            assert!(
+                p[0] * rest[shoulder][3][0] > 0.0,
+                "vertex {v} at {p:?} is on the other side"
+            );
         }
     }
 
@@ -148,6 +157,9 @@ mod tests {
                 worst = worst.max(d);
             }
         }
-        assert!(worst < 0.06, "the skinned hand is {worst} m from the rigid hand");
+        assert!(
+            worst < 0.06,
+            "the skinned hand is {worst} m from the rigid hand"
+        );
     }
 }

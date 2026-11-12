@@ -723,8 +723,7 @@ impl SkinnedRenderer {
         self.arms = None;
         let mut arms_hand = None;
         if let (Some(a), Some(_)) = (arms, &self.arms_index)
-            && let Some((joints, hand)) =
-                arms_joints(self.meshes[0].data, self.meshes[0].model, a)
+            && let Some((joints, hand)) = arms_joints(self.meshes[0].data, self.meshes[0].model, a)
         {
             let at = floats.len();
             floats.resize(at + INSTANCE_FLOATS, 0.0);
