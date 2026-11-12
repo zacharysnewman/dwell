@@ -890,7 +890,9 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    bones, held items on its `hand.R`; the rigid arms retired. Priority: next after item 30. **Built
    (0.54)**: the arm cut from the body mesh by skin weight (`models.json`
    `firstPerson`), posed by the `fp_*` clips through the retarget map and scaled to the rig's reach, the
-   held item on `hand.R`; `?fparms=rigid` keeps the old arms for comparison (CHARACTERS.md §11.10).
+   held item on `hand.R`; `?fparms=rigid` keeps the old arms for comparison (CHARACTERS.md §11.10). Round 2: the fist round
+   a handle as data (`grips`), the arm turned about the hand to show more forearm, and the held item on
+   other players' skinned hands turned once, not twice.
 38. **Wandering NPCs** (owner 2026-11-12: "Another item to queue up, wandering NPCs. They'll use the same player
    character model."). People using the Peasant model who wander the world like the animals do. Owner's answers
    (2026-11-12): wander, idle (look around, sit), turn to look at a nearby player, step aside when bumped — no

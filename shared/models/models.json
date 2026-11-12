@@ -34,7 +34,7 @@
         "rot": [-2, 1, -175]
       },
       "firstPerson": {
-        "$comment": "Your first-person arms drawn from this model (docs/CHARACTERS.md §5, §11.10): the triangles whose three vertices each have at least `weight` of their skin weight on `joints` (the right arm from the shoulder down: the cut at the shoulder), skinned by the retarget map from the first-person arms' clips (characters.json `firstPerson`), the arm's shoulder put on the rig's arm bone and the arm scaled so its rest reach (shoulder to hand) is the rig's. Needs `retarget`.",
+        "$comment": "Your first-person arms drawn from this model (docs/CHARACTERS.md §5, §11.10): the triangles whose three vertices each have at least `weight` of their skin weight on `joints` (the right arm from the shoulder down: the cut at the shoulder), skinned by the retarget map from the first-person arms' clips (characters.json `firstPerson`), the arm's shoulder put on the rig's arm bone and the arm scaled so its rest reach (shoulder to hand) is the rig's. `turn` (degrees, Euler XYZ in view space: +x left, +y up, +z ahead) turns the whole arm about its hand after, so the hand and the item stay where the clips put them while the elbow and the sleeve's cuff come up into the bottom-right of the view. Needs `retarget`.",
         "joints": [
           "upper_arm.R",
           "forearm.R",
@@ -43,7 +43,20 @@
           "finger.002.R",
           "thumb.R"
         ],
-        "weight": 0.5
+        "weight": 0.5,
+        "turn": [40, 0, 0]
+      },
+      "grips": {
+        "$comment": "How the hand closes on what it holds (docs/CHARACTERS.md §11.10): `poses` turn skin joints (degrees, Euler XYZ, on top of each joint's own turn: the fingers bend about their z), `items` names the pose each held item (shared/characters/characters.json `items`) takes; an item not listed is held in the open hand (a block or a torch on the palm). Fitted so the curled fingertips close round the handle's line (props.json `hand`, a test in render/skinned.rs).",
+        "poses": {
+          "fist": { "finger.001.R": [0, 0, 90], "finger.002.R": [0, 0, 90] }
+        },
+        "items": {
+          "tool": "fist",
+          "stone_axe": "fist",
+          "stone_axe_vertical": "fist",
+          "brush": "fist"
+        }
       },
       "retarget": {
         "$comment": "Drives the Peasant from the characters rig's pose (docs/CHARACTERS.md §11.9, ADR 0070 amendment 2026-11-10): each rig bone names the skin joint it turns, and `rest` (degrees, Euler XYZ in the model's space) turns that joint's rest frame onto the bone's rest (the Peasant stands in an A pose, the rig with its arms and legs straight down). Joints no bone names keep their rest turn under their parent. `root` is the rig bone whose joint takes the clips' root offset (scaled by the two hip heights). Without a rig pose the model plays its own clips (`roles`).",

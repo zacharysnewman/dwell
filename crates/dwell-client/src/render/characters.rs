@@ -672,8 +672,7 @@ pub fn body_frame(d: &BodyDraw, eye: V3) -> Affine {
 /// hand's frame is known.
 struct HeldOnSkin {
     held: Held,
-    /// The rigid rig's bones (model space) without and with the item's turns.
-    rest: [Affine; MAX_BONES],
+    /// The rigid rig's bones (model space) with the item's turns.
     posed: [Affine; MAX_BONES],
     /// The body's frame (relative to the eye).
     frame: Affine,
@@ -685,27 +684,16 @@ struct HeldOnSkin {
     cast_only: bool,
 }
 
-/// A rigid frame's inverse.
-fn inverse(a: &Affine) -> Affine {
-    let m = a.m;
-    let r: [[f32; 3]; 3] = std::array::from_fn(|c| std::array::from_fn(|k| m[k][c]));
-    let inv = Affine { m: r, t: [0.0; 3] };
-    let t = inv.rotate(a.t);
-    Affine {
-        m: r,
-        t: t.map(|v| -v),
-    }
-}
-
 /// The rigid rig's bones (relative to the eye) for an item held in a skinned hand: the body's own
-/// rigid pose, with the hand bone (`hand_bone`, whose frame the items are authored in) moved onto
-/// the skinned hand (`hand`, [`super::skinned::hand_frame`]) and turned by the item's own turns
-/// of that bone (an axe's tilt, data `pose`).
+/// rigid pose, with the hand bone (`hand_bone`, whose frame the items are authored in) on the
+/// skinned hand (`hand`, [`super::skinned::hand_frame`]), which the retarget already turned by the
+/// item's own turns (an axe's tilt, data `pose`).
 fn on_skinned_hand(h: &HeldOnSkin, hand_bone: Option<usize>, hand: &Affine) -> [Affine; MAX_BONES] {
     let mut bones = h.posed.map(|b| h.frame.then(&b));
     if let Some(b) = hand_bone.filter(|&b| b < MAX_BONES) {
-        let turn = inverse(&h.rest[b]).then(&h.posed[b]);
-        bones[b] = hand.then(&turn);
+        // The skinned body is posed from the pose with the item's turns on, so its hand already
+        // carries them: none on top (they were applied twice before 0.54, the axe 50° off).
+        bones[b] = *hand;
     }
     bones
 }
@@ -1214,10 +1202,10 @@ impl CharacterRenderer {
                     cast_only: d.cast_only,
                     // The same pose the rigid body and the arms play, its held item's turns on.
                     rig_pose: Some(with_item(&d.pose, held_item)),
+                    grip: item_name(d.held),
                 });
                 held_items.push(HeldOnSkin {
                     held: d.held,
-                    rest: bone_transforms(self.character, &d.pose),
                     posed,
                     frame,
                     seed: d.seed,
@@ -1280,6 +1268,7 @@ impl CharacterRenderer {
                 light: *light,
                 cast_only: false,
                 rig_pose: None,
+                grip: None,
             });
         }
         // Your arms from the player model (§11.10): the first-person clips' pose retargeted onto its
@@ -1292,6 +1281,7 @@ impl CharacterRenderer {
                 Some(super::skinned::SkinnedArms {
                     frame,
                     pose: with_item(&a.pose, held_item),
+                    grip: item_shown(self.character, a.held),
                     light: a.light,
                 })
             }
@@ -1351,9 +1341,6 @@ impl CharacterRenderer {
                 Some(hand) => on_skinned_hand(
                     &HeldOnSkin {
                         held: a.held,
-                        // The skinned hand already carries the item's turns (the arm is
-                        // retargeted from the pose with them on): none on top.
-                        rest: posed,
                         posed,
                         frame,
                         seed: 0,
@@ -1686,7 +1673,6 @@ mod tests {
             let axe = ch.item("stone_axe").expect("the axe is data");
             let held = |h: Held, item: Option<&dwell_characters::Item>| HeldOnSkin {
                 held: h,
-                rest: bone_transforms(ch, &pose),
                 posed: bone_transforms(ch, &with_item(&pose, item)),
                 frame,
                 seed: 3,
@@ -1704,14 +1690,12 @@ mod tests {
                     assert!((bones[b].m[k][r] - hand.m[k][r]).abs() < 1e-5);
                 }
             }
-            // The axe's tilt of the hand on top of the skinned hand.
+            // The axe: the skinned hand already carries its tilt (the body is retargeted from
+            // the pose with it on), so exactly the skinned hand again.
             let h = held(Held::Tool("stone_axe"), Some(axe));
             let bones = on_skinned_hand(&h, Some(b), &hand);
-            let turn = inverse(&h.rest[b]).then(&h.posed[b]);
-            let want = hand.then(&turn);
-            assert!((0..3).all(|k| (bones[b].t[k] - want.t[k]).abs() < 1e-5));
-            assert!((0..3).all(|k| (bones[b].m[k][0] - want.m[k][0]).abs() < 1e-5));
-            assert!(turn.m[0][0] < 0.99, "the axe turns the hand: {turn:?}");
+            assert!((0..3).all(|k| (bones[b].t[k] - hand.t[k]).abs() < 1e-5));
+            assert!((0..3).all(|k| (bones[b].m[k][0] - hand.m[k][0]).abs() < 1e-5));
             // Another bone keeps the body's frame.
             let head = ch.bone("head").unwrap();
             let body = frame.then(&h.posed[head]);
@@ -1766,6 +1750,75 @@ mod tests {
             depth_state().depth_compare,
             Some(wgpu::CompareFunction::GreaterEqual)
         );
+    }
+
+    dwell_world::both_faces! {
+        fn another_players_item_is_turned_once_on_the_skinned_hand(face: FaceFrame) {
+            // The skinned body is retargeted from the pose with the item's turns on (the axe's
+            // tilt of the hand and forearm), so its hand already carries them: the item drawn on it
+            // is turned as on the rigid body, not twice (the Peasant's hand.R and the rig's hand
+            // bone agree within 10°, the_retargeted_hand_follows_the_rigs_hand_in_the_world).
+            use crate::render::skinned::{SkinnedDraw, body_matrix, hand_frame, model_pose};
+            let ch = dwell_characters::player();
+            let (data, model) = dwell_models::player();
+            let b = ch.bone("hand_r").unwrap();
+            let feet = face.point([3.0, 6.0, 1.0]);
+            for (name, held) in [
+                ("stone_axe", Held::Tool("stone_axe")),
+                ("tool", Held::Tool("stone_pickaxe")),
+            ] {
+                let item = ch.item(name).expect("an item");
+                for clip in ["biped_idle", "biped_walk"] {
+                    let c = (0..)
+                        .map(|i| dwell_characters::TABLES.clip(i))
+                        .find(|c| c.name == clip)
+                        .unwrap();
+                    let pose = dwell_characters::anim::sample(c, c.duration * 0.3);
+                    let posed = with_item(&pose, Some(item));
+                    let d = SkinnedDraw {
+                        model: dwell_models::PLAYER,
+                        seed: 1,
+                        feet,
+                        yaw: 30.0,
+                        face,
+                        dead: false,
+                        role: "idle",
+                        light: [1.0, 0.0],
+                        cast_only: false,
+                        rig_pose: Some(posed),
+                        grip: Some(name),
+                    };
+                    let place = body_matrix(&d, data, [0.0; 3]);
+                    let p = dwell_models::anim::Player::new(data, model, "idle");
+                    let g = dwell_models::anim::globals(
+                        model,
+                        &model_pose(data, model, &p, d.rig_pose.as_ref(), d.grip),
+                    );
+                    let hand = hand_frame(data, model, &g, &place).unwrap();
+                    let frame = place_frame(feet, 30.0, face, false, [0.0; 3]);
+                    let h = HeldOnSkin {
+                        held,
+                        posed: bone_transforms(ch, &posed),
+                        frame,
+                        seed: 1,
+                        light: [1.0, 0.0],
+                        far: false,
+                        passes: 1,
+                        casts: true,
+                        cast_only: false,
+                    };
+                    let drawn = on_skinned_hand(&h, Some(b), &hand)[b];
+                    let rigid = frame.then(&h.posed[b]);
+                    let turn = (0..3)
+                        .map(|c| {
+                            let dot: f32 = (0..3).map(|r| drawn.m[c][r] * rigid.m[c][r]).sum();
+                            dot.clamp(-1.0, 1.0).acos().to_degrees()
+                        })
+                        .fold(0.0, f32::max);
+                    assert!(turn < 12.0, "{name} in {clip}: the item is {turn:.1}° off the rig's hand");
+                }
+            }
+        }
     }
 
     fn torch() -> Held {

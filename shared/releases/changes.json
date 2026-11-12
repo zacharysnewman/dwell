@@ -2,6 +2,20 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.54.94",
+      "changes": [
+        "Your hand, and other players' hands, now close into a fist round a tool's handle; blocks and torches still rest on the open palm.",
+        "Your first-person arm shows more of the forearm.",
+        "Fixed tools in other players' hands (and your shadow's) being tilted twice, the axe about 50 degrees off."
+      ]
+    },
+    {
+      "version": "0.54.93",
+      "changes": [
+        "Villagers wander the meadows near you: they look around, sit, turn to look at you and step aside when bumped"
+      ]
+    },
+    {
       "version": "0.54.92",
       "changes": [
         "Metal tools are twice as good: they break blocks in about half the hits, knock off chunks twice the size and last twice as long"

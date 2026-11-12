@@ -58,6 +58,8 @@ pub struct SkinnedDraw {
     /// first-person arms play): a model with a retarget map is posed from it (docs/CHARACTERS.md
     /// §11.9); None, or no map: the model plays its own clip for `role`.
     pub rig_pose: Option<dwell_characters::anim::Pose>,
+    /// The held item's name (characters.json `items`): the hand's grip (models.json `grips`).
+    pub grip: Option<&'static str>,
 }
 
 /// The model's pose this frame: retargeted from the rig's pose where the model has a map and one
@@ -67,13 +69,18 @@ pub fn model_pose(
     model: &Model,
     player: &Player,
     rig_pose: Option<&dwell_characters::anim::Pose>,
+    grip: Option<&str>,
 ) -> Vec<anim::Trs> {
-    match (data.retarget, rig_pose) {
+    let mut pose = match (data.retarget, rig_pose) {
         (Some(map), Some(pose)) => {
             dwell_models::retarget::pose_from(model, data, &map, dwell_characters::player(), pose)
         }
         _ => player.pose(model),
+    };
+    if let Some(g) = grip.and_then(|i| data.grip(i)) {
+        dwell_models::grip::apply(model, g, &mut pose);
     }
+    pose
 }
 
 /// A model-space matrix as a rigid frame: its rotation's columns made orthonormal (the model's
@@ -334,6 +341,8 @@ pub struct SkinnedArms {
     pub frame: Affine,
     /// The first-person clips' pose, the held item's turns on.
     pub pose: dwell_characters::anim::Pose,
+    /// The held item's name: the hand's grip.
+    pub grip: Option<&'static str>,
     pub light: [f32; 2],
 }
 
@@ -375,8 +384,13 @@ pub fn arms_joints(
     model: &Model,
     arms: &SkinnedArms,
 ) -> Option<(Vec<Mat4>, Option<Affine>)> {
-    let (globals, place) =
-        dwell_models::first_person::pose(model, data, dwell_characters::player(), &arms.pose)?;
+    let (globals, place) = dwell_models::first_person::pose(
+        model,
+        data,
+        dwell_characters::player(),
+        &arms.pose,
+        arms.grip,
+    )?;
     let place = mm::mul(&mat4(&arms.frame), &place);
     let hand = hand_frame(data, model, &globals, &place);
     let joints = model
@@ -698,7 +712,10 @@ impl SkinnedRenderer {
                 continue;
             }
             let place = body_matrix(d, data, eye);
-            let globals = anim::globals(model, &model_pose(data, model, p, d.rig_pose.as_ref()));
+            let globals = anim::globals(
+                model,
+                &model_pose(data, model, p, d.rig_pose.as_ref(), d.grip),
+            );
             hands[n] = hand_frame(data, model, &globals, &place);
             let joints: Vec<Mat4> = model
                 .skin
@@ -860,6 +877,7 @@ mod tests {
                 light: [1.0, 0.0],
                 cast_only: false,
                 rig_pose: None,
+                grip: None,
             };
             let place = body_matrix(&d, data, [0.0; 3]);
             let joints: Vec<Mat4> = anim::joint_matrices(model, &anim::rest(model))
@@ -889,6 +907,7 @@ mod tests {
             light: [1.0, 0.0],
             cast_only: false,
             rig_pose: None,
+            grip: None,
         };
         let place = body_matrix(&d, data, [0.0; 3]);
         let mut p = Player::new(data, model, "walk");
@@ -1085,10 +1104,11 @@ mod tests {
                         light: [1.0, 0.0],
                         cast_only: true,
                         rig_pose: Some(pose),
+                        grip: None,
                     };
                     let place = body_matrix(&d, data, [0.0; 3]);
                     let p = Player::new(data, model, "idle");
-                    let globals = anim::globals(model, &model_pose(data, model, &p, d.rig_pose.as_ref()));
+                    let globals = anim::globals(model, &model_pose(data, model, &p, d.rig_pose.as_ref(), d.grip));
                     let skinned = hand_frame(data, model, &globals, &place).unwrap();
                     let frame = place_frame(feet, 30.0, face, false, [0.0; 3]);
                     let rigid = frame.then(&bone_transforms(ch, &pose)[hand_r]);
@@ -1106,6 +1126,65 @@ mod tests {
             eprintln!("skinned vs rigid hand: worst {:.3} m, {:.1}°", worst.0, worst.1);
             assert!(worst.0 < 0.2, "{worst:?}");
             assert!(worst.1 < 10.0, "{worst:?}");
+        }
+    }
+
+    #[test]
+    fn a_fist_closes_round_the_handle_and_an_open_hand_does_not() {
+        // both-faces: model space at rest, before the body's face frame (as
+        // a_tool_is_gripped_in_the_peasants_fist).
+        // models.json `grips`: a tool's fist curls the Peasant's fingers so their tips close round
+        // the handle's line (props.json `hand`: the grip's centre and axis in the rig's hand bone,
+        // on hand.R by models.json `hand`); a block is held in the open hand.
+        let (data, model) = dwell_models::player();
+        let scale = mm::trs([0.0; 3], [0.0, 0.0, 0.0, 1.0], [data.scale; 3]);
+        let tip_joint = model
+            .skin
+            .iter()
+            .position(|&n| model.nodes[n].name == "finger.002.R")
+            .expect("the Peasant's fingertips");
+        let tips_from_handle = |item: &str| {
+            let mut pose = anim::rest(model);
+            if let Some(g) = data.grip(item) {
+                dwell_models::grip::apply(model, g, &mut pose);
+            }
+            let joints = anim::joint_matrices(model, &pose);
+            let mut c = [0.0f32; 3];
+            let mut n = 0.0;
+            for v in 0..model.positions.len() {
+                let (j, w) = (0..4)
+                    .map(|k| (model.joints[v][k], model.weights[v][k]))
+                    .fold((0, 0.0), |b, x| if x.1 > b.1 { x } else { b });
+                if usize::from(j) == tip_joint && w > 0.5 {
+                    let p = mm::point(&scale, anim::skin_point(model, &joints, v));
+                    for k in 0..3 {
+                        c[k] += p[k];
+                    }
+                    n += 1.0;
+                }
+            }
+            let c = c.map(|x| x / n);
+            let hand = hand_frame(data, model, &anim::globals(model, &pose), &scale).unwrap();
+            let grip = dwell_models::HAND_GRIP;
+            let (at, axis) = (hand.apply(grip.at), hand.rotate(grip.axis));
+            let d = [0, 1, 2].map(|k| c[k] - at[k]);
+            let along: f32 = (0..3).map(|k| d[k] * axis[k]).sum();
+            (0..3)
+                .map(|k| (d[k] - along * axis[k]).powi(2))
+                .sum::<f32>()
+                .sqrt()
+        };
+        for item in ["stone_axe", "stone_axe_vertical", "tool", "brush"] {
+            let d = tips_from_handle(item);
+            eprintln!("{item}: fingertips {d:.3} m from the handle's line");
+            assert!(
+                d < 0.025,
+                "{item}: the fingertips are {d:.3} m from the handle"
+            );
+        }
+        for item in ["block", "torch"] {
+            assert!(data.grip(item).is_none(), "{item} is held in the open hand");
+            assert!(tips_from_handle(item) > 0.06, "the open hand is open");
         }
     }
 }
