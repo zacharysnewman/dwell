@@ -1628,6 +1628,9 @@ pub struct Renderer {
     /// The adapter's kind (`clouds_for`): a CPU adapter draws no clouds.
     adapter: wgpu::DeviceType,
     cloud_coverage: f64,
+    /// The view ray's cloud opacity over the data's (`?cloudExtinction=`, a dev A/B knob; 0: the
+    /// data's `volume.extinction`).
+    cloud_extinction: f64,
     cloud_seconds: f64,
     stats: RenderStats,
 }
@@ -2515,6 +2518,7 @@ impl Renderer {
             warmup: pipeline::Warmup::default(),
             adapter: wgpu::DeviceType::Other,
             cloud_coverage: CLOUDS.shape.coverage,
+            cloud_extinction: 0.0,
             cloud_seconds: 0.0,
             stats: RenderStats::default(),
         }
@@ -2880,6 +2884,8 @@ impl Renderer {
         let mut block = cloud_prev_block(prev, view, eye, blend, n);
         // The pass's divisor: the scene span's footprint per texel (cloud_scene_span).
         block[4][3] = self.cloud_tier().map_or(1, |t| t.divisor) as f32;
+        // The view's opacity override (0: the data's; `?cloudExtinction=`).
+        block[3][2] = self.cloud_extinction as f32;
         block
     }
     /// The Model detail setting (ADR 0070 §10): every skinned model at `level`
@@ -2917,6 +2923,16 @@ impl Renderer {
     /// to set.
     pub fn set_cloud_coverage(&mut self, coverage: f64) {
         self.cloud_coverage = coverage.clamp(0.0, 1.0);
+    }
+    /// The view ray's cloud opacity (per m at density 1) over the data's `volume.extinction`, for
+    /// an A/B of how much a cloud hides the ones behind it (`?cloudExtinction=`; 0 or less: the
+    /// data's). The light's path keeps `volume.lightExtinction` whatever this is.
+    pub fn set_cloud_extinction(&mut self, extinction: f64) {
+        self.cloud_extinction = if extinction.is_finite() {
+            extinction.clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
     }
     /// The clouds' clock (s): world time where there is one, so clients roughly agree.
     pub fn set_cloud_time(&mut self, seconds: f64) {

@@ -789,13 +789,16 @@ suite and the bench). The file is served once per site at `/dwell/media/<name>-<
 than in each version directory: release builds load it from the site root (`__MEDIA_BASE__`,
 `client/scripts/media.ts`), and the Pages workflow moves each build's copy there (`site.ts media`).
 
-### 5.3 Characters and creatures **[in progress; Phase 40: the design, data and prototype built; players in the game built (C1, C2's held item and swings); looks at join and creatures planned. Phase 54: other players and your shadow drawn as skinned models, held items in the skinned hand (S1, S2), wandering animals (S3, ADR 0073); the arms and your own body in first person to follow]**
+### 5.3 Characters and creatures **[in progress; Phase 40: the design, data and prototype built; players in the game built (C1, C2's held item and swings); looks at join and creatures planned. Phase 54: other players and your shadow drawn as skinned models, held items in the skinned hand (S1, S2), wandering animals (S3, ADR 0073); your first-person arms and your own body in first person from the Peasant (0.54)]**
 
 **Skinned models [in progress, Phase 54 S1–S2]** ([ADR 0070](./adr/0070-skinned-models.md),
 [`CHARACTERS.md`](./CHARACTERS.md) §11). Skinned models from the owner's Unity Asset Store packs
 replace the rigid-part characters, starting with **other players' bodies**: they are drawn as the
-Peasant model (`shared/models/models.json` `player`), and so is your own shadow (S2); your
-first-person arms and your own body seen in first person stay the rigid parts below for now. Since
+Peasant model (`shared/models/models.json` `player`), and so is your own shadow (S2); since 0.54
+your first-person arms (`firstPerson`, CHARACTERS.md §11.10) and your own body seen in first person
+(`firstPerson.body`, §11.12: the mesh less its head and arms by skin weight, a third index buffer,
+posed as your shadow and placed as the rigid body below was) are drawn from it too, the rigid
+parts only under `?fparms=rigid`. Since
 0.52.35 the Peasant is **posed from the rigid rig's animator pose** (the same clips, times and
 blends): `models.json` `retarget` maps rig bones to skin joints with rest-pose corrections
 (validated by `gen.mjs`), `dwell_models::retarget` turns each mapped joint by its bone's turn from
@@ -930,8 +933,8 @@ tests only); CI fails on stale output. Code names characters, looks, items and r
   and each foot is planted on the render-side ground under it (`bodies.rs` `ground_at`,
   `MoveInput::foot_ground`, the animator's two-bone `plant_feet`); `Bodies::step_started` is
   the hook for a step pose.
-- **Drawing** (`render/characters.rs`; since Phase 54 S1 your arms, your own body and your shadow
-  only, other players being skinned, above): per character one block of uniforms (1,280 bytes, a dynamic
+- **Drawing** (`render/characters.rs`; since Phase 54 the held items only, every body being skinned,
+  above, and your rigid arms and body under `?fparms=rigid`): per character one block of uniforms (1,280 bytes, a dynamic
   offset: 24 bones' 3 × 4 transforms to eye-relative world space, the held block's atlas tiles,
   settings) and two indexed draws (body and item), each with an **inverted-hull outline** in
   `ink_soft` (front faces culled, pushed out ~6 mm along the normal, widening a little with
@@ -951,7 +954,8 @@ tests only); CI fails on stale output. Code names characters, looks, items and r
   10 m far): the arms never clip into terrain and keep their size under the speed FOV. Hidden while
   dead, zoomed in the spyglass, in a placed camera, or with the **Show your arms** setting off (the
   view record, append-only). Timed as `gpu.arms`.
-- **Your own body in first person** **[built, C1b]** ([`CHARACTERS.md`](./CHARACTERS.md) §5.1): the
+- **Your own body in first person** **[built, C1b; the Peasant since 0.54, the rigid one below under
+  `?fparms=rigid`]** ([`CHARACTERS.md`](./CHARACTERS.md) §5.1, §11.12): the
   full body from the neck down, playing the clips others see, drawn in the scene passes under the
   arms (`BodyDraw::first_person`, set by the game in first person and not from a placed camera or
   while dead). Data, `firstPerson.body`: the bones and parts it leaves out (the head and its hat,

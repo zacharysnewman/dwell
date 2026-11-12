@@ -76,7 +76,18 @@ pub struct CloudLight {
 pub struct VolumeTunables {
     pub base_m: f64,
     pub top_m: f64,
+    /// The view ray's opacity: the light lost per metre at density 1 along the view (what hides a
+    /// cloud behind another). The renderer can override it at run time (`?cloudExtinction=`).
     pub extinction: f64,
+    /// The same along the light's path toward the sun or moon (× `light.absorption`): separate,
+    /// so a more opaque view leaves the light through the cloud as it is.
+    pub light_extinction: f64,
+    /// A plume's view opacity.
+    pub plume_extinction: f64,
+    /// How much a low sun's warm tint also takes the shade colour (the sky's light and the
+    /// ground's bounce), toward the deck's shaded side: × the low sun's ramp (`light.sunWarmth` at
+    /// most), the mix capped at 1. 0: only the sun's light warms.
+    pub sunset_shade: f64,
     /// The first light sample's length toward the sun or moon (m); each next is
     /// `light_step_growth` times the last.
     pub light_step_m: f64,
@@ -844,7 +855,7 @@ pub struct SampleLight {
 /// by the cloud above, the bounce from below by the cloud below.
 pub fn sample_light(t: &CloudTunables, od: f64, c: f64, above_m: f64, below_m: f64) -> SampleLight {
     let v = &t.volume;
-    let tau = t.light.absorption * v.extinction * od;
+    let tau = t.light.absorption * v.light_extinction * od;
     let beer = (-tau).exp().max(v.multi_scatter * (-0.25 * tau).exp());
     let powder = 1.0 - v.powder * (0.5 - 0.5 * c) * (-2.0 * tau).exp();
     SampleLight {
@@ -860,6 +871,77 @@ pub fn sample_light(t: &CloudTunables, od: f64, c: f64, above_m: f64, below_m: f
 pub fn sample_colour(t: &CloudTunables, l: SampleLight, lit: Rgb, shade: Rgb) -> Rgb {
     let tint = t.volume.bounce_tint;
     [0, 1, 2].map(|i| shade[i] * (l.sky + l.bounce * tint[i]) + lit[i] * l.sun)
+}
+
+// ----- The low sun's tint (WORK_QUEUE item 13: the deck's golden hour on the volume) -----
+
+/// The deck's share of the shade colour a shaded side takes of the sunset tint
+/// (`dwell_cloud_layer`'s `CLOUD_SUNSET * mix(0.75, 1.0, lit)` at no light).
+pub const SUNSET_SHADE: f64 = 0.75;
+
+/// How much a sun `sun_up` (its face-local up part, the elevation's sine) warms the clouds: the
+/// deck's ramp, all of `light.sunWarmth` up to ~1° and none from ~24° (`cloud_low_sun`).
+pub fn low_sun(t: &CloudTunables, sun_up: f64) -> f64 {
+    (1.0 - smoothstep(0.02, 0.4, sun_up)) * t.light.sun_warmth
+}
+
+/// A light's hue for display (`cloud_hue`): its linear colour scaled to a brightest channel of 1,
+/// encoded with gamma 2.2.
+pub fn light_hue(linear: Rgb) -> Rgb {
+    let m = linear[0].max(linear[1]).max(linear[2]).max(1e-4);
+    linear.map(|c| (c / m).powf(1.0 / 2.2))
+}
+
+fn mix3(a: Rgb, b: Rgb, k: f64) -> Rgb {
+    [0, 1, 2].map(|i| a[i] + (b[i] - a[i]) * k)
+}
+
+/// The day's lit and shade colours a march's samples take (`cloud_shading`'s day part) for a sun
+/// `sun_up` of hue `sun_hue` and the sky's light of hue `ambient_hue` ([`light_hue`]): the lit
+/// colour mixed toward the sunset tint by [`low_sun`], as the deck's; the shade toward the deck's
+/// shaded side of it (`SUNSET_SHADE` of it) by `low_sun` × `volume.sunsetShade` (at most 1), so
+/// bases and
+/// shaded sides warm at sunrise and sunset too (before, only the sun's light did, and at a low sun
+/// it reaches little of a cloud: the ambient's white took over).
+pub fn day_shading(t: &CloudTunables, sun_up: f64, sun_hue: Rgb, ambient_hue: Rgb) -> (Rgb, Rgb) {
+    let l = &t.light;
+    let low = low_sun(t, sun_up);
+    let lit = mix3([0, 1, 2].map(|i| l.sunlit[i] * sun_hue[i]), l.sunset, low);
+    let shade = [0, 1, 2].map(|i| l.shade[i] * (0.5 + 0.5 * ambient_hue[i]));
+    let warm = l.sunset.map(|c| c * SUNSET_SHADE);
+    (
+        lit,
+        mix3(shade, warm, (low * t.volume.sunset_shade).min(1.0)),
+    )
+}
+
+/// The 2D deck's day colour (`dwell_cloud_layer`) at a light share `lit` (0 shaded, 1 in full
+/// light), seen from below: the reference the volume's tint is matched against.
+pub fn deck_day_colour(
+    t: &CloudTunables,
+    lit: f64,
+    sun_up: f64,
+    sun_hue: Rgb,
+    ambient_hue: Rgb,
+) -> Rgb {
+    let l = &t.light;
+    let shade = [0, 1, 2].map(|i| l.shade[i] * (0.5 + 0.5 * ambient_hue[i]));
+    let sun = [0, 1, 2].map(|i| l.sunlit[i] * sun_hue[i]);
+    let day = mix3(shade, sun, lit);
+    let warm = l
+        .sunset
+        .map(|c| c * (SUNSET_SHADE + (1.0 - SUNSET_SHADE) * lit));
+    mix3(day, warm, low_sun(t, sun_up) * lit)
+}
+
+/// How much far cloud takes the sky behind it (`cloud_far_haze`), at most.
+pub const FAR_HAZE: f64 = 0.85;
+
+/// Far cloud hazed toward the sky behind it, `clear` (near the horizon, the horizon's colour and
+/// the low sun's band), by its distance `first_m` over the deck's fade end `fade_end_m`: the deck
+/// and the volume both (`cloud_far_haze`).
+pub fn far_haze(col: Rgb, clear: Rgb, first_m: f64, fade_end_m: f64) -> Rgb {
+    mix3(col, clear, FAR_HAZE * smoothstep(0.0, fade_end_m, first_m))
 }
 
 /// The march's colour with its brightest parts (a silver lining's) rolled off toward a little over
@@ -1097,6 +1179,8 @@ pub fn cloud_wgsl(t: &CloudTunables) -> String {
         format!("const CLOUD_SILVER_POWER: f32 = {};", f(l.silver_power)),
         format!("const CLOUD_SUN_WARMTH: f32 = {};", f(l.sun_warmth)),
         format!("const CLOUD_TWILIGHT: f32 = {};", f(TWILIGHT)),
+        format!("const CLOUD_SUNSET_SHADE: f32 = {};", f(SUNSET_SHADE)),
+        format!("const CLOUD_FAR_HAZE: f32 = {};", f(FAR_HAZE)),
     ];
     let v = &t.volume;
     let fm = &t.form;
@@ -1123,6 +1207,15 @@ pub fn cloud_wgsl(t: &CloudTunables) -> String {
         format!("const CLOUD_PRECIP: f32 = {};", f(w.precipitation)),
         format!("const CLOUD_DETAIL_SIZE: i32 = {};", fm.detail_size),
         format!("const CLOUD_VOL_EXTINCTION: f32 = {};", f(v.extinction)),
+        format!(
+            "const CLOUD_VOL_LIGHT_EXTINCTION: f32 = {};",
+            f(v.light_extinction)
+        ),
+        format!(
+            "const CLOUD_PLUME_EXTINCTION: f32 = {};",
+            f(v.plume_extinction)
+        ),
+        format!("const CLOUD_VOL_SUNSET_SHADE: f32 = {};", f(v.sunset_shade)),
         format!("const CLOUD_VOL_H: f32 = {};", f(v.top_m - v.base_m)),
         format!("const CLOUD_VOL_LIGHT_STEP: f32 = {};", f(v.light_step_m)),
         format!(
@@ -1464,9 +1557,11 @@ fn cloud_shading(face: f32, lights: CloudLighting) -> CloudShading {
 	let sun_up = dot(lights.sun, up);
 	let light = select(lights.moon, lights.sun, sun_up >= dot(lights.moon, up));
 	let dayness = smoothstep(-CLOUD_TWILIGHT, CLOUD_TWILIGHT, dot(up, lights.day_pole));
-	let low = (1.0 - smoothstep(0.02, 0.4, sun_up)) * CLOUD_SUN_WARMTH;
+	// The low sun's tint (day_shading): the sun's light toward the sunset colour as the deck's, and
+	// the shade (the sky's light, the ground's bounce) toward the deck's shaded side of it.
+	let low = cloud_low_sun(sun_up);
 	let day_lit = mix(CLOUD_SUNLIT * cloud_hue(lights.sun_color), CLOUD_SUNSET, low);
-	let day_shade = CLOUD_SHADE * mix(vec3f(1.0), cloud_hue(lights.day_ambient), 0.5);
+	let day_shade = mix(CLOUD_SHADE * mix(vec3f(1.0), cloud_hue(lights.day_ambient), 0.5), CLOUD_SUNSET * CLOUD_SUNSET_SHADE, min(low * CLOUD_VOL_SUNSET_SHADE, 1.0));
 	let night_lit = CLOUD_NIGHT_LIT * cloud_hue(lights.moon_color);
 	let night_shade = CLOUD_NIGHT_SHADE * mix(vec3f(1.0), cloud_hue(lights.night_ambient), 0.5);
 	return CloudShading(mix(night_lit, day_lit, dayness), mix(night_shade, day_shade, dayness), light, dot(light, up), dayness);
@@ -1484,7 +1579,7 @@ fn cloud_ray_light(dir: vec3f, sh: CloudShading) -> vec2f {
 // cloud_ray_light), plus the sky's light from above dimmed by the cloud `above` (m) and the
 // ground's darker bounce from below dimmed by the cloud `below`: bases darker than tops.
 fn cloud_vol_light(sh: CloudShading, od: f32, above: f32, below: f32, ray: vec2f) -> vec3f {
-	let tau = CLOUD_ABSORPTION * CLOUD_VOL_EXTINCTION * od;
+	let tau = CLOUD_ABSORPTION * CLOUD_VOL_LIGHT_EXTINCTION * od;
 	let beer = max(exp(-tau), CLOUD_VOL_MULTI * exp(-0.25 * tau));
 	let powder = 1.0 - ray.y * exp(-2.0 * tau);
 	let sun = CLOUD_VOL_SUN * beer * powder * ray.x;
@@ -1496,7 +1591,7 @@ fn cloud_vol_light(sh: CloudShading, od: f32, above: f32, below: f32, ray: vec2f
 // an eye `eye_h` above sea level, in front-to-back colour (rgb, not divided by cover) and
 // transmittance (a), and the first cloud's distance. Early-outs: no coverage, or a ray that never
 // crosses the layer inside the reach, takes no samples.
-fn cloud_layer_march(dir: vec3f, rise: f32, eye_h: f32, max_t: f32, jitter: f32, offsets: vec4f, cfg: vec4f, steps: i32, light_steps: i32, sh: CloudShading) -> CloudMarch {
+fn cloud_layer_march(dir: vec3f, rise: f32, eye_h: f32, max_t: f32, jitter: f32, offsets: vec4f, cfg: vec4f, steps: i32, light_steps: i32, sh: CloudShading, extinction: f32) -> CloudMarch {
 	let none = CloudMarch(vec4f(0.0, 0.0, 0.0, 1.0), -1.0);
 	if (cfg.x <= 0.0) {
 		return none;
@@ -1582,7 +1677,9 @@ fn cloud_layer_march(dir: vec3f, rise: f32, eye_h: f32, max_t: f32, jitter: f32,
 			len *= CLOUD_VOL_LIGHT_GROWTH;
 		}
 		let col = cloud_vol_light(sh, od, above, below, ray);
-		let a = 1.0 - exp(-CLOUD_VOL_EXTINCTION * d * dt);
+		// The view's opacity (volume.extinction or the run-time override): what hides a cloud
+		// behind another; the light's path above has its own (lightExtinction).
+		let a = 1.0 - exp(-extinction * d * dt);
 		energy += trans * a * col;
 		trans *= 1.0 - a;
 	}
@@ -1697,7 +1794,7 @@ fn dwell_cloud_plumes(layer: CloudMarch, dir: vec3f, rise: f32, eye_h: f32, max_
 			}
 			// Its own thickness toward the light (its radius), the column over and under the sample.
 			let col = p.color.rgb * cloud_vol_light(sh, d * p.at.z, 0.5 * d * (p.span.y - h), 0.5 * d * (h - p.span.x), ray);
-			let a = 1.0 - exp(-CLOUD_VOL_EXTINCTION * d * dt);
+			let a = 1.0 - exp(-CLOUD_PLUME_EXTINCTION * d * dt);
 			energy += trans * a * col;
 			trans *= 1.0 - a;
 		}
@@ -1739,7 +1836,7 @@ fn dwell_cloud_upsample_weight(e: f32, rec: vec2f) -> f32 {
 // samples, a powder term, a dual-lobe phase (the silver lining toward the light), the sky's light
 // from above and the ground's darker bounce from below, dimmed by the cloud over and under. The
 // layer is colour (rgb, not hazed: dwell_cloud_hazed) and cover (a).
-fn dwell_cloud_march(dir: vec3f, face: f32, max_t: f32, jitter: f32, offsets: vec4f, cfg: vec4f, inside: vec4f, lights: CloudLighting) -> CloudMarch {
+fn dwell_cloud_march(dir: vec3f, face: f32, max_t: f32, jitter: f32, offsets: vec4f, cfg: vec4f, inside: vec4f, lights: CloudLighting, extinction: f32) -> CloudMarch {
 	let none = CloudMarch(vec4f(0.0), -1.0);
 	let steps = i32(floor(inside.w));
 	let light_steps = i32(round(fract(inside.w) * 8.0));
@@ -1749,7 +1846,7 @@ fn dwell_cloud_march(dir: vec3f, face: f32, max_t: f32, jitter: f32, offsets: ve
 	let eye_h = CLOUD_ALTITUDE - cfg.w;
 	let rise = face_rise(face, dir);
 	let sh = cloud_shading(face, lights);
-	let layer = cloud_layer_march(dir, rise, eye_h, max_t, jitter, offsets, cfg, steps, light_steps, sh);
+	let layer = cloud_layer_march(dir, rise, eye_h, max_t, jitter, offsets, cfg, steps, light_steps, sh, select(CLOUD_VOL_EXTINCTION, extinction, extinction > 0.0));
 	let m = dwell_cloud_plumes(layer, dir, rise, eye_h, max_t, jitter, sh);
 	let trans = m.layer.a;
 	let cover = 1.0 - trans;
@@ -1772,12 +1869,23 @@ fn dwell_cloud_hazed(m: CloudMarch, clear: vec3f, cfg: vec4f) -> vec4f {
 		return vec4f(0.0);
 	}
 	let fade = dwell_cloud_fade(cfg.w);
-	let col = mix(m.layer.rgb, clear, 0.85 * smoothstep(0.0, fade.y, m.first));
+	let col = cloud_far_haze(m.layer.rgb, clear, m.first, fade.y);
 	return vec4f(col, m.layer.a * CLOUD_OPACITY * (1.0 - smoothstep(fade.x, fade.y, m.first)));
 }
 ";
 
 const CLOUD_FNS: &str = r"
+// How much a sun `sun_up` above the face warms the clouds (low_sun): the deck's and the volume's.
+fn cloud_low_sun(sun_up: f32) -> f32 {
+	return (1.0 - smoothstep(0.02, 0.4, sun_up)) * CLOUD_SUN_WARMTH;
+}
+
+// Far cloud hazed toward the sky behind it (far_haze): near the horizon its colour and the low
+// sun's band, so far clouds fade into the horizon on the deck and the volume alike.
+fn cloud_far_haze(col: vec3f, clear: vec3f, dist: f32, fade_end: f32) -> vec3f {
+	return mix(col, clear, CLOUD_FAR_HAZE * smoothstep(0.0, fade_end, dist));
+}
+
 fn cloud_hash(c: vec2i) -> f32 {
 	let w = vec2u(((c % CLOUD_PERIOD) + CLOUD_PERIOD) % CLOUD_PERIOD);
 	var h = (w.x * 0x8da6b343u) ^ (w.y * 0xd8163841u);
@@ -1955,8 +2063,8 @@ fn dwell_cloud_layer(clear: vec3f, dir: vec3f, face: f32, deck: vec4f, fw: f32, 
 	// sky), by the day pole's height: the sun's.
 	let dayness = smoothstep(-CLOUD_TWILIGHT, CLOUD_TWILIGHT, dot(up, day_pole));
 	var day = mix(CLOUD_SHADE * mix(vec3f(1.0), cloud_hue(lights.day_ambient), 0.5), CLOUD_SUNLIT * cloud_hue(lights.sun_color), lit);
-	let low = (1.0 - smoothstep(0.02, 0.4, sun_up)) * CLOUD_SUN_WARMTH;
-	day = mix(day, CLOUD_SUNSET * mix(0.75, 1.0, lit), low * lit);
+	let low = cloud_low_sun(sun_up);
+	day = mix(day, CLOUD_SUNSET * mix(CLOUD_SUNSET_SHADE, 1.0, lit), low * lit);
 	let night = mix(CLOUD_NIGHT_SHADE * mix(vec3f(1.0), cloud_hue(lights.night_ambient), 0.5), CLOUD_NIGHT_LIT * cloud_hue(lights.moon_color), lit);
 	var col = mix(night, day, dayness);
 	// From above the tops are white in full light: the light's tint shows half as much (a low or
@@ -1969,7 +2077,7 @@ fn dwell_cloud_layer(clear: vec3f, dir: vec3f, face: f32, deck: vec4f, fw: f32, 
 	let rim = CLOUD_SILVER * pow(toward_light, CLOUD_SILVER_POWER) * (1.0 - d) * (1.0 - d);
 	col += rim * mix(CLOUD_MOON_GLOW * 0.5, CLOUD_SUN_GLOW, dayness);
 	// Far cloud takes the sky's haze behind it.
-	col = mix(col, clear, 0.85 * smoothstep(0.0, dwell_cloud_fade(cfg.w).y, deck.z));
+	col = cloud_far_haze(col, clear, deck.z, dwell_cloud_fade(cfg.w).y);
 	// From above the deck is seen through its whole depth: denser, and solid sooner at its edges.
 	let cover = select(d, sqrt(d), from_above);
 	return vec4f(col, cover * CLOUD_OPACITY * weight);
@@ -2673,6 +2781,239 @@ mod volume_tests {
         // The light's up part is the viewer's face's.
         assert!(body("cloud_shading").contains("let up = face_up(face);"));
     }
+
+    // ----- The low sun's tint (WORK_QUEUE item 13) -----
+
+    /// The sun's face-local up part at `solar_deg` and the day's sun and sky-light hues there, as
+    /// the renderer hands them to the clouds (`DayNight::pack`'s sun light and hemisphere sky).
+    fn day_at(solar_deg: f64) -> (f64, Rgb, Rgb) {
+        let s = DAY_NIGHT.sample(solar_deg);
+        let lin = |c: Rgb| c.map(crate::srgb_to_linear);
+        (
+            DAY_NIGHT.sun_direction(solar_deg)[1],
+            light_hue(lin(s.sun_light)),
+            light_hue(lin(s.hemi_sky)),
+        )
+    }
+
+    /// The morning's solar angle where the sun stands `deg` over the horizon.
+    fn solar_at_elevation(deg: f64) -> f64 {
+        let want = deg.to_radians().sin();
+        let (mut lo, mut hi) = (0.0, 90.0);
+        for _ in 0..60 {
+            let mid = 0.5 * (lo + hi);
+            if DAY_NIGHT.sun_direction(mid)[1] < want {
+                lo = mid;
+            } else {
+                hi = mid;
+            }
+        }
+        0.5 * (lo + hi)
+    }
+
+    /// A colour's chromaticity (its channels over their sum): the tint, whatever the brightness.
+    fn chroma(c: Rgb) -> Rgb {
+        let s = (c[0] + c[1] + c[2]).max(1e-9);
+        c.map(|x| x / s)
+    }
+
+    fn chroma_gap(a: Rgb, b: Rgb) -> f64 {
+        let (a, b) = (chroma(a), chroma(b));
+        (0..3).map(|i| (a[i] - b[i]).abs()).fold(0.0, f64::max)
+    }
+
+    /// A sample `y` up the broad cloud in the colours `shading` (lit, shade), lit from a light
+    /// whose face-local up part is `rise`, seen at `c` from it, with `steps` light samples.
+    fn tinted_sample(
+        t: &CloudTunables,
+        y: f64,
+        rise: f64,
+        c: f64,
+        steps: u32,
+        shading: (Rgb, Rgb),
+    ) -> Rgb {
+        let (p, w) = broad();
+        let h = t.volume.top_m - t.volume.base_m;
+        let d = broad_density(y);
+        let (above, below) = column_cover_m(t, &p, y, w.cover);
+        let od = light_depth(t, steps, y, d, above, rise, |s| {
+            broad_density(y + rise * s / h)
+        });
+        let l = sample_light(t, od, c, above, below);
+        soft_clip(sample_colour(t, l, shading.0, shading.1))
+    }
+
+    /// The volume's shading before the low sun's tint took its shade (the lit colour only).
+    fn untinted(t: &CloudTunables, sun_up: f64, sun: Rgb, sky: Rgb) -> (Rgb, Rgb) {
+        day_shading(
+            &CloudTunables {
+                volume: VolumeTunables {
+                    sunset_shade: 0.0,
+                    ..t.volume
+                },
+                ..*t
+            },
+            sun_up,
+            sun,
+            sky,
+        )
+    }
+
+    #[test]
+    fn at_sunrise_the_volume_takes_the_decks_golden_tint_and_at_noon_it_is_unchanged() {
+        let steps = CLOUDS.tiers.medium.light_steps;
+        let top = broad_top();
+        let (low_up, low_sun_hue, low_sky) = day_at(solar_at_elevation(3.0));
+        assert!((low_up - 3f64.to_radians().sin()).abs() < 1e-6);
+        let low = day_shading(&CLOUDS, low_up, low_sun_hue, low_sky);
+        // The lit side: just under the top, seen side-on, the sun 3° up.
+        let lit_side = tinted_sample(&CLOUDS, top - 0.01, low_up, 0.0, steps, low);
+        let base = tinted_sample(&CLOUDS, 0.04, low_up, 0.0, steps, low);
+        // The deck's tint at its half-to-mostly lit sides (lit 0.7), its warmth (red over blue):
+        // the volume's lit side within 8 % of it; before (the shade untinted: the cool sky light
+        // took over at a low sun, ~70 % of a sample's light) it was 20 % short.
+        let warmth = |c: Rgb| c[0] / c[2];
+        let deck = deck_day_colour(&CLOUDS, 0.7, low_up, low_sun_hue, low_sky);
+        let near = |c: Rgb| (warmth(c) / warmth(deck) - 1.0).abs();
+        assert!(
+            near(lit_side) < 0.08,
+            "the lit side {lit_side:.3?} has the deck's tint {deck:.3?}"
+        );
+        assert!(chroma_gap(lit_side, deck) < 0.02);
+        assert!(warmth(lit_side) > 1.5, "{lit_side:.3?}");
+        // The base picks up the low sun's warmth too (the deck's shaded side's).
+        assert!(warmth(base) > 1.4, "the base warms too: {base:.3?}");
+        let old = untinted(&CLOUDS, low_up, low_sun_hue, low_sky);
+        let before = tinted_sample(&CLOUDS, top - 0.01, low_up, 0.0, steps, old);
+        let before_base = tinted_sample(&CLOUDS, 0.04, low_up, 0.0, steps, old);
+        assert!(near(before) > 0.15, "before: {before:.3?}");
+        assert!(warmth(before_base) < 1.2, "before: {before_base:.3?}");
+        // Noon: the tint is gone (the low sun's ramp is 0) and the look is what it was.
+        let (noon_up, noon_sun, noon_sky) = day_at(90.0);
+        assert!(noon_up > 0.5);
+        assert_eq!(low_sun(&CLOUDS, noon_up), 0.0);
+        let noon = day_shading(&CLOUDS, noon_up, noon_sun, noon_sky);
+        assert_eq!(noon, untinted(&CLOUDS, noon_up, noon_sun, noon_sky));
+        let noon_side = tinted_sample(&CLOUDS, top - 0.01, noon_up, 0.0, steps, noon);
+        assert!(
+            chroma_gap(lit_side, noon_side) > 0.04,
+            "sunrise {lit_side:.3?} vs noon {noon_side:.3?}"
+        );
+        // By data: no sunsetShade is the old shade; no sunWarmth no tint at all.
+        let cold = CloudTunables {
+            light: CloudLight {
+                sun_warmth: 0.0,
+                ..CLOUDS.light
+            },
+            ..CLOUDS
+        };
+        assert_eq!(low_sun(&cold, low_up), 0.0);
+    }
+
+    #[test]
+    fn far_clouds_fade_into_the_horizon_on_the_deck_and_the_volume_alike() {
+        let (up, sun, sky) = day_at(solar_at_elevation(3.0));
+        let (lit, _) = day_shading(&CLOUDS, up, sun, sky);
+        // A pale warm horizon behind the cloud.
+        let clear = [0.9, 0.7, 0.6];
+        let end = CLOUDS.deck.fade_end_m;
+        assert_eq!(far_haze(lit, clear, 0.0, end), lit);
+        let far = far_haze(lit, clear, end, end);
+        assert!(chroma_gap(far, clear) < chroma_gap(lit, clear) * (1.0 - FAR_HAZE) + 1e-9);
+        // One function hazes both (the shader's twin).
+        let src = cloud_wgsl(&CLOUDS) + &cloud_march_wgsl(0, 0, 1);
+        assert_eq!(
+            src.matches("cloud_far_haze(").count(),
+            3,
+            "defined once, used twice"
+        );
+        assert_eq!(
+            src.matches("cloud_low_sun(").count(),
+            3,
+            "the deck and the volume's ramp"
+        );
+        assert!(src.contains("min(low * CLOUD_VOL_SUNSET_SHADE, 1.0)"));
+    }
+
+    #[test]
+    fn the_view_opacity_is_the_views_and_the_light_keeps_its_own() {
+        let src = cloud_wgsl(&CLOUDS) + &cloud_march_wgsl(0, 0, 1);
+        let body = |name: &str| {
+            let a = src.find(&format!("fn {name}(")).unwrap();
+            let b = src[a..].find("\n}\n").unwrap();
+            src[a..a + b].to_owned()
+        };
+        // The light's Beer takes lightExtinction, never the view's.
+        let light = body("cloud_vol_light");
+        assert!(light.contains("CLOUD_VOL_LIGHT_EXTINCTION"));
+        assert!(!light.contains("CLOUD_VOL_EXTINCTION "));
+        // The layer's view takes the run-time value (the data's when none is set).
+        assert!(body("cloud_layer_march").contains("exp(-extinction * d * dt)"));
+        assert!(
+            body("dwell_cloud_march")
+                .contains("select(CLOUD_VOL_EXTINCTION, extinction, extinction > 0.0)")
+        );
+        assert!(body("dwell_cloud_plumes").contains("CLOUD_PLUME_EXTINCTION"));
+        // On the CPU: a sample's light doesn't move when only the view's opacity does.
+        let opaque = CloudTunables {
+            volume: VolumeTunables {
+                extinction: 0.05,
+                ..CLOUDS.volume
+            },
+            ..CLOUDS
+        };
+        assert_eq!(
+            sample_light(&CLOUDS, 300.0, 0.2, 100.0, 50.0),
+            sample_light(&opaque, 300.0, 0.2, 100.0, 50.0)
+        );
+        // The shipped view is more opaque than the light (the owner's A/B: a cloud hides the
+        // ones behind it; light still goes through).
+        const { assert!(CLOUDS.volume.extinction > CLOUDS.volume.light_extinction) };
+    }
+
+    /// The view samples a march through `cloud_m` of cloud of density `d`, `dt` apart, takes
+    /// before it is 98 % opaque (the march's early exit), at the view opacity `extinction`.
+    fn samples_to_opaque(extinction: f64, d: f64, dt: f64, cloud_m: f64) -> u32 {
+        let (mut trans, mut n) = (1.0, 0);
+        while trans >= 0.02 && f64::from(n) * dt < cloud_m {
+            trans *= (-extinction * d * dt).exp();
+            n += 1;
+        }
+        n
+    }
+
+    #[test]
+    fn a_more_opaque_view_hides_the_clouds_behind_and_stops_the_march_sooner() {
+        // An eroded mid cloud (density 0.25: where a dense core isn't) through a 2 km bank, at
+        // High's and the near tier's ~300 m steps: at 0.006 it never hid what was behind (7
+        // samples, ~4 % still through); at 0.03 and 0.05 two samples end the march.
+        let n = [0.006, 0.03, 0.05].map(|e| samples_to_opaque(e, 0.25, 300.0, 2000.0));
+        assert_eq!(n[0], 7, "{n:?}");
+        assert_eq!([n[1], n[2]], [2, 2], "{n:?}");
+        // A dense core at Medium's ~900 m steps is one sample either way.
+        assert_eq!(samples_to_opaque(0.006, 1.0, 900.0, 2000.0), 1);
+        // What is left of a cloud behind 400 m of that mid cloud.
+        let behind = |e: f64| (-e * 0.25 * 400.0).exp();
+        assert!(behind(0.006) > 0.5, "{:.3}", behind(0.006));
+        assert!(behind(CLOUDS.volume.extinction) < 0.1);
+        // A thin eroded edge still lets the view through (density 0.05 over 50 m): soft edges.
+        assert!((-CLOUDS.volume.extinction * 0.05 * 50.0).exp() > 0.9);
+    }
+
+    dwell_world::both_faces!(
+        fn the_low_suns_tint_is_face_local_so_both_faces_warm_alike(f: FaceFrame) {
+            // A sun 3° over the face, in the world through the face's frame.
+            let (up, sun, sky) = day_at(solar_at_elevation(3.0));
+            let local = [(1.0 - up * up).sqrt(), up, 0.0];
+            let rise = f.vector(f.vector(local))[1];
+            let a = day_shading(&CLOUDS, up, sun, sky);
+            let here = day_shading(&CLOUDS, rise, sun, sky);
+            for i in 0..3 {
+                assert!((a.0[i] - here.0[i]).abs() < 1e-9 && (a.1[i] - here.1[i]).abs() < 1e-9);
+            }
+            assert!(here.1[0] > here.1[2], "the shade warms on face {f:?}");
+        }
+    );
 
     dwell_world::both_faces!(
         fn the_light_is_face_local_so_both_faces_shade_alike(f: FaceFrame) {

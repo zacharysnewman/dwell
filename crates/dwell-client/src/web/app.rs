@@ -1977,6 +1977,16 @@ impl Client {
             .borrow_mut()
             .set_cloud_coverage(coverage);
     }
+    /// The volume's view opacity over the data's (`?cloudExtinction=`, a dev A/B knob; 0: the
+    /// data's `volume.extinction`; docs/CLOUDS.md §9.8).
+    #[wasm_bindgen(js_name = setCloudExtinction)]
+    pub fn set_cloud_extinction(&self, extinction: f64) {
+        self.inner
+            .borrow()
+            .renderer
+            .borrow_mut()
+            .set_cloud_extinction(extinction);
+    }
     /// The Shadows setting (0 Off, 1 Low, 2 High; DAY_NIGHT.md §10). A CPU adapter draws Low at
     /// most.
     #[wasm_bindgen(js_name = setShadows)]

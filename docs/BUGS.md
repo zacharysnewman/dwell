@@ -6,16 +6,36 @@ pins it.
 
 ## Open
 
-### 94. Jumping into a tree's leaves rubber-bands you toward the ground until you back out
+### 97. Light shafts draw a pixelated dither pattern
 
-Owner, 2026-11-12: "A bug I just found seems to be a mismatch between server and client for leaves collision.
-Jumping into the leaves of a tree makes you rubberband falling to the ground endlessly until you back out of the
-leaves." Suspects: the client's predicted controller and the server's disagree about leaves — one treats leaf cells
-as solid (or as a climbable/slowing medium) and the other as passable, so every snapshot corrects the predicted
-position and prediction falls again; candidates: leaves' collision shape or `solid` flag read from different data
-(block registry vs the mesher's leaf cards / leaf density), trees composed at chunk load on one side only
-(TREE_GROWTH layer, tombstones/growers) so the server or client has no leaf blocks there, or leaves' `flooded`/state
-aliasing differing across the registry sync.
+Owner, 2026-11-12 (screenshot: low sun behind clouds, a tree in front): "Volumetric lighting also has some weird
+dithering where the light shafts look pixelated. Not sure if this is a bug, a blending problem, or something else."
+A fine diagonal crosshatch covers the trees, ground and sky around the sun, strongest in the shafts behind the tree.
+Suspects: the light-shaft pass marches at reduced resolution with a per-pixel dither (interleaved gradient or a
+Bayer pattern) and is composited without a blur, temporal accumulation or a depth-aware upsample, so the dither
+pattern itself shows; or its accumulation's history is rejected every frame. Fix like #90's clouds: blue-noise
+jitter, temporal accumulation with a clamped history, a depth-aware (bilateral) blur/upsample.
+
+### 96. Villagers' faces are jet black, not their skin colour
+
+Owner, 2026-11-12: "Why do all the villagers look like their faces are jet black? Not even matching the rest of
+their skin color?" Every villager's face draws black regardless of its skin variant. Suspects: the face's colours in
+the Peasant GLB snap to a palette stop the villager's `skin` colour part doesn't map (its `from` is `skin_fair`, the
+face a different stop or a shade the recolour misses, or a utility/never-snap colour that the NPC pass reads as 0);
+the hat repaint (`repaint` hair_brown → wool_yellow with minY/beyond/above) catching the face; the NPC draw's colour
+table missing an entry (index out of range → black); or the face's normals inverted at the default model detail.
+Check whether your own body/other players (the same model, no recolour) show it too.
+
+### 95. Far trees seen from above have holes through to the sky below
+
+Owner, 2026-11-12 (screenshot at night, looking straight down from high up): "looking down at trees from high up,
+where you can first make out individual trees, they seem to have visible holes through them into the ground (sky on
+the other side). This is most obvious at night, so the day sky shines through the ground." In the shot each far
+tree (the LOD's crownless trees: dark crosses and squares on the grass) shows bright light-blue pixels at its
+centre — through the tree and the ground under it, the other face's (day) sky shows. Suspects: the LOD terrain
+leaves a hole (or an unfilled cell) under each far tree's trunk/column (the tree cells cut from the LOD's ground and
+not filled), or T-junction cracks where the far tree's mesh meets the LOD ground; at that distance the gap is a
+pixel or two and the sky behind the disc shows through.
 
 ### 92. Downhill water shows edge triangles and thin lines at its ½ m level steps
 
@@ -432,6 +452,27 @@ face, or the placement check against its shape.
 
 
 ## Fixed
+
+### 94. Jumping into a tree's leaves rubber-bands you toward the ground until you back out (fixed after 0.54.14x)
+
+Owner, 2026-11-12: "A bug I just found seems to be a mismatch between server and client for leaves collision.
+Jumping into the leaves of a tree makes you rubberband falling to the ground endlessly until you back out of the
+leaves." Suspects: the client's predicted controller and the server's disagree about leaves — one treats leaf cells
+as solid (or as a climbable/slowing medium) and the other as passable, so every snapshot corrects the predicted
+position and prediction falls again; candidates: leaves' collision shape or `solid` flag read from different data
+(block registry vs the mesher's leaf cards / leaf density), trees composed at chunk load on one side only
+(TREE_GROWTH layer, tombstones/growers) so the server or client has no leaf blocks there, or leaves' `flooded`/state
+aliasing differing across the registry sync.
+Cause: not the collision or the leaf cells — both sides built the same crown voxel for voxel, and both controllers pass
+through leaves (`passable`). The server alone also runs the buried-player lift (`server/buried.rs`, BUGS #82), which
+read any `solid` full cell as ground to be lifted out of: leaves are `solid` (and `passable`), so a player whose centre
+entered a crown was teleported to the crown's top every tick while the client's prediction fell through it — each
+snapshot pulled the prediction back up and it fell again, until the player left the leaves. Fixed: the lift asks
+`dwell_blocks::collision_class`, the terrain collision's own test, so a passable block buries no one. Tests:
+`netcode` `jumping_into_a_trees_leaves_is_predicted_exactly_without_latency` (the real server and a predicting
+client on a flat world with a pine, walking and jumping in and out of the crown: 10 replays of 1–3 m on the unfixed
+code → 0, every acknowledged position exact) and `buried` `a_player_inside_leaves_is_not_buried_and_falls_through_them`
+(both faces: held at the crown's top 4.6 m up on the unfixed code → falls to the stone).
 
 ### 93. Vertical swings (axe, sword, …) play twice for one swing (fixed after 0.54.14x; the look in game left local)
 

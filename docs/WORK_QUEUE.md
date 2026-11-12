@@ -365,6 +365,20 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    sunset like our old 2D clouds."** The volume should take the deck's golden-hour tint: the sun's colour low in the
    sky, the warm underside glow and the horizon colour the deck mixed in; compare at sunrise/sunset against
    `?clouds=` the 2D deck (the reference since the lighting rework).
+   Owner, 2026-11-12: **"Also, our new 2D clouds seem to have lost most of their lighting from the original too. Can
+   you compare with our old non-volumetric clouds they were 3d to see what was different about their lighting? They
+   almost looked 3D"** — compare the deck as it was before the volumetric work (before 93fd6c26, e.g. at
+   122b0f0e) with today's deck term by term (fake relief/normals from the noise, self-shadowing toward the sun,
+   rim/silver light, the dark undersides, the sunset ramp) and restore what was lost.
+   **Built (2026-11-12, cloud, branch `claude/cloud-golden-hour-zjl391`, CLOUDS.md §9.8):** the tint was lost in
+   the ambient: the deck warms its whole colour at a low sun, the volume only the sun's light, and a volume
+   sample's light is mostly the cool sky's. Now the shade (sky light and ground bounce) takes the deck's warm
+   tint too (`volume.sunsetShade`), the ramp and the far haze are one function on both; CPU twin tests at 3°
+   (the deck's warmth within 8 %, bases warm; red on the old shading), noon unchanged, both faces. And the
+   opacity split: the light march had taken `volume.extinction` too; now `volume.extinction` (0.03, was 0.006)
+   is the view's, `volume.lightExtinction` (0.006) the light's, plumes keep theirs; a dev knob
+   `?cloudExtinction=` / `__dwell.cloudExtinction(x)` for the A/B. Next (local): the look at sunrise/sunset
+   against `?clouds=` the deck, the A/B of 0.006 / 0.03 / 0.05 and `gpu.clouds`; tune by the data.
 14. **Tall grass grows and spreads** (owner 2026-11-11: "I want tall grass to steadily grow and spread. It
    should probably have a max depending on climate/biome."). **Built** (ADR 0075 T3c, docs/ECOLOGY.md §10):
    `shared/worldgen/grass.json` (the rule as data: the block, the ground, the decoration whose climate
@@ -618,6 +632,19 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    shattered (the crack overlay dominates; the scar is low-contrast and never reaches the silhouette); next
    levers listed there. Round 3: faint late cracks, a fresh-rock tint and 3D flying fragments (4 a hit) built; close up
    it reads as chipped stone. Left: flakes breaking the cell's edge (the silhouette), the owner's look.
+   Owner, 2026-11-12: **"One of my requirements that I think might not have been coming through for tools is that
+   the chunks that fly off and show chunked off the blocks should be equivalent to 50% of the block's volume /
+   number of swings required to break it."** The rule, for every tool on every block (digging, mining, chopping —
+   items 18, 24–26): each hit carves away, and throws off as pieces, a volume of 0.5 × the block's volume ÷ the hits
+   that block takes to break with that tool; so when it breaks, half the block has been carved and flown off (the
+   block breaks at 50 % broken; metal tools take fewer, bigger bites). The carved mark and the flying pieces both
+   match that volume (the pieces' total ≈ the bite).
+   **Status (bite-volume):** built (BLOCK_DAMAGE.md §10): `dwell_protocol::damage::bite_m3` (0.5 × the block's
+   volume, a ramp half a cell's, ÷ its hits with the tool), used by the server's marks, the carve (sized to
+   k bites after k hits, half at the break, within 8 % on the mesh) and the flying pieces (`chips.shards` ×
+   `chips.piece` look, together the bite; dirt clods and the axe's wood chips added); the tier `chunk` data
+   removed (metal's bigger bites come from its fewer hits). Dirt one shovel hit 0.0014 → 0.05 m³. Left: the
+   axe's notch carve still its own size (the chips follow the rule), the owner's look in game.
 19. **Lava glow, remaining** (owner 2026-11-11: "Lava should have bloom glow"; "Lava looks dark red instead of
    bright red/orange"; "It should darken as it solidifies though"). Built 0.52.107: colour by heat stops, heat in
    cells. **Bloom built (pending release, `claude/bloom`):** keyed on the scene's self-lit flag (lava, torches,
@@ -1144,6 +1171,12 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    is still the old rigid parts (§11.5 "Still rigid"); only the arms moved to the Peasant. Next: draw your own body
    in first person from the Peasant too (the skinned body minus head, the arm cut hidden where the fp arms draw,
    the same clips as your shadow), the rigid body retired; `?fparms=rigid` keeps both old for comparison.
+   **Built (0.54, cloud)**: your own body is the Peasant's skinned mesh less its head and arms, cut by skin
+   weight (`models.json` `firstPerson.body`: `hide` the neck, head and left arm, plus the fp arm's joints),
+   posed by your shadow's rig pose and placed as the rigid body was (`back`, `lookDown`, `clear`, `near`);
+   no held item on it; `?fparms=rigid` draws the old arms and body together (CHARACTERS.md §11.12). Sliding,
+   the Peasant's shorter legs come into view from 30° down (the rigid ones from 15°). In-game look still to
+   be checked locally on a GPU.
 38. **Wandering NPCs** (owner 2026-11-12: "Another item to queue up, wandering NPCs. They'll use the same player
    character model."). People using the Peasant model who wander the world like the animals do. Owner's answers
    (2026-11-12): wander, idle (look around, sit), turn to look at a nearby player, step aside when bumped — no
@@ -1337,6 +1370,17 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
 
 ## Done
 
+- **Main's tests green again (owner 2026-11-12: "make main's tests green again (tests/fixes only)"):**
+  four stale expectations, no code bugs. `checks.ts`'s areas lacked `shared/look/bloom.mjs` (render) and
+  `src/theater/` (ui); the textures test's known palette deviations gained obsidian's near-black shadow
+  and lava's self-lit top (the lava look); the client NPC test expected four colour parts, five since
+  the hat got its own (8a5f8a1). `hosting.test.ts` and `hostPanel.test.ts` failed only without the
+  wasm package (`npm run build:wasm`).
+  **Still red, found along the way (not fixed here):** `dwell-client`'s
+  `game_local.rs` `a_long_trip_over_the_terrain_keeps_the_near_ring_at_full_detail` (BUGS #54's test): a
+  near chunk waits 277 frames (bar 120) at frame 4619, chunk (63, 14, 224); deterministic, and the same at
+  every commit back to 588e896, so older than this checkout's recent history; needs its own look.
+
 - **Axe swing directions and animation tools (owner 2026-11-11: "The axe animations are still trash.
   They don't swing in the right direction at all. Make yourself some tools to properly observe
   animations"):** the clip probe (`cargo run -p dwell-client --example clip_probe`, DEV_TOOLS.md "Clip
@@ -1431,6 +1475,10 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
 
 ## Smaller items, after the queue
 
+- **Leaves rubber-band (BUGS.md #94, 2026-11-12, `claude/leaves-rubberband-dy5tni`), done.** Owner: "seems to be a mismatch
+  between server and client for leaves collision. Jumping into the leaves of a tree makes you rubberband falling to
+  the ground endlessly until you back out of the leaves." The server's buried-player lift took leaves (solid but
+  passable) for ground; it now uses the terrain collision's own test. Tests in `netcode` and `buried` (both faces).
 - **Realistic and forest look (2026-11-12, `claude/realistic-forest-look`), seen in Chrome on the GPU** (Realistic
   seeds 1–3 face A, `test:forest`; stills, a contact sheet and a 9:16 video handed to the owner). What reads: the big
   map (M, widest level) shows the plates' story at a glance — one continent a seed, snow-capped ranges, a green wet
@@ -1574,6 +1622,15 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
   terrain's LOD levels coarser than the cirques and crags may smooth them.
 - **Chisel:** biome decorations and spacing per biome; players' saved structures as placement sources;
   the in-game editor and a biome choice in the New world form.
+
+43. **Model part painter** (owner 2026-11-12, after bug #96, villagers' faces and hair taking clothes/hat colours:
+   **"You should have tooling for debugging this and setting up a model so it can be retextured."**). Answers: a
+   **standalone prototype page** (docs/prototypes, published like the Character Lab); parts **painted per vertex,
+   saved as data** (a part map per model: each vertex → part — skin, hair, shirt, trousers, hat, eyes, …; seeded
+   from the skin weights and colours, corrected by hand with a brush). The page shows the model with its parts in
+   distinct colours (front/side/back, rotate), paints vertices into parts, previews the creature's colour variants
+   (creatures.json `colours`), and exports the part map file the game reads (the recolour by part, not by colour).
+   Order: bug #96's fix lands the part map format and the game reading it; then the page.
 
 ## Future (needs owner answers)
 

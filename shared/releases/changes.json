@@ -2,6 +2,75 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.54.173",
+      "changes": [
+        "Each tool hit carves a real bite out of a block: half the block over the hits it takes to break",
+        "The shards, clods and wood chips a hit throws off add up to that bite; metal tools take bigger bites"
+      ]
+    },
+    {
+      "version": "0.54.172",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.171",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.170",
+      "changes": [
+        "Behind the scenes: bug notes"
+      ]
+    },
+    {
+      "version": "0.54.169",
+      "changes": [
+        "Looking down or sliding, your own legs, boots and tunic are now the same character model others see and your shadow casts",
+        "Behind the scenes: ?fparms=rigid shows the old first-person arms and body together for comparison"
+      ]
+    },
+    {
+      "version": "0.54.168",
+      "changes": [
+        "Behind the scenes: test fixes"
+      ]
+    },
+    {
+      "version": "0.54.167",
+      "changes": [
+        "Volumetric clouds glow warm at sunrise and sunset like the old flat clouds: warm tops, peach-pink bases, far clouds fading into the horizon",
+        "Volumetric clouds hide the clouds behind them instead of showing them through, while sunlight still shines through their edges"
+      ]
+    },
+    {
+      "version": "0.54.166",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.165",
+      "changes": [
+        "Jumping into a tree's leaves no longer rubber-bands you: you fall through them smoothly"
+      ]
+    },
+    {
+      "version": "0.54.164",
+      "changes": [
+        "Behind the scenes: bug notes"
+      ]
+    },
+    {
+      "version": "0.54.163",
+      "changes": [
+        "Behind the scenes: the forest frame-rate bench now checks the GPU frame budget, and the far-tree impostors know which trees to draw (not drawn yet)"
+      ]
+    },
+    {
       "version": "0.54.162",
       "changes": [
         "Behind the scenes: bug notes"

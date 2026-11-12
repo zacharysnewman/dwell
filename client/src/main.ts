@@ -342,6 +342,11 @@ interface DwellDebug {
    * radius?, height?, density?, riseMps?] a steam plume based at a world point; `near` [name, dx,
    * dz] one under the eye; `move` [name, x, y, z]; `remove` [name]; `clear`.
    */
+  /**
+   * The volumetric clouds' view opacity (per m at density 1; `?cloudExtinction=`) over the data's
+   * `volume.extinction`, live, for an A/B (0.006 / 0.03 / 0.05); 0 or none: the data's.
+   */
+  cloudExtinction(extinction?: number): void;
   plume(
     op?: 'list' | 'add' | 'near' | 'move' | 'remove' | 'clear',
     args?: [string?, ...number[]],
@@ -1052,6 +1057,10 @@ async function start(): Promise<App | null> {
     // ?waterdbg=caustics,foam,… turns pieces of the water's shading off (a dev tool, DEV_TOOLS.md).
     const waterDebug = new URLSearchParams(location.search).get('waterdbg');
     if (waterDebug) client.setWaterDebug(waterDebug);
+    // ?cloudExtinction=0.03 sets the volumetric clouds' view opacity over the data's, for an A/B of
+    // how much a cloud hides the ones behind it (a dev tool, DEV_TOOLS.md; docs/CLOUDS.md §9.8).
+    const cloudExtinction = Number(new URLSearchParams(location.search).get('cloudExtinction'));
+    if (cloudExtinction > 0) client.setCloudExtinction(cloudExtinction);
     // ?heightfield=1|0 forces the near water's GPU heightfield on or off (a dev tool, DEV_TOOLS.md).
     const heightfield = new URLSearchParams(location.search).get('heightfield');
     if (heightfield === '1' || heightfield === '0') client.setHeightfield(Number(heightfield));
@@ -1456,6 +1465,7 @@ async function start(): Promise<App | null> {
       Promise.resolve(null),
     spawnNpcs: (n, radius, variant) =>
       app.loopback?.lavaDev('spawnNpcs', [n, radius ?? 3, variant ?? 0]) ?? Promise.resolve(null),
+    cloudExtinction: (extinction) => client.setCloudExtinction(extinction ?? 0),
     plume: (op, args) => {
       const [name, ...nums] = args ?? [];
       return client.plumeDev(op ?? 'list', name ?? '', Float64Array.from(nums));
