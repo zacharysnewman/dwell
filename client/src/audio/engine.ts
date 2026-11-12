@@ -9,6 +9,7 @@ import { makeNoise, playSound, startLoop, type LoopVoice, type NoiseBank } from 
 import { SampleBank } from './samples';
 import { mulberry32, Variation } from './variation';
 import { VoiceLimits } from './voices';
+import type { ListenerPose } from './listener';
 import type { MusicElement } from './music';
 import type { SamplePlay } from './samples';
 import type { SoundData, SoundDef } from './types';
@@ -24,6 +25,8 @@ export interface PlayRequest {
   /** Stereo position for a non-spatial play (footsteps left and right). */
   pan?: number;
   gain?: number;
+  /** The share sent to the room on top of the sound's own (an own sound's placement). */
+  reverb?: number;
 }
 
 /** Spatial plays farther than this are not played (m). */
@@ -43,6 +46,7 @@ export class AudioEngine {
   /** Loop voices by mover (a slide's scrape). */
   private readonly loops = new Map<string, { voice: LoopVoice; panner: PannerNode | undefined }>();
   private listener: Vec3 = [0, 0, 0];
+  private pose: ListenerPose | null = null;
   private installed = false;
   /** The latest plays' ids, newest last (the `window.__dwell.sounds()` debug hook). */
   readonly recent: string[] = [];
@@ -180,6 +184,7 @@ export class AudioEngine {
   /** The camera: position, forward and up (unit vectors). */
   setListener(position: Vec3, forward: Vec3, up: Vec3): void {
     this.listener = position;
+    this.pose = { position, forward, up };
     const l = this.ctx?.listener;
     if (!l) return;
     if ('positionX' in l) {
@@ -203,6 +208,11 @@ export class AudioEngine {
     }
   }
 
+  /** The listener last set (the camera), or null before the first frame. */
+  listenerPose(): ListenerPose | null {
+    return this.pose;
+  }
+
   /** Plays a sound by id (`dwell:stone_step`); false if it was not played. */
   play(id: string, req: PlayRequest): boolean {
     const { ctx, mixer, noise } = this;
@@ -221,7 +231,13 @@ export class AudioEngine {
       setPosition(panner, at);
     }
     const sample = this.samples.pick(id, sound);
-    const input = soundInput(ctx, mixer, req.bus, roomSend(sound, sample !== null), panner);
+    const input = soundInput(
+      ctx,
+      mixer,
+      req.bus,
+      roomSend(sound, sample !== null) + (req.reverb ?? 0),
+      panner,
+    );
     let end: number;
     if (sample) {
       end = playSample(
@@ -264,7 +280,7 @@ export class AudioEngine {
       panner = this.panner(ctx);
       setPosition(panner, at);
     }
-    const input = soundInput(ctx, mixer, req.bus, sound.reverb ?? 0, panner);
+    const input = soundInput(ctx, mixer, req.bus, (sound.reverb ?? 0) + (req.reverb ?? 0), panner);
     const params = this.variation.draw(id, sound, req.intensity ?? 1);
     const v = startLoop(
       ctx,

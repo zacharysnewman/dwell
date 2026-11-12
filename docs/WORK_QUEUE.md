@@ -26,6 +26,13 @@ and leg speed (#103), underwater/surface swim audio (#104), floating trees + lea
 needs the owner's 0.55 line), tall grass height (item 14), far-sky rim/band (#823, conflicts). Then: the moon's
 client side (item 27), orbits O4–O5, big worlds memory (#76/#77).
 
+Owner, 2026-11-12 (BUGS.md #110): **"I think the sound 'source' direction might be the issue with some of our sound
+effects. They sound like they're coming from right behind your head. Are we using 2D sound?"**, then **"Like
+footsteps sound like they're in your ears."** → own footsteps grounded (below and slightly ahead, at the feet, a touch
+of the room), positioned rather than non-positional, never behind the head looking up or down. **Fixed (cloud,
+2026-11-12):** the listener frame checked on both faces; own sounds placed round the ear by data (`shared/sounds`
+`self`: feet, body, hand; AUDIO.md §5a). Next: the owner listens on headphones.
+
 Owner, 2026-11-12: **"How are realistic worlds going? And forests? Those are the two I'm most interested in
 seeing."** → next on the Mac after the flying frame rate: a look at both (screenshots/video of a Realistic world —
 plates, ranges, rain shadow, biomes by climate — and the old-growth forest), then R6 (the Realistic world in New
