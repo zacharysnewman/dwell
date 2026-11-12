@@ -347,29 +347,40 @@ fn arms_bones(role: &str, held: Held, t: f32) -> [Affine; MAX_BONES] {
     arm_transforms(ch, &with_item(&pose, hold))
 }
 
-/// A fitted arms key: the root offset (view space, as the clip keys it: +x left) and the swing's
-/// three arm bones (degrees), and where it puts the grip and the tool head (the player's frame:
-/// right, up, ahead of the eye).
+/// A fitted key: the arms' root offset (view space, as the clip keys it: +x left) or the body's
+/// chest twist (degrees about up), the swing's three arm bones (degrees), and where it puts the
+/// grip, the tool head and which way the blade's edge faces (the player's frame: right, up, ahead
+/// of the eye; the body's: right, up, ahead of the feet).
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Fit {
+    pub body: bool,
     pub root: [f32; 3],
+    pub chest: f32,
     pub arm: [f32; 3],
     pub forearm: f32,
     pub hand: [f32; 3],
     pub grip: [f32; 3],
     pub head: [f32; 3],
+    pub blade: [f32; 3],
+}
+
+/// What a fitted key should do: the grip and the tool head there, and (if given) the blade's edge
+/// facing that way (a direction; the strike's way, so the edge leads the head).
+#[derive(Clone, Copy, Debug)]
+pub struct Target {
+    pub grip: [f32; 3],
+    pub head: [f32; 3],
+    pub blade: Option<[f32; 3]>,
 }
 
 impl Fit {
-    /// The key as the clip's JSON (`{ "t": …, "root": …, "bones": {…} }`).
+    /// The key as the clip's JSON (`{ "t": …, "root": …, "bones": {…} }`; a body key keys the
+    /// chest instead of a root).
     pub fn json(&self, t: f32) -> String {
         let r = |v: f32| (v * 1000.0).round() / 1000.0 + 0.0;
         let d = |v: f32| v.round() + 0.0;
-        format!(
-            r#"{{ "t": {t}, "root": [{}, {}, {}], "bones": {{ "arm_r": [{}, {}, {}], "forearm_r": [{}, 0, 0], "hand_r": [{}, {}, {}] }} }}"#,
-            r(self.root[0]),
-            r(self.root[1]),
-            r(self.root[2]),
+        let arms = format!(
+            r#""arm_r": [{}, {}, {}], "forearm_r": [{}, 0, 0], "hand_r": [{}, {}, {}]"#,
             d(self.arm[0]),
             d(self.arm[1]),
             d(self.arm[2]),
@@ -377,51 +388,98 @@ impl Fit {
             d(self.hand[0]),
             d(self.hand[1]),
             d(self.hand[2]),
-        )
+        );
+        if self.body {
+            format!(
+                r#"{{ "t": {t}, "bones": {{ "chest": [0, {}, 0], {arms} }} }}"#,
+                d(self.chest)
+            )
+        } else {
+            format!(
+                r#"{{ "t": {t}, "root": [{}, {}, {}], "bones": {{ {arms} }} }}"#,
+                r(self.root[0]),
+                r(self.root[1]),
+                r(self.root[2]),
+            )
+        }
     }
 }
 
-/// Fits an arms key for `role`'s swing (the clip-authoring aid behind `clip_probe --fit`): the
-/// root offset (a torso turn, kept small) and the arm, elbow and wrist turns that put the grip at
-/// `grip` and the tool head at `head` (the player's frame: right, up, ahead of the eye), within
-/// the rig's joint limits, starting from `from`. Coordinate descent on the game's own posing
-/// (`arm_transforms` with the hold's turns), so the key plays where it was fitted.
-pub fn fit(
-    role: &str,
-    item: Option<&'static str>,
-    grip: [f32; 3],
-    head: [f32; 3],
-    from: Fit,
-) -> Fit {
+/// Fits a key for `role`'s swing (the clip-authoring aid behind `clip_probe --fit`): the arm,
+/// elbow and wrist turns, with the arms' root offset (first person; a torso turn, kept small) or
+/// the chest's twist (`body`: the third-person rig, its frame from the feet), that put the grip
+/// and the tool head at `target`'s places and turn the blade's edge its way, within the rig's
+/// joint limits, starting from `from`. Coordinate descent on the game's own posing
+/// (`arm_transforms` / `bone_transforms` with the hold's turns), so the key plays where it was
+/// fitted.
+pub fn fit(role: &str, item: Option<&'static str>, body: bool, target: Target, from: Fit) -> Fit {
     let ch = player();
     let held = held_for(item, role);
     let hold = held.item().and_then(|(n, _)| ch.item(n));
     let (gb, gp) = local_point(held, Point::Grip).expect("grip");
     let (hb, hp) = local_point(held, Point::ToolHead).unwrap_or((gb, gp));
+    let edge = local_point(held, Point::Part("axe_blade"));
+    let lash = local_point(held, Point::Part("axe_lashing"));
     let bone = |n: &str| ch.bone(n).expect("bone");
-    let (arm, fore, hand) = (bone("arm_r"), bone("forearm_r"), bone("hand_r"));
+    let (arm, fore, hand, chest) = (
+        bone("arm_r"),
+        bone("forearm_r"),
+        bone("hand_r"),
+        bone("chest"),
+    );
     let place = |x: &[f32; 10]| {
         let mut pose = dwell_characters::anim::Pose::REST;
         pose.rot[arm] = [x[0], x[1], x[2]];
         pose.rot[fore] = [x[3], 0.0, 0.0];
         pose.rot[hand] = [x[4], x[5], x[6]];
-        pose.root = [x[7], x[8], x[9]];
-        let b = arm_transforms(ch, &with_item(&pose, hold));
-        (to_local(b[gb].apply(gp)), to_local(b[hb].apply(hp)))
+        let b = if body {
+            pose.rot[chest] = [0.0, x[7], 0.0];
+            bone_transforms(ch, &with_item(&pose, hold))
+        } else {
+            pose.root = [x[7], x[8], x[9]];
+            arm_transforms(ch, &with_item(&pose, hold))
+        };
+        let at = |(i, p): (usize, [f32; 3])| to_local(b[i].apply(p));
+        let blade = match (edge, lash) {
+            (Some(e), Some(l)) => norm3(sub3(at(e), at(l))),
+            _ => [0.0; 3],
+        };
+        (at((gb, gp)), at((hb, hp)), blade)
     };
-    // The rig's joint limits, and a torso turn of at most 0.25 m.
-    let lo = [
-        -180.0, -90.0, -180.0, -150.0, -80.0, -60.0, -40.0, -0.25, -0.2, -0.2,
-    ];
-    let hi = [70.0, 90.0, 30.0, 0.0, 80.0, 60.0, 40.0, 0.25, 0.2, 0.2];
+    // The rig's joint limits, and a torso turn of at most 0.25 m (arms) or 50° (body).
+    let (lo, hi) = if body {
+        (
+            [
+                -180.0, -90.0, -180.0, -150.0, -80.0, -60.0, -40.0, -50.0, 0.0, 0.0,
+            ],
+            [70.0, 90.0, 30.0, 0.0, 80.0, 60.0, 40.0, 50.0, 0.0, 0.0],
+        )
+    } else {
+        (
+            [
+                -180.0, -90.0, -180.0, -150.0, -80.0, -60.0, -40.0, -0.25, -0.2, -0.2,
+            ],
+            [70.0, 90.0, 30.0, 0.0, 80.0, 60.0, 40.0, 0.25, 0.2, 0.2],
+        )
+    };
     let cost = |x: &[f32; 10]| {
-        let (g, h) = place(x);
+        let (g, h, b) = place(x);
         let d2 = |a: [f32; 3], b: [f32; 3]| (0..3).map(|k| (a[k] - b[k]).powi(2)).sum::<f32>();
         // The root costs a little (the arm does the work), the wrist's turn a little too.
-        let reg = 0.3 * (x[7] * x[7] + x[8] * x[8] + x[9] * x[9])
-            + 2e-6 * (x[4] * x[4] + x[5] * x[5] + x[6] * x[6]);
-        let behind = if h[2] < 0.2 { 10.0 * (0.2 - h[2]) } else { 0.0 };
-        d2(g, grip) + d2(h, head) + reg + behind
+        let reg = if body {
+            1e-5 * x[7] * x[7]
+        } else {
+            0.3 * (x[7] * x[7] + x[8] * x[8] + x[9] * x[9])
+        } + 2e-6 * (x[4] * x[4] + x[5] * x[5] + x[6] * x[6]);
+        let behind = if !body && h[2] < 0.2 {
+            10.0 * (0.2 - h[2])
+        } else {
+            0.0
+        };
+        let facing = target
+            .blade
+            .map_or(0.0, |w| 0.05 * (1.0 - dot3(b, norm3(w))));
+        d2(g, target.grip) + d2(h, target.head) + reg + behind + facing
     };
     let mut x = [
         from.arm[0],
@@ -431,12 +489,16 @@ pub fn fit(
         from.hand[0],
         from.hand[1],
         from.hand[2],
-        from.root[0],
-        from.root[1],
-        from.root[2],
+        if body { from.chest } else { from.root[0] },
+        if body { 0.0 } else { from.root[1] },
+        if body { 0.0 } else { from.root[2] },
     ];
     let mut best = cost(&x);
-    let mut step = [8.0f32, 8.0, 8.0, 8.0, 8.0, 8.0, 8.0, 0.03, 0.03, 0.03];
+    let mut step = if body {
+        [8.0f32, 8.0, 8.0, 8.0, 8.0, 8.0, 8.0, 8.0, 0.0, 0.0]
+    } else {
+        [8.0f32, 8.0, 8.0, 8.0, 8.0, 8.0, 8.0, 0.03, 0.03, 0.03]
+    };
     for _ in 0..4000 {
         let mut moved = false;
         for k in 0..10 {
@@ -457,14 +519,17 @@ pub fn fit(
             }
         }
     }
-    let (g, h) = place(&x);
+    let (g, h, b) = place(&x);
     Fit {
-        root: [x[7], x[8], x[9]],
+        body,
+        root: if body { [0.0; 3] } else { [x[7], x[8], x[9]] },
+        chest: if body { x[7] } else { 0.0 },
         arm: [x[0], x[1], x[2]],
         forearm: x[3],
         hand: [x[4], x[5], x[6]],
         grip: g,
         head: h,
+        blade: b,
     }
 }
 
@@ -767,12 +832,14 @@ fn view_title(view: &str) -> &'static str {
 /// skeleton in `tp`.
 pub fn svg(r: &Report, views: &[&str]) -> String {
     use std::fmt::Write;
-    let (pw, ph) = (360.0f32, 300.0f32);
-    // Two columns (five views: 720 × 924) and a viewBox, so a viewer or thumbnailer that fits the
-    // sheet to a square (`qlmanage -t`) shows every panel (the side panel was cut off).
-    let cols = views.len().clamp(1, 2);
-    let rows = views.len().div_ceil(cols);
-    let (w, h) = (pw * cols as f32, ph * rows as f32 + 24.0);
+    // A square sheet (five views: three columns of two rows, 1080 × 1080) with a viewBox, so a
+    // thumbnailer that renders a square (`qlmanage -t`) shows every panel (it cropped the side
+    // panel of a wide sheet and the last of a tall one).
+    let cols = (views.len() as f32).sqrt().ceil().max(1.0) as usize;
+    let rows = views.len().div_ceil(cols).max(1);
+    let side = 360.0 * cols as f32;
+    let (pw, ph) = (side / cols as f32, (side - 24.0) / rows as f32);
+    let (w, h) = (side, side);
     let mut s = String::new();
     let _ = writeln!(
         s,
@@ -1118,6 +1185,32 @@ mod chop_swing_tests {
                 "{role}: the hands travel the arc with the head: grip {grip:.2} m, head {head:.2} m"
             );
         }
+    }
+
+    #[test]
+    fn the_level_strike_stays_level_on_screen() {
+        // face-a-only: view space. Round 2's refit drew the head back high off the top right, so
+        // the strike came down diagonally to the crosshair.
+        let mut p = Probe::new("chop_level");
+        p.samples = 121;
+        let r = probe(&p).expect("probe");
+        let s = within(&r, "strike");
+        let (mut dx, mut dy) = (0.0f32, 0.0f32);
+        for w in s.windows(2) {
+            let (a, b) = (w[0].at[0].screen, w[1].at[0].screen);
+            dx += (b[0] - a[0]).abs();
+            dy += (b[1] - a[1]).abs();
+        }
+        let high = s
+            .iter()
+            .map(|x| x.at[0].screen[1].abs())
+            .fold(0.0, f32::max);
+        assert!(
+            dy < 0.3 * dx && high < 0.45,
+            "the level strike runs across, not down: across {dx:.2}, up/down {dy:.2}, \
+             furthest off the crosshair's height {high:.2}\n{}",
+            table(&r)
+        );
     }
 
     #[test]
