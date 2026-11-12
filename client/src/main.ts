@@ -1099,7 +1099,12 @@ async function start(): Promise<App | null> {
     client.setShowArms(s.showArms);
     client.setDetail(s.detail.distanceM, s.detail.pixelError, s.detail.memoryMb);
     // The features with no tier of their own before WORK_QUEUE item 30 (ui/featureSettings.ts).
-    client.setTerrainDetail(s.features.tallGrass, s.features.farTrees);
+    // ?tallgrass=0..1 overrides the Tall grass share (a dev tool for the bench, DEV_TOOLS.md).
+    const tallGrassQ = Number(new URLSearchParams(location.search).get('tallgrass') ?? NaN);
+    const tallGrass = Number.isFinite(tallGrassQ)
+      ? Math.min(1, Math.max(0, tallGrassQ))
+      : s.features.tallGrass;
+    client.setTerrainDetail(tallGrass, s.features.farTrees);
     client.setDistantShadows(s.features.distantShadows);
     client.setEffects(s.features.hitShards, s.features.particles, s.features.farHerds);
     reportSettings = {

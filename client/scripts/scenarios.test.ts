@@ -559,6 +559,14 @@ describe('record budgets', () => {
     expect(overBudget(frames, { 'mesh_dirty.p95': 9 })).toEqual(['mesh_dirty.p95: not recorded']);
   });
 
+  it('bounds the GPU timings, which are samples, not per-frame series (forest-perf)', () => {
+    const frames = { 'frame.cpu': { p95: 9 } };
+    const samples = { 'gpu.frame': { p95: 25.0 } };
+    expect(overBudget(frames, { 'frame.cpu.p95': 16.7, 'gpu.frame.p95': 16.7 }, samples)).toEqual([
+      'gpu.frame.p95 25.00 over 16.7',
+    ]);
+  });
+
   it('rejects a budget without a known statistic', () => {
     expect(() => one({ 'frame.cpu': 14 })).toThrow(/stat of mean, p50, p95, p99, max/);
     expect(() => one([1])).toThrow(/expected/);
