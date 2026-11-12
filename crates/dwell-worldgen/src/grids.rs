@@ -31,8 +31,9 @@ pub enum GridFrameKind {
 /// A grid's generator, by kind.
 #[derive(Clone, Debug, PartialEq)]
 pub enum GridGenerator {
-    /// Today's home terrain (`TerrainGenerator`, both faces by `BifacialTerrain`).
-    Terrain,
+    /// Today's home terrain (`TerrainGenerator`, both faces by `BifacialTerrain`); its far bake
+    /// (`crate::home_far`) is `bake_size` texels a side per face, from the world map.
+    Terrain { bake_size: usize },
     /// The moon rules ([`CraterRules`]).
     Cratered(Arc<CraterRules>),
 }
@@ -55,6 +56,9 @@ pub struct GridDef {
     /// Past this distance (m) from the viewer the grid is drawn as a far body (its baked maps,
     /// MOON_WORLD.md §5), nearer as LOD terrain.
     pub far_m: f64,
+    /// How high its ground reaches over its midplane (m, face-local): the slab far flight measures
+    /// its distance from (MOON_WORLD.md §7).
+    pub surface_m: f64,
     pub generator: GridGenerator,
 }
 
@@ -260,12 +264,7 @@ fn crater_rules(g: &Value, at: &str) -> Result<CraterRules, String> {
             "{at}: `maria.edgeM` must be at most the smallest radius"
         ));
     }
-    let bake = num(g, "bake.size", at)?;
-    if !(8.0..=2048.0).contains(&bake) || bake.fract() != 0.0 {
-        return Err(format!(
-            "{at}: `bake.size` must be a whole number in 8..=2048"
-        ));
-    }
+    let bake = bake_size(g, at)?;
     Ok(CraterRules {
         block: block.to_owned(),
         datum_m: num(g, "datumM", at)?,
@@ -298,8 +297,19 @@ fn crater_rules(g: &Value, at: &str) -> Result<CraterRules, String> {
             },
             classes,
         },
-        bake_size: bake as usize,
+        bake_size: bake,
     })
+}
+
+/// A generator's `bake.size`: the far-LOD map's texels a side per face.
+fn bake_size(g: &Value, at: &str) -> Result<usize, String> {
+    let bake = num(g, "bake.size", at)?;
+    if !(8.0..=2048.0).contains(&bake) || bake.fract() != 0.0 {
+        return Err(format!(
+            "{at}: `bake.size` must be a whole number in 8..=2048"
+        ));
+    }
+    Ok(bake as usize)
 }
 
 /// Parses and validates a grids file: a bad entry fails with a message naming it.
@@ -339,7 +349,9 @@ pub fn parse_grids(text: &str) -> Result<Vec<GridDef>, String> {
         };
         let gen_ = get(g, "generator", &at)?;
         let generator = match gen_.get("kind").and_then(Value::as_str) {
-            Some("terrain") => GridGenerator::Terrain,
+            Some("terrain") => GridGenerator::Terrain {
+                bake_size: bake_size(gen_, &at)?,
+            },
             Some("cratered") => GridGenerator::Cratered(Arc::new(crater_rules(gen_, &at)?)),
             _ => {
                 return Err(format!(
@@ -353,6 +365,7 @@ pub fn parse_grids(text: &str) -> Result<Vec<GridDef>, String> {
             Some(_) => Some(positive(g, "captureM", &at)?),
         };
         let far_m = positive(g, "farM", &at)?;
+        let surface_m = positive(g, "surfaceM", &at)?;
         if frame == GridFrameKind::Rest && capture_m.is_some() {
             return Err(format!(
                 "{at}: the grid at rest captures nobody (no `captureM`)"
@@ -384,6 +397,7 @@ pub fn parse_grids(text: &str) -> Result<Vec<GridDef>, String> {
             gravity_scale,
             capture_m,
             far_m,
+            surface_m,
             generator,
         });
     }
@@ -412,6 +426,56 @@ pub fn grids() -> &'static [GridDef] {
 /// The build's grid named `name` (`dwell:moon`).
 pub fn grid(name: &str) -> Option<&'static GridDef> {
     grids().iter().find(|g| g.name == name)
+}
+
+/// Travel between the grids (`grids.json` `travel`, MOON_WORLD.md §7).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct TravelRules {
+    /// Far flight starts this far (m) from the nearest grid's slab.
+    pub far_above_m: f64,
+    /// Far flight's speed per metre of that distance (1/s): `v = perS × d`.
+    pub far_per_s: f64,
+    /// Far flight's top speed (m/s).
+    pub far_max_mps: f64,
+    /// A captured player is released past `captureM` × this (> 1: hysteresis).
+    pub release_factor: f64,
+}
+
+impl TravelRules {
+    /// The far-flight speed at `d` m from the nearest grid's slab: 0 nearer than `aboveM` (the
+    /// slider's speed alone), else `perS × d` up to the top.
+    pub fn far_speed(&self, d: f64) -> f64 {
+        if d <= self.far_above_m {
+            0.0
+        } else {
+            (self.far_per_s * d).min(self.far_max_mps)
+        }
+    }
+}
+
+/// Parses and validates `grids.json`'s `travel` block.
+pub fn parse_travel(text: &str) -> Result<TravelRules, String> {
+    let v: Value = serde_json::from_str(text).map_err(|e| format!("grids: {e}"))?;
+    let t = v.get("travel").ok_or("grids: no `travel` block")?;
+    let at = "grids `travel`";
+    let far = get(t, "farFlight", at)?;
+    let at_far = "grids `travel.farFlight`";
+    let rules = TravelRules {
+        far_above_m: positive(far, "aboveM", at_far)?,
+        far_per_s: positive(far, "perS", at_far)?,
+        far_max_mps: positive(far, "maxMps", at_far)?,
+        release_factor: positive(t, "releaseFactor", at)?,
+    };
+    if rules.release_factor <= 1.0 {
+        return Err(format!("{at}: `releaseFactor` must be over 1 (hysteresis)"));
+    }
+    Ok(rules)
+}
+
+/// The build's travel rules (`grids.json` `travel`); a bad file panics with its message.
+pub fn travel() -> TravelRules {
+    static T: OnceLock<TravelRules> = OnceLock::new();
+    *T.get_or_init(|| parse_travel(GRIDS_JSON).unwrap_or_else(|e| panic!("{e}")))
 }
 
 /// One crater of the field, face-local (m).
@@ -464,7 +528,13 @@ pub struct FarBake {
     /// over `height_range` (0 at its low end, 255 at its high); outside the disc straight up, A 0.
     pub normal_height: Vec<u8>,
     /// RGBA: the ground's colour × its albedo (maria darker), A 255 inside the disc, 0 outside.
+    /// Under water it is the ground under the water (the bed): the renderer lays the water's own
+    /// look over it by `water`.
     pub albedo: Vec<u8>,
+    /// One byte a texel: the share of it under water (0 dry, 255 all water; 0 outside the disc),
+    /// for the far body's sea colour, specular glint and reflection (MOON_WORLD.md §5). All 0 on a
+    /// grid without water (the moon).
+    pub water: Vec<u8>,
     /// The heights (m, face-local) A spans.
     pub height_range: [f64; 2],
 }
@@ -483,6 +553,10 @@ impl FarBake {
     pub fn texel_m(&self) -> f64 {
         2.0 * self.radius_m / self.size as f64
     }
+    /// The bytes it holds (all three maps).
+    pub fn bytes(&self) -> usize {
+        self.normal_height.len() + self.albedo.len() + self.water.len()
+    }
 }
 
 /// What a grid gives its far-body bake (MOON_WORLD.md §5): any grid's generator implements it,
@@ -493,12 +567,18 @@ pub trait FarSource {
     fn far_radius_m(&self) -> f64;
     /// The ground's height (face-local m) at (x, z), with the detail at least `texel_m` wide.
     fn far_height(&self, face: Face, x: f64, z: f64, texel_m: f64) -> f64;
-    /// The ground's colour at (x, z), sRGB 0..=1.
+    /// The ground's colour at (x, z), sRGB 0..=1, the texel `texel_m` wide.
     fn far_albedo(&self, face: Face, x: f64, z: f64) -> [f64; 3];
+    /// The share (0..=1) of the texel `texel_m` wide centred on (x, z) that is under water. None by
+    /// default (a dry grid).
+    fn far_water(&self, _face: Face, _x: f64, _z: f64, _texel_m: f64) -> f64 {
+        0.0
+    }
 }
 
 /// A grid's far-LOD maps for one face at `size` texels a side: heights at the texel centres
-/// with the detail at least a texel wide, normals by central differences, the albedo per texel.
+/// with the detail at least a texel wide, normals by central differences, the albedo and the water
+/// share per texel.
 pub fn bake_far<S: FarSource + ?Sized>(src: &S, face: Face, size: usize) -> FarBake {
     let size = size.max(2);
     let r = src.far_radius_m();
@@ -526,6 +606,7 @@ pub fn bake_far<S: FarSource + ?Sized>(src: &S, face: Face, size: usize) -> FarB
     let byte = |v: f64| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
     let mut normal_height = vec![0u8; size * size * 4];
     let mut albedo = vec![0u8; size * size * 4];
+    let mut water = vec![0u8; size * size];
     let at = |i: usize, j: usize| h[j * size + i];
     for j in 0..size {
         for i in 0..size {
@@ -553,6 +634,7 @@ pub fn bake_far<S: FarSource + ?Sized>(src: &S, face: Face, size: usize) -> FarB
             ]);
             let c = src.far_albedo(face, centre(i), centre(j));
             albedo[p..p + 4].copy_from_slice(&[byte(c[0]), byte(c[1]), byte(c[2]), 255]);
+            water[j * size + i] = byte(src.far_water(face, centre(i), centre(j), s));
         }
     }
     FarBake {
@@ -560,6 +642,7 @@ pub fn bake_far<S: FarSource + ?Sized>(src: &S, face: Face, size: usize) -> FarB
         radius_m: r,
         normal_height,
         albedo,
+        water,
         height_range: [lo, hi],
     }
 }

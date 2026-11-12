@@ -576,6 +576,30 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    and snap, home targeting (`raycast_block_in`) and the controller's spawn face go through it; the both-faces
    check's rule 3 (no hand `inverse * (p − origin)`). Renderer model matrices per grid left for M-5; grid ids for
    M-7 (MOON_WORLD.md §2.1).
+   **M-7 partial 2026-11-12** (branch `claude/moon-m7-travel`; the brief: fly to the moon, ~1–1.5 min, home gravity
+   until captured, the grid id behind a `grid.frames` capability so it isn't breaking; "if it doesn't fit, build the
+   frame switch + gravity natively first and leave streaming for a follow-up"): built natively — a simulation space
+   per grid (`dwell-sim` `travel.rs`: its chunks from its generator in its local frame, its physics and players),
+   the moon's frame from M-4's orbit, capture inside `captureM` and release past × `releaseFactor` with the world
+   position kept (µm) and the path smooth, gravity per player (`Players::set_gravity_scale`, the moon's ⅙: same
+   take-off, 6× the jump), far flight (`grids.json` `travel.farFlight`: ≥ 0.12/s × the distance from every grid's
+   slab, ≤ 20 km/s), a look continued across grids. Tested: a scripted flight home → moon → home on each of the
+   moon's faces. **Left for the follow-up:** the server's session loop holding the spaces, the moon's chunks on the
+   wire per grid, the grid id in snapshots and the `grid.frames` capability (not announced until a build sends it),
+   the client's view roll to the new down, and the predictor's far-flight speed (MOON_WORLD.md §7.1).
+   **M-6's bake built 2026-11-12** (branch `claude/moon-m6-home-bake`; the owner's "The earth should use the same
+   normal map kinda technique when far enough away, when on the moon."): `dwell-worldgen` `home_far.rs`, the home
+   grid's `FarSource` over its world map — heights from the map's cells (water flat at its level), the albedo from
+   each column's surface block (its biome's palette, blocks.json `color`), a separate water channel
+   (`FarBake::water`, the share of the texel in the sea or a lake) — at `grids.json`'s home `bake.size` 256: 576 KiB
+   and ~0.17 s a face natively; 10 tests on both faces; `examples/home_bake.rs` writes preview PNGs
+   (MOON_WORLD.md §5). Clouds out of scope. Not drawn yet: drawing it from the moon comes with M-5/M-7.
+   Owner, 2026-11-12, after M-2: **"The moon looks smaller I think compared to the old moon?"** The disc's angular
+   radius in the shader is unchanged (`MOON_RADIUS`, the same edge test), so the cause is how it's lit: the full
+   ball shape darkens the limb, and the baked terrain's rim (craters cut by the disc's edge, darker rim albedo)
+   eats into the bright area, so the bright part reads smaller than the old evenly lit disc. Next (local): a
+   side-by-side with the old moon at the same zoom and time; keep the full moon lit to its edge (limb darkening
+   only on the dark side of the terminator, rim albedo evened) so the bright disc matches the old size.
 
 ## Done
 

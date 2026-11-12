@@ -3980,6 +3980,23 @@ impl TerrainGenerator {
         col
     }
 
+    /// The block column (x, z)'s top shows from afar, at a coarse cell of `cell` m (as
+    /// [`TerrainGenerator::column_lod`] samples it): its palette's top for its band (no ramps,
+    /// decorations or snow pieces), air outside the disc. The home far bake's colour (`home_far`).
+    pub fn far_surface(&self, x: i64, z: i64, cell: i64) -> StateId {
+        let col = self.column_lod(x, z, cell);
+        if col.outside {
+            return M.air;
+        }
+        fill_soil(
+            self.palette(col),
+            col.band,
+            top_voxel(col.height),
+            0,
+            under_rows(),
+        )
+    }
+
     /// Turns the LOD colour map's river valleys on, their ground `margin` m under the river's
     /// level, or off (`column_lod`; LOD sections only).
     pub fn set_lod_valleys(&mut self, margin: Option<f64>) {
