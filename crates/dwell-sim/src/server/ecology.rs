@@ -378,6 +378,7 @@ impl Server {
                 .collect();
         }
         let players = self.living_points();
+        let stances = self.living_stances();
         let world_s = f64::from(self.tick) / f64::from(SIM_HZ);
         let night = FACES.map(|f| night_on(self.settings.clock, world_s, f));
         let Some(islands) = self.ecology.islands.clone() else {
@@ -398,6 +399,7 @@ impl Server {
                 islands: &islands[..],
                 ecos: &mut faces[..],
                 players: &players,
+                stances: &stances,
                 get: &get,
                 night,
                 seed: self.config.world_seed,

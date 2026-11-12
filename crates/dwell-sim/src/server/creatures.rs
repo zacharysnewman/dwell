@@ -60,6 +60,23 @@ impl Server {
             .collect()
     }
 
+    /// The living players' stances, in [`Self::living_points`]' order (WORK_QUEUE item 39: animals
+    /// notice a crouching player closer, a running one farther).
+    pub(super) fn living_stances(&self) -> Vec<crate::herds::Stance> {
+        self.sessions
+            .values()
+            .filter(|s| s.joined())
+            .filter_map(|s| s.handle)
+            .map(|h| {
+                let v = self.players.velocity(&self.physics, h);
+                crate::herds::Stance {
+                    crouching: self.players.controller(h).crouching,
+                    speed: f64::from(v.x.hypot(v.z)),
+                }
+            })
+            .collect()
+    }
+
     pub(super) fn step_creatures(&mut self) {
         let players = self.living_points();
         // The near ecology's herds and packs (docs/ECOLOGY.md §8) before the creatures move.

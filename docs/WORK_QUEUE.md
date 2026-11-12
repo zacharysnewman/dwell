@@ -941,7 +941,14 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    within a distance by data, closer when crouching, and run off; wolves keep their distance unless hungry),
    **packs roam toward herds** (hungry packs travel toward the nearest herd, so hunts happen near players), and
    **a grazing pose and more idle behaviour** (deer lower their heads to graze, look up, flick ears; wolves sit
-   and lie down). In progress (cloud); a new video after.
+   and lie down). **Built (cloud, 2026-11-12; ECOLOGY.md §8.2)**: `near.players` as data (notice distance by the
+   player's stance — walking, crouching, still, running —, `flee` as a herd calming after `calmS`, or `avoid`;
+   bold when hungry), a hunter's far `roam` (hungry packs head for the island's nearest herd) and near
+   `hunt.trackM` (a near pack walks to a herd past its sense, then the chase), and `near.idles` (graze, look up,
+   ear flick, stand; sit, lie) picked by weight for data seconds, with eating's and sleep's poses; tests on both
+   faces and a fixture species by data alone. Left (local, GPU): drawing the poses — the GLBs have only
+   idle/walk/run clips, so the poses go on the wire (a capability-gated part like the NPCs') and are built from
+   the rig as data in models.json —, then a new video.
    Owner on the first video: **"The recording was a really good start. I'd like to record at 9:16 1080/1920."** —
    the next video (after this item lands) is portrait 1080×1920, framed for portrait, with a chase and fleeing.
 

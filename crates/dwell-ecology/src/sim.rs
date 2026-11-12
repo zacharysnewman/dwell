@@ -434,6 +434,20 @@ impl Ecosystem {
                 Some((d, _)) if d <= reach_m * 0.5 => (at, Activity::Hunting),
                 Some((_, p)) => (p, Activity::Hunting),
                 None if g.hunger < 0.3 => (at, Activity::Resting),
+                // A hungry hunter heads for the island's nearest prey group (WORK_QUEUE item 39,
+                // owner 2026-11-12: "hungry packs travel toward the nearest herd"), at any distance.
+                None if sp
+                    .roam
+                    .is_some_and(|r| g.hunger > r.toward_prey_above_hunger)
+                    && all().any(huntable) =>
+                {
+                    let nearest = all()
+                        .filter(|o| huntable(o))
+                        .map(|o| (dist(at, (o.x, o.z)), (o.x, o.z)))
+                        .min_by(|a, b| a.0.total_cmp(&b.0))
+                        .map(|(_, p)| p);
+                    (nearest.unwrap_or(at), Activity::Roaming)
+                }
                 None => {
                     let h = hash(self.seed, u64::from(g.id), (self.day / ROAM_DAYS) as u64);
                     let a = unit(h) * std::f64::consts::TAU;
