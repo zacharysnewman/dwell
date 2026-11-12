@@ -1,0 +1,67 @@
+{
+  "name": "preset:tropical_rainforest",
+  "label": "Tropical rainforest",
+  "description": "Hot and very wet: a dense, tall broadleaf canopy with palms, thick undergrowth and tall grass on wet dark ground, dark still rivers.",
+  "where": {
+    "weight": 1,
+    "celsius": {
+      "min": 16,
+      "blend": 2
+    },
+    "rain": {
+      "min": 2200,
+      "blend": 250
+    }
+  },
+  "detail": {
+    "amplitude": 2,
+    "wavelength": 96,
+    "octaves": 4,
+    "mountainAmplitude": 14,
+    "mountainFrom": 300,
+    "mountainFull": 1800,
+    "waterFade": 30
+  },
+  "shaping": {
+    "edgeNoise": 150,
+    "edgeWavelength": 320,
+    "edgeSlopeLift": 350,
+    "rockSlope": 0.85,
+    "rockSlopeHigh": 0.55,
+    "rockHigh": 1550,
+    "rockWindow": 150,
+    "shore": 2,
+    "underDepth": 3
+  },
+  "banks": {
+    "riverSlope": 0.25,
+    "lake": 0.5,
+    "lakeSlope": 0.15,
+    "beach": 1
+  },
+  "bands": [
+    {
+      "name": "rainforest",
+      "ground": "dwell:grass",
+      "under": "dwell:dirt",
+      "rock": "dwell:stone",
+      "shoreBlock": "dwell:dirt"
+    }
+  ],
+  "decorations": ["meadow_grass"],
+  "vegetation": 1,
+  "placements": ["rainforest_groves"],
+  "ground": {
+    "dwell:ground_stick": 3,
+    "dwell:ground_rock": 0.3
+  },
+  "trees": {
+    "rainforest_groves": 3
+  },
+  "undergrowth": 1,
+  "water": "dwell:water",
+  "waterLook": {
+    "scatter": "#2a3a1c",
+    "absorption": [0.9, 0.45, 0.6]
+  }
+}

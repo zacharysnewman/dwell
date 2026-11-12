@@ -1,0 +1,69 @@
+{
+  "name": "preset:cold_desert",
+  "label": "Cold desert",
+  "description": "Cold and nearly rainless interior: bare dry dirt and sand, sparse dry grass, loose rocks and boulders, no trees, snow on the cold heights.",
+  "where": {
+    "weight": 1,
+    "celsius": {
+      "min": -1.5,
+      "max": 14,
+      "blend": 1
+    },
+    "rain": {
+      "max": 220,
+      "blend": 60
+    }
+  },
+  "detail": {
+    "amplitude": 2,
+    "wavelength": 160,
+    "octaves": 3,
+    "mountainAmplitude": 14,
+    "mountainFrom": 300,
+    "mountainFull": 1800,
+    "waterFade": 30
+  },
+  "shaping": {
+    "edgeNoise": 150,
+    "edgeWavelength": 320,
+    "edgeSlopeLift": 350,
+    "rockSlope": 0.9,
+    "rockSlopeHigh": 0.6,
+    "rockHigh": 1550,
+    "rockWindow": 150,
+    "shore": 2,
+    "underDepth": 3
+  },
+  "banks": {
+    "riverSlope": 0.3,
+    "lake": 0.5,
+    "lakeSlope": 0.25,
+    "beach": 2
+  },
+  "bands": [
+    {
+      "name": "cold_desert",
+      "ground": "dwell:dirt",
+      "under": "dwell:sand",
+      "rock": "dwell:stone",
+      "shoreBlock": "dwell:sand"
+    }
+  ],
+  "decorations": ["dry_grass"],
+  "vegetation": 1,
+  "placements": ["boulders"],
+  "ground": {
+    "dwell:ground_rock": 3
+  },
+  "trees": {
+    "boulders": 0.8
+  },
+  "snow": {
+    "belowC": -1,
+    "maxSlope": 0.9,
+    "block": "dwell:snow"
+  },
+  "undergrowth": 1,
+  "soilBlocks": true,
+  "water": "dwell:water"
+}
