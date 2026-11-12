@@ -144,8 +144,12 @@ one stop of it (`"brass"`, `"leather.shadow"`), a swatch (`"ink"`), a colour slo
 - **`clips`**: `{ rig, space?, layer, duration, loop, ease, cycle?, grounded?, blend?, keys }`. A key is `{ t, bones:
   { bone: [x, y, z] degrees }, root?: [x, y, z] metres }`; each bone interpolates between the keys
   that name it, so a key lists only what moves at that moment. `cycle` is the distance travelled per
-  loop: a gait plays at `speed / cycle` loops a second, so feet don't slide. The arms' gaits have no
-  feet, so their `cycle` sets the hand bob's rate (§5).
+  loop: a gait plays at `speed / cycle` loops a second. A body gait's `cycle` is two footsteps of the
+  sound data's stride for that gait (`shared/sounds` `gaits`; a test pins it), so the feet land with
+  the footsteps at a natural cadence (~2 steps a second walking) rather than matching the
+  controller's fast 5 m/s walk foot-for-foot (BUGS.md #103: 1.6 m a loop stepped 6.25 a second); the
+  feet slide a little at the walk. The arms' gaits have no feet, so their `cycle` sets the hand bob's
+  rate (§5).
 
 A part, from the file:
 
@@ -221,7 +225,7 @@ and chain; the rigid parts below are drawn only with the dev switch `?fparms=rig
   (owner's playtest, 2026-10-20: was 0.65 high and up to the crosshair, then 0.43 read too small; set by moving the anchor
   out and ahead, the FOV unchanged; `crates/dwell-characters/tests/first_person.rs` pins it).
 - **Its own clips.** `fp_idle` (the arm held into view, breathing), `fp_walk` (a bob on the anchor,
-  two dips a loop at 4 m a loop, not the legs' 1.6 m: ~2.5 Hz at the 5 m/s walk; `fp_sprint` shares
+  two dips a loop at 4 m a loop, not the legs' 5 m (1.6 m before BUGS.md #103): ~2.5 Hz at the 5 m/s walk; `fp_sprint` shares
   the 4 m, so its bob is faster in proportion to the speed, ~4 Hz at the 8 m/s run), `fp_break` (a wind-up and a chop down-forward, 0.5 s), `fp_place` (a push
   forward, 0.36 s). They key the same bones as the body's `hold`, `break` and `place`, so a swing
   seen by others is the same gesture.
@@ -364,7 +368,7 @@ Clips are keyed rotations on the rig (and a root offset for bob), sampled and la
 
 | Character | Base | Hold | Action |
 | --- | --- | --- | --- |
-| Player (body) | `biped_idle` (breathing, 3 s), `biped_walk` (1 s, 1.6 m a loop: legs, counter-swinging arms, hips and chest twist, bob), `biped_sprint` (0.66 s, 3 m: chest forward, arms pumping, high knees), `biped_crouch` (a deep squat, chest forward), `biped_crouch_walk` (1 s, 0.9 m), `biped_slide` (low and leaning back, the lead leg out, the other folded under, the left arm out for balance), `biped_jump` (0.42 s, one-shot: a dip, the push onto the toes with the arms swinging up, then knees tucked), `biped_fall` (legs loose, arms up and out), `biped_land` (0.4 s, one-shot: the squash on touching down, to standing), `biped_climb` (hand over hand, 1.2 m a loop), `biped_swim` (a breaststroke and a frog kick, leaning into it), `biped_fly` (a hover, legs trailing) | `biped_hold` (the right forearm forward) | `biped_break`, `biped_place` |
+| Player (body) | `biped_idle` (breathing, 3 s), `biped_walk` (1 s, 5 m a loop, two footsteps of the sound data's 2.5 m walk stride: ~2 steps a second at the 5 m/s walk; legs, counter-swinging arms, hips and chest twist, bob), `biped_sprint` (0.66 s, 5.6 m, two 2.8 m run strides, ~2.9 steps a second at 8 m/s: chest forward, arms pumping, high knees), `biped_crouch` (a deep squat, chest forward), `biped_crouch_walk` (1 s, 2.2 m, two 1.1 m crouch strides), `biped_slide` (low and leaning back, the lead leg out, the other folded under, the left arm out for balance), `biped_jump` (0.42 s, one-shot: a dip, the push onto the toes with the arms swinging up, then knees tucked), `biped_fall` (legs loose, arms up and out), `biped_land` (0.4 s, one-shot: the squash on touching down, to standing), `biped_climb` (hand over hand, 1.2 m a loop), `biped_swim` (a breaststroke and a frog kick, leaning into it), `biped_fly` (a hover, legs trailing) | `biped_hold` (the right forearm forward) | `biped_break`, `biped_place` |
 | Player (arms) | `fp_idle`, `fp_walk`, `fp_sprint` (a bigger, faster bob and the arm pumping), `fp_slide` (the arm out to the right and lowered), `fp_jump` (a dip on the take-off, the arm lifting with the push), `fp_fall` (raised a little, fluttering), `fp_land` (a dip, back to the hold) | (in the base) | `fp_break`, `fp_place` |
 | Wolf | `wolf_idle` (tail sway, head turns, an ear flick), `wolf_trot` (0.56 s, 1.4 m: diagonal pairs, a suspended bob, the tail up and swaying) | | |
 | Deer | `deer_idle` (head turns, ear and tail flicks), `deer_walk` (1.2 s, 1.1 m: four beats, left hind, left fore, right hind, right fore), `deer_graze` (6 s: head down to the grass, nibbling, a look up with ears forward, down again) | | |

@@ -186,6 +186,7 @@ const PLACEMENT_KEYS = [
   "structures",
   "on",
   "footprint",
+  "pad",
   "grid",
   "density",
   "groves",
@@ -198,6 +199,21 @@ const PLACEMENT_KEYS = [
 ];
 /** What `footprint` may say: "on" (every column under the structure is one of `on`) or "anchor". */
 export const FOOTPRINTS = ["on", "anchor"];
+/**
+ * What `pad` may say (WORK_QUEUE item 44): "trunk" (the ground under the trunk's columns, the
+ * structure's lowest cells, is levelled up to its base, ramps there made full) or "none". Default:
+ * "trunk" for a placement that lists a tree species, else "none".
+ */
+export const PADS = ["trunk", "none"];
+/** A placement's pad, its default filled in (`species`: the build's tree species' names). */
+export function padOf(p, species) {
+  return (
+    p.pad ??
+    (Object.keys(p.structures ?? {}).some((n) => species.has(n))
+      ? "trunk"
+      : "none")
+  );
+}
 /** The widest reach of a placed structure from its anchor, in blocks (bounds a chunk's search). */
 export const MAX_REACH = 16;
 
@@ -292,6 +308,8 @@ export function validatePlacements(
     }
     if (!FOOTPRINTS.includes(p.footprint))
       fail(`${at}: footprint must be one of ${FOOTPRINTS.join(", ")}`);
+    if (p.pad !== undefined && !PADS.includes(p.pad))
+      fail(`${at}: pad must be one of ${PADS.join(", ")}`);
     if (!(Number.isInteger(p.grid) && p.grid >= 2 && p.grid <= 256))
       fail(`${at}: grid must be a whole number of metres in [2, 256]`);
     if (!(isNum(p.density) && p.density > 0 && p.density <= 1))
@@ -386,7 +404,7 @@ export function validatePlacements(
 }
 
 /** The Rust table for validated placements. The slope limit is emitted as the squared gradient. */
-export function placementsRust(data) {
+export function placementsRust(data, species = registrySpecies()) {
   const rs = [
     `// ${placementsHeader}`,
     "",
@@ -419,6 +437,7 @@ export function placementsRust(data) {
     rs.push(`        structures: &[${ss.join(", ")}],`);
     rs.push(`        on: &[${p.on.map((o) => JSON.stringify(o)).join(", ")}],`);
     rs.push(`        footprint_on: ${p.footprint === "on"},`);
+    rs.push(`        pad_trunk: ${padOf(p, species) === "trunk"},`);
     rs.push(`        grid: ${p.grid},`);
     rs.push(`        density: ${rf(p.density)},`);
     rs.push(`        grove_wavelength: ${g.wavelength},`);
@@ -2045,7 +2064,7 @@ export function validateGrass(data, blocks, decorations) {
     throw new Error(`grass.json: ${m}`);
   };
   if (typeof data !== "object" || data === null) fail("must be an object");
-  const keys = ["$comment", "block", "on", "onRamps", "decoration", ...Object.keys(GRASS)];
+  const keys = ["$comment", "block", "on", "onRamps", "decoration", "stages", ...Object.keys(GRASS)];
   const extra = Object.keys(data).filter((k) => !keys.includes(k));
   if (extra.length) fail(`unknown ${extra.join(", ")}`);
   if (typeof data.block !== "string" || !blocks.has(data.block))
@@ -2084,7 +2103,36 @@ export function validateGrass(data, blocks, decorations) {
   for (const k of ["reach", "openAbove", "catchUpDays"]) {
     if (!Number.isInteger(data[k])) fail(`${k} must be a whole number`);
   }
+  validateGrassStages(data, blocks.get(data.block), fail);
   return data;
+}
+
+/** The least mean days from sprout to full height (owner 2026-11-12: "a week or more"). */
+export const GRASS_MIN_DAYS_TO_FULL = 7;
+
+/** grass.json's `stages` (growing in height, docs/ECOLOGY.md §10) against the grown block. */
+function validateGrassStages(data, block, fail) {
+  const st = data.stages;
+  if (typeof st !== "object" || st === null) fail("stages must be an object");
+  const extra = Object.keys(st).filter((k) => !["$comment", "property", "order", "days", "share"].includes(k));
+  if (extra.length) fail(`stages: unknown ${extra.join(", ")}`);
+  const values = block.properties?.[st.property];
+  if (!values) fail(`stages.property ${JSON.stringify(st.property)} is not a property of ${data.block}`);
+  if (!Array.isArray(st.order) || st.order.length < 4)
+    fail("stages.order must list at least 4 values (a sprout to full)");
+  if (st.order.length !== values.length || st.order.some((v) => !values.includes(v)) || new Set(st.order).size !== st.order.length)
+    fail(`stages.order must list each of ${data.block}'s ${st.property} values once (${values.join(", ")})`);
+  if (st.order[st.order.length - 1] !== values[0])
+    fail(`stages.order must end with the property's default ${values[0]} (full: placed and saved tall grass)`);
+  if (!Array.isArray(st.days) || st.days.length !== st.order.length - 1 || st.days.some((d) => !(isNum(d) && d >= 1 && d <= 60)))
+    fail("stages.days must give each stage but the last its mean days, each in [1, 60]");
+  const total = st.days.reduce((a, b) => a + b, 0);
+  if (total < GRASS_MIN_DAYS_TO_FULL)
+    fail(`stages.days must add up to at least ${GRASS_MIN_DAYS_TO_FULL} (a sprout to full height in a week or more), not ${total}`);
+  if (!Array.isArray(st.share) || st.share.length !== st.order.length || st.share.some((v) => !(isNum(v) && v >= 0 && v <= 1)))
+    fail("stages.share must give each stage a climate share in [0, 1]");
+  if (st.share[0] !== 0) fail("stages.share must start at 0 (a sprout grows wherever grass does)");
+  if (st.share.some((v, i) => i > 0 && v < st.share[i - 1])) fail("stages.share must not fall from stage to stage");
 }
 
 /** The Rust for the validated grass growth (grass.json). */
@@ -2105,6 +2153,13 @@ export function grassRust(g) {
     `    reach: ${g.reach},`,
     `    open_above: ${g.openAbove},`,
     `    catch_up_days: ${g.catchUpDays},`,
+    `    stage_property: ${JSON.stringify(g.stages.property)},`,
+    "    stages: &[",
+    ...g.stages.order.map(
+      (v, i) =>
+        `        GrassStage { value: ${JSON.stringify(v)}, days: ${f(g.stages.days[i] ?? 0)}, share: ${f(g.stages.share[i])} },`,
+    ),
+    "    ],",
     "};",
     "",
   ].join("\n");

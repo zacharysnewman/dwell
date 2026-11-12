@@ -5,11 +5,11 @@ export const SOUND_DATA: SoundData = {
   "fallback": "dwell:stone",
   "gaits": {
     "walk": {
-      "stride": 2,
+      "stride": 2.5,
       "gain": 0.55
     },
     "run": {
-      "stride": 2.7,
+      "stride": 2.8,
       "gain": 0.85
     },
     "crouch": {
@@ -817,6 +817,10 @@ export const SOUND_DATA: SoundData = {
         "startle": "dwell:deer_snort"
       }
     }
+  },
+  "brush": {
+    "everyM": 2.5,
+    "minS": 0.3
   },
   "sounds": {
     "dwell:stone_step": {
@@ -1912,9 +1916,10 @@ export const SOUND_DATA: SoundData = {
           "grass-step-5-14c021c5.m4a",
           "grass-step-6-9e0addf8.m4a"
         ],
-        "gain": 0.5,
+        "gain": 0.4,
         "pitch": 1
       },
+      "voices": 2,
       "gain": 1.902,
       "reverb": 0.055,
       "variation": {
@@ -5817,72 +5822,51 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:leaf_brush": {
-      "gain": 0.35,
-      "reverb": 0.04,
+      "$comment": "A soft swish layered on a footstep through tall grass or leaves (BUGS.md #103): pink noise only, a slow attack, no grains (the old white-noise grains crackled at five rustles a second); one voice, never restarted.",
+      "gain": 0.16,
+      "reverb": 0.03,
+      "voices": 1,
+      "minGapS": 0.25,
       "variation": {
         "pitch": 2,
         "gain": 1.5,
-        "cutoff": 0.2,
-        "time": 0.2
+        "cutoff": 0.15,
+        "time": 0.15
       },
       "intensity": {
         "gain": [
-          0.3,
+          0.4,
           1
         ],
         "cutoff": [
-          0.7,
+          0.8,
           1
         ],
         "time": [
-          1.2,
-          0.8
+          1.1,
+          0.9
         ]
       },
       "layers": [
         {
           "source": "noise",
           "color": "pink",
-          "gain": 0.45,
+          "gain": 0.4,
           "filters": [
             {
               "type": "bandpass",
-              "freq": 2400,
-              "q": 0.7
-            }
-          ],
-          "env": {
-            "attack": 0.03,
-            "hold": 0.08,
-            "decay": 0.25
-          }
-        },
-        {
-          "source": "noise",
-          "color": "white",
-          "gain": 0.15,
-          "filters": [
-            {
-              "type": "highpass",
-              "freq": 3500,
+              "freq": 1800,
               "q": 0.6
+            },
+            {
+              "type": "lowpass",
+              "freq": 4500
             }
           ],
           "env": {
-            "attack": 0.002,
-            "decay": 0.03
-          },
-          "grains": {
-            "count": [
-              5,
-              9
-            ],
-            "spread": 0.3,
-            "gain": [
-              0.3,
-              1
-            ],
-            "pitch": 4
+            "attack": 0.05,
+            "hold": 0.05,
+            "decay": 0.22
           }
         }
       ]

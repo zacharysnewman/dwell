@@ -19,6 +19,9 @@ pub struct FarLook {
     /// The fade (m from the eye): whole until the start, gone at the end.
     pub fade_start_m: f64,
     pub fade_end_m: f64,
+    /// The least a head stands on screen (CSS px): past where `size_m` is smaller its billboard
+    /// grows with the distance, so a herd reads from the air (WORK_QUEUE item 46; 0: never).
+    pub min_px: f64,
 }
 
 include!("far_herds.gen.rs");
@@ -97,9 +100,25 @@ pub fn fade(head: &Head, eye: [f64; 3]) -> f64 {
     (1.0 - (d - l.fade_start_m) / (l.fade_end_m - l.fade_start_m)).clamp(0.0, 1.0)
 }
 
-/// The heads' billboards seen from `eye` (world), the faded-out ones left out; none on a CPU
-/// adapter (`cpu`), which draws the cheapest tier of everything.
-pub fn puffs(heads: &[Head], eye: [f64; 3], cpu: bool) -> Vec<Puff> {
+/// A head's height (m) at `distance` m from the eye: its look's `size_m`, or past where that is
+/// under `min_px` on screen, what stands `min_px` tall (`focal_px`: CSS px a metre at a metre, the
+/// viewport's height over 2·tan(fov/2)).
+pub fn head_size(look: &FarLook, distance: f64, focal_px: f64) -> f64 {
+    if focal_px <= 0.0 {
+        return look.size_m;
+    }
+    look.size_m.max(look.min_px * distance / focal_px)
+}
+
+/// The focal length in CSS px of a viewport `height_px` tall at a vertical FOV of `fov_y_deg`.
+pub fn focal_px(height_px: f64, fov_y_deg: f64) -> f64 {
+    height_px / (2.0 * (fov_y_deg.to_radians() / 2.0).tan())
+}
+
+/// The heads' billboards seen from `eye` (world), the faded-out ones left out, each at least its
+/// look's `min_px` tall on screen ([`head_size`]); none on a CPU adapter (`cpu`), which draws the
+/// cheapest tier of everything.
+pub fn puffs(heads: &[Head], eye: [f64; 3], cpu: bool, focal_px: f64) -> Vec<Puff> {
     if cpu {
         return Vec::new();
     }
@@ -108,7 +127,11 @@ pub fn puffs(heads: &[Head], eye: [f64; 3], cpu: bool) -> Vec<Puff> {
         .filter_map(|h| {
             let alpha = fade(h, eye);
             (alpha > 0.01).then(|| {
-                let half = 0.5 * h.look.size_m;
+                let local = h.face.point(eye);
+                let d = (local[0] - h.feet[0])
+                    .hypot(local[1] - h.feet[1])
+                    .hypot(local[2] - h.feet[2]);
+                let half = 0.5 * head_size(&h.look, d, focal_px);
                 let feet = h.feet;
                 let at = h.face.point([feet[0], feet[1] + half, feet[2]]);
                 let [r, g, b] = h.look.color.map(u32::from);
@@ -126,6 +149,59 @@ pub fn puffs(heads: &[Head], eye: [f64; 3], cpu: bool) -> Vec<Puff> {
         .collect()
 }
 
+/// A far herd or pack as the finder lists it (`__dwell.herds()`, WORK_QUEUE item 46).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Found {
+    pub id: u32,
+    pub species: String,
+    /// Face-local metres.
+    pub x: f64,
+    pub z: f64,
+    pub size: f64,
+    /// Face-local horizontal metres from the eye.
+    pub distance: f64,
+    /// The face-local yaw that faces it (degrees, 0 toward +z, 90 toward +x: the look's yaw).
+    pub bearing_deg: f64,
+}
+
+/// The snapshot's groups on the eye's face (`eye` world), of `species` (None: any), nearest first
+/// (ties by id): the finder of the dev tools' `herds` and `goToHerd`.
+pub fn find(snapshot: &EcologyMessage, eye: [f64; 3], species: Option<&str>) -> Vec<Found> {
+    let face = FaceFrame::at_height(eye[1]);
+    let local = face.point(eye);
+    let mut out: Vec<Found> = snapshot
+        .groups
+        .iter()
+        .filter(|g| g.face == u8::from(face.is_b()))
+        .filter(|g| species.is_none_or(|s| s == g.species))
+        .map(|g| {
+            let (dx, dz) = (f64::from(g.x) - local[0], f64::from(g.z) - local[2]);
+            Found {
+                id: g.id,
+                species: g.species.clone(),
+                x: f64::from(g.x),
+                z: f64::from(g.z),
+                size: f64::from(g.size),
+                distance: dx.hypot(dz),
+                bearing_deg: dx.atan2(dz).to_degrees().rem_euclid(360.0),
+            }
+        })
+        .collect();
+    out.sort_by(|a, b| a.distance.total_cmp(&b.distance).then(a.id.cmp(&b.id)));
+    out
+}
+
+/// Where the finder's `goToHerd` stands the player: `back_m` short of the herd along the line
+/// from `from` (face-local x, z), or `back_m` toward +x when it is right there.
+pub fn approach(from: (f64, f64), herd: (f64, f64), back_m: f64) -> (f64, f64) {
+    let (dx, dz) = (herd.0 - from.0, herd.1 - from.1);
+    let d = dx.hypot(dz);
+    if d < 1e-6 {
+        return (herd.0 - back_m, herd.1);
+    }
+    (herd.0 - dx / d * back_m, herd.1 - dz / d * back_m)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -137,6 +213,7 @@ mod tests {
         size_m: 2.0,
         fade_start_m: 100.0,
         fade_end_m: 200.0,
+        min_px: 0.0,
     };
 
     fn snapshot(face: u8) -> EcologyMessage {
@@ -214,7 +291,7 @@ mod tests {
             // Seen from the eye at x 0 on this face, 2 m up: the herd at 50 m whole, the one at
             // ~300 m gone (past the fade's end); on the other face, none.
             let eye = f.point([0.0, 12.0, 0.0]);
-            let p = puffs(&heads, eye, false);
+            let p = puffs(&heads, eye, false, 0.0);
             assert_eq!(p.len(), MAX_HEADS, "the far herd faded out");
             for q in &p {
                 assert_eq!(q.kind, PuffKind::Herd);
@@ -229,16 +306,105 @@ mod tests {
                 assert!(up > 10.0, "stood on the ground, not under it");
             }
             let mid = f.point([150.0, 12.0, -40.0]);
-            let half: Vec<_> = puffs(&heads, mid, false)
+            let half: Vec<_> = puffs(&heads, mid, false, 0.0)
                 .into_iter()
                 .filter(|q| q.alpha < 1.0)
                 .collect();
             assert!(!half.is_empty(), "fading between the fade's start and end");
-            assert!(puffs(&heads, eye, true).is_empty(), "none on the CPU tier");
             assert!(
-                puffs(&heads, f.other().point([0.0, 12.0, 0.0]), false).is_empty(),
+                puffs(&heads, eye, true, 0.0).is_empty(),
+                "none on the CPU tier"
+            );
+            assert!(
+                puffs(&heads, f.other().point([0.0, 12.0, 0.0]), false, 0.0).is_empty(),
                 "none seen from the other face"
             );
+        }
+    );
+
+    dwell_world::both_faces!(
+        /// WORK_QUEUE item 46: a far head stays at least its look's `min_px` on screen, its
+        /// billboard growing with the distance (its look's size near), and the shipped deer read
+        /// to ~2.5 km before they fade.
+        fn a_far_head_grows_with_distance_to_its_least_screen_size(f: FaceFrame) {
+            let look = FarLook {
+                min_px: 4.0,
+                fade_start_m: 2000.0,
+                fade_end_m: 3000.0,
+                ..LOOK
+            };
+            let focal = focal_px(720.0, 70.0);
+            assert!(
+                (head_size(&look, 10.0, focal) - 2.0).abs() < 1e-12,
+                "its size near"
+            );
+            let px = |d: f64| head_size(&look, d, focal) * focal / d;
+            for d in [600.0, 1200.0, 2400.0] {
+                assert!((px(d) - 4.0).abs() < 1e-9, "{d} m: {} px", px(d));
+            }
+            assert!(head_size(&look, 2400.0, focal) > head_size(&look, 1200.0, focal));
+            // Through the billboards, on this face: a head 1.2 km off is drawn min_px tall.
+            let head = Head {
+                face: f,
+                feet: [1200.0, 10.0, 0.0],
+                look,
+                seed: 1,
+            };
+            let eye = f.point([0.0, 10.0, 0.0]);
+            let p = puffs(&[head], eye, false, focal);
+            assert_eq!(p.len(), 1);
+            assert!((2.0 * p[0].size * focal / 1200.0 - 4.0).abs() < 1e-6);
+            assert_eq!(FaceFrame::at_height(p[0].at[1]), f);
+            assert!(f.y(p[0].at[1]) > 10.0, "grown upward from its feet");
+            // The shipped deer: whole at 1.5 km, gone past 2.5 km.
+            let deer = *FAR_LOOKS
+                .iter()
+                .find(|l| l.species == "dwell:deer")
+                .unwrap();
+            assert!(deer.min_px > 0.0);
+            let at = |x: f64| Head {
+                face: f,
+                feet: [x, 10.0, 0.0],
+                look: deer,
+                seed: 1,
+            };
+            assert!((fade(&at(1500.0), eye) - 1.0).abs() < 1e-12);
+            assert!(fade(&at(2200.0), eye) > 0.0);
+            assert_eq!(fade(&at(2600.0), eye), 0.0);
+        }
+    );
+
+    dwell_world::both_faces!(
+        /// The finder (`__dwell.herds()`, `goToHerd`): the eye's face's groups nearest first, by
+        /// species, with their distance and the yaw that faces them; the other face's left out.
+        fn the_finder_lists_the_nearest_herds_of_the_eyes_face(f: FaceFrame) {
+            let face = u8::from(f.is_b());
+            let mut s = snapshot(face);
+            s.groups.push(EcologyGroupNet {
+                id: 20,
+                face: 1 - face,
+                species: "test:elk".into(),
+                x: 1.0,
+                z: 1.0,
+                size: 3.0,
+            });
+            let eye = f.point([0.0, 12.0, 0.0]);
+            let all = find(&s, eye, None);
+            assert_eq!(
+                all.iter().map(|g| g.id).collect::<Vec<_>>(),
+                [8, 9, 7],
+                "nearest first, this face only"
+            );
+            let elk = find(&s, eye, Some("test:elk"));
+            assert_eq!(elk[0].id, 9);
+            assert!((elk[0].distance - 50.0).abs() < 1e-9);
+            assert!((elk[0].bearing_deg - 90.0).abs() < 1e-9, "toward +x");
+            assert!((elk[1].bearing_deg - (300f64.atan2(-40.0)).to_degrees()).abs() < 1e-6);
+            assert!(find(&s, eye, Some("test:moose")).is_empty());
+            // goToHerd stands the player short of it, on the line from where it was.
+            let (x, z) = approach((0.0, 0.0), (50.0, 0.0), 30.0);
+            assert!((x - 20.0).abs() < 1e-9 && z.abs() < 1e-9);
+            assert_eq!(approach((50.0, 0.0), (50.0, 0.0), 30.0), (20.0, 0.0));
         }
     );
 

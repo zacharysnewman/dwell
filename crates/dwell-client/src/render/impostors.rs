@@ -72,6 +72,77 @@ pub fn reach(far: &Far) -> f32 {
     }
 }
 
+/// The hand-over the frame draws with (BUGS.md #106): the tier's `far` only while the impostors
+/// are `ready` to draw the far trees ([`Impostors::ready`]: the atlas baked and the area's
+/// instances in), else `None`, so the near crowns draw to the full-detail distance and the LOD
+/// sections keep their trees, as before the impostors. Without this a tier "on" whose impostors
+/// never drew left every tree past the hand-over a bare trunk.
+pub fn drawn(far: Option<Far>, ready: bool) -> Option<Far> {
+    far.filter(|f| f.impostor && ready)
+}
+
+/// The LOD sections mesh their trees (Graphics → Far trees on) unless the impostors draw them
+/// (`drawn`, [`drawn`]).
+pub fn lod_trees(far_trees: bool, drawn: Option<Far>) -> bool {
+    far_trees && drawn.is_none()
+}
+
+/// The radius (m) about the eye whose far trees tiles must all be in before the impostors take
+/// over ([`ready`]): the hand-over's end and a tile, past which the tiles stream in nearest first.
+pub fn ready_radius(far: &Far) -> f32 {
+    (far.from + far.fade + TILE_M as f32).min(reach(far))
+}
+
+/// Whether the impostors can draw the far trees around the eye (`eye`, world, on `face`): every
+/// atlas layer baked (`baked` of `layer_count`), every tile within [`ready_radius`] held (`held`:
+/// its instance count, `None` not in yet) and at least one tree among them. An area whose tiles
+/// list no trees at all stays not ready, which is harmless (no trees, no leaves to drop) and keeps
+/// a worker that answers every tile empty (no terrain) from dropping the near crowns.
+pub fn ready(
+    baked: u32,
+    layer_count: u32,
+    far: &Far,
+    face: FaceFrame,
+    eye: [f64; 3],
+    held: impl Fn(&(u8, i32, i32)) -> Option<usize>,
+) -> bool {
+    if !far.impostor || layer_count == 0 || baked < layer_count {
+        return false;
+    }
+    let local = face.point(eye);
+    let bit = u8::from(face.is_b());
+    let mut trees = 0;
+    for (i, k) in tiles_within([local[0], local[2]], ready_radius(far)) {
+        match held(&(bit, i, k)) {
+            Some(n) => trees += n,
+            None => return false,
+        }
+    }
+    trees > 0
+}
+
+/// What the impostors hold now (`__dwell.impostors()`, the bench): their readiness and why not.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Status {
+    /// Made at all (the tier draws impostors).
+    pub made: bool,
+    /// The tier's hand-over is impostors.
+    pub tier_on: bool,
+    /// The frame draws them (`ready`).
+    pub ready: bool,
+    pub baked: u32,
+    pub layers: u32,
+    /// Bakes sent to the workers.
+    pub requested: bool,
+    /// Tiles held on any face, and their instances.
+    pub tiles: u32,
+    pub instances: u32,
+    /// Instances drawn last frame (the eye's face).
+    pub drawn: u32,
+    /// The last thing that went wrong (a layer dropped, an empty bake), empty when none.
+    pub last_error: String,
+}
+
 /// The frame uniform's `far_trees` vec4 (shaders.rs `near_tree_share`): from, fade, reach, 1 when
 /// impostors draw; zeros (the near trees' leaves to the full-detail distance) without.
 pub fn far_uniform(far: Option<Far>) -> [f32; 4] {
@@ -406,6 +477,10 @@ pub struct Impostors {
     pub far: Option<Far>,
     /// Bakes asked for (the game sends them once).
     pub requested: bool,
+    /// Layers uploaded (of `layers.len()`).
+    baked: u32,
+    /// The last upload or bake that went wrong ([`Status::last_error`]).
+    last_error: String,
 }
 
 impl Impostors {
@@ -619,6 +694,46 @@ impl Impostors {
             dirty: false,
             far: None,
             requested: false,
+            baked: 0,
+            last_error: String::new(),
+        }
+    }
+
+    /// Whether they can draw the far trees about `eye` (world) on `face` ([`ready`]).
+    pub fn ready(&self, face: FaceFrame, eye: [f64; 3]) -> bool {
+        self.far.is_some_and(|far| {
+            ready(
+                self.baked,
+                self.layers.len() as u32,
+                &far,
+                face,
+                eye,
+                |key| {
+                    self.tiles
+                        .get(key)
+                        .map(|b| b.len() / INSTANCE_BYTES as usize)
+                },
+            )
+        })
+    }
+
+    /// What they hold now (`ready` the frame's).
+    pub fn status(&self, ready: bool) -> Status {
+        Status {
+            made: true,
+            tier_on: self.far.is_some_and(|f| f.impostor),
+            ready,
+            baked: self.baked,
+            layers: self.layers.len() as u32,
+            requested: self.requested,
+            tiles: self.tiles.len() as u32,
+            instances: self
+                .tiles
+                .values()
+                .map(|b| (b.len() / INSTANCE_BYTES as usize) as u32)
+                .sum(),
+            drawn: self.count,
+            last_error: self.last_error.clone(),
         }
     }
 
@@ -639,10 +754,20 @@ impl Impostors {
     ) {
         let bytes = (self.size.0 * self.size.1 * 4) as usize;
         let Some(slot) = self.layers.get_mut(layer as usize) else {
+            self.last_error = format!("layer {layer} past the atlas's {}", self.layers.len());
             return;
         };
         if albedo.len() != bytes || normal_depth.len() != bytes {
+            self.last_error = format!(
+                "layer {layer}: {} / {} bytes baked, the atlas takes {bytes}",
+                albedo.len(),
+                normal_depth.len()
+            );
+            crate::telemetry::add("impostor.dropped_layers", 1.0);
             return;
+        }
+        if slot[2] < 0.5 {
+            self.baked += 1;
         }
         for (t, data) in [(&self.albedo, albedo), (&self.normal, normal_depth)] {
             queue.write_texture(

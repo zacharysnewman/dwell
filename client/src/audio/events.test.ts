@@ -17,9 +17,13 @@ const kind = (name: string): number => {
 };
 const state = (s: string): number => {
   // A block's name alone is its default state (`dwell:sand` is `dwell:sand[flooded=false]`,
-  // `dwell:water` is `dwell:water[fill=8]`).
+  // `dwell:water` is `dwell:water[fill=8]`, `dwell:tall_grass` is `dwell:tall_grass[stage=3]`).
   const d = STATE_DEFS.find(
-    (x) => x.state === s || x.state === `${s}[flooded=false]` || x.state === `${s}[fill=8]`,
+    (x) =>
+      x.state === s ||
+      x.state === `${s}[flooded=false]` ||
+      x.state === `${s}[fill=8]` ||
+      x.state === `${s}[stage=3]`,
   );
   if (!d) throw new Error(`no state ${s}`);
   return d.id;

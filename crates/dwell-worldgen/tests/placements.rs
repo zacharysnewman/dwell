@@ -402,6 +402,7 @@ fn a_placement_added_by_data_alone_stands_its_structure_in_the_chunks() {
         structures: &[("dwell:proto_rock", 1)],
         on: &["dwell:grass"],
         footprint_on: false,
+        pad_trunk: false,
         grid: 12,
         density: 1.0,
         grove_wavelength: 0,

@@ -866,6 +866,27 @@ async function step(run: Run, s: Step): Promise<void> {
       if (r.includes('"error"')) throw new Error(`lava ${s.op}: ${r}`);
       return;
     }
+    case 'herd': {
+      const kind = s.kind === undefined ? 'undefined' : JSON.stringify(s.kind);
+      const list = await call<
+        { species: string; distance: number; bearing: number; size: number }[]
+      >(page, `d.herds(${kind})`);
+      console.log(
+        `  herds: ${String(list.length)} on this face; nearest ${list
+          .slice(0, 3)
+          .map(
+            (h) =>
+              `${h.species} ×${h.size.toFixed(0)} ${h.distance.toFixed(0)} m at ${h.bearing.toFixed(0)}°`,
+          )
+          .join(', ')}`,
+      );
+      const r = await call<string | null>(page, `d.goToHerd(${kind}, ${String(s.back ?? 40)})`);
+      if (r === null) throw new Error('herd: not a local world');
+      console.log(`  goToHerd: ${r}`);
+      if (r === 'null' || r.includes('"error"')) throw new Error(`herd: ${r}`);
+      await page.waitForTimeout(500);
+      return;
+    }
     case 'give': {
       const ok = await call<boolean | null>(
         page,

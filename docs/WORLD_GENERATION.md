@@ -211,7 +211,15 @@ of `on` and dry. Of two kept candidates whose boxes come within the spacing, the
 priority hash is dropped, whether or not the higher one survives — so the answer needs only the
 neighbours, and a chunk finds every tree reaching into it from the cells around it (the chunk plus
 three reaches and the spacing), the same whichever chunk generates first. The tree's voxels go over
-air and replaceable cells only (tall grass), never into the ground or water. The sky test leaves
+air and replaceable cells only (tall grass), never into the ground or water. **Trunk pads (0.55,
+WORK_QUEUE item 44):** with `pad` "trunk" (the default for a placement of tree species; the pines'
+rule sets it) the ground under each trunk column — the structure's lowest cells, from its data — is
+filled up to the row under the trunk's base with the column's own ground (its surface block on top,
+its soil under), and a ramp there is made full cells, so a trunk on a slope stands flat on its 1 m
+pad instead of hanging over the drop (owner, 2026-11-12: "For now let's just do level pad, can just
+be the the tree width, 1m."). Only the trunk's columns change (no ring; uphill, the ground the trunk
+stands in is left); the LOD's 2 m level fills under a far tree's trunk the same way; impostors stand
+at the same anchors. Tested on both faces (`tests/tree_pads.rs`). The sky test leaves
 room over the highest ground for the tallest tree; the spawn's level patch is clear of trees.
 
 **Per biome** (ADR 0074 B5, 0.52.39): a rule stands only where a biome listing it in `placements`

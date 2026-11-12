@@ -35,8 +35,9 @@ use dwell_protocol::{
 use dwell_world::Face;
 use std::sync::Arc;
 
-/// The most ecology steps in one tick (a catch-up is spread over ticks).
-pub const MAX_STEPS_PER_TICK: u32 = 4;
+/// The most ecology steps in one tick (a catch-up is spread over ticks). One since the real
+/// densities (WORK_QUEUE item 46): a step of both faces' ~600 herds is a few ms natively.
+pub const MAX_STEPS_PER_TICK: u32 = 1;
 /// Behind by this many days or more, the ecology catches up in big steps.
 pub const CATCH_UP_DAYS: f64 = 10.0;
 /// With nobody online the ecology waits until it is this far behind, then catches up.
@@ -458,9 +459,25 @@ impl Server {
         }
         let mut changes = super::TickChanges::default();
         for c in eaten {
-            changes.set(&mut self.world, c, dwell_blocks::AIR);
+            let to = self.eaten_to(c);
+            if self.world.get_voxel_if_loaded(c) != to {
+                changes.set(&mut self.world, c, to);
+            }
         }
         self.broadcast_changes(changes, dwell_protocol::VoxelModificationReason::Edit);
+    }
+
+    /// What a grazer's eaten tuft at world cell `c` becomes (docs/ECOLOGY.md §10): in a world that
+    /// grows grass, a sprout over the rule's ground (the roots stay and it regrows stage by stage);
+    /// else air, as before. Public for tests and tools.
+    pub fn eaten_to(&self, c: [i32; 3]) -> dwell_blocks::StateId {
+        if !self.grass.enabled {
+            return dwell_blocks::AIR;
+        }
+        let f = dwell_world::FaceFrame::at_row(c[1]);
+        let [x, y, z] = f.cell(c);
+        let below = f.state(self.world.get_voxel_if_loaded(f.cell([x, y - 1, z])));
+        f.state(self.grass_rule.eaten(below))
     }
 
     /// A client reads the far ecology (`EcologyHello`): the far groups now, then every
@@ -470,20 +487,41 @@ impl Server {
             return;
         };
         s.ecology_hello = true;
-        if let Some(m) = self.ecology_message() {
+        if let Some(m) = self.ecology_message_from(self.session_feet(id)) {
             self.send_reliable(id, &Message::Ecology(m), Channel::World);
         }
     }
 
     /// The far groups for the clients (docs/ECOLOGY.md §9), None while the ecology doesn't run.
     pub fn ecology_message(&self) -> Option<EcologyMessage> {
+        self.ecology_message_from(None)
+    }
+
+    /// [`Self::ecology_message`] for a player at `eye` (world feet): its face's groups nearest
+    /// first, then the other face's, so the [`MAX_ECOLOGY_GROUPS`] sent are the ones it could see
+    /// or find (WORK_QUEUE item 46: ~600 herds a face at real densities); None: in id order.
+    pub fn ecology_message_from(&self, eye: Option<[f64; 3]>) -> Option<EcologyMessage> {
         let snap = self.ecology_snapshot();
         if !snap.enabled || !snap.running {
             return None;
         }
-        let groups = snap
-            .groups
-            .iter()
+        let mut order: Vec<&GroupView> = snap.groups.iter().collect();
+        if let Some(eye) = eye {
+            let f = dwell_world::FaceFrame::at_height(eye[1]);
+            let local = f.point(eye);
+            let key = |g: &GroupView| {
+                (
+                    dwell_world::FaceFrame::of(g.face) != f,
+                    (g.x - local[0]).hypot(g.z - local[2]),
+                )
+            };
+            order.sort_by(|a, b| {
+                let (ka, kb) = (key(a), key(b));
+                ka.0.cmp(&kb.0).then(ka.1.total_cmp(&kb.1))
+            });
+        }
+        let groups = order
+            .into_iter()
             .take(MAX_ECOLOGY_GROUPS)
             .map(|g| EcologyGroupNet {
                 id: g.id,
@@ -500,7 +538,14 @@ impl Server {
         })
     }
 
-    /// Every [`ECOLOGY_SEND_EVERY`] ticks, the far groups to the joined clients that asked.
+    /// The world feet of session `id`'s living player, if it has one.
+    fn session_feet(&self, id: SessionId) -> Option<[f64; 3]> {
+        let h = self.sessions.get(&id)?.handle?;
+        Some(self.players.position(&self.physics, h).to_array())
+    }
+
+    /// Every [`ECOLOGY_SEND_EVERY`] ticks, the far groups to the joined clients that asked, each
+    /// its own nearest first.
     pub(super) fn send_ecology(&mut self) {
         if !self.tick.is_multiple_of(ECOLOGY_SEND_EVERY) {
             return;
@@ -511,15 +556,11 @@ impl Server {
             .filter(|(_, s)| s.joined() && s.ecology_hello)
             .map(|(&id, _)| id)
             .collect();
-        if to.is_empty() {
-            return;
-        }
-        let Some(m) = self.ecology_message() else {
-            return;
-        };
-        let m = Message::Ecology(m);
         for id in to {
-            self.send_reliable(id, &m, Channel::World);
+            let Some(m) = self.ecology_message_from(self.session_feet(id)) else {
+                return;
+            };
+            self.send_reliable(id, &Message::Ecology(m), Channel::World);
         }
     }
 

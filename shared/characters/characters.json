@@ -581,12 +581,13 @@
       ]
     },
     "biped_walk": {
+      "$comment": "5 m a loop, two footsteps of the sound data’s walk stride (shared/sounds gaits.walk 2.5 m): ~2 steps a second at the 5 m/s walk (BUGS.md #103: 1.6 m stepped 6.25 a second).",
       "rig": "biped",
       "layer": "base",
       "duration": 1,
       "loop": true,
       "ease": "spline",
-      "cycle": 1.6,
+      "cycle": 5,
       "keys": [
         { "t": 0, "root": [0, -0.02, 0], "bones": { "hips": [0, 6, 0], "chest": [4, -6, 0], "thigh_l": [-28, 0, 0], "shin_l": [6, 0, 0], "foot_l": [0, 0, 0], "thigh_r": [20, 0, 0], "shin_r": [25, 0, 0], "foot_r": [15, 0, 0], "arm_l": [22, 0, 6], "arm_r": [-22, 0, -6], "forearm_l": [-12, 0, 0], "forearm_r": [-25, 0, 0] } },
         { "t": 0.25, "root": [0, 0.03, 0], "bones": { "hips": [0, 0, 0], "chest": [4, 0, 0], "thigh_l": [-2, 0, 0], "shin_l": [4, 0, 0], "foot_l": [0, 0, 0], "thigh_r": [-30, 0, 0], "shin_r": [60, 0, 0], "foot_r": [0, 0, 0], "arm_l": [0, 0, 6], "arm_r": [0, 0, -6], "forearm_l": [-15, 0, 0], "forearm_r": [-15, 0, 0] } },
@@ -665,13 +666,13 @@
       ]
     },
     "biped_sprint": {
-      "$comment": "Running: the chest forward, arms pumping, high knees. One foot is always near the ground (storybook, not a flight phase).",
+      "$comment": "Running: the chest forward, arms pumping, high knees. One foot is always near the ground (storybook, not a flight phase). 5.6 m a loop, two of the sound data’s run strides (2.8 m): ~2.9 steps a second at the 8 m/s run (BUGS.md #103).",
       "rig": "biped",
       "layer": "base",
       "duration": 0.66,
       "loop": true,
       "ease": "spline",
-      "cycle": 3,
+      "cycle": 5.6,
       "blend": 0.25,
       "keys": [
         { "t": 0, "root": [0, -0.056, 0], "bones": { "hips": [6, 0, 0], "chest": [12, -8, 0], "head": [-10, 6, 0], "arm_l": [40, 0, 8], "forearm_l": [-70, 0, 0], "arm_r": [-55, 0, -8], "forearm_r": [-95, 0, 0], "thigh_l": [-36, 0, 0], "shin_l": [23, 0, 0], "foot_l": [7, 0, 0], "thigh_r": [7, 0, 0], "shin_r": [46, 0, 0], "foot_r": [-4, 0, 0] } },
@@ -693,12 +694,13 @@
       ]
     },
     "biped_crouch_walk": {
+      "$comment": "2.2 m a loop, two of the sound data’s crouch strides (1.1 m): ~1.5 steps a second at the 1.6 m/s crouch (BUGS.md #103).",
       "rig": "biped",
       "layer": "base",
       "duration": 1,
       "loop": true,
       "ease": "spline",
-      "cycle": 0.9,
+      "cycle": 2.2,
       "blend": 0.15,
       "keys": [
         { "t": 0, "root": [0, -0.433, -0.08], "bones": { "hips": [28, 0, 0], "chest": [28, 5, 0], "head": [-26, 0, 0], "arm_l": [-16, 0, 10], "forearm_l": [-50, 0, 0], "arm_r": [-40, 0, -10], "forearm_r": [-50, 0, 0], "thigh_l": [-118, 0, 6], "shin_l": [115, 0, 0], "foot_l": [-25, 0, 0], "thigh_r": [-81, 0, -6], "shin_r": [142, 0, 0], "foot_r": [-45, 0, 0] } },

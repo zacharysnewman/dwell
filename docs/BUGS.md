@@ -40,17 +40,22 @@ nearest trees are leafy but already dithered; no impostor crowns anywhere. So th
 hand-over (`card_dropped`: leaf faces past `far_trees.x + .y + 2` when `frame.far_trees.w` is set) while the
 impostors draw nothing. The leaves must not fade out unless the impostors for those trees actually draw (atlas
 uploaded, the tile's instances in), and why the impostors draw nothing on the release needs finding.
+Then (local GPU check, test:starter seed 0, High): past ~48 m (at 80 and 150 m) most trees are thin trunks with
+small, faint crowns, so the impostors do draw, but too small/faint; `?impostors=0` brings back the full crowns at
+40–150 m; at 300 m both look alike.
+**Gate (claude/tree-sticks):** the frame's hand-over (`impostors::drawn`) is the tier's only once the impostors are
+ready about the eye (`impostors::ready`: every atlas layer baked, every tile within `fromM + fadeM + 64` m in, at
+least one tree there); until then the near crowns draw to the full-detail distance, chunk cutouts aren't cut and the
+LOD sections keep their trees (`render/mod.rs` `the_near_crowns_and_lod_trees_stay_until_the_impostors_are_ready`,
+red on main → green). `__dwell.impostors()` reads out ready, layers baked, tiles, instances, drawn and the last
+upload error (a layer of the wrong size used to be dropped silently). **Root cause still open:** the bake matches
+the real trees (radius and side area within ~10–30% for every species' wild trees), and a CPU emulation of
+`imp_fs`'s sampling (quad point, per-pixel view dither, texel) covers 1.02× the real crown's side silhouette with
+0.80 overlap (`dwell-worldgen` `crown_match`), so the shrinkage is on the GPU path not emulated: the vertex stage
+(layer spheres from the layer buffer, the instance foot), MSAA sample masks, lighting/fog darkening the crowns, or
+the near trunks with the dropped crowns. Next: a local GPU session reads `__dwell.impostors()` on the release and
+on test:starter, and screenshots `?impostors=1` with the near trees hidden.
 
-### 103. Walking through tall grass is loud, fast and crackly; the first-person legs step too fast
-
-Owner, 2026-11-12: "Walking through tall grass is really loud and obnoxious. Bad sound effect for it I think, it's
-also playing really fast. ... the feet are moving really fast, way faster than normal legs step/walk. And there's an
-occasional crackly sound too, are there 3 SFX playing while walking on grass?" (On 0.54.153: the own-body change
-#791 hadn't shipped — releases failed from ~18:45 until the typecheck fix.) Check: how many sounds play per step on
-grass with tall grass (the footstep on the grass block, a brush sound per tall-grass cell entered, the cross plant's
-own sound — possibly all three, each per cell or per tick rather than per step), their volume and rate; the crackle
-(clipping from stacked sounds, or a sound restarted every tick); the first-person body's walk clip speed against the
-walk speed (stride length 1.6 m a loop vs the controller's speed — too high a playback rate).
 
 ### 100. Volumetric clouds look like "crazy triangles"
 
@@ -630,6 +635,34 @@ the UI or music) go through a low-pass at 800 Hz and drop to 0.6, gliding over 0
 `another_swimmers_depth_is_read_at_its_head_line` and `the_listener_hears_underwater_only_with_the_eye_under_the_surface`
 (both faces), `client/src/audio/underwater.test.ts` (the filter's targets and glide, the UI and music buses dry, the
 strokes' bounded gains, red before: 0.7 × 0.6 = 0.42 over the 0.2 bound). The listening check is the owner's.
+
+### 103. Walking through tall grass is loud, fast and crackly; the first-person legs step too fast (fixed after 0.54.201; the listening check is the owner's)
+
+Owner, 2026-11-12: "Walking through tall grass is really loud and obnoxious. Bad sound effect for it I think, it's
+also playing really fast. ... the feet are moving really fast, way faster than normal legs step/walk. And there's an
+occasional crackly sound too, are there 3 SFX playing while walking on grass?" (On 0.54.153: the own-body change
+#791 hadn't shipped — releases failed from ~18:45 until the typecheck fix.) Check: how many sounds play per step on
+grass with tall grass (the footstep on the grass block, a brush sound per tall-grass cell entered, the cross plant's
+own sound — possibly all three, each per cell or per tick rather than per step), their volume and rate; the crackle
+(clipping from stacked sounds, or a sound restarted every tick); the first-person body's walk clip speed against the
+walk speed (stride length 1.6 m a loop vs the controller's speed — too high a playback rate).
+**Fixed (branch `claude/grass-steps`):** what played per step on grass with tall grass, walking at 5 m/s: the
+footstep (`step` on the grass block → `dwell:grass_step`, a sample at 0.5 × the walk's 0.55, one per 2.0 m: 2.5 a
+second) and the rustle (`brush` on the tall grass → `dwell:leaf_brush`, procedural, gain 0.35 with five to nine
+2 ms white-noise grains, one per 0.8 m but ≥ 0.18 s apart: ~5.3 a second, each ~0.35 s long, so two or three
+overlapping over every step, and one at once on entering each patch). No third sound on open grass (a stick's snap
+only under trees); the "three" was the stacked rustles, and the crackle their grains. No one-shot was restarted while
+playing (each play is a new voice; nothing per-sound limited them). The legs: `biped_walk` looped every 1.6 m, so
+6.25 steps a second at the walk (the sprint 5.3 at 8 m/s), on your own body, other players and the shadow alike.
+Now: on its feet a body rustles only with a footstep, at most one a step (`Stride`, `brush` `minS` 0.3 s; off its
+feet every `everyM` 2.5 m); `leaf_brush` is a soft pink-noise swish (gain 0.16, no grains, one voice, `minGapS`
+0.25); every sound has a voice limit (`voices`, default 4, over it a play is dropped, never restarted); grass steps
+at 0.4; the strides are walk 2.5 m, run 2.8 m (2.0 and 2.9 steps a second) and the gait clips loop every two of
+them (walk 5 m, sprint 5.6 m, crouch-walk 2.2 m). Tests, red on main → green:
+`walking_through_tall_grass_is_one_footstep_a_step_and_at_most_one_rustle_on_it` (main: 15 steps, 32 rustles over
+30 m), `rustles_on_feet_are_never_closer_than_the_min_interval`, `voices.test.ts` (main: the step + rustle stack
+0.635, no voice limit, crackle grains), `the_gaits_step_at_a_natural_cadence_at_the_controllers_speeds` (main: 6.25
+steps a second), `gen.test.mjs` (a gait's cycle = two footstep strides).
 
 ### 92. Downhill water shows edge triangles and thin lines at its ½ m level steps (fixed after 0.54.142; the browser check left local)
 

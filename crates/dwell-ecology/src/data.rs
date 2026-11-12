@@ -85,7 +85,13 @@ pub struct Roam {
 pub struct SpeciesDef {
     pub name: &'static str,
     pub group: GroupRules,
+    /// The start's groups: a fixed count (`start_per_km2` 0), or from the range's area.
     pub start_groups: usize,
+    /// Head a km² of the species' range at the start (a grazer's range the island's grazing land,
+    /// a hunter's its land; WORK_QUEUE item 46: real densities, not a fixed count); 0: `start_groups`.
+    pub start_per_km2: f64,
+    /// The fewest start groups from a density (a small island still has some).
+    pub start_min_groups: usize,
     pub start_size: f64,
     pub breed_per_day: f64,
     pub breed_below_hunger: f64,
@@ -101,6 +107,19 @@ pub struct SpeciesDef {
     pub roam: Option<Roam>,
     /// Its individuals near players (docs/ECOLOGY.md §8); None: it stays a record.
     pub near: Option<NearDef>,
+}
+
+impl SpeciesDef {
+    /// The groups a new ecology starts with on a range of `km2` (km²): `start_groups`, or the
+    /// density's head over `start_size` (rounded), at least `start_min_groups`, at most the
+    /// group's `max_groups`.
+    pub fn start_groups_on(&self, km2: f64) -> usize {
+        if self.start_per_km2 <= 0.0 {
+            return self.start_groups.min(self.group.max_groups);
+        }
+        let n = (km2.max(0.0) * self.start_per_km2 / self.start_size).round() as usize;
+        n.max(self.start_min_groups).min(self.group.max_groups)
+    }
 }
 
 /// Where groups become individuals and fold back (docs/ECOLOGY.md §8).

@@ -11,5 +11,12 @@
   "regrowPerDay": 0.25,
   "reach": 1,
   "openAbove": 2,
-  "catchUpDays": 20
+  "catchUpDays": 20,
+  "stages": {
+    "$comment": "Growing in height (owner 2026-11-12: \"I thought it would get taller over time?\"): `block`'s `property` steps through `order`, a sprout to full height, each value's height from the block's `cross.heights`. A tuft leaves stage i with chance 1/days[i] a day (days: one fewer than order; their sum is the mean days from sprout to full, ≥ 7). `share[i]` is the least climate share (the cap's share) a column needs for its tufts to reach stage i: dry or cold ground stays short, a lush meadow grows full. Grown and regrown tufts start as a sprout (order[0]); eaten tufts go back to it; generation places each tuft at its column's top stage. The last value must be the property's default (full: tall grass placed, or saved before stages).",
+    "property": "stage",
+    "order": ["0", "1", "2", "3"],
+    "days": [3, 3, 4],
+    "share": [0, 0.2, 0.4, 0.6]
+  }
 }
