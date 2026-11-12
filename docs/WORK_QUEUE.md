@@ -903,8 +903,13 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
   a 2× world creates natively in 4.6 s at 176 MB (1×: 3.7 s, 164 MB). **M2b built (the browser):** New world →
   More options → World size (desktop pages only; hidden on touch) and the dev link `?size=2x`; the size saved
   in the world's settings and its menu record, every worker builds its maps and generators at it, the client's
-  bounds, streaming, LOD and big map follow the join's size; 1× unchanged. **Next: the owner tests 2× on the
-  desktop**, then 4×, 8×, 10× with the bench's measurements at each.
+  bounds, streaming, LOD and big map follow the join's size; 1× unchanged. **Checked on the M1's bench
+  (2026-11-11, `?size=`, seed 0):** 2× plays — maps 3.0 s, spawn search 2.9 s, playing at 11.2 s (1×: 2.1, 1.5,
+  8.7 s), every big map level right over the 200 km disc, no gap at the old 50 km rim, a 3.8 km flight at
+  128 m/s at 60 fps (frame.cpu p95 9 ms); 4× plays — maps 7.3 s, playing at 25.3 s. The F4 height map's
+  widest zoom showed only the 1× disc (fixed). Open: the page's memory grows with the area (BUGS.md #76:
+  non-mesh 749 → 979 → 1 819 MB at 1×/2×/4×) and the bigger islands lose their mountains to a speckle of
+  lakes (#77). **Next: the owner tests 2× on the desktop**; #76 before 8× and 10×.
 
 - **Sharing saved structures between players** (owner 2026-11-11: "eventually shareable").
 

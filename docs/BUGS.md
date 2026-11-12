@@ -6,6 +6,37 @@ pins it.
 
 ## Open
 
+### 76. A bigger world's page takes memory that grows with the area (2× +230 MB, 4× +1.07 GB)
+
+Found 2026-11-11 (0.54.59) checking BIG_MAP.md M2b on the M1's warm bench (seed 0, 1280×720, `memory()`
+once settled at the spawn; session scratchpad `bigworld/`). Everything but the meshes (which follow the
+view), in MB:
+
+| | core | server | each of 4 job workers | the other 4 workers | non-mesh total |
+|---|---|---|---|---|---|
+| 1× | 194 | 61 | 77–79 | 22–28 | 749 |
+| 2× | 198 | 203 | 107 | 22–26 | 979 |
+| 4× | 337 | 334 | 241 | 22–24 | 1 819 |
+
+The world map is 1002² cells at every size (its cell doubles), and natively a 2× world peaks at 176 MB
+against 1×'s 164 MB, so something in the job workers and the local server grows with the disc's
+area (job workers ~+9 MB a 1× area). Suspects: a grid at a fixed cell over the disc or the build volume
+(the LOD's or streamer's per-column tables, the water's held sea, the hydrology grid's
+`grid_for_radius(cell, WORLD_RADIUS)` callers), or the big map's disc-level reveal state. Next: a
+`memory()` per worker kind after each of `prepareWorld`, the spawn search and the first terrain, at 1×
+and 4×. At 8× and 10× this decides whether the desktop test fits at all.
+
+### 77. A bigger world's island loses its mountains and fills with small lakes
+
+Found 2026-11-11 (0.54.59), same check: the big map's widest level at 1×, 2× and 4× (scratchpad
+`bigworld/bw-1x_map-l2.png`, `bw-2x_map-l2.png`, `bw-4x_map-l2.png`). 1×'s island has two snowy ranges
+and a few long rivers; 2×'s has thin ridges and its interior speckled with small lakes and a
+grid-like mesh of streams; 4×'s has no snow at all and the speckle covers the island. The ground at
+the spawn still plays well (`bw-2x_spawn.png`, `bw-4x_spawn.png`). Suspects: the uplift's ranges and
+the island shape's absolute tunables (BIG_MAP.md §1) narrower than the map's coarser cell (200 m at 2×,
+400 m at 4×), and the erosion and lake fill tuned per cell rather than per metre. A worldgen look
+question for the owner (the plates are to decide the land, REALISTIC_WORLD.md), not a crash.
+
 ### 69. A dark vertical column in the far terrain before the starter world's volcano
 
 Found 2026-11-11 (0.52.64) on the starter world's tour: `?worldgen=test:starter&fresh=1&at=8571.5,350,-4866.5`

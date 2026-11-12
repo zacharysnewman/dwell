@@ -13,6 +13,8 @@ import {
   mapPixels,
   mapView,
 } from './mapOverlay';
+import { MAP } from './map.gen';
+import { setMapWorldSize } from './minimap';
 
 function map(columns: [number, number][]): Uint8Array {
   const out = new Uint8Array(columns.length * MAP_COLUMN_BYTES);
@@ -85,6 +87,21 @@ describe('terrain map overlay', () => {
     // Out of range zooms clamp.
     expect(mapView(99, 0, 0)).toEqual(disc);
     expect(mapView(-3, 0, 0).step).toBe(8);
+  });
+
+  it("covers a bigger world's whole disc at its widest zoom (BIG_MAP.md M2b)", () => {
+    // The F4 map's last zoom is the world's disc, not the 1x build's: at 2x the 200 km disc.
+    const levels = MAP.bigMap.levels.flatMap((l) => [l.cellM, 1000]);
+    try {
+      setMapWorldSize(2, levels);
+      const disc = mapView(DISC_ZOOM, 0, 0);
+      expect(disc.step * MAP_SIZE).toBeGreaterThanOrEqual(4 * World.worldRadius);
+      expect(disc.step * MAP_SIZE).toBeLessThan(4 * World.worldRadius + MAP_SIZE);
+      expect(disc.x0).toBe(-(MAP_SIZE / 2) * disc.step);
+    } finally {
+      setMapWorldSize(1, []);
+    }
+    expect(mapView(DISC_ZOOM, 0, 0).step).toBe(782);
   });
 
   it('writes distances for a caption', () => {
