@@ -87,7 +87,10 @@ const LAYER_KEYS = [
   "alts",
 ];
 const SOUND_KEYS = [
+  "$comment",
   "gain",
+  "voices",
+  "minGapS",
   "reverb",
   "variation",
   "intensity",
@@ -111,6 +114,7 @@ const TOP_KEYS = [
   "ambience",
   "underwater",
   "creatures",
+  "brush",
   "sounds",
 ];
 /** A creature event's part (AUDIO.md §2d): which of the creature's sounds it plays. */
@@ -294,6 +298,12 @@ export function validateSound(where, s) {
   keysIn(where, s, SOUND_KEYS);
   number(`${where}.gain`, s.gain, 0, 4);
   number(`${where}.reverb`, s.reverb, 0, 1, { optional: true });
+  // At most this many plays of the sound at once (more are dropped, never restarted), and no
+  // second play within `minGapS` seconds of the last (BUGS.md #103).
+  number(`${where}.voices`, s.voices, 1, 24, { optional: true });
+  if (s.voices !== undefined && !Number.isInteger(s.voices))
+    fail(`${where}.voices`, "must be a whole number");
+  number(`${where}.minGapS`, s.minGapS, 0, 2, { optional: true });
   if (s.variation !== "none") {
     const v = s.variation;
     if (!isObject(v))
@@ -518,6 +528,7 @@ export function resolveSounds(files, samplesDir = SAMPLES_DIR) {
     ambience: undefined,
     underwater: undefined,
     creatures: undefined,
+    brush: undefined,
     sounds: {},
   };
   const sorted = [...files].sort((a, b) =>
@@ -682,6 +693,17 @@ export function resolveSounds(files, samplesDir = SAMPLES_DIR) {
     out.creatures = { radiusM: c.radiusM, models };
   }
   if (!out.creatures) out.creatures = { radiusM: 32, models: {} };
+  // Brushing through foliage (AUDIO.md §5 `brush`, BUGS.md #103).
+  for (const file of sorted) {
+    const b = file.brush;
+    if (b === undefined) continue;
+    if (out.brush) fail("brush", "given twice");
+    keysIn("brush", b, ["$comment", "everyM", "minS"]);
+    number("brush.everyM", b.everyM, 0.1, 20);
+    number("brush.minS", b.minS, 0, 5);
+    out.brush = { everyM: b.everyM, minS: b.minS };
+  }
+  if (!out.brush) fail("brush", "missing (the foliage rustle's rate)");
   if (!out.fallback || !(out.fallback in out.sets))
     fail("fallback", `unknown set "${out.fallback}"`);
   // A loop's start plays loop sounds, every other event one-shots; the fallback set has every

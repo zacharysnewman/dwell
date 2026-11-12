@@ -1537,6 +1537,14 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
   by a low-pass with the eye under water, eased at the crossing, plus an underwater bed; all data (AUDIO.md §3a). The
   listening check is the owner's.
 
+- **Tall grass steps (owner 2026-11-12: "Walking through tall grass is really loud and obnoxious. Bad sound effect for
+  it I think, it's also playing really fast. ... the feet are moving really fast, way faster than normal legs
+  step/walk. And there's an occasional crackly sound too, are there 3 SFX playing while walking on grass?"; brief: one
+  footstep per step plus at most a soft brush, never per tick or per cell, a voice limit per sound, the walk/sprint
+  clip at ground speed ÷ stride, ~1.8–2 steps a second):** BUGS.md #103. A rustle on each footstep only (data
+  `brush`), a softer `leaf_brush`, per-sound `voices`/`minGapS`, strides walk 2.5 m / run 2.8 m and the gait clips
+  two strides a loop. The listening and the look on a GPU are the owner's.
+
 - **dwell-mesh's face-B parity test green (owner's brief 2026-11-12: "a_chunk_meshes_the_same_face_local_on_either_face::b
   fails on main (\"cutout plants\"), reported by two sessions … fix the cause at the source so face B's plants are face
   A's mirror … keep the density setting's behaviour"):** BUGS.md #98. Not the Tall grass density (6578783: cleared,
@@ -1865,10 +1873,29 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    (4–8 packs). Plan: deer at the low end of real (~2–4/km² of grazing land, herds of 4–12: a few hundred herds,
    capped by the grazing's carrying capacity), wolves at real (~1 per 60 km²: 4–8 packs), as data; far herds
    visible to ~2.5 km and growing with distance; a test/dev command to list herds and go to the nearest.
+   **Built** (2026-11-12, docs/ECOLOGY.md §3, §9, §11): a species' `start` is a density over its range
+   (`perKm2`: deer 3 a km² of grazing land in herds of 10, wolves 1 per 60 km² of land in packs of 5,
+   `minGroups` for small islands); deer `maxGroups` 40 → 600, wolves cap 7 → 8 (packs of 4–8). Seed 1:
+   ~590 herds (5,900 deer) and 7 packs a face at the start, settling at ~6,900 deer (3.5/km²) and 50–65
+   wolves in 8 packs over two simulated years; a 5-day step ~2.5 ms a face (the step's O(n²) scans cut),
+   one step a server tick; the record ~137 KB a face. Far herds fade 1.8–2.5 km (wolves 1.5–2.2 km), each
+   head at least 3 px on screen (`far.minPx`), stood past the loaded chunks on the generator's ground;
+   the server sends each client its nearest groups first. The finder: `__dwell.herds(kind?)`,
+   `__dwell.goToHerd(kind?, back?)` (local worlds) and the bench step `herd` (scenario `herds`). Near
+   creature limits (`limits.max` 64, `spawnChunks`) unchanged: at ~3 deer a km² a player meets a herd or
+   two at a time. Not yet: in-game screenshots and the frame cost from the bench (no GPU in the cloud).
 
 47. **Wind only when flying** (owner 2026-11-12: "let's disable the wind for now it doesn't seem right like should just be
    for flying or high altitude only." / "Wind SFX"). Built: the wind bed reads the eye's height above the ground
    (silent below 12 m, full at 60 m) instead of altitude above the sea.
+
+48. **Leaves flat against logs** (owner 2026-11-12: **"can we make it so the inside leave edges make a flat side against
+   the logs, so it doesn't leave quite so much gapping where they connect to the tree. Currently they're slanted edges
+   all the way around in all cases, but where it touches the tree it would look better if it was flat"**). Answers:
+   **"Flat leaf applied when a full Face touching and any new leaf touching leaf cases that need to be adjusted to fit
+   together properly."** — a leaf block's side that shares a full face with a log is flat (no chamfer); and wherever
+   that change leaves leaf-to-leaf seams that no longer meet (a flat side next to a chamfered neighbour), adjust them
+   so the crown fits together without gaps or overlaps.
 
 ## Future (needs owner answers)
 

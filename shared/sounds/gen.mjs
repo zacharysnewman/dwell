@@ -119,6 +119,13 @@ for (const [m, d] of Object.entries(cr.models))
 rs.push("    ];");
 rs.push("}");
 rs.push("");
+rs.push("/// Brushing through foliage (shared/sounds `brush`; AUDIO.md §5, BUGS.md #103): on its feet a body");
+rs.push("/// rustles only with a footstep; off them every `EVERY_M` moved; never closer than `MIN_S`.");
+rs.push("pub mod brush_sounds {");
+rs.push(`    pub const EVERY_M: f64 = ${rf(data.brush.everyM)};`);
+rs.push(`    pub const MIN_S: f64 = ${rf(data.brush.minS)};`);
+rs.push("}");
+rs.push("");
 writeFileSync(join(root, "crates/dwell-game/src/sound.gen.rs"), rs.join("\n"));
 console.log(
   `sounds: ${Object.keys(data.sounds).length} sounds, ${Object.keys(data.sets).length} sets, ${data.events.length} events`,
