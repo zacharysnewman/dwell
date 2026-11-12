@@ -2,6 +2,15 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.54.180",
+      "changes": [
+        "Villagers' faces are their skin colour again, not jet black",
+        "A villager's hair, skin and hat each take their own colour: no more yellow fringes or clothes-coloured heads",
+        "Characters and animals draw in their true palette colours (they were drawn too dark)",
+        "Behind the scenes: models have part maps (which part each vertex is), with a tool that renders them"
+      ]
+    },
+    {
       "version": "0.54.179",
       "changes": [
         "Trees and ground in front of the clouds no longer show a dithered pattern of the clouds behind them",
