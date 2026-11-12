@@ -1127,13 +1127,13 @@ changed by hand is pinned and reads **Custom** (ARCHITECTURE.md §5, the game me
 the exposure and the water's flow switches are outside the presets. `?preset=<id>` draws a visit at a preset
 (the bench's runs below), whatever is stored.
 
-| Preset | Render scale | Water | Sun & moon shadows | Torch shadows | Light shafts | Clouds | Full detail | Distant detail | Distant memory |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Ultra | 100 % | Medium (High until 0.50.29) | High | High | High | High | 352 m | 2 px | 512 MB |
-| High (desktop default) | 50 % Stretch | Medium | High | Low | High | High | 256 m | 4 px | 256 MB |
-| Medium | 50 % Stretch | Medium | Low | Off | Low | High | 192 m | 6 px | 192 MB |
-| Mobile (phone default) | 50 % Stretch | Low | Low | Off | Low | Low | 128 m | 8 px | 96 MB |
-| Low | 50 % Stretch | Low | Off | Off | Off | Off | 96 m | 12 px | 64 MB |
+| Preset | Render scale | Water | Sun & moon shadows | Torch shadows | Light shafts | Bloom | Clouds | Full detail | Distant detail | Distant memory |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Ultra | 100 % | Medium (High until 0.50.29) | High | High | High | High | High | 352 m | 2 px | 512 MB |
+| High (desktop default) | 50 % Stretch | Medium | High | Low | High | High | High | 256 m | 4 px | 256 MB |
+| Medium | 50 % Stretch | Medium | Low | Off | Low | Low | High | 192 m | 6 px | 192 MB |
+| Mobile (phone default) | 50 % Stretch | Low | Low | Off | Low | Off | Low | 128 m | 8 px | 96 MB |
+| Low | 50 % Stretch | Low | Off | Off | Off | Off | Off | 96 m | 12 px | 64 MB |
 
 **The order of the cuts**, by GPU time saved per beauty lost, from the [cost profile](#cost-profile-m1-air),
 [render scale](#render-scale-and-upscaling) and [water cost](#water-cost-m1-air) measurements: the render

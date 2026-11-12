@@ -17,7 +17,7 @@ mod table {
     include!("tools.gen.rs");
 }
 
-pub use crate::damage::{BlockDamageDef, DamageLook, DamageLookKind};
+pub use crate::damage::{BlockDamageDef, CarveProfile, DamageLook, DamageLookKind};
 pub use table::{
     BLOCK_DAMAGE, BREAK_CLASSES, BREAK_TOOLS, BREAK_WITH, CHOP2_DEFAULT, CREATIVE_WEAR, DURABILITY,
     TOOLS, WEAR_BREAK_SOUND, WOODS,

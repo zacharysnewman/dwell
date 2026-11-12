@@ -1,0 +1,10 @@
+{
+  "$comment": "Bloom, the glow round self-lit surfaces (WORK_QUEUE item 19; owner 2026-11-11: 'Lava should have bloom glow'; docs/proposals/VOLCANOES.md §6.5; docs/ARCHITECTURE.md, Bloom). Keyed on emissive, not on the scene's brightness: only the pixels the scene flags self-lit (lava, a torch's flame, a lamp: `self_lit_depth`) feed it, so a bright sky or snow never blooms. The bright pass takes those pixels' linear colour above threshold (its brightest channel, the scene's linear light; 0: all of it), the chain blurs it over `levels` levels (the first at `scale` of the drawing buffer each axis, each next one half; dual-filter down, tent up with the up taps `radius` texels of their level apart), and the composite adds the blurred glow × intensity to the scene's linear light before the tone curve. tiers: the Settings → Graphics → Bloom choices (Off draws none and builds no pipeline): Low (the Medium preset) at half of High's resolution with a level fewer; a CPU adapter and the phone tier never draw it (the owner plays on Low on an iPhone: frame rate there first). Run `node shared/look/bloom.mjs` after editing; CI fails if crates/dwell-look/src/bloom.gen.rs is stale. The content is prototype (ARCHITECTURE.md §6.1).",
+  "threshold": 0.05,
+  "intensity": 0.9,
+  "radius": 1.0,
+  "tiers": {
+    "high": { "scale": 0.5, "levels": 5 },
+    "low": { "scale": 0.25, "levels": 4 }
+  }
+}

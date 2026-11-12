@@ -198,9 +198,13 @@ Owner, 2026-11-11: "Lava should have bloom glow." / "Lava looks dark red instead
   data (`shaders.rs` `lava_wgsl`): seam colour and core, emissive, crust cover (seams widen as it thins).
 - **Hue kept:** lava's glow goes through `glow_hue` (`render/lights.rs`): the tone curve on the brightest
   channel only, the colour scaled with it, so a hot orange doesn't wash to mustard.
-- **Not built: the bloom pass** (bright pass keyed on self-lit pixels, since `glow` caps emissive at
-  `GLOW_PEAK` before tone mapping; half-res blur levels; tiers as data, off on CPU and low; lazy
-  pipelines; bench cost). Left for a later round.
+- **Bloom (built, pending release):** the glow round the lava, torches and flames (`render/bloom.rs`,
+  `shared/look/bloom.json`; ARCHITECTURE.md, Bloom). Keyed on the scene's self-lit flag, not on raw
+  brightness (`glow` caps emissive at `GLOW_PEAK` before the tone curve, so brightness alone can't find
+  it): the self-lit pixels' linear light above a threshold, blurred over a halving chain (dual filter
+  down, tent up) and added to the scene's linear light before the tone curve. Settings → Graphics →
+  Bloom: High on the High and Ultra presets, Low (half its resolution) on Medium, off on Low and Mobile;
+  never on a phone or a CPU adapter.
 
 ### 6.4 As built: V2, rivers to the sea (2026-11-11)
 

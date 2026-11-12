@@ -239,6 +239,20 @@ dwell_world::both_faces!(
         // (one each of the four before the last), the rest on the destroy.
         assert_eq!(loose(&fx, "dwell:rock_shard"), 4);
         assert_eq!(loose(&fx, "dwell:stone"), 0, "no longer the block itself");
+        // Each hit's piece is a real 3D shard (BLOCK_DAMAGE.md §6.2, owner: "both"): the loose item
+        // is drawn by its look, the angular `shard`, no bigger than the mark the hit carves.
+        let piece = dwell_protocol::inventory::item("dwell:rock_shard")
+            .and_then(|d| d.look)
+            .expect("a rock shard's look is data");
+        assert_eq!(piece.shape, dwell_protocol::inventory::LookShape::Shard);
+        let mark = dwell_protocol::damage::look_of("dwell:stone").expect("stone's mark is data");
+        assert!(
+            piece.size.iter().all(|&s| s <= mark.size) && piece.size[1] <= mark.depth,
+            "the piece fits the chunk it came out of: {:?} in {} × {}",
+            piece.size,
+            mark.size,
+            mark.depth
+        );
         hit(&mut fx, f, STONE);
         assert_eq!(block_at(&mut fx, f, STONE), "dwell:air");
         assert_eq!(

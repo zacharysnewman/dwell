@@ -7,6 +7,10 @@
 //! This is the CPU copy of the shader's height field (kept in step by hand; the tests pin its
 //! shape) and the packing of a quad's parameters into its vertex colour and light, which the
 //! shader reads flat (`TerrainOut.code`).
+//!
+//! Since the carved mesh (BLOCK_DAMAGE.md §6.2) the same height fields cut real geometry: the
+//! struck face is meshed as a grid pushed in by [`Carve::height`] (a [`Dent`]'s bowls for soils,
+//! [`Facets`]' angular facets for stone), and the mesher no longer emits relief quads.
 
 /// The marks' distances merge by a smooth minimum this soft (in radii): two bowls closer than
 /// about two radii run into one hollow.
@@ -57,13 +61,7 @@ impl Dent {
 
     /// The height at `p` (m; negative: into the face), faded to the face at the cell's edge.
     pub fn height(&self, p: [f64; 2]) -> f64 {
-        let e = (p[0] - self.lo[0])
-            .min(self.hi[0] - p[0])
-            .min(p[1] - self.lo[1])
-            .min(self.hi[1] - p[1]);
-        let s = (e / EDGE_FADE_M).clamp(0.0, 1.0);
-        let fade = s * s * (3.0 - 2.0 * s);
-        profile(self.distance(p), self.depth, self.rim) * fade
+        profile(self.distance(p), self.depth, self.rim) * edge_fade(p, self.lo, self.hi)
     }
 
     /// The lit normal at `p` in the face's frame (u, v, out), from the height's gradient by
@@ -74,6 +72,131 @@ impl Dent {
         let gy = (self.height([p[0], p[1] + E]) - self.height([p[0], p[1] - E])) / (2.0 * E);
         let l = (gx * gx + gy * gy + 1.0).sqrt();
         [-gx / l, -gy / l, 1.0 / l]
+    }
+}
+
+/// The edge fade (smoothstep over [`EDGE_FADE_M`]) at `p` inside the rectangle `lo`–`hi`: 0 on its
+/// edge, so a carved face's boundary vertices stay on the face (watertight with its neighbours).
+pub fn edge_fade(p: [f64; 2], lo: [f64; 2], hi: [f64; 2]) -> f64 {
+    let e = (p[0] - lo[0])
+        .min(hi[0] - p[0])
+        .min(p[1] - lo[1])
+        .min(hi[1] - p[1]);
+    let s = (e / EDGE_FADE_M).clamp(0.0, 1.0);
+    s * s * (3.0 - 2.0 * s)
+}
+
+/// One shard knocked out of a face: an apex `depth` in, the facets running up from it to an
+/// uneven polygon of `corners` on the face (all in the face's (u, v) metres).
+#[derive(Clone, Debug)]
+pub struct Shard {
+    pub apex: [f64; 2],
+    pub corners: Vec<[f64; 2]>,
+    pub depth: f64,
+}
+
+impl Shard {
+    /// The shard's height at `p` (m; ≤ 0): the facet `p` lies on, linear across it (a flat facet),
+    /// 0 outside the polygon.
+    pub fn height(&self, p: [f64; 2]) -> f64 {
+        let n = self.corners.len();
+        for k in 0..n {
+            let (a, b, c) = (self.apex, self.corners[k], self.corners[(k + 1) % n]);
+            let det = (b[0] - a[0]) * (c[1] - a[1]) - (c[0] - a[0]) * (b[1] - a[1]);
+            if det.abs() < 1e-12 {
+                continue;
+            }
+            let wb = ((p[0] - a[0]) * (c[1] - a[1]) - (c[0] - a[0]) * (p[1] - a[1])) / det;
+            let wc = ((b[0] - a[0]) * (p[1] - a[1]) - (p[0] - a[0]) * (b[1] - a[1])) / det;
+            let wa = 1.0 - wb - wc;
+            if wa >= -1e-9 && wb >= -1e-9 && wc >= -1e-9 {
+                return -self.depth * wa;
+            }
+        }
+        0.0
+    }
+
+    /// How far the shard reaches from its apex (m).
+    pub fn reach(&self) -> f64 {
+        self.corners
+            .iter()
+            .map(|c| ((c[0] - self.apex[0]).powi(2) + (c[1] - self.apex[1]).powi(2)).sqrt())
+            .fold(0.0, f64::max)
+    }
+}
+
+/// A face's facets: its marks' shards, the deepest wins where they overlap, faded to the face at
+/// the cell's edge (`lo`–`hi`, the face's metres).
+#[derive(Clone, Debug)]
+pub struct Facets {
+    pub shards: Vec<Shard>,
+    pub lo: [f64; 2],
+    pub hi: [f64; 2],
+}
+
+/// A struck face's carve: the height field its grid is pushed in by (BLOCK_DAMAGE.md §6.2).
+#[derive(Clone, Debug)]
+pub enum Carve {
+    /// Soils: bowls merged into one hollow, lit by smooth normals.
+    Bowl(Dent),
+    /// Stone: angular facets, each triangle lit flat.
+    Facets(Facets),
+}
+
+impl Carve {
+    /// The height at `p` (face metres; m, ≤ 0 into the face; 0 on the cell's edge).
+    pub fn height(&self, p: [f64; 2]) -> f64 {
+        match self {
+            Carve::Bowl(d) => d.height(p).min(0.0),
+            Carve::Facets(f) => {
+                let h = f.shards.iter().map(|s| s.height(p)).fold(0.0, f64::min);
+                h * edge_fade(p, f.lo, f.hi)
+            }
+        }
+    }
+
+    /// The deepest the field goes (m).
+    pub fn depth(&self) -> f64 {
+        match self {
+            Carve::Bowl(d) => d.depth,
+            Carve::Facets(f) => f.shards.iter().map(|s| s.depth).fold(0.0, f64::max),
+        }
+    }
+
+    /// Whether it is lit by smooth normals (a bowl) or flat per triangle (facets).
+    pub fn smooth(&self) -> bool {
+        matches!(self, Carve::Bowl(_))
+    }
+
+    /// The rectangle (face metres) outside which the field is the face itself.
+    pub fn reach(&self) -> ([f64; 2], [f64; 2]) {
+        let (pts, r, lo, hi): (Vec<[f64; 2]>, Vec<f64>, _, _) = match self {
+            // Without a rim the bowl ends at its lip (one radius); with one, the rim's reach.
+            Carve::Bowl(d) => (
+                d.centres.clone(),
+                vec![if d.rim > 0.0 { EXTENT } else { 1.0 } * d.radius; d.centres.len()],
+                d.lo,
+                d.hi,
+            ),
+            Carve::Facets(f) => (
+                f.shards.iter().map(|s| s.apex).collect(),
+                f.shards.iter().map(|s| s.reach()).collect(),
+                f.lo,
+                f.hi,
+            ),
+        };
+        let mut a = hi;
+        let mut b = lo;
+        for (p, r) in pts.iter().zip(r) {
+            for i in 0..2 {
+                a[i] = a[i].min(p[i] - r);
+                b[i] = b[i].max(p[i] + r);
+            }
+        }
+        (
+            [a[0].max(lo[0]), a[1].max(lo[1])],
+            [b[0].min(hi[0]), b[1].min(hi[1])],
+        )
     }
 }
 

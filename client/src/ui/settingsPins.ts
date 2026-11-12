@@ -24,6 +24,7 @@ export const EXPOSURE_KEY = 'dwell.exposure';
 /** Its own key (the stores are append-only: an older build ignores it, a newer one reads it). */
 export const CLOUDS_KEY = 'dwell.clouds';
 export const SHAFTS_KEY = 'dwell.shafts';
+export const BLOOM_KEY = 'dwell.bloom';
 /** A record, append-only: unknown fields are kept on rewrite (ui/waterSettings.ts). */
 export const WATER_KEY = 'dwell.water';
 /** A record, append-only: unknown fields are kept on rewrite (ui/shadowSettings.ts). */
@@ -83,6 +84,7 @@ export function settingFields(keys: StoreKeys): SettingField[] {
     ...rec('audio', keys.audio, ['master', 'effects', 'ui', 'music', 'ambience']),
     one(['clouds'], CLOUDS_KEY, [], 'clouds'),
     one(['shafts'], SHAFTS_KEY, [], 'shafts'),
+    one(['bloom'], BLOOM_KEY, [], 'bloom'),
     ...rec(
       'water',
       WATER_KEY,

@@ -929,6 +929,8 @@ async function start(): Promise<App | null> {
     client.setChopAim(/[?&]chop=v2(&|$)/.test(location.search));
     // The light shafts (ADR 0064); ?shafts=off|low|high overrides them (the bench).
     client.setShafts(new URLSearchParams(location.search).get('shafts') ?? s.shafts);
+    // Bloom (WORK_QUEUE item 19); ?bloom=off|low|high overrides it (the bench).
+    client.setBloom(new URLSearchParams(location.search).get('bloom') ?? s.bloom);
     // Render scale and its upscaler; ?renderscale= and ?upscaler= override them (the bench).
     const rs = renderScaleFromQuery(location.search, s.renderScale);
     client.setRenderScale(rs.scale, rs.upscaler, UPSCALE.sharpenStops);

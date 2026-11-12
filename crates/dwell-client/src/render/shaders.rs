@@ -1516,7 +1516,8 @@ fn composited_of(c: vec4f, depth: f32, ray: vec3f, clear: vec3f, back: vec3f) ->
 // The light shafts over the finished picture (ADR 0064): the shafts pass's glow (`shafts_fs`, at
 // the tier's resolution, filtered up) × the light's colour and weight, screened over the colour so
 // it brightens softly and never clips. None when the frame draws none (uniform).
-fn with_shafts(color: vec3f, p: vec2i) -> vec3f {
+fn with_shafts(composited: vec3f, p: vec2i) -> vec3f {
+    let color = with_bloom(composited, p);
     let air = frame.shafts.w > 0.5 && frame.shafts.z > 0.0;
     let lit = frame.torch_shafts[0].x > 0.5;
     if (!air && !lit) {
@@ -1527,6 +1528,23 @@ fn with_shafts(color: vec3f, p: vec2i) -> vec3f {
     let g = select(0.0, s.a * frame.shafts.z, air);
     let glow = clamp(frame.shafts_color.rgb * g + select(vec3f(0.0), s.rgb, lit), vec3f(0.0), vec3f(1.0));
     return color + glow * (1.0 - color);
+}
+
+// Bloom over the composited colour (WORK_QUEUE item 19, render/bloom.rs): the chain's blurred glow
+// of the self-lit pixels × BLOOM_INTENSITY added to the pixel's linear light before the tone curve
+// (the composite's colour taken back through `inverse_display`, and only the difference the glow
+// makes added, so a pixel without glow is exactly as it was). None with bloom off (its chain 1 × 1).
+fn with_bloom(color: vec3f, p: vec2i) -> vec3f {
+    if (textureDimensions(bloom_tex).x <= 1u) {
+        return color;
+    }
+    let uv = (vec2f(p) + 0.5) / vec2f(textureDimensions(scene_color));
+    let b = textureSampleLevel(bloom_tex, scene_sampler, uv, 0.0).rgb * BLOOM_INTENSITY;
+    if (max(max(b.r, b.g), b.b) < 1e-5) {
+        return color;
+    }
+    let lin = inverse_display(min(color, vec3f(0.995)));
+    return color + max(display(lin + b) - display(lin), vec3f(0.0));
 }
 
 fn composite_pixel(p: vec2i, ndc: vec2f) -> vec3f {
@@ -3377,8 +3395,10 @@ fn scene_bindings(samples: u32) -> String {
     } else {
         "texture_2d<f32>"
     };
+    let bloom = dwell_look::bloom::BLOOM.intensity as f32;
     format!(
         "const SCENE_SAMPLES: i32 = {samples};\n\
+         const BLOOM_INTENSITY: f32 = {bloom:?};\n\
          const SAMPLE_SLOTS: u32 = {samples}u;\n\
          @group(2) @binding(0) var scene_color: texture_2d<f32>;\n\
          @group(2) @binding(1) var scene_depth: {depth};\n\
@@ -3387,6 +3407,7 @@ fn scene_bindings(samples: u32) -> String {
          @group(2) @binding(3) var shafts_tex: texture_2d<f32>;\n\
          @group(2) @binding(4) var clouds_tex: texture_2d<f32>;\n\
          @group(2) @binding(5) var cloud_dist_tex: texture_2d<f32>;\n\
+         @group(2) @binding(6) var bloom_tex: texture_2d<f32>;\n\
          @group(3) @binding(1) var cloud_history: texture_2d<f32>;\n\
          @group(3) @binding(2) var cloud_history_sampler: sampler;\n\
          @group(3) @binding(3) var<uniform> cloud_prev: CloudPrev;\n",

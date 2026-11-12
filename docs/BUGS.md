@@ -448,6 +448,20 @@ grids per process (the server, the chunk worker and the LOD worker each generate
 the erosion, so each reads every grid). Expected ~37 MB less in each of the three processes (~110 MB
 of the 850 MB); the page's numbers are to be re-measured on the bench (`memory-phone --touch`).
 
+**Re-measured, 0.53.2 (2026-11-11)**, the same method (`memory-phone --touch --compare` with a `{"worldgen":
+"test:starter"}` config, the M1's GPU; MB at the end of loading, 30 s later in brackets):
+
+| World | Total at load | Server | World workers | Core | GPU meshes |
+| --- | --- | --- | --- | --- | --- |
+| Default, 0.53.2 | 662 MB (583) | 60 | 77 + 77 (+ 20 + 22) | 96 | 285 (206) |
+| Starter, 0.53.2 | **661 MB** (588) | 83 | 83 + 83 (+ 16 + 15) | 99 | 258 (184) |
+
+The starter now reads the same as the default world (850 → 661 MB at load): the grids' cut took ~31 MB
+from the server and each big world worker, as expected. "One world worker on phones" is not needed for
+the memory: nothing in the starter dominates any more; the GPU meshes (the LOD's cache and the near
+chunks) are the largest share in both worlds, then the two big world workers. (The two smaller workers,
+~20 MB each, are the second pool's.) Still not measured on the iPhone itself.
+
 ### 67. The minimap fragmented, black-edged and coarse when moving fast (fixed pending release 0.52.10)
 
 Owner, 2026-11-10: "The mini map gets all fragmented when moving fast, it should always show the full
