@@ -979,6 +979,10 @@ pub fn upsample_cover(v: &VolumeTunables, e: f64, texels: &[(f64, [f64; 2], f64)
     if weight > 0.0 { sum / weight } else { 0.0 }
 }
 
+/// How many standard deviations of a texel's neighbourhood its history may stray ([`resolve`],
+/// `CLOUD_HISTORY_CLAMP`).
+pub const HISTORY_CLAMP: f64 = 1.5;
+
 /// The clouds' resolve (BUGS.md #90, `clouds_resolve_fs`): the box a texel's history is clamped to,
 /// from this frame's march at it and its 3 × 3 neighbours whose scene matched its own (`samples`,
 /// premultiplied colour and cover): each channel's mean ± `gamma` standard deviations, widened to
@@ -3235,7 +3239,7 @@ mod shape_tests {
                     .flat_map(|dy| (-1..=1).map(move |dx| (dx, dy)))
                     .map(|(dx, dy)| at(dx, dy))
                     .collect();
-                let bx = neighbourhood_box(own, &nb, 1.5);
+                let bx = neighbourhood_box(own, &nb, HISTORY_CLAMP);
                 hist = resolve(own, bx, hist, 1.0, CLOUDS.tiers.medium.history_blend);
                 if frame >= 16 {
                     raw.push(own[3]);

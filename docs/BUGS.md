@@ -14,6 +14,13 @@ accumulation; near or inside the layer the reprojection fails (the camera moves 
 fast), so the history is rejected and the raw jittered low-res result shows, then a plain upsample makes it blocky.
 Fixes to weigh: blue-noise jitter, a depth-aware (bilateral) upsample, neighbourhood clamping instead of history
 rejection, more steps or full resolution when the eye is in or near the layer.
+**Fixed in code (2026-11-12, branch `claude/cloud-shapes`, CLOUDS.md §9.6), the look to check locally:** the jitter
+is a baked blue-noise tile; a resolve pass clamps the history into the texel's 3 × 3 neighbourhood (matching scene
+only) instead of dropping it as the eye moves; near or in the layer a tier takes its `nearSteps`/`nearDivisor`
+(Medium ½ and 14 steps, High 24 steps); the composite keeps §8.9's depth-aware upsample. Tests (`dwell-look`
+`shape_tests`): the resolve's variance under the jitter sequence with the eye moving is under a quarter of the raw
+march's (the old pass showed the raw march there), stale history is clamped, a silhouette stays sharp, the near tier
+comes from the data. Move to Fixed once the owner's look at cloud level confirms it.
 
 ### 89. Sub-60 fps flying at High on the owner's M1 MacBook Air (measured; partial)
 

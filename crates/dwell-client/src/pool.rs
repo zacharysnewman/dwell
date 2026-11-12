@@ -89,6 +89,8 @@ pub enum Purpose {
     Base(Coord),
     /// A strip of the LOD colour map (`crate::lod_map`).
     LodMap(crate::lod_map::TileJob),
+    /// A slab of the clouds' shape noise: the detail texture's (else the base's), from slice z0.
+    CloudNoise(bool, u32),
     /// A tile of the big map (`crate::map_reveal`): face (0 A, 1 B), tile indices and its zoom
     /// level's cell side (m).
     Reveal(u8, i32, i32, i32),
@@ -112,6 +114,7 @@ impl Purpose {
             Purpose::Diff(..) => ("job.diff.wait", "job.diff.run"),
             Purpose::Base(..) => ("job.base.wait", "job.base.run"),
             Purpose::LodMap(..) => ("job.lod_map.wait", "job.lod_map.run"),
+            Purpose::CloudNoise(..) => ("job.cloud_noise.wait", "job.cloud_noise.run"),
             Purpose::Reveal(..) => ("job.reveal.wait", "job.reveal.run"),
             Purpose::ExploreTile(..) => ("job.explore_tile.wait", "job.explore_tile.run"),
         }

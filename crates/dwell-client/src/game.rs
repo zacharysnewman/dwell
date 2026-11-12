@@ -70,6 +70,9 @@ const ARMS_LIGHT: u32 = u32::MAX;
 /// input queue and latency window (dwell-sim `MAX_QUEUED_INPUTS`, `LATENCY_WINDOW_TICKS`) hold a
 /// frame of this many inputs.
 const MAX_TICKS_PER_FRAME: f64 = 60.0;
+/// The clouds' shape-noise bake's slices per worker job (docs/CLOUDS.md §9.4): 64³ base slabs of 4 slices
+/// take ~20 ms each natively.
+const CLOUD_NOISE_SLICES: u32 = 4;
 /// Server input buffer outside [LOW, HIGH] nudges the local tick rate by ±RATE_NUDGE.
 const BUFFER_LOW: u8 = 1;
 const BUFFER_HIGH: u8 = 4;
@@ -241,6 +244,13 @@ pub trait Scene: TerrainRenderer {
     fn set_lod_map(&mut self, _map: Option<&crate::lod_map::LodMap>) {}
     /// A strip of ring `ring` rasterised: world texels `rect`, rgba8 sRGB rows of x.
     fn lod_map_tile(&mut self, _ring: usize, _rect: crate::lod_map::Rect, _rgba: &[u8]) {}
+    /// Whether the clouds' shape noise is wanted and not yet asked for (docs/CLOUDS.md §9.4): the
+    /// game then bakes it in its job workers. Asking marks it asked.
+    fn take_cloud_noise_request(&mut self) -> bool {
+        false
+    }
+    /// A baked slab of the clouds' shape noise (`detail`: the detail texture, else the base).
+    fn cloud_noise_slab(&mut self, _detail: bool, _z0: u32, _texels: &[u8]) {}
     fn stats(&self) -> RenderStats;
     /// The day/night cycle's state this frame, and seconds for the stars' twinkle.
     fn set_day(&mut self, _day: &DayState, _seconds: f64) {}
@@ -2097,6 +2107,11 @@ impl<S: Scene> Game<S> {
                         ),
                         _ => String::new(),
                     };
+                }
+                (Purpose::CloudNoise(detail, z0), Output::CloudNoise(texels)) => {
+                    self.scene
+                        .borrow_mut()
+                        .cloud_noise_slab(detail, z0, &texels);
                 }
                 (Purpose::LodMap(job), out) => {
                     if let Some(map) = &mut self.lod_map
@@ -4689,6 +4704,34 @@ impl<S: Scene> Game<S> {
             LodView::<SectionMeshes>::show_lod_stand_ins(&mut view, &[]);
         }
         self.update_lod_map(position);
+        self.update_cloud_noise();
+    }
+
+    /// The clouds' shape noise (docs/CLOUDS.md §9.4): when a volume tier first wants it, its bake
+    /// goes to the job workers as slabs of a few slices each (no frame waits on it); the slabs go
+    /// into the textures as they come back ([`Scene::cloud_noise_slab`]).
+    fn update_cloud_noise(&mut self) {
+        if !self.scene.borrow_mut().take_cloud_noise_request() {
+            return;
+        }
+        let t = &dwell_look::clouds::CLOUDS;
+        let mut pool = self.pool.borrow_mut();
+        for (detail, z0, z1) in crate::render::cloud_noise_slabs(t, CLOUD_NOISE_SLICES) {
+            let size = if detail {
+                t.form.detail_size
+            } else {
+                t.form.base_size
+            };
+            pool.submit(
+                Purpose::CloudNoise(detail, z0),
+                crate::jobs::Job::CloudNoise {
+                    detail,
+                    size,
+                    z0,
+                    z1,
+                },
+            );
+        }
     }
 
     /// The LOD colour map's rings around the eye (`position`, world): starts the strips its moves

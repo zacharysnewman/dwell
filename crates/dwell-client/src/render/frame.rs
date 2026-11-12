@@ -250,10 +250,62 @@ impl BloomChain {
     }
 }
 
-/// The clouds pass's own group (3; binding 0 is the motion pass's `finished`): the accumulated
-/// clouds of the last frame, a filtering sampler, the last frame's camera (`CloudPrev`), the
-/// run-time plumes (`CloudPlumes`, docs/CLOUDS.md §8.7) and the last frame's scene span per texel
-/// (`CLOUD_DIST`, §8.9).
+/// The clouds pass's own group (3; binding 0 is the motion pass's `finished`): the last frame's
+/// camera (`CloudPrev`), the run-time plumes (`CloudPlumes`, docs/CLOUDS.md §8.7) and the baked
+/// shape noise (§9.3: the base and detail 3D textures, their repeating sampler).
+pub fn cloud_march_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
+    let texture_3d = |binding| wgpu::BindGroupLayoutEntry {
+        binding,
+        visibility: wgpu::ShaderStages::FRAGMENT,
+        ty: wgpu::BindingType::Texture {
+            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+            view_dimension: wgpu::TextureViewDimension::D3,
+            multisampled: false,
+        },
+        count: None,
+    };
+    device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("cloud march"),
+        entries: &[
+            cloud_prev_entry(),
+            wgpu::BindGroupLayoutEntry {
+                binding: 4,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: wgpu::BufferSize::new(cloud_plume_bytes()),
+                },
+                count: None,
+            },
+            texture_3d(6),
+            texture_3d(7),
+            wgpu::BindGroupLayoutEntry {
+                binding: 8,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                count: None,
+            },
+        ],
+    })
+}
+
+fn cloud_prev_entry() -> wgpu::BindGroupLayoutEntry {
+    wgpu::BindGroupLayoutEntry {
+        binding: 3,
+        visibility: wgpu::ShaderStages::FRAGMENT,
+        ty: wgpu::BindingType::Buffer {
+            ty: wgpu::BufferBindingType::Uniform,
+            has_dynamic_offset: false,
+            min_binding_size: wgpu::BufferSize::new(CLOUD_PREV_BYTES),
+        },
+        count: None,
+    }
+}
+
+/// The clouds' resolve's group (3, BUGS.md #90): the accumulated clouds of the last frame, a
+/// filtering sampler, the last frame's camera, the last frame's scene span per texel
+/// (`CLOUD_DIST`, §8.9), and this frame's raw march and span.
 pub fn cloud_history_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
     device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         label: Some("cloud history"),
@@ -265,27 +317,10 @@ pub fn cloud_history_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
                 ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                 count: None,
             },
-            wgpu::BindGroupLayoutEntry {
-                binding: 3,
-                visibility: wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: wgpu::BufferSize::new(CLOUD_PREV_BYTES),
-                },
-                count: None,
-            },
-            wgpu::BindGroupLayoutEntry {
-                binding: 4,
-                visibility: wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: wgpu::BufferSize::new(cloud_plume_bytes()),
-                },
-                count: None,
-            },
+            cloud_prev_entry(),
             filterable(5),
+            filterable(9),
+            filterable(10),
         ],
     })
 }
@@ -303,8 +338,9 @@ pub const CLOUD_PREV_BYTES: u64 = 5 * 16;
 /// The volumetric clouds' buffer's format: premultiplied colour and cover.
 pub const CLOUDS: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
 /// The scene under each texel (docs/CLOUDS.md §8.9): its nearest and farthest pixel's distance
-/// along the ray (m; the sky and past the reach: the march's reach), where its march ended.
-pub const CLOUD_DIST: wgpu::TextureFormat = wgpu::TextureFormat::Rg16Float;
+/// along the ray (m; the sky and past the reach: the march's reach), where its march ended, and the
+/// first cloud's distance (the resolve's parallax).
+pub const CLOUD_DIST: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
 
 fn filterable(binding: u32) -> wgpu::BindGroupLayoutEntry {
     wgpu::BindGroupLayoutEntry {
@@ -368,6 +404,9 @@ pub struct Targets {
     pub cloud_history: Target,
     pub cloud_dist_history: Target,
     pub cloud_group: wgpu::BindGroup,
+    /// The march's group (its camera, the plumes, the shape noise) and its raw output.
+    pub cloud_march_group: wgpu::BindGroup,
+    pub cloud_raw: (wgpu::Texture, wgpu::TextureView),
     /// Bloom's chain (its tier's size; 1 × 1 with bloom off).
     pub bloom: BloomChain,
 }
@@ -384,6 +423,13 @@ pub struct SceneGroups<'a> {
     pub cloud_layout: &'a wgpu::BindGroupLayout,
     pub cloud_prev: &'a wgpu::Buffer,
     pub cloud_plumes: &'a wgpu::Buffer,
+    /// The march's group layout and the baked noise (base, detail, their sampler).
+    pub cloud_march_layout: &'a wgpu::BindGroupLayout,
+    pub cloud_noise: (
+        &'a wgpu::TextureView,
+        &'a wgpu::TextureView,
+        &'a wgpu::Sampler,
+    ),
     /// Bloom's chain (`dwell_look::bloom::chain`; (1, 1, 1) off) and its passes' group layout.
     pub bloom: (u32, u32, u32),
     pub bloom_layout: &'a wgpu::BindGroupLayout,
@@ -473,6 +519,7 @@ impl Targets {
             groups.clouds,
             read | wgpu::TextureUsages::COPY_SRC,
         );
+        let cloud_raw = small(CLOUDS, "clouds (raw march)", groups.clouds, read);
         let cloud_dist = small(
             CLOUD_DIST,
             "cloud distance",
@@ -508,12 +555,43 @@ impl Targets {
                     resource: groups.cloud_prev.as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: wgpu::BindingResource::TextureView(&cloud_dist_history.1),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 9,
+                    resource: wgpu::BindingResource::TextureView(&cloud_raw.1),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 10,
+                    resource: wgpu::BindingResource::TextureView(&cloud_dist.1),
+                },
+            ],
+        });
+        let (base, detail, noise_sampler) = groups.cloud_noise;
+        let cloud_march_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("cloud march"),
+            layout: groups.cloud_march_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: groups.cloud_prev.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
                     binding: 4,
                     resource: groups.cloud_plumes.as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
-                    binding: 5,
-                    resource: wgpu::BindingResource::TextureView(&cloud_dist_history.1),
+                    binding: 6,
+                    resource: wgpu::BindingResource::TextureView(base),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 7,
+                    resource: wgpu::BindingResource::TextureView(detail),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 8,
+                    resource: wgpu::BindingResource::Sampler(noise_sampler),
                 },
             ],
         });
@@ -607,6 +685,8 @@ impl Targets {
             cloud_history,
             cloud_dist_history,
             cloud_group,
+            cloud_march_group,
+            cloud_raw,
             bloom,
         }
     }

@@ -74,6 +74,14 @@ pub enum Job {
         w: i32,
         h: i32,
     },
+    /// A slab of the clouds' shape noise (docs/CLOUDS.md §9.3, `dwell_look::cloud_noise`): the
+    /// detail texture's (else the base's) slices `z0..z1` at `size`³.
+    CloudNoise {
+        detail: bool,
+        size: u32,
+        z0: u32,
+        z1: u32,
+    },
     /// The block states the main thread registered at run time (synced from a server, ADR 0038),
     /// as `dwell_blocks::sync::extension_payload`: a worker adds them to its own table, so mesh
     /// jobs naming synced ids read the same rows. Sent to every worker ([`crate::pool::Jobs::broadcast`]).
@@ -121,6 +129,8 @@ pub enum Output {
     Map(Option<Vec<u8>>),
     /// A colour map strip's rgba8 sRGB texels, rows of x; `None` without a terrain.
     LodMap(Option<Vec<u8>>),
+    /// A cloud-noise slab's RGBA8 texels (x, then y, then z).
+    CloudNoise(Vec<u8>),
     ChunkMesh(Box<ChunkMeshes>),
     SectionMesh(Box<SectionMeshes>),
     Failed(String),
@@ -256,6 +266,23 @@ impl Runner {
                     }
                 }
                 Output::Map(Some(out))
+            }
+            Job::CloudNoise {
+                detail,
+                size,
+                z0,
+                z1,
+            } => {
+                // A size the data allows (a power of two the generator checked), else nothing.
+                if !size.is_power_of_two() || !(8..=256).contains(&size) || z1 <= z0 {
+                    return Output::CloudNoise(Vec::new());
+                }
+                let slab = if detail {
+                    dwell_look::cloud_noise::bake_detail_slab(size, z0, z1)
+                } else {
+                    dwell_look::cloud_noise::bake_base_slab(size, z0, z1)
+                };
+                Output::CloudNoise(slab.into_iter().flatten().collect())
             }
             Job::LodMap {
                 face,

@@ -134,7 +134,7 @@
       "historyBlend": 0.2,
       "plumeSteps": 8,
       "nearSteps": 24,
-      "nearDivisor": 1
+      "nearDivisor": 2
     },
     "medium": {
       "steps": 10,
@@ -142,7 +142,7 @@
       "divisor": 4,
       "historyBlend": 0.2,
       "plumeSteps": 6,
-      "nearSteps": 16,
+      "nearSteps": 14,
       "nearDivisor": 2
     },
     "low": {

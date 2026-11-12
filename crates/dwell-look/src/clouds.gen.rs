@@ -92,7 +92,7 @@ pub const CLOUDS: CloudTunables = CloudTunables {
             history_blend: 0.2,
             plume_steps: 8,
             near_steps: 24,
-            near_divisor: 1,
+            near_divisor: 2,
         },
         medium: VolumeTier {
             steps: 10,
@@ -100,7 +100,7 @@ pub const CLOUDS: CloudTunables = CloudTunables {
             divisor: 4,
             history_blend: 0.2,
             plume_steps: 6,
-            near_steps: 16,
+            near_steps: 14,
             near_divisor: 2,
         },
         low: VolumeTier {
