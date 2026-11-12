@@ -638,6 +638,9 @@ pub struct ViewOverride {
     pub pitch_deg: f64,
     /// The vertical field of view (degrees) instead of the setting's (theater mode's paths).
     pub fov_deg: Option<f64>,
+    /// The face whose up the camera holds wherever it is (a theater path's `up`), its yaw and
+    /// pitch in that face's frame; `None`: the face the eye is over.
+    pub up: Option<FaceFrame>,
 }
 
 /// Theater mode's free-fly step (docs/THEATER_MODE.md §2): `view` moved `forward`, `right` and `up`
@@ -652,7 +655,7 @@ pub fn fly_step(
     yaw: f64,
     pitch: f64,
 ) -> ViewOverride {
-    let f = dwell_world::FaceFrame::at_height(view.eye[1]);
+    let f = view.face();
     let yaw_deg = (view.yaw_deg + f.handed(yaw)).rem_euclid(360.0);
     let pitch_deg = (view.pitch_deg + pitch).clamp(-89.0, 89.0);
     let ahead = f.look(yaw_deg, 0.0);
@@ -670,9 +673,35 @@ pub fn fly_step(
 }
 
 impl ViewOverride {
-    /// The face the eye is over.
-    fn face(&self) -> FaceFrame {
-        FaceFrame::at_height(self.eye[1])
+    /// The frame the look (yaw, pitch) and the camera's up are in: the held `up` face's, else the
+    /// face the eye is over.
+    pub fn face(&self) -> FaceFrame {
+        self.up.unwrap_or_else(|| FaceFrame::at_height(self.eye[1]))
+    }
+    /// The camera as the renderer takes it: (yaw, pitch, face, roll), the look face-local to the
+    /// face the eye is over (the sky, fog, clouds and water are that air's). A held up from the
+    /// other face's side is the same look continued across (`FaceFrame::look_across`) turned
+    /// over by half a turn of roll: that face's view, the world upside down.
+    /// The same view with its up held to `up`'s face (`None`: the eye's): the look kept, its yaw
+    /// and pitch given in the new frame.
+    pub fn with_up(self, up: Option<FaceFrame>) -> Self {
+        let p = dwell_theater::Pose::new(self.eye, self.face().look(self.yaw_deg, self.pitch_deg))
+            .with_up(up);
+        Self {
+            yaw_deg: p.yaw_deg,
+            pitch_deg: p.pitch_deg,
+            up,
+            ..self
+        }
+    }
+    pub fn camera(&self) -> (f64, f64, FaceFrame, f64) {
+        let eye = FaceFrame::at_height(self.eye[1]);
+        if self.face() == eye {
+            (self.yaw_deg, self.pitch_deg, eye, 0.0)
+        } else {
+            let (yaw, pitch) = FaceFrame::look_across(self.yaw_deg, self.pitch_deg);
+            (yaw, pitch, eye, std::f64::consts::PI)
+        }
     }
 }
 
@@ -1387,6 +1416,7 @@ impl<S: Scene> Game<S> {
             yaw_deg: pose.yaw_deg,
             pitch_deg: pose.pitch_deg,
             fov_deg: pose.fov_deg,
+            up: pose.up,
         });
         self.theater_time = pose.time_of_day;
     }
@@ -4439,9 +4469,10 @@ impl<S: Scene> Game<S> {
         }
         let camera_eye = match self.view {
             Some(v) => {
+                let (yaw, pitch, face, roll) = v.camera();
                 self.scene
                     .borrow_mut()
-                    .set_camera(v.eye, v.yaw_deg, v.pitch_deg, v.face(), 0.0);
+                    .set_camera(v.eye, yaw, pitch, face, roll);
                 self.scene.borrow_mut().set_block_outline(None, FULL_CELL);
                 v.eye
             }
@@ -5794,6 +5825,69 @@ mod tests {
     }
 
     dwell_world::both_faces!(
+        /// A theater path's held `up` (THEATER_MODE.md §3.1, WORK_QUEUE item 40): a camera on the
+        /// other face's side keeps the held face's up (the world upside down), its forward the
+        /// same; under "auto" it takes the face it is over. Sky, fog and water stay the eye's face.
+        fn a_held_up_keeps_its_face_up_across_the_midplane(f: FaceFrame) {
+            use crate::render::camera::aim;
+            let other = f.other();
+            // 30 m on the other face's side, looking level along +X and a little down.
+            let eye = other.point([0.0, 30.0, 0.0]);
+            let pose = |up: &str| {
+                let p = dwell_theater::Path::parse(&serde_json::json!({
+                    "formatVersion": 1,
+                    "keyframes": [
+                        { "t": 0, "position": eye, "look": [90, -20], "up": up },
+                        { "t": 1 }
+                    ]
+                }))
+                .unwrap_or_else(|e| panic!("{e}"));
+                dwell_theater::pose_at(&p, 0.5, &dwell_theater::NoTargets)
+            };
+            let view = |p: dwell_theater::Pose| ViewOverride {
+                eye: p.position,
+                yaw_deg: p.yaw_deg,
+                pitch_deg: p.pitch_deg,
+                fov_deg: None,
+                up: p.up,
+            };
+            let basis = |v: ViewOverride| {
+                let (yaw, pitch, face, roll) = v.camera();
+                assert_eq!(face, other, "the sky and fog are the eye's face's");
+                aim(yaw, pitch, face, roll)
+            };
+            let held = view(pose(if f.is_b() { "b" } else { "a" }));
+            let auto = view(pose("auto"));
+            let (h, a) = (basis(held), basis(auto));
+            let held_up = f.up();
+            let near = |x: [f64; 3], y: [f64; 3], what: &str| {
+                assert!(
+                    (0..3).all(|k| (x[k] - y[k]).abs() < 1e-9),
+                    "{what}: {x:?} vs {y:?}"
+                );
+            };
+            // The up is the held face's, mostly: the look is 20° below that face's level.
+            let (s, c) = 20f64.to_radians().sin_cos();
+            let world_x = f.vector([1.0, 0.0, 0.0]);
+            let up_of = |u: [f64; 3], x: [f64; 3]| std::array::from_fn(|k| u[k] * c + x[k] * s);
+            near(h.up, up_of(held_up, world_x), "held up");
+            near(a.up, up_of(other.up(), world_x), "auto up");
+            // The forward is the held face's look: along +X, 20° toward the held face's down.
+            let fwd: [f64; 3] = std::array::from_fn(|k| world_x[k] * c - held_up[k] * s);
+            near(h.forward(), fwd, "held forward");
+            // The same look in both frames' own terms: auto's look is the other face's.
+            near(a.forward(), other.look(90.0, -20.0), "auto forward");
+            // The view frame as the LOD takes it: the world pitch of the look.
+            assert!((held.face().pitch(held.pitch_deg) - f.pitch(-20.0)).abs() < 1e-9);
+            // The free camera's up held and released (the editor's Up): the look kept.
+            let freed = held.with_up(None);
+            assert_eq!(freed.up, None);
+            near(basis(freed).forward(), h.forward(), "released forward");
+            near(basis(freed.with_up(Some(f))).up, h.up, "held again");
+        }
+    );
+
+    dwell_world::both_faces!(
         /// Theater mode's free-fly (THEATER_MODE.md §2): forward follows the level look, up the
         /// face's up, a turn the player's handedness; the pitch stops short of straight up.
         fn the_theater_camera_flies_along_its_face_local_look(f: FaceFrame) {
@@ -5802,6 +5896,7 @@ mod tests {
                 yaw_deg: 0.0,
                 pitch_deg: 30.0,
                 fov_deg: Some(50.0),
+                up: None,
             };
             let n = fly_step(v, 2.0, 0.0, 1.0, 0.0, 0.0);
             let local = f.point(n.eye);

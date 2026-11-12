@@ -5,7 +5,7 @@
 
 import { type Aspect, THEATER, type TheaterConfig } from './config';
 import { setHud } from './hud';
-import { KeyframeEditor, type PathJson, type Vec3 } from './keyframes';
+import { KeyframeEditor, type PathJson, UPS, type Up, type Vec3 } from './keyframes';
 import { download, extensionOf, fitOnScreen, recordSize, startTake, type Take } from './record';
 import { PathStore, exportName, parseImported } from './store';
 
@@ -23,6 +23,8 @@ export interface TheaterModeClient {
   theaterState(): unknown;
   theaterPresets(): string;
   theaterPreset(name: string, params: string, subject: string): string;
+  /** Holds the free camera's up to a face ('a', 'b') or the one it is over ('auto'). */
+  theaterUp(up: string): void;
   releaseCamera(): void;
   setTimeOfDay(t?: number): void;
   creatures(): Float64Array | number[];
@@ -124,6 +126,8 @@ export class TheaterMode {
   private downloadTake = true;
   private takeDone: ((r: TakeResult) => void) | null = null;
   private timeOfDay: number | undefined;
+  /** The face whose up the camera holds (the keys and presets take it; 'auto' the eye's). */
+  private up: Up = 'auto';
   private aspect: Aspect;
   private height = THEATER.record.defaultHeight;
   private fps = THEATER.record.defaultFps;
@@ -507,7 +511,7 @@ export class TheaterMode {
         return JSON.parse(
           this.host.client.theaterPreset(
             preset.name,
-            JSON.stringify(params),
+            JSON.stringify(this.up === 'auto' ? params : { ...params, up: this.up }),
             JSON.stringify(subject),
           ),
         ) as PathJson;
@@ -613,6 +617,7 @@ export class TheaterMode {
       if (s > 0 && s !== 1) k.speed = s;
       if (fov.value !== '') k.fov = Number(fov.value);
       if (this.timeOfDay !== undefined) k.timeOfDay = this.timeOfDay;
+      if (this.up !== 'auto') k.up = this.up;
       return k;
     };
     const move = this.select(THEATER.keyframes.moves, 'ease', (v) => {
@@ -686,7 +691,15 @@ export class TheaterMode {
     sp.append(speed);
     const tl = el(doc, 'label', 'tb-label', 'time ');
     tl.append(timeOn, time);
-    r2.append(sp, fov, tl);
+    const upSel = this.select([...UPS], this.up, (v) => {
+      this.up = v as Up;
+      this.host.client.theaterUp(this.up);
+    });
+    upSel.title =
+      "Whose up the camera holds: auto (the face it's over), or face a's or b's wherever it is (upside down on the other face's side)";
+    const ul = el(doc, 'label', 'tb-label', 'up ');
+    ul.append(upSel);
+    r2.append(sp, fov, tl, ul);
     const r3 = el(doc, 'div', 'tb-row');
     r3.append(
       this.button(

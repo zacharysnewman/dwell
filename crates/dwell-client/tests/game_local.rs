@@ -1241,6 +1241,7 @@ fn a_placed_camera_views_the_world_from_there() {
         yaw_deg: 0.0,
         pitch_deg: -60.0,
         fov_deg: None,
+        up: None,
     };
     rig.game.as_mut().unwrap().set_view(Some(view));
     let fine_below = |r: &Rig| {
