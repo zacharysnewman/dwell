@@ -395,8 +395,8 @@ interface DwellDebug {
   }[];
   /** The blasts whose effects are still going (docs/EXPLOSIVES.md): each one's place and age (s). */
   blasts(): { x: number; y: number; z: number; age: number }[];
-  /** The creatures drawn (docs/adr/0073-creatures.md): each one's feet, heading (deg) and speed (m/s). */
-  creatures(): { x: number; y: number; z: number; yaw: number; speed: number }[];
+  /** The creatures drawn (docs/adr/0073-creatures.md): each one's feet, heading (deg), speed (m/s) and whether it is an NPC. */
+  creatures(): { x: number; y: number; z: number; yaw: number; speed: number; npc: boolean }[];
   /**
    * The far ecology the server last told of (docs/ECOLOGY.md §9): its day and the far herds and
    * packs (face, species, face-local x/z, head); null before the first, or from a server without one.
@@ -1304,8 +1304,15 @@ async function start(): Promise<App | null> {
       const v = Array.from(client.creatures());
       const at = (k: number) => v[k] ?? 0;
       const out = [];
-      for (let i = 0; i + 5 <= v.length; i += 5) {
-        out.push({ x: at(i), y: at(i + 1), z: at(i + 2), yaw: at(i + 3), speed: at(i + 4) });
+      for (let i = 0; i + 6 <= v.length; i += 6) {
+        out.push({
+          x: at(i),
+          y: at(i + 1),
+          z: at(i + 2),
+          yaw: at(i + 3),
+          speed: at(i + 4),
+          npc: at(i + 5) === 1,
+        });
       }
       return out;
     },

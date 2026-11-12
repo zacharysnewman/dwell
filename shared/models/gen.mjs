@@ -466,9 +466,7 @@ export function validateProps(data, dir, read = (p) => readFileSync(p)) {
     if (handle && p.grip !== undefined) {
       const [lo, hi] = [Math.min(...p.handle), Math.max(...p.handle)];
       if (!(p.grip[1] >= lo && p.grip[1] <= hi))
-        fail(
-          `${at}: grip ${p.grip[1]} m is outside its handle ${lo}..${hi} m`,
-        );
+        fail(`${at}: grip ${p.grip[1]} m is outside its handle ${lo}..${hi} m`);
     }
     const hold = validateHold(p.hold, at);
     if (

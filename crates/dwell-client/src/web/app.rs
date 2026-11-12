@@ -1878,8 +1878,8 @@ impl Client {
     }
     /// The blasts whose effects are still going (docs/EXPLOSIVES.md; DEV_TOOLS.md): 4 numbers each,
     /// its place (world x, y, z) and its age (s).
-    /// The creatures drawn (ADR 0073; DEV_TOOLS.md): 5 numbers each, the feet (world x, y, z),
-    /// the heading (degrees) and the speed (m/s).
+    /// The creatures drawn (ADR 0073; DEV_TOOLS.md): 6 numbers each, the feet (world x, y, z),
+    /// the heading (degrees), the speed (m/s) and 1 for an NPC (else 0).
     #[wasm_bindgen(js_name = creatures)]
     pub fn creatures(&self) -> Vec<f64> {
         let s = self.inner.borrow();
@@ -1889,7 +1889,16 @@ impl Client {
         g.creatures
             .shown()
             .into_iter()
-            .flat_map(|(p, yaw, speed)| [p[0], p[1], p[2], yaw, f64::from(speed)])
+            .flat_map(|(p, yaw, speed, npc)| {
+                [
+                    p[0],
+                    p[1],
+                    p[2],
+                    yaw,
+                    f64::from(speed),
+                    f64::from(u8::from(npc)),
+                ]
+            })
             .collect()
     }
     /// The far ecology the server last told of (docs/ECOLOGY.md §9; DEV_TOOLS.md): `{ day, groups:

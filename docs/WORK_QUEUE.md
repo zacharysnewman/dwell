@@ -870,13 +870,16 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    have health, a hit radius and drops (shared/creatures), react by `near.hurt` (deer flee; wolves fight, flee when
    badly hurt), die and drop; a defender API (`Creature::guard`: stance, raised, attacking drops it) and the
    blade-angle clash (blocked / glanced / connected, a block recoils the striker). ARCHITECTURE.md "Weapons".
-   **Outstanding (local):** pick one sword out of the joined prop and measure its grip (needs the FBX); slash
+   **The model (local, 2026-11-12):** the pack has no straight sword: its `katanas-swords` FBX is one katana
+   blade and five colour variants of one handle, stacked. The `sword` prop is the blade on the first handle,
+   1 m, its grip measured on the handle (a grip off the handle fails the generator), held in the fist
+   (ITEMS.md §1a′). **Outstanding (local):** slash
    clips of its own fitted with `clip_probe --fit` (it plays the axe's chop clips, with the axe's timings, for
    now); a clash's sound, sparks and recoil on the clients (a message for the outcome); the player's block input
    and raised pose (players can't be struck yet); NPCs raising their block and swinging on their own (the
    villager holds the sword as its guard from its spawn, lowered, and turns on its striker: item 38's
    `fightBack`; the sword in its drawn hand is item 38's renderer work); wolves biting back (no creature damage
-   to players yet).
+   to players yet). The sword in the villager's hand is drawn (item 38).
 36. **A showcase video of the deer and wolves** (owner 2026-11-12: "have you observed the animals simulation? Make
    some clips of the deer/wolves behavior, really showcase it and try to get good angles. Keep it under 2 minutes
    of video. Splice it together into a single video."). Queued (local, after item 30).
@@ -908,8 +911,10 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    Built (cloud, 0.52.x): the villager as a creature with an `npc` block (idles stand/look/sit, look-at,
    sidestep, held, disposition, combat hook `fightBack`, colour parts), rules' `spacingM` and `biomes`, the
    server's behaviour, the `creatures.npcs` capability's NPC part on `Creatures`, the client's pose roles and
-   colours; CHARACTERS.md §11.11. Left (local): the colour remap and held item in the renderer, sit/look
-   clips, combat with the swords.
+   colours; CHARACTERS.md §11.11. **Drawn (local, 2026-11-12):** each villager in its variant's colours (a per-body palette remap
+   in the skinned shader) with its sword on the Peasant's `hand.R`, fist closed (CHARACTERS.md §11.11).
+   Left: sit and look-around clips (the Peasant has only idle and walk: both play idle), NPCs posed from the
+   rig's clips (they play the Peasant's own, so the sword hangs as the idle holds it), combat with the swords.
 
 39. **Livelier animals** (owner 2026-11-12, after the video had no chase or fleeing — on day one every pack is
    kilometres from any herd and players can't scare deer): chose **deer flee from players** (they notice a player
