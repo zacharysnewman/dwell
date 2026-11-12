@@ -1569,7 +1569,7 @@ fn clouds_fs(i: SkyOut) -> CloudOut {
     let dir = normalize(ray);
     let p = vec2i(i.clip.xy);
     let rec = cloud_scene_span(p, length(ray));
-    let m = dwell_cloud_march(dir, frame.eye.y, dwell_cloud_march_end(rec), cloud_jitter(p, u32(cloud_prev.params.y)), frame.clouds, frame.cloud_cfg, frame.cloud_inside, cloud_lighting());
+    let m = dwell_cloud_march(dir, frame.eye.y, dwell_cloud_march_end(rec), cloud_jitter(p, u32(cloud_prev.params.y)), frame.clouds, frame.cloud_cfg, frame.cloud_inside, cloud_lighting(), cloud_prev.tan.z);
     // The sky behind is worked out only where there is cloud to haze toward it (§8.7's cut).
     var layer = vec4f(0.0);
     if (m.first >= 0.0) {

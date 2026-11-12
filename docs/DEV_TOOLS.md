@@ -1730,6 +1730,14 @@ shading off, to attribute `gpu.*.water` and `gpu.frame` to them; a `--compare` c
 scenario's `water` step switches it mid-run. On a GPU shared with other processes, compare a pass's `min` (in
 every summary) rather than its p50. WATER_RENDERING.md §8 ("Cost") has the method and the numbers.
 
+## The clouds' view opacity (`?cloudExtinction=`)
+
+`?cloudExtinction=0.05` sets the volumetric clouds' view opacity (per m at density 1) over the data's
+`volume.extinction` (0.03), for an A/B of how much a cloud hides the ones behind it (0.006 was the old value);
+`__dwell.cloudExtinction(x)` changes it mid-run (0 or none: the data's). The light through the clouds keeps
+`volume.lightExtinction` whatever it is (CLOUDS.md §9.8). A `--compare` configuration can set it with
+`params` (`{ "name": "opaque", "params": { "cloudExtinction": "0.05" } }`).
+
 ## The leaf cards (`?cards=`)
 
 `?cards=1` meshes the leaf cards whatever the renderer's tier says (`shared/look/leaves.json` `cards.tiers`: off on the

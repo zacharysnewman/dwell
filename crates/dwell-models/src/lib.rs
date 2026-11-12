@@ -128,6 +128,18 @@ pub struct FirstPerson {
     /// Degrees, Euler XYZ in view space: the whole arm turned about its hand (the sleeve's cuff
     /// brought into view, the hand and item kept).
     pub turn: [f32; 3],
+    /// Your own body in first person from this model (`firstPerson.body`); None: none drawn.
+    pub body: Option<FirstPersonBody>,
+}
+
+/// Your own body seen in first person (models.json `firstPerson.body`, docs/CHARACTERS.md §5.1,
+/// §11.12): the body mesh less every triangle with a vertex that has at least `weight` of its skin
+/// weight on `hide` or on the first-person arm's `joints` (drawn by the arms view).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct FirstPersonBody {
+    /// The skin joints left out besides the arm's: the head (its hat and hair), the other arm.
+    pub hide: &'static [usize],
+    pub weight: f32,
 }
 
 /// A pose of the hand (models.json `grips.poses`, docs/CHARACTERS.md §11.10): turns of skin joints
@@ -375,7 +387,7 @@ mod detail_tests {
         assert_eq!(detail_level(levels, "coarse", 0), 1);
         let m = glb::parse(fixture::PLAYER_GLB).unwrap();
         assert_eq!(m.level_count(), levels.len());
-        assert_eq!(m.level(1).indices.len(), 3);
+        assert_eq!(m.level(1).indices.len(), 6);
         // A level past the model's last draws its coarsest.
         assert_eq!(m.level(9).positions.len(), m.level(1).positions.len());
     }

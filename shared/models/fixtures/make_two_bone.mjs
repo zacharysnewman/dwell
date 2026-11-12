@@ -1,7 +1,8 @@
 #!/usr/bin/env node
-// Writes shared/models/fixtures/two_bone.glb: the tests' smallest skinned model. One triangle on a
+// Writes shared/models/fixtures/two_bone.glb: the tests' smallest skinned model. Two triangles on a
 // two-joint chain (`root` at the origin, `tip` 1 m up it): vertex 0 at the origin and vertex 2 at
-// +x on the root, vertex 1 2 m up on the tip. Clips: `rest` (the tip still) and `bend` (the tip
+// +x on the root, vertex 1 2 m up on the tip; a second triangle (0, 3, 2) below it all on the root
+// (vertex 3 at 1 m down), the part a first-person body keeps (fixtures/models.json `firstPerson`). Clips: `rest` (the tip still) and `bend` (the tip
 // turning 90° about +z over a second). Run it after changing it; the GLB is checked in.
 import { writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -31,27 +32,27 @@ function add(array, type, componentType, extra = {}) {
   return accessors.length - 1;
 }
 const F = 5126;
-const position = add(new Float32Array([0, 0, 0, 0, 2, 0, 1, 0, 0]), "VEC3", F, {
-  min: [0, 0, 0],
+const position = add(new Float32Array([0, 0, 0, 0, 2, 0, 1, 0, 0, 0.5, -1, 0]), "VEC3", F, {
+  min: [0, -1, 0],
   max: [1, 2, 0],
 });
-const normal = add(new Float32Array([0, 0, 1, 0, 0, 1, 0, 0, 1]), "VEC3", F);
+const normal = add(new Float32Array([0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1]), "VEC3", F);
 const color = add(
-  new Float32Array([1, 0, 0, 1, 0, 1, 0, 1, 0, 0, 1, 1]),
+  new Float32Array([1, 0, 0, 1, 0, 1, 0, 1, 0, 0, 1, 1, 0, 0, 1, 1]),
   "VEC4",
   F,
 );
 const joints = add(
-  new Uint8Array([0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0]),
+  new Uint8Array([0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
   "VEC4",
   5121,
 );
 const weights = add(
-  new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0]),
+  new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0]),
   "VEC4",
   F,
 );
-const indices = add(new Uint16Array([0, 2, 1]), "SCALAR", 5123);
+const indices = add(new Uint16Array([0, 2, 1, 0, 3, 2]), "SCALAR", 5123);
 const ibm = add(
   new Float32Array([
     1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 1, 0, 0, 0,
@@ -77,7 +78,7 @@ const json = {
     { name: "root", children: [1] },
     { name: "tip", translation: [0, 1, 0] },
     { name: "mesh", mesh: 0, skin: 0 },
-    // A second model-detail level (fixtures/models.json `detail`): the same triangle.
+    // A second model-detail level (fixtures/models.json `detail`): the same triangles.
     { name: "mesh_1", mesh: 1, skin: 0 },
   ],
   meshes: [0, 1].map((k) => ({

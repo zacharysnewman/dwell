@@ -13,6 +13,10 @@
 //!   and no per-pixel cost beyond the rigid characters' (no CPU-adapter tier needed).
 //! - **Shadows**: the bodies cast into the shadow maps as the rigid characters do; your own body
 //!   (`cast_only`, the shadow you see in first person) casts into the nearest cascade only.
+//! - **Your own body** (§5.1, §11.12): in first person the same model, posed as your shadow is,
+//!   drawn by a second index buffer that leaves out its head and arms (models.json
+//!   `firstPerson.body`, by skin weight), moved back from the eye as the rigid body was
+//!   ([`own_joints`]); fragments inside the near margin are discarded (the instance's `light.z`).
 //! - **Held items** (§11.5): [`hand_frame`] gives the characters rig's hand bone's frame on the
 //!   model's hand joint (`hand` in models.json) this frame; the rigid renderer draws the item there.
 
@@ -209,7 +213,8 @@ pub const WGSL: &str = r"
 struct SkinInstance {
     // Each joint's 3 × 4 matrix to eye-relative world space, as three rows.
     joints: array<vec4f, JOINT_ROWS>,
-    // x sky, y block level / 15 (docs/DAY_NIGHT.md §11).
+    // x sky, y block level / 15 (docs/DAY_NIGHT.md §11); z the near margin your own body's
+    // fragments are discarded within (m from the eye; 0 for every other body).
     light: vec4f,
     // The body's colour remap (an NPC's colours, docs/CHARACTERS.md §11.11): pairs of rows, the
     // model's ramp base and the base drawn in its place (sRGB 0..1); w 1 where the pair is used.
@@ -285,6 +290,10 @@ struct Key2 {
 
 @fragment
 fn skinned_fs(i: SkinnedOut, @builtin(front_facing) front: bool) -> SceneOut {
+    // Your own body's safety net: nothing within the near margin of the eye (0 for every other).
+    if (dot(i.rel, i.rel) < skin.light.z * skin.light.z) {
+        discard;
+    }
     let n = normalize(select(-i.normal, i.normal, front));
     let frag_y = frame.eye.x + i.rel.y;
     var light = terrain_light(1.0, skin.light.xy);
@@ -329,6 +338,8 @@ struct Draw {
     casts: bool,
     /// Your own body: into the nearest cascade only (as the rigid `cast_only`).
     cast_only: bool,
+    /// Your own body in first person: drawn by the body's index buffer (`own_index`).
+    own: bool,
 }
 
 /// A model's mesh on the GPU.
@@ -389,6 +400,78 @@ pub struct SkinnedRenderer {
     arms_index: Option<(wgpu::Buffer, u32)>,
     /// This frame's arms instance, when drawn.
     arms: Option<u32>,
+    /// Your own body's triangles in first person (the player model's `firstPerson.body`), their
+    /// count and the vertices they use (skinned on the CPU to keep them clear of the eye); None:
+    /// the player model draws no body.
+    own_index: Option<(wgpu::Buffer, u32, Vec<u32>)>,
+}
+
+/// Your own body to draw in first person from the player model (docs/CHARACTERS.md §5.1, §11.12).
+#[derive(Clone, Copy, Debug)]
+pub struct SkinnedOwn {
+    /// The body as your shadow is drawn (its feet, yaw, face, light and rig pose).
+    pub draw: SkinnedDraw,
+    /// The camera's look (eye-relative world space).
+    pub forward: V3,
+    /// How it is kept clear of the eye (characters.json `firstPerson.body`).
+    pub body: dwell_characters::FirstPersonBody,
+    /// Bit per scene pass it is drawn in.
+    pub passes: u8,
+}
+
+/// The player model's own-body triangles at `level` and the vertices they use (None: it draws
+/// none).
+pub fn own_body_mesh(
+    data: &ModelData,
+    model: &Model,
+    level: usize,
+) -> Option<(Vec<u32>, Vec<u32>)> {
+    let fp = data.first_person?;
+    data.retarget?;
+    let tris = dwell_models::first_person::body_triangles(model, level, &fp);
+    if tris.is_empty() {
+        return None;
+    }
+    let verts = dwell_models::first_person::vertices_of(&tris);
+    Some((tris, verts))
+}
+
+/// Your own body's joints in first person (each skin joint's matrix to eye-relative world space)
+/// and how far back it was moved: the model posed by the rig's pose (as your shadow), its place
+/// (`place_frame`) moved back along its own −z by `own::shift_points` over its kept vertices
+/// `verts` at `level`, in the body's frame (so the same on both faces). None: no retarget map or
+/// no rig pose.
+pub fn own_joints(
+    data: &ModelData,
+    model: &Model,
+    level: usize,
+    verts: &[u32],
+    own: &SkinnedOwn,
+    eye: V3,
+) -> Option<(Vec<Mat4>, f32)> {
+    let map = data.retarget?;
+    let pose = own.draw.rig_pose?;
+    let local =
+        dwell_models::retarget::pose_from(model, data, &map, dwell_characters::player(), &pose);
+    let globals = anim::globals(model, &local);
+    let to_body = mm::trs(
+        [0.0; 3],
+        mm::axis_angle([0.0, 1.0, 0.0], data.yaw),
+        [data.scale; 3],
+    );
+    let in_body: Vec<Mat4> = model
+        .skin
+        .iter()
+        .zip(&model.inverse_bind)
+        .map(|(&j, ib)| mm::mul(&to_body, &mm::mul(&globals[j], ib)))
+        .collect();
+    let points = dwell_models::first_person::skin_points(model, level, &in_body, verts);
+    let d = &own.draw;
+    let frame = place_frame(d.feet, d.yaw, d.face, d.dead, eye);
+    let (eye_local, pitch) = super::characters::eye_in(&frame, own.forward);
+    let s = dwell_characters::own::shift_points(&own.body, points, eye_local, pitch);
+    let placed = mat4(&frame.then(&Affine::translation([0.0, 0.0, -s])));
+    Some((in_body.iter().map(|j| mm::mul(&placed, j)).collect(), s))
 }
 
 /// Your first-person arms to draw from the player model (docs/CHARACTERS.md §11.10).
@@ -423,6 +506,26 @@ fn arms_index(
     });
     queue.write_buffer(&b, 0, &bytes);
     Some((b, tris.len() as u32))
+}
+
+/// Your own body's index buffer at `level`, its count and vertices (None: the model draws none).
+fn own_index(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    data: &ModelData,
+    model: &Model,
+    level: usize,
+) -> Option<(wgpu::Buffer, u32, Vec<u32>)> {
+    let (tris, verts) = own_body_mesh(data, model, level)?;
+    let bytes: Vec<u8> = tris.iter().flat_map(|i| i.to_le_bytes()).collect();
+    let b = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("skinned own body indices"),
+        size: (bytes.len() as u64).max(4).next_multiple_of(4),
+        usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    queue.write_buffer(&b, 0, &bytes);
+    Some((b, tris.len() as u32, verts))
 }
 
 /// An affine frame as a 4 × 4 (columns).
@@ -656,6 +759,7 @@ impl SkinnedRenderer {
         let level = dwell_models::DETAIL_DEFAULT;
         let player = upload(device, queue, data, model, level);
         let arms_index = arms_index(device, queue, data, model, level);
+        let own_index = own_index(device, queue, data, model, level);
         let capacity = 4;
         let instances = instance_buffer(device, capacity);
         let group = bind_group(device, &layout, &instances);
@@ -674,6 +778,7 @@ impl SkinnedRenderer {
             level,
             arms_index,
             arms: None,
+            own_index,
         }
     }
 
@@ -689,6 +794,12 @@ impl SkinnedRenderer {
         }
         let (data, model) = (self.meshes[0].data, self.meshes[0].model);
         self.arms_index = arms_index(device, queue, data, model, level);
+        self.own_index = own_index(device, queue, data, model, level);
+    }
+
+    /// Whether the player model draws your own body in first person.
+    pub fn has_own_body(&self) -> bool {
+        self.own_index.is_some()
     }
 
     /// The level drawn (`set_level`'s).
@@ -717,6 +828,7 @@ impl SkinnedRenderer {
         passes: &[(f64, f64)],
         cast_m: f64,
         bodies: &[SkinnedDraw],
+        own: Option<&SkinnedOwn>,
         arms: Option<&SkinnedArms>,
         now_s: f64,
     ) -> (Vec<Option<Affine>>, Option<Affine>) {
@@ -806,6 +918,39 @@ impl SkinnedRenderer {
                 passes: mask,
                 casts,
                 cast_only: d.cast_only,
+                own: false,
+            });
+        }
+        // Your own body in first person (§11.12): its joints, the near margin in `light.z`.
+        if let (Some(o), Some((_, _, verts))) = (own, &self.own_index)
+            && o.passes != 0
+            && let Some((joints, _)) = own_joints(
+                self.meshes[0].data,
+                self.meshes[0].model,
+                self.level,
+                verts,
+                o,
+                eye,
+            )
+        {
+            let at = floats.len();
+            floats.resize(at + INSTANCE_FLOATS, 0.0);
+            for (k, j) in joints.iter().take(MAX_JOINTS).enumerate() {
+                floats[at + k * 12..at + k * 12 + 12].copy_from_slice(&rows(j));
+            }
+            let near = super::characters::own_discard_m(&o.body);
+            floats[at + JOINT_FLOATS..at + JOINT_FLOATS + 3].copy_from_slice(&[
+                o.draw.light[0],
+                o.draw.light[1],
+                near,
+            ]);
+            self.draws.push(Draw {
+                instance: (at / INSTANCE_FLOATS) as u32,
+                mesh: 0,
+                passes: o.passes,
+                casts: false,
+                cast_only: false,
+                own: true,
             });
         }
         self.arms = None;
@@ -872,11 +1017,15 @@ impl SkinnedRenderer {
     fn draw(&self, pass: &mut wgpu::RenderPass<'_>, d: &Draw, calls: &mut u32, tris: &mut u64) {
         pass.set_bind_group(1, &self.group, &[d.instance * INSTANCE_BYTES as u32]);
         let m = &self.meshes[d.mesh];
+        let (index, count) = match (&self.own_index, d.own) {
+            (Some((b, n, _)), true) => (b, *n),
+            _ => (&m.index, m.count),
+        };
         pass.set_vertex_buffer(0, m.vertex.slice(..));
-        pass.set_index_buffer(m.index.slice(..), wgpu::IndexFormat::Uint32);
-        pass.draw_indexed(0..m.count, 0, 0..1);
+        pass.set_index_buffer(index.slice(..), wgpu::IndexFormat::Uint32);
+        pass.draw_indexed(0..count, 0, 0..1);
         *calls += 1;
-        *tris += u64::from(m.count / 3);
+        *tris += u64::from(count / 3);
     }
 
     /// Draws the bodies of scene pass `i`; whether any were (group 1 is then the skinned group's).

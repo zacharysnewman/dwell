@@ -113,6 +113,14 @@ test("bad entries fail with their path named", () => {
       (d) => (d.volume.bounceTint = "grey"),
       /volume\.bounceTint must be a colour/,
     ],
+    [
+      (d) => (d.volume.lightExtinction = 2),
+      /volume\.lightExtinction must be a number in \[0, 1\]/,
+    ],
+    [
+      (d) => (d.volume.sunsetShade = -1),
+      /volume\.sunsetShade must be a number in \[0, 4\]/,
+    ],
     [(d) => (d.plumes = {}), /plumes must be a list/],
     [
       (d) => d.plumes.push({ ...ASH, topM: 100 }),

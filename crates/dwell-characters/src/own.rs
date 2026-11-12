@@ -32,11 +32,26 @@ pub fn shift(
     eye: [f32; 3],
     pitch: f32,
 ) -> f32 {
+    let points = mesh
+        .positions
+        .iter()
+        .zip(&mesh.bones)
+        .map(|(p, &b)| bones[usize::from(b)].apply(*p));
+    shift_points(body, points, eye, pitch)
+}
+
+/// [`shift`] over posed vertices already in the body's frame (a skinned body's, CHARACTERS.md
+/// §11.12): the same offsets and the same clearance.
+pub fn shift_points(
+    body: &FirstPersonBody,
+    points: impl IntoIterator<Item = [f32; 3]>,
+    eye: [f32; 3],
+    pitch: f32,
+) -> f32 {
     let down = (-pitch.to_radians().sin()).max(0.0);
     let mut s = body.back + body.look_down * down;
     let c2 = body.clear * body.clear;
-    for (p, &b) in mesh.positions.iter().zip(&mesh.bones) {
-        let v = bones[usize::from(b)].apply(*p);
+    for v in points {
         let (dx, dy, dz) = (v[0] - eye[0], v[1] - eye[1], v[2] - eye[2]);
         let r2 = dx * dx + dy * dy;
         if r2 < c2 {
