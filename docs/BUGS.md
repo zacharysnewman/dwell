@@ -6,6 +6,16 @@ pins it.
 
 ## Open
 
+### 96. Villagers' faces are jet black, not their skin colour
+
+Owner, 2026-11-12: "Why do all the villagers look like their faces are jet black? Not even matching the rest of
+their skin color?" Every villager's face draws black regardless of its skin variant. Suspects: the face's colours in
+the Peasant GLB snap to a palette stop the villager's `skin` colour part doesn't map (its `from` is `skin_fair`, the
+face a different stop or a shade the recolour misses, or a utility/never-snap colour that the NPC pass reads as 0);
+the hat repaint (`repaint` hair_brown → wool_yellow with minY/beyond/above) catching the face; the NPC draw's colour
+table missing an entry (index out of range → black); or the face's normals inverted at the default model detail.
+Check whether your own body/other players (the same model, no recolour) show it too.
+
 ### 95. Far trees seen from above have holes through to the sky below
 
 Owner, 2026-11-12 (screenshot at night, looking straight down from high up): "looking down at trees from high up,
