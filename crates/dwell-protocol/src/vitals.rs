@@ -282,7 +282,7 @@ mod tests {
     }
 
     #[test]
-    fn causes_hello_round_trips_and_burn_is_the_last_cause() {
+    fn causes_hello_round_trips_and_weapon_is_the_last_cause() {
         use crate::{DamageCause, Message, inventory_flags};
         let m = Message::CausesHello(DamageCause::MAX);
         let b = m.encode();
@@ -293,7 +293,8 @@ mod tests {
             "the cause cut off"
         );
         assert_eq!(DamageCause::from_u8(5), Some(DamageCause::Burn));
-        assert_eq!(DamageCause::MAX, DamageCause::Burn as u8);
+        assert_eq!(DamageCause::from_u8(6), Some(DamageCause::Weapon));
+        assert_eq!(DamageCause::MAX, DamageCause::Weapon as u8);
         assert_eq!(inventory_flags::CAUSES, 32);
     }
 

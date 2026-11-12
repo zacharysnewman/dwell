@@ -84,6 +84,8 @@ pub struct Chips {
     pub list: Vec<Chip>,
     /// A CPU adapter: a third of the chips.
     pub cpu: bool,
+    /// Graphics → Particles: the share of chips, sparks and leaves drawn (crate::effect_share).
+    pub share: crate::effect_share::Share,
 }
 
 fn hash(seed: u32, k: u32) -> f64 {
@@ -137,7 +139,7 @@ impl Chips {
     /// How many chips a swing at wood `wood` knocks out.
     pub fn count(&self, wood: usize) -> usize {
         let n = chip_look(wood).map_or(0, |w| w.count as usize);
-        if self.cpu { n.div_ceil(3) } else { n }
+        self.share.of(if self.cpu { n.div_ceil(3) } else { n })
     }
 
     /// A hit's chips of look `look` ([`hit_chips_of`]): out of the struck face (its outward
@@ -158,7 +160,9 @@ impl Chips {
         point: [f64; 3],
         now_s: f64,
     ) {
-        let count = if self.cpu { chips.div_ceil(3) } else { chips };
+        let count = self
+            .share
+            .of(if self.cpu { chips.div_ceil(3) } else { chips });
         let Some(w) = chip_look(look) else {
             return;
         };
@@ -227,7 +231,7 @@ impl Chips {
     /// How many leaves a hit at wood `wood` shakes down (a CPU adapter: a third).
     pub fn leaf_count(&self, wood: usize) -> usize {
         let n = WOODS.get(wood).map_or(0, |w| w.leaves.count as usize);
-        if self.cpu { n.div_ceil(3) } else { n }
+        self.share.of(if self.cpu { n.div_ceil(3) } else { n })
     }
 
     /// A hit's leaves: each from one of the tree's leaf cells `cells` (world), drifting down.
@@ -261,6 +265,7 @@ impl Chips {
     /// in wood `wood`'s leaf colour ([`leaf_colour_of`]).
     pub fn fall_leaves(&mut self, wood: usize, cell: [i32; 3], count: u32, now_s: f64, seed: u32) {
         let n = if self.cpu { count.div_ceil(3) } else { count };
+        let n = self.share.of(n as usize) as u32;
         let f = FaceFrame::at_row(cell[1]);
         let l = f.cell(cell);
         for k in 0..n {

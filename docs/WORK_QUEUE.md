@@ -16,6 +16,13 @@ Last updated: 2026-11-11 (0.52.108).
 
 ## Queued next, in order (2026-11-12)
 
+Owner, 2026-11-12: **"How are realistic worlds going? And forests? Those are the two I'm most interested in
+seeing."** → next on the Mac after the flying frame rate: a look at both (screenshots/video of a Realistic world —
+plates, ranges, rain shadow, biomes by climate — and the old-growth forest), then R6 (the Realistic world in New
+world) and the far-tree impostors drawn (I-2/I-3); R5 (geology) in the cloud now.
+
+
+
 The running order across the items below; each line names its item, where the owner's words and details are.
 
 1. **High at 60 fps on the M1 Air (item 30, P0)** — running locally: measure each feature at High, cull leaf cards
@@ -841,15 +848,32 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    leaves and ladders), a dense-forest spot that reproduces the owner's 31 ms, then (3) impostors.
 
    Owner, 2026-11-12, on this M1 Air: **"Im seeing on this m1 Mac that im getting sub-60FPS when flying on High. Im
-   wondering if the new trees and volumetric clouds are at fault!"** Next (local, after theater mode's UI): measure
-   flying at High (sky and cloud pass cost at altitude, tree meshing/uploads while streaming, the clouds' volume
-   pass vs the deck), cut what's large.
+   wondering if the new trees and volumetric clouds are at fault!"** **Measured (2026-11-12, BUGS.md #89,
+   `claude/fly-high-m1`; docs/DEV_TOOLS.md "Flying at High on the M1", scenario `high-fly`):** flying at level 4
+   from the starter's mixed forest east, `gpu.frame` 8.8 ms over open ground and 13.4–15.0 mean, p95 15.6–17.3
+   (up to 18.5) over the forests; `frame.cpu` p95 ≤ 10.5. The volumetric clouds are not at fault (Medium → Low:
+   no change), nor streaming (uploads, meshing, LOD; a 1 MiB desktop upload budget changed ≤ 1.8 ms and was not
+   adopted); the forest's near pass is (cutout leaves and tall grass, their shadows: the costs #78 found standing).
+   Speed effects −0.5 ms, shadows Low ~−2 over forest. No cut made in the time box. Next: the Tall grass
+   setting (mesher flag) and impostors (item 31) are the levers; a vsync run of `high-fly` for the dropped-frame
+   count; a faster flight (level 6+) for streaming.
    Owner, 2026-11-12: **"Ensure all of our graphics have settings in our graphics menu."** Every visual feature gets a
    Graphics setting (with preset values), not only the ones with a renderer tier function: tall grass density, far
    trees / impostors, leaf cards and chamfer, hit shards and particles, far herds, distant shadows (its own),
    volumetric clouds and plumes, lava crust/glow, bloom, haze extras, water tiers, light shafts, reflections, view
    distance; the audit test widened from `render/*_for` to every per-feature switch the renderer and mesher read.
-   In progress (cloud).
+   **Built (2026-11-12, cloud; the GPU measurement outstanding, local):** Settings → Graphics in seven groups
+   (Display, Lighting, Sky & weather, Water, Terrain & trees, Effects, Distance); new settings with switches where
+   there were none, each preset keeping what it drew before (all on / 100 %): Tall grass 0–100 % (the mesher's
+   `ChunkFlags::plants`), Far trees (the LOD sections' trees), Distant shadows (its own switch at the Shadows
+   tier), Hit shards 0–100 %, Particles 0–100 % (chips, sparks, leaves, steam), Far herds; stored in the
+   append-only `dwell.features` record (an older record reads with the defaults). `graphicsAudit.test.ts` now
+   covers four declared lists — the renderer's tier functions, the look data files, the mesher's switches and
+   the client's CPU-tiered effects — each naming a setting or a written reason (the fog's haze, ambient and flood
+   light baked at mesh time, the LOD blend, dev previews, …; lava's glow is Bloom's, the vent plumes are drawn by
+   the clouds' pass). Next (local): measure each new switch's GPU cost on the M1 at High (forest-perf) and decide
+   which presets should cut them (Low and Mobile are the candidates for tall grass, far trees and distant
+   shadows); chamfered leaves have no switch (the mesh shape, not a per-pixel cost).
    Owner, 2026-11-12: **"It would be sweet if we could see in realtime on graphics menu exactly or approximately what %
    of performance is being used by each setting."** Plan: the renderer's GPU pass timings (the `gpu.*` telemetry,
    timestamp queries where the browser allows them) mapped to the settings that drive each pass (data: setting →
@@ -1037,7 +1061,14 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
 
    Owner, 2026-11-12: **"Villagers should be able to hurt players."** A villager's sword strike that connects on a
    player damages them (through the damage rules: a new cause, knockback, the player's raised guard blocks it by the
-   same angle rule); modes without player damage (creative) are unaffected. In progress (cloud).
+   same angle rule); modes without player damage (creative) are unaffected. **Built (cloud, 2026-11-12):** an
+   NPC's blow past the player's block (glanced or connected) takes the weapon's `damage` through the damage
+   rules, a new cause `Weapon` (6; `Fall` to a client whose `CausesHello` doesn't name it, as `Burn`), and
+   pushes the player by the weapon's new `knockbackMps`/`liftMps` (shared/tools); a block recoils the NPC
+   unhurt; creative neither hurts nor pushes; the clash goes to clients as before. Tests (both faces,
+   `tests/weapons.rs`): an unguarded hit hurts and pushes, a raised guard across the blade blocks, creative
+   takes none, an older client hears `Fall`. Not yet: the client's own hurt look for a weapon (it shows the
+   generic damage flash), wolves biting players.
 39. **Livelier animals** (owner 2026-11-12, after the video had no chase or fleeing — on day one every pack is
    kilometres from any herd and players can't scare deer): chose **deer flee from players** (they notice a player
    within a distance by data, closer when crouching, and run off; wolves keep their distance unless hungry),
@@ -1404,6 +1435,11 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
   the in-game editor and a biome choice in the New world form.
 
 ## Future (needs owner answers)
+
+- **Geography presets for Realistic worlds** (owner 2026-11-12: "Let's hold that for a possible future feature."):
+  Mixed (today), Archipelago (oceanic plates only plus more hotspots: Hawaii-style chains and Japan-style arcs),
+  Continental (mostly continental plates); plate counts scaling with world size so big worlds get real continents.
+  Today every seed has at least one oceanic and one continental plate (plates.json `kinds.min`).
 
 - **A looser body in the chops** (owner 2026-11-12: "We can save loosening the stiff body for later"): the
   hips and legs turning into a level chop seen from behind, not the chest alone.

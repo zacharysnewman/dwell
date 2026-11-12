@@ -260,6 +260,7 @@ pub fn encode_job(id: u32, job: &Job) -> Vec<u8> {
             ground,
             water_tops,
             cards,
+            plants,
         } => {
             w.u8(4);
             // The message's size up front: one allocation, not a doubling buffer.
@@ -272,6 +273,7 @@ pub fn encode_job(id: u32, job: &Job) -> Vec<u8> {
             );
             // Bit 0 the mirror, bit 1 no water tops, bit 2 no leaf cards.
             w.u8(u8::from(*mirror) | if *water_tops { 0 } else { 2 } | if *cards { 0 } else { 4 });
+            w.u8(*plants);
             origin.iter().for_each(|v| w.i32(*v));
             w.u16s(padded);
             w.bytes(light);
@@ -316,9 +318,11 @@ pub fn encode_job(id: u32, job: &Job) -> Vec<u8> {
             water_drop,
             mirror,
             tints,
+            trees,
         } => {
             w.u8(5);
-            w.u8(u8::from(*mirror));
+            // Bit 0 the mirror, bit 1 no trees (Graphics → Far trees).
+            w.u8(u8::from(*mirror) | if *trees { 0 } else { 2 });
             w.f64(*water_drop);
             w.u16s(cells);
             w.opt_f32s(surface);
@@ -377,6 +381,7 @@ pub fn decode_job(bytes: &[u8]) -> Result<(u32, Job), DecodeError> {
         4 => {
             let bits = r.u8()?;
             let (mirror, water_tops, cards) = (bits & 1 != 0, bits & 2 == 0, bits & 4 == 0);
+            let plants = r.u8()?;
             let origin = [r.i32()?, r.i32()?, r.i32()?];
             let padded = r.u16s()?;
             let light = r.bytes()?;
@@ -437,13 +442,16 @@ pub fn decode_job(bytes: &[u8]) -> Result<(u32, Job), DecodeError> {
                 ground,
                 water_tops,
                 cards,
+                plants,
             }
         }
         5 => {
-            let mirror = r.u8()? != 0;
+            let bits = r.u8()?;
+            let (mirror, trees) = (bits & 1 != 0, bits & 2 == 0);
             let water_drop = r.f64()?;
             Job::MeshSection {
                 mirror,
+                trees,
                 water_drop,
                 cells: r.u16s()?,
                 surface: r.opt_f32s()?,
@@ -650,6 +658,7 @@ mod tests {
             ground: Some((7, vec![[1, 2, 3]], vec![5; n])),
             water_tops: true,
             cards: true,
+            plants: 100,
         };
         let out = encode_job(9, &job);
         assert!(
@@ -729,6 +738,7 @@ mod tests {
             ground: Some((0x1234_5678_9abc, vec![[1, 2, 3], [4, 5, 6]], vec![3, 4])),
             water_tops: false,
             cards: false,
+            plants: 37,
         });
         jobs.push(Job::MeshSection {
             cells: vec![1; dwell_world::lod::VOLUME],
@@ -745,6 +755,7 @@ mod tests {
                 ),
                 (40, Tint::NONE),
             ],
+            trees: false,
         });
         for (n, job) in jobs.into_iter().enumerate() {
             let id = 1000 + n as u32;
@@ -788,6 +799,7 @@ mod tests {
                 ground: Some((7, vec![[1, 2, 3]], vec![9])),
                 water_tops: true,
                 cards: true,
+                plants: 100,
             },
         );
         for n in 0..bytes.len() {

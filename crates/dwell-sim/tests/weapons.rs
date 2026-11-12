@@ -2,7 +2,8 @@
 //! axe's) lands at its contact and strikes the creatures its arc crosses by the sword's data —
 //! damage, knockback, one wear a creature struck — never a player; a deer killed drops its data
 //! drops; a creature holding a raised sword (the defender API) blocks a strike across its blade.
-//! Both faces.
+//! An NPC's strike past a player's block hurts the player (WORK_QUEUE item 38): the weapon's damage,
+//! cause `Weapon` (`Fall` to an older client), its knockback; none in creative. Both faces.
 
 mod common;
 
@@ -11,7 +12,7 @@ use dwell_blocks::require;
 use dwell_protocol::chopping::{self, Clash};
 use dwell_protocol::*;
 use dwell_sim::creatures::Guard;
-use dwell_sim::server::ServerConfig;
+use dwell_sim::server::{ServerConfig, SessionId};
 use dwell_world::{FLAT_TOP_Y, FaceFrame, empty_generator, m_of_row};
 
 const BASE: i32 = FLAT_TOP_Y + 40;
@@ -247,7 +248,11 @@ dwell_world::both_faces!(
 /// Client 2 says the `weapons.clash` capability (this build's client); client 1 says none (an
 /// older build). Player 1 says it holds the sword, level.
 fn swordplay_scene(f: FaceFrame) -> Fixture {
-    let mut fx = scene(f, "adventure");
+    swordplay_scene_in(f, "adventure")
+}
+
+fn swordplay_scene_in(f: FaceFrame, mode: &str) -> Fixture {
+    let mut fx = scene(f, mode);
     fx.send(
         2,
         Message::Capabilities(dwell_protocol::capabilities::Capabilities::this_client()),
@@ -284,15 +289,23 @@ fn clashes(msgs: &[Message]) -> Vec<ClashNet> {
 }
 
 /// Player 1 looks along face-local +x (yaw 90: toward the creatures put ahead of it) for `ticks`
-/// ticks, an input frame a tick (as a client sends them), stepping the server.
+/// ticks, an input frame a tick (as a client sends them), stepping the server. The sequence is
+/// the test's own (a thread's): one shared by the tests running in parallel jumped past the
+/// server's `MAX_SEQ_AHEAD`, so its frames were refused and the look lost.
 fn facing_ahead(fx: &mut Fixture, ticks: u32) {
-    static SEQ: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(1);
+    thread_local! {
+        static SEQ: std::cell::Cell<u32> = const { std::cell::Cell::new(1) };
+    }
     let input = dwell_physics::controller::Input {
         look_yaw: 90.0,
         ..Default::default()
     };
     for _ in 0..ticks {
-        let seq = SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let seq = SEQ.with(|c| {
+            let n = c.get();
+            c.set(n + 1);
+            n
+        });
         let m = Message::PlayerInput(PlayerInput {
             last_snapshot_tick: 0,
             inputs: vec![dwell_physics::net::quantize_input(&input, seq)],
@@ -481,6 +494,9 @@ dwell_world::both_faces!(
         assert!(fx.server.creatures_mut().attacked(v, at));
         fx.server.creatures_mut().set_foe_player(v, 1);
         fx.take_all();
+        // The swinger's eye as it slashes (the villager's blow back pushes it off after).
+        let mut eye = f.point(fx.server.feet_of(1).expect("a live player"));
+        eye[1] += f64::from(flat().player_config.body.eye_height);
         // A level slash: in its wind-up the villager raises its upright counter.
         fx.send(
             1,
@@ -502,8 +518,6 @@ dwell_world::both_faces!(
         let p = f.point(got[0].point.map(f64::from));
         let (grip, tip) = raised_blade_local(f, true, feet, [-1.0, 0.0, 0.0]);
         let guard = to_segment(p, grip, tip);
-        let mut eye = f.point(fx.server.feet_of(1).expect("a live player"));
-        eye[1] += f64::from(flat().player_config.body.eye_height);
         let striking = to_arc(f, eye, [1.0, 0.0, 0.0], false, p);
         assert!(
             guard <= 0.15 && striking <= 0.15,
@@ -536,7 +550,7 @@ fn villager_guard(fx: &Fixture, v: u32) -> Guard {
 }
 
 dwell_world::both_faces!(
-    fn an_npc_blocks_the_wind_up_by_counter_then_strikes_back_unhurting(f: FaceFrame) {
+    fn an_npc_blocks_the_wind_up_by_counter_then_strikes_back(f: FaceFrame) {
         let mut fx = swordplay_scene(f);
         facing_ahead(&mut fx, 2);
         let v = foe_villager(&mut fx, f);
@@ -575,14 +589,22 @@ dwell_world::both_faces!(
             fx.server.strikes().last().unwrap().clash,
             Some(Clash::Blocked)
         );
-        // In the recovery it swung back: player 1's block was down, so it connected, and hurt
-        // nobody (an NPC can't hurt a player; the owner's open question).
+        // In the recovery it swung back: player 1's block was down, so it connected and hurt it
+        // (WORK_QUEUE item 38).
         let n = fx.server.npc_strikes().to_vec();
         assert_eq!(n.len(), 1, "{n:?}");
         assert_eq!((n[0].npc, n[0].player_id), (v, 1));
         assert_eq!(n[0].outcome, Some(Clash::Connected));
         assert!(n[0].vertical, "in its stance");
-        assert_eq!([fx.server.health_of(1), fx.server.health_of(2)], healths);
+        let dmg = sword().weapon.unwrap().damage.round() as i32;
+        assert_eq!(n[0].damage, dmg);
+        assert_eq!(
+            [fx.server.health_of(1), fx.server.health_of(2)],
+            [healths[0] - dmg, healths[1]]
+        );
+        let healths = [fx.server.health_of(1), fx.server.health_of(2)];
+        // Back where it stood (the blow pushed it off).
+        move_to(&mut fx, 1, f, 0.5, 0.5);
         let all = fx.take_all();
         assert!(
             clashes(&all[&2])
@@ -618,6 +640,7 @@ dwell_world::both_faces!(
             Some(Clash::Blocked),
             "upright on a level block"
         );
+        assert_eq!(n[1].damage, 0, "a block takes no damage");
         assert_eq!([fx.server.health_of(1), fx.server.health_of(2)], healths);
         // Where the blades met (BUGS.md #86): on player 1's raised level blade, not between the eyes.
         let all = fx.take_all();
@@ -664,5 +687,156 @@ dwell_world::both_faces!(
         }
         assert_eq!(foe(&fx), None, "given up");
         assert!(!villager_guard(&fx, v).raised);
+    }
+);
+
+// --- WORK_QUEUE item 38: villagers hurt players (owner, 2026-11-12: "Villagers should be able to
+// hurt players."). ---
+
+/// Player 1 slashes level at the villager (blocked by its counter) and waits out the swing, the
+/// villager striking back in the recovery.
+fn provoke(fx: &mut Fixture, f: FaceFrame) {
+    fx.send(
+        1,
+        Message::Chop(ChopAction::Sweep {
+            tool: SWORD.into(),
+            look: f.vector([1.0, 0.0, 0.0]).map(|v| v as f32),
+            vertical: false,
+        }),
+    );
+    facing_ahead(fx, 3 + swing_ticks());
+}
+
+/// What client `id` was sent (nothing: none).
+fn of(all: &std::collections::BTreeMap<SessionId, Vec<Message>>, id: SessionId) -> &[Message] {
+    all.get(&id).map_or(&[], Vec::as_slice)
+}
+
+/// Player 1's damage events a client heard: (cause, amount).
+fn damage_heard(msgs: &[Message]) -> Vec<(DamageCause, u8)> {
+    msgs.iter()
+        .filter_map(|m| match m {
+            Message::PlayerEvent(e) if e.kind == PlayerEventKind::Damage && e.player_id == 1 => {
+                Some((e.cause, e.amount))
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+/// Player 1's knockbacks (world vectors) a client heard.
+fn knockbacks_heard(msgs: &[Message]) -> Vec<[f32; 3]> {
+    msgs.iter()
+        .filter_map(|m| match m {
+            Message::PlayerEvent(e) if e.kind == PlayerEventKind::Knockback && e.player_id == 1 => {
+                Some(e.vector)
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+dwell_world::both_faces!(
+    fn an_npc_strike_hurts_and_pushes_an_unguarded_player_older_clients_hear_fall(f: FaceFrame) {
+        let mut fx = swordplay_scene(f);
+        facing_ahead(&mut fx, 2);
+        let v = foe_villager(&mut fx, f);
+        // Client 1 knows every cause of this build; client 2 says none (an older one).
+        fx.send(1, Message::CausesHello(DamageCause::MAX));
+        let before = fx.server.health_of(1);
+        fx.take_all();
+        provoke(&mut fx, f);
+        let n = fx.server.npc_strikes().to_vec();
+        assert_eq!(n.len(), 1, "{n:?}");
+        assert_eq!((n[0].npc, n[0].outcome), (v, Some(Clash::Connected)));
+        let w = sword().weapon.unwrap();
+        let dmg = w.damage.round() as i32;
+        assert!(dmg > 0);
+        assert_eq!(n[0].damage, dmg);
+        assert_eq!(fx.server.health_of(1), before - dmg);
+        let all = fx.take_all();
+        assert_eq!(
+            damage_heard(of(&all, 1)),
+            vec![(DamageCause::Weapon, dmg as u8)]
+        );
+        assert_eq!(
+            damage_heard(of(&all, 2)),
+            vec![(DamageCause::Fall, dmg as u8)],
+            "an older client hears a cause it knows"
+        );
+        // Pushed away from the villager (at face-local +x): along -x and up, by the data.
+        let k = knockbacks_heard(of(&all, 1));
+        assert_eq!(k.len(), 1, "{k:?}");
+        let local = f.vector(k[0].map(f64::from));
+        let want = [-w.knockback_mps, w.lift_mps, 0.0];
+        assert!(
+            (0..3).all(|i| (local[i] - want[i]).abs() < 1e-3),
+            "{local:?} (face-local), want {want:?}"
+        );
+        // Out of the guard's way: it did move off along -x.
+        facing_ahead(&mut fx, 10);
+        let feet = f.point(fx.server.feet_of(1).unwrap());
+        assert!(feet[0] < 0.4, "pushed back: {feet:?}");
+    }
+);
+
+dwell_world::both_faces!(
+    fn a_raised_guard_across_the_npcs_blade_blocks_its_strike_unhurt(f: FaceFrame) {
+        let mut fx = swordplay_scene(f);
+        facing_ahead(&mut fx, 2);
+        let v = foe_villager(&mut fx, f);
+        // The villager counters a level slash with its upright stance and strikes back upright:
+        // player 1 raises its level block across that blade once its slash is out.
+        fx.send(
+            1,
+            Message::Chop(ChopAction::Sweep {
+                tool: SWORD.into(),
+                look: f.vector([1.0, 0.0, 0.0]).map(|v| v as f32),
+                vertical: false,
+            }),
+        );
+        fx.send(1, Message::Chop(ChopAction::Guard { raised: true }));
+        let before = fx.server.health_of(1);
+        fx.take_all();
+        facing_ahead(&mut fx, 3 + swing_ticks());
+        let n = fx.server.npc_strikes().to_vec();
+        assert_eq!(n.len(), 1, "{n:?}");
+        assert!(n[0].vertical);
+        assert_eq!((n[0].npc, n[0].outcome), (v, Some(Clash::Blocked)));
+        assert_eq!(n[0].damage, 0);
+        assert_eq!(fx.server.health_of(1), before);
+        let all = fx.take_all();
+        assert!(damage_heard(of(&all, 1)).is_empty());
+        assert!(knockbacks_heard(of(&all, 1)).is_empty());
+        assert!(
+            clashes(of(&all, 2))
+                .iter()
+                .any(|c| c.striker == Fighter::Creature(v) && c.outcome == Clash::Blocked)
+        );
+    }
+);
+
+dwell_world::both_faces!(
+    fn in_creative_an_npc_strike_neither_hurts_nor_pushes_a_player(f: FaceFrame) {
+        let mut fx = swordplay_scene_in(f, "creative");
+        facing_ahead(&mut fx, 2);
+        let v = foe_villager(&mut fx, f);
+        let before = fx.server.health_of(1);
+        fx.take_all();
+        provoke(&mut fx, f);
+        let n = fx.server.npc_strikes().to_vec();
+        assert_eq!(n.len(), 1, "{n:?}");
+        assert_eq!((n[0].npc, n[0].outcome), (v, Some(Clash::Connected)));
+        assert_eq!(n[0].damage, 0);
+        assert_eq!(fx.server.health_of(1), before);
+        let all = fx.take_all();
+        assert!(damage_heard(of(&all, 1)).is_empty());
+        assert!(knockbacks_heard(of(&all, 1)).is_empty());
+        // The clash still reaches the clients.
+        assert!(
+            clashes(of(&all, 2))
+                .iter()
+                .any(|c| c.striker == Fighter::Creature(v) && c.outcome == Clash::Connected)
+        );
     }
 );
