@@ -45,7 +45,7 @@ pub const ATLAS_SIZE: usize = CELL * ATLAS_CELLS;
 pub const ATLAS_TILES: usize = ATLAS_CELLS * ATLAS_CELLS;
 
 /// The tiles in atlas order (the registry's texture names).
-pub const TILE_ORDER: [&str; 41] = [
+pub const TILE_ORDER: [&str; 53] = [
     "plain",
     "grass",
     "grassSide",
@@ -99,6 +99,20 @@ pub const TILE_ORDER: [&str; 41] = [
     "redSandstone",
     // The leaf cards' painted clump (shared/look/leaves.json `cards.tile`).
     "leafCard",
+    // The crack stages a damaged block's faces are multiplied by (shared/textures/cracks.json,
+    // docs/BLOCK_DAMAGE.md §6.3): stone, soil and wood, hairline to branching.
+    "crackStone1",
+    "crackStone2",
+    "crackStone3",
+    "crackStone4",
+    "crackSoil1",
+    "crackSoil2",
+    "crackSoil3",
+    "crackSoil4",
+    "crackWood1",
+    "crackWood2",
+    "crackWood3",
+    "crackWood4",
     // The fallback look of a state whose look or textures this build lacks (synced from a server,
     // ADR 0038): a magenta and black checker, never content.
     MISSING_TILE,

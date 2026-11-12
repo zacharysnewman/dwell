@@ -667,6 +667,9 @@ struct TerrainIn {
     @location(5) light: f32,
     // The flood light (dwell-mesh flood.rs): sky and block level as shares of 15.
     @location(6) flood: vec2f,
+    // The crack overlay (docs/BLOCK_DAMAGE.md §6.3; dwell-mesh `CrackLayer::pack`, unorm8x4): the
+    // crack tile's s and t over [−½, 1½], its atlas slot + 1 (/255; 0: none) and strength.
+    @location(7) crack: vec4f,
 };
 struct TerrainOut {
     @builtin(position) clip: vec4f,
@@ -678,6 +681,9 @@ struct TerrainOut {
     @location(5) @interpolate(flat) draw: u32,
     @location(6) light: f32,
     @location(7) flood: vec2f,
+    // The crack tile's s and t (0–1 on the tile), its atlas slot + 1 and strength (constant over
+    // a face).
+    @location(8) crack: vec4f,
 };
 
 @vertex
@@ -693,7 +699,30 @@ fn terrain_vs(v: TerrainIn, @builtin(instance_index) k: u32) -> TerrainOut {
     o.tile = v.tile;
     o.light = v.light;
     o.flood = v.flood;
+    o.crack = vec4f(v.crack.xy * CRACK_UV_RANGE + CRACK_UV_MIN, v.crack.z * 255.0, v.crack.w);
     return o;
+}
+
+// The crack overlay (docs/BLOCK_DAMAGE.md §6.3): a damaged block's faces multiplied by its crack
+// stage's tile (white, with dark cracks), centred on the hit. One texture lookup, on the faces of
+// cracked cells only (a branch constant over each face); `crack` as TerrainOut carries it. The
+// tile's level from its own uv's footprint; past the tile (a far corner from the hit) no crack.
+const CRACK_UV_MIN: f32 = -0.5;
+const CRACK_UV_RANGE: f32 = 2.0;
+fn crack_shade(crack: vec4f, gx: vec2f, gy: vec2f) -> vec3f {
+    let slot = u32(round(crack.z));
+    let st = crack.xy;
+    if (slot == 0u || any(st < vec2f(0.0)) || any(st > vec2f(1.0))) {
+        return vec3f(1.0);
+    }
+    let cell = slot - 1u;
+    let size = vec2f(textureDimensions(atlas));
+    let pitch = size / f32(ATLAS_CELLS);
+    let tile = (pitch - 2.0 * f32(ATLAS_GUTTER)) / size;
+    let origin = (vec2f(f32(cell % ATLAS_CELLS), f32(cell / ATLAS_CELLS)) * pitch + f32(ATLAS_GUTTER)) / size;
+    let grads = atlas_grads(gx * tile, gy * tile);
+    let texel = textureSampleGrad(atlas, atlas_sampler, atlas_crisp(origin + st * tile), grads[0], grads[1]);
+    return mix(vec3f(1.0), texel.rgb, crack.w);
 }
 
 // The grid of the atlas tile whose rectangle starts at `tile_origin` (its cell: the tile's origin
@@ -751,7 +780,10 @@ fn terrain_fs(i: TerrainOut, @builtin(front_facing) front: bool) -> SceneOut {
     let stop = select(0u, min(u32(max(i.color.r, 0.0)), LAVA_STOPS - 1u), coded);
     let look = lava_stop_look[stop];
     let core = lava_stop_core[stop];
-    var albedo = vcol * texel.rgb * shade * draw.tint.rgb;
+    // The crack overlay's footprint, taken in uniform control flow.
+    let crack_gx = dpdx(i.crack.xy);
+    let crack_gy = dpdy(i.crack.xy);
+    var albedo = vcol * texel.rgb * shade * draw.tint.rgb * crack_shade(i.crack, crack_gx, crack_gy);
     // Lava (§17.1): world-space crust plates over the painted tile, thin glowing seams between
     // them, continuous across blocks; a top face takes the world's x z, a side its along and y.
     var crack = smoothstep(0.25, 0.75, max(texel.r, texel.g));

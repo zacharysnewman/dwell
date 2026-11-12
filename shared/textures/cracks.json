@@ -1,0 +1,9 @@
+{
+  "$comment": "Crack tile sets (docs/BLOCK_DAMAGE.md §6.3, WORK_QUEUE item 18): per material family, its crack stages in order, hairline to branching. Each name is an atlas tile painted by materials.json (a white tile with dark strokes, multiplied over a damaged block's faces, centred on where it was struck: the tile spans `span` m round the hit). A block's `damage.look.cracks.set` names a set here; its `stages` give the damage fraction each tile starts at.",
+  "span": 1.5,
+  "sets": {
+    "stone": ["crackStone1", "crackStone2", "crackStone3", "crackStone4"],
+    "soil": ["crackSoil1", "crackSoil2", "crackSoil3", "crackSoil4"],
+    "wood": ["crackWood1", "crackWood2", "crackWood3", "crackWood4"]
+  }
+}

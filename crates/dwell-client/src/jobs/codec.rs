@@ -78,6 +78,7 @@ impl W {
         self.f32s(&m.bare);
         self.f32s(&m.light);
         self.f32s(&m.flood);
+        self.u32s(&m.cracks);
         self.u32s(&m.indices);
     }
     fn flat(&mut self, m: &FlatMesh) {
@@ -198,6 +199,7 @@ impl R<'_> {
             bare: self.f32s()?,
             light: self.f32s()?,
             flood: self.f32s()?,
+            cracks: self.u32s()?,
             indices: self.u32s()?,
         })
     }
