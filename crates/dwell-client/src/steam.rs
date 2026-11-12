@@ -35,6 +35,8 @@ pub struct Steam {
     list: Vec<SteamPuff>,
     /// A CPU adapter: a third of the puffs.
     pub cpu: bool,
+    /// Graphics → Particles: the share of puffs drawn (crate::effect_share).
+    pub share: crate::effect_share::Share,
 }
 
 impl Steam {
@@ -42,7 +44,7 @@ impl Steam {
     /// over each (a third on a CPU adapter), the oldest dropped past `MAX_LIVE`.
     pub fn add(&mut self, cells: &[[i32; 3]], now_s: f64) {
         for (i, c) in cells.iter().enumerate() {
-            if self.cpu && i % 3 != 0 {
+            if (self.cpu && i % 3 != 0) || !self.share.keeps(i) {
                 continue;
             }
             let f = FaceFrame::at_height(dwell_world::m_of_row(c[1]));

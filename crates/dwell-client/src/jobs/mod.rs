@@ -48,6 +48,8 @@ pub enum Job {
         water_tops: bool,
         /// Leaf cards are meshed (false on a CPU adapter; `dwell_mesh::ChunkFlags`).
         cards: bool,
+        /// The share of cross plants meshed, percent (Graphics → Tall grass; `ChunkFlags::plants`).
+        plants: u8,
     },
     /// An LOD section's meshes.
     MeshSection {
@@ -57,6 +59,8 @@ pub enum Job {
         mirror: bool,
         /// Its tree cells' leaf tints (ADR 0079; `dwell_mesh::mesh_section_tinted`).
         tints: Vec<(u32, dwell_world::tree_tint::Tint)>,
+        /// Its trees are drawn (Graphics → Far trees; `dwell_mesh::mesh_section_trees`).
+        trees: bool,
     },
     /// A strip of the LOD colour map (`crate::lod_map::raster`): world texels `x0..x0 + w` ×
     /// `z0..z0 + h` of `texel_m` m on face `face` (0 A, 1 B); with `heights`, each texel's height
@@ -301,6 +305,7 @@ impl Runner {
                 ground,
                 water_tops,
                 cards,
+                plants,
             } => match dwell_mesh::mesh_chunk_trees(
                 &padded,
                 &light,
@@ -316,7 +321,11 @@ impl Runner {
                         density: self.ground_density(origin),
                     })
                     .as_ref(),
-                dwell_mesh::ChunkFlags { water_tops, cards },
+                dwell_mesh::ChunkFlags {
+                    water_tops,
+                    cards,
+                    plants,
+                },
                 &damage,
                 // Its species trees' leaf tints, from the generator this worker runs (ADR 0079).
                 &self.tree_tints(origin, &padded),
@@ -330,13 +339,14 @@ impl Runner {
                 water_drop,
                 mirror,
                 tints,
+                trees,
             } => {
                 let options = MeshSectionOptions {
                     surface: surface.as_deref(),
                     water_drop,
                     mirror,
                 };
-                match dwell_mesh::mesh_section_tinted(&cells, &options, &tints) {
+                match dwell_mesh::mesh_section_trees(&cells, &options, &tints, trees) {
                     Ok(m) => Output::SectionMesh(Box::new(m)),
                     Err(e) => Output::Failed(format!("{e:?}")),
                 }
@@ -446,6 +456,7 @@ mod tests {
             water_drop: 0.0,
             mirror: false,
             tints: Vec::new(),
+            trees: true,
         };
         assert_eq!(mesh.column(), None);
     }

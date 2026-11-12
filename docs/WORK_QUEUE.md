@@ -826,7 +826,18 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    trees / impostors, leaf cards and chamfer, hit shards and particles, far herds, distant shadows (its own),
    volumetric clouds and plumes, lava crust/glow, bloom, haze extras, water tiers, light shafts, reflections, view
    distance; the audit test widened from `render/*_for` to every per-feature switch the renderer and mesher read.
-   In progress (cloud).
+   **Built (2026-11-12, cloud; the GPU measurement outstanding, local):** Settings → Graphics in seven groups
+   (Display, Lighting, Sky & weather, Water, Terrain & trees, Effects, Distance); new settings with switches where
+   there were none, each preset keeping what it drew before (all on / 100 %): Tall grass 0–100 % (the mesher's
+   `ChunkFlags::plants`), Far trees (the LOD sections' trees), Distant shadows (its own switch at the Shadows
+   tier), Hit shards 0–100 %, Particles 0–100 % (chips, sparks, leaves, steam), Far herds; stored in the
+   append-only `dwell.features` record (an older record reads with the defaults). `graphicsAudit.test.ts` now
+   covers four declared lists — the renderer's tier functions, the look data files, the mesher's switches and
+   the client's CPU-tiered effects — each naming a setting or a written reason (the fog's haze, ambient and flood
+   light baked at mesh time, the LOD blend, dev previews, …; lava's glow is Bloom's, the vent plumes are drawn by
+   the clouds' pass). Next (local): measure each new switch's GPU cost on the M1 at High (forest-perf) and decide
+   which presets should cut them (Low and Mobile are the candidates for tall grass, far trees and distant
+   shadows); chamfered leaves have no switch (the mesh shape, not a per-pixel cost).
 31. **Far trees as multi-angle impostors** (owner 2026-11-12: "billboards (maybe from above billboards too,
    possibly a few different angles so we can switch between them like old Mario kart did with carts, and some
    trees too)" and "The farther distant thoughts on billboards are because our low LOD trees look pretty bad and

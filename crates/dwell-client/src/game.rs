@@ -97,6 +97,25 @@ const REGION_GHOST_COLOR: u32 = 0x6fd3ff;
 /// The whole cell, as an outline box.
 pub const FULL_CELL: ([f32; 3], [f32; 3]) = ([0.0; 3], [1.0; 3]);
 
+/// Graphics → Effects (WORK_QUEUE item 30): the shell's Hit shards and Particles shares and the
+/// Far herds switch, applied to the game's effects (`Game::set_effects`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct EffectSettings {
+    pub hit_shards: crate::effect_share::Share,
+    pub particles: crate::effect_share::Share,
+    pub far_herds: bool,
+}
+
+impl Default for EffectSettings {
+    fn default() -> Self {
+        Self {
+            hit_shards: Default::default(),
+            particles: Default::default(),
+            far_herds: true,
+        }
+    }
+}
+
 /// What the game draws through (the wgpu renderer, or a recorder in tests). The terrain part is
 /// [`TerrainRenderer`]'s: each chunk's and section's meshes; the rest is the camera, players,
 /// outline, lines and stats.
@@ -112,6 +131,16 @@ pub trait Scene: TerrainRenderer {
     /// Leaf cards are drawn (shared/look/leaves.json `cards`; not on a CPU adapter, the cheapest
     /// tier): chunks are meshed with them (`dwell_mesh::ChunkFlags`).
     fn draws_cards(&self) -> bool {
+        true
+    }
+    /// The share of cross plants chunks are meshed with, percent (Graphics → Tall grass;
+    /// `dwell_mesh::ChunkFlags::plants`).
+    fn plant_percent(&self) -> u8 {
+        100
+    }
+    /// LOD sections are meshed with their trees (Graphics → Far trees;
+    /// `dwell_mesh::mesh_section_trees`).
+    fn draws_far_trees(&self) -> bool {
         true
     }
     /// How many bytes of finished chunk meshes a frame uploads (shared/render/streaming.json by
@@ -644,6 +673,8 @@ pub struct Game<S: Scene> {
     /// The far herds' heads laid out on the ground from the last `ecology` (crate::far_herds),
     /// and whether it is to be laid out again (a new snapshot, or heads whose ground wasn't loaded).
     far_heads: Vec<crate::far_herds::Head>,
+    /// Graphics → Far herds: the far ecology's herds drawn past the near creatures.
+    pub far_herds_shown: bool,
     far_stale: bool,
     ecology_on: bool,
     /// The server keeps block damage (`inventory_flags::DAMAGE`): `DamageHello` sent, struck
@@ -1072,6 +1103,7 @@ impl<S: Scene> Game<S> {
             creatures_on: false,
             ecology: None,
             far_heads: Vec::new(),
+            far_herds_shown: true,
             far_stale: false,
             ecology_on: false,
             damage_on: false,
@@ -3329,6 +3361,9 @@ impl<S: Scene> Game<S> {
                 });
             self.far_stale = false;
         }
+        if !self.far_herds_shown {
+            return Vec::new();
+        }
         crate::far_herds::puffs(&self.far_heads, eye, false)
     }
 
@@ -3410,6 +3445,15 @@ impl<S: Scene> Game<S> {
                 now_ms / 1000.0,
             );
         }
+    }
+
+    /// Graphics → Effects (WORK_QUEUE item 30): the share of a hit's shards, of the chips, sparks,
+    /// leaves and steam, and whether the far herds are drawn.
+    pub fn set_effects(&mut self, e: EffectSettings) {
+        self.hit_shards.share = e.hit_shards;
+        self.chips.share = e.particles;
+        self.steam.share = e.particles;
+        self.far_herds_shown = e.far_herds;
     }
 
     /// Which blast effects show (Settings → Explosions), and whether the adapter is a CPU's.
@@ -3705,6 +3749,15 @@ impl<S: Scene> Game<S> {
         self.pool.borrow_mut().water_tops = water_tops;
         let cards = self.scene.borrow().draws_cards();
         self.pool.borrow_mut().cards = cards;
+        // Graphics → Tall grass and Far trees: chunks and sections meshed from now on follow them.
+        let (plants, trees) = {
+            let s = self.scene.borrow();
+            (s.plant_percent(), s.draws_far_trees())
+        };
+        let mut pool = self.pool.borrow_mut();
+        pool.plants = plants;
+        pool.trees = trees;
+        drop(pool);
         let done = telemetry::span("jobs.poll", || self.pool.borrow_mut().poll());
         telemetry::add("jobs.done", done.len() as f64);
         telemetry::span("jobs.apply", || self.on_jobs(done));

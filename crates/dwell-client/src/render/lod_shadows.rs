@@ -30,10 +30,14 @@ use dwell_world::{ChunkCoord, FaceFrame};
 
 use super::camera::{Mat4, V3, cross};
 
-/// The distant shadows an adapter draws: the Shadows setting's, none on a CPU adapter (the
-/// cheapest tier of everything there).
-pub fn lod_shadows_for(device_type: wgpu::DeviceType, quality: ShadowQuality) -> ShadowQuality {
-    if device_type == wgpu::DeviceType::Cpu {
+/// The distant shadows an adapter draws: the Shadows setting's while Graphics → Distant shadows
+/// is on (`distant`), none when it is off or on a CPU adapter (the cheapest tier of everything).
+pub fn lod_shadows_for(
+    device_type: wgpu::DeviceType,
+    quality: ShadowQuality,
+    distant: bool,
+) -> ShadowQuality {
+    if device_type == wgpu::DeviceType::Cpu || !distant {
         ShadowQuality::Off
     } else {
         quality
@@ -1453,11 +1457,16 @@ mod tests {
     fn a_cpu_adapter_draws_no_distant_shadows() {
         for q in [ShadowQuality::Off, ShadowQuality::Low, ShadowQuality::High] {
             assert_eq!(
-                lod_shadows_for(wgpu::DeviceType::Cpu, q),
+                lod_shadows_for(wgpu::DeviceType::Cpu, q, true),
                 ShadowQuality::Off
             );
-            assert_eq!(lod_shadows_for(wgpu::DeviceType::DiscreteGpu, q), q);
-            assert_eq!(lod_shadows_for(wgpu::DeviceType::IntegratedGpu, q), q);
+            assert_eq!(lod_shadows_for(wgpu::DeviceType::DiscreteGpu, q, true), q);
+            assert_eq!(lod_shadows_for(wgpu::DeviceType::IntegratedGpu, q, true), q);
+            // WORK_QUEUE item 30: Graphics → Distant shadows has its own switch.
+            assert_eq!(
+                lod_shadows_for(wgpu::DeviceType::DiscreteGpu, q, false),
+                ShadowQuality::Off
+            );
         }
         assert_eq!(maps_size(None), (1, 1, 1));
         let t = tier();
