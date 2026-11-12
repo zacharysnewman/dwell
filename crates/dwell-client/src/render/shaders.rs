@@ -567,10 +567,6 @@ fn water_tier_opacity() -> f32 {
 fn water_tier_molten() -> bool {
     return (water_tier_bits() & 1024u) != 0u;
 }
-// Bit 11: block damage's relief marches the texture into its dents (dwell-look `relief_parallax`).
-fn water_tier_relief() -> bool {
-    return (water_tier_bits() & 2048u) != 0u;
-}
 
 // The fluid the eye is under or just above (`frame.water`).
 fn eye_fluid() -> Fluid {
@@ -682,8 +678,6 @@ struct TerrainOut {
     @location(5) @interpolate(flat) draw: u32,
     @location(6) light: f32,
     @location(7) flood: vec2f,
-    // The vertex colour and light read flat: a relief quad's packed parameters (`dent_of`).
-    @location(8) @interpolate(flat) code: vec4f,
 };
 
 @vertex
@@ -699,7 +693,6 @@ fn terrain_vs(v: TerrainIn, @builtin(instance_index) k: u32) -> TerrainOut {
     o.tile = v.tile;
     o.light = v.light;
     o.flood = v.flood;
-    o.code = vec4f(v.color, v.light);
     return o;
 }
 
@@ -742,19 +735,8 @@ fn terrain_fs(i: TerrainOut, @builtin(front_facing) front: bool) -> SceneOut {
     let span = select(1.0, 1.0 / MOLTEN_SPAN, molten);
     let drift = select(vec2f(0.0), MOLTEN_DRIFT * frame.fog.z, molten);
     let face_n = select(-i.normal, i.normal, front);
-    // Block damage's relief (BLOCK_DAMAGE.md §6.1): a relief quad's blue is negative (a lava face's
-    // green is). Its texture frame from the screen derivatives, taken here in uniform control flow.
-    let dent = i.code.z < -0.5 && i.code.y >= 0.0;
-    let frame_tb = dent_frame(dpdx(i.rel), dpdy(i.rel), dpdx(i.uv), dpdy(i.uv), face_n);
-    var tuv = i.uv;
-    var n = face_n;
-    var carved = DentShade(i.uv, face_n, 1.0, 1.0, 1.0);
-    if (dent) {
-        carved = dent_shade(dent_of(i.code, i.uv), i.uv, face_n, frame_tb[0], frame_tb[1], i.rel, water_tier_relief());
-        tuv = carved.uv;
-        n = carved.n;
-    }
-    let atlas_uv = i.tile.xy + fract(tuv * span + drift) * i.tile.zw;
+    let n = face_n;
+    let atlas_uv = i.tile.xy + fract(i.uv * span + drift) * i.tile.zw;
     let grads = atlas_grads(dpdx(i.uv) * span * i.tile.zw, dpdy(i.uv) * span * i.tile.zw);
     let texel = textureSampleGrad(atlas, atlas_sampler, atlas_crisp(atlas_uv), grads[0], grads[1]);
     let shade = grid_shade(i.uv, tile_grid(i.tile.xy));
@@ -765,12 +747,11 @@ fn terrain_fs(i: TerrainOut, @builtin(front_facing) front: bool) -> SceneOut {
     // A molten block's faces carry its heat stop in their colour (k, −1, −1; dwell-mesh
     // `vertex_rgb`, VOLCANOES.md §6.5) and are white otherwise.
     let coded = i.color.g < 0.0;
-    // A relief quad's colour is its parameters: it takes its face's tint (dwell-look `face_tint`).
-    let vcol = select(select(i.color, vec3f(1.0), coded), dent_tint(face_n, face_at(frame.eye.x + i.rel.y)), dent);
+    let vcol = select(i.color, vec3f(1.0), coded);
     let stop = select(0u, min(u32(max(i.color.r, 0.0)), LAVA_STOPS - 1u), coded);
     let look = lava_stop_look[stop];
     let core = lava_stop_core[stop];
-    var albedo = vcol * texel.rgb * shade * draw.tint.rgb * carved.damp;
+    var albedo = vcol * texel.rgb * shade * draw.tint.rgb;
     // Lava (§17.1): world-space crust plates over the painted tile, thin glowing seams between
     // them, continuous across blocks; a top face takes the world's x z, a side its along and y.
     var crack = smoothstep(0.25, 0.75, max(texel.r, texel.g));
@@ -791,9 +772,7 @@ fn terrain_fs(i: TerrainOut, @builtin(front_facing) front: bool) -> SceneOut {
         albedo = mix(crust, seam, plate.x) * vcol * draw.tint.rgb;
         crack = plate.x;
     }
-    var lit = terrain_light(select(i.light, 1.0, dent), i.flood);
-    lit.ambient *= carved.ao;
-    lit.direct *= carved.sun;
+    let lit = terrain_light(i.light, i.flood);
     var o = scene_out(albedo, normalize(n), i.rel, alpha, lit);
     // The heat brightens the glowing seams (or a still tile's bright cracks), not the crust.
     let heat = select(1.0, mix(0.15, 1.1 * molten_heat(i.rel.xz + frame.tan.zw, frame.fog.z), crack), molten);
@@ -3418,9 +3397,8 @@ fn scene_bindings(samples: u32) -> String {
 /// shading and every entry point.
 pub fn source(samples: u32) -> String {
     format!(
-        "{}{DRAWS}\n{FADE}\n{}\n{}\n{}\n{}\n{}\n{TERRAIN}\n{MOTION}\n{OUTLINE}\n{WATER}\n{SHAFTS}\n{}",
+        "{}{DRAWS}\n{FADE}\n{}\n{}\n{}\n{}\n{TERRAIN}\n{MOTION}\n{OUTLINE}\n{WATER}\n{SHAFTS}\n{}",
         lighting_source(),
-        dent_wgsl(),
         dwell_look::lod_blend::LOD_BLEND.pattern.wgsl(),
         super::lod_map::wgsl(&dwell_look::lod_map::LOD_MAP),
         super::flow::wgsl(),
@@ -3428,198 +3406,6 @@ pub fn source(samples: u32) -> String {
         water_slope()
     ) + &super::heightfield::wgsl()
 }
-
-/// Block damage's per-pixel relief (docs/BLOCK_DAMAGE.md §6.1): a relief quad's height field (its
-/// marks' bowls merged into one hollow, the loose rim; dwell-mesh `relief`, its CPU copy), the
-/// normal bent by its gradient, the texture marched into it, the rim's shadow, the floor's
-/// occlusion and damp. Its constants from dwell-mesh's and dwell-look's.
-fn dent_wgsl() -> String {
-    use dwell_mesh::relief;
-    let v = |c: [f64; 3]| {
-        format!(
-            "vec3f({:?}, {:?}, {:?})",
-            c[0] as f32, c[1] as f32, c[2] as f32
-        )
-    };
-    format!(
-        "const DENT_MERGE: f32 = {:?};\nconst DENT_RIM_AT: f32 = {:?};\nconst DENT_RIM_HALF: f32 = {:?};\nconst DENT_EDGE_FADE: f32 = {:?};\nconst DENT_CELL_H: f32 = {:?};\nconst TINT_TOP: vec3f = {};\nconst TINT_BOTTOM: vec3f = {};\nconst TINT_SIDE_X: vec3f = {};\nconst TINT_SIDE_Z: vec3f = {};\n{DENT}",
-        relief::MERGE as f32,
-        relief::RIM_AT as f32,
-        relief::RIM_HALF as f32,
-        relief::EDGE_FADE_M as f32,
-        dwell_world::CELL_H as f32,
-        v(dwell_look::face_tint(1, 1)),
-        v(dwell_look::face_tint(1, -1)),
-        v(dwell_look::face_tint(0, 1)),
-        v(dwell_look::face_tint(2, 1)),
-    )
-}
-
-const DENT: &str = r"
-struct Dent {
-    c: array<vec2f, 4>,
-    count: u32,
-    lo: vec2f,
-    hi: vec2f,
-    radius: f32,
-    depth: f32,
-    rim: f32,
-    steps: u32,
-    darken: f32,
-};
-struct DentShade {
-    uv: vec2f,
-    n: vec3f,
-    ao: f32,
-    sun: f32,
-    damp: f32,
-};
-
-// A relief quad's parameters (dwell-mesh `relief::pack`), its marks' centres placed in the cell the
-// fragment's face uv (metres) lies in.
-fn dent_of(code: vec4f, uv: vec2f) -> Dent {
-    let r = u32(code.x + 0.5);
-    let g = u32(code.y + 0.5);
-    let b = u32(-code.z - 1.0 + 0.5);
-    let l = u32(code.w + 0.5);
-    var d: Dent;
-    d.count = min(r & 7u, 4u);
-    let ext = vec2f(select(1.0, DENT_CELL_H, (r & 8u) != 0u), select(1.0, DENT_CELL_H, (r & 16u) != 0u));
-    let origin = floor(uv / ext) * ext;
-    d.lo = origin;
-    d.hi = origin + ext;
-    var words = array<u32, 4>(g & 4095u, g >> 12u, b & 4095u, b >> 12u);
-    for (var k = 0u; k < 4u; k++) {
-        let w = words[k];
-        d.c[k] = origin + vec2f(f32(w & 63u), f32((w >> 6u) & 63u)) / 63.0 * ext;
-    }
-    d.steps = (r >> 5u) & 15u;
-    d.darken = f32((r >> 9u) & 7u) / 7.0;
-    d.rim = f32((r >> 12u) & 31u) / 1000.0;
-    d.radius = max(f32(l & 255u) / 500.0, 0.01);
-    d.depth = f32((l >> 8u) & 255u) / 500.0;
-    return d;
-}
-
-fn dent_smin(a: f32, b: f32, k: f32) -> f32 {
-    let h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0);
-    return b + (a - b) * h - k * h * (1.0 - h);
-}
-
-// The radial profile (dwell-mesh `relief::profile`): a smooth bowl and the raised rim.
-fn dent_profile(t: f32, depth: f32, rim: f32) -> f32 {
-    let q = clamp(1.0 - t * t, 0.0, 1.0);
-    let x = clamp((t - DENT_RIM_AT) / DENT_RIM_HALF, -1.0, 1.0);
-    let b = 1.0 - x * x;
-    return -depth * q * q + rim * b * b;
-}
-
-// Value noise (0-1) for the rim's loose crumbs.
-fn dent_hash(p: vec2f) -> f32 {
-    return fract(sin(dot(p, vec2f(127.1, 311.7))) * 43758.547);
-}
-fn dent_crumbs(p: vec2f) -> f32 {
-    let q = p * 70.0;
-    let i = floor(q);
-    let f = q - i;
-    let s = f * f * (3.0 - 2.0 * f);
-    let a = mix(dent_hash(i), dent_hash(i + vec2f(1.0, 0.0)), s.x);
-    let c = mix(dent_hash(i + vec2f(0.0, 1.0)), dent_hash(i + vec2f(1.0, 1.0)), s.x);
-    return mix(a, c, s.y);
-}
-
-// The height at `p` (face uv, m; negative: into the face), faded to the face at the cell's edge.
-fn dent_height(d: Dent, p: vec2f) -> f32 {
-    var t = 1e3;
-    for (var k = 0u; k < d.count; k++) {
-        t = dent_smin(t, length(p - d.c[k]) / d.radius, DENT_MERGE);
-    }
-    let e = min(min(p.x - d.lo.x, d.hi.x - p.x), min(p.y - d.lo.y, d.hi.y - p.y));
-    let fade = smoothstep(0.0, DENT_EDGE_FADE, e);
-    let x = clamp((t - DENT_RIM_AT) / DENT_RIM_HALF, -1.0, 1.0);
-    let band = (1.0 - x * x) * (1.0 - x * x);
-    let crumbs = d.rim * 1.2 * band * (dent_crumbs(p) - 0.4);
-    return (dent_profile(t, d.depth, d.rim) + crumbs) * fade;
-}
-
-// The face's texture axes (world, unit) from the screen derivatives of its position and uv: the
-// uv runs in metres along both, so no face's up or turn is assumed.
-fn dent_frame(dp1: vec3f, dp2: vec3f, duv1: vec2f, duv2: vec2f, n: vec3f) -> array<vec3f, 2> {
-    let p2 = cross(dp2, n);
-    let p1 = cross(n, dp1);
-    let t = p2 * duv1.x + p1 * duv2.x;
-    let b = p2 * duv1.y + p1 * duv2.y;
-    return array<vec3f, 2>(t * inverseSqrt(max(dot(t, t), 1e-20)), b * inverseSqrt(max(dot(b, b), 1e-20)));
-}
-
-// The tint of the face (dwell-look `normal_tint`), its up face-local.
-fn dent_tint(n: vec3f, face: f32) -> vec3f {
-    let ny = face_rise(face, n);
-    let x2 = n.x * n.x;
-    let z2 = n.z * n.z;
-    let h = x2 + z2;
-    let w = select(vec2f(0.0), vec2f(x2, z2) / max(h, 1e-12), h > 0.0);
-    let v = min(abs(ny), 1.0);
-    let end = select(TINT_BOTTOM, TINT_TOP, ny >= 0.0);
-    return (TINT_SIDE_X * w.x + TINT_SIDE_Z * w.y) * (1.0 - v) + end * v;
-}
-
-// The dent's look at a fragment: the uv marched into it, the normal its gradient bends, the
-// occlusion deeper in, the rim's shadow toward the sun, the damp floor.
-fn dent_shade(d: Dent, uv: vec2f, n: vec3f, t: vec3f, b: vec3f, rel: vec3f, march: bool) -> DentShade {
-    var p = uv;
-    let e = normalize(rel);
-    let en = dot(e, n);
-    let steps = select(0u, d.steps, march);
-    if (steps > 0u && en < -0.05) {
-        // Steep parallax: down the view ray in even steps until it meets the floor, then the
-        // crossing between the last two.
-        let along = vec2f(dot(e, t), dot(e, b)) / max(-en, 0.3);
-        let span = d.depth * 1.05;
-        var z0 = 0.0;
-        var g0 = dent_height(d, uv);
-        if (g0 < 0.0) {
-            for (var k = 1u; k <= steps; k++) {
-                let z = span * f32(k) / f32(steps);
-                let g = z + dent_height(d, uv + along * z);
-                if (g >= 0.0) {
-                    let zc = z0 + (z - z0) * (-g0) / max(g - g0, 1e-6);
-                    p = uv + along * zc;
-                    break;
-                }
-                z0 = z;
-                g0 = g;
-                p = uv + along * z;
-            }
-        }
-    }
-    let h = dent_height(d, p);
-    let eps = 0.004;
-    let gx = (dent_height(d, p + vec2f(eps, 0.0)) - dent_height(d, p - vec2f(eps, 0.0))) / (2.0 * eps);
-    let gy = (dent_height(d, p + vec2f(0.0, eps)) - dent_height(d, p - vec2f(0.0, eps))) / (2.0 * eps);
-    let bent = normalize(n - gx * t - gy * b);
-    let deep = clamp(-h / max(d.depth, 1e-3), 0.0, 1.0);
-    // The rim's soft shadow toward the light (the sun, or the moon at night).
-    let sun_up = dot(frame.day.sun.xyz, n) > 0.0;
-    let l = select(frame.day.moon.xyz, frame.day.sun.xyz, sun_up);
-    let ln = dot(l, n);
-    let lt = vec2f(dot(l, t), dot(l, b));
-    let ll = length(lt);
-    var shadow = 0.0;
-    if (ln > 0.0 && ll > 1e-3 && h < 0.0) {
-        let dir = lt / ll;
-        let rise = ln / ll;
-        for (var k = 1u; k <= 4u; k++) {
-            let s = d.radius * 0.6 * f32(k);
-            shadow = max(shadow, (dent_height(d, p + dir * s) - (h + s * rise)) / 0.008);
-        }
-    }
-    let sun = 1.0 - 0.85 * clamp(shadow, 0.0, 1.0);
-    let ao = 1.0 - 0.45 * deep;
-    let damp = 1.0 - d.darken * smoothstep(0.15, 1.0, deep);
-    return DentShade(p, bent, ao, sun, damp);
-}
-";
 
 /// The flood light's shading constants (shared/look/light.json; docs/DAY_NIGHT.md §11).
 fn light_wgsl() -> String {
@@ -3663,12 +3449,13 @@ pub fn lava_wgsl() -> String {
 /// entry points.
 pub fn lighting_source() -> String {
     format!(
-        "{}{}const SEA_LEVEL: f32 = {:.1};\nconst AMBIENT_FLOOR: f32 = {:?};\n{}const ATLAS_CELLS: u32 = {}u;\nconst ATLAS_TILES: u32 = {}u;\nconst ATLAS_GUTTER: u32 = {}u;\n{}\n{}\n{}\n{FRAME}\n{}\n{}\n{FRAME_DEPTH}\n{}\n{}\n{COMMON}\n{}\n{}\n",
+        "{}{}const SEA_LEVEL: f32 = {:.1};\nconst AMBIENT_FLOOR: f32 = {:?};\n{}{}const ATLAS_CELLS: u32 = {}u;\nconst ATLAS_TILES: u32 = {}u;\nconst ATLAS_GUTTER: u32 = {}u;\n{}\n{}\n{}\n{FRAME}\n{}\n{}\n{FRAME_DEPTH}\n{}\n{}\n{COMMON}\n{}\n{}\n",
         dwell_world::FaceFrame::wgsl(),
         super::face_shading::WGSL,
         world::SEA_LEVEL_M,
         dwell_look::ambient::AMBIENT.floor as f32,
-        format!("{}{}", light_wgsl(), lava_wgsl()),
+        light_wgsl(),
+        lava_wgsl(),
         dwell_mesh::ATLAS_CELLS,
         dwell_mesh::ATLAS_TILES,
         dwell_mesh::GUTTER,
@@ -3686,31 +3473,6 @@ pub fn lighting_source() -> String {
 
 #[cfg(test)]
 mod tests {
-    /// Block damage's relief (BLOCK_DAMAGE.md §6.1): the shader's height field takes its shape from
-    /// its CPU copy's constants (dwell-mesh `relief`, whose tests pin the bowl), its tints from
-    /// dwell-look's, and marches the texture only on the tiers that afford it.
-    #[test]
-    fn the_relief_shares_its_shape_with_its_cpu_copy() {
-        use dwell_mesh::relief;
-        let src = super::source(1);
-        for (name, v) in [
-            ("DENT_MERGE", relief::MERGE),
-            ("DENT_RIM_AT", relief::RIM_AT),
-            ("DENT_RIM_HALF", relief::RIM_HALF),
-            ("DENT_EDGE_FADE", relief::EDGE_FADE_M),
-        ] {
-            assert!(
-                src.contains(&format!("const {name}: f32 = {:?};", v as f32)),
-                "{name}"
-            );
-        }
-        assert!(
-            src.contains("dent_shade(dent_of(i.code, i.uv)"),
-            "terrain_fs draws relief quads"
-        );
-        assert!(src.contains("water_tier_relief()"), "the march is tiered");
-    }
-
     #[test]
     fn molten_lava_draws_its_stop_hottest_bright_orange_red_past_white() {
         // Owner, 2026-11-11: "Lava looks dark red instead of bright red/orange." The seams glowed

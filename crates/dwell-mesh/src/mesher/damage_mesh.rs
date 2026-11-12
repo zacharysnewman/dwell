@@ -680,6 +680,22 @@ mod tests {
         assert_eq!(look_of("dwell:leaves"), None);
     }
 
+    /// Stone's shard reads from standing height (browser check, 2026-11-11): at 0.34 m across,
+    /// 0.10 m deep and a 0.12 darker floor, three pickaxe hits were invisible on the top face from
+    /// 2 m; the carve is the stone look's `size`, `depth` and `darken` (`shared/blocks/dwell.json`).
+    #[test]
+    fn a_stone_shard_is_big_and_dark_enough_to_read_from_standing_height() {
+        // both-faces: data only, no up.
+        let carve = |b: &str| {
+            let l = look_of(b).unwrap();
+            (l.size, l.depth, l.darken)
+        };
+        let (size, depth, darken) = carve("dwell:stone");
+        assert!(size >= 0.4, "a shard {size} m across");
+        assert!(depth >= 0.15, "a shard {depth} m deep");
+        assert!(darken >= 0.35, "its floor {darken} darker");
+    }
+
     /// The carved mesh's cost, measured natively (BLOCK_DAMAGE.md §6.2): a chunk of stone and dirt
     /// with 50 damaged cells (one to four struck faces each), against the same chunk undamaged.
     #[test]

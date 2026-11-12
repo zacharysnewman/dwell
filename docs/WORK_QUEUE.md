@@ -300,6 +300,13 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    axe's notch was already real geometry. (b) the per-hit drops were already 3D loose items; the rock shard
    now has its own angular `shard` look. Measured: 50 damaged cells +213 triangles and ~70 µs a cell.
    Left: the owner's look review in game (no GPU in the cloud), then removing the shader's unused relief.
+   **Status (carved-check):** checked in the browser on a GPU, by day: the soil bowl reads as a real hollow
+   from above, at a grazing angle (its far wall lit) and from standing height; no seams or cracks seen.
+   Stone's facets were too small and pale to see from standing height after three hits (0.34 m, 0.10 m deep,
+   floor 0.12 darker), now 0.44 m, 0.16 m, 0.4 (data). The terrain shader's unreached relief (`dent_*`, the
+   flat `code` varying) is removed; dwell-look's tier bit 11 (`relief_parallax`) and dwell-mesh's
+   `relief::pack`/`unpack` are now unread, left for a cleanup. By design the carve fades to 0 at the cell's
+   edge (watertight), so it never shows in a block's silhouette. Left: the owner's review.
 19. **Lava glow, remaining** (owner 2026-11-11: "Lava should have bloom glow"; "Lava looks dark red instead of
    bright red/orange"; "It should darken as it solidifies though"). Built 0.52.107: colour by heat stops, heat in
    cells. **Bloom built (pending release, `claude/bloom`):** keyed on the scene's self-lit flag (lava, torches,
