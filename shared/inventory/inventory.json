@@ -44,7 +44,7 @@
       "label": "Rock shard",
       "color": "#8f8a84",
       "size": 0.1,
-      "look": { "shape": "shard", "size": [0.11, 0.05, 0.08], "texture": "dwell:stone", "color": "#f0ece6" }
+      "look": { "shape": "shard", "size": [0.18, 0.045, 0.06], "texture": "dwell:stone", "color": "#f0ece6" }
     },
     {
       "name": "dwell:dirt_clump",

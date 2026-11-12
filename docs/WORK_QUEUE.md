@@ -405,7 +405,13 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    Owner, 2026-11-12: **"The stone hits should be elongated low poly shards stone doesn't dent, it shatters."**
    So stone gets no dent: each pickaxe hit spalls the face (flat, sharp-edged chip-outs, shallow and elongated,
    lit as broken rock, not a dark pit) and knocks off elongated low-poly shards (a few per hit, tumbling) as the
-   per-hit pieces; soil keeps its bowl. In progress (cloud).
+   per-hit pieces; soil keeps its bowl. **Status (stone-shatter):** built (BLOCK_DAMAGE.md §6.4): a `spall`
+   profile (flat, elongated, stepped chip-outs lit lighter as fresh rock, 2 a hit, a few cm deep) on every
+   stone look, and the rock shard an elongated 6-triangle shard (~3:1); one shard a hit is still the drop,
+   the hit's chips the visual-only fragments. Browser check (BLOCK_DAMAGE.md §6.4): not yet read as
+   shattered (the crack overlay dominates; the scar is low-contrast and never reaches the silhouette); next
+   levers listed there. Round 3: faint late cracks, a fresh-rock tint and 3D flying fragments (4 a hit) built; close up
+   it reads as chipped stone. Left: flakes breaking the cell's edge (the silhouette), the owner's look.
 19. **Lava glow, remaining** (owner 2026-11-11: "Lava should have bloom glow"; "Lava looks dark red instead of
    bright red/orange"; "It should darken as it solidifies though"). Built 0.52.107: colour by heat stops, heat in
    cells. **Bloom built (pending release, `claude/bloom`):** keyed on the scene's self-lit flag (lava, torches,
@@ -530,6 +536,10 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    Design: docs/proposals/MOON_WORLD.md; M-1 built (grids.json, the moon's cratered generator on both faces, the
    generic far-body bake, `dwell:moon_dust`). Owner's answers to §12 (2026-11-12): tidally locked; physical phases
    (no dome bias); "A darker floor but a minimum still." for new-moon nights; ~1–1.5 minutes to fly there.
+   Owner, 2026-11-12: **"If not already planned we want the same moon shine/glow effects we already had. So the
+   moon should look bright."** The far-body moon (M-2) keeps today's halo/glow and brightness: the baked normals
+   and albedo shape its surface, but its lit part is as bright as today's moon (exposure-independent emissive-like
+   brightness and the same glow around it), scaled by the phase's lit share (physical phases).
    **M-3 built 2026-11-12** (branch `claude/moon-m3-gridframe-kg7kpg`): `dwell_world::GridFrame` (world ↔ grid ↔
    face-local: points, vectors, looks, up and gravity per face, cells, capture/release; `HOME` the identity, bit for
    bit), `dwell-physics` `frame::grid_of_pose` (bodies' poses, same bits as glam); the bodies' ray, felling's hits

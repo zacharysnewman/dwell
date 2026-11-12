@@ -55,7 +55,7 @@ test("the axe's held item, the log's chips and its breakWith reach the Rust tabl
   const d = validateTools(...fresh());
   const rs = toolsRust(d);
   assert.match(rs, /name: "dwell:stone_axe", kind: ToolKind::Axe, held: Some\("stone_axe"\)/);
-  assert.match(rs, /block: "dwell:log", .*chips: Chips \{ count: 7, color: \[217, 179, 122\]/);
+  assert.match(rs, /block: "dwell:log", .*chips: Chips \{ count: 7, shards: 0, color: \[217, 179, 122\]/);
   assert.match(rs, /\("dwell:log", ToolKind::Axe\),/);
 });
 
@@ -231,7 +231,7 @@ test("block damage: the data's hits reach Rust and TS; a fixture block by data a
   blocks.set('test:clay', { damage: { default: 3, look: { kind: 'scoops', size: 0.3, color: '#806040', crack: '#302010' } } });
   assert.match(
     toolsRust(validateTools(data, items, blocks)),
-    /block: "test:clay", .*look: Some\(DamageLook \{ kind: DamageLookKind::Scoops, size: 0\.3, color: \[128, 96, 64\], crack: \[48, 32, 16\], depth: 0\.1, rim: 0\.012, parallax: 6, darken: 0\.35, profile: CarveProfile::Bowl, facets: 5, grid: 8, triangles: 256, cracks: None \}\)/,
+    /block: "test:clay", .*look: Some\(DamageLook \{ kind: DamageLookKind::Scoops, size: 0\.3, color: \[128, 96, 64\], crack: \[48, 32, 16\], depth: 0\.1, rim: 0\.012, parallax: 6, darken: 0\.35, profile: CarveProfile::Bowl, facets: 5, flakes: 2, grid: 8, triangles: 256, cracks: None \}\)/,
   );
   bad({ default: 3, look: { kind: 'dents', size: 0.3, color: '#806040', crack: '#302010' } }, /test:clay\.damage\.look\.kind must be one of shards, scoops, chips/);
   bad({ default: 3, look: { kind: 'scoops', size: 0.3, color: '#806040', crack: '#302010', depth: 0.9 } }, /test:clay\.damage\.look\.depth must be a number in \[0, 0\.5\]/);
@@ -241,8 +241,12 @@ test("block damage: the data's hits reach Rust and TS; a fixture block by data a
   bad({ default: 3, look: { kind: 'scoops', size: 0.3, color: '#806040', crack: '#302010', darken: -1 } }, /test:clay\.damage\.look\.darken must be a number in \[0, 1\]/);
   // The carved mesh's data (§6.2): a fixture's facets by data alone, bad values failing by name.
   blocks.set('test:clay', { damage: { default: 3, look: { kind: 'chips', size: 0.3, color: '#806040', crack: '#302010', profile: 'facets', facets: 7, grid: 6, triangles: 160 } } });
-  assert.match(toolsRust(validateTools(data, items, blocks)), /block: "test:clay", .*profile: CarveProfile::Facets, facets: 7, grid: 6, triangles: 160, cracks: None \}\)/);
-  bad({ default: 3, look: { kind: 'scoops', size: 0.3, color: '#806040', crack: '#302010', profile: 'spiky' } }, /test:clay\.damage\.look\.profile must be one of bowl, facets/);
+  assert.match(toolsRust(validateTools(data, items, blocks)), /block: "test:clay", .*profile: CarveProfile::Facets, facets: 7, flakes: 2, grid: 6, triangles: 160, cracks: None \}\)/);
+  bad({ default: 3, look: { kind: 'scoops', size: 0.3, color: '#806040', crack: '#302010', profile: 'spiky' } }, /test:clay\.damage\.look\.profile must be one of bowl, facets, spall/);
+  // Stone's spall (WORK_QUEUE item 18): a fixture's flakes by data alone, a bad count failing by name.
+  blocks.set('test:clay', { damage: { default: 3, look: { kind: 'shards', size: 0.3, color: '#806040', crack: '#302010', profile: 'spall', flakes: 3 } } });
+  assert.match(toolsRust(validateTools(data, items, blocks)), /block: "test:clay", .*profile: CarveProfile::Spall, facets: 5, flakes: 3, grid: 8/);
+  bad({ default: 3, look: { kind: 'shards', size: 0.3, color: '#806040', crack: '#302010', profile: 'spall', flakes: 5 } }, /test:clay\.damage\.look\.flakes must be a whole number from 1 to 4/);
   bad({ default: 3, look: { kind: 'scoops', size: 0.3, color: '#806040', crack: '#302010', facets: 2 } }, /test:clay\.damage\.look\.facets must be a whole number from 3 to 8/);
   bad({ default: 3, look: { kind: 'scoops', size: 0.3, color: '#806040', crack: '#302010', grid: 40 } }, /test:clay\.damage\.look\.grid must be a whole number from 2 to 16/);
   bad({ default: 3, look: { kind: 'scoops', size: 0.3, color: '#806040', crack: '#302010', triangles: 64 } }, /test:clay\.damage\.look\.triangles must be a whole number from 128 to 2048/);
@@ -267,10 +271,14 @@ test("block damage: the data's hits reach Rust and TS; a fixture block by data a
   blocks.set('test:clay', { damage: { default: 3, chips: { count: 5, color: '#806040', speed: 1.5, size: 0.05 } } });
   assert.match(
     toolsRust(validateTools(data, items, blocks)),
-    /block: "test:clay", .*chips: Some\(Chips \{ count: 5, color: \[128, 96, 64\], speed: 1\.5, size: 0\.05 \}\)/,
+    /block: "test:clay", .*chips: Some\(Chips \{ count: 5, shards: 0, color: \[128, 96, 64\], speed: 1\.5, size: 0\.05 \}\)/,
   );
   bad({ default: 3, chips: { count: 5, color: 'brown' } }, /test:clay\.damage\.chips\.color must be #rrggbb/);
   bad({ default: 3, chips: { count: 99 } }, /test:clay\.damage\.chips\.count must be a whole number/);
+  // A hit's 3D fragments by data alone (WORK_QUEUE item 18), a bad count failing by name.
+  blocks.set('test:clay', { damage: { default: 3, chips: { count: 5, shards: 3 } } });
+  assert.match(toolsRust(validateTools(data, items, blocks)), /block: "test:clay", .*chips: Some\(Chips \{ count: 5, shards: 3,/);
+  bad({ default: 3, chips: { count: 5, shards: 9 } }, /test:clay\.damage\.chips\.shards must be a whole number in \[0, 8\]/);
 });
 
 test('durability: the stone axe, stone pickaxe and wooden shovel survive 32 hits, creative does not wear, a fixture tool by data alone', () => {

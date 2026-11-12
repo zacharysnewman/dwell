@@ -134,13 +134,80 @@ pub struct Facets {
     pub hi: [f64; 2],
 }
 
+/// One spalled flake (WORK_QUEUE item 18: "stone doesn't dent, it shatters"): a flat chip-out
+/// over a convex, elongated polygon (`corners`, counter-clockwise, face metres), its floor a plane
+/// `depth` in at `origin` and rising along `-grad` toward the far end (a conchoidal scar: deep at
+/// the strike, feathering out), its walls a steep bevel `bevel` wide inside the polygon's edge.
+#[derive(Clone, Debug)]
+pub struct Flake {
+    pub corners: Vec<[f64; 2]>,
+    pub origin: [f64; 2],
+    pub depth: f64,
+    /// The floor's depth gained per metre (face metres; its plane is `depth + grad·(p − origin)`).
+    pub grad: [f64; 2],
+    pub bevel: f64,
+}
+
+impl Flake {
+    /// How far inside the polygon `p` lies (m; negative outside): the least distance to its edges.
+    pub fn inside(&self, p: [f64; 2]) -> f64 {
+        let n = self.corners.len();
+        (0..n).fold(f64::MAX, |d, k| {
+            let (a, b) = (self.corners[k], self.corners[(k + 1) % n]);
+            let e = [b[0] - a[0], b[1] - a[1]];
+            let l = (e[0] * e[0] + e[1] * e[1]).sqrt().max(1e-12);
+            // Counter-clockwise: the inside is to the edge's left.
+            d.min((e[0] * (p[1] - a[1]) - e[1] * (p[0] - a[0])) / l)
+        })
+    }
+
+    /// The floor's depth at `p` (m, >= 0): its plane.
+    pub fn floor(&self, p: [f64; 2]) -> f64 {
+        (self.depth
+            + self.grad[0] * (p[0] - self.origin[0])
+            + self.grad[1] * (p[1] - self.origin[1]))
+            .max(0.0)
+    }
+
+    /// The flake's height at `p` (m; <= 0): its floor's plane past the bevel, the bevel's wall
+    /// rising to the face at the polygon's edge, 0 outside.
+    pub fn height(&self, p: [f64; 2]) -> f64 {
+        let s = self.inside(p);
+        if s <= 0.0 {
+            return 0.0;
+        }
+        -self.floor(p) * (s / self.bevel).min(1.0)
+    }
+
+    /// How far it reaches from its origin (m).
+    pub fn reach(&self) -> f64 {
+        self.corners
+            .iter()
+            .map(|c| ((c[0] - self.origin[0]).powi(2) + (c[1] - self.origin[1]).powi(2)).sqrt())
+            .fold(0.0, f64::max)
+    }
+}
+
+/// A face's spall: its marks' flakes, the deepest wins where they overlap (the scars merge and
+/// step), faded to the face at the cell's edge (`lo`–`hi`, the face's metres).
+#[derive(Clone, Debug)]
+pub struct Spall {
+    pub flakes: Vec<Flake>,
+    pub lo: [f64; 2],
+    pub hi: [f64; 2],
+    /// How far the fresh scar is lifted toward the look's `color` (0–1).
+    pub fresh: f64,
+}
+
 /// A struck face's carve: the height field its grid is pushed in by (BLOCK_DAMAGE.md §6.2).
 #[derive(Clone, Debug)]
 pub enum Carve {
     /// Soils: bowls merged into one hollow, lit by smooth normals.
     Bowl(Dent),
-    /// Stone: angular facets, each triangle lit flat.
+    /// Angular facets, each triangle lit flat.
     Facets(Facets),
+    /// Stone: flat spalled flakes, lit flat and lighter.
+    Spall(Spall),
 }
 
 impl Carve {
@@ -152,6 +219,10 @@ impl Carve {
                 let h = f.shards.iter().map(|s| s.height(p)).fold(0.0, f64::min);
                 h * edge_fade(p, f.lo, f.hi)
             }
+            Carve::Spall(f) => {
+                let h = f.flakes.iter().map(|s| s.height(p)).fold(0.0, f64::min);
+                h * edge_fade(p, f.lo, f.hi)
+            }
         }
     }
 
@@ -160,6 +231,20 @@ impl Carve {
         match self {
             Carve::Bowl(d) => d.depth,
             Carve::Facets(f) => f.shards.iter().map(|s| s.depth).fold(0.0, f64::max),
+            Carve::Spall(f) => f
+                .flakes
+                .iter()
+                .map(|s| s.depth + s.grad[0].hypot(s.grad[1]) * s.reach())
+                .fold(0.0, f64::max),
+        }
+    }
+
+    /// How far a carved point's colour is lifted toward the look's fresh `color` (0: none; bowls
+    /// and facets are darkened by `darken` instead).
+    pub fn fresh(&self) -> f64 {
+        match self {
+            Carve::Spall(f) => f.fresh,
+            _ => 0.0,
         }
     }
 
@@ -181,6 +266,12 @@ impl Carve {
             Carve::Facets(f) => (
                 f.shards.iter().map(|s| s.apex).collect(),
                 f.shards.iter().map(|s| s.reach()).collect(),
+                f.lo,
+                f.hi,
+            ),
+            Carve::Spall(f) => (
+                f.flakes.iter().map(|s| s.origin).collect(),
+                f.flakes.iter().map(|s| s.reach()).collect(),
                 f.lo,
                 f.hi,
             ),

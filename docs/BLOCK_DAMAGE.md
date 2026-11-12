@@ -298,6 +298,61 @@ damage." Built, in addition to the carve (not instead of it):
   the wasm32 clippy and the Vitest files were not run here (no wasm target or `node_modules` in the
   container). The wood set waits for a wood block with a `damage.look`.
 
+### 6.4 Stone shatters, it doesn't dent (WORK_QUEUE item 18)
+
+Owner, 2026-11-12: **"The stone hits should be elongated low poly shards stone doesn't dent, it
+shatters."** The browser pass of §6.2 had found stone's `facets` (an apex pit) reading as near-black
+spiky wedges.
+
+- **Spall** (`damage.look.profile: "spall"`, now every stone look's; `facets` stays in the vocabulary):
+  each hit chips the face with `flakes` (data, 1–4; stone 2) flat chip-outs (`relief::Flake`): a convex,
+  elongated (~2.8:1) polygon turned along a direction of the hit's own, its floor one tilted plane
+  (deepest at the strike, `depth` × 0.55–1, feathering to 30 % at the far end, like a conchoidal scar),
+  its wall a 4 mm bevel inside its edge (on the mesh grid the wall is the straddling triangles: a
+  sharp-edged step). Each next flake is smaller (0.7×), turned a little and deeper: a stepped scar. More
+  hits add flakes; where they overlap the deepest wins (merged scars). The field is 0 at the cell's edge
+  (§6.2's fade), so the face stays watertight. Lit flat per triangle, and the scar is fresh rock: the
+  vertex colour lifted toward the look's `color` (× 1.4 × colour, by depth share), occluded 0.15 by depth
+  instead of 0.4, `darken` unread. Stone's data: `flakes` 1, `size` 0.6, `depth` 0.1 (after the browser check), `darken` 0, `grid` 12,
+  `triangles` 512 (one struck face 392 triangles; four still fit at the coarser grid `grid_for` picks).
+- **Pieces:** the rock shard's `shard` look is now an elongated low-poly shard: a triangular waist and
+  two off-axis tips, 6 flat triangles, closed all round (it tumbles in the air as every loose item
+  does), size 0.18 × 0.045 × 0.06 m (~3:1). One shard a hit stays the picked-up drop (the drop rules
+  are unchanged); the hit's `chips` (data `count`, stone 7) are the extra visual-only fragments, the
+  billboard splinters of the chips pass, not 3D.
+- **Tests:** `dwell-mesh` `damage_mesh`: `a_fixture_material_by_data_alone_spalls_into_flat_elongated_flakes`
+  (convex, ≥ 2.2:1, one plane past the bevel, a few cm deep, stepped, merged, flat-lit, a floor of many
+  coplanar triangles, the budget), `stone_spalls_shallow_and_light_not_a_dark_pit` (every stone look
+  spalls; the scar lighter than the face, barely occluded; red on the old data), the watertight/outline,
+  inside-the-cell and budget tests now run on stone's spall (both faces); `ground_mesh`
+  `the_rock_shard_is_an_elongated_low_poly_shard` (6–10 triangles, ≥ 2.5:1, closed; red on the old
+  size); `shared/tools/gen.test.mjs` (a fixture's spall and flakes by data alone, a bad count fails).
+- **Browser check** (2026-11-12, M1 GPU, the warm bench; scenarios in the PR, a flat world's stone floor
+  hit 1/3/4 times by the stone pickaxe, which breaks it on the 5th; before = 0.54.29): first tuned
+  in data to `flakes` 1, `size` 0.6, `depth` 0.1 (the two-flake 0.44/0.06 scar was a hand's width and
+  invisible from standing height). Verdict, honestly: **it does not yet read as shattered stone.** Close
+  up there are a few light flat planes at the strike, but the dark crack overlay (§6.3) dominates the
+  cell; from standing height the mark reads as a dark crack starburst, as before; at a grazing angle
+  barely anything shows (the carve fades to 0 well inside the cell's edge, so nothing shows in the
+  silhouette). The light stone texture leaves the lifted floor little contrast. No flying shard was seen
+  in the burst frames (one small 18 cm drop and the billboard chips). Next levers: weaker or no cracks
+  on spalled faces, a stronger lift or a distinct fresh tint, flakes that reach the cell's edge (break
+  the silhouette; needs the fade relaxed with the neighbour's face kept watertight), and real 3D flying
+  fragments.
+
+- **Round 3** (2026-11-12): spalled stone's cracks start at half damage at 0.3 strength (`cracks`
+  data: stages 0.5/0.7/0.85/0.95); the scar lifted 1.8× toward the fresh-rock `color`, at full lift
+  from an eighth of the depth; each pickaxe hit flings `damage.chips.shards` (new data, 0–8; stone 4)
+  real 3D fragments: the rock shard's look at half size (6 triangles) through the pieces' renderer
+  (`dwell-client` `hit_shards.rs`, ids `0xA000_0000 | ring`), tumbling about a random axis, falling
+  toward the face's ground, removed after 1 s (no fade: pieces have no alpha); none on a CPU adapter,
+  half on a phone (the flag exists; no phone signal is wired to it yet). Browser (M1, same scenarios):
+  close up the scar now reads as light, flat chipped facets with a darker step wall, not a dark pit
+  or starburst; the burst shows the small fragments flying; from standing height the chip shows as a
+  light flake with a dark edge, small but readable. Not built: flakes reaching the cell's edge to
+  chip the silhouette (lever 3; needs the cell's own side walls meshed where the notch cuts the
+  edge), so a struck block's outline is still a perfect cube.
+
 ## 7. Pieces (0.52.46)
 
 - **Pieces** (owner, 2026-11-11: "8 Rock shards make a rock slab, 8 dirt clumps make a dirt slab, 8 wood
