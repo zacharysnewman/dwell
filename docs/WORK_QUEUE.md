@@ -350,6 +350,12 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    resolution or steps near or inside the layer by data per tier, a CPU test of a sharp silhouette and stability
    under the jitter. **Built (same branch, CLOUDS.md §9.6).** Next (local): the in-game look (sun high, low sun,
    from above, night, through the layer) against the old blobs and the bench before/after; tune by the data.
+   Owner, 2026-11-12: **"I wonder if the clouds would look better and be cheaper if they were opaque to each other,
+   like you can't see through them to the ones behind?"** Finding: the march already stops once a ray is 98 % blocked
+   (`trans < 0.02`), but `volume.extinction` is 0.006 /m, so a ray needs ~650 m of dense cloud to get there: clouds stay
+   see-through, march their full length and self-shadow weakly (part of the flat white look). Real cumulus is ~0.05 /m.
+   Next, in the in-game cloud check: an A/B of extinction 0.006 → ~0.03–0.05 (data), measuring the look and
+   `gpu.clouds`; keep soft eroded edges so higher opacity doesn't read as solid blobs.
 14. **Tall grass grows and spreads** (owner 2026-11-11: "I want tall grass to steadily grow and spread. It
    should probably have a max depending on climate/biome."). **Built** (ADR 0075 T3c, docs/ECOLOGY.md §10):
    `shared/worldgen/grass.json` (the rule as data: the block, the ground, the decoration whose climate
