@@ -663,7 +663,8 @@ with hotter/colder."** — the orbit's variety is a world setting (New world →
 *Default* (the proposed ranges, the day fixed at 20 min), *Day varies* (the same with the day length rolled a
 little), *Extreme* (wider ranges: hotter and colder worlds); more presets by data. 3. **the moon's orbit by seed
 too**, its size in the sky kept. Default-generator worlds: **Realistic worlds only** roll orbits; the default
-and starter keep today's sky. Still open: 4 (how much the two faces' climates differ) and 5 (the gradient across
+and starter keep today's sky — owner: "We'll likely roll orbits out to regular worlds too, but for now it's a
+good reference point to compare to." Still open: 4 (how much the two faces' climates differ) and 5 (the gradient across
 the disc) — the proposal's defaults until answered.
 
 
