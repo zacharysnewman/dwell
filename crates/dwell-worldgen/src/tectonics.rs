@@ -37,6 +37,9 @@ pub struct Tectonics {
     /// 1: the face seed's plate layout shapes the world (R2, `plate_tectonics.rs`): its coast,
     /// its boundaries' landforms, its arcs and hotspot chains; 0 off.
     pub plates: u32,
+    /// 1: the face seed's latitude climate (R3, `climate.rs`, `shared/worldgen/climate.json`): its
+    /// band's prevailing wind marched over the uplifted ground weights the rivers' discharge; 0 off.
+    pub climate: u32,
     pub angle: f64,
     pub offset: f64,
     pub width: f64,
@@ -214,6 +217,11 @@ impl Tectonics {
     /// Whether the face seed's plate layout shapes the world (`plates` 1, R2).
     pub fn from_plates(&self) -> bool {
         self.plates != 0
+    }
+
+    /// Whether the face seed's latitude climate drives the rain (`climate` 1, R3).
+    pub fn from_climate(&self) -> bool {
+        self.climate != 0
     }
 
     /// The boundary's frame at (x, z): (along the line, across it: + the overriding plate).
