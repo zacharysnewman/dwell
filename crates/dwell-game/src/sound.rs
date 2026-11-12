@@ -1492,6 +1492,35 @@ mod tests {
     }
 
     dwell_world::both_faces!(
+        /// BUGS.md #110: the local player's own footsteps carry no position (the shell places them
+        /// round the ear by the event's `self`, AUDIO.md §5a); another player's sound at its feet.
+        fn own_footsteps_go_to_the_ear_and_anothers_sound_at_its_feet(f: FaceFrame) {
+            let mut s = standing();
+            s.face = f;
+            s.feet = f.point([0.0, 10.0, 0.0]);
+            let (mut ours, mut theirs) = (MoverSounds::new(), MoverSounds::with_voice(4));
+            let (mut own, mut other) = (Vec::new(), Vec::new());
+            s.state = PlayerState::Walking;
+            s.velocity = f.vector([4.0, 0.0, 0.0]);
+            for _ in 0..(3.0 / DT).round() as usize {
+                s.feet[0] += 4.0 * DT;
+                ours.update(&s, None, &mut own);
+                let from = other.len();
+                theirs.update(&s, Some(s.feet), &mut other);
+                for e in &other[from..] {
+                    assert_eq!(e.at, Some(s.feet), "at its feet as it walks: {e:?}");
+                }
+            }
+            let steps = |v: &[SoundEvent]| v.iter().filter(|e| e.kind == SoundKind::Step).count();
+            assert!(
+                steps(&own) >= 3 && steps(&own) == steps(&other),
+                "{own:?} {other:?}"
+            );
+            assert!(own.iter().all(|e| e.at.is_none()), "{own:?}");
+        }
+    );
+
+    dwell_world::both_faces!(
         /// Owner, 2026-11-09 (walking played while still on moving bodies): strides are walked over
         /// the ground carrying the mover. Walking at 5 m/s against a raft's 5 m/s, still in the
         /// world, steps as on the ground; carried while still, none. Red before: the steps
@@ -2026,6 +2055,16 @@ mod tests {
             m.update(&s, None, &mut out);
         }
         assert_eq!(kinds(&out), [SoundKind::Rise, SoundKind::Dive]);
+    }
+
+    #[test]
+    fn our_hit_on_a_block_sounds_at_the_block() {
+        // BUGS.md #110: a hit is heard where the block is, not at the ear. face-a-only: world cells.
+        let mut out = Vec::new();
+        let floor = require("dwell:sandbox_floor");
+        EditSounds::new().local_break([5, -3, 2], floor, 0.0, &mut out);
+        assert_eq!(kinds(&out), [SoundKind::Hit]);
+        assert_eq!(out[0].at, Some(dwell_world::centre_of_cell([5, -3, 2])));
     }
 
     #[test]

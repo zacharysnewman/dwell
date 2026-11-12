@@ -455,6 +455,33 @@ intensity, x, y, z, flags`; flags bit 0 = spatial, bits 1–3 the gait + 1, bits
 camera's position, forward and up. Audio is a side channel: nothing read back affects the
 simulation, and it reads only the predicted state the game already has.
 
+### 5a. Where you hear your own sounds (BUGS.md #110, 2026-11-12)
+
+The game sends the local player's own sounds without a position (`at` none: footsteps, swim strokes, the held tool,
+a swing, a slide); other players', creatures' and the world's carry theirs (another player's step at its feet, a hit
+at the struck point in the block, a break or place at the cell's centre). Played straight to both ears a mono sound
+is heard inside the head (owner: "footsteps sound like they're in your ears"), so the shell places each own sound by
+its event's **`self`**, a placement named in `shared/sounds` `self`:
+
+| Placement | Where (m from the ear: right, up, ahead) | Events |
+|---|---|---|
+| `feet` | 0, −1.5, 0.6; steps alternate ±`stepM` (0.15) left and right; `reverb` 0.08 | `step`, `land`, `jump`, `slide` (its loop follows the ear), `slide_end`, `brush`, `stick_snap` |
+| `body` | 0, −0.7, 0.4; `reverb` 0.05 | `climb`, `swim`, `swim_under`, `enter`, `exit`, `crouch_on`/`_off`, `sprint`, `impact`, `rise`, `dive`, `sizzle` |
+| `hand` | 0.3, −0.35, 0.5 | `tool`, the axe's (`axe_swish`, `axe_clank`, `axe_rustle`, `chop_*`), `break`/`place`/`hit` without a point |
+
+An event without `self` plays at the ear, centred: your own voice (`gasp`, `strain`, `exhausted`, `hurt`, `death`,
+`respawn`), a blast heard at the listener (`explode`), `deny`. A placement is in the **listener's own frame**
+(`client/src/audio/listener.ts` `selfAt`: the eye plus right × `right`, up × `up`, forward × `ahead`), not the body's,
+so looking up or down never moves a footstep behind the ears; level, that is the ground just ahead of the feet.
+`reverb` is sent to the room on top of the sound's own, so a step is not bone dry. The validator refuses an unknown
+placement and one behind the head (`ahead` < 0). Before the first frame's listener the steps fall back to the old
+±0.12 stereo pan.
+
+**The listener.** `listener()` (`dwell-client` game.rs) is the camera's eye, forward and up in the world frame the
+sounds are placed in, on both faces (face B's up is −y and the player's right mirrored); WebAudio's listener is
+right-handed (right = forward × up, ahead −z), which is the drawn view's right (game.rs
+`the_listener_hears_ahead_ahead_and_right_right`). The shell sets it before playing the frame's sounds.
+
 ## 6. The shell (`client/src/audio/`)
 
 - Game actions the shell handles play their `actions` sound: a hotbar change (keys, wheel, tap),
@@ -467,7 +494,8 @@ simulation, and it reads only the predicted state the game already has.
   distance rolloff, events past 48 m dropped), at most 24 plays at once and each sound's own
   `voices` and `minGapS` (`voices.ts`), and the listener following the camera.
 - `events.ts`: decodes the event numbers, resolves block state → block → set → sound (the
-  generated `BLOCK_DEFS`), applies the gait gain and the step alternation.
+  generated `BLOCK_DEFS`), applies the gait gain, and places own sounds by their `self` (§5a) with
+  the step alternation; `listener.ts`: the listener frame and the placements.
 - `uiSounds.ts`: **delegated** listeners on the document (installed once by the game page and the
   main menu, which the launcher also shows, in plain TS without WASM): hover/focus on any button,
   link, tab or slider; click on any button (back on close/cancel/back buttons, tab on

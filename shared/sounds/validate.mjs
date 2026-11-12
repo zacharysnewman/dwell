@@ -115,8 +115,11 @@ const TOP_KEYS = [
   "underwater",
   "creatures",
   "brush",
+  "self",
   "sounds",
 ];
+/** A placement's keys (AUDIO.md §5a): metres from the ear in the listener's frame. */
+export const SELF_KEYS = ["right", "up", "ahead", "stepM", "reverb"];
 /** A creature event's part (AUDIO.md §2d): which of the creature's sounds it plays. */
 export const CREATURE_PARTS = ["step", "startle", "call"];
 /** The surroundings an ambience bed's conditions read (crates/dwell-game ambience.rs `INPUTS`). */
@@ -519,6 +522,7 @@ export function resolveSounds(files, samplesDir = SAMPLES_DIR) {
   const out = {
     fallback: "",
     gaits: {},
+    self: {},
     events: [],
     sets: {},
     actions: {},
@@ -561,6 +565,24 @@ export function resolveSounds(files, samplesDir = SAMPLES_DIR) {
     if (!(id in out.sounds)) fail(where, `unknown sound "${name}"`);
     return id;
   };
+  // The local player's own sounds' placements (AUDIO.md §5a, BUGS.md #110).
+  for (const file of sorted) {
+    for (const [name, p] of Object.entries(file.self ?? {})) {
+      if (name === "$comment") continue;
+      const where = `self ${name}`;
+      if (!NAME.test(name)) fail(where, "bad name");
+      if (name in out.self) fail(where, "defined twice");
+      keysIn(where, p, SELF_KEYS);
+      for (const k of ["right", "up", "ahead"]) number(`${where}.${k}`, p[k], -3, 3);
+      // Behind the ears is what BUGS.md #110 was: an own sound is never placed behind the head.
+      if (p.ahead < 0) fail(`${where}.ahead`, "must not be behind the head (BUGS.md #110)");
+      if (p.stepM !== undefined) number(`${where}.stepM`, p.stepM, 0, 1);
+      if (p.reverb !== undefined) number(`${where}.reverb`, p.reverb, 0, 1);
+      out.self[name] = { right: p.right, up: p.up, ahead: p.ahead,
+        ...(p.stepM !== undefined ? { stepM: p.stepM } : {}),
+        ...(p.reverb !== undefined ? { reverb: p.reverb } : {}) };
+    }
+  }
   for (const file of sorted) {
     const ns = file.namespace;
     for (const [name, set] of Object.entries(file.sets ?? {})) {
@@ -584,7 +606,9 @@ export function resolveSounds(files, samplesDir = SAMPLES_DIR) {
       const where = `event ${name}`;
       if (!NAME.test(name)) fail(where, "bad name");
       if (out.events.some((e) => e.name === name)) fail(where, "defined twice");
-      keysIn(where, def, ["set", "sound", "speed", "loop", "fallback", "creature"]);
+      keysIn(where, def, ["set", "sound", "speed", "loop", "fallback", "creature", "self"]);
+      if (def.self !== undefined && !(def.self in out.self))
+        fail(`${where}.self`, `unknown placement "${def.self}" (shared/sounds self)`);
       if (def.creature !== undefined) oneOf(`${where}.creature`, def.creature, CREATURE_PARTS);
       if (def.loop !== undefined) oneOf(`${where}.loop`, def.loop, LOOP_PARTS);
       const plays = def.set !== undefined || def.sound !== undefined || def.creature !== undefined;
@@ -623,6 +647,7 @@ export function resolveSounds(files, samplesDir = SAMPLES_DIR) {
         ...(def.loop !== undefined ? { loop: def.loop } : {}),
         ...(def.fallback === false ? { fallback: false } : {}),
         ...(def.creature !== undefined ? { creature: def.creature } : {}),
+        ...(def.self !== undefined ? { self: def.self } : {}),
       });
     }
     if (file.gaits !== undefined) {
