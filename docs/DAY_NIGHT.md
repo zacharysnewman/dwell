@@ -67,7 +67,7 @@ noon as a share of the day) with `k` chosen so the sun sets `dayS / 2` after noo
 by day and faster by night, smoothly (k = −0.60 for 20/10 minutes; the generator rejects a split
 whose path would turn back). The sky draws the **moon where the celestial model puts it** (§14, its own orbit; since the moon
 world's M-2), its disc a flat face of the moon's real terrain lit by the sun (BIFACIAL_WORLD.md §6):
-full when opposite the sun; its normals blended `moon.domeBias` (0.6) toward a sphere's, so the phases
+full when opposite the sun; shaped as a sphere (`moon.domeBias` 1) with its normals tilted by the baked slopes, so the phases
 read as crescents, halves and gibbous with the craters on top, and the halo and the moonlight follow
 that disc's lit share (`celestial::disc_lit`). The stars are fixed to the sky, which turns about the path's axis
 by the solar angle.
