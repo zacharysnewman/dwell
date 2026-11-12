@@ -1939,7 +1939,15 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    ~20 min because every shot is re-recorded, an agent drives each step, camera spots found by trial; owner:
    **"Yeah build thst"**). Keep each finished shot as a compressed clip until the owner approves the video (raw
    frames still deleted); `take.mjs <video> [--only s5]` records the named shots from the committed plan and paths
-   and re-splices with no agent in the loop; an agent only for new camera spots.
+   and re-splices with no agent in the loop; an agent only for new camera spots. Owner (2026-11-12): **build this
+   before the v5 re-record** (v5 was stopped); the bifacial manifest must make shot 5's camera and `up: "auto"` easy to
+   set (only the initial wide holds face A's up; the out-of-the-hole shot is upright in face B's frame).
+   **Built 2026-11-12:** `.claude/skills/record/videos/bifacial/video.json` (v4's shots: s1, s2, the `portal` take with
+   parts s3–s5 and shot 5's `camB`/`fov`/`up` as args, s6) and `take.mjs <video> [--only s5] [--splice-only]
+   [--dry-run]`, `--clean <video>`: records the named, missing and stale shots into a per-shot clip cache (frames
+   encoded and deleted right after capture), reuses the rest, splices with `splice.py`. Tests without a browser
+   (`take.test.mjs`, in CI): the manifest validates, shot selection and the cache, and the generated plan equals v4's
+   hand-written one. Not yet run against the real browser (the first use is the v5 re-record, on the Mac).
 
 ## Future (needs owner answers)
 
