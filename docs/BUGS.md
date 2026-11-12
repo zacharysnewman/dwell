@@ -452,6 +452,14 @@ face, or the placement check against its shape.
 
 ## Fixed
 
+### 99. A placed camera on the player shows no player (fixed after 0.54.181)
+
+Found recording showcase video 1 (the bifacial world, 2026-11-12): theater mode's `track` / `orbit` on `"player"`, and
+any `placeCamera` view, drew an empty sky where the player was. A placed camera hid the first-person body (neck down)
+and drew nothing in its place, so the record skill's third-person shots of the player could not be made. Fixed: from
+a placed camera your whole body is drawn as others see it, lit like a remote player (`game.rs` `own_body_draw`, test
+`a_placed_camera_draws_your_whole_body`, red on the old rule, then green).
+
 ### 95. Far trees seen from above have holes through to the sky below (fixed after 0.54.175)
 
 Owner, 2026-11-12 (screenshot at night, looking straight down from high up): "looking down at trees from high up,
