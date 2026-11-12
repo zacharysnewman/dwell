@@ -491,9 +491,17 @@ pub fn first_face_a_row(c: LodCoord) -> i32 {
 }
 
 /// Empty or Buried when the bounds decide the section (with its apron), else Content. A section
-/// straddling the midplane is empty or buried only when both parts are.
+/// straddling the midplane is empty or buried only when both parts are. A 1× world's: a bigger one
+/// classifies with [`kind_from_bounds_of`] and its own bounds.
 pub fn kind_from_bounds(c: LodCoord, b: &LodBounds) -> LodKind {
-    if !in_world(c) || !b.any_inside {
+    kind_from_bounds_of(c, b, &crate::WorldBounds::DEFAULT)
+}
+
+/// [`kind_from_bounds`] in a world of these bounds: a section outside *its* disc and build volume
+/// is empty (BUGS.md #108: with the 1× test a 4× world's sections past 50 km were empty, so the
+/// terrain stopped drawing there, and at 8× and 10× the spawn's own chunks never showed).
+pub fn kind_from_bounds_of(c: LodCoord, b: &LodBounds, w: &crate::WorldBounds) -> LodKind {
+    if !in_world_of(c, w) || !b.any_inside {
         return LodKind::Empty;
     }
     if !b.bifacial {

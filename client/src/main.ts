@@ -456,6 +456,12 @@ interface DwellDebug {
    */
   ecology(): EcologyReadout | null;
   /**
+   * The far trees' impostors (BUGS.md #106): whether they draw (`ready`: every atlas layer baked
+   * and the tiles about the eye in), the layers baked, tiles and instances held, instances drawn
+   * last frame and the last upload error. Not ready: the near crowns and the LOD's trees draw.
+   */
+  impostors(): ImpostorStatus;
+  /**
    * The finder (WORK_QUEUE item 46): the far herds and packs on the player's face from the last
    * `ecology`, of `kind` (any when omitted), nearest first, with their distance (m) and the yaw
    * facing them (`bearing`, degrees); face-local metres.
@@ -515,6 +521,20 @@ export interface Telemetry {
   samples: Record<string, TelemetryStats>;
   counters: Record<string, number>;
   frameCount: number;
+}
+
+/** The far trees' impostors now (render/impostors.rs `Status`, BUGS.md #106). */
+export interface ImpostorStatus {
+  made: boolean;
+  tierOn: boolean;
+  ready: boolean;
+  baked: number;
+  layers: number;
+  requested: boolean;
+  tiles: number;
+  instances: number;
+  drawn: number;
+  lastError: string;
 }
 
 /** One controller tick (telemetry.rs `TickSample`). */
@@ -1469,6 +1489,7 @@ async function start(): Promise<App | null> {
       return out;
     },
     ecology: () => client.ecology() as EcologyReadout | null,
+    impostors: () => client.impostorStatus() as ImpostorStatus,
     herds: (kind) => client.herds(kind === undefined ? '' : `dwell:${kind}`) as HerdFound[],
     goToHerd: (kind, back) =>
       app.loopback?.lavaDev('goToHerd', [

@@ -1226,3 +1226,80 @@ mod face_tests {
         }
     );
 }
+
+#[cfg(test)]
+mod crown_match {
+    // face-a-only: the bake and the draw's sampling are face-local (+y up); the drawer crosses faces.
+    //! BUGS.md #106: an impostor's crown, as the draw samples it (render/impostors.rs `imp_fs`: the
+    //! quad point, the view `Config::dither` picks per pixel, the texel), against the real tree's
+    //! silhouette from the same side: the same size and density.
+    use super::*;
+    use crate::species::{SPECIES, grow, wild};
+
+    /// shaders.rs `pixel_noise` (the dither's threshold per pixel).
+    fn pixel_noise(i: u32, j: u32) -> f32 {
+        let x = (i as f32 * 0.067_110_56 + j as f32 * 0.005_837_15).fract();
+        (52.982_918 * x).fract()
+    }
+
+    #[test]
+    fn a_far_crown_covers_what_the_real_crown_does() {
+        let c = Config::get();
+        let px = c.px(Tier::Desktop);
+        let (mut truth, mut drawn, mut both) = (0u32, 0u32, 0u32);
+        for sp in SPECIES.iter() {
+            for (seed, stage) in wild(sp).into_iter().take(3) {
+                let real = grow(sp, seed, stage);
+                let b = bake_cells(&real.cells, c, px);
+                let grid: HashMap<[i32; 3], Part> =
+                    real.cells.iter().map(|(k, p)| (*k, *p)).collect();
+                let shapes: HashMap<Part, Vec<([f32; 3], f32)>> =
+                    real.cells.values().map(|p| (*p, slabs(*p))).collect();
+                let (mut lo, mut hi) = ([i32::MAX; 3], [i32::MIN; 3]);
+                for k in real.cells.keys() {
+                    for a in 0..3 {
+                        lo[a] = lo[a].min(k[a]);
+                        hi[a] = hi[a].max(k[a]);
+                    }
+                }
+                let r = b.radius;
+                // Seen from a far eye a little above the horizon, between and on the baked views.
+                for az_deg in [7.0f32, 22.5, 31.0] {
+                    let (el, az) = (3.0f32.to_radians(), az_deg.to_radians());
+                    let eye = [el.cos() * az.cos(), el.sin(), el.cos() * az.sin()];
+                    let (right, up) = basis(eye);
+                    let n = 96;
+                    for j in 0..n {
+                        for i in 0..n {
+                            let sx = ((i as f32 + 0.5) / n as f32 * 2.0 - 1.0) * r;
+                            let sy = (1.0 - (j as f32 + 0.5) / n as f32 * 2.0) * r;
+                            let local: [f32; 3] =
+                                std::array::from_fn(|a| right[a] * sx + up[a] * sy);
+                            let o: [f32; 3] =
+                                std::array::from_fn(|a| b.centre[a] + local[a] + eye[a] * r);
+                            let t = march(o, eye.map(|x| -x), lo, hi, &grid, &shapes).is_some();
+                            let k = c.dither(eye, pixel_noise(i, j));
+                            let (rk, uk) = basis(c.views[k]);
+                            let (u, v) = (dot(local, rk) / r, dot(local, uk) / r);
+                            let d = u.abs() < 1.0 && v.abs() < 1.0 && {
+                                let q = |x: f32| ((x * px as f32) as u32).min(px - 1);
+                                b.albedo[b.at(k, q(u * 0.5 + 0.5), q(0.5 - v * 0.5))][3] > 127
+                            };
+                            truth += u32::from(t);
+                            drawn += u32::from(d);
+                            both += u32::from(t && d);
+                        }
+                    }
+                }
+            }
+        }
+        let area = drawn as f32 / truth as f32;
+        let iou = both as f32 / (truth + drawn - both) as f32;
+        // Measured 2026-11-12: area 1.02, overlap 0.80 (the dither between views 45° apart).
+        assert!(
+            (0.85..1.2).contains(&area),
+            "impostor crown area {area:.2} of the real"
+        );
+        assert!(iou > 0.7, "impostor crown overlap {iou:.2}");
+    }
+}

@@ -6,16 +6,12 @@ pins it.
 
 ## Open
 
-### 108. Worlds bigger than 2× stop drawing terrain past a stepped edge (it's there to walk on)
+### 109. In a big world the client won't place a block past 50 km from the centre
 
-Owner, 2026-11-12 (two screenshots, a >2× world from the air): "worlds bigger than 2x seem to give up loading
-chunks at some point, and just cutoff. The full minimap shows the whole world, and the terrain is playable. It just
-doesn't show up. It even has collision on the chunks that didn't load in." The far ground ends in a jagged edge of
-square steps (LOD section boundaries) with open sea/sky beyond, while the map has land there and walking onto it
-collides. So the server/collision side has the chunks; the client's drawing (LOD sections and/or near meshes) stops.
-Suspects: the LOD tree's root/levels or a section budget sized for 1×–2× (a fixed max section count, a memory cap,
-an f32 coordinate or index overflow in section keys at large radius), the LOD's bounds tied to the 50 km radius, or
-the client's mesh budget (BUGS #76, memory at big sizes) silently refusing new sections.
+Found 2026-11-12 fixing #108 (not reproduced in game): `dwell-game` `block_interaction.rs` drops a Place outside
+the build volume before sending it, testing `inside_build_volume`, the 1× build's (50 km), not the world's
+(`WorldBounds::volume`). In a 4×–10× world, where the spawn is often past 50 km, placing would do nothing while
+breaking works. Fix: give the block interaction the world's volume (`Game::set_world`), with a 4× test.
 
 ### 106. Trees look like sticks
 
@@ -30,6 +26,21 @@ nearest trees are leafy but already dithered; no impostor crowns anywhere. So th
 hand-over (`card_dropped`: leaf faces past `far_trees.x + .y + 2` when `frame.far_trees.w` is set) while the
 impostors draw nothing. The leaves must not fade out unless the impostors for those trees actually draw (atlas
 uploaded, the tile's instances in), and why the impostors draw nothing on the release needs finding.
+Then (local GPU check, test:starter seed 0, High): past ~48 m (at 80 and 150 m) most trees are thin trunks with
+small, faint crowns, so the impostors do draw, but too small/faint; `?impostors=0` brings back the full crowns at
+40–150 m; at 300 m both look alike.
+**Gate (claude/tree-sticks):** the frame's hand-over (`impostors::drawn`) is the tier's only once the impostors are
+ready about the eye (`impostors::ready`: every atlas layer baked, every tile within `fromM + fadeM + 64` m in, at
+least one tree there); until then the near crowns draw to the full-detail distance, chunk cutouts aren't cut and the
+LOD sections keep their trees (`render/mod.rs` `the_near_crowns_and_lod_trees_stay_until_the_impostors_are_ready`,
+red on main → green). `__dwell.impostors()` reads out ready, layers baked, tiles, instances, drawn and the last
+upload error (a layer of the wrong size used to be dropped silently). **Root cause still open:** the bake matches
+the real trees (radius and side area within ~10–30% for every species' wild trees), and a CPU emulation of
+`imp_fs`'s sampling (quad point, per-pixel view dither, texel) covers 1.02× the real crown's side silhouette with
+0.80 overlap (`dwell-worldgen` `crown_match`), so the shrinkage is on the GPU path not emulated: the vertex stage
+(layer spheres from the layer buffer, the instance foot), MSAA sample masks, lighting/fog darkening the crowns, or
+the near trunks with the dropped crowns. Next: a local GPU session reads `__dwell.impostors()` on the release and
+on test:starter, and screenshots `?impostors=1` with the near trees hidden.
 
 
 ### 100. Volumetric clouds look like "crazy triangles"
@@ -491,7 +502,7 @@ face, or the placement check against its shape.
 
 ## Fixed
 
-### 107. In the browser a player dropped into a portal doesn't come out beside face B's hole (fixed after 0.55.2)
+### 107. In the browser a player dropped into a portal doesn't come out beside face B's hole (fixed after 0.55.5)
 
 Found recording showcase #1 v3 (2026-11-12, 0.54.205's tree). Seed 7's portal (`?fresh=1&seed=7&spawn=portal`,
 axis 1779.5, 20690.5; `top` A 51.0, B 44.5): walked in on the diagonal (yaw 45) and dropped, the player rises ~12 m
@@ -517,6 +528,42 @@ take's walk-in on seed 7 through `LocalCore`, the session and the game's predict
 `Game::set_world` for every size, as the web app does) and
 `a_player_who_falls_against_the_shafts_wall_still_lands_beside_the_far_hole` (`portal_exit.rs`, both faces). The
 browser check is left for the next video take.
+
+### 108. Worlds bigger than 2× stop drawing terrain past a stepped edge (it's there to walk on) (fixed after 0.54.215)
+
+Owner, 2026-11-12 (two screenshots, a >2× world from the air): "worlds bigger than 2x seem to give up loading
+chunks at some point, and just cutoff. The full minimap shows the whole world, and the terrain is playable. It just
+doesn't show up. It even has collision on the chunks that didn't load in." The far ground ends in a jagged edge of
+square steps (LOD section boundaries) with open sea/sky beyond, while the map has land there and walking onto it
+collides. So the server/collision side has the chunks; the client's drawing (LOD sections and/or near meshes) stops.
+Suspects: the LOD tree's root/levels or a section budget sized for 1×–2× (a fixed max section count, a memory cap,
+an f32 coordinate or index overflow in section keys at large radius), the LOD's bounds tied to the 50 km radius, or
+the client's mesh budget (BUGS #76, memory at big sizes) silently refusing new sections.
+
+Owner, 2026-11-12, adding: "Sizes 8x and 10x for the map spawn you in the void where there's no terrain only
+collision." So at 8× and 10× even the chunks round the spawn didn't draw.
+
+Cause: one test of "is this section in the world" left at the 1× disc. The LOD's `classify` and the worker's
+generator (`BifacialTerrain::generate_lod`) both judged a section by `lod::kind_from_bounds`, which starts with
+`in_world(c)`, the build's 50 km disc and volume, not the world's. Every section past 50 km from the centre was
+classified Empty at any size, so the far ground stopped at the 50 km circle, drawn in the coarse sections' squares
+(the stepped edge). The streamed chunks are only drawn where the LOD reaches their level-1 section, and an empty
+section is never descended into, so at 8× and 10× (spawns 50 km+ out) the spawn's own chunks never showed, though
+the server sent them and the controller collided with them. Not a budget or a cap: the cache, the levels (the root
+holds 10×, M1) and the section keys were fine. The fix classifies in the world's bounds:
+`lod::kind_from_bounds_of(c, bounds, world)` (`LodSystem::classify` with `set_world`'s bounds, `generate_lod` with
+the terrain's). The dev report also took the 1× volume (`streamingReport`'s near ring read `outsideVolume` there).
+`__dwell.debug().lod` gains `wanted`, `built`, `drawnTotal`, `empty` and `evicted` (dropped by the cache budget).
+
+Tests (red on main, green after; both faces): `dwell-lod` `a_4x_world_s_lod_tiles_the_view_out_to_60_km_with_no_holes`
+and its 10× twin (a camera 300 m up three quarters of the way to the rim: every ground column out to 60 km is drawn
+by exactly one level and none by an empty leaf; the cache and the view's sections within the budget; red: "the
+ground 0 m out … drawn by 0 leaves, 1 empty"), `an_8x_world_draws_the_chunks_round_a_far_out_player` and its 10×
+twin (every ground chunk within the 48 m full-detail distance drawn; red: "not drawn"); `dwell-worldgen`
+`tests/world_size.rs` `an_8x_world_s_spawn_ground_is_drawn_at_every_lod_level` and its 10× twin (the real 8×/10×
+spawn's sections at levels 1–8 classify and generate as content; red at `generate_lod`: Empty). Outstanding: the
+owner's look in the browser (no GPU in the cloud session); BIG_MAP.md M3 (f32 world coordinates in the shaders, ~3 cm
+steps at 500 km) is unchanged.
 
 ### 102. A bright horizontal band in face B's sky seen from beyond the rim (fixed after 0.54.191)
 
