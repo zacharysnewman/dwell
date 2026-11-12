@@ -120,9 +120,11 @@ registry lacks fails generation with a message.
   leaned on stays as it was. That includes a steep upper piece over a removed lower one: blocks
   float as they always have.
 - **Placing** a natural block places it flat (`shape=full`). A crafted block keeps its own shape.
-- **Tall grass** is placed by generation and by players only on a top whose shape is `full`, and
-  it is removed if the cell under it stops being full (the existing `needsSupport` rule, extended
-  to the shape).
+- **Tall grass** is placed by generation on a top whose shape is `full`, and since 0.54.0 also
+  over a ½ m grass ramp (a decoration rule's `onRamps`, `TRANSPARENT_BLOCKS.md` §10; never over a
+  1 m ramp), in the cell over it, its feet drawn down to the ramp's surface (`sitOnSupport`).
+  Players may place it on grass and dirt and their ramps (its `placeOn`); it goes with the block
+  under it (`needsSupport`).
 - **Water.** Every ramp piece whose cell lies below sea level is generated with `flooded=true` and
   drawn holding the sea in its open part — a ramp in the sea's top row too, and a 1 m ramp's lower
   piece when only it is under (owner, 2026-10-20: the ramps stood dry beside the water, which was

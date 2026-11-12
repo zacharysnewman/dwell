@@ -294,13 +294,22 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    restarts quite often. What's so much heavier about it?"). 0.52.99–0.52.104: ecology 12.5 → 0.9 MB, starter
    biome grids 53.6 → 15.9 MB a process. Left: re-measure on the `--touch` page; if still near the limit, one
    world worker on phones.
-21. **Meadow tall grass** (owner's call pending, 2026-11-11): the meadow's grass grows in patches, never on ½ m
+21. **Meadow tall grass** (approved 2026-11-11; built 2026-11-12, waiting on the owner's look): the meadow's grass grows in patches, never on ½ m
    grass ramps (~40 % of the meadow), drawn pale. Denser patches or tufts on ramps change the default world's
    terrain (a new compatibility line); a less pale tuft is a look change only. Asked the owner which.
 
    Owner, 2026-11-11, asked whether it rides along with 0.53: "What's this meadow grass change?" — explained;
    Owner, 2026-11-11: **"Yes make the meadow grass fix."** Tufts on grass ramps, denser/wider patches, less
    pale tufts. 0.53.0 has already shipped, so this worldgen change takes the next line (0.54).
+
+   Built 2026-11-12 (`claude/meadow-tall-grass-fix-ea4p5m`, the 0.54 line; the owner raises
+   `package.json` at merge): a decoration rule's `onRamps` puts tufts over ½ m grass ramps (both
+   faces; the mesher already stood a plant's feet on a ramp), the meadow's patches wider and denser
+   (`decorations.json`: density 0.65, wavelength 56 m, coverage 0.65), the starter steppe's
+   `undergrowth` 0.75 → 0.85 so it stays sparse; the starter's meadow spot went from 11 % to 33 % of
+   its grass tops with tall grass, its steppe 8 %. The tuft's tile is painted in the grass top's
+   colours, darker at the foot (no light-stop tips). Goldens and the starter pin regenerated.
+   Left: the owner's look in game; grass growth still regrows tufts on flat grass only.
 22. **Settings and version buttons look like web links** (owner 2026-11-11: "I thought we had settings and
    version buttons changed queued, is that true?" — it wasn't recorded anywhere; then "The buttons should be
    aligned to match the design of the others instead of looking like web links"). Restyle them as the menu's

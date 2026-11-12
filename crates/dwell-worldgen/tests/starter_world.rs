@@ -902,6 +902,82 @@ fn tall_grass_counts() {
     }
 }
 
+/// The share of the open grass tops (flat grass and ½ m grass ramps, the cell over them air or
+/// tall grass) with tall grass over them, in the `r` × `r` chunks round face-local (x, z), as
+/// generated: (tufts, tops).
+fn tuft_share(g: &TerrainGenerator, x: i32, z: i32, r: i32) -> (usize, usize) {
+    use dwell_blocks::StateId;
+    let tall = dwell_blocks::require("dwell:tall_grass");
+    let air = dwell_blocks::require("dwell:air");
+    let grass = dwell_blocks::require("dwell:grass");
+    let top = |m: StateId| {
+        m == grass
+            || (dwell_blocks::block_of(m).name == "dwell:grass_ramp"
+                && dwell_blocks::state_property(m, "shape") == Some("ramp"))
+    };
+    let (mut tufts, mut tops) = (0, 0);
+    for cz in -r / 2..r - r / 2 {
+        for cx in -r / 2..r - r / 2 {
+            let (wx, wz) = (x / CHUNK_SIZE + cx, z / CHUNK_SIZE + cz);
+            let h = f64::from(g.column_at(wx * CHUNK_SIZE, wz * CHUNK_SIZE).height);
+            let row = rows_for_m(h).div_euclid(CHUNK_SIZE);
+            // The chunk stack round the ground, read by face-local row.
+            let stack: Vec<Chunk> = (row - 2..=row + 2)
+                .map(|cy| {
+                    let mut c = Chunk::default();
+                    g.generate(ChunkCoord::new(wx, cy, wz), &mut c);
+                    c
+                })
+                .collect();
+            let y0 = (row - 2) * CHUNK_SIZE;
+            let at = |lx: i32, y: i32, lz: i32| {
+                let i = (y - y0).div_euclid(CHUNK_SIZE) as usize;
+                stack[i].get(lx, (y - y0).rem_euclid(CHUNK_SIZE), lz)
+            };
+            for lz in 0..CHUNK_SIZE {
+                for lx in 0..CHUNK_SIZE {
+                    let Some(y) = g.ground_y(wx * CHUNK_SIZE + lx, wz * CHUNK_SIZE + lz) else {
+                        continue;
+                    };
+                    if y < y0 || y + 1 >= y0 + 5 * CHUNK_SIZE {
+                        continue;
+                    }
+                    let (m, over) = (at(lx, y, lz), at(lx, y + 1, lz));
+                    if top(m) && (over == air || over == tall) {
+                        tops += 1;
+                        tufts += usize::from(over == tall);
+                    }
+                }
+            }
+        }
+    }
+    (tufts, tops)
+}
+
+/// WORK_QUEUE item 21 (owner, 2026-11-11: "Yes make the meadow grass fix"): the tour's meadow
+/// spot has tall grass over about a third of its grass tops, ramps included (wider, denser patches,
+/// decorations.json), and the steppe stays sparse. Red before: 16 % of the meadow's flat grass and
+/// none of its ramps (~11 % of all its grass tops).
+#[test]
+fn the_meadow_is_a_third_tall_grass_and_the_steppe_stays_sparse() {
+    // face-a-only: the tour's spots are face A's (the ramps' both-face check is tests/terrain.rs).
+    let (g, _) = generator(FaceFrame::A, 0);
+    let (tufts, tops) = tuft_share(&g, 10100, 16300, 4);
+    let meadow = tufts as f64 / tops as f64;
+    assert!(tops > 5000, "{tops} grass tops round the meadow spot");
+    assert!(
+        (0.28..=0.42).contains(&meadow),
+        "the meadow's tall grass: {tufts} of {tops} grass tops ({meadow:.3})"
+    );
+    let (tufts, tops) = tuft_share(&g, -4100, 8300, 4);
+    let steppe = tufts as f64 / tops as f64;
+    println!("meadow {meadow:.3}, steppe {steppe:.3} ({tufts} of {tops})");
+    assert!(
+        steppe > 0.0 && steppe < 0.5 * meadow,
+        "the steppe's tall grass: {tufts} of {tops} ({steppe:.3}) against the meadow's {meadow:.3}"
+    );
+}
+
 /// The steppe keeps sparse tall grass (the visual pass, 2026-11-11): its dry lee (wetness ~0.01) is
 /// under the meadow grass's moisture envelope, so at `undergrowth` 1 its climate share was 0 and the
 /// tour's steppe spot had none of 50,545 grass cells. Its `undergrowth` < 1 keeps a floor of

@@ -188,14 +188,26 @@ by `shared/worldgen/gen.mjs` into `crates/dwell-worldgen/src/decorations.gen.rs`
 fails on a diff, and runs its node tests):
 
 ```json
-{ "name": "meadow_grass", "block": "dwell:tall_grass", "on": ["dwell:grass"], "density": 0.55,
-  "patches": { "wavelength": 40, "coverage": 0.45 }, "maxSlope": 1, "height": [3, 400] }
+{ "name": "meadow_grass", "block": "dwell:tall_grass", "on": ["dwell:grass"], "density": 0.65,
+  "patches": { "wavelength": 56, "coverage": 0.65 }, "maxSlope": 1, "onRamps": true,
+  "height": [3, 1500] }
 ```
 
 - The block put one cell above the ground (an air plant, shape empty); the ground blocks it stands
   on (each must be in the block's `placeOn`); a density inside noise **patches** (meadows, not a
   lawn); the steepest slope (the most the ground's top differs from its four neighbours'); the
   ground's height range (face-local, above sea level).
+- **On ramps** (`onRamps`, 0.54.0; WORK_QUEUE item 21): the rule also puts its block over a ½ m
+  ramp of its ground (`dwell:grass_ramp`, shape `ramp`; never over a 1 m ramp's two pieces), in the
+  cell over the ramp, where the mesher stands its feet on the ramp's surface (`sitOnSupport`). The
+  generator checks that each `on` block has ramps and that the block's `placeOn` lists them. Before,
+  the ~40 % of a meadow's grass tops that are ½ m ramps grew none: bare stripes along every slope.
+  With the wider, denser patches the starter's meadow spot has tall grass over about a third of its
+  grass tops (`starter_world.rs` `the_meadow_is_a_third_tall_grass_and_the_steppe_stays_sparse`,
+  was 11 %); the steppe ~8 % (its `undergrowth` 0.85). The tuft's tile is painted in the grass top's
+  own colours, darker at the foot (`shared/textures/materials.json` `tall_grass`; it read pale
+  against the grass with tips in the meadow ramp's light stop). Grass growth (`grass.json`) still
+  grows and regrows tufts over flat grass only.
 - **Deterministic and order-independent**: each cell is decided from the world seed and its
   position alone — the patch noise, a per-cell hash, its ground and its neighbours' tops through
   `column_at`, the chunk path's own arithmetic — so chunks agree across their borders and generate

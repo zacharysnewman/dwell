@@ -249,12 +249,12 @@
       ]
     },
     "tall_grass": {
-      "$comment": "A sprite on crossed quads, so it does not wrap: blades rooted on the bottom row, inside the side columns, tips under the top row; dark at the foot, light at the tips.",
+      "$comment": "A sprite on crossed quads, so it does not wrap: blades rooted on the bottom row, inside the side columns, tips under the top row. In the grass top's own colours (WORK_QUEUE item 21: the tufts read pale, whitish-green, against the grass with tips in the ramp's light stop): the meadow base, its shadow at the foot fading out by mid-blade (gen.test.mjs pins it near the grass top's average, darker at the foot).",
       "use": "block", "ramp": "meadow", "overlay": 1, "alpha": "strokes", "wrap": false,
       "layers": [
         { "kind": "fill", "color": "@base" },
-        { "kind": "blade", "at": [[5.5, 0, 21], [7.5, 0, 28], [9.5, 0, 16], [11, 0, 24], [13, 0, 12], [14.5, 0, 29], [16.5, 0, 19], [18, 0, 26], [20, 0, 14], [21.5, 0, 27], [23.5, 0, 18], [25, 0, 23], [26.5, 0, 15]], "colors": ["@base", "@shadow", "@light"], "width": [2.2, 3], "length": 1, "angle": 90, "angleJitter": 7, "bend": [-3, 3], "softness": 2 },
-        { "kind": "gradient", "from": "@shadow", "to": "@light", "direction": "up", "opacity": 0.55, "clip": true }
+        { "kind": "blade", "at": [[5.5, 0, 21], [7.5, 0, 28], [9.5, 0, 16], [11, 0, 24], [13, 0, 12], [14.5, 0, 29], [16.5, 0, 19], [18, 0, 26], [20, 0, 14], [21.5, 0, 27], [23.5, 0, 18], [25, 0, 23], [26.5, 0, 15]], "colors": ["@base"], "width": [2.2, 3], "length": 1, "angle": 90, "angleJitter": 7, "bend": [-3, 3], "softness": 2 },
+        { "kind": "gradient", "from": "@shadow", "to": "@base", "direction": "up", "end": 0.6, "opacity": 0.6, "clip": true }
       ]
     },
     "planks": {

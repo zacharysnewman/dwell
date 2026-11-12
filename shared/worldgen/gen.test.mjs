@@ -56,7 +56,20 @@ test('an entry added by data alone is emitted', () => {
   });
   const rs = decorationsRust(validateDecorations(d, blocks));
   assert.match(rs, /DECORATIONS: \[Decoration; 2\]/);
-  assert.match(rs, /name: "dirt_tufts", block: "dwell:tall_grass", on: &\["dwell:dirt"\], density: 0\.1, patch_wavelength: 0, patch_coverage: 1\.0, max_slope: 2, min_height: 0, max_height: 50/);
+  assert.match(rs, /name: "dirt_tufts", block: "dwell:tall_grass", on: &\["dwell:dirt"\], density: 0\.1, patch_wavelength: 0, patch_coverage: 1\.0, max_slope: 2, min_height: 0, max_height: 50, on_ramps: false/);
+});
+
+test('a rule on ramps needs its ground to have ramps its block may stand on', () => {
+  const d = load();
+  d.decorations[0].onRamps = true;
+  validateDecorations(d, blocks);
+  const strict = new Map(blocks);
+  const grass = strict.get('dwell:tall_grass');
+  strict.set('dwell:tall_grass', { ...grass, placeOn: grass.placeOn.filter((b) => b !== 'dwell:grass_ramp') });
+  assert.throws(() => validateDecorations(d, strict), /onRamps: dwell:tall_grass may not stand on dwell:grass_ramp/);
+  const noRamps = new Map(blocks);
+  noRamps.delete('dwell:grass_ramp');
+  assert.throws(() => validateDecorations(d, noRamps), /onRamps: dwell:grass has no ramps/);
 });
 
 test('a bad entry fails with its name and the problem', () => {
@@ -70,6 +83,7 @@ test('a bad entry fails with its name and the problem', () => {
     [(d) => (d.decorations[0].maxSlope = 1.5), /maxSlope must be a whole number/],
     [(d) => (d.decorations[0].height = [10, 5]), /height must be \[min, max\]/],
     [(d) => (d.decorations[0].rarity = 1), /unknown rarity/],
+    [(d) => (d.decorations[0].onRamps = 1), /onRamps must be true or false/],
     [(d) => d.decorations.push({ ...d.decorations[0] }), /duplicate name/],
   ];
   for (const [edit, message] of cases) {

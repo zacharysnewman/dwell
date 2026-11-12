@@ -3873,10 +3873,13 @@ impl TerrainGenerator {
         top: i32,
     ) -> Option<StateId> {
         const S: i32 = CHUNK_SIZE;
-        // Plants grow on flat tops only (HALF_HEIGHT_GRID.md §5).
-        if !self.top_pieces(cols, x0, z0, lx, lz, top).is_empty() {
-            return None;
-        }
+        // Plants grow on flat tops, and a rule with `onRamps` over a ½ m ramp (one piece) too, its
+        // foot drawn down to the ramp's surface; never over a 1 m ramp (HALF_HEIGHT_GRID.md §5).
+        let ramp = match self.top_pieces(cols, x0, z0, lx, lz, top).len() {
+            0 => false,
+            1 => true,
+            _ => return None,
+        };
         let (x, z) = (x0 + lx, z0 + lz);
         let here = &cols[(lz * S + lx) as usize];
         let ground = fill(self.palette(here), here.band, top, 0);
@@ -3916,6 +3919,7 @@ impl TerrainGenerator {
             .iter()
             .enumerate()
             .filter(|(i, _)| listed.is_none_or(|d| d.contains(&DECORATIONS[*i].name)))
+            .filter(|(_, p)| !ramp || p.on_ramps())
             // The rules' heights are metres above sea level.
             .find(|(i, p)| {
                 let factor = || match biome {
