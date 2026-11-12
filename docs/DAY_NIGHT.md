@@ -65,9 +65,11 @@ is the **solar angle**: 0° rising, 90° noon, 180° setting, 270° lowest. To m
 `dayS` of the day, the angle runs unevenly with time: hour angle `2πu + k·sin 2πu` (u = time from
 noon as a share of the day) with `k` chosen so the sun sets `dayS / 2` after noon; it moves slower
 by day and faster by night, smoothly (k = −0.60 for 20/10 minutes; the generator rejects a split
-whose path would turn back). The sky draws the **moon always opposite the sun** until the moon world's
-M-2 draws it from the celestial model (§14, where it has its own orbit) (BIFACIAL_WORLD.md §6), so it is
-up exactly when the sun is down. The stars are fixed to the sky, which turns about the path's axis
+whose path would turn back). The sky draws the **moon where the celestial model puts it** (§14, its own orbit; since the moon
+world's M-2), its disc a flat face of the moon's real terrain lit by the sun (BIFACIAL_WORLD.md §6):
+full when opposite the sun; shaped as a sphere (`moon.domeBias` 1) with its normals tilted by the baked slopes, so the phases
+read as crescents, halves and gibbous with the craters on top, and the halo and the moonlight follow
+that disc's lit share (`celestial::disc_lit`). The stars are fixed to the sky, which turns about the path's axis
 by the solar angle.
 
 **Face B** shares the sky. The sun is over face B exactly when it is under face A, so face B's

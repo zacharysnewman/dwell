@@ -26,7 +26,7 @@ fn the_build_s_grids_are_home_at_rest_and_a_cratered_moon() {
     let home = grid("dwell:home").expect("home");
     assert_eq!(home.frame, GridFrameKind::Rest);
     assert_eq!(home.radius_m, None, "the home grid is the world's own size");
-    assert_eq!(home.generator, GridGenerator::Terrain);
+    assert_eq!(home.generator, GridGenerator::Terrain { bake_size: 256 });
     assert_eq!(home.seed(42), 42, "home keeps the world seed");
     let m = grid("dwell:moon").expect("moon");
     assert_eq!(m.frame, GridFrameKind::Orbit);

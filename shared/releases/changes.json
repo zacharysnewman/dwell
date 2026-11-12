@@ -2,6 +2,60 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.54.53",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.52",
+      "changes": [
+        "Behind the scenes: the home world can now be baked into a far-away map of its land, sea and mountains, ready to be seen from the moon"
+      ]
+    },
+    {
+      "version": "0.54.51",
+      "changes": [
+        "The crescent moon now shows a clear lit arc, with craters catching the light along its edge.",
+        "Moon phases are shaded like a ball, so quarters and gibbous moons read the way you expect."
+      ]
+    },
+    {
+      "version": "0.54.50",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.49",
+      "changes": [
+        "Behind the scenes: one frame for grids that move and turn, ready for the moon"
+      ]
+    },
+    {
+      "version": "0.54.48",
+      "changes": [
+        "The moon in the sky is now your world's own moon: its craters and darker seas come from its real terrain.",
+        "The moon moves on its own orbit and shows real phases: full when opposite the sun, dark around new moon.",
+        "Moonless nights are darker than before, but never black."
+      ]
+    },
+    {
+      "version": "0.54.47",
+      "changes": [
+        "Saved structures can't be placed outside creative worlds, even by a modified client: the server now refuses them",
+        "Behind the scenes: servers and clients tell each other which optional features they have, so new features no longer need protocol flag bits"
+      ]
+    },
+    {
+      "version": "0.54.46",
+      "changes": [
+        "Each axe chop now bites a V the size of the axe head where it strikes, instead of a slice across the whole log.",
+        "Chopping the same spot widens the bites until they join into the notch; the tree still falls in about 11 chops.",
+        "Wood cracks spread along the grain around the bites as you chop."
+      ]
+    },
+    {
       "version": "0.54.45",
       "changes": [
         "Stone shatters instead of denting: each pickaxe hit chips flat, light flakes of fresh rock out of the face",

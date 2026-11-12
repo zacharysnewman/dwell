@@ -285,6 +285,10 @@ pub fn encode_job(id: u32, job: &Job) -> Vec<u8> {
                     .copied()
                     .collect();
                 w.f32s(&f);
+                // Its bites (WORK_QUEUE item 26), as the wire writes them.
+                let mut bites = Vec::new();
+                cut.write_bites(&mut dwell_protocol::bytes::ByteWriter::new(&mut bites));
+                w.bytes(&bites);
             }
             match ground {
                 None => w.u8(0),
@@ -386,6 +390,12 @@ pub fn decode_job(bytes: &[u8]) -> Result<(u32, Job), DecodeError> {
                 cut.notch.copy_from_slice(&f[..4]);
                 for (k, v) in cut.kerf.iter_mut().flatten().enumerate() {
                     *v = f[4 + k];
+                }
+                let bites = r.bytes()?;
+                let mut br = dwell_protocol::bytes::ByteReader::new(&bites);
+                cut.read_bites(&mut br);
+                if !(br.ok() && br.at_end()) {
+                    return Err(DecodeError);
                 }
                 cuts.push((c, cut));
             }
@@ -700,6 +710,10 @@ mod tests {
                 let mut c = dwell_protocol::chopping::Cut::default();
                 c.notch[2] = 0.25;
                 c.kerf[2][1] = 0.04;
+                // Its bites go to the worker too (WORK_QUEUE item 26).
+                let look = dwell_protocol::chopping::BITE_LOOK;
+                c.bite(1, 2, 1, 0.3, &look);
+                c.bite(1, 2, 1, 0.3, &look);
                 c
             })],
             damage: vec![(

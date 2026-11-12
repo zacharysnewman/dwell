@@ -2113,6 +2113,69 @@ dwell_world::both_faces!(
     }
 );
 
+dwell_world::both_faces!(
+    /// The axe's bites (WORK_QUEUE item 26): one hit on a standing trunk's −x side, struck 0.45 m
+    /// along z (on the octagon's flat face) in the face-locally lower band, is carved as a head-sized V there, not a slit across
+    /// the side (red before: the kerf's fresh wood ran from z 0 to 1), and the cell carries the
+    /// wood's cracks while its neighbours don't.
+    fn a_bitten_log_is_carved_where_it_was_struck_and_cracks(f: FaceFrame) {
+        let log = require("dwell:log");
+        let wood = dwell_protocol::chopping::wood("dwell:log").unwrap();
+        let axe = dwell_protocol::chopping::tool("dwell:stone_axe").unwrap();
+        let (x, z) = (5, 5);
+        let cells: Vec<_> = (10..13).map(|y| (x, y, z, log)).collect();
+        let mut cut = Cut::default();
+        cut.swing(axe, 1, 0, 0, 1.0);
+        cut.bite(1, 0, 0, 0.45, &wood.cut.bite);
+        let m = mesh_cut(&cells, &[([x, 11, z], cut)], f.is_b());
+        let fresh: Vec<_> = triangles(&m, "logCut")
+            .into_iter()
+            .filter(|t| t.2)
+            .collect();
+        assert!(!fresh.is_empty(), "fresh-wood faces");
+        let half = 0.5 * wood.cut.bite.width_m;
+        let lower = |y: f64| {
+            if f.is_b() {
+                y >= 11.5 - 1e-6
+            } else {
+                y <= 11.5 + 1e-6
+            }
+        };
+        for (p, _, _) in &fresh {
+            for q in p {
+                assert!(
+                    q[2] >= 5.45 - half - 1e-5 && q[2] <= 5.45 + half + 1e-5,
+                    "inside the head's width round the hit: {q:?}"
+                );
+                assert!(lower(q[1]), "in the band struck: {q:?}");
+                assert!(q[0] >= 5.0 - 1e-6 && q[0] <= 5.0 + 0.1 + 1e-5, "{q:?}");
+            }
+        }
+        // Its cracks: the cut cell's vertices carry the wood's first crack tile, the logs above
+        // and below none.
+        assert_eq!(
+            m.cracks.len(),
+            m.positions.len() / 3,
+            "the stream covers every vertex"
+        );
+        let first = wood.cut.cracks.unwrap().tiles[0];
+        let slot = crate::textures::TILE_ORDER
+            .iter()
+            .position(|t| *t == first)
+            .unwrap()
+            + 1;
+        for (v, p) in m.positions.chunks_exact(3).enumerate() {
+            let y = f64::from(p[1]);
+            let slot_here = (m.cracks[v] >> 16) & 0xff;
+            if y > 11.0 + 1e-4 && y < 12.0 - 1e-4 {
+                assert_eq!(slot_here as usize, slot, "the cut cell cracks: {p:?}");
+            } else if !(10.999..=12.001).contains(&y) {
+                assert_eq!(slot_here, 0, "a neighbour doesn't: {p:?}");
+            }
+        }
+    }
+);
+
 /// The opaque mesh of logs (`(x, y, z, axis)`, chunk-local) in chunk (0, 2, 0) of face `f`,
 /// read back face-local: each triangle's (centroid, normal).
 fn log_triangles(f: FaceFrame, logs: &[(i32, i32, i32, &str)]) -> Vec<([f64; 3], [f64; 3])> {

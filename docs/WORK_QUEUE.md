@@ -495,8 +495,12 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    facets), the bites growing together into the notch as the chop goes on; cracks/splits along the grain from
    the cracks work. Next after item 24 (same code).
    Owner, 2026-11-12: **"Yes axe bites proposal looks good."** (head-sized V bites where each hit lands, joining
-   into the notch; grain cracks around them; felling unchanged at ~11 swings, leaving the V gash). In progress
-   (cloud).
+   into the notch; grain cracks around them; felling unchanged at ~11 swings, leaving the V gash). **Built
+   2026-11-12** (cloud, branch `claude/axe-bites-zzvudx`), waiting on the owner's look in game: each hit records
+   where it struck (`Cut::bites`) and the mesher carves a head-sized V there (`cut.bite.widthM` 0.14), a hit on a
+   bitten spot landing beside it so the bites join into the notch; the wood's `cut.cracks` (`wood` set) round them;
+   felling unchanged (11 swings at one aim, both faces); bites sent after a `BitesHello` and saved, an older cut
+   drawn as before (docs/BLOCK_DAMAGE.md §6.4, ADR 0067 note).
 27. **A felled trunk landing on its chopper flings them (BUGS.md #52)** (the owner's brief, 2026-11-12: fix the
    cause, "we shouldn't be capping player kick like that" (2026-11-08): no cap on the kick; a trunk hitting a
    player at speed must still knock them as physics says). **Built 2026-11-12** (branch `claude/pinch-fling`):
@@ -546,6 +550,10 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    moon should look bright."** The far-body moon (M-2) keeps today's halo/glow and brightness: the baked normals
    and albedo shape its surface, but its lit part is as bright as today's moon (exposure-independent emissive-like
    brightness and the same glow around it), scaled by the phase's lit share (physical phases).
+   **M-2 built 2026-11-12** (branch `claude/moon-m2-sky`): the sky draws the moon from the celestial model and its baked terrain (M-2): its direction `Celestial::view`'s, its face A (tidally locked) baked once at the join (`dwell-worldgen` `bake_far`, 256², `render/moon.rs`), packed with mips into one storage buffer (frame group binding 20: the composite already binds WebGPU's 16 sampled textures), each texel lit as N·L of its baked normal (slopes × `moon.relief` 8) by the real sun direction, its albedo the bake's over its brightest (so the lit part is today's `moon.color`); halo × the lit share; moonlight `nightFloor` + the rest × lit share. A CPU adapter packs no normals (a flat disc by the albedo). Same angular size (1.2°) and glow constants. Deviations: the bake runs on the
+   main thread at the join (~0.1 s native), not a worker, and is not cached; the world's `MOON_PHASE` is
+   Owner, 2026-11-12, changing Q3: "You mentioned a dome something, maybe do that": `moon.domeBias` (1: a ball) shapes the disc as a sphere, its normals tilted by the baked slopes (polish round: a 0.6 mix left a 135° crescent nearly invisible), so phases read as crescents, halves and gibbous with the craters on top, and the lit share (`celestial::disc_lit`, the mean N·L of that domed disc over full's) drives the halo and the moonlight: one model for the drawn moon and its light.
+   not threaded into the sky yet (the data's start phase); no browser screenshots yet (time box).
    **M-4 built 2026-11-12** (branch `claude/moon-m4-celestial-jxijig`): the celestial model (`dwell-look`
    `celestial.rs`, DAY_NIGHT.md §14): the moon's orbit as data (`daynight.json` `moonOrbit`: 5°, ~597 km, the
    node turning every 96 days; the month `moon.cycleDays` 8), tidally locked (face A toward home), phases and
@@ -575,6 +583,19 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    moon's faces. **Left for the follow-up:** the server's session loop holding the spaces, the moon's chunks on the
    wire per grid, the grid id in snapshots and the `grid.frames` capability (not announced until a build sends it),
    the client's view roll to the new down, and the predictor's far-flight speed (MOON_WORLD.md §7.1).
+   **M-6's bake built 2026-11-12** (branch `claude/moon-m6-home-bake`; the owner's "The earth should use the same
+   normal map kinda technique when far enough away, when on the moon."): `dwell-worldgen` `home_far.rs`, the home
+   grid's `FarSource` over its world map — heights from the map's cells (water flat at its level), the albedo from
+   each column's surface block (its biome's palette, blocks.json `color`), a separate water channel
+   (`FarBake::water`, the share of the texel in the sea or a lake) — at `grids.json`'s home `bake.size` 256: 576 KiB
+   and ~0.17 s a face natively; 10 tests on both faces; `examples/home_bake.rs` writes preview PNGs
+   (MOON_WORLD.md §5). Clouds out of scope. Not drawn yet: drawing it from the moon comes with M-5/M-7.
+   Owner, 2026-11-12, after M-2: **"The moon looks smaller I think compared to the old moon?"** The disc's angular
+   radius in the shader is unchanged (`MOON_RADIUS`, the same edge test), so the cause is how it's lit: the full
+   ball shape darkens the limb, and the baked terrain's rim (craters cut by the disc's edge, darker rim albedo)
+   eats into the bright area, so the bright part reads smaller than the old evenly lit disc. Next (local): a
+   side-by-side with the old moon at the same zoom and time; keep the full moon lit to its edge (limb darkening
+   only on the dark side of the terminator, rim albedo evened) so the bright disc matches the old size.
 
 ## Done
 

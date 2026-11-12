@@ -2288,7 +2288,7 @@ lives in side files. Chunk and LOD blobs are the protocol's palette + RLE compre
 | `block_damage` | **[built, 0.52.28]** One record (key 0), rewritten each save: the blocks hit short of breaking (`dwell_protocol::damage::Damage::to_bytes`, version 1: each cell, its state, hits and up to four hit marks; ADR 0078). Optional: a world without it loads undamaged, older builds leave it; an unreadable record is kept, not overwritten |
 | `tree_growth` | **[built, 0.52.60]** One record (key 0), rewritten each save: the trees' growth records (`dwell_worldgen::growth::Records::to_bytes`, version 1: per tree its anchor, face, species by name, seed, stage, the world day it reached it, turn, planter, variant, stopped; ADR 0079). Optional: a world without it grows its trees from their drawn stages, older builds leave it; an unreadable record is kept, not overwritten |
 | `ecology` | **[built]** One record (key 0), rewritten each save: the far ecology (docs/ECOLOGY.md §6; `dwell-sim` `server/ecology.rs`, version 1: the world's `enabled` switch and `speed`, then each face's `Ecosystem::to_bytes`: its seed, day, forage grid, species by name, groups). Optional: a world without it starts a fresh ecology from its seed and catches up its days; older builds leave it; an unreadable record is kept, not overwritten |
-| `cuts` | **[built, 0.50.34]** One record (key 0), rewritten each save: the axes' cuts in wood cells (`dwell_protocol::chopping::Cuts::to_bytes`, version 1: each cell, then per side its notch and two kerfs as f32; ADR 0067). Optional: older builds leave it; an unreadable record is kept, not overwritten |
+| `cuts` | **[built, 0.50.34]** One record (key 0), rewritten each save: the axes' cuts in wood cells (`dwell_protocol::chopping::Cuts::to_bytes`, version 1: each cell, then per side its notch and two kerfs as f32; ADR 0067; then, when any cell has bites, u8 1 and each cell's bites, WORK_QUEUE item 26: an older build can't read such a record and keeps it unread, an older record loads with no bites). Optional: older builds leave it; an unreadable record is kept, not overwritten |
 | `water` | **[built, 0.48.2]** The water surface grid's free water (§6.7, WATER_SURFACE_GRID.md): one LZ4 record of `Water::save` (`DWG1`): each water chunk with free columns, their floors, depths and flows (and the rest layer's), and what the chunk owes; held water is found again from the blocks. An older basin record (`DWW5`) is ignored |
 | `tree_tombstones` | **[planned, Phase 30]** Per chunk: the sparse set of chopped procedural tree ids `(chunk, procedural index)` and the pruned node sets of partly cut ones (§6.3 tree growth) |
 | `growers` | **[planned, Phase 30]** Player-planted trees, keyed by the chunk holding the root: structure, variant seed, root, planted world time, pruned nodes |
@@ -3006,8 +3006,7 @@ chunks), keeps the last selection (`LodSystem::update`; ~1 ms a frame standing s
   follow from the geometry, the same from either home face; moonlight = today's × (`moon.nightFloor`
   0.15 + the rest × lit share × the disc's share over the face's horizon); the halo is today's × the
   lit share. The month's start is the world's (`WorldSettings` optional tag `MOON_PHASE` 0x84; absent,
-  `moon.startPhase`). The sky still draws today's moon (opposite the sun, counted phase,
-  `newMoonLight`) until M-2 draws from the model.
+  `moon.startPhase`). Since M-2 the sky draws the moon from the celestial model and its baked terrain (M-2): its direction `Celestial::view`'s, its face A (tidally locked) baked once at the join (`dwell-worldgen` `bake_far`, 256², `render/moon.rs`), packed with mips into one storage buffer (frame group binding 20: the composite already binds WebGPU's 16 sampled textures), each texel lit as N·L of its baked normal (slopes × `moon.relief` 8) by the real sun direction, its albedo the bake's over its brightest (so the lit part is today's `moon.color`); halo × the lit share; moonlight `nightFloor` + the rest × lit share. A CPU adapter packs no normals (a flat disc by the albedo). Same angular size (1.2°) and glow constants. Owner, 2026-11-12, changing Q3: "You mentioned a dome something, maybe do that": `moon.domeBias` (1: a ball) shapes the disc as a sphere, its normals tilted by the baked slopes (polish round: a 0.6 mix left a 135° crescent nearly invisible), so phases read as crescents, halves and gibbous with the craters on top, and the lit share (`celestial::disc_lit`, the mean N·L of that domed disc over full's) drives the halo and the moonlight: one model for the drawn moon and its light.
 - **Clouds [built, Phase 31]** ([ADR 0034](./adr/0034-sky-clouds.md), [`CLOUDS.md`](./CLOUDS.md)): a
   2D cloud layer drawn as part of the sky in the composite pass (not volumetric, no geometry). A thin
   deck lies `altitudeM` above the viewer's own face's sea level, on a sphere about a centre
@@ -3308,7 +3307,14 @@ the chamfers bark, `carve::Part::Inner`). **Cuts are carved into the terrain mes
 opaque cube as carved geometry (`dwell-mesh` `carve.rs`) instead of the cube: what is left at each
 point along the grain is the cross-section trimmed by each side's depth, so each side's notch is a
 V across the side (its opening the wood's `cut.open` × its depth) and each band's kerf past it a
-slit (`cut.kerfWidthM` wide) with walls square to the grain; the bark left on a side and the ends
+slit (`cut.kerfWidthM` wide) with walls square to the grain (a cut without bites, an older
+server's or save's); **[built, WORK_QUEUE item 26]** a cut whose hits recorded where they struck
+(`Cut::bites`) is carved instead as head-sized V bites (`carve/bites.rs`): each side's bark face a
+height field, the notch's V and each band's kerf V under the mask of that band's bites (each
+`cut.bite.widthM` across, its ends sloping over `endsM`), so the notch is the union of the bites;
+the face's outline never moves (watertight); the wood's `cut.cracks` (the `wood` set) overlay every
+face of the cell from its stage by the share of the fell fraction cut, centred on the newest bite;
+the bark left on a side and the ends
 are drawn as the cube's faces (hidden where a neighbour covers them), the faces cut in take the
 wood's `cut.tile` (`logCut`, the painterly `fresh_wood`) × `cut.tint`, lit by the sky the side
 sees (sky rays from its plane) and darker the deeper they lie; face-local, a face-B chunk's cuts
@@ -4315,8 +4321,20 @@ C→S  Chop  0x58: u8 kind — 0 Hello (send me cuts; answered with at least one
            u8 vertical (the hold; answered with at least one HeldTools)
 S→C  HeldTools 0x5A, world: u16 n, each u16 player id, str tool (empty: none), u8 vertical
 S→C  Cuts  0x59, world: u16 n, each i32×3 cell and its cut (per side f32 notch, f32×2 kerfs);
-           then u16 n gone cells (at most 512 each); all of them after Hello, then each change
+           then u16 n gone cells (at most 512 each); all of them after Hello, then each change;
+           then, only to a client that said BitesHello, u8 1 and each cell's bites (per side u8
+           n ≤ 12, each f32 u across the side, u8 band)
+C→S  BitesHello 0x04, datagram: (empty) — send my Cuts with their bites (WORK_QUEUE item 26)
 ```
+
+**The axe's bites: `BitesHello` (datagram) [built]** (WORK_QUEUE item 26). Each hit records where it
+struck across the side (`Cut::bites`, the look only: felling still reads the notch and kerfs), and
+the client carves a head-sized V there (`dwell-mesh` `carve/bites.rs`). Asked for as `SwingHello`'s
+kinds are (no Welcome flag is free; an older server drops an unknown datagram, an older client
+refuses trailing bytes): a client that has had a `Cuts` sends `BitesHello` once a second, at most ten
+times, until a `Cuts` ends with bites; the server sends all its cuts again on the first. A cut with no
+bites (an older server's or save's) is drawn as before: the notch across the side, the kerfs as
+slits.
 
 **Block damage: `DamageHello`, `Damage` (reliable), a break's struck point [built, 0.52.28]**
 (ADR 0078, docs/BLOCK_DAMAGE.md). Optional, as the creatures': a server that keeps damage sets

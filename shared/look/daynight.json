@@ -22,7 +22,7 @@
     "glow": 0.3
   },
   "moon": {
-    "$comment": "The disc, its phases (a cycle of cycleDays in-game days; startPhase at day 0: 0 new, 0.5 full), its surface (maria darkness, earthshine on the unlit part) and its cool halo (a bloom and a glow, as the sun's, scaled by each keyframe's moonGlow and the lit share). newMoonLight is the share of the moonlight left at new moon, so every night stays readable.",
+    "$comment": "The disc, its phases (a cycle of cycleDays in-game days; startPhase at day 0: 0 new, 0.5 full), its surface (maria darkness, earthshine on the unlit part) and its cool halo (a bloom and a glow, as the sun's, scaled by each keyframe's moonGlow and the lit share). newMoonLight is the share of the moonlight left at new moon, so every night stays readable. relief scales the slopes of the moon's baked normals (its real terrain, MOON_WORLD.md §5) as the sky draws them: its craters are a few degrees steep, too shallow to see from home at 1:1. domeBias is how much of a sphere's shape the disc takes (1 a ball), its normals then tilted by the baked slopes (owner, 2026-11-12: \"You mentioned a dome something, maybe do that\"), so its phases read as crescents, halves and gibbous with the craters on top; the lit share, the halo and the moonlight follow the same blended disc (celestial::disc_lit).",
     "radiusDeg": 1.2,
     "cycleDays": 8,
     "startPhase": 0.5,
@@ -35,10 +35,12 @@
     "glow": 0.14,
     "glowColor": "#c6d6ff",
     "newMoonLight": 0.55,
+    "relief": 8,
+    "domeBias": 1,
     "nightFloor": 0.15
   },
   "moonOrbit": {
-    "$comment": "The celestial model (docs/proposals/MOON_WORLD.md \u00a76, M-4; dwell_look::celestial): the moon on a circle distanceM from the home disc's centre, inclined inclinationDeg to the sun's path, going round once a month (moon.cycleDays, new moon to new moon; moon.startPhase at day 0, or the world's own phase, WorldSettings tag MOON_PHASE) against the sky's daily turn, tidally locked (its face A toward home). Its ascending node sits nodeDeg along the sun's path from the sun at day 0 and turns once against the sun every nodeTurnDays (0: never), so eclipse seasons come round. distanceM keeps the moon grid's radius (shared/worldgen/grids.json) at moon.radiusDeg in the sky (checked to 1%). moon.nightFloor is the share of today's moonlight left on a moonless night (owner: \"A darker floor but a minimum still.\"). Not drawn yet: M-2 draws from it.",
+    "$comment": "The celestial model (docs/proposals/MOON_WORLD.md \u00a76, M-4; dwell_look::celestial): the moon on a circle distanceM from the home disc's centre, inclined inclinationDeg to the sun's path, going round once a month (moon.cycleDays, new moon to new moon; moon.startPhase at day 0, or the world's own phase, WorldSettings tag MOON_PHASE) against the sky's daily turn, tidally locked (its face A toward home). Its ascending node sits nodeDeg along the sun's path from the sun at day 0 and turns once against the sun every nodeTurnDays (0: never), so eclipse seasons come round. distanceM keeps the moon grid's radius (shared/worldgen/grids.json) at moon.radiusDeg in the sky (checked to 1%). moon.nightFloor is the share of today's moonlight left on a moonless night (owner: \"A darker floor but a minimum still.\"). Drawn since M-2 (the sky's moon, its glow and the moonlight).",
     "inclinationDeg": 5,
     "nodeDeg": 90,
     "nodeTurnDays": 96,

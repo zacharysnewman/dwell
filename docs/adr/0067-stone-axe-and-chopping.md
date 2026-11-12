@@ -354,6 +354,24 @@ swept again from the player's eye and applied as before, or dropped if the axe i
 only consume durability on hit"); a miss or a swing through only leaves does not. The client's swing stops
 if the axe is put away before its contact. docs/BLOCK_DAMAGE.md §8.
 
+## Note 2026-11-12: the axe's bites (WORK_QUEUE item 26)
+
+Owner, 2026-11-12: "The tree chopping slice doesn't match the other tools style. It cuts a line all the
+way across which is much bigger than the tool head. It should align more with the dirt and stone ones."
+Then: "Yes axe bites proposal looks good." The cut model (§2: bands, notch, kerfs, `open_band`, the fell
+and buck fractions) is unchanged, so a standing trunk still falls in 11 swings at one aim and leaves item
+24's gash. What changes is the look: each landed hit also records where it struck the side
+(`Cut::bites`, per side at most 12: `u` across the side, face-locally up for y, and the band cut), and
+§11's carve draws a head-sized V there instead of the notch and kerf across the whole side
+(`dwell-mesh` `carve/bites.rs`). A hit on a spot already bitten in its band lands beside it
+(`Cut::bite`: `step` × the width from it, nearest the aim), so hacking one spot widens the bites across
+the side and they join into the notch, whose cross-section is their union. Data: the wood's
+`cut.bite` (`widthM` 0.14, `endsM` 0.03, `step` 0.6) and `cut.cracks` (the `wood` crack set; stages by the
+share of the fell fraction cut), validated by `shared/tools/gen.mjs`. Wire and save, additive: the bites
+ride after a `Cuts` message's cells only to a client that said `BitesHello` (a datagram, as
+`SwingHello`), and after the `cuts` record's cells (an older record loads with none). A cut without
+bites is drawn as before. ARCHITECTURE.md §8.3, BLOCK_DAMAGE.md §6.4.
+
 ## Consequences
 
 - A new tool is an item and a `tools` entry; a new wood a block with an `axis` and a `woods` entry;

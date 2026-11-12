@@ -37,6 +37,8 @@ const SCHEMA = {
     glow: [0, 1],
     glowColor: 'color',
     newMoonLight: [0, 1],
+    relief: [1, 50],
+    domeBias: [0, 1],
     nightFloor: [0, 1],
   },
   moonOrbit: {

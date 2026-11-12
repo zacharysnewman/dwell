@@ -41,34 +41,78 @@ pub(super) fn band_of(f: FaceFrame, cell: [i32; 3], grain: usize, point: [f64; 3
     usize::from(frac >= 0.5)
 }
 
+/// Where a world point lies across side `side` of a cell with grain `grain` (0..1 along the side's
+/// other axis; face-locally up for y, as [`band_of`]): the hit's place for its bite.
+pub(super) fn across_of(
+    f: FaceFrame,
+    cell: [i32; 3],
+    grain: usize,
+    side: usize,
+    point: [f64; 3],
+) -> f64 {
+    let other = chop::side_axis(grain, side ^ 2);
+    let frac = if other == 1 {
+        (f.y(point[1]) - m_of_row(f.row(cell[1]))) / CELL_H
+    } else {
+        point[other] - f64::from(cell[other])
+    };
+    frac.clamp(0.0, 1.0)
+}
+
 impl Server {
     pub(super) fn chop_action(&mut self, id: SessionId, a: ChopAction) {
         match a {
             ChopAction::Hello => {
                 let s = self.sessions.get_mut(&id).expect("session");
                 s.chop_hello = true;
-                // At least one (empty when there are none): the client's sign the server chops.
-                let all = self.cuts.sorted();
-                let parts: Vec<Vec<_>> = if all.is_empty() {
-                    vec![Vec::new()]
-                } else {
-                    all.chunks(MAX_CUTS_PER_MESSAGE)
-                        .map(<[_]>::to_vec)
-                        .collect()
-                };
-                for cuts in parts {
-                    let m = Message::Cuts(CutsMessage {
-                        cuts,
-                        gone: Vec::new(),
-                    });
-                    self.send_reliable(id, &m, Channel::World);
-                }
+                self.send_all_cuts(id);
             }
             // An exhausted player's swing is refused; a swing draws its cost (ADR 0069 §5).
             ChopAction::Swing { ref tool, .. } | ChopAction::Sweep { ref tool, .. }
                 if !self.swing_stamina(id, tool) => {}
             a @ (ChopAction::Swing { .. } | ChopAction::Sweep { .. }) => self.start_swing(id, a),
             ChopAction::Held { tool, vertical } => self.held_tool(id, tool, vertical),
+        }
+    }
+
+    /// All the cuts to one client: at least one message (empty when there are none), the client's
+    /// sign the server chops (and, to one that said `BitesHello`, that it sends bites).
+    fn send_all_cuts(&mut self, id: SessionId) {
+        let Some(s) = self.sessions.get(&id) else {
+            return;
+        };
+        let bites = s.bites_hello;
+        let all = self.cuts.sorted();
+        let parts: Vec<Vec<_>> = if all.is_empty() {
+            vec![Vec::new()]
+        } else {
+            all.chunks(MAX_CUTS_PER_MESSAGE)
+                .map(<[_]>::to_vec)
+                .collect()
+        };
+        for cuts in parts {
+            let m = Message::Cuts(CutsMessage {
+                cuts,
+                gone: Vec::new(),
+                bites,
+            });
+            self.send_reliable(id, &m, Channel::World);
+        }
+    }
+
+    /// A client draws the axe's bites (`BitesHello`, WORK_QUEUE item 26; a datagram, repeated until
+    /// answered): its cuts end with them from now on, and the first brings all of them again (once
+    /// it has said `ChopAction::Hello`; before, that Hello's answer carries them).
+    pub(super) fn bites_hello(&mut self, id: SessionId) {
+        let Some(s) = self.sessions.get_mut(&id) else {
+            return;
+        };
+        if s.bites_hello {
+            return;
+        }
+        s.bites_hello = true;
+        if s.chop_hello {
+            self.send_all_cuts(id);
         }
     }
 
@@ -497,6 +541,14 @@ impl Server {
         } else {
             let band = cut.open_band(side, band);
             cut.swing(t, grain, side, band, share);
+            // Where it struck across the side (WORK_QUEUE item 26): the bite the client carves.
+            cut.bite(
+                grain,
+                side,
+                band,
+                across_of(f, cell, grain, side, point),
+                &wood.cut.bite,
+            );
         }
         let cut = *cut;
         let standing = grain == 1;
@@ -599,8 +651,12 @@ impl Server {
             .filter(|(_, s)| s.chop_hello)
             .map(|(&id, _)| id)
             .collect();
-        let m = Message::Cuts(CutsMessage { cuts, gone });
         for id in to {
+            let m = Message::Cuts(CutsMessage {
+                cuts: cuts.clone(),
+                gone: gone.clone(),
+                bites: self.sessions[&id].bites_hello,
+            });
             self.send_reliable(id, &m, Channel::World);
         }
     }
