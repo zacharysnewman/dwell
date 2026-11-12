@@ -181,7 +181,7 @@ pub fn grid_generator(def: &GridDef, world_seed: u64) -> Option<(ChunkGenerator,
             Some((generate, air))
         }
         // Home's terrain is the server's own generator (`generator_for`).
-        GridGenerator::Terrain => None,
+        GridGenerator::Terrain { .. } => None,
     }
 }
 
