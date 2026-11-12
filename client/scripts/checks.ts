@@ -47,6 +47,7 @@ const RENDER_LOOKS = [
   'shafts',
   'waterfalls',
   'daynight',
+  'bloom',
 ];
 /** The `shared/look` scripts that also emit HUD or settings code (client/src/ui). */
 const UI_LOOKS = ['loading', 'spyglass', 'watertiers', 'orbits'];
@@ -227,7 +228,7 @@ export const AREAS: Record<string, Area> = {
       ...lookTests(UI_LOOKS),
     ],
     crates: ['dwell-game', 'dwell-theater'],
-    vitest: ['src/ui/', 'src/input/', 'src/debug/', 'src/identity/'],
+    vitest: ['src/ui/', 'src/input/', 'src/debug/', 'src/identity/', 'src/theater/'],
   },
   audio: {
     notes: 'sounds and music (data, validation, the synth and mixer)',
