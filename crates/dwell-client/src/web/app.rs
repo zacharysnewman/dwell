@@ -2314,6 +2314,18 @@ impl Client {
             .borrow_mut()
             .set_impostors_override(on);
     }
+    /// The impostors' debug view (`__dwell.impostorDebug`, BUGS.md #106): 0 off, 1 the quads
+    /// solid, 2 the silhouettes solid, 3 the albedo unlit; `ambient` and `albedo` (both ≥ 0)
+    /// override `leafShade` for tuning.
+    #[wasm_bindgen(js_name = setImpostorDebug)]
+    pub fn set_impostor_debug(&self, mode: u32, ambient: f32, albedo: f32) {
+        let shade = (ambient >= 0.0 && albedo >= 0.0).then_some([ambient, albedo]);
+        self.inner
+            .borrow()
+            .renderer
+            .borrow_mut()
+            .set_impostor_debug(mode, shade);
+    }
     /// The ink outline's mode by name (`shared/look/outline.json`; docs/ART_DIRECTION.md §7), as
     /// `?outline=` takes it; `off` or an unknown name turns it off. True when a mode is on.
     #[wasm_bindgen(js_name = setOutline)]

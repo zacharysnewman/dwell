@@ -45,7 +45,10 @@ The running order across the items below; each line names its item, where the ow
    release and add `__dwell.impostors()`. Then (local GPU check): the impostors draw but small and faint: make a far
    impostor's crown match the real crown's size and density at the hand-over, with a CPU test. Gate and readout done
    (claude/tree-sticks); the CPU test shows the bake and the fragment's sampling match the real crown, so the cause
-   is on the GPU path, open (BUGS.md #106).
+   is on the GPU path. **Fixed** (claude/impostors-gpu-fix, found on the GPU): the quad stood at its sphere's centre,
+   behind the near tree's own trunk and branches (still drawn), which showed through as sticks; and the leaf texels
+   were lit as open sky, lighter than the near crowns. The quad now stands at the sphere's near side (same pixels)
+   and leaf texels take `impostors.json` `leafShade` (BUGS.md #106, Fixed).
 4. **Far-tree impostors (item 31)** — the bake in the cloud now; drawing them locally after, replacing lod_trees.
 5. **Dense forest reference (item 32)** — in the cloud now: `old_growth`, `test:forest`, the `forest-perf` bench.
 6. **The moon, client side (item 27, M-7c)** — the client follows a player onto the moon (its chunks in the moon's

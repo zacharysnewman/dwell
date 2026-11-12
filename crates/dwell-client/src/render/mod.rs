@@ -3164,6 +3164,17 @@ impl Renderer {
     pub fn set_impostors_override(&mut self, on: Option<bool>) {
         self.impostors_override = on;
     }
+    /// The impostors' debug view (`__dwell.impostorDebug`, BUGS.md #106): 0 off, 1 the quads
+    /// solid, 2 the silhouettes solid, 3 the albedo unlit; `shade` (ambient, albedo) overrides
+    /// `leafShade` for tuning when given.
+    pub fn set_impostor_debug(&mut self, mode: u32, shade: Option<[f32; 2]>) {
+        if let Some(i) = &mut self.impostors {
+            i.debug = mode;
+            if let Some(s) = shade {
+                i.leaf_shade = s;
+            }
+        }
+    }
     /// The far trees' hand-over now (`impostors.json` `far.tiers` by the Far trees setting):
     /// `None` when the far trees are the LOD sections' (`?impostors=0`).
     fn far_tier(&self) -> Option<dwell_worldgen::impostor::Far> {
@@ -6946,6 +6957,8 @@ mod tests {
 
     #[test]
     fn the_near_crowns_and_lod_trees_stay_until_the_impostors_are_ready() {
+        // face-a-only: the gate's ready/unready switch, not its face crossing (`impostors::ready`
+        // keys tiles by the eye's face through `FaceFrame::point`).
         // BUGS.md #106 (red before: with the Far trees tier "on" the frame dropped every leaf past
         // the hand-over and the LOD sections their trees, though no impostor had been baked or
         // placed, so every far tree was a bare trunk).

@@ -58,6 +58,11 @@ pub struct Config {
     pub far: Vec<(String, Far)>,
     /// How far a leaf's normal leans out of the crown (shared/look/leaves.json `canopyBlend`).
     pub canopy_blend: f32,
+    /// How a leaf texel is shaded at draw time (`leafShade`, BUGS.md #106): the hemisphere
+    /// light's share (the near leaves' baked sky light and corner occlusion, which a texel has
+    /// none of) and the albedo's scale (the painted leaf tile's mean over the palette colour).
+    pub leaf_ambient: f32,
+    pub leaf_albedo: f32,
 }
 
 impl Config {
@@ -83,6 +88,7 @@ impl Config {
                     | "variants"
                     | "albedo"
                     | "marginM"
+                    | "leafShade"
                     | "far"
             ) {
                 return Err(format!("unknown field `{k}`"));
@@ -159,6 +165,28 @@ impl Config {
         let (leaf, log) = (colour("leaf")?, colour("log")?);
         let margin = num(field("marginM")?, "marginM", 0.0, 4.0)? as f32;
         let far = parse_far(field("far")?)?;
+        let shade = field("leafShade")?;
+        for k in shade
+            .as_object()
+            .ok_or("`leafShade` must be an object")?
+            .keys()
+        {
+            if !matches!(k.as_str(), "$comment" | "ambient" | "albedo") {
+                return Err(format!("unknown field `leafShade.{k}`"));
+            }
+        }
+        let leaf_ambient = num(
+            shade.get("ambient").unwrap_or(&Value::Null),
+            "leafShade.ambient",
+            0.0,
+            1.0,
+        )? as f32;
+        let leaf_albedo = num(
+            shade.get("albedo").unwrap_or(&Value::Null),
+            "leafShade.albedo",
+            0.0,
+            2.0,
+        )? as f32;
         let mut out = Config {
             views: Vec::new(),
             azimuths,
@@ -172,6 +200,8 @@ impl Config {
             margin,
             far,
             canopy_blend: canopy_blend(),
+            leaf_ambient,
+            leaf_albedo,
         };
         out.views = out.layout();
         Ok(out)
