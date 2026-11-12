@@ -522,6 +522,11 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    design a sky model as data: the sun, the home disc and the moon as bodies with positions and orbits, the moon's
    lit half facing the sun so its phase follows from where it is; today's day length, both faces' days and
    nights, the moon's size in the sky and its light kept; moonlight scaled by the phase.
+   **M-1 built 2026-11-12** (branch `claude/moon-world-design-build-8k9duh`): `shared/worldgen/grids.json`
+   (home and moon), the `cratered` generator on both faces (`dwell-worldgen` `grids.rs`: craters by size
+   class, maria, ridges), `dwell:moon_dust`, the generic far-body bake (normal/height + albedo RGBA per
+   face, 256²: ~0.1 s, 512 KiB a face), the moon spawn search; 20 tests on both faces. Not in the game yet
+   (M-2 draws it in the sky). Open questions in MOON_WORLD.md §12; the owner's lines above are folded in (§2 grids, §5 far body, §6 sky model, §7 travel, §8 moon spawn).
 
 ## Done
 

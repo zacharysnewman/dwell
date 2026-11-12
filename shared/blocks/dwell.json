@@ -754,6 +754,18 @@
       "medium": "air",
       "color": "#8fbf4a",
       "textures": "leaves"
+    },
+    {
+      "$comment": "The moon's ground (docs/proposals/MOON_WORLD.md M-1): gray dust over the whole moon world for now, the moon generator's one block (shared/worldgen/moon.json `block`). Digs like sand. Prototype content (ARCHITECTURE.md §6.1).",
+      "name": "moon_dust",
+      "damage": { "default": 11, "shovel": 7, "look": { "kind": "scoops", "size": 0.38, "color": "#6f6d78", "crack": "#4a4850", "depth": 0.12, "cracks": { "set": "soil", "stages": [0.2, 0.45, 0.65, 0.85], "strength": 0.6 } }, "chips": { "count": 6, "color": "#8a8890", "speed": 1.6, "size": 0.04 } },
+      "sound": "dwell:sand",
+      "density": 1500,
+      "shape": "full",
+      "placeable": true,
+      "properties": { "flooded": ["false", "true"] },
+      "color": "#9a9898",
+      "textures": "moonDust"
     }
   ]
 }
