@@ -1915,6 +1915,12 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    and the fixture's `test:post` by data alone; a tree-dense chunk meshes no slower (≈196 vs ≈211 ms).
    Docs: TREE_GROWTH.md §10, BLOCK_REGISTRY.md.
 
+49. **Release queue starved by CI** (2026-11-12): every notes-only PR started a full CI run (e2e shards), and the Release
+   runs queued behind ~40 runs for ~40 minutes. Owner: **"Yeah go ahead and cancel the CI ones and that makes sense
+   to drop PRs for notes only updates."** Done: the stale CI runs of merged/closed branches cancelled; CI skips
+   docs-only changes (`paths-ignore` docs/** and *.md); notes (BUGS/WORK_QUEUE entries) ride along with the next real
+   change instead of their own PR (CI already cancels superseded runs per branch).
+
 ## Future (needs owner answers)
 
 - **Waterlogging** (owner 2026-11-12: "Eventually we'll want to make it so some blocks if they don't move for a little

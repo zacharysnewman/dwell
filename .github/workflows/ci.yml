@@ -1,9 +1,13 @@
 name: CI
 
 on:
+  # Docs-only changes (owner, 2026-11-12: CI runs starved the Release queue) skip CI; a change that
+  # touches anything else, a pending release note included, still runs it in full.
   push:
     branches: [main]
+    paths-ignore: ['docs/**', '**/*.md']
   pull_request:
+    paths-ignore: ['docs/**', '**/*.md']
 
 concurrency:
   group: ci-${{ github.ref }}
