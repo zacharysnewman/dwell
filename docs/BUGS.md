@@ -14,6 +14,9 @@ a face, today's count), so it should take seconds, not minutes; something scales
 ×100 counts. And the stage reports only whole faces (0/2), so minutes pass with no visible progress. Expected: a
 10× map in seconds (or a measured, honest estimate), and progress inside each face's build (its steps: base field,
 tectonics, hydrology, erosion, rivers, biome field).
+Owner, later: "Looks like it started the server 200+ seconds in and now it's at almost 1 minute looking for a place to
+stand. And still 0/2 280+ seconds in on shaping the world map." So the map takes ~200 s, the spawn search ~1 minute
+more, and the map stage's counter stays at 0/2 even after the server has started (it never advances or completes).
 
 ### 90. Volumetric clouds look badly dithered and pixelated where they overlap, mostly at cloud level
 
