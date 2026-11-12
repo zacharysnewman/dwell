@@ -4,7 +4,9 @@
 //! bake is deterministic per seed, differs between seeds and faces, and its normals point out of
 //! the crater walls, on both faces.
 
-use dwell_world::{CELL_H, CHUNK_SIZE, Chunk, ChunkCoord, Face, both_faces, local_index};
+use dwell_world::{
+    CELL_H, CHUNK_SIZE, Chunk, ChunkCoord, Face, FaceFrame, both_faces, local_index,
+};
 use dwell_worldgen::grids::{
     CrateredTerrain, GRIDS_JSON, GridFrameKind, GridGenerator, bake_far, grid, grids, parse_grids,
 };
@@ -45,9 +47,14 @@ fn the_build_s_grids_are_home_at_rest_and_a_cratered_moon() {
 /// A bad entry fails with a message naming it.
 #[test]
 fn bad_grids_fail_with_a_message() {
-    let cases: [(&str, &str, &str); 8] = [
+    let cases: [(&str, &str, &str); 9] = [
         ("\"frame\": \"orbit\"", "\"frame\": \"spin\"", "`frame`"),
         ("\"dwell:moon_dust\"", "\"dwell:no_such\"", "names no block"),
+        (
+            "\"dwell:moon_mare_dust\"",
+            "\"dwell:no_mare\"",
+            "maria: `block` names no block",
+        ),
         ("\"perKm2\": 30", "\"perKm2\": 0", "perKm2"),
         ("\"reach\": 2.4", "\"reach\": 0.9", "reach"),
         ("\"captureM\": 40000", "\"captureM\": 9000", "captureM"),
@@ -304,7 +311,7 @@ both_faces!(
         let coord = f.chunk(local);
         let mut ch = Chunk::default();
         t.generate(coord, &mut ch);
-        let dust = f.state(dwell_blocks::require("dwell:moon_dust"));
+        let dust = f.state(t.surface_block(f.face, 5, 7));
         let ly_of = |row: i64| {
             let y = row as i32 - local.y * CHUNK_SIZE;
             if f.is_b() { CHUNK_SIZE - 1 - y } else { y }
@@ -340,5 +347,165 @@ both_faces!(
                 assert!((c.x - x).hypot(c.z - z) > c.radius, "not in {c:?}");
             }
         }
+    }
+);
+
+/// The block in column (x, z)'s top cell on `f`'s face, from a generated chunk.
+fn top_cell(t: &CrateredTerrain, f: FaceFrame, x: i64, z: i64) -> dwell_blocks::StateId {
+    let top = t.top_row(f.face, x, z).expect("inside the disc");
+    let s = i64::from(CHUNK_SIZE);
+    let local = ChunkCoord::new(
+        x.div_euclid(s) as i32,
+        top.div_euclid(s) as i32,
+        z.div_euclid(s) as i32,
+    );
+    let mut ch = Chunk::default();
+    t.generate(f.chunk(local), &mut ch);
+    let y = top.rem_euclid(s) as i32;
+    let ly = if f.is_b() { CHUNK_SIZE - 1 - y } else { y };
+    ch.voxels()[local_index(x.rem_euclid(s) as i32, ly, z.rem_euclid(s) as i32)]
+}
+
+/// Points of the disc on a coarse grid, split by mare weight: (in a mare, in the highlands).
+type Points = Vec<(f64, f64)>;
+
+fn mare_and_highland_points(t: &CrateredTerrain, face: Face) -> (Points, Points) {
+    let r = t.radius_m();
+    let (mut mare, mut high) = (Vec::new(), Vec::new());
+    for i in -24..=24 {
+        for j in -24..=24 {
+            let (x, z) = (f64::from(i) * r / 25.0, f64::from(j) * r / 25.0);
+            if x.hypot(z) > 0.95 * r {
+                continue;
+            }
+            match t.mare_weight(face, x, z) {
+                w if w > 0.99 => mare.push((x, z)),
+                w if w < 0.01 => high.push((x, z)),
+                _ => {}
+            }
+        }
+    }
+    (mare, high)
+}
+
+both_faces!(
+    /// The maria's ground is the data's darker block (owner, 2026-11-12: "keep darker seas (add a
+    /// dark moon aria dirt block)"), the highlands the grid's block; a column at least half in a
+    /// mare takes the mare's.
+    fn maria_are_the_dark_block_and_highlands_moon_dust(f: FaceFrame) {
+        let t = moon(4);
+        assert_eq!(t.rules().maria.block, "dwell:moon_mare_dust");
+        let dark = dwell_blocks::require("dwell:moon_mare_dust");
+        let dust = dwell_blocks::require("dwell:moon_dust");
+        let (mare, high) = mare_and_highland_points(&t, f.face);
+        assert!(
+            mare.len() > 20 && high.len() > 20,
+            "{} / {}",
+            mare.len(),
+            high.len()
+        );
+        for &(x, z) in mare.iter().step_by(4) {
+            let (cx, cz) = (x.floor() as i64, z.floor() as i64);
+            assert_eq!(t.surface_block(f.face, cx, cz), dark);
+            assert_eq!(top_cell(&t, f, cx, cz), f.state(dark), "mare at {x} {z}");
+        }
+        for &(x, z) in high.iter().step_by(8) {
+            let (cx, cz) = (x.floor() as i64, z.floor() as i64);
+            assert_eq!(t.surface_block(f.face, cx, cz), dust);
+            assert_eq!(
+                top_cell(&t, f, cx, cz),
+                f.state(dust),
+                "highland at {x} {z}"
+            );
+        }
+    }
+);
+
+both_faces!(
+    /// The far bake is darker over the maria, by the blocks' own colours (blocks.json `color`): a
+    /// mare's texel is the mare block's colour, a highland's the moon dust's, with no separate
+    /// albedo constant.
+    fn the_bake_is_darker_over_the_maria_by_the_blocks_colours(f: FaceFrame) {
+        let t = moon(4);
+        let bake = t.bake_far(f.face, 128);
+        let rgb = |name: &str| {
+            let c = dwell_blocks::info(dwell_blocks::require(name)).color;
+            [(c >> 16) & 0xff, (c >> 8) & 0xff, c & 0xff].map(|v| v as u8)
+        };
+        let (dark, dust) = (rgb("dwell:moon_mare_dust"), rgb("dwell:moon_dust"));
+        let lum = |c: [u8; 3]| c.iter().map(|&v| f64::from(v)).sum::<f64>();
+        assert!(lum(dark) < 0.8 * lum(dust), "the mare block is darker");
+        let s = bake.texel_m();
+        let texel = |v: f64| ((v + bake.radius_m) / s).floor() as usize;
+        let at = |x: f64, z: f64| {
+            let p = (texel(z) * bake.size + texel(x)) * 4;
+            [bake.albedo[p], bake.albedo[p + 1], bake.albedo[p + 2]]
+        };
+        let (mare, high) = mare_and_highland_points(&t, f.face);
+        let near = |a: [u8; 3], b: [u8; 3]| (0..3).all(|i| a[i].abs_diff(b[i]) <= 3);
+        let opaque = |x: f64, z: f64| bake.albedo[(texel(z) * bake.size + texel(x)) * 4 + 3] == 255;
+        let in_mare = |x: f64, z: f64| {
+            t.mare_weight(
+                f.face,
+                bake.texel_centre(texel(x)),
+                bake.texel_centre(texel(z)),
+            )
+        };
+        let (mut m, mut h) = (0, 0);
+        for &(x, z) in &mare {
+            if opaque(x, z) && in_mare(x, z) > 0.99 {
+                assert!(
+                    near(at(x, z), dark),
+                    "mare texel {:?} vs {dark:?}",
+                    at(x, z)
+                );
+                m += 1;
+            }
+        }
+        for &(x, z) in &high {
+            if opaque(x, z) && in_mare(x, z) < 0.01 {
+                assert!(
+                    near(at(x, z), dust),
+                    "highland texel {:?} vs {dust:?}",
+                    at(x, z)
+                );
+                h += 1;
+            }
+        }
+        assert!(m > 20 && h > 20, "{m} / {h}");
+    }
+);
+
+both_faces!(
+    /// The bake's seas are clearly dark: over the maria its luma (as the sky's moon reads it,
+    /// dwell-client `render::moon::pack`) is 0.55 × the highlands', the old sky moon's contrast
+    /// (its shader's maria at `1 − moon.maria`, 0.45; owner, 2026-11-12: "keep darker seas").
+    fn the_bakes_maria_have_the_old_moons_contrast(f: FaceFrame) {
+        let t = moon(4);
+        let bake = t.bake_far(f.face, 128);
+        let luma = |p: &[u8]| {
+            0.2126 * f64::from(p[0]) + 0.7152 * f64::from(p[1]) + 0.0722 * f64::from(p[2])
+        };
+        let (mut mare, mut high) = (Vec::new(), Vec::new());
+        for j in 0..bake.size {
+            for i in 0..bake.size {
+                let p = &bake.albedo[(j * bake.size + i) * 4..][..4];
+                if p[3] != 255 {
+                    continue;
+                }
+                match t.mare_weight(f.face, bake.texel_centre(i), bake.texel_centre(j)) {
+                    w if w > 0.99 => mare.push(luma(p)),
+                    w if w < 0.01 => high.push(luma(p)),
+                    _ => {}
+                }
+            }
+        }
+        assert!(mare.len() > 100 && high.len() > 100);
+        let mean = |v: &[f64]| v.iter().sum::<f64>() / v.len() as f64;
+        let contrast = mean(&mare) / mean(&high);
+        assert!(
+            (contrast - 0.55).abs() < 0.03,
+            "maria at {contrast:.3} × the highlands' luma, the old moon's 0.55"
+        );
     }
 );
