@@ -72,6 +72,9 @@ pub struct PendingHit {
     pub at: Option<[f64; 3]>,
     /// It breaks the block (one hit by the data), else a hit short of breaking.
     pub breaks: bool,
+    /// Aimed at its contact (`hits.at_contact`, BUGS.md #110): the target is what the crosshair
+    /// holds then, and the hit is sent then; `cell`, `block`, `at` and `breaks` are unused.
+    pub aimed: bool,
 }
 
 /// The tool hits under way (at most one: a swing at a time).
@@ -119,6 +122,7 @@ mod pending_tests {
             block: 1,
             at: None,
             breaks: false,
+            aimed: false,
         }
     }
 

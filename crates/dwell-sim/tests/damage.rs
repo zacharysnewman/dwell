@@ -182,6 +182,67 @@ dwell_world::both_faces!(
     }
 );
 
+/// Says `hits.at_contact`: this client sends a tool's hit at its swing's contact, aimed then.
+fn says_hits_at_contact(fx: &mut Fixture) {
+    fx.send(
+        1,
+        Message::Capabilities(capabilities::Capabilities::of([
+            capability_names::HITS_AT_CONTACT,
+        ])),
+    );
+    fx.server.step();
+}
+
+dwell_world::both_faces!(
+    fn a_hit_sent_at_its_contact_lands_on_arrival_checked_from_the_eye_then(f: FaceFrame) {
+        // BUGS.md #110 (owner, 2026-11-12): "if I click on a block, and move my cursor to aim at
+        // the block below it, I'll see and hear the tool hit, but it won't be on the block I'm
+        // aiming at". A client with `hits.at_contact` sends the hit at the contact, naming what it
+        // aims at then: the server lands it at once (no second wait), checked as any edit.
+        for (tool, cell) in [
+            ("dwell:stone_pickaxe", STONE),
+            ("dwell:wooden_shovel", DIRT),
+        ] {
+            let mut fx = scene_with(f, config(f, "adventure"));
+            says_hits_at_contact(&mut fx);
+            hold(&mut fx, "adventure", tool);
+            fx.take_all();
+            send_hit(&mut fx, f, cell);
+            fx.server.step();
+            assert_eq!(
+                fx.server.damage_of(f.cell(cell)).map(|d| d.hits),
+                Some(1),
+                "{tool}: landed on arrival (the client's contact)"
+            );
+            assert_eq!(wear_of(&fx, tool), 1, "{tool}: one wear, at the hit");
+            for _ in 0..30 {
+                fx.server.step();
+            }
+            assert_eq!(
+                fx.server.damage_of(f.cell(cell)).map(|d| d.hits),
+                Some(1),
+                "{tool}: once"
+            );
+            assert_eq!(wear_of(&fx, tool), 1, "{tool}: worn once");
+        }
+        // Validated then: a cell the eye can't see (buried under the top stone) is refused,
+        // landing nothing and wearing nothing.
+        let mut fx = scene_with(f, config(f, "adventure"));
+        says_hits_at_contact(&mut fx);
+        hold(&mut fx, "adventure", "dwell:stone_pickaxe");
+        let buried = [STONE[0], BASE - 3, STONE[2]];
+        send_hit(&mut fx, f, buried);
+        for _ in 0..30 {
+            fx.server.step();
+        }
+        assert!(
+            fx.server.damage_of(f.cell(buried)).is_none(),
+            "out of sight"
+        );
+        assert_eq!(wear_of(&fx, "dwell:stone_pickaxe"), 0, "no wear");
+    }
+);
+
 dwell_world::both_faces!(
     fn a_hit_whose_tool_is_put_away_before_contact_lands_nothing(f: FaceFrame) {
         for mode in ["adventure", "creative"] {

@@ -465,6 +465,20 @@ face, or the placement check against its shape.
 
 ## Fixed
 
+### 110. A tool hit lands on the block clicked, not the one aimed at when the swing connects (fixed after 0.55.11)
+
+Owner, 2026-11-12: "I've noticed on tool hits they don't check where they're aimed at hit time, if I click on a
+block, and move my cursor to aim at the block below it, I'll see and hear the tool hit, but it won't be on the
+block I'm aiming at, it'll be the one I clicked on first before the hit played." Earlier decisions (WORK_QUEUE
+items 17, 25): marks at the swing's contact, wear only on a hit, a held swing "each swing hitting what is targeted
+then". Cause: the pickaxe's and shovel's `BlockEditRequest` named its cell at the click; the server landed that
+cell `contactS` later and the client's sound and chips played at it.
+**Fix:** the hit is aimed and sent at the contact, and the server lands it on arrival (capability
+`hits.at_contact`; docs/BLOCK_DAMAGE.md §11). Tests: `dwell-client` `game_local`
+`a_pickaxe_hit_lands_on_what_is_aimed_at_its_contact_not_the_block_clicked`, `…aimed_at_air…_is_a_miss`,
+`a_held_pickaxe_swing_strikes_what_is_aimed_at_each_contact`; `dwell-sim` `damage`
+`a_hit_sent_at_its_contact_lands_on_arrival_checked_from_the_eye_then` (both faces); red → green.
+
 ### 109. In a big world the client won't place a block past 50 km from the centre (fixed after 0.55.9)
 
 Found 2026-11-12 fixing #108 (not reproduced in game): `dwell-game` `block_interaction.rs` drops a Place outside

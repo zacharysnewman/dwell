@@ -616,3 +616,35 @@ the block's volume / number of swings required to break it."** One rule in one p
   volume, k = 1..n, half at the break, metal 5/3 of stone), `the_bite_rules_cell_is_the_worlds`;
   `dwell-client` `a_hits_pieces_total_its_bite` (stone, dirt, grass, wood chips); `dwell-sim` `damage`
   (marks' chunks 26/43, both faces); `shared/tools/gen.test.mjs` (the ramp's volume, no tier chunk).
+
+## 11. A hit strikes what is aimed at its contact (BUGS.md #110)
+
+Owner, 2026-11-12: "I've noticed on tool hits they don't check where they're aimed at hit time, if I click on a
+block, and move my cursor to aim at the block below it, I'll see and hear the tool hit, but it won't be on the
+block I'm aiming at, it'll be the one I clicked on first before the hit played." §8 moved the hit's *time* to
+the contact but kept the click's *target*: the `BlockEditRequest` named the cell clicked, and the server and the
+client's sound and chips landed on it `contactS` later.
+
+- **Client:** with a breaking tool that has a `contactS` (the pickaxes, the shovels) the click starts the swing
+  (the arms, the click's rate, one swing at a time) and sends nothing. At the contact, after that frame's aim
+  (`Game::land_aimed_hit`, run after `target`), the crosshair's block is the target: its `BlockEditRequest`
+  (`BlockInteraction::break_request`, with the struck point) is sent then, and its hit sound and chips, or a
+  one-hit break's sound, play at that block. Nothing aimed at (air, or a moving body nearer than any block) is
+  a miss: nothing is sent or shown, so nothing wears. A held swing (`repeatOnHold`) is a new click each
+  `repeatS`, each aimed at its own contact.
+- **Server:** a session whose client said `hits.at_contact` has its tool hits land on arrival (no `contactS`
+  wait: the client already waited), through the usual checks from the eye at that tick (reach, line of sight,
+  the edit rate's token bucket) and the held tool (damage, drops, wear once per landed hit).
+- **Compatibility:** the capability `hits.at_contact` (`shared/protocol/capabilities.json`, ARCHITECTURE.md
+  §8.3). Not breaking: the message is unchanged, and with an older peer on either side the client sends at the
+  click and the server waits `contactS`, as in §8 (`Game::set_hits_at_contact`, from the session's
+  capabilities).
+- **Not changed:** the axe's swing (`Chop::Sweep`) keeps its committed arc, aimed at the click and swept again
+  from the eye at contact (§8); a hand or a block in hand lands at once.
+- **Tests:** `dwell-sim` `damage` `a_hit_sent_at_its_contact_lands_on_arrival_checked_from_the_eye_then` (both
+  faces; a buried cell is refused, no wear); `dwell-client` `game_local`
+  `a_pickaxe_hit_lands_on_what_is_aimed_at_its_contact_not_the_block_clicked` (A clicked, B aimed at by the
+  contact: B's damage and sound, A untouched, nothing refused or left pending),
+  `a_pickaxe_swing_aimed_at_air_by_its_contact_is_a_miss`, `a_held_pickaxe_swing_strikes_what_is_aimed_at_each_contact`
+  (each swing turned before its contact). All red on the old code (the hit on A; a hit sound and a sent hit on
+  the miss).

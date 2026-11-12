@@ -958,6 +958,9 @@ pub struct Game<S: Scene> {
     /// input; the others' guards (players' and NPCs': stance, raised) for the renderer; and when
     /// this player's last strike was blocked (its view's recoil: the time, the weapon, its plane).
     swordplay: bool,
+    /// The server takes a tool's hit at its contact (`hits.at_contact`, BUGS.md #110): the hit is
+    /// aimed and sent then, not at the click.
+    hits_at_contact: bool,
     pub guard_input: crate::swordplay::GuardInput,
     /// The use (Break) button held: a tool that repeats keeps swinging (crate::held_use).
     pub held_use: crate::held_use::HeldUse,
@@ -1158,6 +1161,9 @@ impl<S: Scene> Game<S> {
             remote_sounds: Default::default(),
             remote_tools: Default::default(),
             swordplay: false,
+            // As this build's client says it (`Capabilities::this_client`); an older server's
+            // session turns it off (`set_hits_at_contact`).
+            hits_at_contact: true,
             guard_input: Default::default(),
             held_use: Default::default(),
             remote_guards: Default::default(),
@@ -2390,6 +2396,25 @@ impl<S: Scene> Game<S> {
         if contact_s > 0.0 && self.pending_hits.busy(now_ms) {
             return false;
         }
+        // The click starts the swing; its hit is aimed at what the crosshair holds at the contact
+        // and sent then (BUGS.md #110), a miss there landing nothing.
+        if contact_s > 0.0 && self.hits_at_contact {
+            if self.interaction.act(action, now_ms).is_none() {
+                return false; // the click's rate
+            }
+            self.pending_hits.push(crate::hit_feedback::PendingHit {
+                due_ms: crate::hit_feedback::PendingHits::due(now_ms, contact_s),
+                item: tool_item.expect("a tool with a contact"),
+                cell: target.cell,
+                block: 0,
+                at: None,
+                breaks: false,
+                aimed: true,
+            });
+            self.bodies
+                .swing_arms(dwell_characters::animator::Swing::Break);
+            return true;
+        }
         // A steep slope's upper half goes with it (`act_upper`), read before the place's
         // prediction changes the target.
         let upper = (action == EditAction::Place)
@@ -2422,6 +2447,7 @@ impl<S: Scene> Game<S> {
                             block,
                             at,
                             breaks,
+                            aimed: false,
                         });
                         predict = false;
                     }
@@ -2820,6 +2846,12 @@ impl<S: Scene> Game<S> {
     /// clashes and others' guards arrive.
     pub fn set_swordplay(&mut self, on: bool) {
         self.swordplay = on;
+    }
+
+    /// Whether the server lands a tool's hit on arrival, sent at the swing's contact and aimed
+    /// then (`hits.at_contact`); else the hit goes at the click, at the cell clicked.
+    pub fn set_hits_at_contact(&mut self, on: bool) {
+        self.hits_at_contact = on;
     }
 
     /// The block's frame: Place held past the weapon's `raiseAfterS` raises it; a weapon put away
@@ -3402,7 +3434,6 @@ impl<S: Scene> Game<S> {
     }
 
     fn update_swing_run(&mut self, now_ms: f64) -> CameraOffset {
-        self.land_hits(now_ms);
         self.repeat_held_use(now_ms);
         // The axe put away mid-swing: the swing stops, landing nothing (the server's too).
         if self
@@ -3440,6 +3471,10 @@ impl<S: Scene> Game<S> {
     fn land_hits(&mut self, now_ms: f64) {
         let held = self.held_break_item();
         for h in self.pending_hits.take_due(now_ms, held) {
+            if h.aimed {
+                self.land_aimed_hit(now_ms);
+                continue;
+            }
             if h.breaks {
                 self.sounds.push(SoundEvent::new(
                     SoundKind::Break,
@@ -3456,6 +3491,49 @@ impl<S: Scene> Game<S> {
                 self.hit_chips(h.block, h.cell, at, bite, now_ms);
             }
         }
+    }
+
+    /// A tool's hit at its swing's contact, aimed at what the crosshair holds now (BUGS.md #110):
+    /// sent to the server (which lands it on arrival, checked from the eye then), its sound and
+    /// chips, or a one-hit break's sound, at that block. Nothing aimed at (air, or a moving body
+    /// nearer than any block) is a miss: nothing sent, nothing shown, no wear.
+    fn land_aimed_hit(&mut self, now_ms: f64) {
+        if self.dead || self.body_target.is_some() {
+            return;
+        }
+        let (Some(target), Some(mut e)) =
+            (self.interaction.target(), self.interaction.break_request())
+        else {
+            return;
+        };
+        let [x, y, z] = target.cell;
+        let block = self.voxel(x, y, z);
+        let name = dwell_blocks::block_of(block).name;
+        let struck = self.struck_point(target.cell, target.face);
+        let at = struck.map(|p| point_in_cell(target.cell, p));
+        if self.hits_to_break(name) == Some(1) {
+            // Not predicted: the server's change shows it, its sound now.
+            self.edit_sounds.expect_break(target.cell, now_ms);
+            self.sounds.push(SoundEvent::new(
+                SoundKind::Break,
+                block,
+                1.0,
+                Some(dwell_world::centre_of_cell(target.cell)),
+            ));
+        } else {
+            self.remote_hits.own_hit(target.cell, now_ms);
+            self.sounds
+                .push(SoundEvent::new(SoundKind::Hit, block, 1.0, at));
+            if let Some(at) = at {
+                let bite = self.own_bite_m3(block);
+                self.hit_chips(block, target.cell, at, bite, now_ms);
+            }
+        }
+        if self.damage_on {
+            e.point = struck;
+        }
+        let id = self.prediction.next_id();
+        self.send_edit(Message::BlockEditRequest(e), Some(id));
     }
 
     /// What a swing's impact shows: into a wood its chips, its hit's sound by how far the wood is
@@ -4466,6 +4544,7 @@ impl<S: Scene> Game<S> {
                 .set_camera(cam.eye, yaw + sy, cam.pitch + sp, cam.face, 0.0);
             self.show_hud_text();
             self.target(None, input, now_ms);
+            self.land_hits(now_ms);
             self.update_motion(c.position, dt);
         } else {
             self.scene
@@ -4491,6 +4570,8 @@ impl<S: Scene> Game<S> {
             self.listener = listener(eye, yaw, pitch, face);
             let ready = self.terrain_ready();
             self.target(ready.then_some(eye), input, now_ms);
+            // After the aim of this frame: a hit due now strikes what it holds (BUGS.md #110).
+            self.land_hits(now_ms);
             self.update_motion(eye, dt);
             // Your arms in their own pass (CHARACTERS.md §5): not while zoomed in the spyglass, in
             // a placed camera, or with the setting off.
