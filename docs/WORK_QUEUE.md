@@ -965,6 +965,17 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    14. Deer and wolves — a grazing herd, deer bolting from the player, a wolf pack hunting (after item 39).
    15. Villagers — wandering in their outfits, turning to look at you, a sword duel showing block vs connect
        (after the NPC look and swords round 2).
+   Owner, 2026-11-12: **"Some of these would look good as full timelapses, or partial timelapses. There's older
+   features we haven't showcased yet too like the bifacial world, The underwater. It's probably ideal to include
+   the player in the videos when possible. Rivers flowing from mountains to the sea."** So: time-lapse where it
+   suits (a whole clip sped up, or a normal-speed shot that speeds up mid-way: day to night, tree growth, lava
+   cooling, grass spreading, clouds); the player in frame when possible (a third-person camera on the player's
+   body, or first person with the arms and held item); and three more:
+   16. The bifacial world — flying out past the rim and over the edge to face B, gravity turning, the other
+       face's sky, the world seen from beneath.
+   17. Underwater — diving in a lake or the sea, the surface from below with the sky through it, light shafts.
+   18. Rivers from mountains to the sea — a long follow down a river from the peaks through valleys to its
+       mouth (partly time-lapsed).
 
 ## Done
 
