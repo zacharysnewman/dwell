@@ -1,0 +1,344 @@
+//! The world's grids and the moon's `cratered` generator (docs/proposals/MOON_WORLD.md M-1): the
+//! data parses and validates, the moon's seed comes from the world's, its crater field follows the
+//! data (floors under rims, rims raised, density by `perKm2`), maria are flatter, and the far-body
+//! bake is deterministic per seed, differs between seeds and faces, and its normals point out of
+//! the crater walls, on both faces.
+
+use dwell_world::{CELL_H, CHUNK_SIZE, Chunk, ChunkCoord, Face, both_faces, local_index};
+use dwell_worldgen::grids::{
+    CrateredTerrain, GRIDS_JSON, GridFrameKind, GridGenerator, bake_far, grid, grids, parse_grids,
+};
+
+fn moon(seed: u64) -> CrateredTerrain {
+    CrateredTerrain::for_grid("dwell:moon", seed).expect("the build's moon grid")
+}
+
+fn other(face: Face) -> Face {
+    match face {
+        Face::A => Face::B,
+        Face::B => Face::A,
+    }
+}
+
+#[test]
+fn the_build_s_grids_are_home_at_rest_and_a_cratered_moon() {
+    let g = grids();
+    let home = grid("dwell:home").expect("home");
+    assert_eq!(home.frame, GridFrameKind::Rest);
+    assert_eq!(home.radius_m, None, "the home grid is the world's own size");
+    assert_eq!(home.generator, GridGenerator::Terrain);
+    assert_eq!(home.seed(42), 42, "home keeps the world seed");
+    let m = grid("dwell:moon").expect("moon");
+    assert_eq!(m.frame, GridFrameKind::Orbit);
+    assert_eq!(
+        m.radius_m,
+        Some(12_500.0),
+        "about a quarter of the home disc"
+    );
+    assert!(m.gravity_scale < 0.2, "the moon's gravity is weaker");
+    assert!(m.capture_m.unwrap() > 12_500.0);
+    assert_ne!(m.seed(42), 42);
+    assert_ne!(m.seed(42), m.seed(43), "every world its own moon");
+    assert_eq!(g.len(), 2);
+}
+
+/// A bad entry fails with a message naming it.
+#[test]
+fn bad_grids_fail_with_a_message() {
+    let cases: [(&str, &str, &str); 8] = [
+        ("\"frame\": \"orbit\"", "\"frame\": \"spin\"", "`frame`"),
+        ("\"dwell:moon_dust\"", "\"dwell:no_such\"", "names no block"),
+        ("\"perKm2\": 30", "\"perKm2\": 0", "perKm2"),
+        ("\"reach\": 2.4", "\"reach\": 0.9", "reach"),
+        ("\"captureM\": 40000", "\"captureM\": 9000", "captureM"),
+        (
+            "\"kind\": \"cratered\"",
+            "\"kind\": \"lumpy\"",
+            "generator.kind",
+        ),
+        ("\"seedSalt\": 1297040974,", "", "seedSalt"),
+        ("\"captureM\": 40000,", "", "needs a `captureM`"),
+    ];
+    for (from, to, want) in cases {
+        assert!(
+            GRIDS_JSON.contains(from),
+            "the fixture edit `{from}` applies"
+        );
+        let bad = GRIDS_JSON.replacen(from, to, 1);
+        let err = parse_grids(&bad).expect_err(&format!("`{to}` is rejected"));
+        assert!(err.contains(want), "`{err}` mentions {want}");
+        assert!(err.contains("dwell:moon"), "`{err}` names the grid");
+    }
+}
+
+both_faces!(
+    /// A grid added by data alone generates: a second moon with its own salt and radius.
+    fn a_grid_added_by_data_alone_generates(f: FaceFrame) {
+        let moon_entry_at = GRIDS_JSON
+            .find("    {\n      \"name\": \"dwell:moon\"")
+            .unwrap();
+        let end = GRIDS_JSON.rfind("\n  ]").unwrap();
+        let entry = GRIDS_JSON[moon_entry_at..end]
+            .replace("dwell:moon\"", "test:little_moon\"")
+            .replace("1297040974", "7")
+            .replace("\"radiusM\": 12500", "\"radiusM\": 3000")
+            .replace("\"captureM\": 40000", "\"captureM\": 9000");
+        let text = format!("{},\n{}{}", &GRIDS_JSON[..end], entry, &GRIDS_JSON[end..]);
+        let list = parse_grids(&text).expect("valid");
+        let def = list.iter().find(|g| g.name == "test:little_moon").unwrap();
+        let t = CrateredTerrain::new(def, 1).unwrap();
+        assert_eq!(t.radius_m(), 3000.0);
+        assert!(t.top_row(f.face, 0, 0).is_some());
+        assert!(t.top_row(f.face, 3100, 0).is_none(), "outside its disc");
+    }
+);
+
+both_faces!(
+    /// The moon's heights stay in the build volume over its whole disc: never under the data's
+    /// floor (`minM`, where stacked craters would dig through the midplane), and the bake's too.
+    fn the_moon_s_heights_stay_in_the_build_volume(f: FaceFrame) {
+        let t = moon(5);
+        let r = t.radius_m();
+        let bake = t.bake_far(f.face, 128);
+        assert!(
+            bake.height_range[0] >= t.rules().min_m,
+            "{:?}",
+            bake.height_range
+        );
+        for i in -20..=20 {
+            for j in -20..=20 {
+                let (x, z) = (f64::from(i) * r / 20.0, f64::from(j) * r / 20.0);
+                if !t.inside(x, z) {
+                    continue;
+                }
+                let h = t.height(f.face, x, z);
+                assert!(
+                    h >= t.rules().min_m && h < dwell_world::BUILD_TOP_M - 8.0,
+                    "{h} at {x}, {z}"
+                );
+            }
+        }
+    }
+);
+
+both_faces!(
+    /// The big craters' floors lie under their rims, and their rims stand raised over the ground
+    /// their ejecta reaches out to.
+    fn crater_floors_are_under_raised_rims(f: FaceFrame) {
+        for seed in [1u64, 2, 3] {
+            let t = moon(seed);
+            let field = &t.rules().craters;
+            let mut big = t.craters_near(f.face, 0.0, 0.0, t.radius_m() * 0.8, 150.0);
+            big.sort_by(|a, b| b.radius.total_cmp(&a.radius));
+            assert!(big.len() >= 5, "seed {seed}: some big craters on the face");
+            for c in big.iter().take(8) {
+                // Heights over the ground the craters sit on (the plains, ridges and maria
+                // left out), so a ridge or a basin under the ring doesn't count.
+                let ring = |k: f64| {
+                    (0..8)
+                        .map(|a| {
+                            let th = f64::from(a) * std::f64::consts::TAU / 8.0;
+                            let (x, z) =
+                                (c.x + k * c.radius * th.cos(), c.z + k * c.radius * th.sin());
+                            t.height(f.face, x, z) - t.base_height(f.face, x, z)
+                        })
+                        .sum::<f64>()
+                        / 8.0
+                };
+                let floor = t.height(f.face, c.x, c.z) - t.base_height(f.face, c.x, c.z);
+                let (rim, out) = (ring(1.0), ring(field.reach));
+                assert!(
+                    floor < rim - c.depth * 0.5,
+                    "seed {seed} {c:?}: floor {floor} rim {rim}"
+                );
+                assert!(
+                    rim > out,
+                    "seed {seed} {c:?}: rim {rim} over the surround {out}"
+                );
+            }
+        }
+    }
+);
+
+both_faces!(
+    /// The crater count follows `perKm2`: four times the density, four times the craters.
+    fn crater_density_is_data(f: FaceFrame) {
+        let class = "{ \"radiusM\": [18, 60], \"perKm2\": 5 }";
+        assert!(GRIDS_JSON.contains(class));
+        let count = |per: f64| {
+            let text = GRIDS_JSON.replacen(
+                class,
+                &format!("{{ \"radiusM\": [18, 60], \"perKm2\": {per} }}"),
+                1,
+            );
+            let list = parse_grids(&text).unwrap();
+            let t = CrateredTerrain::new(list.iter().find(|g| g.name == "dwell:moon").unwrap(), 9)
+                .unwrap();
+            // Centres in a 6 km square far from the field's other classes' influence: count the
+            // class's craters only.
+            t.craters_near(f.face, 0.0, 0.0, 6000.0, 0.0)
+                .iter()
+                .filter(|c| c.class == 1 && c.x.abs() < 3000.0 && c.z.abs() < 3000.0)
+                .count() as f64
+        };
+        let (one, four) = (count(5.0), count(20.0));
+        assert!(
+            one > 60.0,
+            "{one} craters at 5 a km² over 36 km² (fewer in maria)"
+        );
+        let ratio = four / one;
+        assert!((3.2..4.8).contains(&ratio), "{four} / {one} = {ratio}");
+    }
+);
+
+both_faces!(
+    /// A mare's floor is flatter than the highlands: smaller height changes between neighbours.
+    fn maria_are_flatter(f: FaceFrame) {
+        let t = moon(4);
+        let r = t.radius_m();
+        let rough = |x: f64, z: f64| {
+            (t.height(f.face, x + 30.0, z) - t.height(f.face, x, z)).abs()
+                + (t.height(f.face, x, z + 30.0) - t.height(f.face, x, z)).abs()
+        };
+        let (mut mare, mut high) = (Vec::new(), Vec::new());
+        for i in -30..=30 {
+            for j in -30..=30 {
+                let (x, z) = (f64::from(i) * r / 32.0, f64::from(j) * r / 32.0);
+                if !t.inside(x, z) {
+                    continue;
+                }
+                match t.mare_weight(f.face, x, z) {
+                    w if w > 0.99 => mare.push(rough(x, z)),
+                    w if w < 0.01 => high.push(rough(x, z)),
+                    _ => {}
+                }
+            }
+        }
+        assert!(
+            mare.len() > 30 && high.len() > 30,
+            "{} / {}",
+            mare.len(),
+            high.len()
+        );
+        let mean = |v: &[f64]| v.iter().sum::<f64>() / v.len() as f64;
+        let (m, h) = (mean(&mare), mean(&high));
+        assert!(m < h * 0.7, "maria {m} vs highlands {h}");
+        // And lower: the basins sit under the datum.
+        let floor = t.maria_near(f.face, 0.0, 0.0, r)[0];
+        assert!(t.base_height(f.face, floor.x, floor.z) < t.rules().datum_m);
+    }
+);
+
+both_faces!(
+    /// The bake is a pure function of (world seed, face): the same seed bakes the same bytes, other
+    /// seeds and the other face bake others; its texels are RGBA at the data's size.
+    fn the_bake_is_deterministic_and_differs_by_seed_and_face(f: FaceFrame) {
+        let size = 64;
+        let a = moon(77).bake_far(f.face, size);
+        assert_eq!(a.normal_height.len(), size * size * 4);
+        assert_eq!(a.albedo.len(), size * size * 4);
+        assert_eq!(a, moon(77).bake_far(f.face, size), "deterministic");
+        assert_ne!(
+            a.normal_height,
+            moon(78).bake_far(f.face, size).normal_height
+        );
+        assert_ne!(
+            a.normal_height,
+            moon(77).bake_far(other(f.face), size).normal_height
+        );
+        assert_eq!(
+            moon(1).bake_far_default(f.face).size,
+            256,
+            "the data's bake size"
+        );
+        // The corner is outside the disc (alpha 0); the centre inside, gray and opaque.
+        assert_eq!(a.normal_height[3], 0);
+        let c = ((size / 2) * size + size / 2) * 4;
+        assert_eq!(a.albedo[c + 3], 255);
+        let [r, g, b] = [a.albedo[c], a.albedo[c + 1], a.albedo[c + 2]];
+        assert!(
+            r.abs_diff(g) < 12 && g.abs_diff(b) < 12,
+            "gray: {r} {g} {b}"
+        );
+    }
+);
+
+both_faces!(
+    /// On a big crater's inner wall the baked normal leans toward the crater's centre: out of the
+    /// wall. (Its outer flank is too gentle at the rim's cap to beat the ridges at a texel.)
+    fn baked_normals_point_out_of_crater_walls(f: FaceFrame) {
+        let t = moon(3);
+        let bake = bake_far(&t, f.face, 256);
+        let s = bake.texel_m();
+        let mut big = t.craters_near(f.face, 0.0, 0.0, t.radius_m() * 0.7, 6.0 * s);
+        big.sort_by(|a, b| b.radius.total_cmp(&a.radius));
+        let c = big.first().copied().expect("a crater several texels wide");
+        assert!(c.radius > 4.0 * s, "{c:?}");
+        let texel = |v: f64| ((v + bake.radius_m) / s).floor() as usize;
+        let (mut inner, mut n) = (0, 0);
+        for a in 0..16 {
+            let th = f64::from(a) * std::f64::consts::TAU / 16.0;
+            let (dx, dz) = (th.cos(), th.sin());
+            let lean = |k: f64| {
+                let (x, z) = (c.x + k * c.radius * dx, c.z + k * c.radius * dz);
+                let nrm = bake.normal(texel(x), texel(z));
+                nrm[0] * dx + nrm[2] * dz
+            };
+            n += 1;
+            inner += usize::from(lean(0.75) < 0.0);
+        }
+        assert!(
+            inner >= n * 3 / 4,
+            "inner wall leans in at {inner}/{n} headings"
+        );
+    }
+);
+
+both_faces!(
+    /// A chunk through the surface holds the ground's block up to the column's height and air over
+    /// it, placed on the face's side of the midplane through its FaceFrame.
+    fn a_chunk_holds_the_ground_up_to_its_height(f: FaceFrame) {
+        let t = moon(8);
+        let top = t.top_row(f.face, 5, 7).unwrap();
+        let local = ChunkCoord::new(0, (top as i32).div_euclid(CHUNK_SIZE), 0);
+        let coord = f.chunk(local);
+        let mut ch = Chunk::default();
+        t.generate(coord, &mut ch);
+        let dust = f.state(dwell_blocks::require("dwell:moon_dust"));
+        let ly_of = |row: i64| {
+            let y = row as i32 - local.y * CHUNK_SIZE;
+            if f.is_b() { CHUNK_SIZE - 1 - y } else { y }
+        };
+        assert_eq!(ch.voxels()[local_index(5, ly_of(top), 7)], dust);
+        if (top + 1) as i32 - local.y * CHUNK_SIZE < CHUNK_SIZE {
+            assert_eq!(
+                ch.voxels()[local_index(5, ly_of(top + 1), 7)],
+                dwell_world::M.air
+            );
+        }
+        let h = t.height(f.face, 5.5, 7.5);
+        assert!(((top + 1) as f64 * CELL_H - h).abs() <= CELL_H / 2.0 + 1e-9);
+    }
+);
+
+both_faces!(
+    /// The moon's spawn on each face is on flat ground clear of crater walls, standing on the
+    /// ground, the same for the same seed and apart on the two faces.
+    fn the_moon_spawn_is_flat_and_clear_of_craters(f: FaceFrame) {
+        for seed in [1u64, 2, 3] {
+            let t = moon(seed);
+            let [x, y, z] = t.spawn_point(f.face);
+            assert!(t.inside(x, z));
+            assert_eq!([x, y, z], moon(seed).spawn_point(f.face), "deterministic");
+            assert_ne!([x, y, z], t.spawn_point(other(f.face)), "each face its own");
+            let h = t.height(f.face, x, z);
+            assert!((y - h).abs() <= CELL_H, "on the ground: {y} vs {h}");
+            for (dx, dz) in [(3.0, 0.0), (-3.0, 0.0), (0.0, 3.0), (0.0, -3.0)] {
+                assert!((t.height(f.face, x + dx, z + dz) - h).abs() <= 1.0, "flat");
+            }
+            for c in t.craters_near(f.face, x, z, 0.0, 10.0) {
+                assert!((c.x - x).hypot(c.z - z) > c.radius, "not in {c:?}");
+            }
+        }
+    }
+);

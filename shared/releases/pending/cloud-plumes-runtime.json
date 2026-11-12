@@ -1,7 +1,0 @@
-{
-  "changes": [
-    "A faint plume of steam now rises over active volcano lava lakes, on Medium and High clouds.",
-    "Cloud plumes can be added and moved while the game runs, ready for volcano smoke and weather.",
-    "The volumetric clouds do less work for empty sky and clear weather."
-  ]
-}

@@ -2,6 +2,62 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.54.43",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.42",
+      "changes": [
+        "Behind the scenes: moon design answers"
+      ]
+    },
+    {
+      "version": "0.54.41",
+      "changes": [
+        "Behind the scenes: a fix for the structures data check"
+      ]
+    },
+    {
+      "version": "0.54.40",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.39",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.38",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.37",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.36",
+      "changes": [
+        "Behind the scenes: the moon's own terrain (gray moon dust, craters, maria and ridges on both of its faces), not in the sky yet"
+      ]
+    },
+    {
+      "version": "0.54.35",
+      "changes": [
+        "A faint plume of steam now rises over active volcano lava lakes, on Medium and High clouds.",
+        "Cloud plumes can be added and moved while the game runs, ready for volcano smoke and weather.",
+        "The volumetric clouds do less work for empty sky and clear weather."
+      ]
+    },
+    {
       "version": "0.54.34",
       "changes": [
         "Behind the scenes: work queue notes"
