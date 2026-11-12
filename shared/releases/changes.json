@@ -2,6 +2,31 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.55.9",
+      "changes": [
+        "Behind the scenes: CI skips docs-only changes so releases ship faster"
+      ]
+    },
+    {
+      "version": "0.55.8",
+      "changes": [
+        "A player who walks into a portal now comes out beside the far hole, not back down it"
+      ]
+    },
+    {
+      "version": "0.55.7",
+      "changes": [
+        "Leaves sit flush against tree trunks instead of leaving gaps"
+      ]
+    },
+    {
+      "version": "0.55.6",
+      "changes": [
+        "Far trees have their leafy crowns back: no more bare trunks and branches poking through past about 50 m",
+        "Far tree crowns are shaded to match the nearby trees instead of fading into the grass"
+      ]
+    },
+    {
       "version": "0.55.5",
       "changes": [
         "Distant trees keep their leaves again"
