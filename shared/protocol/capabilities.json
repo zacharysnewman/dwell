@@ -14,6 +14,10 @@
     {
       "name": "damage.chunks",
       "description": "A Damage message's cells end with each hit mark's chunk (docs/BLOCK_DAMAGE.md \u00a79: how big a piece the hit took off, in sixteenths of the block's mark; a metal tool's 32, owner 2026-11-12 \"Metal tools break double sized bigger chunks off\"). Without it the server sends none and the client draws every mark at \u00d71."
+    },
+    {
+      "name": "creatures.npcs",
+      "description": "A Creatures message ends with its NPCs' part (WORK_QUEUE item 38, CHARACTERS.md \u00a711.11): per NPC its id, kind name, idle pose (stand, look, sit) and palette variant seed, from which the client picks the NPC's colours by shared/creatures/creatures.json. Without it the server leaves the part out, and an NPC is drawn as its model's plain creature."
     }
   ]
 }

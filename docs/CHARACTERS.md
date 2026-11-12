@@ -683,6 +683,8 @@ characters' ramp from the vertex's palette colour, the same lights and shadow ma
   and dark tail tip, faces still flat-shaded. Colours are palette references mixed in sRGB, so a
   coat holds blends between palette stops.
 
+- **NPCs** (WORK_QUEUE item 38, §11.11): people drawn as the Peasant who wander among the animals.
+
 ### 11.7 What is left (next)
 
 - Animal behaviour beyond wandering (ADR 0073's questions); jump, swim and climb clips for the
@@ -776,4 +778,38 @@ model?" Your arm on screen is the Peasant's own right arm, the same sleeve, cuff
   twice before, the axe 50° off the rig's hand; `another_players_item_is_turned_once_on_the_skinned_hand`). `?fparms=rigid` (`setRigidArms`) draws the old rigid arms instead,
   a dev switch for comparison; the rigid arms' parts stay in `characters.json` for it and for your
   own body (§5.1).
+
+### 11.11 Wandering NPCs (WORK_QUEUE item 38, 2026-11-12)
+
+The owner (2026-11-12): "wandering NPCs. They'll use the same player character model." Answers: wander,
+idle (look around, sit), turn to look at a nearby player, step aside when bumped — no talking or trading
+yet; a few near players by a data rule (count, spacing, biomes), simulated only nearby, like the
+animals; colour variations of the Peasant per NPC by palette remaps, seeded, as data. Later the same day:
+"Wandering NPCs will get swords" (item 35's swordplay): a held item slot by data, a disposition (neutral
+by default) and a combat hook; the combat AI waits for the sword mechanic.
+
+- **Data**: an NPC is a creature in `shared/creatures/creatures.json` with an `npc` block (the villager,
+  model `peasant`): `idles` (`pose` from the fixed vocabulary `stand`, `look`, `sit`; `weight`;
+  `seconds`), `lookAtM` and `turnDegPerS`, `bumpM` and `sidestepM`, `held` (an item of
+  `shared/items/items.json`, none for the villager until the sword is an item), `disposition`
+  (`neutral`), `combat` (`none` or `fightBack`) and `colours`: per part (`shirt`, `trousers`, `skin`,
+  `hair`) the palette ramp the Peasant's mesh has (`from`: `wool_green`, `flint`, `skin_fair`,
+  `hair_brown`) and the ramps one is picked from (`to`). The spawn rule is a creature rule with
+  `spacingM` (no group within that of another of its kind) and `biomes` (biome names). `gen.mjs`
+  validates the poses, ramps, items and biomes; `fixtures/npcs.json`'s `test:person` is a kind added by
+  data alone. Which ramp of the Peasant's mesh is which part is a first guess from its colours (the
+  ramps by vertex count: `hair_brown` 942, `skin_fair` 908, `wool_green` 564, `skin_brown` 501,
+  `flint` 440): prototype data to tune by eye.
+- **Server** (`dwell_sim::creatures`): idle in a pose picked by weight; while idle, turn toward the
+  nearest player within `lookAtM`, else (looking around) sweep ±60° over 4 s; a player or another NPC
+  within `bumpM` sends it `sidestepM` away (to its side when right on top); `Creatures::attacked` turns
+  a `fightBack` NPC on its attacker for 10 s. Each NPC's `variant` is seeded from the world seed and
+  its spawn cell; `npc_colours(def, variant)` picks one `to` per part, deterministically.
+- **Wire**: `Creatures` as before, plus, for a client with the `creatures.npcs` capability, its NPCs'
+  part (id, kind, pose, variant; ARCHITECTURE.md §8). Older clients draw a plain Peasant.
+- **Client** (`dwell-client` `creatures.rs`): `CreatureView::npc` holds the NPC's colours (from its
+  kind's data and variant) and held item; its role is its speed's while moving, else `look` or `sit`
+  (the Peasant has neither clip yet, so they play its fallback, idle).
+- **Not yet** (follows locally): the renderer applying the colour remap per body and drawing the held
+  item on `hand.R`, sit and look clips, and the combat behaviour with the swords (item 35).
 

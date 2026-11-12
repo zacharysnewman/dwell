@@ -1,6 +1,7 @@
 //! Creatures through the server (docs/adr/0073-creatures.md): the fixture creature spawns near a
 //! joined player by data alone, a client that said `CreaturesHello` is told of it (and only that
-//! one), it wanders on the ground, and it despawns when the player goes far (both faces).
+//! one), it wanders on the ground, and it despawns when the player goes far (both faces); NPCs'
+//! part goes only to clients with the `creatures.npcs` capability.
 
 mod common;
 
@@ -14,12 +15,18 @@ use dwell_world::{FLAT_TOP_Y, FaceFrame, empty_generator, m_of_row};
 const BASE: i32 = FLAT_TOP_Y + 40;
 
 fn scene(f: FaceFrame) -> Fixture {
+    scene_with(f, Table::FIXTURE, false)
+}
+
+/// The scene with `table`'s creatures; client 2 also says hello, with the `creatures.npcs`
+/// capability when `npcs`.
+fn scene_with(f: FaceFrame, table: Table, npcs: bool) -> Fixture {
     let mut fx = Fixture::new(ServerConfig {
         generator_override: Some(empty_generator()),
         spawn: Some(f.point([0.5, m_of_row(BASE), 0.5])),
         ..flat()
     });
-    fx.server.set_creature_table(Table::FIXTURE);
+    fx.server.set_creature_table(table);
     let stone = f.state(require("dwell:stone"));
     // A stone floor over the whole chunk column the player stands in (the fixture's spawnChunks 0).
     for x in -2..34 {
@@ -34,6 +41,12 @@ fn scene(f: FaceFrame) -> Fixture {
     fx.join(2, &Client::new(2));
     fx.send(1, Message::InventoryAction(InventoryAction::Hello));
     fx.send(1, Message::CreaturesHello);
+    if npcs {
+        let caps = dwell_protocol::capabilities::Capabilities::this_client();
+        assert!(caps.has(capability_names::CREATURES_NPCS));
+        fx.send(2, Message::Capabilities(caps));
+        fx.send(2, Message::CreaturesHello);
+    }
     let h = fx.server.player_handle_of(1).expect("a live player");
     for id in [1u16, 2] {
         let h = fx.server.player_handle_of(id).unwrap_or(h);
@@ -113,5 +126,55 @@ dwell_world::both_faces!(
                 .any(|m| matches!(m, Message::Creatures(c) if c.gone.len() == 3))),
             "the client is told they are gone"
         );
+    }
+);
+
+// WORK_QUEUE item 38: NPCs ride the creature messages; their part (kind, pose, palette variant)
+// goes only to a client with the `creatures.npcs` capability, an older client (1) reading them
+// as plain creatures.
+dwell_world::both_faces!(
+    fn npcs_are_told_with_their_part_only_to_clients_with_the_capability(f: FaceFrame) {
+        let mut fx = scene_with(f, Table::NPC_FIXTURE, true);
+        for _ in 0..61 {
+            fx.server.step();
+        }
+        let n = fx.server.creatures().len();
+        assert!(n >= 1, "the fixture NPC spawns by data alone");
+        let all = fx.take_all();
+        let msgs = |id: u32| -> Vec<CreaturesMessage> {
+            all.get(&id)
+                .map_or(&[][..], |v| v.as_slice())
+                .iter()
+                .filter_map(|m| match m {
+                    Message::Creatures(c) => Some(c.clone()),
+                    _ => None,
+                })
+                .collect()
+        };
+        let (old, new) = (msgs(1), msgs(2));
+        assert!(
+            old.iter()
+                .any(|m| m.creatures.iter().any(|c| c.model == "peasant"))
+        );
+        assert!(
+            old.iter().all(|m| m.npcs.is_none()),
+            "no part for an older client"
+        );
+        let part: Vec<NpcNet> = new
+            .iter()
+            .filter_map(|m| m.npcs.clone())
+            .flatten()
+            .collect();
+        assert!(!part.is_empty());
+        for p in &part {
+            let c = fx
+                .server
+                .creatures()
+                .iter()
+                .find(|c| c.id == p.id)
+                .expect("its creature");
+            assert_eq!(p.kind, "test:person");
+            assert_eq!(p.variant, c.variant);
+        }
     }
 );

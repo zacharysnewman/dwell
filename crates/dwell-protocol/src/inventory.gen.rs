@@ -99,4 +99,6 @@ pub static DROPS: &[BlockDrops] = &[
     BlockDrops { block: "dwell:oak_sapling", cost: "dwell:oak_sapling", drops: &[DropRule { chance: 1.0, choices: &[DropChoice { item: "dwell:oak_sapling", min: 1, max: 1, weight: 1.0 }] }] },
     BlockDrops { block: "dwell:pine_sapling", cost: "dwell:pine_sapling", drops: &[DropRule { chance: 1.0, choices: &[DropChoice { item: "dwell:pine_sapling", min: 1, max: 1, weight: 1.0 }] }] },
     BlockDrops { block: "dwell:palm_sapling", cost: "dwell:palm_sapling", drops: &[DropRule { chance: 1.0, choices: &[DropChoice { item: "dwell:palm_sapling", min: 1, max: 1, weight: 1.0 }] }] },
+    BlockDrops { block: "dwell:moon_dust", cost: "dwell:moon_dust", drops: &[DropRule { chance: 1.0, choices: &[DropChoice { item: "dwell:moon_dust", min: 1, max: 1, weight: 1.0 }] }] },
+    BlockDrops { block: "dwell:moon_mare_dust", cost: "dwell:moon_mare_dust", drops: &[DropRule { chance: 1.0, choices: &[DropChoice { item: "dwell:moon_mare_dust", min: 1, max: 1, weight: 1.0 }] }] },
 ];

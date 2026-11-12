@@ -49,7 +49,9 @@ export function fixtureWorldEdit<E>(
 ): E;
 export const WORLD_KNOBS: Record<string, readonly string[]>;
 export const WATER_LOOK_FIELDS: readonly string[];
-export function validateWorldKnobs<T>(w: T): T;
+/** The knob groups' list keys (terrain.json's `TERRAIN_LISTS`, e.g. `tectonics.lavaVents`). */
+export const WORLD_LISTS: Record<string, Record<string, unknown>>;
+export function validateWorldKnobs<T>(w: T, base?: Record<string, unknown>): T;
 export const BIOME_TEXT: Record<"label" | "description", number>;
 export function validatePresets<T>(
   presets: T[],

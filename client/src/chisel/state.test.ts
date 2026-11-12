@@ -24,6 +24,7 @@ import {
   starterEdit,
 } from './state';
 import { WorldIndex } from '../local/worldIndex';
+import { WORLD_KNOBS, WORLD_LISTS } from '../../../shared/worldgen/biomes.mjs';
 
 describe("Chisel's Play in game", () => {
   it("records the edit as the new world's worldgen config, which reopens unchanged", () => {
@@ -77,6 +78,41 @@ describe('Chisel state', () => {
     const unknown = structuredClone(e);
     (unknown.world as Record<string, unknown>).rivers = { bank: 1 };
     expect(validateEdit(unknown).join()).toMatch(/rivers is not a world knob/);
+  });
+
+  it("accepts every key gen.mjs takes in a world's knob groups, lists included", () => {
+    // Every world file's overrides in the knob groups (the starter's tectonics.lavaVents too).
+    const worlds = import.meta.glob('../../../shared/worldgen/worlds/*.json', {
+      eager: true,
+      import: 'default',
+    }) as Record<string, { overrides?: Record<string, Record<string, unknown>> }>;
+    expect(Object.keys(worlds).length).toBeGreaterThan(0);
+    for (const [file, w] of Object.entries(worlds)) {
+      const world = Object.fromEntries(
+        Object.entries(w.overrides ?? {}).filter(([g]) => g in WORLD_KNOBS),
+      );
+      const e = { ...buildEdit(), world } as unknown as Parameters<typeof validateEdit>[0];
+      expect(validateEdit(e), file).toEqual([]);
+    }
+    // A list key (WORLD_LISTS, from biomes.mjs TERRAIN_LISTS) is checked by its own checker.
+    expect(Object.keys(WORLD_LISTS.tectonics ?? {})).toContain('lavaVents');
+    const vent = {
+      cone: 'hotspot',
+      index: 0,
+      kind: 'lake',
+      fluid: 'dwell:lava',
+      rateM3s: 2,
+      radius: 12,
+    };
+    const ok = { ...buildEdit(), world: { tectonics: { hotspotCount: 1, lavaVents: [vent] } } };
+    expect(validateEdit(ok as unknown as Parameters<typeof validateEdit>[0])).toEqual([]);
+    const bad = {
+      ...buildEdit(),
+      world: { tectonics: { hotspotCount: 1, lavaVents: [{ ...vent, index: 3 }] } },
+    };
+    expect(validateEdit(bad as unknown as Parameters<typeof validateEdit>[0]).join()).toMatch(
+      /tectonics\.lavaVents\[0\]: no hotspot cone 3/,
+    );
   });
 
   it('the build edit is valid and round-trips through its JSON', () => {

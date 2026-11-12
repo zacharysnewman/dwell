@@ -3,11 +3,16 @@
 //! rolled once per chunk column and face from the world seed), wander (idle, then walk to a random
 //! nearby point on walkable ground, stopping at water and cliffs), and are removed once no player
 //! is within `despawn_m`. Everything is face-local through `FaceFrame`: face B mirrors face A.
+//!
+//! NPCs (WORK_QUEUE item 38, CHARACTERS.md §11.11) are creatures with an `npc` block: they idle in a
+//! pose picked by weight (stand, look around, sit), turn to face a player within `look_at_m`, step
+//! aside when a player or another NPC comes within `bump_m`, and carry a palette variant seed the
+//! client picks their colours from; their rules may keep groups apart (`spacing_m`) and to biomes.
 
 use std::collections::{HashMap, HashSet};
 
 use dwell_blocks::{StateId, VoxelShape, find_block, try_info};
-use dwell_protocol::{CreatureNet, SIM_HZ};
+use dwell_protocol::{CreatureNet, NPC_POSES, NpcNet, SIM_HZ};
 use dwell_world::{CHUNK_SIZE, FaceFrame, cell_of_pos, m_of_row};
 
 #[rustfmt::skip]
@@ -21,6 +26,89 @@ pub use table::{CREATURES, LIMITS, RULES};
 pub mod fixture {
     include!("creatures_fixture.gen.rs");
 }
+
+/// The fixture NPC (shared/creatures/fixtures/npcs.json): an NPC kind added by data alone.
+#[rustfmt::skip]
+pub mod npc_fixture {
+    include!("npcs_fixture.gen.rs");
+}
+
+/// An NPC's idle pose (`NpcNet::pose` on the wire, `NPC_POSES` its names).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Pose {
+    Stand = 0,
+    Look = 1,
+    Sit = 2,
+}
+
+impl Pose {
+    pub fn name(self) -> &'static str {
+        NPC_POSES[self as usize]
+    }
+}
+
+/// Who an NPC treats as a foe (owner 2026-11-12: neutral by default): neutral starts no fight.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Disposition {
+    Neutral,
+}
+
+/// What an NPC does when attacked ([`Creatures::attacked`]): nothing, or turn on its attacker
+/// (the swords' stances and blocks come with the sword mechanic, WORK_QUEUE item 35).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Combat {
+    None,
+    FightBack,
+}
+
+/// One of an NPC's idles: the pose, its weight among them, how long (s, [min, max]).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Idle {
+    pub pose: Pose,
+    pub weight: f64,
+    pub seconds: [f64; 2],
+}
+
+/// A colour part of an NPC: its model's palette ramp `from` is drawn as one of `to`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ColourSlot {
+    pub part: &'static str,
+    pub from: &'static str,
+    pub to: &'static [&'static str],
+}
+
+/// An NPC's behaviour and looks (shared/creatures/creatures.json `npc`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct NpcDef {
+    pub look_at_m: f64,
+    pub turn_deg_per_s: f64,
+    pub bump_m: f64,
+    pub sidestep_m: f64,
+    /// The item in its hand (shared/items/items.json), drawn on its model's hand joint.
+    pub held: Option<&'static str>,
+    pub disposition: Disposition,
+    pub combat: Combat,
+    pub idles: &'static [Idle],
+    pub colours: &'static [ColourSlot],
+}
+
+/// An NPC's colours from its `variant` seed: per part, (the model's ramp, the ramp drawn in its
+/// place). Deterministic: the same seed always picks the same.
+pub fn npc_colours(def: &NpcDef, variant: u32) -> Vec<(&'static str, &'static str)> {
+    def.colours
+        .iter()
+        .enumerate()
+        .map(|(j, c)| {
+            let h = unit(mix(u64::from(variant), [j as i32, 0, 0], 0x636f_6c6f));
+            let i = ((h * c.to.len() as f64) as usize).min(c.to.len() - 1);
+            (c.from, c.to[i])
+        })
+        .collect()
+}
+
+/// The biome of a face-local column (`[x, z]`), by name; None: the world has no biome map (a
+/// rule's `biomes` are then not checked).
+pub type BiomeAt<'a> = &'a dyn Fn(FaceFrame, [i32; 2]) -> Option<&'static str>;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Limits {
@@ -39,6 +127,8 @@ pub struct CreatureDef {
     pub rows: i32,
     pub climb_rows: i32,
     pub drop_rows: i32,
+    /// An NPC's behaviour and looks; None: an animal.
+    pub npc: Option<NpcDef>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -49,6 +139,10 @@ pub struct SpawnRule {
     pub group: [u32; 2],
     /// Other creatures a group may hold in place of the rule's own (a herd's stag).
     pub mix: &'static [MixPart],
+    /// No group within this many metres of another of its kind (0: no spacing).
+    pub spacing_m: f64,
+    /// The biomes it spawns in (shared/worldgen/biomes names); empty: any.
+    pub biomes: &'static [&'static str],
 }
 
 /// A part of a rule's group mix (shared/creatures/creatures.json `mix`, ADR 0073): rolled once a
@@ -98,6 +192,19 @@ impl Table {
         creatures: &fixture::CREATURES,
         rules: &fixture::RULES,
     };
+    pub const NPC_FIXTURE: Table = Table {
+        limits: npc_fixture::LIMITS,
+        creatures: &npc_fixture::CREATURES,
+        rules: &npc_fixture::RULES,
+    };
+
+    /// The NPC kind named `name`, if it is one.
+    pub fn npc(&self, name: &str) -> Option<&'static NpcDef> {
+        self.creatures
+            .iter()
+            .find(|c| c.name == name)
+            .and_then(|c| c.npc.as_ref())
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -122,6 +229,18 @@ pub struct Creature {
     pub driven: bool,
     /// × its walking speed (a sprint, a flight; 1 walking).
     pub pace: f64,
+    /// An NPC's idle pose (Stand while it walks).
+    pub pose: Pose,
+    /// An NPC's palette variant seed (its colours: [`npc_colours`]).
+    pub variant: u32,
+    /// An NPC walking aside from a bump.
+    pub sidestepping: bool,
+    /// An NPC's heading when its idle began (looking around sweeps about it) and that idle's ticks.
+    look_base: f64,
+    idle_len: u32,
+    /// An NPC turned on its attacker (`Combat::FightBack`): where it is and ticks left.
+    pub foe: Option<[f64; 3]>,
+    foe_ticks: u32,
     rng: u64,
 }
 
@@ -134,6 +253,17 @@ impl Creature {
             yaw: self.yaw as f32,
             speed: self.speed as f32,
         }
+    }
+
+    /// Its NPC part on the wire; None for an animal.
+    pub fn npc_net(&self, table: &Table) -> Option<NpcNet> {
+        let def = &table.creatures[self.kind];
+        def.npc.map(|_| NpcNet {
+            id: self.id,
+            kind: def.name.to_string(),
+            pose: self.pose as u8,
+            variant: self.variant,
+        })
     }
 }
 
@@ -205,7 +335,44 @@ impl Creature {
         let [lo, hi] = def.idle_seconds;
         ((lo + (hi - lo) * self.roll()) * f64::from(SIM_HZ)) as u32
     }
+
+    /// Begins an idle: an animal's of `idle_seconds`, an NPC's a pose picked by weight for its
+    /// seconds.
+    fn start_idle(&mut self, def: &CreatureDef) {
+        self.sidestepping = false;
+        let Some(n) = def.npc else {
+            self.idle = self.idle_ticks(def).max(1);
+            return;
+        };
+        let total: f64 = n.idles.iter().map(|i| i.weight).sum();
+        let mut r = self.roll() * total;
+        let mut pick = n.idles[n.idles.len() - 1];
+        for i in n.idles {
+            if r < i.weight {
+                pick = *i;
+                break;
+            }
+            r -= i.weight;
+        }
+        let [lo, hi] = pick.seconds;
+        self.pose = pick.pose;
+        self.idle = (((lo + (hi - lo) * self.roll()) * f64::from(SIM_HZ)) as u32).max(1);
+        self.idle_len = self.idle;
+        self.look_base = self.yaw;
+    }
+
+    /// Turns its heading toward `to` (degrees) by at most `max` degrees.
+    fn turn_toward(&mut self, to: f64, max: f64) {
+        let d = (to - self.yaw + 540.0).rem_euclid(360.0) - 180.0;
+        self.yaw += d.clamp(-max, max);
+    }
 }
+
+/// How far (degrees) an NPC looking around turns either way, and the sweep's period (s).
+const LOOK_SWEEP_DEG: f64 = 60.0;
+const LOOK_PERIOD_S: f64 = 4.0;
+/// How long an NPC that fights back stays turned on its attacker (s).
+const FOE_SECONDS: f64 = 10.0;
 
 /// The world's creatures.
 #[derive(Debug)]
@@ -275,6 +442,13 @@ impl Creatures {
             home,
             driven: true,
             pace: 1.0,
+            pose: Pose::Stand,
+            variant: 0,
+            sidestepping: false,
+            look_base: yaw,
+            idle_len: 0,
+            foe: None,
+            foe_ticks: 0,
             rng,
         });
         Some(self.next_id)
@@ -296,6 +470,11 @@ impl Creatures {
     /// a column whose cells aren't loaded waits. Deterministic: the roll, the cell and the group
     /// hash the world seed and the face-local column.
     pub fn spawn_near(&mut self, players: &[[f64; 3]], get: Get, seed: u64) {
+        self.spawn_near_in(players, get, seed, &|_, _| None);
+    }
+
+    /// [`Creatures::spawn_near`] with the world's biomes (a rule's `biomes`).
+    pub fn spawn_near_in(&mut self, players: &[[f64; 3]], get: Get, seed: u64, biome: BiomeAt) {
         let r = self.table.limits.spawn_chunks;
         for p in players {
             let f = FaceFrame::at_height(p[1]);
@@ -311,7 +490,7 @@ impl Creatures {
                     if self.rolled.contains(&key) {
                         continue;
                     }
-                    if self.roll_column(get, seed, f, key, row) {
+                    if self.roll_column(get, seed, f, key, row, biome) {
                         self.rolled.insert(key);
                     }
                 }
@@ -320,7 +499,15 @@ impl Creatures {
     }
 
     /// One column's roll; false when its cells aren't loaded yet.
-    fn roll_column(&mut self, get: Get, seed: u64, f: FaceFrame, key: [i32; 3], row: i32) -> bool {
+    fn roll_column(
+        &mut self,
+        get: Get,
+        seed: u64,
+        f: FaceFrame,
+        key: [i32; 3],
+        row: i32,
+        biome: BiomeAt,
+    ) -> bool {
         let col = [key[0], 0, key[2]];
         for (i, rule) in self.table.rules.iter().enumerate() {
             if self.reserved.contains(&rule.creature) {
@@ -354,6 +541,22 @@ impl Creatures {
             let Some((x, y, z)) = found else {
                 continue;
             };
+            if !rule.biomes.is_empty()
+                && biome(f, [x, z]).is_some_and(|b| !rule.biomes.contains(&b))
+            {
+                continue;
+            }
+            // Spacing: no group within `spacing_m` of another of its kind on this face.
+            if rule.spacing_m > 0.0
+                && self.list.iter().any(|c| {
+                    let l = f.point(c.position);
+                    c.kind == rule.creature
+                        && FaceFrame::at_height(c.position[1]).sign() == f.sign()
+                        && (l[0] - f64::from(x)).hypot(l[2] - f64::from(z)) < rule.spacing_m
+                })
+            {
+                continue;
+            }
             let [lo, hi] = rule.group;
             let n = lo + ((h(3) * f64::from(hi - lo + 1)) as u32).min(hi - lo);
             let kinds = group_kinds(rule, n, |j| h(200 + j as u64));
@@ -389,9 +592,21 @@ impl Creatures {
                     home: key,
                     driven: false,
                     pace: 1.0,
+                    pose: Pose::Stand,
+                    variant: mix(seed, [x + dx, yy, z + dz], 0x6e70_6373) as u32,
+                    sidestepping: false,
+                    look_base: 0.0,
+                    idle_len: 0,
+                    foe: None,
+                    foe_ticks: 0,
                     rng: mix(seed, [x + dx, yy, z + dz], 99),
                 };
-                c.idle = c.idle_ticks(&def);
+                c.look_base = c.yaw;
+                if def.npc.is_some() {
+                    c.start_idle(&def);
+                } else {
+                    c.idle = c.idle_ticks(&def);
+                }
                 self.list.push(c);
             }
             return true;
@@ -399,14 +614,108 @@ impl Creatures {
         true
     }
 
-    /// One tick: each creature idles or walks a step; a step onto ground it can't stand on (water,
-    /// a cliff's edge, a wall, unloaded) ends the walk.
+    /// One tick with no players near (no NPC looks at or steps aside from anyone).
     pub fn step(&mut self, get: Get) {
+        self.step_near(get, &[]);
+    }
+
+    /// An NPC of `id` is attacked by something at `from` (world): with `Combat::FightBack` it
+    /// stops and turns on it for `FOE_SECONDS`. True when it fights back.
+    pub fn attacked(&mut self, id: u32, from: [f64; 3]) -> bool {
+        let table = self.table;
+        let Some(c) = self.get_mut(id) else {
+            return false;
+        };
+        match table.creatures[c.kind].npc.map(|n| n.combat) {
+            Some(Combat::FightBack) => {
+                c.foe = Some(from);
+                c.foe_ticks = (FOE_SECONDS * f64::from(SIM_HZ)) as u32;
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// One tick: each creature idles or walks a step; a step onto ground it can't stand on (water,
+    /// a cliff's edge, a wall, unloaded) ends the walk. NPCs also look at the `players` (world
+    /// feet) near them and step aside from a player or another NPC that bumps them.
+    pub fn step_near(&mut self, get: Get, players: &[[f64; 3]]) {
         let dt = 1.0 / f64::from(SIM_HZ);
+        let table = self.table;
+        // Who can bump an NPC: the players (id 0) and the NPCs, as of the tick's start.
+        let bumpers: Vec<(u32, [f64; 3])> = players
+            .iter()
+            .map(|p| (0, *p))
+            .chain(
+                self.list
+                    .iter()
+                    .filter(|c| table.creatures[c.kind].npc.is_some())
+                    .map(|c| (c.id, c.position)),
+            )
+            .collect();
         for c in &mut self.list {
-            let def = self.table.creatures[c.kind];
+            let def = table.creatures[c.kind];
             let f = FaceFrame::at_height(c.position[1]);
             let local = f.point(c.position);
+            if let (Some(n), false) = (def.npc, c.driven) {
+                let near = |p: &[f64; 3]| {
+                    (FaceFrame::at_height(p[1]).sign() == f.sign()).then(|| {
+                        let l = f.point(*p);
+                        let (dx, dz) = (l[0] - local[0], l[2] - local[2]);
+                        (dx, dz, dx.hypot(dz))
+                    })
+                };
+                let max_turn = n.turn_deg_per_s * dt;
+                if c.foe_ticks > 0 {
+                    c.foe_ticks -= 1;
+                    c.target = None;
+                    c.speed = 0.0;
+                    c.pose = Pose::Stand;
+                    if let Some((dx, dz, _)) = c.foe.as_ref().and_then(near) {
+                        c.turn_toward(dx.atan2(dz).to_degrees(), max_turn);
+                    }
+                    if c.foe_ticks == 0 {
+                        c.foe = None;
+                        c.start_idle(&def);
+                    }
+                    continue;
+                }
+                let bump = bumpers
+                    .iter()
+                    .filter(|(id, _)| *id != c.id)
+                    .filter_map(|(_, p)| near(p))
+                    .filter(|&(_, _, d)| d < n.bump_m)
+                    .min_by(|a, b| a.2.total_cmp(&b.2));
+                if let (Some((dx, dz, d)), false) = (bump, c.sidestepping) {
+                    // Away from the bumper; one right on top of it: to its side.
+                    let (ax, az) = if d > 1e-6 {
+                        (-dx / d, -dz / d)
+                    } else {
+                        let y = c.yaw.to_radians();
+                        (y.cos(), -y.sin())
+                    };
+                    c.target = Some([local[0] + ax * n.sidestep_m, local[2] + az * n.sidestep_m]);
+                    c.idle = 0;
+                    c.pose = Pose::Stand;
+                    c.sidestepping = true;
+                }
+                if c.idle > 0 {
+                    // Idle: face the nearest player within `look_at_m`, else look around.
+                    let watch = players
+                        .iter()
+                        .filter_map(near)
+                        .filter(|&(_, _, d)| d <= n.look_at_m && d > 1e-6)
+                        .min_by(|a, b| a.2.total_cmp(&b.2));
+                    if let Some((dx, dz, _)) = watch {
+                        c.turn_toward(dx.atan2(dz).to_degrees(), max_turn);
+                    } else if c.pose == Pose::Look {
+                        let t = f64::from(c.idle_len - c.idle) / f64::from(SIM_HZ);
+                        let to = c.look_base
+                            + LOOK_SWEEP_DEG * (t * std::f64::consts::TAU / LOOK_PERIOD_S).sin();
+                        c.turn_toward(to, max_turn);
+                    }
+                }
+            }
             if c.driven {
                 c.idle = 0;
                 if c.target.is_none() {
@@ -418,6 +727,7 @@ impl Creatures {
                 c.idle -= 1;
                 c.speed = 0.0;
                 if c.idle == 0 {
+                    c.pose = Pose::Stand;
                     let a = c.roll() * std::f64::consts::TAU;
                     let d = def.wander_m * (0.3 + 0.7 * c.roll());
                     c.target = Some([local[0] + d * a.sin(), local[2] + d * a.cos()]);
@@ -425,7 +735,7 @@ impl Creatures {
                 continue;
             }
             let Some([tx, tz]) = c.target else {
-                c.idle = c.idle_ticks(&def).max(1);
+                c.start_idle(&def);
                 continue;
             };
             let (dx, dz) = (tx - local[0], tz - local[2]);
@@ -435,7 +745,7 @@ impl Creatures {
             if dist <= step {
                 c.target = None;
                 if !c.driven {
-                    c.idle = c.idle_ticks(&def).max(1);
+                    c.start_idle(&def);
                 }
                 c.speed = 0.0;
                 continue;
@@ -453,7 +763,7 @@ impl Creatures {
                 None => {
                     c.target = None;
                     if !c.driven {
-                        c.idle = c.idle_ticks(&def).max(1);
+                        c.start_idle(&def);
                     }
                     c.speed = 0.0;
                 }
@@ -570,7 +880,7 @@ mod tests {
     // Owner, 2026-11-10: "let's disable all the animals except wolves and deer for now". The rules
     // spawn only deer (does, the stag by the mix) and wolves, in packs of 2-4 rarer than the herds.
     #[test]
-    fn only_deer_and_wolves_spawn_the_wolves_in_small_rarer_packs() {
+    fn only_deer_wolves_and_villagers_spawn_the_wolves_in_small_rarer_packs() {
         let t = Table::SHIPPED;
         let name = |k: usize| t.creatures[k].name;
         let mut spawned: Vec<_> = t
@@ -580,7 +890,11 @@ mod tests {
             .map(name)
             .collect();
         spawned.sort_unstable();
-        assert_eq!(spawned, ["dwell:deer", "dwell:doe", "dwell:wolf"]);
+        // And the wandering NPCs (WORK_QUEUE item 38), the villagers.
+        assert_eq!(
+            spawned,
+            ["dwell:deer", "dwell:doe", "dwell:villager", "dwell:wolf"]
+        );
         let rule = |n: &str| t.rules.iter().find(|r| name(r.creature) == n).unwrap();
         let (wolf, doe) = (rule("dwell:wolf"), rule("dwell:doe"));
         assert_eq!(wolf.group, [2, 4]);
@@ -660,4 +974,247 @@ mod tests {
             assert_eq!(cs.list.len(), 3);
         }
     );
+
+    // --- NPCs (WORK_QUEUE item 38) ---
+
+    fn npcs(f: FaceFrame, at: [f64; 2]) -> Creatures {
+        let g = world(f);
+        let mut cs = Creatures::new(Table::NPC_FIXTURE);
+        cs.spawn_near(&[f.point([at[0], m_of_row(10), at[1]])], &g, 7);
+        cs
+    }
+
+    /// Face-local feet on walkable ground of `world`: the floor (out of the water, off the wall's
+    /// side) or the wall's top (a 6-row drop off it: the fixture steps down 1).
+    fn walkable(l: [f64; 3]) -> bool {
+        let floor =
+            (l[1] - m_of_row(10)).abs() < 1e-9 && !(20.0..24.0).contains(&l[0]) && l[0] > -5.0;
+        let top = (l[1] - m_of_row(16)).abs() < 1e-9 && l[0] < -5.0;
+        floor || top
+    }
+
+    /// One fixture NPC idling (standing) at face-local (x, z) on the floor, facing +z.
+    fn one_npc(f: FaceFrame, [x, z]: [f64; 2]) -> Creatures {
+        let mut cs = npcs(f, [0.5, 0.5]);
+        cs.list.truncate(1);
+        let c = &mut cs.list[0];
+        c.position = f.point([x, m_of_row(10), z]);
+        c.target = None;
+        c.idle = 60 * 60;
+        c.idle_len = c.idle;
+        c.pose = Pose::Stand;
+        c.yaw = 0.0;
+        cs
+    }
+
+    both_faces!(
+        fn an_npc_kind_spawns_by_data_near_a_player_kept_apart_and_none_far(f: FaceFrame) {
+            let cs = npcs(f, [0.5, 0.5]);
+            assert!(cs.list.len() >= 2, "{} NPCs", cs.list.len());
+            let span = f64::from(CHUNK_SIZE) * 2.0;
+            for (i, c) in cs.list.iter().enumerate() {
+                assert_eq!(cs.table.creatures[c.kind].name, "test:person");
+                assert!(cs.table.creatures[c.kind].npc.is_some());
+                let l = f.point(c.position);
+                assert!(walkable(l), "on the floor or the wall's top: {l:?}");
+                assert!(
+                    l[0].abs() <= span && l[2].abs() <= span,
+                    "only near the player: {l:?}"
+                );
+                // The rule's spacing (20 m between groups; a member spawns up to 2 cells off).
+                for d in &cs.list[i + 1..] {
+                    let m = f.point(d.position);
+                    assert!((l[0] - m[0]).hypot(l[2] - m[2]) > 20.0 - 3.0);
+                }
+            }
+            // The same seed spawns the same, mirrored on face B.
+            let a: Vec<_> = npcs(FaceFrame::A, [0.5, 0.5])
+                .list
+                .iter()
+                .map(|c| (c.position, c.variant))
+                .collect();
+            let here: Vec<_> = cs
+                .list
+                .iter()
+                .map(|c| (FaceFrame::A.point(f.point(c.position)), c.variant))
+                .collect();
+            assert_eq!(a, here);
+            // Far from every player they go.
+            let mut cs = cs;
+            cs.despawn_far(&[f.point([500.0, m_of_row(10), 0.5])]);
+            assert!(cs.list.is_empty());
+        }
+    );
+
+    both_faces!(
+        fn a_rule_s_biomes_limit_where_it_spawns(f: FaceFrame) {
+            let rules: &'static [SpawnRule] = Box::leak(Box::new([SpawnRule {
+                biomes: &["preset:steppe"],
+                ..npc_fixture::RULES[0]
+            }]));
+            let table = Table {
+                rules,
+                ..Table::NPC_FIXTURE
+            };
+            let g = world(f);
+            let feet = [f.point([0.5, m_of_row(10), 0.5])];
+            let count = |biome: BiomeAt| {
+                let mut cs = Creatures::new(table);
+                cs.spawn_near_in(&feet, &g, 7, biome);
+                cs.list.len()
+            };
+            assert_eq!(count(&|_, _| Some("preset:boreal")), 0, "another biome");
+            assert!(count(&|_, _| Some("preset:steppe")) > 0, "its biome");
+            assert!(count(&|_, _| None) > 0, "no biome map: unchecked");
+        }
+    );
+
+    both_faces!(
+        fn npcs_wander_on_walkable_ground_and_idle_in_their_poses(f: FaceFrame) {
+            let g = world(f);
+            let mut cs = npcs(f, [0.5, 0.5]);
+            let (mut walked, mut poses) = (0.0, HashSet::new());
+            for _ in 0..60 * 120 {
+                let before: Vec<_> = cs.list.iter().map(|c| c.position).collect();
+                cs.step_near(&g, &[]);
+                for (c, b) in cs.list.iter().zip(&before) {
+                    let l = f.point(c.position);
+                    walked += (0..3)
+                        .map(|k| (c.position[k] - b[k]).powi(2))
+                        .sum::<f64>()
+                        .sqrt();
+                    assert!(walkable(l), "on the floor or the wall's top: {l:?}");
+                    if c.idle > 0 {
+                        poses.insert(c.pose);
+                    }
+                }
+            }
+            assert!(walked > 20.0, "they wander ({walked} m)");
+            // The fixture's idles by data: looking around and sitting.
+            assert_eq!(poses, HashSet::from([Pose::Look, Pose::Sit]));
+        }
+    );
+
+    both_faces!(
+        fn an_idle_npc_turns_to_look_at_a_near_player_and_not_a_far_one(f: FaceFrame) {
+            let g = world(f);
+            // A player 3 m to its +x (within the fixture's 5 m): it turns to face +x, 90 degrees.
+            let mut cs = one_npc(f, [0.5, 0.5]);
+            let near = f.point([3.5, m_of_row(10), 0.5]);
+            for _ in 0..60 {
+                cs.step_near(&g, &[near]);
+            }
+            let c = &cs.list[0];
+            assert!((c.yaw - 90.0).abs() < 1.0, "faces the player: {}", c.yaw);
+            assert_eq!(f.point(c.position)[0], 0.5, "turned, not moved");
+            // One 10 m off: it keeps facing +z.
+            let mut cs = one_npc(f, [0.5, 0.5]);
+            for _ in 0..60 {
+                cs.step_near(&g, &[f.point([10.5, m_of_row(10), 0.5])]);
+            }
+            assert!(cs.list[0].yaw.abs() < 1e-9, "{}", cs.list[0].yaw);
+        }
+    );
+
+    both_faces!(
+        fn a_bumped_npc_steps_aside_from_a_player_and_from_another_npc(f: FaceFrame) {
+            let g = world(f);
+            let mut cs = one_npc(f, [0.5, 0.5]);
+            let player = f.point([0.8, m_of_row(10), 0.5]); // 0.3 m to its +x
+            for _ in 0..60 * 3 {
+                cs.step_near(&g, &[player]);
+            }
+            let l = f.point(cs.list[0].position);
+            assert!(l[0] < 0.5 - 1.0, "stepped away from the player: {l:?}");
+            assert!((l[0] - 0.8).hypot(l[2] - 0.5) > 0.8, "out of reach: {l:?}");
+            // Two NPCs 0.4 m apart both step aside.
+            let mut cs = npcs(f, [0.5, 0.5]);
+            cs.list.truncate(2);
+            for (c, x) in cs.list.iter_mut().zip([0.3, 0.7]) {
+                c.position = f.point([x, m_of_row(10), 0.5]);
+                c.target = None;
+                c.idle = 60 * 60;
+                c.pose = Pose::Sit;
+            }
+            for _ in 0..60 * 3 {
+                cs.step_near(&g, &[]);
+            }
+            let (a, b) = (f.point(cs.list[0].position), f.point(cs.list[1].position));
+            assert!((a[0] - b[0]).hypot(a[2] - b[2]) > 2.0, "apart: {a:?} {b:?}");
+        }
+    );
+
+    both_faces!(
+        fn an_npc_that_fights_back_stops_and_turns_on_its_attacker(f: FaceFrame) {
+            let g = world(f);
+            let mut cs = one_npc(f, [0.5, 0.5]);
+            let id = cs.list[0].id;
+            let from = f.point([0.5, m_of_row(10), -2.5]); // behind it (-z)
+            assert!(cs.attacked(id, from), "the fixture's combat is fightBack");
+            for _ in 0..90 {
+                cs.step_near(&g, &[]);
+            }
+            let c = &cs.list[0];
+            assert!((c.yaw.abs() - 180.0).abs() < 1.0, "faces it: {}", c.yaw);
+            assert_eq!(c.speed, 0.0);
+            assert_eq!(c.foe, Some(from));
+            // An animal has no combat hook.
+            let mut animals = spawn(f);
+            let id = animals.list[0].id;
+            assert!(!animals.attacked(id, from));
+        }
+    );
+
+    #[test]
+    fn an_npc_s_colours_are_deterministic_per_seed_and_from_its_data() {
+        let def = Table::NPC_FIXTURE
+            .npc("test:person")
+            .expect("the fixture NPC");
+        assert_eq!(def.held, Some("dwell:stone_axe"));
+        assert_eq!(def.disposition, Disposition::Neutral);
+        let mut seen: Vec<HashSet<&str>> = vec![HashSet::new(); def.colours.len()];
+        for v in 0..400u32 {
+            let c = npc_colours(def, v.wrapping_mul(0x9e37_79b9));
+            assert_eq!(
+                c,
+                npc_colours(def, v.wrapping_mul(0x9e37_79b9)),
+                "deterministic"
+            );
+            for ((from, to), (slot, seen)) in c.iter().zip(def.colours.iter().zip(&mut seen)) {
+                assert_eq!(*from, slot.from);
+                assert!(slot.to.contains(to));
+                seen.insert(*to);
+            }
+        }
+        for (slot, seen) in def.colours.iter().zip(&seen) {
+            assert_eq!(
+                seen.len(),
+                slot.to.len(),
+                "every option of {} turns up",
+                slot.part
+            );
+        }
+        // The game's villager: the Peasant, four parts, sent with its kind and variant.
+        let t = Table::SHIPPED;
+        let v = t.npc("dwell:villager").expect("the villager");
+        let parts: Vec<_> = v.colours.iter().map(|c| c.part).collect();
+        assert_eq!(parts, ["shirt", "trousers", "skin", "hair"]);
+        let kind = t
+            .creatures
+            .iter()
+            .position(|c| c.name == "dwell:villager")
+            .unwrap();
+        assert_eq!(t.creatures[kind].model, "peasant");
+        let cs = npcs(FaceFrame::A, [0.5, 0.5]);
+        let net = cs.list[0].npc_net(&cs.table).expect("an NPC part");
+        assert_eq!(
+            (net.kind.as_str(), net.variant),
+            ("test:person", cs.list[0].variant)
+        );
+        assert!(
+            spawn(FaceFrame::A).list[0]
+                .npc_net(&Table::FIXTURE)
+                .is_none()
+        );
+    }
 }

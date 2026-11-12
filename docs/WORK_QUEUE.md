@@ -883,7 +883,15 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    character model."). People using the Peasant model who wander the world like the animals do. Owner's answers
    (2026-11-12): wander, idle (look around, sit), turn to look at a nearby player, step aside when bumped — no
    talking or trading yet; a few near players by a data rule (count, spacing, biomes), simulated only nearby, like
-   the animals; colour variations of the Peasant per NPC (palette remaps, seeded, data). In progress (cloud).
+   the animals; colour variations of the Peasant per NPC (palette remaps, seeded, data). Owner, later
+   2026-11-12 (recorded in item 35): "Wandering NPCs will get swords." — for the NPCs: a held item slot by data
+   (the sword, per NPC kind) drawn on the Peasant's `hand.R`, a disposition by data (neutral by default), a
+   combat hook in the vocabulary; combat AI waits for the swords PR (a minimal fight-back once it is in).
+   Built (cloud, 0.52.x): the villager as a creature with an `npc` block (idles stand/look/sit, look-at,
+   sidestep, held, disposition, combat hook `fightBack`, colour parts), rules' `spacingM` and `biomes`, the
+   server's behaviour, the `creatures.npcs` capability's NPC part on `Creatures`, the client's pose roles and
+   colours; CHARACTERS.md §11.11. Left (local): the colour remap and held item in the renderer, sit/look
+   clips, combat with the swords.
 
 ## Done
 
@@ -981,6 +989,14 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
 
 ## Smaller items, after the queue
 
+- **Chisel's world knobs take every key gen.mjs takes (owner 2026-11-12: "fix a failing test on main": `state.test.ts`
+  "opens the starter world as a valid edit" failed with "tectonics.lavaVents is not a world knob"; "make Chisel
+  accept every key the generator's world config accepts — ideally derived from the same schema … so new keys never
+  break it again"). Done (`claude/chisel-world-knobs`): `validateWorldKnobs` (shared/worldgen/biomes.mjs) takes the
+  knob groups' list keys from `TERRAIN_LISTS` (`WORLD_LISTS`, checked by the same checker gen.mjs uses, over
+  terrain.json's group), as the tectonics' ranged keys already came from `TERRAIN`; a test validates every world
+  file's knob-group overrides as a Chisel edit. Still open on main: `textures.test.ts` "flags colours off the art
+  direction" lists `obsidian.shadow` and `lava.light` off the palette (an art-direction call for the owner).
 - **Chop check (2026-11-12, `claude/chop-check`), items 24–26 seen in Chrome on the GPU** (`fell-tree` and scratch
   scenarios on `?world=flat`):
   - **One swing after the fall wipes the gash (item 24).** At the 11th swing the stump is an upright ramp low at the
