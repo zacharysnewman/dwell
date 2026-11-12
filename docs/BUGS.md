@@ -6,6 +6,25 @@ pins it.
 
 ## Open
 
+### 88. Sub-60 fps flying at High on the owner's M1 MacBook Air (measured; partial)
+
+Reported 2026-11-12 (owner): "Im seeing on this m1 Mac that im getting sub-60FPS when flying on High. Im wondering
+if the new trees and volumetric clouds are at fault!" Target (WORK_QUEUE item 30): High at 60 fps on an M1 Air.
+
+Measured on this M1 Air (`npm run bench -- --warm --unthrottled high-fly`, docs/DEV_TOOLS.md "Flying at High on the
+M1"): flying at level 4 from the starter's mixed forest toward the tall cone, `gpu.frame` 8.8 ms mean over open
+ground and **13.4–15.0 mean, p95 15.6–17.3 (18.5 in one run) over the forests**; the main thread is not the limit
+(`frame.cpu` p95 ≤ 10.5 ms, no long tasks). **Not the volumetric clouds**: Medium → Low (the 2D deck) for the
+same flight changed nothing (15.0 → 15.7 ms, within the spread); their steps are fixed per pixel, so altitude does
+not grow them. **Not streaming**: 330–400 MiB of chunk meshes uploaded per 4 s over forest, but a 1 MiB desktop
+upload budget (from 4) moved the frame ≤ 1.8 ms and lagged the uploads, so it was not adopted. **The trees are, as
+standing still in #78**: over forest the near pass goes 3 → 6–8 ms (the cutout leaves and tall grass) and the sun
+shadows ~2 ms more. Speed effects' motion pass costs ~0.5 ms; bloom and shafts nothing measurable.
+
+Outstanding: no cut yet (45-minute box). The levers: a Tall grass setting (a mesher flag, #78's outstanding item),
+the far trees as impostors (WORK_QUEUE item 31), and High's sun shadows over forest; a vsync run of `high-fly` for
+the dropped-frame count and a faster flight (level 6+) for the streaming at speed.
+
 ### 87. An NPC's raised vertical block leans the blade back over its shoulder
 
 Found fixing #86 (2026-11-12), not reported: `clip_probe` puts the third-person `guard_vertical` pose's

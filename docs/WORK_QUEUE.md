@@ -818,9 +818,15 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    leaves and ladders), a dense-forest spot that reproduces the owner's 31 ms, then (3) impostors.
 
    Owner, 2026-11-12, on this M1 Air: **"Im seeing on this m1 Mac that im getting sub-60FPS when flying on High. Im
-   wondering if the new trees and volumetric clouds are at fault!"** Next (local, after theater mode's UI): measure
-   flying at High (sky and cloud pass cost at altitude, tree meshing/uploads while streaming, the clouds' volume
-   pass vs the deck), cut what's large.
+   wondering if the new trees and volumetric clouds are at fault!"** **Measured (2026-11-12, BUGS.md #88,
+   `claude/fly-high-m1`; docs/DEV_TOOLS.md "Flying at High on the M1", scenario `high-fly`):** flying at level 4
+   from the starter's mixed forest east, `gpu.frame` 8.8 ms over open ground and 13.4–15.0 mean, p95 15.6–17.3
+   (up to 18.5) over the forests; `frame.cpu` p95 ≤ 10.5. The volumetric clouds are not at fault (Medium → Low:
+   no change), nor streaming (uploads, meshing, LOD; a 1 MiB desktop upload budget changed ≤ 1.8 ms and was not
+   adopted); the forest's near pass is (cutout leaves and tall grass, their shadows: the costs #78 found standing).
+   Speed effects −0.5 ms, shadows Low ~−2 over forest. No cut made in the time box. Next: the Tall grass
+   setting (mesher flag) and impostors (item 31) are the levers; a vsync run of `high-fly` for the dropped-frame
+   count; a faster flight (level 6+) for streaming.
    Owner, 2026-11-12: **"Ensure all of our graphics have settings in our graphics menu."** Every visual feature gets a
    Graphics setting (with preset values), not only the ones with a renderer tier function: tall grass density, far
    trees / impostors, leaf cards and chamfer, hit shards and particles, far herds, distant shadows (its own),
