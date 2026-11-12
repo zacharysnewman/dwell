@@ -660,6 +660,8 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    `chips.piece` look, together the bite; dirt clods and the axe's wood chips added); the tier `chunk` data
    removed (metal's bigger bites come from its fewer hits). Dirt one shovel hit 0.0014 → 0.05 m³. Left: the
    axe's notch carve still its own size (the chips follow the rule), the owner's look in game.
+   Owner, 2026-11-12, on the axe notch left out of the rule (#794: its ¼ m band can't hold half a cell): **"Yes the
+   notch should grow to follow the 50% rule."**
 19. **Lava glow, remaining** (owner 2026-11-11: "Lava should have bloom glow"; "Lava looks dark red instead of
    bright red/orange"; "It should darken as it solidifies though"). Built 0.52.107: colour by heat stops, heat in
    cells. **Bloom built (pending release, `claude/bloom`):** keyed on the scene's self-lit flag (lava, torches,
@@ -1052,6 +1054,7 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    on or off, with and without surface data; trees off = the treeless ground's mesh exactly), both faces, red →
    green. Left: the in-game look from high up at night (a local check).
 
+   Owner, 2026-11-12, on the 48 m hand-over side-by-sides: **"Distant trees looks solid handover."**
 32. **A tall dense forest for performance reference** (owner 2026-11-12: "We should have a tall dense forest
    biome/climate for performance reference on trees."). A biome preset (tall, closely spaced mature trees — an
    old-growth temperate rainforest of tall pines and broadleaf, thick undergrowth) placed by climate (cool and very
@@ -1352,6 +1355,9 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
        pulling back to the whole range and the island's scale. The text exception is the measuring effect's
        numbers only — no titles or descriptions. Owner: "Measure in meters" (e.g. 1000 m, 2000 m … ticking up).
 
+   Video 1 (bifacial) owner review, 2026-11-12: **"That bifacial video is pretty bad. The cool part of the bifacial is
+   how the world looks from the side far away showcasing the world outline. What it looks like to go down a portal.
+   Etc. give me a shot plan before doing that."** — every showcase gets a shot plan approved before recording.
 41. **Theater mode** (owner 2026-11-12: "We should use full camera tools to do the things you were doing and expand
    this tool set as you go, we could call it theater mode. Even make it available ingame as a feature that could be
    toggled on for any world type."). Answers: **both** presets (pick a target and a move: orbit, dolly, track,
