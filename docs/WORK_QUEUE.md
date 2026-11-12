@@ -682,6 +682,16 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    height lower (~1200 m) so valleys haze and peaks stand clearer. Next (local): side-by-side variants for the
    owner to pick.
 
+30. **Desktop frame rate on the M1 and hidden graphics settings (P0)** (owner 2026-11-12: "It seems like we're
+   hiding some performance settings. I don't see 'tree' options in our settings for graphics. I think cards are
+   killing my m1 mac too." / "Running 26fps." / "GPU at 31ms"). The desktop default preset is High (leaf cards
+   on, high shadows, shafts, bloom, medium volumetric clouds, distanceM 256). Found: the Leaf cards switch exists
+   but sits under Settings → View, not Graphics; several costly features have no setting at all (distant/LOD
+   shadows, tall grass, far trees, hit shards, far herds). Next (local, after item 29's variants): measure each
+   feature's GPU cost on the M1 at High; a Trees group in Settings → Graphics (leaf cards and the rest) and a
+   setting for every renderer tier feature (an audit test that none is hidden); cut what's large; reconsider the
+   desktop default for M1-class GPUs.
+
 ## Done
 
 - **Axe swing directions and animation tools (owner 2026-11-11: "The axe animations are still trash.
