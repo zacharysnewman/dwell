@@ -150,6 +150,22 @@ test("a retarget map is data: the fixture's lands in the table, bad names fail n
   }
 });
 
+test("your own body in first person is data: its cut validates and lands in the table", () => {
+  const f = fixture();
+  const out = rust(f, validate(f, palette, fixtures), "../../../shared/models/fixtures");
+  assert.match(out, /body: Some\(FirstPersonBody \{ hide: &\[\], weight: 0\.5 \}\)/);
+  for (const [edit, re] of [
+    [(b) => (b.hide = ["neck"]), /firstPerson: body: no joint neck/],
+    [(b) => (b.hide = ["tip"]), /firstPerson: body: a joint is listed twice/],
+    [(b) => (b.weight = 0), /firstPerson: body: weight is in \(0, 1\]/],
+    [(b) => delete b.hide, /firstPerson: body: hide names the skin joints/],
+  ]) {
+    const g = fixture();
+    edit(g.models.two_bone.firstPerson.body);
+    assert.throws(() => validate(g, palette, fixtures), re);
+  }
+});
+
 test("a role naming a clip the GLB lacks fails naming it", () => {
   const f = fixture();
   f.models.two_bone.roles.walk.clip = "cartwheel";

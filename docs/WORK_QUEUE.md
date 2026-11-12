@@ -1111,6 +1111,12 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    is still the old rigid parts (§11.5 "Still rigid"); only the arms moved to the Peasant. Next: draw your own body
    in first person from the Peasant too (the skinned body minus head, the arm cut hidden where the fp arms draw,
    the same clips as your shadow), the rigid body retired; `?fparms=rigid` keeps both old for comparison.
+   **Built (0.54, cloud)**: your own body is the Peasant's skinned mesh less its head and arms, cut by skin
+   weight (`models.json` `firstPerson.body`: `hide` the neck, head and left arm, plus the fp arm's joints),
+   posed by your shadow's rig pose and placed as the rigid body was (`back`, `lookDown`, `clear`, `near`);
+   no held item on it; `?fparms=rigid` draws the old arms and body together (CHARACTERS.md §11.12). Sliding,
+   the Peasant's shorter legs come into view from 30° down (the rigid ones from 15°). In-game look still to
+   be checked locally on a GPU.
 38. **Wandering NPCs** (owner 2026-11-12: "Another item to queue up, wandering NPCs. They'll use the same player
    character model."). People using the Peasant model who wander the world like the animals do. Owner's answers
    (2026-11-12): wander, idle (look around, sit), turn to look at a nearby player, step aside when bumped — no

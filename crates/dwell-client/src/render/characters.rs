@@ -15,7 +15,8 @@
 //!   with their own projection (the data's FOV, a 2 cm near plane), so they never clip into
 //!   terrain and keep their size under the speed FOV.
 //! - **Your own body** (§5.1): in first person, the full body from the neck down in the scene
-//!   passes (`BodyDraw::first_person`), its own mesh (`dwell_characters::own`: no head, neck or
+//!   passes (`BodyDraw::first_person`). Since 0.54 the player model's (render/skinned.rs,
+//!   `SkinnedOwn`, §11.12); with `?fparms=rigid` (`rigid_arms`) the rigid one: its own mesh (`dwell_characters::own`: no head, neck or
 //!   arms), moved back from the eye each frame (`own_frame`) so nothing comes near the camera, and
 //!   its fragments within `own_discard_m` of the eye discarded as a safety net. Its shadow is the
 //!   whole body's, cast separately (`cast_only`).
@@ -324,8 +325,8 @@ pub struct CharacterRenderer {
     /// This frame's creatures and their light (ADR 0073), set by the game.
     pub creatures: Vec<(crate::creatures::CreatureView, [f32; 2])>,
     pub stats: CharacterStats,
-    /// Your first-person arms drawn from the rigid parts, not the player model (`?fparms=rigid`,
-    /// a dev switch for comparison; docs/CHARACTERS.md §11.10).
+    /// Your first-person arms and your own body drawn from the rigid parts, not the player model
+    /// (`?fparms=rigid`, a dev switch for comparison; docs/CHARACTERS.md §11.10, §11.12).
     pub rigid_arms: bool,
 }
 
@@ -808,15 +809,21 @@ pub fn own_frame(
     bones: &[Affine; MAX_BONES],
 ) -> Affine {
     let frame = body_frame(d, eye);
+    let (eye_local, pitch) = eye_in(&frame, forward);
+    let s = own::shift(body, mesh, bones, eye_local, pitch);
+    frame.then(&Affine::translation([0.0, 0.0, -s]))
+}
+
+/// The eye (the origin of eye-relative space) in a body's `frame`, and the pitch (degrees, up
+/// positive) of the look `forward` there: what your own body is kept clear of (`own::shift`).
+pub fn eye_in(frame: &Affine, forward: V3) -> ([f32; 3], f32) {
     // The frame is a rotation and a translation: its inverse is the transpose.
     let back = |v: [f32; 3]| -> [f32; 3] {
         std::array::from_fn(|k| (0..3).map(|j| frame.m[k][j] * v[j]).sum())
     };
     let eye_local = back(frame.t.map(|t| -t));
     let look = back(forward.map(|c| c as f32));
-    let pitch = look[1].clamp(-1.0, 1.0).asin().to_degrees();
-    let s = own::shift(body, mesh, bones, eye_local, pitch);
-    frame.then(&Affine::translation([0.0, 0.0, -s]))
+    (eye_local, look[1].clamp(-1.0, 1.0).asin().to_degrees())
 }
 
 /// The arms' frame: view space (+x left, +y up, +z ahead) to eye-relative world space.
@@ -1211,6 +1218,7 @@ impl CharacterRenderer {
         };
         let mut keys = Vec::new();
         let mut skinned = Vec::new();
+        let mut skinned_own = None;
         let mut held_items = Vec::new();
         for d in bodies {
             let dist = (0..3)
@@ -1248,6 +1256,34 @@ impl CharacterRenderer {
             // The held item's turns on top of the clips (a block carried on an upturned palm).
             let held_item = item_name(d.held).and_then(|n| self.character.item(n));
             let posed = bone_transforms(self.character, &with_item(&d.pose, held_item));
+            // Your own body from the player model (§11.12): the skinned body less its head and
+            // arms, posed as your shadow is, kept clear of the eye as the rigid one was; it holds
+            // nothing (the arms view does). `?fparms=rigid` keeps the rigid body.
+            if let Some(b) = own.filter(|_| !self.rigid_arms && self.skinned.has_own_body()) {
+                let bones = posed.map(|p| body_frame(d, eye).then(&p));
+                own_light = own_light.or_else(|| light_at(d.held, &bones, d.seed));
+                skinned_own = Some(super::skinned::SkinnedOwn {
+                    draw: super::skinned::SkinnedDraw {
+                        model: dwell_models::PLAYER,
+                        seed: u32::MAX - 1,
+                        feet: d.feet,
+                        yaw: d.yaw,
+                        face: d.face,
+                        dead: d.dead,
+                        role: d.role,
+                        light: d.light,
+                        cast_only: false,
+                        rig_pose: Some(with_item(&d.pose, held_item)),
+                        grip: None,
+                        remap: super::skinned::NO_REMAP,
+                        idle_pose: None,
+                    },
+                    forward: basis.forward(),
+                    body: b,
+                    passes: mask,
+                });
+                continue;
+            }
             let frame = match own {
                 Some(b) => {
                     let character = self.character;
@@ -1389,6 +1425,7 @@ impl CharacterRenderer {
             passes,
             cast_m,
             &skinned,
+            skinned_own.as_ref(),
             skinned_arms.as_ref(),
             crate::render_clock::now_ms() / 1000.0,
         );
@@ -2528,120 +2565,304 @@ mod tests {
             out
         }
 
+        /// A body as drawn in one view: its vertices relative to the eye, its triangles, and
+        /// each vertex's part of the leg (`FOOT`, `SHIN`, else 0).
+        struct Drawn {
+            name: String,
+            world: Vec<[f32; 3]>,
+            indices: Vec<u32>,
+            leg: Vec<u8>,
+        }
+        const FOOT: u8 = 1;
+        const SHIN: u8 = 2;
+
+        /// The sweep (CHARACTERS.md §5.1): every pose of [`poses`], the eye at its height, a step
+        /// low on the ground and, crouched, still at the standing eye, every pitch from −90° to
+        /// 90° in 15° steps; `draw` gives the body as drawn for a view. No triangle within the
+        /// near bar of the eye, the body over at most `fill` of a 16:9 screen at the base FOV
+        /// and 1.25× it, the feet in view looking down (−75° and below) and the legs while
+        /// sliding (`slide_pitch` and below).
+        fn sweep(
+            face: FaceFrame,
+            slide_pitch: f64,
+            draw: &dyn Fn(&BodyDraw, V3, &crate::render::camera::Basis) -> Vec<Drawn>,
+        ) {
+            let ch = dwell_characters::player();
+            let body = ch
+                .first_person
+                .and_then(|f| f.body)
+                .expect("the player draws its body");
+            let cfg = dwell_physics::config::PlayerControllerConfig::default();
+            let lag = f64::from(cfg.max_step_lift());
+            let bar = own_discard_m(&body);
+            let base_fov = crate::render::camera::vertical_fov(f64::from(ASPECT));
+            let mut worst_near = f32::MAX;
+            let mut worst_fill: (f32, String) = (0.0, String::new());
+            let mut over: Vec<String> = Vec::new();
+            let poses = poses();
+            for (name, crouched, pose) in &poses {
+                let eye_h = f64::from(if *crouched {
+                    cfg.body.crouch_eye_height
+                } else {
+                    cfg.body.eye_height
+                });
+                // The eye lags a step below its height on the ground (the step smoothing),
+                // and crouched it eases down from the standing eye (the crouch smoothing).
+                let role = name.split([' ', '+']).next().unwrap_or("");
+                let grounded = matches!(
+                    role,
+                    "idle" | "walk" | "sprint" | "crouch" | "crouch_walk" | "slide" | "land"
+                );
+                let rise = f64::from(cfg.body.crouch_eye_height - cfg.body.eye_height);
+                let drops: &[f64] = match (grounded, *crouched) {
+                    (true, true) => &[0.0, lag, rise],
+                    (true, false) => &[0.0, lag],
+                    _ => &[0.0],
+                };
+                for &drop in drops {
+                    for pitch in (-6..=6).map(|k| f64::from(k) * 15.0) {
+                        let yaw = 30.0;
+                        let feet = face.point([5.5, 10.0, 3.5]);
+                        let eye = face.point([5.5, 10.0 + eye_h - drop, 3.5]);
+                        let basis = crate::render::camera::aim(yaw, pitch, face, 0.0);
+                        let d = BodyDraw {
+                            feet,
+                            yaw,
+                            face,
+                            dead: false,
+                            look: dwell_characters::DEFAULT_LOOK,
+                            pose: *pose,
+                            held: Held::Empty,
+                            cast_only: false,
+                            first_person: true,
+                            light: [1.0, 0.0],
+                            seed: 0,
+                            role: "idle",
+                        };
+                        let r = |v: V3| v.map(|c| c as f32);
+                        let (right, up, fwd) = (r(basis.right), r(basis.up), r(basis.forward()));
+                        for m in draw(&d, eye, &basis) {
+                            let at =
+                                format!("{name}, {}, pitch {pitch}, eye {drop:.2} m lower", m.name);
+                            let mut cells = [false; COLS * ROWS];
+                            for t in m.indices.chunks(3) {
+                                let [a, b, c] = [t[0], t[1], t[2]].map(|i| m.world[i as usize]);
+                                let dist = distance(a, b, c);
+                                worst_near = worst_near.min(dist);
+                                assert!(
+                                    dist >= bar,
+                                    "{at}: a triangle {dist:.3} m from the eye (the bar {bar:.3} m)"
+                                );
+                                let view =
+                                    [a, b, c].map(|v| [dot(v, right), dot(v, up), dot(v, fwd)]);
+                                for fov in [base_fov, base_fov * 1.25] {
+                                    let f = 1.0 / (fov.to_radians() as f32 / 2.0).tan();
+                                    raster(view, crate::render::NEAR_PLANE as f32, f, &mut cells);
+                                }
+                            }
+                            let fill =
+                                cells.iter().filter(|c| **c).count() as f32 / cells.len() as f32;
+                            // The feet are in view looking down standing or walking, and the
+                            // legs sliding (the owner's ask: "particularly when sliding").
+                            let wants = drop == 0.0
+                                && ((matches!(role, "idle" | "walk") && pitch <= -75.0)
+                                    || (role == "slide" && pitch <= slide_pitch));
+                            if wants {
+                                let f = 1.0 / (base_fov.to_radians() as f32 / 2.0).tan();
+                                let used: std::collections::HashSet<u32> =
+                                    m.indices.iter().copied().collect();
+                                let seen = used.iter().any(|&i| {
+                                    let (v, leg) = (m.world[i as usize], m.leg[i as usize]);
+                                    let (x, y, z) = (dot(v, right), dot(v, up), dot(v, fwd));
+                                    (leg == FOOT || (role == "slide" && leg == SHIN))
+                                        && z > 0.1
+                                        && (x / z * f / ASPECT).abs() < 1.0
+                                        && (y / z * f).abs() < 1.0
+                                });
+                                assert!(seen, "{at}: the feet (sliding, the legs) are out of view");
+                            }
+                            if fill > worst_fill.0 {
+                                worst_fill = (fill, at.clone());
+                            }
+                            if fill > body.fill {
+                                over.push(format!("{at}: {:.0}%", fill * 100.0));
+                            }
+                        }
+                    }
+                }
+            }
+            println!(
+                "{} poses: nearest triangle {worst_near:.3} m (bar {bar:.3}); most fill {:.1}% at {}",
+                poses.len(),
+                worst_fill.0 * 100.0,
+                worst_fill.1
+            );
+            assert!(
+                over.is_empty(),
+                "the body covers more than {:.0}% of the screen in {} views, e.g.\n{}",
+                body.fill * 100.0,
+                over.len(),
+                over.iter().take(40).cloned().collect::<Vec<_>>().join("\n")
+            );
+        }
+
         dwell_world::both_faces! {
+            /// The rigid body (`?fparms=rigid`).
             fn your_body_never_comes_near_the_camera_or_fills_the_view(face: FaceFrame) {
                 let ch = dwell_characters::player();
                 let body = ch.first_person.and_then(|f| f.body).expect("the player draws its body");
-                let cfg = dwell_physics::config::PlayerControllerConfig::default();
-                let lag = f64::from(cfg.max_step_lift());
-                let bar = own_discard_m(&body);
                 let meshes: Vec<(&str, Mesh)> = ch
                     .looks
                     .iter()
                     .map(|l| (l.name, own::build(l.parts, &body)))
                     .collect();
-                let base_fov = crate::render::camera::vertical_fov(f64::from(ASPECT));
-                let mut worst_near = f32::MAX;
-                let mut worst_fill: (f32, String) = (0.0, String::new());
-                let mut over: Vec<String> = Vec::new();
-                let poses = poses();
-                for (name, crouched, pose) in &poses {
-                    let eye_h = f64::from(if *crouched {
-                        cfg.body.crouch_eye_height
-                    } else {
-                        cfg.body.eye_height
-                    });
-                    let posed = bone_transforms(ch, pose);
-                    // The eye lags a step below its height on the ground (the step smoothing),
-                    // and crouched it eases down from the standing eye (the crouch smoothing).
-                    let role = name.split([' ', '+']).next().unwrap_or("");
-                    let grounded = matches!(role, "idle" | "walk" | "sprint" | "crouch" | "crouch_walk" | "slide" | "land");
-                    let rise = f64::from(cfg.body.crouch_eye_height - cfg.body.eye_height);
-                    let drops: &[f64] = match (grounded, *crouched) {
-                        (true, true) => &[0.0, lag, rise],
-                        (true, false) => &[0.0, lag],
-                        _ => &[0.0],
+                sweep(face, -15.0, &|d, eye, basis| {
+                    let posed = bone_transforms(ch, &d.pose);
+                    meshes
+                        .iter()
+                        .map(|(look, m)| {
+                            let frame = own_frame(d, eye, basis.forward(), &body, m, &posed);
+                            let bones = posed.map(|b| frame.then(&b));
+                            let leg = |b: u8| {
+                                let n = ch.bones[usize::from(b)].name;
+                                if n.starts_with("foot") { FOOT } else if n.starts_with("shin") { SHIN } else { 0 }
+                            };
+                            Drawn {
+                                name: (*look).to_string(),
+                                world: m.positions.iter().zip(&m.bones).map(|(p, &b)| bones[usize::from(b)].apply(*p)).collect(),
+                                indices: m.indices.clone(),
+                                leg: m.bones.iter().map(|&b| leg(b)).collect(),
+                            }
+                        })
+                        .collect()
+                });
+            }
+        }
+
+        dwell_world::both_faces! {
+            /// Your own body from the player model (§11.12), at every model detail level.
+            fn your_skinned_body_never_comes_near_the_camera_or_fills_the_view(face: FaceFrame) {
+                let ch = dwell_characters::player();
+                let body = ch.first_person.and_then(|f| f.body).expect("the player draws its body");
+                let (data, model) = dwell_models::player();
+                let joint = |bone: &str| data.retarget.unwrap().bones.iter().find(|b| b.bone == bone).unwrap().joint;
+                let (feet_j, shins_j) = ([joint("foot_l"), joint("foot_r")], [joint("shin_l"), joint("shin_r")]);
+                // Per detail level: its index, triangles, vertices and each vertex's part of the leg.
+                type Level = (usize, Vec<u32>, Vec<u32>, Vec<u8>);
+                let levels: Vec<Level> = (0..model.level_count())
+                    .map(|level| {
+                        let (tris, verts) = crate::render::skinned::own_body_mesh(data, model, level).unwrap();
+                        let m = model.level(level);
+                        let share = |v: usize, js: &[usize]| -> f32 {
+                            (0..4).filter(|&k| js.contains(&usize::from(m.joints[v][k]))).map(|k| m.weights[v][k]).sum()
+                        };
+                        let leg = (0..m.positions.len())
+                            .map(|v| if share(v, &feet_j) >= 0.5 { FOOT } else if share(v, &shins_j) >= 0.5 { SHIN } else { 0 })
+                            .collect();
+                        (level, tris, verts, leg)
+                    })
+                    .collect();
+                // The Peasant's legs are shorter than the rig's: sliding, its feet reach less far
+                // ahead, and come into view from 30° down (the rigid legs' from 15°).
+                sweep(face, -30.0, &|d, eye, basis| {
+                    let own = crate::render::skinned::SkinnedOwn {
+                        draw: own_skinned_draw(d),
+                        forward: basis.forward(),
+                        body,
+                        passes: 1,
                     };
-                    for &drop in drops {
-                        for pitch in (-6..=6).map(|k| f64::from(k) * 15.0) {
-                            let yaw = 30.0;
+                    levels
+                        .iter()
+                        .map(|(level, tris, verts, leg)| {
+                            let (joints, _) = crate::render::skinned::own_joints(data, model, *level, verts, &own, eye).unwrap();
+                            let pts = dwell_models::first_person::skin_points(model, *level, &joints, verts);
+                            let mut world = vec![[0.0f32; 3]; model.level(*level).positions.len()];
+                            for (&v, p) in verts.iter().zip(pts) {
+                                world[v as usize] = p;
+                            }
+                            Drawn { name: format!("Peasant level {level}"), world, indices: tris.clone(), leg: leg.clone() }
+                        })
+                        .collect()
+                });
+            }
+        }
+
+        /// The skinned own body's draw for a rigid one (as `prepare` builds it).
+        fn own_skinned_draw(d: &BodyDraw) -> crate::render::skinned::SkinnedDraw {
+            crate::render::skinned::SkinnedDraw {
+                model: dwell_models::PLAYER,
+                seed: u32::MAX - 1,
+                feet: d.feet,
+                yaw: d.yaw,
+                face: d.face,
+                dead: d.dead,
+                role: d.role,
+                light: d.light,
+                cast_only: false,
+                rig_pose: Some(d.pose),
+                grip: None,
+                remap: crate::render::skinned::NO_REMAP,
+                idle_pose: None,
+            }
+        }
+
+        dwell_world::both_faces! {
+            /// Your skinned body's feet are on the ground under the eye, the rig's eye height
+            /// below it, walking, crouched and sliding, as the rigid body's are: looking level and
+            /// down.
+            fn your_skinned_bodys_feet_are_the_rigs_height_below_the_eye(face: FaceFrame) {
+                let ch = dwell_characters::player();
+                let body = ch.first_person.and_then(|f| f.body).unwrap();
+                let cfg = dwell_physics::config::PlayerControllerConfig::default();
+                let (data, model) = dwell_models::player();
+                let level = dwell_models::DETAIL_DEFAULT;
+                let (_, verts) = crate::render::skinned::own_body_mesh(data, model, level).unwrap();
+                let rigid = own::build(ch.look(dwell_characters::DEFAULT_LOOK).unwrap().parts, &body);
+                let up = face.up().map(|c| c as f32);
+                for (role, crouched) in [("idle", false), ("walk", false), ("crouch", true), ("crouch_walk", true), ("slide", true)] {
+                    let clip = TABLES.clip(ch.clip(role).unwrap());
+                    let eye_h = if crouched { cfg.body.crouch_eye_height } else { cfg.body.eye_height };
+                    for k in 0..4 {
+                        let pose = sample(clip, clip.duration * k as f32 / 4.0);
+                        for pitch in [0.0, -45.0, -90.0] {
                             let feet = face.point([5.5, 10.0, 3.5]);
-                            let eye = face.point([5.5, 10.0 + eye_h - drop, 3.5]);
-                            let basis = crate::render::camera::aim(yaw, pitch, face, 0.0);
+                            let eye = face.point([5.5, 10.0 + f64::from(eye_h), 3.5]);
+                            let basis = crate::render::camera::aim(30.0, pitch, face, 0.0);
                             let d = BodyDraw {
                                 feet,
-                                yaw,
+                                yaw: 30.0,
                                 face,
                                 dead: false,
                                 look: dwell_characters::DEFAULT_LOOK,
-                                pose: *pose,
+                                pose,
                                 held: Held::Empty,
                                 cast_only: false,
                                 first_person: true,
                                 light: [1.0, 0.0],
                                 seed: 0,
-                                role: "idle",
+                                role,
                             };
-                            let r = |v: V3| v.map(|c| c as f32);
-                            let (right, up, fwd) = (r(basis.right), r(basis.up), r(basis.forward()));
-                            for (look, m) in &meshes {
-                                let frame = own_frame(&d, eye, basis.forward(), &body, m, &posed);
-                                let bones = posed.map(|b| frame.then(&b));
-                                let world: Vec<[f32; 3]> = m
-                                    .positions
-                                    .iter()
-                                    .zip(&m.bones)
-                                    .map(|(p, &b)| bones[usize::from(b)].apply(*p))
-                                    .collect();
-                                let at = format!("{name}, {look}, pitch {pitch}, eye {drop:.2} m lower");
-                                let mut cells = [false; COLS * ROWS];
-                                for t in m.indices.chunks(3) {
-                                    let [a, b, c] = [t[0], t[1], t[2]].map(|i| world[i as usize]);
-                                    let dist = distance(a, b, c);
-                                    worst_near = worst_near.min(dist);
-                                    assert!(dist >= bar, "{at}: a triangle {dist:.3} m from the eye (the bar {bar:.3} m)");
-                                    let view = [a, b, c].map(|v| [dot(v, right), dot(v, up), dot(v, fwd)]);
-                                    for fov in [base_fov, base_fov * 1.25] {
-                                        let f = 1.0 / (fov.to_radians() as f32 / 2.0).tan();
-                                        raster(view, crate::render::NEAR_PLANE as f32, f, &mut cells);
-                                    }
-                                }
-                                let fill = cells.iter().filter(|c| **c).count() as f32 / cells.len() as f32;
-                                // The feet are in view looking down standing or walking, and the
-                                // legs sliding (the owner's ask: "particularly when sliding").
-                                let wants = drop == 0.0
-                                    && ((matches!(role, "idle" | "walk") && pitch <= -75.0)
-                                        || (role == "slide" && pitch <= -15.0));
-                                if wants {
-                                    let f = 1.0 / (base_fov.to_radians() as f32 / 2.0).tan();
-                                    let seen = world.iter().zip(&m.bones).any(|(v, &b)| {
-                                        let bone = ch.bones[usize::from(b)].name;
-                                        let (x, y, z) = (dot(*v, right), dot(*v, up), dot(*v, fwd));
-                                        (bone.starts_with("foot") || (role == "slide" && bone.starts_with("shin")))
-                                            && z > 0.1
-                                            && (x / z * f / ASPECT).abs() < 1.0
-                                            && (y / z * f).abs() < 1.0
-                                    });
-                                    assert!(seen, "{at}: the feet (sliding, the legs) are out of view");
-                                }
-                                if fill > worst_fill.0 {
-                                    worst_fill = (fill, at.clone());
-                                }
-                                if fill > body.fill {
-                                    over.push(format!("{at}: {:.0}%", fill * 100.0));
-                                }
-                            }
+                            let own = crate::render::skinned::SkinnedOwn { draw: own_skinned_draw(&d), forward: basis.forward(), body, passes: 1 };
+                            let (joints, s) = crate::render::skinned::own_joints(data, model, level, &verts, &own, eye).unwrap();
+                            let low = dwell_models::first_person::skin_points(model, level, &joints, &verts)
+                                .iter()
+                                .map(|p| dot(*p, up))
+                                .fold(f32::MAX, f32::min);
+                            // The rigid body's lowest vertex in the same view.
+                            let posed = bone_transforms(ch, &pose);
+                            let frame = own_frame(&d, eye, basis.forward(), &body, &rigid, &posed);
+                            let rigid_low = rigid
+                                .positions
+                                .iter()
+                                .zip(&rigid.bones)
+                                .map(|(p, &b)| dot(frame.then(&posed[usize::from(b)]).apply(*p), up))
+                                .fold(f32::MAX, f32::min);
+                            let at = format!("{role} {k}/4, pitch {pitch}: lowest {low:.3}, rigid {rigid_low:.3}, eye {eye_h}, back {s:.2}");
+                            assert!((low + eye_h).abs() < 0.08, "{at}: the feet are not on the ground under the eye");
+                            assert!((low - rigid_low).abs() < 0.08, "{at}: not where the rigid body's feet were");
                         }
                     }
                 }
-                println!("{} poses: nearest triangle {worst_near:.3} m (bar {bar:.3}); most fill {:.1}% at {}", poses.len(), worst_fill.0 * 100.0, worst_fill.1);
-                assert!(
-                    over.is_empty(),
-                    "the body covers more than {:.0}% of the screen in {} views, e.g.\n{}",
-                    body.fill * 100.0,
-                    over.len(),
-                    over.iter().take(40).cloned().collect::<Vec<_>>().join("\n")
-                );
             }
         }
     }

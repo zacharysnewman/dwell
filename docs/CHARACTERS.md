@@ -269,7 +269,7 @@ its own (`fp_slash_level`, `fp_slash_vertical` and the bodies', the blade's edge
 single sword's grip is measured from the FBX (ITEMS.md §1a′); and the block's raised pose (§ ARCHITECTURE.md
 "Weapons": a player's raised block turns an NPC's strike across its blade; one past it hurts).
 
-### 5.1 Your own body in first person **[built, C1b]**
+### 5.1 Your own body in first person **[built, C1b; drawn from the Peasant since 0.54, §11.12]**
 
 The owner (2026-10-21): "I want to see legs in first person, particularly when sliding." The
 answers (question tool):
@@ -282,6 +282,11 @@ answers (question tool):
 - **The constraint** (verbatim): "The main thing to watch out for with full body draw is not
   clipping the camera into the player model." No body geometry may come inside the camera's near
   plane or fill the view, in any clip or pose, looking fully down or up, on both faces.
+
+Since 0.54 the body drawn is the **Peasant's** skinned mesh (§11.12): what it leaves out is cut by
+skin weight (`models.json` `firstPerson.body`), and where it stands is this section's placement, the
+same data (`back`, `lookDown`, `clear`, `near`) over its skinned vertices. The rigid body described
+here is drawn only with `?fparms=rigid` (with the rigid arms, for comparison).
 
 **The design** (data: `firstPerson.body` in `characters.json`; code: `dwell-characters` `own.rs`,
 `render/characters.rs` `own_frame`):
@@ -670,8 +675,8 @@ characters' ramp from the vertex's palette colour, the same lights and shadow ma
   light rides the same frame. A model with no `hand` (the animals) holds nothing.
 - **Your shadow** (the `cast_only` body) is the Peasant, into the nearest cascade only, with your
   held item in its hand: your shadow is what others see.
-- **Still rigid**: your **own body** seen in first person (§5.1). Your first-person arms are the
-  Peasant's since 0.54 (§11.10).
+- **Your own body** seen in first person (§5.1) and your first-person arms are the Peasant's
+  since 0.54 (§11.12, §11.10): nothing of the player is drawn rigid except under `?fparms=rigid`.
 
 ### 11.6 The animals in the world (phase 3, ADR 0073)
 
@@ -797,9 +802,9 @@ model?" Your arm on screen is the Peasant's own right arm, the same sleeve, cuff
   joints through `arms_frame`; the held item on the Peasant's hand by `models.json` `hand`, as on
   another player's body (§11.5). Since 0.54 the item is put on the skinned hand as it is, in first
   and third person: the hand already carries the item's turns from the retarget (they were applied
-  twice before, the axe 50° off the rig's hand; `another_players_item_is_turned_once_on_the_skinned_hand`). `?fparms=rigid` (`setRigidArms`) draws the old rigid arms instead,
-  a dev switch for comparison; the rigid arms' parts stay in `characters.json` for it and for your
-  own body (§5.1).
+  twice before, the axe 50° off the rig's hand; `another_players_item_is_turned_once_on_the_skinned_hand`). `?fparms=rigid` (`setRigidArms`) draws the old rigid arms and the old rigid
+  body (§5.1) together instead, a dev switch for comparison; the rigid parts stay in
+  `characters.json` for it.
 
 ### 11.11 Wandering NPCs (WORK_QUEUE item 38, 2026-11-12)
 
@@ -896,3 +901,33 @@ by default) and a combat hook; the combat AI waits for the sword mechanic.
 - **Not yet**: sit and look-around clips (the rig has none); the NPC's raised guard and swings drawn
   from the server's fight (item 35).
 
+### 11.12 Your own body from the Peasant (0.54, WORK_QUEUE item 37)
+
+The owner (2026-11-12): "Im noticing my hands look like the new model, but my legs/body doesn't?
+What's up with that?" Looking down or sliding you now see the Peasant's own trousers, boots and
+tunic, the body others see and your shadow casts.
+
+- **Data**: `models.json` `firstPerson.body`: `hide` (skin joints: the Peasant's neck and head
+  `spine.004`–`spine.006`, so its hat and hair, and the left arm `upper_arm.L` down: the owner's
+  "never two pairs") and `weight` (0.5). The generator fails on an unknown joint, one listed twice
+  (the arm's `firstPerson.joints` are hidden already) or a weight outside (0, 1]; the fixture's
+  two-joint model draws a body by data alone (`a_fixture_models_body_is_cut_by_data_alone`).
+- **The mesh** (`dwell_models::first_person::body_triangles`, at load and on a detail change): the
+  body mesh less every triangle with a vertex that has at least `weight` of its skin weight on
+  `hide` or on the first-person arm's joints: a third index buffer over the body's vertices, the
+  arms view's arm and it sharing no triangle (the head and hat are 40 % of the Peasant).
+- **The pose**: the rig's pose your shadow plays (the same clips, times, swings and held-item
+  turns, through the retarget map, §11.9); no grip and no held item (the arms view holds it).
+- **Where it stands**: as the rigid body did (§5.1): on your feet, turned to your yaw, moved back
+  along its own −z by `own::shift_points` (`back`, `lookDown`, `clear`) over its kept vertices
+  skinned on the CPU in the body's frame (`skinned::own_joints`), so the same on both faces;
+  fragments within `near` past the near plane discarded (the instance's `light.z`).
+- **Tests** (`render::characters` `own_body`, `both_faces!`): the §5.1 sweep (every clip and swing,
+  the pitch −90°…90°, the eye a step low and easing out of a crouch) at every detail level: no
+  triangle within 0.13 m of the eye (the nearest 0.166 m), at most 21 % of the screen covered
+  (crouch-walking, looking straight up), the feet in view looking down; the lowest vertex within
+  8 cm of the ground under the eye and of the rigid body's, standing, walking, crouched and sliding
+  (`your_skinned_bodys_feet_are_the_rigs_height_below_the_eye`).
+- **Differs from the rigid body**: the Peasant's legs are shorter than the rig's, so sliding its
+  feet reach less far ahead and come into view from 30° down (the rigid legs' from 15°). The in-game
+  look is to be checked on a GPU.
