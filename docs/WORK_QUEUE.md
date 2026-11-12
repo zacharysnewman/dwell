@@ -356,6 +356,15 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    see-through, march their full length and self-shadow weakly (part of the flat white look). Real cumulus is ~0.05 /m.
    Next, in the in-game cloud check: an A/B of extinction 0.006 → ~0.03–0.05 (data), measuring the look and
    `gpu.clouds`; keep soft eroded edges so higher opacity doesn't read as solid blobs.
+   Owner, clarifying: **"to be clear, light should still go through the clouds, but what is looking bad is the
+   clouds behind the one in front and you usually can't see other separate clouds blocked behind ones in front of
+   you?"** So: raise the view ray's opacity (`volume.extinction`, what hides a cloud behind another) and leave the
+   light's path as it is (`light.absorption`, the sun through the cloud: lit edges, silver lining, glow); they are
+   separate numbers already.
+   Owner, 2026-11-12: **"Another thing about the clouds is that they don't look pretty and tinted during sunrise and
+   sunset like our old 2D clouds."** The volume should take the deck's golden-hour tint: the sun's colour low in the
+   sky, the warm underside glow and the horizon colour the deck mixed in; compare at sunrise/sunset against
+   `?clouds=` the 2D deck (the reference since the lighting rework).
 14. **Tall grass grows and spreads** (owner 2026-11-11: "I want tall grass to steadily grow and spread. It
    should probably have a max depending on climate/biome."). **Built** (ADR 0075 T3c, docs/ECOLOGY.md §10):
    `shared/worldgen/grass.json` (the rule as data: the block, the ground, the decoration whose climate
@@ -369,6 +378,14 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    makes a ½ m ramp of its ground ground too (validated as decorations' `onRamps`: the ramp exists and
    the tuft's `placeOn` allows it), so a tuft on a ramp that is eaten or cut regrows and spreading
    reaches ramp cells, under the same climate cap; never a 1 m ramp's pieces (tests on both faces).
+   Owner, 2026-11-12: **"Seems like tall grass isn't growing in height like I expected. I thought it would get
+   taller over time?"** (the built growth only spreads; every tuft is 0.85 m from the start). Answers: max height
+   **depends on climate**; **4+ stages, slower** (a week or more of game time to full height); **cutting resets it**
+   (cut or eaten grass goes back to a sprout and regrows); **more drops when tall**; the hide mechanic: "I like the
+   hide mechanic idea, save this for later" (tall grass hiding a crouched player from animals/NPCs — Future).
+   Plan: a growth-stage property on the plant (a new property, default the full stage, so not breaking, ADR 0063),
+   stages and days per stage as data in grass.json, each stage's height from the block's look, the climate share
+   capping the top stage, drops per stage; one cell (≤ ~1 m) first, a two-cell top for the tallest climates later.
 
 15. **Realistic world** (owner 2026-11-11: "The realistic world should come from our systems (which may not be
    properly defined or built yet to support this) the seed should determine tectonic plates, rain shadow,
@@ -955,8 +972,17 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    `far.tiers`: `on` an impostor from 96 m over a 24 m fade, `off` none), the crossfade's shares, the dithered
    view pick, the baked stage/variant per tree and the view direction through `FaceFrame` (tests on both faces).
    **Not built:** the GPU half (atlas upload, instance buffer, the billboard shader with the baked normals and
-   depth offset) and I-2's tree lists; the far trees are still `lod_trees.rs`'s. Next (local): I-2, then the
-   draw, measured with `forest-perf`.
+   depth offset); the far trees are still `lod_trees.rs`'s.
+   **I-2's tree lists built (2026-11-12, local, `claude/forest-edge-impostors`):** `TerrainGenerator::far_trees(lo,
+   hi)` lists the species trees anchored in a rectangle (each tree in one list, by its anchor: four quarters'
+   lists are the square's, tested on both faces in `forest_world`), and `impostor::Config::instances` turns a list
+   into instances (the tree's foot, its baked layer `species × stages × variants`, a quarter turn from its seed).
+   Felled trees are not yet left out (the growth records are the server's). Next (local, one session): the GPU
+   draw on these lists — the bake run at load in a worker, the atlas array, an instance buffer per LOD section,
+   the billboard shader (`Config::dither`'s view pick, the baked normals, depth offset), `Far::share`'s
+   crossfade, then the LOD sections stop drawing tree cells. The forest edge says it is also the frame-rate
+   lever (item 32): the near pass there is bound by the leaves' triangles, and `lod_trees.rs` draws the same
+   chamfered cells past 96 m.
 
 32. **A tall dense forest for performance reference** (owner 2026-11-12: "We should have a tall dense forest
    biome/climate for performance reference on trees."). A biome preset (tall, closely spaced mature trees — an
@@ -985,9 +1011,16 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    drawn out to the full-detail distance and discarded per fragment; any plant past its fade is now dropped
    whole in the vertex stage, as leaf cards were. After: inside **14.7 / 15.4** (under 16.7), edge 24.3 / 25.7
    (unchanged: its cutout cost is the cards and grass within their fades, seen from just over the crowns),
-   above 14.5 / 15.8. **Outstanding:** the edge, ~9 ms over. Next: split the edge's 14.8 ms between the leaf
-   cards and the near grass (`?cards=0` against the default) and cut it inside the High look (the cards'
-   fade 24–40 m, cards seen edge-on from above, grass under a closed canopy).
+   above 14.5 / 15.8. **Outstanding:** the edge, ~9 ms over.
+   **The edge split (2026-11-12, local, `claude/forest-edge-impostors`; docs/DEV_TOOLS.md "The tree performance
+   reference"):** leaf cards off −0.5 ms, tall grass off (`?tallgrass=0`, a new dev override) −0.6 at the edge
+   (−1.3 inside): neither is the edge's 14.8 ms; the cutout **leaf blocks** are. The near pass there is bound by
+   geometry, not pixels (render scale 0.5 → 1: `gpu.near` +17 % for 4× the pixels). A cutout depth prepass
+   (alpha-tested depth first, colour on equal depth) was built and measured: +6–8 ms at every spot (edge 23.8 →
+   31.4), not adopted. Also fixed: `forest-perf`'s 16.7 ms `gpu.frame` budget was never checked (the GPU
+   timings are samples, not per-frame series: "not recorded"). Next: fewer leaf triangles — impostors from
+   nearer than 96 m (item 31) and a plainer leaf mesh with distance (no chamfer, merged faces past the cards'
+   fade) — measured with `forest-edge`.
 33. **Licensed music replaces the generated music** (owner 2026-11-12: "I downloaded a big music set as a Unity
    asset, I'd like the casual game music setup in a prototype and make it play randomly in the game. Probably
    needs compression. It'll replace the current music which is AI generated."). The pack: *Andrew Sitkov Music*
@@ -1549,6 +1582,9 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
   the in-game editor and a biome choice in the New world form.
 
 ## Future (needs owner answers)
+
+- **Tall grass hides you** (owner 2026-11-12: "I like the hide mechanic idea, save this for later."): tall grass
+  hides a crouched player from animals and NPCs (and deer bed down in it).
 
 - **Geography presets for Realistic worlds** (owner 2026-11-12: "Let's hold that for a possible future feature."):
   Mixed (today), Archipelago (oceanic plates only plus more hotspots: Hawaii-style chains and Japan-style arcs),

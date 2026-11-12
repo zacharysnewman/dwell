@@ -149,9 +149,13 @@ impostors are on in every tier (the CPU adapter's included); until then a `?impo
   than wide; leaf normals outward on the crown's silhouette; an empty tree bakes an empty atlas; the fixture
   shrub and a layout added by data alone bake; a standing log's width constant down its length (a red →
   green check on the axis mapping) — all tests in `impostor.rs`.
-- **I-2 — tree lists:** each chunk / LOD section lists its trees (anchor, species index, seed, stage) from
-  the placements and growth records, the same tree from either side of a border; felled trees gone. Exit:
-  tests on the starter world (counts match the placed trees, both faces through `FaceFrame`).
+- **I-2 — tree lists** (**built**, 2026-11-12, but for felled trees): each chunk / LOD section lists its trees
+  (anchor, species index, seed, stage) from the placements and growth records, the same tree from either side
+  of a border; felled trees gone. Built: `TerrainGenerator::far_trees(lo, hi)` (the species trees anchored in
+  the rectangle, sorted, each in one list) and `impostor::Config::instances` (foot, layer, quarter turn); tested
+  on the forest world (the stand's count, four quarters' lists equal the square's, both faces). Not yet:
+  felled trees left out (the growth records, server side). Exit: tests on the starter world (counts match
+  the placed trees, both faces through `FaceFrame`).
 - **I-3 — drawing** (local, GPU): the atlas array uploaded at load per tier, the instance buffer, the
   billboard shader (pick/dither, tint, N·L, ambient, fog, depth offset, shadow receive), the far hand-over
   data and crossfade, the CPU tier. Exit: `npm run bench` before/after on the M1 at High (frame time with the
