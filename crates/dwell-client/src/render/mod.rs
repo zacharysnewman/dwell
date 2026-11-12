@@ -3566,7 +3566,7 @@ impl Renderer {
             &REFLECTIONS,
             self.water().index(),
             self.clouds.octaves(&CLOUDS),
-            self.clouds.self_shadow(),
+            self.clouds.self_shadow(&CLOUDS),
             self.phone,
         ) {
             put(&v);
