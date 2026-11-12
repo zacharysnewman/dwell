@@ -187,8 +187,11 @@ pub struct World<'a> {
     /// Both faces' islands and ecosystems, by [`FACES`] index.
     pub islands: &'a [Island],
     pub ecos: &'a mut [Ecosystem],
-    /// The living players' feet (world).
+    /// The living players' feet (world): what the animals see, flee and notice.
     pub players: &'a [[f64; 3]],
+    /// Where groups come near and stay (world): the players' feet and the theater cameras'
+    /// viewpoints (docs/THEATER_MODE.md §7), which bring the world near but are never seen.
+    pub near: &'a [[f64; 3]],
     /// Their stances, by the same index (a player without one stands still).
     pub stances: &'a [Stance],
     pub get: Get<'a>,
@@ -445,7 +448,7 @@ impl Near {
         let mut i = 0;
         while i < self.groups.len() {
             let g = &self.groups[i];
-            let on = players_on(w.players, g.face);
+            let on = players_on(w.near, g.face);
             let near = g
                 .members
                 .iter()
@@ -469,7 +472,7 @@ impl Near {
     fn spawn_near(&mut self, w: &mut World, creatures: &mut Creatures) {
         let spawn = w.data.near.spawn_m;
         for (k, &face) in FACES.iter().enumerate().take(w.ecos.len()) {
-            let on = players_on(w.players, k);
+            let on = players_on(w.near, k);
             if on.is_empty() {
                 continue;
             }
@@ -1245,6 +1248,7 @@ mod tests {
                     islands: &self.islands,
                     ecos: &mut self.ecos,
                     players: &players,
+                    near: &players,
                     stances: &self.stances,
                     get: &g,
                     night: [self.night; 2],

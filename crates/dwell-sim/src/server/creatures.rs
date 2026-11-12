@@ -131,9 +131,12 @@ impl Server {
 
     pub(super) fn step_creatures(&mut self) {
         let players = self.living_points();
+        // Creatures spawn and stay near the bodies and the theater cameras' viewpoints
+        // (THEATER_MODE.md §7); only the bodies bump NPCs and are looked at.
+        let near = self.presence_points(&players);
         // The near ecology's herds and packs (docs/ECOLOGY.md §8) before the creatures move.
         self.step_herds();
-        if players.is_empty() && self.creatures.list.is_empty() {
+        if near.is_empty() && self.creatures.list.is_empty() {
             return;
         }
         let before = self.creatures.list.len();
@@ -151,7 +154,7 @@ impl Server {
                 t.biomes().get(usize::from(i)).map(|b| b.name)
             };
             self.creatures
-                .spawn_near_in(&players, &get, self.config.world_seed, &biome);
+                .spawn_near_in(&near, &get, self.config.world_seed, &biome);
         }
         let world = &self.world;
         let get = |c: [i32; 3]| {
@@ -159,7 +162,7 @@ impl Server {
             Some(world.get_voxel_if_loaded(c))
         };
         self.creatures.step_near(&get, &players);
-        self.creatures.despawn_far(&players);
+        self.creatures.despawn_far(&near);
         let gone = std::mem::take(&mut self.creatures.removed);
         let spawned = self.creatures.list.len() > before;
         let table = self.creatures.table;

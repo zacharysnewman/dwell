@@ -231,6 +231,17 @@ impl Session {
         }
     }
 
+    /// Whether the world's mode makes theater mode's camera a simulation viewpoint
+    /// (`theaterViewpoint`, creative; THEATER_MODE.md §7). Used only with the `theater.viewpoint`
+    /// capability.
+    pub fn theater_viewpoint(&self) -> bool {
+        use dwell_protocol::modes::Ability;
+        match self.world {
+            Some(w) => w.allows(Ability::TheaterViewpoint),
+            None => dwell_protocol::modes::default_mode().allows(Ability::TheaterViewpoint),
+        }
+    }
+
     /// Whether a capability (ARCHITECTURE.md §8.3) is on for this session: the server announced it
     /// and this build has it. False before the settings arrive and on an older server.
     pub fn capability(&self, name: &str) -> bool {

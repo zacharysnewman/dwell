@@ -1125,6 +1125,13 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    the body and the camera only sees what's already loaded near the player (no scouting). The server accepts the
    viewpoint only where the world's mode allows it. Owner: **"Still want theater mode for adventure, just without
    camera-relative sim."** — theater mode itself stays available in every mode; only the camera viewpoint is creative-only.
+   **T-4 built (2026-11-12, cloud):** the creative simulation viewpoint (THEATER_MODE.md §7.1): the
+   `theaterViewpoint` ability (creative only, `shared/modes/modes.json`), the `theater.viewpoint` capability and
+   the `TheaterViewpoint` message (the playing path's eye, at most 4 a second, a clear when it ends); the server uses
+   it only in a mode with the ability (checked on the server, never trusted from the client), within 4096 m of the
+   body: chunks streamed around it from the same budget, creatures spawned and kept, the near ecology, lava and
+   water stepped there; animals don't flee it. Tests on both faces (creative streams and simulates, adventure
+   ignores, no capability ignored, a clear ends it). Not yet run in a browser. Next, locally: T-2, T-3.
 
 42. **The sun as a real world** (owner 2026-11-12: "Add this feature to the queue, the sun is an actual world like
    the moon. Follow similar concepts as the moon. The sun is a volcano world. Constant flowing lava, oceans of

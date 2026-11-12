@@ -44,10 +44,16 @@ pub enum Ability {
     /// The server takes the placement as ordinary `Paste` region edits under the mode's own rules
     /// (a mode without `unlimitedBlocks` pays items for every cell, ADR 0066).
     Structures,
+    /// Theater mode's camera is a simulation viewpoint (docs/THEATER_MODE.md §7, T-4; owner,
+    /// 2026-11-12: "perhaps only available in creative mode … can't be used for cheating in
+    /// adventure"): the server streams chunks around it and runs creatures, NPCs, the near ecology
+    /// and the water there as near a body. Without it the server ignores a client's
+    /// `TheaterViewpoint` and the camera sees only what is loaded near the player.
+    TheaterViewpoint,
 }
 
 impl Ability {
-    pub const ALL: [Ability; 10] = [
+    pub const ALL: [Ability; 11] = [
         Ability::Damage,
         Ability::Flight,
         Ability::Brushes,
@@ -58,6 +64,7 @@ impl Ability {
         Ability::Oxygen,
         Ability::InstantBreaks,
         Ability::Structures,
+        Ability::TheaterViewpoint,
     ];
     /// The data's name (`shared/modes/gen.mjs` `ABILITIES`).
     pub const fn name(self) -> &'static str {
@@ -72,6 +79,7 @@ impl Ability {
             Ability::Oxygen => "oxygen",
             Ability::InstantBreaks => "instantBreaks",
             Ability::Structures => "structures",
+            Ability::TheaterViewpoint => "theaterViewpoint",
         }
     }
     pub const fn bit(self) -> u32 {

@@ -41,6 +41,8 @@ export const World = {
   chunkBytesPerSecond: 1048576,
   maxChunksPerTick: 32,
   autosaveSeconds: 30,
+  theaterViewpointHz: 4,
+  theaterViewpointMaxM: 4096,
   pos64Limit: 33554432,
 } as const;
 
@@ -153,6 +155,7 @@ export const MessageType = {
   Steam: 104,
   Capabilities: 105,
   Swordplay: 106,
+  TheaterViewpoint: 107,
 } as const;
 export type MessageType = (typeof MessageType)[keyof typeof MessageType];
 
@@ -336,5 +339,5 @@ export const WorldSizes = {
 export const Capabilities = {
   maxNames: 64,
   maxNameBytes: 48,
-  names: ['structures.place', 'grid.frames', 'damage.chunks', 'creatures.npcs', 'weapons.clash', 'creatures.poses', 'npcs.swings'],
+  names: ['structures.place', 'grid.frames', 'damage.chunks', 'creatures.npcs', 'weapons.clash', 'creatures.poses', 'npcs.swings', 'theater.viewpoint'],
 } as const;

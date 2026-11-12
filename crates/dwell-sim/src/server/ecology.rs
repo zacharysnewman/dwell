@@ -422,6 +422,7 @@ impl Server {
                 .collect();
         }
         let players = self.living_points();
+        let near = self.presence_points(&players);
         let stances = self.living_stances();
         let world_s = f64::from(self.tick) / f64::from(SIM_HZ);
         let night = FACES.map(|f| night_on(self.settings.clock, world_s, f));
@@ -443,6 +444,7 @@ impl Server {
                 islands: &islands[..],
                 ecos: &mut faces[..],
                 players: &players,
+                near: &near,
                 stances: &stances,
                 get: &get,
                 night,

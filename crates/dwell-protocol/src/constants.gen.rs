@@ -42,6 +42,8 @@ pub mod world {
     pub const CHUNK_BYTES_PER_SECOND: i64 = 1048576;
     pub const MAX_CHUNKS_PER_TICK: i64 = 32;
     pub const AUTOSAVE_SECONDS: i64 = 30;
+    pub const THEATER_VIEWPOINT_HZ: i64 = 4;
+    pub const THEATER_VIEWPOINT_MAX_M: i64 = 4096;
     pub const POS64_LIMIT: i64 = 33554432;
     /// `MIDPLANE_Y` in metres (row × `CELL_HEIGHT`).
     pub const MIDPLANE_M: f64 = 0.0;
@@ -204,6 +206,7 @@ pub enum MessageType {
     Steam = 104,
     Capabilities = 105,
     Swordplay = 106,
+    TheaterViewpoint = 107,
 }
 
 impl MessageType {
@@ -271,6 +274,7 @@ impl MessageType {
             104 => Some(Self::Steam),
             105 => Some(Self::Capabilities),
             106 => Some(Self::Swordplay),
+            107 => Some(Self::TheaterViewpoint),
             _ => None,
         }
     }
@@ -671,6 +675,8 @@ pub mod capability_names {
     pub const CREATURES_POSES: &str = "creatures.poses";
     /// An NPC's pose in a Creatures message's NPCs' part may be 3 or 4 (`NPC_STRIKE_POSES`: striking level, striking vertical) while it swings its sword (WORK_QUEUE item 35), and the client plays that swing's clip. Without it the server sends its idle pose instead, as older clients read it.
     pub const NPCS_SWINGS: &str = "npcs.swings";
+    /// The client sends `TheaterViewpoint` (docs/THEATER_MODE.md §7, T-4): theater mode's camera position while a camera path plays (at most world.theaterViewpointHz a second), and an empty one when it ends. The server adds it to the player's interest (chunks streamed around it, creatures and NPCs spawned and simulated near it, the near ecology and the water stepped there) only where the world's mode has the `theaterViewpoint` ability (shared/modes/modes.json: creative), within world.theaterViewpointMaxM of the body; elsewhere it ignores it. Without it the client never sends one.
+    pub const THEATER_VIEWPOINT: &str = "theater.viewpoint";
     /// Every capability this build knows, in the table's order.
-    pub const ALL: &[&str] = &[STRUCTURES_PLACE, GRID_FRAMES, DAMAGE_CHUNKS, CREATURES_NPCS, WEAPONS_CLASH, CREATURES_POSES, NPCS_SWINGS];
+    pub const ALL: &[&str] = &[STRUCTURES_PLACE, GRID_FRAMES, DAMAGE_CHUNKS, CREATURES_NPCS, WEAPONS_CLASH, CREATURES_POSES, NPCS_SWINGS, THEATER_VIEWPOINT];
 }
