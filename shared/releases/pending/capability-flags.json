@@ -1,1 +1,0 @@
-{"changes": ["Saved structures can't be placed outside creative worlds, even by a modified client: the server now refuses them", "Behind the scenes: servers and clients tell each other which optional features they have, so new features no longer need protocol flag bits"]}
