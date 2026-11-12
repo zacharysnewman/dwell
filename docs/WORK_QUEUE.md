@@ -41,7 +41,10 @@ Answered 2026-11-12: (1) **"Yes add those biomes"** — cold desert and tropical
 two faces' climates and the gradient across the disc come from the orbits model alone, no extra tuning; (5) a 1×
 vs 2× comparison of screenshots for perspective (queued, local); (6) **"iOS runs at 60fps on Low settings"** —
 item 16 done; (7) **"Metal tools break double sized bigger chunks off and reach 50% broken faster, which is when
-the blocks break. Also have double durability."** (in progress, cloud); (8) **"I'd like to see a comparison of
+the blocks break. Also have double durability."** (built, branch `claude/metal-tools`: a tier's
+`chunk` and metal speed 2 × stone's, so the metal pickaxe and shovel break in 3 hits to 5 with marks twice
+the size, the metal axe fells in 5 swings to 11, metal tools 64 hits; BLOCK_DAMAGE.md §9; outstanding:
+the owner's look in game); (8) **"I'd like to see a comparison of
 the two"** — palm fronds as leaf blocks vs frond cards side by side: built in the Tree Growth prototype
 (`docs/prototypes/tree-growth.html`, *Palm fronds* → *Split*, or `?species=palm&fronds=split`; to be republished to its link).
 

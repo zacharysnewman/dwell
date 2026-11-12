@@ -144,6 +144,23 @@ pub fn hits_to_break(block: &str, held: Option<&str>) -> Option<u32> {
     hits_to_break_in(BLOCK_DAMAGE, BREAK_TOOLS, block, held)
 }
 
+/// How big a piece a hit holding `held` takes off, in [`HitMark::chunk`]'s sixteenths (16: ×1),
+/// from `tools`: a breaking tool's tier `chunk` (metal 2: 32; owner, 2026-11-12, metal tools "break
+/// double sized bigger chunks off"), else ×1 (a hand, a block, any other item).
+pub fn hit_chunk_in(tools: &[BreakTool], held: Option<&str>) -> u8 {
+    held.and_then(|h| tools.iter().find(|t| t.item == h))
+        .map_or(HitMark::ONE, |t| {
+            (t.chunk * f64::from(HitMark::ONE))
+                .round()
+                .clamp(1.0, 255.0) as u8
+        })
+}
+
+/// [`hit_chunk_in`] over the build's data.
+pub fn hit_chunk(held: Option<&str>) -> u8 {
+    hit_chunk_in(BREAK_TOOLS, held)
+}
+
 /// Whether `held` is a breaking tool (one of `tools.json`'s, the pickaxes, shovels and axes): an
 /// empty hand, a block or any other item is not.
 pub fn is_break_tool_in(tools: &[BreakTool], held: Option<&str>) -> bool {
@@ -207,12 +224,40 @@ pub fn certain_drops(rules: &[DropRule]) -> Vec<(&'static str, u32)> {
 pub const MAX_HIT_MARKS: usize = 4;
 
 /// Where a hit struck: the face (the edit's face index) and the point on it (each axis in
-/// 1/255ths of the cell).
+/// 1/255ths of the cell), and how big a piece it took off.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct HitMark {
     pub face: u8,
     pub point: [u8; 3],
+    /// The piece's size, a multiple of the block's `damage.look` mark in sixteenths
+    /// ([`HitMark::ONE`]: ×1; the tool's tier `chunk`, [`hit_chunk`]). The carve scales the mark's
+    /// width and depth by it. Sent only to a `damage.chunks` client and saved after the cells only
+    /// when one differs from ×1, so an older build reads every mark as ×1.
+    pub chunk: u8,
 }
+
+impl HitMark {
+    /// A ×1 piece (a stone tool's, a hand's; an older save's or server's mark).
+    pub const ONE: u8 = 16;
+
+    /// A ×1 mark at `point` on `face`.
+    pub fn at(face: u8, point: [u8; 3]) -> HitMark {
+        HitMark {
+            face,
+            point,
+            chunk: Self::ONE,
+        }
+    }
+
+    /// Its size as a multiple of the look's mark (1: a stone tool's).
+    pub fn scale(&self) -> f64 {
+        f64::from(self.chunk.max(1)) / f64::from(Self::ONE)
+    }
+}
+
+/// The byte opening the marks' chunks after a `Damage` message's cells (to a `damage.chunks`
+/// client) or the save record's cells (when any mark is not ×1).
+pub const CHUNKS_MARK: u8 = 0xC4;
 
 /// A damaged cell: the state it was hit as (another state there now: the damage is gone), the hits
 /// it has taken, and its newest hit marks.
@@ -262,12 +307,24 @@ impl DamageView {
         let n = usize::from(r.u8());
         r.check(n <= MAX_HIT_MARKS);
         let marks = (0..n.min(MAX_HIT_MARKS))
-            .map(|_| HitMark {
-                face: r.u8(),
-                point: [r.u8(), r.u8(), r.u8()],
-            })
+            .map(|_| HitMark::at(r.u8(), [r.u8(), r.u8(), r.u8()]))
             .collect();
         DamageView { fraction, marks }
+    }
+
+    /// Its marks' chunks (after the cells, [`CHUNKS_MARK`]): one byte a mark, as many as `write`
+    /// wrote.
+    pub fn write_chunks(&self, w: &mut ByteWriter) {
+        for m in &self.marks[..self.marks.len().min(MAX_HIT_MARKS)] {
+            w.u8(m.chunk);
+        }
+    }
+
+    pub fn read_chunks(&mut self, r: &mut ByteReader) {
+        for m in &mut self.marks {
+            m.chunk = r.u8();
+            r.check(m.chunk > 0);
+        }
     }
 }
 
@@ -275,6 +332,13 @@ impl DamageView {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Damage {
     pub cells: HashMap<[i32; 3], CellDamage>,
+}
+
+/// Whether every mark of `d` is ×1 (its record then has no chunks: an older build reads it).
+fn all_marks_one(d: &Damage) -> bool {
+    d.cells
+        .values()
+        .all(|c| c.marks.iter().all(|m| m.chunk == HitMark::ONE))
 }
 
 /// The save record's version.
@@ -348,6 +412,15 @@ impl Damage {
                 }
             }
         }
+        if all_marks_one(self) {
+            return out;
+        }
+        w.u8(CHUNKS_MARK);
+        for (_, d) in self.sorted() {
+            for m in &d.marks {
+                w.u8(m.chunk);
+            }
+        }
         out
     }
 
@@ -367,10 +440,7 @@ impl Damage {
             let need = r.u16();
             let k = usize::from(r.u8()).min(MAX_HIT_MARKS);
             let marks = (0..k)
-                .map(|_| HitMark {
-                    face: r.u8(),
-                    point: [r.u8(), r.u8(), r.u8()],
-                })
+                .map(|_| HitMark::at(r.u8(), [r.u8(), r.u8(), r.u8()]))
                 .collect();
             cells.insert(
                 c,
@@ -381,6 +451,20 @@ impl Damage {
                     marks,
                 },
             );
+        }
+        // The marks' chunks, when any was not ×1 (in the cells' sorted order; an older record has
+        // none: every mark ×1).
+        if r.ok() && !r.at_end() {
+            let mark = r.u8();
+            r.check(mark == CHUNKS_MARK);
+            let mut keys: Vec<_> = cells.keys().copied().collect();
+            keys.sort();
+            for c in keys {
+                for m in &mut cells.get_mut(&c).expect("a key").marks {
+                    m.chunk = r.u8();
+                    r.check(m.chunk > 0);
+                }
+            }
         }
         (r.ok() && r.at_end()).then_some(Damage { cells })
     }
@@ -473,6 +557,7 @@ mod tests {
                 class: "trowel",
                 tier: "stone",
                 speed: 2.0,
+                chunk: 1.0,
                 contact_s: 0.0,
             },
             BreakTool {
@@ -480,6 +565,7 @@ mod tests {
                 class: "trowel",
                 tier: "metal",
                 speed: 2.5,
+                chunk: 2.0,
                 contact_s: 0.0,
             },
         ];
@@ -488,6 +574,163 @@ mod tests {
         assert_eq!(h(Some("test:golden_trowel")), Some(1), "item over class");
         assert_eq!(h(None), Some(9));
         assert_eq!(h(Some("test:stick")), Some(9));
+    }
+
+    /// Each metal breaking tool and its class's stone-tier counterpart (the wooden shovel is the
+    /// shovel's stone tier).
+    fn metal_and_stone() -> Vec<(&'static BreakTool, &'static BreakTool)> {
+        let pairs: Vec<_> = BREAK_TOOLS
+            .iter()
+            .filter(|t| t.tier == "metal")
+            .map(|m| {
+                let s = BREAK_TOOLS
+                    .iter()
+                    .find(|t| t.class == m.class && t.tier == "stone")
+                    .expect("a stone counterpart");
+                (m, s)
+            })
+            .collect();
+        assert_eq!(pairs.len(), 3, "the metal axe, pickaxe and shovel");
+        pairs
+    }
+
+    #[test]
+    fn a_metal_tool_is_twice_its_stone_counterpart() {
+        // Owner, 2026-11-12: "Metal tools break double sized bigger chunks off and reach 50%
+        // broken faster, which is when the blocks break. Also have double durability."
+        for (m, s) in metal_and_stone() {
+            assert_eq!(m.speed, 2.0 * s.speed, "{}", m.item);
+            assert_eq!(
+                hit_chunk(Some(m.item)),
+                2 * hit_chunk(Some(s.item)),
+                "{}: a chunk twice the size",
+                m.item
+            );
+            assert_eq!(hit_chunk(Some(s.item)), HitMark::ONE, "{}", s.item);
+            let wear = crate::chopping::durability;
+            assert_eq!(
+                wear(m.item),
+                wear(s.item).map(|h| 2 * h),
+                "{}: double durability",
+                m.item
+            );
+            // About half the hits on every block its class has damage for.
+            for d in BLOCK_DAMAGE
+                .iter()
+                .filter(|d| d.tools.iter().any(|(k, _)| *k == m.class))
+            {
+                let (Some(hm), Some(hs)) = (
+                    hits_to_break(d.block, Some(m.item)),
+                    hits_to_break(d.block, Some(s.item)),
+                ) else {
+                    continue;
+                };
+                if hs > 1 {
+                    assert!(
+                        hm <= hs.div_ceil(2) && hm * 2 + 1 >= hs,
+                        "{}: {} {hm} hits against {} {hs}",
+                        d.block,
+                        m.item,
+                        s.item
+                    );
+                }
+            }
+        }
+        // A hand or a block takes a ×1 piece.
+        assert_eq!(hit_chunk(None), HitMark::ONE);
+        assert_eq!(hit_chunk(Some("dwell:dirt")), HitMark::ONE);
+    }
+
+    #[test]
+    fn a_fixture_tiers_chunk_by_data_alone() {
+        let tools = [BreakTool {
+            item: "test:trowel",
+            class: "trowel",
+            tier: "bronze",
+            speed: 2.0,
+            chunk: 1.5,
+            contact_s: 0.0,
+        }];
+        assert_eq!(hit_chunk_in(&tools, Some("test:trowel")), 24);
+        assert_eq!(hit_chunk_in(&tools, Some("test:stick")), HitMark::ONE);
+        assert_eq!(
+            HitMark {
+                chunk: 24,
+                ..HitMark::at(0, [0; 3])
+            }
+            .scale(),
+            1.5
+        );
+    }
+
+    #[test]
+    fn a_marks_chunk_is_saved_only_when_not_one_and_an_older_record_reads_as_one() {
+        let mut d = Damage::default();
+        d.hit([0, 1, 2], 7, 5, HitMark::at(2, [10, 20, 30]));
+        let plain = d.to_bytes();
+        // ×1 marks only: the record an older build writes and reads.
+        let n_cell = 4 * 3 + 2 * 3 + 1 + 4;
+        assert_eq!(plain.len(), 1 + 4 + n_cell, "no chunks");
+        assert_eq!(Damage::from_bytes(&plain), Some(d.clone()));
+        d.hit(
+            [0, 1, 2],
+            7,
+            3,
+            HitMark {
+                chunk: 32,
+                ..HitMark::at(2, [40, 50, 60])
+            },
+        );
+        d.hit([-4, 1, 2], 7, 3, HitMark::at(3, [1, 2, 3]));
+        let bytes = d.to_bytes();
+        let back = Damage::from_bytes(&bytes).expect("reads its own record");
+        assert_eq!(back, d);
+        assert_eq!(back.cells[&[0, 1, 2]].marks[1].chunk, 32);
+        assert_eq!(back.cells[&[-4, 1, 2]].marks[0].chunk, HitMark::ONE);
+        // A bad trailer is not read.
+        let mut bad = bytes.clone();
+        let at = bytes.len() - 4;
+        bad[at] = 0;
+        assert_eq!(Damage::from_bytes(&bad), None);
+    }
+
+    #[test]
+    fn a_damage_message_carries_the_chunks_only_when_asked_and_an_older_one_reads_as_one() {
+        use crate::{DamageMessage, Message};
+        let view = DamageView {
+            fraction: 85,
+            marks: vec![
+                HitMark::at(2, [1, 2, 3]),
+                HitMark {
+                    chunk: 32,
+                    ..HitMark::at(2, [4, 5, 6])
+                },
+            ],
+        };
+        let with = Message::Damage(DamageMessage {
+            cells: vec![([1, -2, 3], view.clone())],
+            gone: vec![[7, 8, 9]],
+            chunks: true,
+        });
+        assert_eq!(Message::decode(&with.encode()), Some(with.clone()));
+        // Without (an older client's form): the same bytes as before the chunks, read as ×1.
+        let without = Message::Damage(DamageMessage {
+            cells: vec![([1, -2, 3], view)],
+            gone: vec![[7, 8, 9]],
+            chunks: false,
+        });
+        let bytes = without.encode();
+        assert_eq!(bytes.len() + 1 + 2, with.encode().len());
+        let Some(Message::Damage(back)) = Message::decode(&bytes) else {
+            panic!("a Damage");
+        };
+        assert!(
+            back.cells[0]
+                .1
+                .marks
+                .iter()
+                .all(|m| m.chunk == HitMark::ONE)
+        );
     }
 
     #[test]
@@ -514,15 +757,7 @@ mod tests {
     fn damage_saves_and_loads_and_a_new_state_is_undamaged() {
         let mut d = Damage::default();
         for i in 0..6 {
-            d.hit(
-                [1, -2, 3],
-                7,
-                5,
-                HitMark {
-                    face: 2,
-                    point: [i, 128, 255],
-                },
-            );
+            d.hit([1, -2, 3], 7, 5, HitMark::at(2, [i, 128, 255]));
         }
         assert_eq!(d.hits([1, -2, 3], 7), 6);
         assert_eq!(d.cells[&[1, -2, 3]].view().fraction, 255, "6 of 5: full");
@@ -531,17 +766,6 @@ mod tests {
         let back = Damage::from_bytes(&d.to_bytes()).expect("reads its own record");
         assert_eq!(back, d);
         assert_eq!(Damage::from_bytes(&[9, 0, 0, 0, 0]), None, "a newer record");
-        assert_eq!(
-            d.hit(
-                [1, -2, 3],
-                8,
-                5,
-                HitMark {
-                    face: 0,
-                    point: [0; 3]
-                }
-            ),
-            1
-        );
+        assert_eq!(d.hit([1, -2, 3], 8, 5, HitMark::at(0, [0; 3])), 1);
     }
 }

@@ -253,6 +253,57 @@ dwell_world::both_faces!(
     }
 );
 
+dwell_world::both_faces!(
+    fn a_metal_tool_breaks_in_about_half_the_hits_with_marks_twice_the_size(f: FaceFrame) {
+        // Owner, 2026-11-12: "Metal tools break double sized bigger chunks off and reach 50%
+        // broken faster, which is when the blocks break. Also have double durability."
+        for (stone_tool, metal_tool, cell) in [
+            ("dwell:stone_pickaxe", "dwell:metal_pickaxe", STONE),
+            ("dwell:wooden_shovel", "dwell:metal_shovel", DIRT),
+        ] {
+            let mut fx = scene_with(f, config(f, "adventure"));
+            hold(&mut fx, "adventure", stone_tool);
+            hit(&mut fx, f, cell);
+            let d = fx.server.damage_of(f.cell(cell)).expect("damaged").clone();
+            assert_eq!(d.marks[0].chunk, 16, "{stone_tool}: a ×1 piece");
+            let s = 1 + hits_to_break(&mut fx, f, cell);
+            assert_eq!(
+                wear_of(&fx, stone_tool),
+                s as u16,
+                "{stone_tool}: a wear a hit"
+            );
+
+            let mut fx = scene_with(f, config(f, "adventure"));
+            hold(&mut fx, "adventure", metal_tool);
+            hit(&mut fx, f, cell);
+            let d = fx.server.damage_of(f.cell(cell)).expect("damaged").clone();
+            assert_eq!(d.marks[0].chunk, 32, "{metal_tool}: a piece twice the size");
+            // Half-way to breaking after half as many hits.
+            assert!(
+                f64::from(d.hits) / f64::from(d.need) >= 0.3,
+                "{metal_tool}: {} of {}",
+                d.hits,
+                d.need
+            );
+            let m = 1 + hits_to_break(&mut fx, f, cell);
+            assert!(
+                m <= s.div_ceil(2) && 2 * m + 1 >= s,
+                "{metal_tool}: {m} hits against {stone_tool}'s {s}"
+            );
+            assert_eq!(
+                wear_of(&fx, metal_tool),
+                m as u16,
+                "{metal_tool}: a wear a hit"
+            );
+            assert_eq!(
+                chopping::durability(metal_tool),
+                chopping::durability(stone_tool).map(|h| 2 * h),
+                "{metal_tool}: double durability"
+            );
+        }
+    }
+);
+
 /// Adventure: selects an empty inventory slot (a bare hand).
 fn empty_hand(fx: &mut Fixture) {
     let slot = fx
@@ -546,6 +597,48 @@ fn damage_and_its_struck_point_reach_a_client_that_draws_it_and_go_when_it_break
         fx.take(2)
             .iter()
             .any(|(m, _)| matches!(m, Message::Damage(d) if d.gone.contains(&f.cell(STONE))))
+    );
+}
+
+#[test]
+fn a_marks_chunk_reaches_only_a_client_that_lists_damage_chunks() {
+    // face-a-only: the message's chunk bytes; the carve's size is the mesher's both-faces test.
+    let f = FaceFrame::A;
+    let mut fx = scene_with(f, config(f, "creative"));
+    fx.join(2, &Client::new(2));
+    fx.send(2, Message::DamageHello);
+    fx.join(3, &Client::new(3));
+    fx.send(
+        3,
+        Message::Capabilities(dwell_protocol::capabilities::Capabilities::this_client()),
+    );
+    fx.send(3, Message::DamageHello);
+    for _ in 0..3 {
+        fx.server.step();
+    }
+    fx.take_all();
+    hold(&mut fx, "creative", "dwell:metal_pickaxe");
+    hit(&mut fx, f, STONE);
+    // One take for every client (`take` keeps only one session's messages).
+    let mut sent = fx.take_all();
+    let mut seen = |id| {
+        sent.remove(&id)
+            .unwrap_or_default()
+            .into_iter()
+            .find_map(|m| match m {
+                Message::Damage(d) if !d.cells.is_empty() => Some(d),
+                _ => None,
+            })
+            .expect("told")
+    };
+    let older = seen(2);
+    assert!(!older.chunks, "an older client's message is as before");
+    assert_eq!(older.cells[0].1.marks[0].chunk, 16, "read as ×1");
+    let newer = seen(3);
+    assert!(newer.chunks);
+    assert_eq!(
+        newer.cells[0].1.marks[0].chunk, 32,
+        "the metal pickaxe's ×2"
     );
 }
 
