@@ -3543,7 +3543,8 @@ impl<S: Scene> Game<S> {
                     use dwell_protocol::player_flags as pf;
                     (v.yaw, v.velocity, v.state) = (0.0, [0.0; 3], PlayerState::Idle);
                     let face = dwell_physics::net::face_of_flags(v.flags, pf::FACE_B);
-                    v.flags = (v.flags & pf::GROUNDED) | dwell_physics::net::face_bit(face, pf::FACE_B);
+                    v.flags =
+                        (v.flags & pf::GROUNDED) | dwell_physics::net::face_bit(face, pf::FACE_B);
                     v.feet[1] = p.origin[1];
                 }
                 // Holding a tool, they swing it (a break swing every 0.8 s): the swing clips seen
