@@ -6,6 +6,15 @@ pins it.
 
 ## Open
 
+### 91. A 10× world sits for minutes on "Shaping the world map… 0/2" with no sign of progress
+
+Owner, 2026-11-12 (M4 Max MacBook Pro): "I tried to start a 10x world … And it's up to 3 minutes so far on 'Shaping the
+world map...' 0/2. Doesn't indicate well what it's doing." At 10× the world map runs at a 1 km cell (about 1 M cells
+a face, today's count), so it should take seconds, not minutes; something scales with the radius or the uplift's
+×100 counts. And the stage reports only whole faces (0/2), so minutes pass with no visible progress. Expected: a
+10× map in seconds (or a measured, honest estimate), and progress inside each face's build (its steps: base field,
+tectonics, hydrology, erosion, rivers, biome field).
+
 ### 90. Volumetric clouds look badly dithered and pixelated where they overlap, mostly at cloud level
 
 Owner, 2026-11-12: "The clouds also look really badly dithered when they overlap? I think mostly when you get to their
