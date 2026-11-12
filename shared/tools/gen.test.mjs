@@ -396,7 +396,7 @@ test('the sword is a weapon: its strike, guard and wear are emitted', () => {
   assert.deepEqual(sword.clears, []);
   assert.ok(d.durability.items.some((x) => x.item === 'dwell:sword'), 'its durability wears as a tool');
   assert.match(toolsRust(d), /name: "dwell:sword", kind: ToolKind::Weapon/);
-  assert.match(toolsRust(d), /weapon: Some\(WeaponDef \{ damage: 12\.0, knockback_m: 0\.8, max_targets: 2, guard: GuardDef \{ level_roll_deg: 0\.0, vertical_roll_deg: 90\.0/);
+  assert.match(toolsRust(d), /weapon: Some\(WeaponDef \{ damage: 12\.0, knockback_m: 0\.8, knockback_mps: 4\.0, lift_mps: 2\.5, max_targets: 2, guard: GuardDef \{ level_roll_deg: 0\.0, vertical_roll_deg: 90\.0/);
   assert.match(toolsRust(d), /name: "dwell:stone_axe"[^\n]*weapon: None/);
 });
 
@@ -405,7 +405,7 @@ test('a fixture weapon added by data alone is emitted with the default guard', (
   items.add('test:club');
   data.tools.push({ name: 'test:club', kind: 'weapon', swingSeconds: 0.4, weapon: { damage: 3, knockbackM: 0.2 } });
   const d = validateTools(data, items, blocks);
-  assert.match(toolsRust(d), /name: "test:club", kind: ToolKind::Weapon[^\n]*max_targets: 1, guard: GuardDef \{ level_roll_deg: 0\.0, vertical_roll_deg: 90\.0, block_within_deg: 45\.0, connect_within_deg: 45\.0/);
+  assert.match(toolsRust(d), /name: "test:club", kind: ToolKind::Weapon[^\n]*knockback_mps: 0\.0, lift_mps: 0\.0, max_targets: 1, guard: GuardDef \{ level_roll_deg: 0\.0, vertical_roll_deg: 90\.0, block_within_deg: 45\.0, connect_within_deg: 45\.0/);
   assert.ok(!d.durability.items.some((x) => x.item === 'test:club'), 'no durability: it never wears');
 });
 
@@ -418,6 +418,9 @@ test('a bad weapon fails naming it and the problem', () => {
   bad((t) => (t.biteM = 0.1), /tools\.dwell:sword\.biteM: a weapon cuts no wood/);
   bad((t) => delete t.weapon, /tools\.dwell:sword\.weapon is required/);
   bad((t) => (t.weapon.damage = 0), /weapon\.damage must be a number in \(0, 1000\]/);
+  // WORK_QUEUE item 38: a player's push from a connecting strike.
+  bad((t) => (t.weapon.knockbackMps = -1), /weapon\.knockbackMps must be a number in \[0, 30\]/);
+  bad((t) => (t.weapon.liftMps = 'up'), /weapon\.liftMps must be a number in \[0, 30\]/);
   bad((t) => (t.weapon.maxTargets = 0), /maxTargets must be a whole number/);
   bad((t) => (t.weapon.guard.blockWithinDeg = 60), /blockWithinDeg \+ connectWithinDeg \(95\) must not be above 90/);
   bad((t) => (t.weapon.guard.stances.level = { rollDeg: 400 }), /stances\.level\.rollDeg must be a number/);

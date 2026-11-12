@@ -421,10 +421,11 @@ pub enum DamageCause {
     Explosion = 3,
     Drown = 4,
     Burn = 5,
+    Weapon = 6,
 }
 
 impl DamageCause {
-    pub const MAX: u8 = 5;
+    pub const MAX: u8 = 6;
 
     pub const fn from_u8(v: u8) -> Option<Self> {
         match v {
@@ -433,6 +434,7 @@ impl DamageCause {
             3 => Some(Self::Explosion),
             4 => Some(Self::Drown),
             5 => Some(Self::Burn),
+            6 => Some(Self::Weapon),
             _ => None,
         }
     }
