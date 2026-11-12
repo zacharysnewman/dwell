@@ -29,6 +29,17 @@ use dwell_world::{CHUNK_SIZE, ChunkCoord, FaceFrame};
 
 use crate::noise::{hash3, mix32, seed_word, unit};
 
+/// One growth stage of the grown block (grass.json `stages`, a sprout to full height).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct GrassStage {
+    /// The block's `stage_property` value.
+    pub value: &'static str,
+    /// The mean days a tuft stays at this stage (it leaves with chance 1/days a day); 0 for the last.
+    pub days: f64,
+    /// The least climate share a column needs for its tufts to reach this stage.
+    pub share: f64,
+}
+
 /// The growth rule as data (see `gen.mjs` `validateGrass` for the ranges).
 #[derive(Clone, Copy, Debug)]
 pub struct GrassData {
@@ -53,10 +64,14 @@ pub struct GrassData {
     pub open_above: i32,
     /// The most days a chunk catches up at once (on its load, after an idle stretch).
     pub catch_up_days: u32,
+    /// The block's property its growth stages are values of.
+    pub stage_property: &'static str,
+    /// The stages, a sprout to full height (the last the property's default).
+    pub stages: &'static [GrassStage],
 }
 
 mod table {
-    use super::GrassData;
+    use super::{GrassData, GrassStage};
     include!("grass.gen.rs");
 }
 pub use table::GRASS;
@@ -88,16 +103,32 @@ pub trait Cells {
 pub struct Rule {
     pub data: GrassData,
     block: StateId,
+    /// The block's states by stage, a sprout to full height.
+    stages: Vec<StateId>,
     /// The ground states, face-local: the `on` blocks and, with `onRamps`, their ½ m ramps.
     on: Vec<StateId>,
     seed: u32,
+    /// The seed of the stage rolls (apart from the spread's).
+    stage_seed: u32,
 }
 
 impl Rule {
     pub fn new(data: GrassData, world_seed: u64) -> Self {
+        let block = dwell_blocks::require(data.block);
+        let stages = data
+            .stages
+            .iter()
+            .map(|st| {
+                dwell_blocks::with_property(block, data.stage_property, st.value).unwrap_or_else(
+                    || panic!("{}: no {}={}", data.block, data.stage_property, st.value),
+                )
+            })
+            .collect();
         Self {
             data,
-            block: dwell_blocks::require(data.block),
+            block,
+            stages,
+            stage_seed: seed_word(world_seed, 0x6A55_57A6),
             on: data
                 .on
                 .iter()
@@ -118,9 +149,73 @@ impl Rule {
         Self::new(GRASS, world_seed)
     }
 
-    /// The block grown.
+    /// The block grown (its default state: full height).
     pub fn block(&self) -> StateId {
         self.block
+    }
+
+    /// Whether `s` is a state of the grown block (any stage).
+    pub fn is_tuft(&self, s: StateId) -> bool {
+        s != AIR && dwell_blocks::block_of(s).name == self.data.block
+    }
+
+    /// The state of stage `i` (0: the sprout; clamped to the last, full height).
+    pub fn stage_state(&self, i: usize) -> StateId {
+        self.stages[i.min(self.stages.len() - 1)]
+    }
+
+    /// The sprout: what grown, regrown and eaten tufts are.
+    pub fn sprout(&self) -> StateId {
+        self.stages[0]
+    }
+
+    /// The stage of a tuft's state (None: not the grown block). A state without a stage the data
+    /// knows (an alias) is full height, as the property's default.
+    pub fn stage_of(&self, s: StateId) -> Option<usize> {
+        if !self.is_tuft(s) {
+            return None;
+        }
+        let i = self.stages.iter().position(|&t| t == s);
+        Some(i.unwrap_or(self.stages.len() - 1))
+    }
+
+    /// What an eaten tuft's cell becomes (face-local `below`, the cell under it): a sprout over the
+    /// rule's ground (the roots stay; it regrows stage by stage), else air.
+    pub fn eaten(&self, below: StateId) -> StateId {
+        if self.grows_on(below) {
+            self.sprout()
+        } else {
+            AIR
+        }
+    }
+
+    /// The tallest stage a column of climate share `share` grows its tufts to (`stages.share`).
+    pub fn top_stage(&self, share: f64) -> usize {
+        self.data
+            .stages
+            .iter()
+            .rposition(|st| share >= st.share)
+            .unwrap_or(0)
+    }
+
+    /// The tuft generation places in a column of climate share `share`: its top stage.
+    pub fn mature(&self, share: f64) -> StateId {
+        self.stage_state(self.top_stage(share))
+    }
+
+    /// Whether a tuft at stage `i` grows a stage on `day` at face-local cell `p`.
+    fn grows_up(&self, i: usize, day: u32, [x, y, z]: [i32; 3]) -> bool {
+        let days = self.data.stages.get(i).map_or(0.0, |st| st.days);
+        if days <= 0.0 {
+            return false;
+        }
+        let r = unit(hash3(
+            mix32(self.stage_seed ^ day.wrapping_mul(0x85EB_CA6B)),
+            x,
+            y,
+            z,
+        ));
+        f64::from(r) < 1.0 / days
     }
 
     /// The most share of a column's open grass cells holding tall grass at a climate share.
@@ -166,7 +261,7 @@ impl Rule {
         env: &dyn Envelope,
         cells: &mut dyn Cells,
     ) -> Vec<([i32; 3], StateId)> {
-        if days == 0 || self.data.spread_per_day <= 0.0 && self.data.regrow_per_day <= 0.0 {
+        if days == 0 {
             return Vec::new();
         }
         let local = f.chunk(chunk);
@@ -175,22 +270,42 @@ impl Rule {
             local.y * CHUNK_SIZE,
             local.z * CHUNK_SIZE,
         );
-        let block = f.state(self.block);
         let now = |cells: &dyn Cells, p: [i32; 3]| cells.now(f.cell(p)).map(|s| f.state(s));
-        let is_grass = |cells: &dyn Cells, p: [i32; 3]| now(cells, p) == Some(self.block);
+        let is_grass =
+            |cells: &dyn Cells, p: [i32; 3]| now(cells, p).is_some_and(|s| self.is_tuft(s));
         // The spots: open cells over grass that the world still holds as generated.
         struct Spot {
             p: [i32; 3],
             roots: bool,
             near: bool,
+            /// The column's top stage.
+            top: usize,
         }
         let mut spots = Vec::new();
+        // The tufts standing (face-local cell, stage, the column's top stage) that may grow taller.
+        let mut tufts: Vec<([i32; 3], usize, usize)> = Vec::new();
         let mut env_cache: Option<((i32, i32), (f32, f64))> = None;
+        let mut envelope = |x: i32, z: i32| match env_cache {
+            Some((at, e)) if at == (x, z) => e,
+            _ => {
+                let e = env.at(x, z);
+                env_cache = Some(((x, z), e));
+                e
+            }
+        };
         for z in z0..z0 + CHUNK_SIZE {
             for x in x0..x0 + CHUNK_SIZE {
                 for y in y0..y0 + CHUNK_SIZE {
                     let p = [x, y, z];
-                    if now(cells, p) != Some(AIR) {
+                    let here = now(cells, p);
+                    if let Some(stage) = here.and_then(|s| self.stage_of(s)) {
+                        let top = self.top_stage(envelope(x, z).1);
+                        if stage < top {
+                            tufts.push((p, stage, top));
+                        }
+                        continue;
+                    }
+                    if here != Some(AIR) {
                         continue;
                     }
                     let below = [x, y - 1, z];
@@ -200,21 +315,14 @@ impl Rule {
                     if !(1..=self.data.open_above).all(|k| now(cells, [x, y + k, z]) == Some(AIR)) {
                         continue;
                     }
-                    let e = match env_cache {
-                        Some((at, e)) if at == (x, z) => e,
-                        _ => {
-                            let e = env.at(x, z);
-                            env_cache = Some(((x, z), e));
-                            e
-                        }
-                    };
+                    let e = envelope(x, z);
                     if !self.fertile(e) {
                         continue;
                     }
                     let generated = cells.generated(f.cell(p)).map(|s| f.state(s));
                     let roots = match generated {
                         Some(AIR) => false,
-                        Some(s) if s == self.block => true,
+                        Some(s) if self.is_tuft(s) => true,
                         _ => continue, // a cell a player emptied of something else
                     };
                     if cells.generated(f.cell(below)).map(|s| f.state(s)) != Some(ground) {
@@ -228,13 +336,24 @@ impl Rule {
                                     .any(|dy| is_grass(cells, [x + dx, y + dy, z + dz]))
                         })
                     });
-                    spots.push(Spot { p, roots, near });
+                    let top = self.top_stage(e.1);
+                    spots.push(Spot { p, roots, near, top });
                 }
             }
         }
         let mut grown: HashSet<[i32; 3]> = HashSet::new();
         let r = self.data.reach;
+        let spreads = self.data.spread_per_day > 0.0 || self.data.regrow_per_day > 0.0;
         for day in first_day..first_day + days {
+            // The standing tufts grow a stage (before today's sprouts, which start tomorrow).
+            for t in tufts.iter_mut().filter(|t| t.1 < t.2) {
+                if self.grows_up(t.1, day, t.0) {
+                    t.1 += 1;
+                }
+            }
+            if !spreads {
+                continue;
+            }
             let mut today = Vec::new();
             for s in spots.iter().filter(|s| !grown.contains(&s.p)) {
                 let [x, y, z] = s.p;
@@ -256,11 +375,38 @@ impl Rule {
                     today.push(s.p);
                 }
             }
-            grown.extend(today);
+            for p in today {
+                grown.insert(p);
+                let top = spots.iter().find(|s| s.p == p).map_or(0, |s| s.top);
+                tufts.push((p, 0, top));
+            }
         }
-        let mut out: Vec<_> = grown.into_iter().map(|p| (f.cell(p), block)).collect();
+        // What changed: each grown cell's tuft and each standing tuft that grew, at its stage now.
+        let mut out: Vec<_> = tufts
+            .into_iter()
+            .filter(|&(p, stage, _)| {
+                grown.contains(&p) || now(cells, p).and_then(|s| self.stage_of(s)) != Some(stage)
+            })
+            .map(|(p, stage, _)| (f.cell(p), f.state(self.stage_state(stage))))
+            .collect();
         out.sort_unstable();
         out
+    }
+}
+
+/// The tuft generation places for decoration `decoration`'s state `state` in a column of climate
+/// share `share` (docs/ECOLOGY.md §10): the build's grown block at the column's top stage; any other
+/// decoration's state as it is. A world of one biome (share 1) places full-height tufts as before.
+pub fn generated_tuft(decoration: &str, state: StateId, share: f64) -> StateId {
+    static RULE: std::sync::OnceLock<Rule> = std::sync::OnceLock::new();
+    if decoration != GRASS.decoration {
+        return state;
+    }
+    let rule = RULE.get_or_init(|| Rule::build(0));
+    if rule.is_tuft(state) {
+        rule.mature(share)
+    } else {
+        state
     }
 }
 

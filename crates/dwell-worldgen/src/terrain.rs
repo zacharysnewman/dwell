@@ -4042,10 +4042,10 @@ impl TerrainGenerator {
             })
             .filter(|(_, p)| !ramp || p.on_ramps())
             // The rules' heights are metres above sea level.
-            .find(|(i, p)| {
+            .find_map(|(i, p)| {
                 let factor = || match biome {
                     Some(b) => {
-                        let kind = self.vegetation.kind_for_decoration(DECORATIONS[*i].name);
+                        let kind = self.vegetation.kind_for_decoration(DECORATIONS[i].name);
                         self.undergrowth_factor(b, kind, || {
                             self.climate_with(x.into(), z.into(), &height)
                         }) as f32
@@ -4060,8 +4060,16 @@ impl TerrainGenerator {
                     |nx, nz| neighbour_top(nx, nz) - SEA_LEVEL,
                     factor,
                 )
+                // Tall grass stands at its climate's top stage (docs/ECOLOGY.md §10).
+                .then(|| {
+                    let name = DECORATIONS[i].name;
+                    if name == crate::grass::GRASS.decoration {
+                        crate::grass::generated_tuft(name, p.state(), f64::from(factor()))
+                    } else {
+                        p.state()
+                    }
+                })
             })
-            .map(|(_, p)| p.state())
     }
 
     // --- level of detail (§6.6) -------------------------------------------------------------------
