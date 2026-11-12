@@ -64,7 +64,7 @@ Hotspot islands map to effusive; arc cones to dormant, waiting or blown.
 
 ### Answers (owner, 2026-11-11)
 
-1. **Lava's danger:** open. Default until answered: heavy damage while in it, plus a moment of burning
+1. **Lava's danger:** answered (owner, 2026-11-11: "Yes that default for lava danger is great."): heavy damage while in it, plus a moment of burning
    after leaving it.
 2. **Active scale:** "Both?" — crater lava lakes with occasional flows **and** lava rivers reaching the
    sea, building new land, chosen as data per vent.
