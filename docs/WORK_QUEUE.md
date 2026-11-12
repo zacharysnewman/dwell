@@ -1934,6 +1934,13 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    docs-only changes (`paths-ignore` docs/** and *.md); notes (BUGS/WORK_QUEUE entries) ride along with the next real
    change instead of their own PR (CI already cancels superseded runs per branch).
 
+50. **Fast re-records: one command per video, shots kept until approved** (owner 2026-11-12: "I would guess that would
+   take about 3 minutes to re-record. What are you expecting and why might it be slower currently?" → explained:
+   ~20 min because every shot is re-recorded, an agent drives each step, camera spots found by trial; owner:
+   **"Yeah build thst"**). Keep each finished shot as a compressed clip until the owner approves the video (raw
+   frames still deleted); `take.mjs <video> [--only s5]` records the named shots from the committed plan and paths
+   and re-splices with no agent in the loop; an agent only for new camera spots.
+
 ## Future (needs owner answers)
 
 - **Waterlogging** (owner 2026-11-12: "Eventually we'll want to make it so some blocks if they don't move for a little
