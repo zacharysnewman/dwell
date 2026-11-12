@@ -2,6 +2,12 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.54.181",
+      "changes": [
+        "Far ground no longer has holes under distant trees: no more sky showing through the forest from high up"
+      ]
+    },
+    {
       "version": "0.54.180",
       "changes": [
         "Villagers' faces are their skin colour again, not jet black",
