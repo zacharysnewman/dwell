@@ -535,12 +535,16 @@ export class MainMenu {
     const line = document.createElement('p');
     line.className = 'menu-hint';
     const { version, channel } = this.deps;
-    line.append(
-      `Dwell ${version} (${channel}) · `,
-      button('About', 'menu-link', () => {
-        details.hidden = !details.hidden;
-      }),
-    );
+    // A disclosure (owner, 2026-11-12: expandable sections must show they expand and collapse): a
+    // chevron that turns, aria-expanded and aria-controls, like the <details> summaries.
+    const about = button('About', 'mm-disclosure', () => {
+      details.hidden = !details.hidden;
+      about.setAttribute('aria-expanded', String(!details.hidden));
+    });
+    about.id = 'about-toggle';
+    about.setAttribute('aria-expanded', 'false');
+    about.setAttribute('aria-controls', 'about-details');
+    line.append(`Dwell ${version} (${channel}) · `, about);
     line.id = 'app-version';
     const details = document.createElement('div');
     details.id = 'about-details';

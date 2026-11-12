@@ -338,6 +338,12 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    aligned to match the design of the others instead of looking like web links"). Restyle them as the menu's
    own buttons, aligned with the others.
 
+23. **Expandable sections in the main menu** (owner 2026-11-12: "Our main menu has some expandable sections that
+   don't have good UI best practices to indicate they can expand and collapse. Improve these."). Built
+   (0.54.x): New world's More options, Versions' Earlier versions and About share one disclosure style: a
+   chevron right when closed and down when open, a hover and pressed background, a focus ring; About is a
+   real disclosure button (aria-expanded, aria-controls). The world card's ⋯ menu keeps its button.
+
 ## Done
 
 - **Axe swing directions and animation tools (owner 2026-11-11: "The axe animations are still trash.
