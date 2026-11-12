@@ -9,7 +9,7 @@ link). They are not part of any build; Prettier and CI ignore `docs/`.
 | Adaptive Block Lab | [`adaptive-block-lab.html`](./adaptive-block-lab.html) | https://claude.ai/artifact/7gvrFMfUyT6GegnyKPTTqV | The adaptive-block rules on whole scenes and three voxel grids |
 | Shape Playground | [`shape-playground.html`](./shape-playground.html) | https://claude.ai/artifact/Sc4Pu3UqX8TcpcrRrEYpVz | Every shape and situation, hand-shaped by the owner; the rules fitted to it |
 | Half-Height Voxel Lab | [`half-height-lab.html`](./half-height-lab.html) | https://claude.ai/artifact/DGQZG6GH1GhxvZRtPgh5MN | Today's 1 m cells beside 1 × ½ × 1 m cells with 1 m double blocks: shapes, 27° and 45° slopes, plants standing on the ground, ½ m growth ([proposal](../proposals/HALF_HEIGHT_VOXELS.md)) |
-| Tree Growth | [`tree-growth.html`](./tree-growth.html) | https://claude.ai/artifact/MRW4RcNKTHkYdxMyRKLLHz | Oak, pine and palm as species data, grown from a thin sapling to maturity in stages (the same silhouette, the trunk thickening in ¼ m steps), in the Leaf Lab's chosen look (option 5) with octagonal logs; seeds, compare, a forest row (2026-11-11) |
+| Tree Growth | [`tree-growth.html`](./tree-growth.html) | https://claude.ai/artifact/MRW4RcNKTHkYdxMyRKLLHz | Oak, pine and palm as species data, grown from a thin sapling to maturity in stages (the same silhouette, the trunk thickening in ¼ m steps), in the Leaf Lab's chosen look (option 5) with octagonal logs; seeds, compare, a forest row (2026-11-11); *Palm fronds*: leaf blocks (the game today), frond cards, or *Split* side by side (2026-11-12; **needs republishing to its link**) |
 | Tree Growth: skeleton | [`tree-growth-skeleton.html`](./tree-growth-skeleton.html) | not published | The G0 page: a hand-built tree grown by revealing its skeleton, obstacles, and jitter variants (Phase 30, G0) |
 | Chisel (biome editor) | [`client/chisel.html`](../../client/chisel.html) | not published (runs the client's WASM: `npm run build:wasm`, `npm run dev`, then `/dwell/chisel.html`) | The world's biomes edited with sliders and previewed live on the real generator; Export/Import the biome JSON (Phase 56 B3, ADR 0074) |
 | Painterly Texture Lab | [`painterly-texture-lab.html`](./painterly-texture-lab.html) | https://claude.ai/artifact/4CTkNW4G6p8p67MkSNMUJA | The painterly materials and palette edited live with the game's generator; the JSON copied back (Phase 39). Folded into Chisel's Textures tab (0.52.42); kept for the character and sky materials |
@@ -63,7 +63,13 @@ The first two feed [`ADAPTIVE_BLOCKS.md`](../ADAPTIVE_BLOCKS.md) (Phase 18, form
   normals, leaf look, growth stages); *Show species JSON* prints it. Oak: thick trunk, two to four heavy
   branches stepping out and up, a lumpy crown with its lumps on the branch tips. Pine: tall straight
   trunk, a cone of 2 m tiers (a wide layer and a narrower one), thin whorl stubs. Palm: a leaning trunk
-  of ½ m ring segments offset in ⅛ m steps, a crown heart block and long drooping fronds drawn as blades.
+  of ½ m ring segments offset in ⅛ m steps, a crown heart block and long drooping fronds.
+- **Palm fronds** (2026-11-12, WORK_QUEUE answer 8: "I'd like to see a comparison of the two"): *Leaf blocks* draws each
+  frond as the game builds it today (the path sampled 12 times, every ½ m cell it crosses a `dwell:leaves` block,
+  chamfered and carded like any leaf); *Frond cards* draws two to four long arching painted cards along each frond's
+  path (by its length; the longer, the more they sag), the leaf card's painterly strokes in a frond's shape; *Split*
+  shows the same palm (seed, stage) both ways from one camera, blocks left, cards right, with the player for scale.
+  `?fronds=blocks|cards|split`. The edit is not on the published link yet: republish the page to it.
 - **Growth**: a slider and a time-lapse; each species has 8 stages, height in ½ m steps, trunk width in
   ¼ m steps, the crown the mature crown scaled. Oak branches and pine whorls appear from a stage on.
 - **Views**: One, Seeds (four variants), Compare (the three side by side), Forest (each species at

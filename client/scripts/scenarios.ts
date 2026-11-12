@@ -93,7 +93,7 @@ export type Step =
   | { do: 'shadows'; quality: 'off' | 'low' | 'high' }
   | {
       do: 'view';
-      clouds?: 'off' | 'low' | 'high';
+      clouds?: 'off' | 'low' | 'medium' | 'high';
       speedEffects?: boolean;
       distanceM?: number;
       pixelError?: number;
@@ -102,6 +102,12 @@ export type Step =
       flowRipples?: boolean;
       flowFoam?: boolean;
       waterfalls?: boolean;
+      shafts?: 'off' | 'low' | 'high';
+      bloom?: 'off' | 'low' | 'high';
+      torchShadows?: 'off' | 'low' | 'high';
+      cards?: boolean;
+      grass?: boolean;
+      renderScale?: number;
     }
   /** Breaks or places at the crosshair, as a click does; selects a hotbar slot. */
   | { do: 'edit'; action: 'break' | 'place' }
@@ -171,9 +177,11 @@ export type Step =
   /**
    * Saves the telemetry, the controller ticks and the game's state under `name`. With a `budget`
    * (`{"<series>.<stat>": max}`, e.g. `{"frame.cpu.p95": 14}`), a value over its maximum fails the
-   * scenario (`overBudget`; BUGS.md #72's phone budget while moving).
+   * scenario (`overBudget`; BUGS.md #72's phone budget while moving). With `reportOnly` true the
+   * values over it are printed (`OVER BUDGET (report only)`) and the scenario goes on: a target not
+   * yet met (`forest-perf`'s 16.7 ms frame, WORK_QUEUE items 30 and 32).
    */
-  | { do: 'record'; name: string; budget?: Record<string, number> }
+  | { do: 'record'; name: string; budget?: Record<string, number>; reportOnly?: true }
   /**
    * Saves a screenshot `<name>.png`. With a placement (`at` [x, y, z], the eye, or `above`
    * [x, z, height], the eye `height` m over the ground there along `face`'s up; `yaw`, `pitch`),
@@ -392,6 +400,12 @@ const STEP_FIELDS: Record<Step['do'], readonly string[]> = {
     'flowRipples',
     'flowFoam',
     'waterfalls',
+    'shafts',
+    'bloom',
+    'cards',
+    'grass',
+    'renderScale',
+    'torchShadows',
   ],
   edit: ['action'],
   select: ['slot'],
@@ -406,7 +420,7 @@ const STEP_FIELDS: Record<Step['do'], readonly string[]> = {
   give: ['item', 'count'],
   lava: ['op', 'args'],
   mark: [],
-  record: ['name', 'budget'],
+  record: ['name', 'budget', 'reportOnly'],
   shot: ['name', ...PLACEMENT_FIELDS, 'quietFrames', 'maxS'],
   spot: ['spot', 'name'],
   traceStart: [],
@@ -498,9 +512,17 @@ export function parseStep(where: string, v: unknown): Step {
     }
     case 'view': {
       const c = o.clouds;
-      if (c !== undefined && c !== 'off' && c !== 'low' && c !== 'high') {
-        throw new ViewError(`${at('clouds')}: expected "off", "low" or "high"`);
+      if (c !== undefined && c !== 'off' && c !== 'low' && c !== 'medium' && c !== 'high') {
+        throw new ViewError(`${at('clouds')}: expected "off", "low", "medium" or "high"`);
       }
+      const tier = (k: string): 'off' | 'low' | 'high' | undefined => {
+        const v = o[k];
+        if (v === undefined) return undefined;
+        if (v !== 'off' && v !== 'low' && v !== 'high') {
+          throw new ViewError(`${at(k)}: expected "off", "low" or "high"`);
+        }
+        return v;
+      };
       const opt = <T>(k: string, v: T | undefined): Record<string, T> =>
         v === undefined ? {} : { [k]: v };
       return {
@@ -531,6 +553,15 @@ export function parseStep(where: string, v: unknown): Step {
         ...opt(
           'waterfalls',
           o.waterfalls === undefined ? undefined : bool(at('waterfalls'), o.waterfalls),
+        ),
+        ...opt('shafts', tier('shafts')),
+        ...opt('bloom', tier('bloom')),
+        ...opt('torchShadows', tier('torchShadows')),
+        ...opt('cards', o.cards === undefined ? undefined : bool(at('cards'), o.cards)),
+        ...opt('grass', o.grass === undefined ? undefined : bool(at('grass'), o.grass)),
+        ...opt(
+          'renderScale',
+          o.renderScale === undefined ? undefined : num(at('renderScale'), o.renderScale, 0.25, 1),
         ),
       };
     }
@@ -653,6 +684,12 @@ export function parseStep(where: string, v: unknown): Step {
     }
     case 'record': {
       const n = name(at('name'), o.name);
+      if (o.reportOnly !== undefined && o.reportOnly !== true) {
+        throw new ViewError(`${at('reportOnly')}: expected true (or leave it out)`);
+      }
+      if (o.reportOnly === true && o.budget === undefined) {
+        throw new ViewError(`${at('reportOnly')}: a record reports only against a budget`);
+      }
       if (o.budget === undefined) return { do: d, name: n };
       if (typeof o.budget !== 'object' || o.budget === null || Array.isArray(o.budget)) {
         throw new ViewError(`${at('budget')}: expected {"<series>.<stat>": max}`);
@@ -667,7 +704,9 @@ export function parseStep(where: string, v: unknown): Step {
         }
         budget[k] = num(`${at('budget')}.${k}`, v, 0, 1e9);
       }
-      return { do: d, name: n, budget };
+      return o.reportOnly
+        ? { do: d, name: n, budget, reportOnly: true }
+        : { do: d, name: n, budget };
     }
     case 'traceStop':
       return { do: d, name: name(at('name'), o.name) };

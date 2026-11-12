@@ -53,6 +53,7 @@ const LISTED: &[&str] = &[
     "preset:badlands",
     "preset:alpine_tundra",
     "preset:wetland",
+    "preset:old_growth",
 ];
 const MIN: f64 = 0.02;
 

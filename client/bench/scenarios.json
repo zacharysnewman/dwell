@@ -2,6 +2,26 @@
   "$comment": "Dev bench scenarios (docs/DEV_TOOLS.md; scripts/scenarios.ts describes the steps, scripts/bench.ts runs them). Each runs in a fresh local world: the player at the spawn, then the steps in order.",
   "scenarios": [
     {
+      "name": "forest-perf",
+      "notes": "THE tree performance reference (WORK_QUEUE item 32; docs/DEV_TOOLS.md \"The tree performance reference\"): the forest world (test:forest, old-growth forest everywhere, ~220 trees a hectare up to 26 m tall) at ?preset=high, the owner's target being High at 60 fps on an M1 MacBook Air (item 30). At each forest spot (inside the densest stand, across the canopy from the high ground, 150 m over it) the view settles, then 8 s are recorded. Budget: a 16.7 ms frame (frame.cpu p95, gpu.frame p95), report only until item 30 lands: a record over it prints OVER BUDGET (report only) and the run goes on. Run on the M1 Air before and after every tree, leaf or impostor change: npm run bench -- --warm forest-perf.",
+      "query": { "worldgen": "test:forest", "seed": "0", "fresh": "1", "preset": "high" },
+      "steps": [
+        { "do": "settle", "maxS": 120 },
+        { "do": "spot", "spot": "forest:inside", "name": "inside" },
+        { "do": "mark" },
+        { "do": "wait", "s": 8 },
+        { "do": "record", "name": "inside", "budget": { "frame.cpu.p95": 16.7, "gpu.frame.p95": 16.7 }, "reportOnly": true },
+        { "do": "spot", "spot": "forest:edge", "name": "edge" },
+        { "do": "mark" },
+        { "do": "wait", "s": 8 },
+        { "do": "record", "name": "edge", "budget": { "frame.cpu.p95": 16.7, "gpu.frame.p95": 16.7 }, "reportOnly": true },
+        { "do": "spot", "spot": "forest:above", "name": "above" },
+        { "do": "mark" },
+        { "do": "wait", "s": 8 },
+        { "do": "record", "name": "above", "budget": { "frame.cpu.p95": 16.7, "gpu.frame.p95": 16.7 }, "reportOnly": true }
+      ]
+    },
+    {
       "name": "lava-burn",
       "notes": "Burning (VOLCANOES.md §6.3): an adventure-mode player on the starter's summit, the lake filled fast, the player put into the lava (`goto` the nearest dwell:lava): the red-orange screen edge and the sizzle.",
       "query": { "worldgen": "test:starter", "seed": "0", "fresh": "1", "mode": "adventure", "at": "30008.5,240,-8000.5" },
@@ -8257,6 +8277,688 @@
         {
           "do": "wait",
           "s": 0.4
+        }
+      ]
+    },
+    {
+      "name": "high-forest",
+      "notes": "WORK_QUEUE item 30 (BUGS.md #78): the High preset in the starter's broadleaf forest, every costly feature switched off in turn mid-run (cards, shadows, torch shadows, shafts, bloom, clouds, water, tall grass, the full-detail distance, the render scale at full), each recorded 4 s; run --unthrottled on the M1 for gpu.frame per feature (docs/DEV_TOOLS.md, High on the M1).",
+      "window": {
+        "width": 1280,
+        "height": 800,
+        "pixelRatio": 2
+      },
+      "query": {
+        "worldgen": "test:starter",
+        "seed": "0",
+        "fresh": "1",
+        "preset": "high"
+      },
+      "steps": [
+        {
+          "do": "settle",
+          "maxS": 60
+        },
+        {
+          "do": "spot",
+          "spot": "starter:broadleaf",
+          "name": "forest"
+        },
+        {
+          "do": "settle",
+          "maxS": 30
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "record",
+          "name": "forest-high"
+        },
+        {
+          "do": "view",
+          "cards": false
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "record",
+          "name": "forest-cards-off"
+        },
+        {
+          "do": "view",
+          "cards": true
+        },
+        {
+          "do": "shadows",
+          "quality": "low"
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "record",
+          "name": "forest-shadows-low"
+        },
+        {
+          "do": "shadows",
+          "quality": "off"
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "record",
+          "name": "forest-shadows-off"
+        },
+        {
+          "do": "shadows",
+          "quality": "high"
+        },
+        {
+          "do": "view",
+          "torchShadows": "off"
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "record",
+          "name": "forest-torch-off"
+        },
+        {
+          "do": "view",
+          "torchShadows": "low"
+        },
+        {
+          "do": "view",
+          "shafts": "off"
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "record",
+          "name": "forest-shafts-off"
+        },
+        {
+          "do": "view",
+          "shafts": "high"
+        },
+        {
+          "do": "view",
+          "bloom": "off"
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "record",
+          "name": "forest-bloom-off"
+        },
+        {
+          "do": "view",
+          "bloom": "high"
+        },
+        {
+          "do": "view",
+          "clouds": "off"
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "record",
+          "name": "forest-clouds-off"
+        },
+        {
+          "do": "view",
+          "clouds": "medium"
+        },
+        {
+          "do": "water",
+          "quality": "low"
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "record",
+          "name": "forest-water-low"
+        },
+        {
+          "do": "water",
+          "quality": "medium"
+        },
+        {
+          "do": "view",
+          "grass": false
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "record",
+          "name": "forest-grass-off"
+        },
+        {
+          "do": "view",
+          "grass": true
+        },
+        {
+          "do": "view",
+          "distanceM": 128
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "record",
+          "name": "forest-distance-128"
+        },
+        {
+          "do": "view",
+          "distanceM": 256
+        },
+        {
+          "do": "view",
+          "renderScale": 1
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "record",
+          "name": "forest-scale-full"
+        },
+        {
+          "do": "view",
+          "renderScale": 0.5
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "record",
+          "name": "forest-high-again"
+        }
+      ]
+    },
+    {
+      "name": "high-open",
+      "notes": "high-forest's ablations on open ground (the starter's beach).",
+      "window": {
+        "width": 1280,
+        "height": 800,
+        "pixelRatio": 2
+      },
+      "query": {
+        "worldgen": "test:starter",
+        "seed": "0",
+        "fresh": "1",
+        "preset": "high"
+      },
+      "steps": [
+        {
+          "do": "settle",
+          "maxS": 60
+        },
+        {
+          "do": "spot",
+          "spot": "starter:beach",
+          "name": "beach"
+        },
+        {
+          "do": "settle",
+          "maxS": 30
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "record",
+          "name": "open-high"
+        },
+        {
+          "do": "view",
+          "cards": false
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "record",
+          "name": "open-cards-off"
+        },
+        {
+          "do": "view",
+          "cards": true
+        },
+        {
+          "do": "shadows",
+          "quality": "low"
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "record",
+          "name": "open-shadows-low"
+        },
+        {
+          "do": "shadows",
+          "quality": "off"
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "record",
+          "name": "open-shadows-off"
+        },
+        {
+          "do": "shadows",
+          "quality": "high"
+        },
+        {
+          "do": "view",
+          "torchShadows": "off"
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "record",
+          "name": "open-torch-off"
+        },
+        {
+          "do": "view",
+          "torchShadows": "low"
+        },
+        {
+          "do": "view",
+          "shafts": "off"
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "record",
+          "name": "open-shafts-off"
+        },
+        {
+          "do": "view",
+          "shafts": "high"
+        },
+        {
+          "do": "view",
+          "bloom": "off"
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "record",
+          "name": "open-bloom-off"
+        },
+        {
+          "do": "view",
+          "bloom": "high"
+        },
+        {
+          "do": "view",
+          "clouds": "off"
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "record",
+          "name": "open-clouds-off"
+        },
+        {
+          "do": "view",
+          "clouds": "medium"
+        },
+        {
+          "do": "water",
+          "quality": "low"
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "record",
+          "name": "open-water-low"
+        },
+        {
+          "do": "water",
+          "quality": "medium"
+        },
+        {
+          "do": "view",
+          "grass": false
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "record",
+          "name": "open-grass-off"
+        },
+        {
+          "do": "view",
+          "grass": true
+        },
+        {
+          "do": "view",
+          "distanceM": 128
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "record",
+          "name": "open-distance-128"
+        },
+        {
+          "do": "view",
+          "distanceM": 256
+        },
+        {
+          "do": "view",
+          "renderScale": 1
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "record",
+          "name": "open-scale-full"
+        },
+        {
+          "do": "view",
+          "renderScale": 0.5
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "record",
+          "name": "open-high-again"
+        }
+      ]
+    },
+    {
+      "name": "high-mixed",
+      "notes": "high-forest at the starter mixed forest (denser trees): High, cards, the cutout meshes and the distance.",
+      "window": {
+        "width": 1280,
+        "height": 800,
+        "pixelRatio": 2
+      },
+      "query": {
+        "worldgen": "test:starter",
+        "seed": "0",
+        "fresh": "1",
+        "preset": "high"
+      },
+      "steps": [
+        {
+          "do": "settle",
+          "maxS": 60
+        },
+        {
+          "do": "spot",
+          "spot": "starter:mixed-forest",
+          "name": "mixed"
+        },
+        {
+          "do": "settle",
+          "maxS": 30
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "record",
+          "name": "mixed-high"
+        },
+        {
+          "do": "view",
+          "grass": false
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "record",
+          "name": "mixed-grass-off"
         }
       ]
     }

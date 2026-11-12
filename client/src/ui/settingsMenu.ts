@@ -696,6 +696,21 @@ function panes(mobile: boolean): Record<SettingsPane, Group[]> {
         ],
       },
       {
+        // BUGS.md #78 (owner: "I don't see 'tree' options in our settings for graphics").
+        title: 'Trees',
+        rows: [
+          {
+            toggle: {
+              label: 'Leaf cards',
+              pin: 'leafCards',
+              hint: 'Painted leaf clumps on near trees; off is lighter on the GPU (never drawn on phones)',
+              get: (s) => s.leafCards,
+              with: (s, v) => ({ ...s, leafCards: v }),
+            },
+          },
+        ],
+      },
+      {
         title: 'Look',
         rows: [
           {
@@ -742,15 +757,6 @@ function panes(mobile: boolean): Record<SettingsPane, Group[]> {
               format: (v) => `${String(Math.round(v))}°`,
               get: (s) => s.fovDeg,
               with: (s, v) => ({ ...s, fovDeg: Math.round(v) }),
-            },
-          },
-          {
-            toggle: {
-              label: 'Leaf cards',
-              pin: 'leafCards',
-              hint: 'Painted leaf clumps on near trees; off is lighter on the GPU (never drawn on phones)',
-              get: (s) => s.leafCards,
-              with: (s, v) => ({ ...s, leafCards: v }),
             },
           },
           {
