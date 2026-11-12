@@ -2068,7 +2068,12 @@ fn composite_underwater(p: vec2i, ray: vec3f, c: vec4f) -> vec3f {
     let past = dist > to_surface - slack;
     let at_surface = reaches && c.a > 0.0 && abs(dist - to_surface) < slack;
     var back = vec3f(0.0);
-    if (reaches && (c.a < 1.0 || at_surface || (!leaves && past))) {
+    // The mirror and the window's share where the ray leaves (§19): toward the window's rim what
+    // the pixel shows past the surface fades into the mirror, as the sky does, so the rim has no
+    // hard-edged bits of the scene (the surface's mesh drawn opaque there by its Fresnel).
+    var rim_mirror = vec3f(0.0);
+    var rim_inside = 1.0;
+    if (reaches && (c.a < 1.0 || at_surface || past)) {
         // The underside where the ray meets the surface: its cells and sun patch, under the fog
         // over the distance to it (`underwater` to to_surface), so toward level they fade into
         // the fog with no hard horizon (render/water.rs `underside_contrast`).
@@ -2119,6 +2124,8 @@ fn composite_underwater(p: vec2i, ray: vec3f, c: vec4f) -> vec3f {
                 * own(sun, frame.eye.y);
             let window = display(underwater(sky_in * mix(1.0, look.x, f.window.x) + glow, to_surface, f));
             back = mix(mirror, window, inside);
+            rim_mirror = mirror;
+            rim_inside = inside;
         } else {
             back = mirror;
         }
@@ -2144,7 +2151,11 @@ fn composite_underwater(p: vec2i, ray: vec3f, c: vec4f) -> vec3f {
             * caustic_light(frame.wrap.xy + rel.xz, under, frame.eye.x + rel.y, pixel_m(p, ray, depth), UNDERWATER_CAUSTICS, f, fluid);
     }
     let shown = moonlit(display(underwater(lit, min(dist, to_surface), f)));
-    return mix(back, shown, min(c.a, 1.0));
+    let out = mix(back, shown, min(c.a, 1.0));
+    if (reaches && leaves && past) {
+        return mix(rim_mirror, out, rim_inside);
+    }
+    return out;
 }
 
 // The time of day's saturation (`frame.day.horizon.a`, lower by moonlight) on a colour the water

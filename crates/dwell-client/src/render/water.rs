@@ -1715,7 +1715,7 @@ mod tests {
             "the scene's saturation is the same"
         );
         assert!(
-            b.contains("let window = display(underwater(sky_in * mix(1.0, look.x, f.window.x), to_surface, f));"),
+            b.contains("let window = display(underwater(sky_in * mix(1.0, look.x, f.window.x) + glow, to_surface, f));"),
             "the underside's cells over the window's sky at the look's share"
         );
         let w = dwell_look::underwater::underwater_look("dwell:water");
@@ -1818,8 +1818,9 @@ mod tests {
         // over its distance (underside_contrast), the sun patch along sun_through.
         assert!(src.contains("rim_above = 1.0 + (band_edge(0.0, f) - 1.0) * clamp(1.0 - d / waterline_across(f).x, 0.0, 1.0);"));
         assert!(src.contains(
-            "let mirror = moonlit(display(underwater(underwater(vec3f(0.0), 1e6, f) * light, to_surface, f)));"
+            "let ceiling = underwater(vec3f(0.0), 1e6, f) * light * f.lift.y + zen * near_rim * 0.35;"
         ));
+        assert!(src.contains("let mirror = moonlit(display(underwater(ceiling, to_surface, f)));"));
         assert!(src.contains("let h = (sun - up * face_rise(face, sun)) / max(ior, 1.0);"));
         assert!(src.contains("return h + up * sqrt(max(1.0 - dot(h, h), 0.0));"));
         assert!(src.contains("let d = max(dist - f.under.y, 0.0) * f.under.z;"));
