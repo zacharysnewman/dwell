@@ -1869,7 +1869,9 @@ impl<S: Scene> Game<S> {
                     let at = point_in_cell(cell, mark.point);
                     self.sounds
                         .push(SoundEvent::new(SoundKind::Hit, block, 1.0, Some(at)));
-                    self.hit_chips(block, cell, at, now_ms);
+                    // The mark's chunk is its bite (BLOCK_DAMAGE.md §10).
+                    let bite = mark.scale() * dwell_protocol::damage::HitMark::UNIT_M3;
+                    self.hit_chips(block, cell, at, bite, now_ms);
                 }
                 // Drawn on the struck faces (docs/BLOCK_DAMAGE.md): each changed cell's chunk again.
                 for cell in &d.gone {
@@ -2354,7 +2356,8 @@ impl<S: Scene> Game<S> {
                             // Its chips; the server's echo of the hit is not shown again.
                             self.remote_hits.own_hit(target.cell, now_ms);
                             if let Some(at) = at {
-                                self.hit_chips(block, target.cell, at, now_ms);
+                                let bite = self.own_bite_m3(block);
+                                self.hit_chips(block, target.cell, at, bite, now_ms);
                             }
                         }
                     }
@@ -3343,7 +3346,8 @@ impl<S: Scene> Game<S> {
             self.sounds
                 .push(SoundEvent::new(SoundKind::Hit, h.block, 1.0, h.at));
             if let Some(at) = h.at {
-                self.hit_chips(h.block, h.cell, at, now_ms);
+                let bite = self.own_bite_m3(h.block);
+                self.hit_chips(h.block, h.cell, at, bite, now_ms);
             }
         }
     }
@@ -3505,7 +3509,14 @@ impl<S: Scene> Game<S> {
 
     /// A hit's chips out of `cell` (the block `block`) at the struck point `at` (world), when its
     /// data has `damage.chips` (docs/BLOCK_DAMAGE.md §6).
-    fn hit_chips(&mut self, block: StateId, cell: [i32; 3], at: [f64; 3], now_ms: f64) {
+    fn hit_chips(
+        &mut self,
+        block: StateId,
+        cell: [i32; 3],
+        at: [f64; 3],
+        bite_m3: f64,
+        now_ms: f64,
+    ) {
         if dwell_blocks::try_info(block).is_none() {
             return;
         }
@@ -3516,13 +3527,20 @@ impl<S: Scene> Game<S> {
             let ids = self.hit_shards.burst(name, n, at, now_ms / 1000.0);
             if !ids.is_empty() {
                 let face = dwell_world::FaceFrame::at_height(at[1]);
-                let meshes = crate::hit_shards::fragment_meshes(face);
+                let meshes = crate::hit_shards::fragment_meshes(name, bite_m3, face);
                 let mut scene = self.scene.borrow_mut();
                 for id in ids {
                     scene.set_piece(id, meshes.as_ref().map(|(m, r)| (m.as_slice(), *r)));
                 }
             }
         }
+    }
+
+    /// The bite (m³) of the player's own hit on `block` with the tool held (the bite rule,
+    /// BLOCK_DAMAGE.md §10); none breakable: none.
+    fn own_bite_m3(&self, block: StateId) -> f64 {
+        let name = dwell_blocks::block_of(block).name;
+        dwell_protocol::damage::bite_m3_of(name, self.held_break_item()).unwrap_or(0.0)
     }
 
     /// A swing's chips out of `face` at `point` of the wood `block` (the server cuts; these show).
@@ -3540,6 +3558,28 @@ impl<S: Scene> Game<S> {
                 self.view_dir,
                 now_ms / 1000.0,
             );
+            // The chop's wood pieces, together its bite (BLOCK_DAMAGE.md §10): the held axe's,
+            // else the stone axe's.
+            let w = &dwell_protocol::chopping::WOODS[wood];
+            let axe = self
+                .held_break_item()
+                .and_then(dwell_protocol::chopping::tool)
+                .filter(|t| t.weapon.is_none())
+                .or_else(|| dwell_protocol::chopping::tool("dwell:stone_axe"));
+            if let Some(axe) = axe {
+                let at = point.map(f64::from);
+                let n = crate::chips::struck_normal(dwell_world::cell_of_pos(at), at);
+                let bite = dwell_protocol::chopping::chop_bite_m3(axe, w);
+                let ids = self.hit_shards.burst(name, n, at, now_ms / 1000.0);
+                if !ids.is_empty() {
+                    let f = dwell_world::FaceFrame::at_height(at[1]);
+                    let meshes = crate::hit_shards::fragment_meshes(name, bite, f);
+                    let mut scene = self.scene.borrow_mut();
+                    for id in ids {
+                        scene.set_piece(id, meshes.as_ref().map(|(m, r)| (m.as_slice(), *r)));
+                    }
+                }
+            }
         }
     }
 

@@ -625,6 +625,12 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    that block takes to break with that tool; so when it breaks, half the block has been carved and flown off (the
    block breaks at 50 % broken; metal tools take fewer, bigger bites). The carved mark and the flying pieces both
    match that volume (the pieces' total ≈ the bite).
+   **Status (bite-volume):** built (BLOCK_DAMAGE.md §10): `dwell_protocol::damage::bite_m3` (0.5 × the block's
+   volume, a ramp half a cell's, ÷ its hits with the tool), used by the server's marks, the carve (sized to
+   k bites after k hits, half at the break, within 8 % on the mesh) and the flying pieces (`chips.shards` ×
+   `chips.piece` look, together the bite; dirt clods and the axe's wood chips added); the tier `chunk` data
+   removed (metal's bigger bites come from its fewer hits). Dirt one shovel hit 0.0014 → 0.05 m³. Left: the
+   axe's notch carve still its own size (the chips follow the rule), the owner's look in game.
 19. **Lava glow, remaining** (owner 2026-11-11: "Lava should have bloom glow"; "Lava looks dark red instead of
    bright red/orange"; "It should darken as it solidifies though"). Built 0.52.107: colour by heat stops, heat in
    cells. **Bloom built (pending release, `claude/bloom`):** keyed on the scene's self-lit flag (lava, torches,

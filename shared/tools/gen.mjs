@@ -72,7 +72,7 @@ const CUT_FIELDS = ['tile', 'tint', 'open', 'kerfWidthM', 'bite', 'cracks'];
 const BITE_FIELDS = ['widthM', 'endsM', 'step'];
 const LEAF_FIELDS = ['block', 'count', 'color', 'radiusM', 'heightM'];
 const SWAY_FIELDS = ['fromFraction', 'maxDeg'];
-const CHIP_FIELDS = ['count', 'shards', 'color', 'speed', 'size'];
+const CHIP_FIELDS = ['count', 'shards', 'piece', 'color', 'speed', 'size'];
 const COLOR = /^#[0-9a-f]{6}$/i;
 const DROP_FIELDS = ['item', 'count', 'chance'];
 
@@ -94,11 +94,15 @@ const inRange = (o, k, lo, hi, at, open = false) => {
 function validateChips(c, at) {
   if (c === null || typeof c !== 'object' || Array.isArray(c)) fail(`${at} must be an object`);
   known(c, CHIP_FIELDS, at);
-  const chips = { count: c.count ?? 6, shards: c.shards ?? 0, color: c.color ?? '#c8a070', speed: c.speed ?? 2.5, size: c.size ?? 0.05 };
+  const chips = { count: c.count ?? 6, shards: c.shards ?? 0, piece: c.piece ?? 'dwell:rock_shard', color: c.color ?? '#c8a070', speed: c.speed ?? 2.5, size: c.size ?? 0.05 };
   if (!Number.isInteger(chips.count) || chips.count < 0 || chips.count > 32) fail(`${at}.count must be a whole number in [0, 32]`);
   // `shards` (optional, 0–8; default 0): real 3D fragments a hit flings, visual only (the client's
   // `hit_shards`, the item's `shard` look smaller; WORK_QUEUE item 18).
   if (!Number.isInteger(chips.shards) || chips.shards < 0 || chips.shards > 8) fail(`${at}.shards must be a whole number in [0, 8]`);
+  // `piece` (optional; default dwell:rock_shard): the item whose look those pieces are drawn with
+  // (stone's shards, soil's clods, wood's chips), sized so the `shards` of them total the hit's bite
+  // (BLOCK_DAMAGE.md §10). Checked against the items where they are known (`validateTools`).
+  if (typeof chips.piece !== 'string' || !/^[a-z0-9_]+:[a-z0-9_]+$/.test(chips.piece)) fail(`${at}.piece must be an item name (ns:name)`);
   if (typeof chips.color !== 'string' || !COLOR.test(chips.color)) fail(`${at}.color must be #rrggbb`);
   inRange(chips, 'speed', 0, 10, at, true);
   inRange(chips, 'size', 0, 0.2, at, true);
@@ -532,7 +536,10 @@ export function validateDamage(blocks, items, breaking, crackSets = loadCracks()
       if (!classes.has(k) && !items.has(k)) fail(`${at}.${k}: no tool class or item ${JSON.stringify(k)} (classes: ${[...classes].join(', ')})`);
       tools.push({ tool: k, hits: hits(v, `${at}.${k}`) });
     }
-    out.push({ block: name, default: dflt, tools, look, chips });
+    // Its volume, a share of a cell, for the bite rule (BLOCK_DAMAGE.md §10: each hit carves and
+    // throws off 0.5 × the volume ÷ the hits to break): a full block 1, a stored ramp ½.
+    const volume = def.family === 'ramp' ? 0.5 : (def.shape ?? 'full') === 'full' ? 1 : fail(`${at}: the bite rule knows the volume of a full block or a ramp, not shape ${JSON.stringify(def.shape)}`);
+    out.push({ block: name, volume, default: dflt, tools, look, chips });
   }
   return out;
 }
@@ -546,15 +553,13 @@ export function validateBreaking(b, items, blocks) {
   for (const [t, v] of Object.entries(b.tiers)) {
     if (t[0] === '$') continue;
     if (!/^[a-z][a-z0-9_]*$/.test(t)) fail(`breaking.tiers.${t}: tiers are lower_snake_case`);
-    // A tier is its break speed, or `{ speed, chunk }`: `chunk` how big a piece each hit takes off
-    // (×, default 1; owner, 2026-11-12: metal tools "break double sized bigger chunks off").
+    // A tier is its break speed, or `{ speed }`. A hit's piece size is not a tier's: it follows
+    // from the hits (the bite rule, BLOCK_DAMAGE.md §10), so a faster tier's bites are bigger.
     const tv = typeof v === 'object' && v !== null && !Array.isArray(v) ? v : { speed: v };
-    if (tv === v) known(tv, ['speed', 'chunk'], `breaking.tiers.${t}`);
+    if (tv === v) known(tv, ['speed'], `breaking.tiers.${t}`);
     if (!(num(tv.speed) && tv.speed > 0)) fail(`breaking.tiers.${t} is a speed above 0, not ${JSON.stringify(tv.speed)}`);
-    const chunk = tv.chunk ?? 1;
-    if (!(num(chunk) && chunk >= 0.25 && chunk <= 4)) fail(`breaking.tiers.${t}.chunk is a size multiple in [0.25, 4], not ${JSON.stringify(chunk)}`);
   }
-  const tierOf = (t) => (typeof b.tiers[t] === 'object' ? { speed: b.tiers[t].speed, chunk: b.tiers[t].chunk ?? 1 } : { speed: b.tiers[t], chunk: 1 });
+  const tierOf = (t) => (typeof b.tiers[t] === 'object' ? { speed: b.tiers[t].speed } : { speed: b.tiers[t] });
   known(b.classes, [...Object.keys(b.classes ?? {})], 'breaking.classes');
   const classOf = new Map();
   const classes = [];
@@ -651,7 +656,7 @@ const rgb = (c) => [1, 3, 5].map((i) => parseInt(c.slice(i, i + 2), 16));
 const f64 = (v) => (Number.isInteger(v) ? `${v}.0` : `${v}`);
 const bladeRust = (b) => `RaisedBlade { grip: [${b.grip.map(f64).join(', ')}], tip: [${b.tip.map(f64).join(', ')}] }`;
 const optStr = (v) => (v === null ? 'None' : `Some("${v}")`);
-const chipsOpt = (c) => (c === null ? 'None' : `Some(Chips { count: ${c.count}, shards: ${c.shards}, color: [${rgb(c.color).join(', ')}], speed: ${f64(c.speed)}, size: ${f64(c.size)} })`);
+const chipsOpt = (c) => (c === null ? 'None' : `Some(Chips { count: ${c.count}, shards: ${c.shards}, piece: "${c.piece}", color: [${rgb(c.color).join(', ')}], speed: ${f64(c.speed)}, size: ${f64(c.size)} })`);
 
 const offsetRust = (o) => `CameraOffset { yaw: ${f64(o.yaw)}, pitch: ${f64(o.pitch)}, roll: ${f64(o.roll)}, bob: [${o.bob.map(f64).join(', ')}] }`;
 const cameraRust = (c) =>
@@ -681,7 +686,7 @@ export function toolsRust(d) {
       (x) => `DropRule { chance: ${f64(x.chance)}, choices: &[DropChoice { item: "${x.item}", min: ${x.min}, max: ${x.max}, weight: 1.0 }] }`,
     );
     rs.push(
-      `    WoodDef { block: "${w.block}", fell_fraction: ${f64(w.fellFraction)}, buck_fraction: ${f64(w.buckFraction)}, buck_drops: &[${drops.join(', ')}], chips: Chips { count: ${w.chips.count}, shards: ${w.chips.shards}, color: [${rgb(w.chips.color).join(', ')}], speed: ${f64(w.chips.speed)}, size: ${f64(w.chips.size)} }, leaves: Leaves { block: ${optStr(w.leaves.block)}, count: ${w.leaves.count}, color: [${rgb(w.leaves.color).join(', ')}], radius_m: ${f64(w.leaves.radiusM)}, height_m: ${f64(w.leaves.heightM)} }, sway: Sway { from_fraction: ${f64(w.sway.fromFraction)}, max_deg: ${f64(w.sway.maxDeg)} }, sounds: &[${w.sounds.map((x) => `(${f64(x.from)}, "${x.event}")`).join(', ')}], cut: CutLook { tile: ${optStr(w.cut.tile)}, tint: [${rgb(w.cut.tint).join(', ')}], open: ${f64(w.cut.open)}, kerf_width_m: ${f64(w.cut.kerfWidthM)}, bite: BiteLook { width_m: ${f64(w.cut.bite.widthM)}, ends_m: ${f64(w.cut.bite.endsM)}, step: ${f64(w.cut.bite.step)} }, cracks: ${crackRust(w.cut.cracks)} }, fell_wedge: ${optStr(w.fellWedge)}, fell_wedge_matching: ${w.fellWedgeTrunk === 'matching'}, fell_tip: ${f64(w.fellTip)}, chop2: Chop2Wood { fell_fraction: ${f64(w.chop2.fellFraction)}, along: ${f64(w.chop2.along)}, wedge_matching: ${w.chop2.fellWedgeTrunk === 'matching'} } },`,
+      `    WoodDef { block: "${w.block}", fell_fraction: ${f64(w.fellFraction)}, buck_fraction: ${f64(w.buckFraction)}, buck_drops: &[${drops.join(', ')}], chips: Chips { count: ${w.chips.count}, shards: ${w.chips.shards}, piece: "${w.chips.piece}", color: [${rgb(w.chips.color).join(', ')}], speed: ${f64(w.chips.speed)}, size: ${f64(w.chips.size)} }, leaves: Leaves { block: ${optStr(w.leaves.block)}, count: ${w.leaves.count}, color: [${rgb(w.leaves.color).join(', ')}], radius_m: ${f64(w.leaves.radiusM)}, height_m: ${f64(w.leaves.heightM)} }, sway: Sway { from_fraction: ${f64(w.sway.fromFraction)}, max_deg: ${f64(w.sway.maxDeg)} }, sounds: &[${w.sounds.map((x) => `(${f64(x.from)}, "${x.event}")`).join(', ')}], cut: CutLook { tile: ${optStr(w.cut.tile)}, tint: [${rgb(w.cut.tint).join(', ')}], open: ${f64(w.cut.open)}, kerf_width_m: ${f64(w.cut.kerfWidthM)}, bite: BiteLook { width_m: ${f64(w.cut.bite.widthM)}, ends_m: ${f64(w.cut.bite.endsM)}, step: ${f64(w.cut.bite.step)} }, cracks: ${crackRust(w.cut.cracks)} }, fell_wedge: ${optStr(w.fellWedge)}, fell_wedge_matching: ${w.fellWedgeTrunk === 'matching'}, fell_tip: ${f64(w.fellTip)}, chop2: Chop2Wood { fell_fraction: ${f64(w.chop2.fellFraction)}, along: ${f64(w.chop2.along)}, wedge_matching: ${w.chop2.fellWedgeTrunk === 'matching'} } },`,
     );
   }
   rs.push('];');
@@ -703,7 +708,7 @@ export function toolsRust(d) {
   rs.push('');
   rs.push("/// Each block's hits to destroy (its `damage`): by bare hands, and by tool class or item.");
   rs.push('pub static BLOCK_DAMAGE: &[BlockDamageDef] = &[');
-  for (const b of d.damage) rs.push(`    BlockDamageDef { block: "${b.block}", default: ${b.default === null ? 'None' : `Some(${b.default})`}, tools: &[${b.tools.map((t) => `("${t.tool}", ${t.hits})`).join(', ')}], look: ${b.look === null ? 'None' : `Some(DamageLook { kind: DamageLookKind::${b.look.kind[0].toUpperCase() + b.look.kind.slice(1)}, size: ${f64(b.look.size)}, color: [${rgb(b.look.color).join(', ')}], crack: [${rgb(b.look.crack).join(', ')}], depth: ${f64(b.look.depth)}, rim: ${f64(b.look.rim)}, parallax: ${b.look.parallax}, darken: ${f64(b.look.darken)}, profile: CarveProfile::${b.look.profile[0].toUpperCase() + b.look.profile.slice(1)}, facets: ${b.look.facets}, flakes: ${b.look.flakes}, grid: ${b.look.grid}, triangles: ${b.look.triangles}, cracks: ${crackRust(b.look.cracks)} })`}, chips: ${b.chips === null ? 'None' : `Some(Chips { count: ${b.chips.count}, shards: ${b.chips.shards}, color: [${rgb(b.chips.color).join(', ')}], speed: ${f64(b.chips.speed)}, size: ${f64(b.chips.size)} })`} },`);
+  for (const b of d.damage) rs.push(`    BlockDamageDef { block: "${b.block}", volume: ${f64(b.volume)}, default: ${b.default === null ? 'None' : `Some(${b.default})`}, tools: &[${b.tools.map((t) => `("${t.tool}", ${t.hits})`).join(', ')}], look: ${b.look === null ? 'None' : `Some(DamageLook { kind: DamageLookKind::${b.look.kind[0].toUpperCase() + b.look.kind.slice(1)}, size: ${f64(b.look.size)}, color: [${rgb(b.look.color).join(', ')}], crack: [${rgb(b.look.crack).join(', ')}], depth: ${f64(b.look.depth)}, rim: ${f64(b.look.rim)}, parallax: ${b.look.parallax}, darken: ${f64(b.look.darken)}, profile: CarveProfile::${b.look.profile[0].toUpperCase() + b.look.profile.slice(1)}, facets: ${b.look.facets}, flakes: ${b.look.flakes}, grid: ${b.look.grid}, triangles: ${b.look.triangles}, cracks: ${crackRust(b.look.cracks)} })`}, chips: ${b.chips === null ? 'None' : `Some(Chips { count: ${b.chips.count}, shards: ${b.chips.shards}, piece: "${b.chips.piece}", color: [${rgb(b.chips.color).join(', ')}], speed: ${f64(b.chips.speed)}, size: ${f64(b.chips.size)} })`} },`);
   rs.push('];');
   rs.push('');
   rs.push('/// Tools that wear (`durability.items`): (item, hits it survives).');
@@ -715,7 +720,7 @@ export function toolsRust(d) {
   rs.push('');
   rs.push("/// Each tool item's class, tier and that tier's break speed (`breaking.tools`).");
   rs.push('pub static BREAK_TOOLS: &[BreakTool] = &[');
-  for (const t of d.breaking.tools) rs.push(`    BreakTool { item: "${t.item}", class: "${t.class}", tier: "${t.tier}", speed: ${f64(t.speed)}, chunk: ${f64(t.chunk)}, contact_s: ${f64(t.contactS)}, repeat_s: ${t.repeatS === null ? 'None' : `Some(${f64(t.repeatS)})`} },`);
+  for (const t of d.breaking.tools) rs.push(`    BreakTool { item: "${t.item}", class: "${t.class}", tier: "${t.tier}", speed: ${f64(t.speed)}, contact_s: ${f64(t.contactS)}, repeat_s: ${t.repeatS === null ? 'None' : `Some(${f64(t.repeatS)})`} },`);
   rs.push('];');
   rs.push('');
   return rs.join('\n');
