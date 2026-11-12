@@ -21,13 +21,16 @@ pub enum Job {
     LodBounds { level: i32, i: i32, k: i32 },
     /// An LOD section's cells and column surfaces.
     Lod { coord: LodCoord },
-    /// The F4 map: n × n samples of each column's height from (x0, z0), `step` apart.
+    /// The F4 map: n × n samples of each column's height from (x0, z0), `step` apart; or, with
+    /// `layer` above 0, the big map's debug layer of field `layer − 1`
+    /// (`dwell_worldgen::map_layers`, REALISTIC_WORLD.md R6), its `LayerGrid::encode` bytes.
     Map {
         x0: i32,
         z0: i32,
         step: i32,
         n: i32,
         face: u8,
+        layer: u8,
     },
     /// A chunk's greedy mesh from its padded voxels; `origin` is its minimum corner's world cell
     /// (plants are jittered by their world position).
@@ -263,6 +266,7 @@ impl Runner {
                 step,
                 n,
                 face,
+                layer,
             } => {
                 let Some(t) = &self.terrain else {
                     return Output::Map(None);
@@ -275,6 +279,20 @@ impl Runner {
                 } else {
                     dwell_world::Face::A
                 });
+                if layer > 0 {
+                    use dwell_worldgen::map_layers::{MapField, sample};
+                    return Output::Map(MapField::of_index(layer - 1).and_then(|f| {
+                        sample(
+                            local,
+                            f,
+                            i64::from(x0),
+                            i64::from(z0),
+                            i64::from(step),
+                            n as usize,
+                        )
+                        .map(|g| g.encode())
+                    }));
+                }
                 let mut out = Vec::with_capacity((n * n * 3) as usize);
                 for j in 0..n {
                     for k in 0..n {
@@ -586,6 +604,44 @@ mod tests {
     }
 
     #[test]
+    fn maps_a_debug_layer_by_field() {
+        // face-a-only: the job only picks the face's generator (map_layers.rs tests the fields).
+        let r = Runner::world(GENERATOR_TERRAIN, 1);
+        let rocks = 1 + dwell_worldgen::map_layers::MapField::Rocks.index();
+        let Output::Map(Some(bytes)) = r.run(Job::Map {
+            x0: -4000,
+            z0: -4000,
+            step: 1000,
+            n: 8,
+            face: 0,
+            layer: rocks,
+        }) else {
+            panic!("the default world has rocks")
+        };
+        let names = usize::from(bytes[0]);
+        assert!(names > 0);
+        let mut o = 1;
+        for _ in 0..names {
+            o += 1 + usize::from(bytes[o]);
+        }
+        o += 4 * names; // their colours
+        assert_eq!(u32::from_le_bytes(bytes[o..o + 4].try_into().unwrap()), 8);
+        assert_eq!(bytes.len(), o + 4 + 8 * 8 * 6);
+        // No plates in the default world: nothing.
+        let plates = 1 + dwell_worldgen::map_layers::MapField::Plates.index();
+        let Output::Map(None) = r.run(Job::Map {
+            x0: 0,
+            z0: 0,
+            step: 1000,
+            n: 4,
+            face: 0,
+            layer: plates,
+        }) else {
+            panic!("no plates in the default world")
+        };
+    }
+
+    #[test]
     fn maps_heights_with_an_outside_flag() {
         let r = Runner::world(GENERATOR_TERRAIN, 1);
         let Output::Map(Some(bytes)) = r.run(Job::Map {
@@ -594,6 +650,7 @@ mod tests {
             step: 16,
             n: 8,
             face: 0,
+            layer: 0,
         }) else {
             panic!()
         };
@@ -610,6 +667,7 @@ mod tests {
             step: 1,
             n: 4,
             face: 0,
+            layer: 0,
         }) else {
             panic!()
         };

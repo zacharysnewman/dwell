@@ -934,6 +934,8 @@ pub struct Game<S: Scene> {
     pending_lod: Option<LodSettings>,
     /// The latest F4 map (None until one arrives; an empty map without a terrain).
     map: Option<Vec<u8>>,
+    /// The latest big-map debug layer (`request_map_layer`).
+    map_layer: Option<(u8, u8, Vec<u8>)>,
     /// Finished chunk meshes waiting for their upload, taken under the frame's byte budget
     /// (`Scene::upload_budget_bytes`, `dwell_game::upload_budget`; BUGS.md #72).
     mesh_uploads: dwell_game::upload_budget::UploadQueue<(
@@ -1152,6 +1154,7 @@ impl<S: Scene> Game<S> {
             registry: None,
             pending_lod: None,
             map: None,
+            map_layer: None,
             mesh_uploads: Default::default(),
             reveal: std::collections::VecDeque::new(),
             explore_tiles: std::collections::VecDeque::new(),
@@ -1537,8 +1540,29 @@ impl<S: Scene> Game<S> {
                 step,
                 n,
                 face,
+                layer: 0,
             },
         );
+    }
+    /// Asks for the big map's debug layer of field `field` (`dwell_worldgen::map_layers::MapField`'s
+    /// index; REALISTIC_WORLD.md R6): n × n samples from face-local (x0, z0), `step` apart, of `face`.
+    pub fn request_map_layer(&mut self, field: u8, x0: i32, z0: i32, step: i32, n: i32, face: u8) {
+        self.pool.borrow_mut().submit(
+            Purpose::MapLayer(field, face),
+            crate::jobs::Job::Map {
+                x0,
+                z0,
+                step,
+                n,
+                face,
+                layer: field.saturating_add(1),
+            },
+        );
+    }
+    /// The latest debug layer, once: (field, face, its `LayerGrid::encode` bytes; empty where the
+    /// world has no such field).
+    pub fn take_map_layer(&mut self) -> Option<(u8, u8, Vec<u8>)> {
+        self.map_layer.take()
     }
     /// The latest map, once (height i16 LE and an outside flag per sample; empty without a terrain).
     pub fn take_map(&mut self) -> Option<Vec<u8>> {
@@ -2155,6 +2179,9 @@ impl<S: Scene> Game<S> {
                     self.verify(hash)
                 }
                 (Purpose::Map, Output::Map(bytes)) => self.map = Some(bytes.unwrap_or_default()),
+                (Purpose::MapLayer(f, face), Output::Map(bytes)) => {
+                    self.map_layer = Some((f, face, bytes.unwrap_or_default()));
+                }
                 (Purpose::Reveal(face, ti, tk, cell_m), out) => {
                     let rgba = match &out {
                         Output::LodMap(Some(p)) => Some(p.as_slice()),

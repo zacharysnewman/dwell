@@ -19,6 +19,7 @@ pub mod home_far;
 pub mod hydrology;
 pub mod impostor;
 pub mod island;
+pub mod map_layers;
 pub mod noise;
 pub mod placements;
 pub mod plate_tectonics;

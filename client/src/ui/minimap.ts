@@ -12,6 +12,14 @@
 // (creative) nothing is fogged. Its looks, levels and sizes are data (shared/ui/map.json →
 // map.gen.ts).
 
+import {
+  MAP_LAYERS,
+  type MapLayerDef,
+  layerPixels,
+  layerSpan,
+  nextLayer,
+  parseLayerGrid,
+} from './mapLayers';
 import { GAMEPAD } from '../input/gamepad.gen';
 import { MAP } from './map.gen';
 import { compatibilityLine } from '../version/semver';
@@ -954,6 +962,22 @@ export interface MapClient extends RevealClient, LiveClient, MinimapFeed {
    * when its toggle is on): a `w` × `h` screen-order grid inside a one-cell border; RGBA out.
    */
   shadeMap(colours: Uint32Array, codes: Int32Array, w: number, h: number): Uint8Array;
+  /**
+   * The debug layers (REALISTIC_WORLD.md R6, `mapLayers.ts`): asks for field `field` (an index
+   * into `mapLayerFields`) sampled n × n from face-local (x0, z0), `step` m apart.
+   */
+  requestMapLayer?(
+    field: number,
+    x0: number,
+    z0: number,
+    step: number,
+    n: number,
+    face: number,
+  ): void;
+  /** A requested layer once: its field index and face, then its `LayerGrid::encode` bytes. */
+  takeMapLayer?(): Uint8Array | undefined;
+  /** The generator's layer fields by index (`map_layers.rs` `MapField`). */
+  mapLayerFields?(): string[];
 }
 
 /** A nice scale bar: the longest 1, 2 or 5 × 10ⁿ metres no wider than `maxPx` at `pxPerM`. */
@@ -1248,6 +1272,12 @@ export class MapUi {
   private readonly exploredTiles = new Set<string>();
   private lastBigDraw = 0;
   private bigStale = false;
+  /** The debug layer shown (an index into `MAP_LAYERS.layers`; −1 none) and its button. */
+  private layer = -1;
+  private readonly layerButton: HTMLButtonElement;
+  /** Each face's layer images by `face:name` (null: the world has no such field), and those asked. */
+  private readonly layerImages = new Map<string, HTMLCanvasElement | null>();
+  private readonly layerAsked = new Set<string>();
   /** The disc's last draw (ms), for the bench's cost readout. */
   costMs = 0;
   shading: boolean = MAP.heightShading.default;
@@ -1326,7 +1356,10 @@ export class MapUi {
     const centre = this.button('map-center', '◎', 'Center on me');
     centre.append(doc.createElement('span'));
     (centre.lastChild as HTMLSpanElement).textContent = 'Center on me';
-    controls.append(this.zoomIn, this.zoomOut, centre);
+    this.layerButton = this.button('map-layer', '▦', `Map layer (${MAP_LAYERS.key.slice(3)})`);
+    this.layerButton.append(doc.createElement('span'));
+    this.layerButton.hidden = !client.requestMapLayer;
+    controls.append(this.zoomIn, this.zoomOut, centre, this.layerButton);
     this.scaleEl = doc.createElement('div');
     this.scaleEl.className = 'map-scale';
     this.scaleLabel = doc.createElement('span');
@@ -1351,6 +1384,10 @@ export class MapUi {
       this.state.center();
       this.drawBig();
     });
+    this.layerButton.addEventListener('click', () => {
+      this.stepLayer();
+    });
+    this.showLayerLabel();
     // A click on the game round the panel closes it too.
     this.big.addEventListener('pointerdown', (e) => {
       if (e.target === this.big) this.setBig(false);
@@ -1447,8 +1484,72 @@ export class MapUi {
     else if (code === 'KeyC') {
       this.state.center();
       this.drawBig();
-    } else return false;
+    } else if (code === MAP_LAYERS.key && this.client.requestMapLayer) this.stepLayer();
+    else return false;
     return true;
+  }
+
+  /** The debug layer shown (its data name), or null. */
+  get layerName(): string | null {
+    return MAP_LAYERS.layers[this.layer]?.name ?? null;
+  }
+
+  /** Steps to the next debug layer (after the last, none). */
+  stepLayer(): void {
+    this.layer = nextLayer(this.layer);
+    this.showLayerLabel();
+    this.drawBig();
+  }
+
+  private showLayerLabel(): void {
+    const def = MAP_LAYERS.layers[this.layer];
+    const v = this.state.view;
+    const none = def && v && this.layerImages.get(`${String(v.face)}:${def.name}`) === null;
+    const label = def ? `${def.label}${none ? ': not in this world' : ''}` : 'Layers';
+    (this.layerButton.lastChild as HTMLSpanElement).textContent = label;
+    this.layerButton.classList.toggle('on', !!def);
+  }
+
+  /** The layer's image for the face, asked for once (null: none yet, or the world has none). */
+  private layerImage(def: MapLayerDef, face: number): HTMLCanvasElement | null {
+    const key = `${String(face)}:${def.name}`;
+    const had = this.layerImages.get(key);
+    if (had !== undefined) return had;
+    const fields = this.client.mapLayerFields?.() ?? [];
+    const field = fields.indexOf(def.field);
+    if (!this.layerAsked.has(key) && field >= 0) {
+      this.layerAsked.add(key);
+      const n = MAP_LAYERS.samples;
+      const { x0, step } = layerSpan(worldRadiusM(), n);
+      this.client.requestMapLayer?.(field, x0, x0, step, n, face);
+    }
+    return null;
+  }
+
+  /** A debug layer arrived: the images of every layer of its field on its face. */
+  private takeLayer(): void {
+    const b = this.client.takeMapLayer?.();
+    if (!b || b.length < 2) return;
+    const fields = this.client.mapLayerFields?.() ?? [];
+    const field = fields[b[0] ?? 0];
+    const face = b[1] ?? 0;
+    const grid = parseLayerGrid(b.subarray(2));
+    for (const def of MAP_LAYERS.layers) {
+      if (def.field !== field) continue;
+      const key = `${String(face)}:${def.name}`;
+      if (!grid) {
+        this.layerImages.set(key, null);
+        continue;
+      }
+      const img = this.doc.createElement('canvas');
+      img.width = img.height = grid.n;
+      img
+        .getContext('2d')
+        ?.putImageData(new ImageData(layerPixels(def, grid), grid.n, grid.n), 0, 0);
+      this.layerImages.set(key, img);
+    }
+    this.showLayerLabel();
+    if (this.bigOpen) this.bigStale = true;
   }
 
   /** The controller while the big map is open (docs/GAMEPAD.md). */
@@ -1497,6 +1598,7 @@ export class MapUi {
       return;
     }
     this.fillReveal();
+    this.takeLayer();
     if (this.bigStale && this.bigOpen && now - this.lastBigDraw >= MAP.revealed.redrawMs) {
       this.drawBig();
     }
@@ -1676,6 +1778,22 @@ export class MapUi {
       const [x0, x1] = [Math.round(w / 2 + Math.min(ax, bx)), Math.round(w / 2 + Math.max(ax, bx))];
       const [y0, y1] = [Math.round(h / 2 + Math.min(ay, by)), Math.round(h / 2 + Math.max(ay, by))];
       ctx.drawImage(img, x0, y0, x1 - x0, y1 - y0);
+    }
+    // The debug layer over the ground (REALISTIC_WORLD.md R6): its grid over the face's disc,
+    // mirrored as the face's view is (`toScreen`).
+    const def = MAP_LAYERS.layers[this.layer];
+    const layerImg = def ? this.layerImage(def, v.face) : null;
+    if (layerImg) {
+      const { x0, step } = layerSpan(worldRadiusM(), layerImg.width);
+      const x1 = x0 + step * layerImg.width;
+      const [ax, ay] = toScreen(v, x0, x0);
+      const [bx, by] = toScreen(v, x1, x1);
+      ctx.save();
+      ctx.imageSmoothingEnabled = false;
+      ctx.translate(w / 2 + ax, h / 2 + ay);
+      ctx.scale(bx > ax ? 1 : -1, by > ay ? 1 : -1);
+      ctx.drawImage(layerImg, 0, 0, Math.abs(bx - ax), Math.abs(by - ay));
+      ctx.restore();
     }
     this.updateControls();
     const [face = 0, x = 0, z = 0, yaw = 0] = this.client.mapPose();

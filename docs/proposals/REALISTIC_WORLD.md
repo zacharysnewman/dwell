@@ -8,7 +8,9 @@ world form); the default and the starter are unchanged. R3 built (2026-11-12): t
 and terrain (`shared/worldgen/climate.json`, `dwell-worldgen` `climate.rs`) in the Realistic world, its rain
 feeding the rivers' discharge. R4 built (2026-11-12): biomes chosen by climate alone, the presets' `where` in
 °C and annual rain (mm), the Realistic world listing every preset unchanged. R5 built (2026-11-12): rocks from
-plate history (`rocks.json` `plateProvinces`) and soils by rock × climate (`vegetation.json` `rockSoils`). §8 (2026-11-12, design only):
+plate history (`rocks.json` `plateProvinces`) and soils by rock × climate (`vegetation.json` `rockSoils`). R6 built
+(2026-11-12) but for its browser check: Realistic in the New world form's World list (`newWorld`), its own golden
+hashes, the big map's debug layers (plates, uplift, rain, rocks); the create/play/reload check is a local session's. §8 (2026-11-12, design only):
 orbits by seed set the latitude band, the sky and later seasons, in place of R3's picked band.
 
 ## 1. The owner's direction
@@ -457,6 +459,35 @@ them: red with the new rocks' palettes among the old, green after). `Resolved::w
 - **R6 The World option.** `newWorld` on `realistic.json`; its own golden hashes; the memory check on the
   phone tier (the bench `--touch`, BUGS.md #70's table). *Exit:* create, play and reload a Realistic world
   in the browser; a hash file for it; total at load on the phone page within ~10 % of the starter's.
+  **Built (2026-11-12), the browser check outstanding.** Owner, 2026-11-12: **"Do we have realistic worlds yet?"**
+  `realistic.json` carries `newWorld` (label Realistic, "Tectonic plates, mountain ranges, rain shadows and climates
+  from the seed."), so New world → World lists it (`worldChoices.ts`, by data) and More options → Sky shows for it
+  (it rolls an orbit, §8); the world's entry keeps its worldgen (`test:realistic`), seed and Sky preset, so it
+  reopens on them. Its goldens: `shared/worldgen/golden/realistic-hashes.txt` (seed 42, both faces: the chunks at
+  the ground and the one above every 6 km out to 30 km, LOD sections at levels 2, 5 and 8 every 12 km; 634 rows),
+  held by `tests/realistic_golden.rs` natively (the dev and release profiles agree) and on wasm32 in CI; while it is
+  a test world (§7 q7) a deliberate change rewrites it with `REALISTIC_GOLDEN=write` and a note. The default's
+  goldens (`tests/golden.rs`) are unchanged. The debug overlays on the big map (§7 q8): `shared/ui/mapLayers.json`
+  (checked by `shared/ui/gen.mjs`: layers by name, each a `field` of the generator's fixed vocabulary, `opacity`,
+  category `colors` and `outlineColor`, or a value `ramp`), `dwell-worldgen` `map_layers.rs` (`MapField`: plates —
+  the kind, outlined at the boundaries; uplift — the boundaries' landform, m; rain — the climate's annual mm;
+  rocks — the surface rock, coloured by its `rocks.json` colour), sampled over the face's disc (256 a side) by the
+  jobs worker (`Job::Map`'s `layer`), drawn over the revealed ground by `mapLayers.ts`; the map's Layer button and
+  `L` step through them; a world without a field (plates outside Realistic, rain without a climate) says so.
+  The memory check (natively; the bench's `--touch` page is a local session's): both faces' biome sets as a
+  process holds them, Realistic seed 42 **14.1 MB** against the starter's (seed 7) **15.9 MB** (−11 %, under
+  the 20 MB bar; `tests/realistic_golden.rs` pins the bar); the Realistic map has no tectonics grids, so its
+  climate rain grid (0.15 MB a face) is its only extra. Tests: `tests/realistic_golden.rs` (the hashes; the
+  memory; the layers sample both kinds of plate, three or more plates, uplift over 300 m and below 0, rain over
+  3× from dry to wet, three or more rocks, on both faces), `map_layers` unit tests (names and indices, the wire
+  form, the data's fields, the default world has rocks and no plates or rain), `jobs` (`maps_a_debug_layer_by_field`,
+  the codec round trip), `gen.test.mjs` (the layers' data, a layer added by data, bad entries named),
+  `mapLayers.test.ts` (decoding, the plates' kind colours and outline, rocks' own colours, the ramps, a layer by
+  data), `worldChoices.test.ts` (the World list offers Realistic, every orbit world is offered, a Realistic world's
+  route and entry keep `test:realistic` and its Sky). **Not done:** the same overlays in Chisel (a view per layer
+  over Chisel's map: the field export is here, the view is not; next with Chisel's other overlays); outlines of the
+  boundaries by kind (the plates' outline is one colour); the browser's create → play → reload and the phone
+  page's total at load (a local session, docs/CLOUD_SESSIONS.md).
 - **Later (not phased):** strata tilt near boundaries; lava vents by rule; a 10× Realistic once the
   world map tiles.
 
@@ -536,8 +567,7 @@ phase in `MOON_PHASE`), the server rolling it at creation for a world with a Sky
 `--sky`), the sky (`Celestial::for_world`, the client's `set_world_settings`) drawing the world's orbit, and
 New world → More options → Sky (desktop and phone), shown for a world file whose climate reads the sky (only
 Realistic; `client/src/ui/sky.ts`) and the `&sky=` link (`?worldgen=test:realistic&sky=extreme`). Realistic
-is still not in the New world form's World list (R6), so in the menu the Sky field appears once it is; by link
-it works now. Deviations: the tag is optional everywhere (not required for Realistic, §8.6): Realistic's
+is in the New world form's World list since R6, so the Sky field shows when it is picked; by link too. Deviations: the tag is optional everywhere (not required for Realistic, §8.6): Realistic's
 terrain doesn't read the orbit until O3, and a Realistic world is a test world whose terrain may change
 (§7 q7); `today` is not in `orbits.json` (it is `daynight.json`'s, one source); the sun's size by distance is
 not drawn (the shader's `SUN_RADIUS` is a constant). **O3 (the climate reads the orbit) not built**: the
