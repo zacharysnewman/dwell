@@ -361,6 +361,10 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    you?"** So: raise the view ray's opacity (`volume.extinction`, what hides a cloud behind another) and leave the
    light's path as it is (`light.absorption`, the sun through the cloud: lit edges, silver lining, glow); they are
    separate numbers already.
+   Owner, 2026-11-12: **"Another thing about the clouds is that they don't look pretty and tinted during sunrise and
+   sunset like our old 2D clouds."** The volume should take the deck's golden-hour tint: the sun's colour low in the
+   sky, the warm underside glow and the horizon colour the deck mixed in; compare at sunrise/sunset against
+   `?clouds=` the 2D deck (the reference since the lighting rework).
 14. **Tall grass grows and spreads** (owner 2026-11-11: "I want tall grass to steadily grow and spread. It
    should probably have a max depending on climate/biome."). **Built** (ADR 0075 T3c, docs/ECOLOGY.md §10):
    `shared/worldgen/grass.json` (the rule as data: the block, the ground, the decoration whose climate
