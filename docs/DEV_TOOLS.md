@@ -411,8 +411,15 @@ independently. Use it for cinematic moves instead of per-frame `placeCamera` scr
 - `__dwell.theater('play', { path })` plays a path from its start (a bad path throws the engine's message,
   naming the entry); `'state'` → `{ time, duration, finished }`; `'pause', { paused }`; `'stop'` (or
   `releaseCamera`) back to the player's eyes, the time of day to the world's.
-- `__dwell.theater('hud', { shown: false })` hides every element but the canvas (one CSS rule); `'stop'` shows
-  it again.
+- `__dwell.theater('hud', { shown: false })` hides every element but the canvas (theater mode's HUD switch,
+  `src/theater/hud.ts`: classes on `body` whose rules are in `style.css` — the page's CSP forbids inline style, so
+  an injected rule does nothing); `'stop'` shows it again.
+- **Theater mode in game** (`__dwell.theaterMode(op, args)`, `src/theater/mode.ts`): `'enter'`/`'exit'` (as F9),
+  `'state'` → `{ active, keys, duration }`, `'keys', { path }` loads a path into the keyframe editor, and
+  `'record', { path, aspect: '9:16' | '16:9', height: 720 | 1080 | 1440 | 1920, fps: 24 | 30 | 60, download }` → a
+  promise of `{ bytes (base64), mime, width, height }`: the in-game recorder (MediaRecorder on the canvas, resized
+  to the take; MP4 on Chrome) records while the path plays and ends with it; without a path, `'endTake'` ends it.
+  Real time: a slow page records fewer frames (the screencast route of the record skill is frame-exact).
 - The bench's step: `{ "do": "theater", "preset": "orbit", "params": { "radiusM": 25, "heightM": 8,
   "timeFrom": 0.7, "timeTo": 0.8 }, "subject": "player" }` or `{ "do": "theater", "path": { … } }`; it waits
   for the path's end unless `"wait": false`, and hides the HUD unless `"hud": true`. Record around it with

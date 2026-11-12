@@ -51,6 +51,14 @@ interface Preset {
   params: Record<string, { default?: number; min: number; max: number }>;
 }
 
+/** A finished take: the file and its frame size. */
+export interface TakeResult {
+  blob: Blob;
+  mime: string;
+  width: number;
+  height: number;
+}
+
 /** The keys the free camera reads (KeyboardEvent.code). */
 const FLY_KEYS: Record<string, [number, number, number]> = {
   KeyW: [1, 0, 0],
@@ -112,6 +120,9 @@ export class TheaterMode {
   private lastMs: number | null = null;
   private take: Take | null = null;
   private takeEndsWithPath = false;
+  private takeSize = { width: 0, height: 0 };
+  private downloadTake = true;
+  private takeDone: ((r: TakeResult) => void) | null = null;
   private timeOfDay: number | undefined;
   private aspect: Aspect;
   private height = THEATER.record.defaultHeight;
@@ -314,13 +325,31 @@ export class TheaterMode {
     this.refresh();
   }
 
-  /** Starts a take; `path` plays it (the take ends with the path), else Esc ends it. */
-  private record(path: PathJson | null): void {
+  /**
+   * Starts a take; `path` plays it (the take ends with the path), else Esc (or `endTake`) ends
+   * it. Resolves with the file when it ends (downloaded too unless `download` is false); the
+   * aspect, height and frame rate are the Record panel's unless given (the dev API's
+   * `theaterMode('record')`).
+   */
+  record(
+    path: PathJson | null,
+    opts: {
+      aspect?: string | undefined;
+      height?: number | undefined;
+      fps?: number | undefined;
+      download?: boolean | undefined;
+    } = {},
+  ): Promise<TakeResult | null> {
     if (typeof MediaRecorder === 'undefined') {
       this.say('This browser cannot record the canvas.');
-      return;
+      return Promise.resolve(null);
     }
-    const size = recordSize(this.aspect, this.height);
+    if (!this.active) this.enter();
+    if (this.take) return Promise.resolve(null);
+    const aspect = THEATER.record.aspects.find((a) => a.name === opts.aspect) ?? this.aspect;
+    const fps = opts.fps ?? this.fps;
+    const size = recordSize(aspect, opts.height ?? this.height);
+    this.downloadTake = opts.download !== false;
     this.host.canvasSize(size);
     const fit = fitOnScreen(size, { width: innerWidth, height: innerHeight });
     Object.assign(this.host.canvas.style, {
@@ -332,13 +361,22 @@ export class TheaterMode {
     });
     this.take = startTake(
       this.host.canvas,
-      this.fps,
+      fps,
       THEATER.record.mimeTypes,
       THEATER.record.bitsPerSecond,
     );
     this.takeEndsWithPath = path !== null;
+    this.takeSize = size;
     setHud(this.host.doc, this.host, false, true);
     if (path) this.play(path);
+    return new Promise((resolve) => {
+      this.takeDone = resolve;
+    });
+  }
+
+  /** Ends the take recording now (as Esc does). */
+  endTake(): Promise<void> {
+    return this.stopTake();
   }
 
   private async stopTake(): Promise<void> {
@@ -354,8 +392,11 @@ export class TheaterMode {
       this.host.canvas.style[p] = '';
     this.host.canvasSize(null);
     if (this.active) setHud(this.host.doc, this.host, false, false);
-    download(this.host.doc, blob, `${this.editor.name}.${extensionOf(take.mime)}`);
+    if (this.downloadTake)
+      download(this.host.doc, blob, `${this.editor.name}.${extensionOf(take.mime)}`);
     this.say(`Saved ${String(Math.round(blob.size / 1024))} kB`);
+    this.takeDone?.({ blob, mime: take.mime, ...this.takeSize });
+    this.takeDone = null;
   }
 
   private say(text: string): void {
@@ -713,12 +754,12 @@ export class TheaterMode {
         '● Record path',
         () => {
           if (this.editor.keys.length < 2) this.say('Add two keyframes (or a preset) first.');
-          else this.record(this.editor.toPath());
+          else void this.record(this.editor.toPath());
         },
         'tb-btn tb-record',
       ),
       this.button('● Record free', () => {
-        this.record(null);
+        void this.record(null);
       }),
     );
     p.append(row, actions, el(doc, 'p', 'tb-hint', 'Esc ends a take; the file downloads.'));

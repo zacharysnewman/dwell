@@ -6,7 +6,10 @@ own time of day and time-lapse, hides the HUD and records the canvas to a file. 
 (`.claude/skills/record/`) drives the same engine for the showcase videos (item 40).
 
 Status: **T-1 built** (the camera path engine `crates/dwell-theater`, the presets file, the client wiring, the
-dev API `__dwell.theater` and the bench's `theater` step). T-2 to T-5 planned (§10).
+dev API `__dwell.theater` and the bench's `theater` step). **T-2 and T-3 built** (2026-11-12; the mode, the free
+camera, the preset and keyframe panels, the timeline, the path store, recording; `client/src/theater/`), except
+the `theaterGuests` world setting (§7, outstanding: the mode is offered to everyone until it lands) and following
+a moving creature by id (the picker aims at its point). T-4 and T-5 planned (§10).
 
 ## 1. The owner's answers (2026-11-12)
 
@@ -44,8 +47,22 @@ What is data and what is code (CLAUDE.md "extendable system"):
 - **Panels:** presets (a target picker — the player, a creature or NPC by clicking it, a point — a move and its
   sliders from the preset's parameter ranges); keyframes (drop / move / delete, a move and easing per segment, the
   timeline with scrubbing); time of day and time-lapse; record.
-- **HUD hidden** while the camera plays or records (one CSS rule: every element but the canvas,
-  `src/debug/theater.ts` `setHudShown`); the theater's own panels hide too while recording.
+- **HUD hidden** while the mode is on: one switch (`src/theater/hud.ts` `setHud`) hides every child of `body`
+  but the canvas and the toolbar (every HUD part is a child of `body`, listed in `HUD_ELEMENTS`; a test audits the
+  sources so a new HUD part fails until listed) and the game's first-person arms; the toolbar hides too while a
+  path plays or a take records (Esc stops either).
+
+**As built (T-2, `client/src/theater/`):** the key, the controller button and the free camera's tunables are data
+in `shared/theater/theater.json` (`F9`, the right stick press; speed, wheel step, run factor, look rates); Settings
+→ Theater has the button; a touch screen gets a Theater button (`#theater-open`) and flies with the left half of
+the screen (a virtual stick) and looks with the right. The free camera is `Client.theaterFly` (`game.rs`
+`fly_step`, face-local through `FaceFrame`, tested on both faces): WASD, Space/E up, C/Q down, Shift faster, the
+wheel sets the speed; the controller's sticks and triggers. The shell's input goes to the camera, not the body,
+while the mode is on. The toolbar (`mode.ts`) has three panels: **Presets** (a preset, its sliders from
+presets.json's ranges, a target — the player, the creature nearest the crosshair, or the point under it — Preview
+and To keyframes), **Keyframes** (+ Key at the camera with speed, fov and time of day; Set, Delete, each segment's
+move; Play; Save/Saved…/Export/Import) and **Record**; the timeline strip shows the keys (drag to move, click to
+select), the segments' moves and the playhead. The editor's model is `keyframes.ts` `KeyframeEditor` (tested).
 
 ## 3. Camera paths (T-1, built)
 
@@ -142,7 +159,9 @@ A new preset is a data entry (a test adds one from a fixture file no code names)
 
 ## 5. Saving and sharing paths (T-2)
 
-- **The player's store:** paths in the browser's IndexedDB under the shared-stores rules (CLAUDE.md
+- **The player's store:** paths in the browser's `localStorage` (`dwell.theater.paths`, one JSON list;
+  `src/theater/store.ts`; deviation from IndexedDB: paths are a few kB and a synchronous store keeps the toolbar
+  simple) under the shared-stores rules (CLAUDE.md
   "versions and releases": append-only — new fields optional, unknown fields and unreadable records kept on
   rewrite, a test pins it). Per player, not per world: a path names world positions, so it is most useful in the
   world it was made in; each saved path records the world's id and seed as a hint, not a lock.
@@ -152,10 +171,14 @@ A new preset is a data entry (a test adds one from a fixture file no code names)
 
 ## 6. Recording (T-3)
 
-- **MediaRecorder on the canvas** (`canvas.captureStream(fps)`), the HUD hidden, WebM (VP9, or H.264 where the
-  browser offers it), downloaded at the end. No audio at first (the showcase format has none).
-- **Crops:** 16:9 or 9:16. The canvas is resized for the recording to the chosen aspect at a chosen height
-  (720/1080/1440), not cropped after, so nothing is wasted and the LOD selects for the real view.
+- **MediaRecorder on the canvas** (`canvas.captureStream(fps)`), the HUD hidden, the first of
+  theater.json's `mimeTypes` the browser records (MP4/H.264, then WebM VP9/VP8), downloaded at the end as
+  `<path name>.mp4|webm`. No audio at first (the showcase format has none). Built (T-3, `src/theater/record.ts`):
+  **Record path** plays the keyframes and ends the take with the path; **Record free** records the free camera
+  until Esc. The dev API `__dwell.theaterMode('record', {path, aspect, height, fps, download})` returns the file
+  (base64) for agents.
+- **Crops:** 16:9 or 9:16 (theater.json `aspects`). The canvas is resized for the recording to the chosen aspect
+  at a chosen height (720/1080/1440/1920; `recordSize`, both sides even), shown fitted on screen, not cropped after, so nothing is wasted and the LOD selects for the real view.
 - **Frame rate:** 24/30/60 (the stream's rate). A path's playback is real-time; a slow page records a lower real
   rate, so the recorder shows the frames it is dropping. An offline mode (step the path by 1/fps per drawn frame,
   frame-exact whatever the page's speed) is the agent's path through the bench (`theater` step + the record
@@ -204,11 +227,11 @@ JSON. `src/easing.rs` checks every curve; `client/src/debug/theater.test.ts` the
 
 - **T-1 — the engine (built):** `crates/dwell-theater`, `shared/theater/presets.json`, the client's
   `step_theater`/`ViewOverride::fov_deg`/`theater_time`, `__dwell.theater`, the bench step, the record skill.
-- **T-2 — the mode and editor (local):** the toggle (key, Settings, controller), free-fly input, the preset and
+- **T-2 — the mode and editor (local; built but the `theaterGuests` setting):** the toggle (key, Settings, controller), free-fly input, the preset and
   keyframe panels and timeline, the target picker, the path store and export/import, the `theaterGuests` world
   setting.
-- **T-3 — recording (local):** MediaRecorder, aspect and size, frame rate, the download; the offline frame-exact
-  mode.
+- **T-3 — recording (local; built but the offline frame-exact mode):** MediaRecorder, aspect and size, frame
+  rate, the download; the offline frame-exact mode still to come.
 - **T-4 — the simulation viewpoint (creative):** the `theaterViewpoint` ability, the `theater.viewpoint`
   capability and message, the server's interest set and chunk budget for it, tests that adventure ignores it.
 - **T-5 — an MCP server (nice to have):** a small local stdio MCP server talking to the open page over a local

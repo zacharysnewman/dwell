@@ -64,8 +64,16 @@ Presets (`shared/theater/presets.json`): `orbit`, `dolly`, `track`, `rise` (a cr
 a path: keyframes `{t, position, look | target, fov, timeOfDay, speed}` and segments `{move, easing, …}` (cut,
 linear, ease, orbit, track, dolly with `vertigo`, crane, pan). A target can be `"player"`, a point, or
 `{creature: id}` / `{npc: id}`. Paths are JSON: keep the ones that worked next to the plan for the next video.
-The bench's `theater` step plays one inside a scenario. Not yet tried in a real recording (built in a cloud
-session): note here what needed changing the first time.
+The bench's `theater` step plays one inside a scenario.
+
+**The in-game recorder** (theater mode T-3, docs/DEV_TOOLS.md "Theater"): for a quick clip of one path, skip the
+screencast — `await d.theaterMode('record', { path, aspect: '9:16', height: 1080, fps: 30, download: false })`
+returns `{ bytes (base64 MP4 on Chrome), mime, width, height }` (write the bytes to a file from the driver; with
+`download: true` the browser downloads it). The canvas renders at the take's size (9:16 at 1080 is 608×1080; the owner's
+1080×1920 is `height: 1920`) with the HUD switched off. It is real time: on a slow page use
+the screencast, which is frame-exact. First tried 2026-11-12: a 10 s orbit at 9:16 1080p/30 fps → a 7 MB MP4.
+**The HUD:** use `d.theater('hud', { shown: false })` (or theater mode), not inline-style scripts; the page's CSP
+blocks injected `<style>` (the T-1 rule never applied for that reason).
 
 - **Dolly in:** the `dolly` preset (`fromM` → `toM`, `heightM` 1–3 m). Low and slow reads best.
 - **Orbit:** the `orbit` preset. Keep it **high or on open ground**: close orbits on hills pass through terrain

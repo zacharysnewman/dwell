@@ -140,6 +140,7 @@ import { startThumbnailCapture, WorldThumbs } from './local/worldThumbs';
 import { pauseFromQuery, togglePause } from './debug/pause';
 import { THEATER } from './theater/config';
 import { TheaterMode } from './theater/mode';
+import type { PathJson } from './theater/keyframes';
 import { PathStore } from './theater/store';
 import gamepadData from '../../shared/input/gamepad.json';
 
@@ -267,6 +268,13 @@ interface DwellDebug {
    * `hud {shown}`. Throws with the engine's message on a bad path or preset.
    */
   theater(op: TheaterOp, args?: Record<string, unknown>): unknown;
+  /**
+   * Theater mode in game (src/theater/mode.ts): `state` → `{active, keys, duration}`, `enter`,
+   * `exit`, `keys {path}` (loads a path into the keyframe editor), `record {path?, aspect?,
+   * height?, fps?, download?}` → a promise of `{bytes (base64), mime, width, height}`; with no
+   * path, `endTake` ends it.
+   */
+  theaterMode(op: string, args?: Record<string, unknown>): unknown;
   /**
    * The placed camera (`placeCamera`, `goto`), or null while the view is the player's eyes
    * (`view()` is the player's look, not a placed camera's).
@@ -569,8 +577,6 @@ interface App {
   mapShading: boolean;
   /** Theater mode (docs/THEATER_MODE.md): the free camera, paths and recording. */
   theater: TheaterMode | null;
-  /** The canvas's size in device px while a take records (theater mode), else null. */
-  canvasOverride: { width: number; height: number } | null;
 }
 
 /**
@@ -930,9 +936,11 @@ async function start(): Promise<App | null> {
     return null;
   }
 
+  // The canvas's size in device px while a theater take records, else null.
+  let canvasOverride: { width: number; height: number } | null = null;
   const resize = (): void => {
     // A theater take renders at its own size (theater/record.ts `recordSize`).
-    const take = app.canvasOverride;
+    const take = canvasOverride;
     if (take) {
       client.resize(take.width, take.height, 1);
       return;
@@ -969,7 +977,6 @@ async function start(): Promise<App | null> {
     world: null,
     playing: false,
     theater: null,
-    canvasOverride: null,
   };
   // On-screen controls on touch devices (shown on the first touch too, e.g. a tablet with a mouse).
   const touch = new TouchControls(document.body, client);
@@ -1274,6 +1281,7 @@ async function start(): Promise<App | null> {
       client.releaseCamera();
     },
     theater: (op, args) => theaterOp(client, document, op, args),
+    theaterMode: (op, args = {}) => theaterModeOp(app, op, args),
     camera: () => client.camera() as Camera | null,
     find: (query, options) => findPlace(findHost(app), query, options),
     goto: (query, options) => gotoPlace(findHost(app), query, options),
@@ -1471,7 +1479,7 @@ async function start(): Promise<App | null> {
       touch.visible = shown && touchWanted;
     },
     canvasSize: (size) => {
-      app.canvasOverride = size;
+      canvasOverride = size;
       resize();
     },
     where: () => (app.world ? { seed: app.world.seed.toString() } : {}),
@@ -1790,6 +1798,46 @@ async function waterReportOf(app: App): Promise<unknown> {
 
 /** The settings last applied, for the streaming report. */
 let reportSettings: ReportSettings | null = null;
+
+/** `__dwell.theaterMode` (src/theater/mode.ts; docs/DEV_TOOLS.md "Theater"). */
+function theaterModeOp(app: App, op: string, args: Record<string, unknown>): unknown {
+  const t = app.theater;
+  if (!t) throw new Error('theater mode: no game yet');
+  switch (op) {
+    case 'state':
+      return { active: t.active, keys: t.editor.keys.length, duration: t.editor.duration };
+    case 'enter':
+      t.enter();
+      return t.active;
+    case 'exit':
+      t.exit();
+      return t.active;
+    case 'keys':
+      t.editor.load(args.path as PathJson);
+      t.refresh();
+      return t.editor.keys.length;
+    case 'record':
+      return t
+        .record((args.path as PathJson | undefined) ?? null, {
+          aspect: args.aspect as string | undefined,
+          height: args.height as number | undefined,
+          fps: args.fps as number | undefined,
+          download: args.download as boolean | undefined,
+        })
+        .then(async (r) => {
+          if (!r) return null;
+          const buf = new Uint8Array(await r.blob.arrayBuffer());
+          let bin = '';
+          for (let i = 0; i < buf.length; i += 0x8000)
+            bin += String.fromCharCode(...buf.subarray(i, i + 0x8000));
+          return { bytes: btoa(bin), mime: r.mime, width: r.width, height: r.height };
+        });
+    case 'endTake':
+      return t.endTake();
+    default:
+      throw new Error(`theaterMode: unknown op ${op} (state, enter, exit, keys, record, endTake)`);
+  }
+}
 
 /** The streaming report (debug/streamingReport.ts): the game's part and the shell's. */
 async function streamingReportOf(app: App): Promise<StreamingReport> {

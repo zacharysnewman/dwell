@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import { THEATER, parseTheaterConfig } from './config';
-import { HUD_ELEMENTS, HUD_RULE, setHud, shownWhenClean } from './hud';
+import { HUD_ELEMENTS, HUD_RULES, setHud, shownWhenClean } from './hud';
 import { KeyframeEditor, MIN_GAP_S, type PathJson } from './keyframes';
 import { flyMove, wheelSpeed } from './mode';
 import { extensionOf, fitOnScreen, pickMime, recordSize } from './record';
@@ -56,8 +56,10 @@ describe('the HUD switch', () => {
       ).toBe(true);
     }
     // The rule hides every child of body but the canvas and the bar (and the bar in a take).
-    expect(HUD_RULE).toContain('body.theater-clean > *:not(#view):not(#theater-bar)');
-    expect(HUD_RULE).toContain('body.theater-take > #theater-bar');
+    // The rules live in style.css (the page's CSP forbids inline style): they must be there.
+    const css = readFileSync(join(SRC, 'style.css'), 'utf8');
+    for (const rule of HUD_RULES) expect(css, rule).toContain(`${rule} {`);
+    expect(HUD_RULES[0]).toContain(':not(#view):not(#theater-bar)');
     for (const id of ['net-status', 'perf-status', 'build-info', 'theater-open', 'hotbar'])
       expect(shownWhenClean(id, false)).toBe(false);
     expect(shownWhenClean('view', true)).toBe(true);
@@ -68,11 +70,7 @@ describe('the HUD switch', () => {
   it('switches the class, the take and the arms together', () => {
     const classes = new Set<string>();
     const arms: boolean[] = [];
-    const styles: string[] = [];
     const doc = {
-      getElementById: (id: string) => (styles.length > 0 && id ? {} : null),
-      createElement: () => ({ id: '', textContent: '' }),
-      head: { appendChild: (e: { textContent: string }) => styles.push(e.textContent) },
       body: {
         classList: {
           toggle: (c: string, on: boolean) => (on ? classes.add(c) : classes.delete(c)),
@@ -87,7 +85,6 @@ describe('the HUD switch', () => {
     setHud(doc, client, true);
     expect(classes.size).toBe(0);
     expect(arms).toEqual([false, false, true]);
-    expect(styles).toHaveLength(1);
   });
 });
 

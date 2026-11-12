@@ -3845,6 +3845,18 @@ body.inventory-open #touch-controls {
   outline-offset: -2px;
 }
 
+/* Theater mode's HUD switch (src/theater/hud.ts `setHud`): every child of body but the canvas and the
+   toolbar hidden; in a take, the toolbar too. */
+body.theater-clean > *:not(#view):not(#theater-bar):not(script):not(style) {
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+body.theater-take > #theater-bar {
+  display: none !important;
+}
+
 /* Theater mode's toolbar (src/theater/mode.ts, docs/THEATER_MODE.md §2): the menu's glass, at the
    foot of the screen, one column on a phone. It hides while a path plays or a take records. */
 .theater-bar {
@@ -3960,7 +3972,7 @@ body.inventory-open #touch-controls {
   bottom: 4px;
   overflow: hidden;
   border-left: 1px solid rgb(29 39 51 / 25%);
-  padding-left: 4px;
+  padding-left: 14px;
   font-size: 11px;
   line-height: 20px;
   white-space: nowrap;

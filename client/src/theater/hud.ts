@@ -36,13 +36,18 @@ export const HUD_ELEMENTS = [
 
 export const CLEAN_CLASS = 'theater-clean';
 export const TAKE_CLASS = 'theater-take';
-const STYLE_ID = 'theater-clean-style';
 
 /** The switch's rule: every child of `body` but the kept ones hidden; in a take, the bar too. */
-export const HUD_RULE =
-  `body.${CLEAN_CLASS} > *:not(#view):not(#theater-bar):not(script):not(style) ` +
-  `{ visibility: hidden !important; } ` +
-  `body.${TAKE_CLASS} > #theater-bar { display: none !important; }`;
+/**
+ * The switch's rules, in src/style.css (the page's CSP allows no inline style, so they can't be
+ * injected; hud.test.ts checks style.css has them): every child of `body` but the kept ones hidden
+ * (opacity too: a part that sets its own children `visibility: visible` would show through a
+ * hidden parent); in a take, the bar too.
+ */
+export const HUD_RULES = [
+  'body.theater-clean > *:not(#view):not(#theater-bar):not(script):not(style)',
+  'body.theater-take > #theater-bar',
+] as const;
 
 /** Whether a child of `body` with this id shows in the clean frame (`take`: while recording). */
 export function shownWhenClean(id: string, take: boolean): boolean {
@@ -52,7 +57,7 @@ export function shownWhenClean(id: string, take: boolean): boolean {
 }
 
 /** The parts of the doc the switch touches. */
-export type HudDoc = Pick<Document, 'getElementById' | 'createElement' | 'head' | 'body'>;
+export type HudDoc = Pick<Document, 'body'>;
 
 /** What the switch turns off in the game's own drawing. */
 export interface HudClient {
@@ -65,12 +70,6 @@ export interface HudClient {
  * hides theater's bar as well.
  */
 export function setHud(doc: HudDoc, client: HudClient | null, shown: boolean, take = false): void {
-  if (!doc.getElementById(STYLE_ID)) {
-    const style = doc.createElement('style');
-    style.id = STYLE_ID;
-    style.textContent = HUD_RULE;
-    doc.head.appendChild(style);
-  }
   doc.body.classList.toggle(CLEAN_CLASS, !shown);
   doc.body.classList.toggle(TAKE_CLASS, !shown && take);
   client?.arms(shown);
