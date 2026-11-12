@@ -621,6 +621,9 @@ pub struct ChunkStreamer<S, G, M: Mesher, V> {
     /// Running estimates of a chunk's light and a mesh start (ms), to stop before the deadline.
     light_cost: ItemCost,
     mesh_cost: ItemCost,
+    /// The frame's one item that runs past the deadline goes to the mesh starts next (BUGS.md #72):
+    /// set when a light that ran past the deadline left them none, cleared once they start one.
+    mesh_first: bool,
     /// Lit and meshed after the near ring, before the rest (`set_second_centre`).
     second: Option<SecondCentre>,
     /// World cells meshed as air while held here (`hide_cells`): a settling piece's blocks while
@@ -688,6 +691,7 @@ where
             drawn_revision: 0,
             light_cost: ItemCost::default(),
             mesh_cost: ItemCost::default(),
+            mesh_first: false,
             second: None,
             hidden: HashSet::default(),
             cuts: HashMap::default(),
@@ -1008,8 +1012,14 @@ where
             }
         };
         let order_of = |a: &(u8, f64), b: &(u8, f64)| a.0.cmp(&b.0).then(a.1.total_cmp(&b.1));
+        // A frame runs one item past its deadline at most, the light's or a mesh start's, not one
+        // of each (BUGS.md #72: on a phone's CPU a chunk's light and a mesh start past an 8 ms
+        // deadline made `mesh_dirty` 14–17 ms). A frame whose light took it leaves it to the mesh
+        // starts next, so neither starves.
+        let to_mesh = self.dirty.len() > 0 && self.mesher.capacity() > self.meshing.len();
+        let light_forces = !(self.mesh_first && to_mesh);
+        let mut lit_past = false;
         if !self.unlit.is_empty() {
-            let to_mesh = self.dirty.len() > 0 && self.mesher.capacity() > self.meshing.len();
             let light_deadline = if to_mesh {
                 deadline - budget.mesh_ms
             } else {
@@ -1027,7 +1037,13 @@ where
             keyed.sort_by(|a, b| order_of(&a.0, &b.0));
             let rest = keyed.into_iter().map(|(_, c)| c);
             let mut rest = rest.peekable();
-            while rest.peek().is_some() && self.light_cost.fits(ran, t, light_deadline) {
+            while rest.peek().is_some()
+                && self.light_cost.fits(
+                    ran + usize::from(!light_forces),
+                    t,
+                    light_deadline,
+                )
+            {
                 let c = rest.next().expect("peeked");
                 self.unlit_set.remove(&c);
                 self.store.light_chunk(c);
@@ -1036,6 +1052,7 @@ where
                 t = t1;
                 ran += 1;
             }
+            lit_past = ran > 0 && t > deadline;
             self.unlit = rest.collect();
             self.relit();
         }
@@ -1074,8 +1091,14 @@ where
             .collect();
         keyed.sort_by(|a, b| order_of(&a.0, &b.0));
         let mut count = 0;
+        let mesh_forces = !lit_past;
+        let waiting = !keyed.is_empty();
         for (_, c) in keyed {
-            if count >= room || !self.mesh_cost.fits(count, t, deadline) {
+            if count >= room
+                || !self
+                    .mesh_cost
+                    .fits(count + usize::from(!mesh_forces), t, deadline)
+            {
                 break;
             }
             self.dirty.remove(&c);
@@ -1109,6 +1132,11 @@ where
             let t1 = now();
             self.mesh_cost.took(t1 - t);
             t = t1;
+        }
+        if count > 0 {
+            self.mesh_first = false;
+        } else if waiting && lit_past {
+            self.mesh_first = true;
         }
         count
     }
@@ -2246,6 +2274,37 @@ mod tests {
         );
         assert_eq!(s.store().lit.len(), 4);
         assert_eq!(sorted(s.store().meshed_from.clone()).len(), 4);
+    }
+
+    #[test]
+    fn a_late_frame_runs_one_item_past_its_deadline_and_the_light_and_meshing_take_turns() {
+        // BUGS.md #72: on the phone page (CPU 4×) a chunk's light ran past the deadline and then a
+        // mesh start ran too, each as its kind's first of the frame: `mesh_dirty` 14–17 ms. Now
+        // one item a frame may run past it, the light's or the mesh starts', in turn.
+        let (mut s, _) = setup();
+        let clock = Rc::new(std::cell::Cell::new(0.0));
+        s.store_mut().light_clock = Some(clock.clone());
+        // Three chunks to light (10 ms each) and mesh, none lit yet.
+        for c in [[8, 0, 0], [0, 0, 0], [12, 0, 0]] {
+            s.on_chunk_data(generated(c));
+            finish(&mut s, c);
+        }
+        let meshed = s.store().meshed_from.len();
+        // A 4 ms budget (2 of it the mesh starts'): the light's 10 ms runs past it, alone.
+        let t = clock.clone();
+        let started = s.mesh_dirty([16.0; 3], StreamBudget::new(4.0, 2.0), move || t.get());
+        assert_eq!(s.store().lit, vec![[0, 0, 0]], "one chunk lit, the nearest");
+        assert_eq!(started, 0, "no mesh start after the light ran past the deadline");
+        // The next late frame is the mesh starts': no light past the deadline, a mesh started.
+        let t = clock.clone();
+        let started = s.mesh_dirty([16.0; 3], StreamBudget::new(4.0, 2.0), move || t.get());
+        assert_eq!(s.store().lit.len(), 1, "the light waits its turn");
+        assert!(started >= 1, "the mesh starts' turn");
+        assert!(s.store().meshed_from.len() > meshed);
+        // Then the light's again.
+        let t = clock.clone();
+        s.mesh_dirty([16.0; 3], StreamBudget::new(4.0, 2.0), move || t.get());
+        assert_eq!(s.store().lit.len(), 2);
     }
 
     #[test]
