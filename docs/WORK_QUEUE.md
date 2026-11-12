@@ -583,6 +583,20 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    moon's faces. **Left for the follow-up:** the server's session loop holding the spaces, the moon's chunks on the
    wire per grid, the grid id in snapshots and the `grid.frames` capability (not announced until a build sends it),
    the client's view roll to the new down, and the predictor's far-flight speed (MOON_WORLD.md §7.1).
+   **M-7b server + wire built 2026-11-12** (branch `claude/moon-m7b`; the brief: the server's session loop holds the
+   grid spaces and runs travel per player, the moon's chunks streamed per grid and stored per grid (additive), the
+   grid id and frame in snapshots behind `grid.frames` (in capabilities.json now), the predictor and drawing on the
+   client, tests through LocalCore; "if it doesn't fit, do the server + wire + predictor first and leave the
+   client's drawing for a local follow-up"): built the server (`dwell-sim` `server/grids.rs`: the moon's space,
+   capture/release per session with no jump, far flight for every player, the moon's chunks streamed to a
+   `grid.frames` client, an away player's edits applied to the moon), the wire (`grid.frames`: the snapshot's
+   `GridView`, the chunks' grid byte) and the per-grid save table (`grid_chunks`). Tested natively (`dwell-sim`
+   `tests/grids.rs`, both faces: capture ≤ 1 cm, landing and walking at ⅙ g, chunks and grid ids to the new
+   client only, release, a moon edit saved and reopened). **Left for the local follow-up:** the client's side —
+   this build's client withholds `grid.frames` (`capabilities::CLIENT_PENDING`) until its predictor runs in the
+   grid's space (its chunks, its gravity, the far-flight speed) and it draws the moon's chunks in its frame and
+   rolls the view; the `game_local` flight through LocalCore; away players in the other systems; the player's grid
+   in its saved record (MOON_WORLD.md §7.2).
    **M-6's bake built 2026-11-12** (branch `claude/moon-m6-home-bake`; the owner's "The earth should use the same
    normal map kinda technique when far enough away, when on the moon."): `dwell-worldgen` `home_far.rs`, the home
    grid's `FarSource` over its world map — heights from the map's cells (water flat at its level), the albedo from

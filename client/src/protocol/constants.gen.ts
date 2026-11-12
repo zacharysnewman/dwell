@@ -335,5 +335,5 @@ export const WorldSizes = {
 export const Capabilities = {
   maxNames: 64,
   maxNameBytes: 48,
-  names: ['structures.place'],
+  names: ['structures.place', 'grid.frames'],
 } as const;

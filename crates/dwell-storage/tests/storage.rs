@@ -96,6 +96,15 @@ fn everything_round_trips_through_a_file() {
             lava: Some(vec![1, 0, 0]),
             ecology: Some(vec![1, 2, 3]),
             grass: Some(vec![1, 1, 0, 0, 0, 0]),
+            // Another grid's chunk at the home chunk's coordinates (MOON_WORLD.md §7.2).
+            grid_chunks: vec![(
+                "dwell:moon".into(),
+                SavedChunk {
+                    coord: ChunkCoord::new(1, -2, 3),
+                    revision: 2,
+                    voxels: chunk_of(require("dwell:moon_dust")),
+                },
+            )],
         };
         db.save(&batch).expect("saves");
         db.set_setting("motd", "hello").expect("setting");
@@ -125,6 +134,15 @@ fn everything_round_trips_through_a_file() {
     let c = db.load_chunk(ChunkCoord::new(1, -2, 3)).expect("chunk");
     assert_eq!(c.voxels, chunk_of(require("dwell:sand")));
     assert_eq!(db.load_chunk(ChunkCoord::new(0, 0, 0)), None);
+    // The other grids' chunks: their own table, by the grid's name, apart from home's.
+    let moon = db.grid_chunks("dwell:moon");
+    assert_eq!(moon.len(), 1);
+    assert_eq!(
+        (moon[0].coord, moon[0].revision),
+        (ChunkCoord::new(1, -2, 3), 2)
+    );
+    assert_eq!(moon[0].voxels, chunk_of(require("dwell:moon_dust")));
+    assert!(db.grid_chunks("dwell:other").is_empty());
     let p = db.load_player(&key).expect("player");
     assert_eq!(
         (p.feet, p.health, p.first_seen, p.last_seen),

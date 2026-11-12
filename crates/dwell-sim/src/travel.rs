@@ -185,6 +185,35 @@ pub fn grid_generator(def: &GridDef, world_seed: u64) -> Option<(ChunkGenerator,
     }
 }
 
+/// Moves a player from one space's players to another's (MOON_WORLD.md §7.1): despawned from
+/// `src`, spawned in `dst` at the grid-local `p`, `v` (already turned into `dst`'s frame) with its
+/// controller state, its face there settled (the vertical state mirrored as at a midplane crossing)
+/// and `dst`'s gravity scale. Returns its handle in `dst`. The server carries its home players to
+/// and from the other grids' spaces through this too.
+pub fn carry(
+    src: (&mut Players, &mut Physics),
+    h: PlayerHandle,
+    dst: (&mut Players, &mut Physics),
+    gravity_scale: f32,
+    p: V3,
+    v: V3,
+) -> PlayerHandle {
+    let (src_players, src_physics) = src;
+    let (dst_players, dst_physics) = dst;
+    let state = *src_players.controller(h);
+    let cfg: PlayerControllerConfig = *src_players.config(h);
+    src_players.despawn(src_physics, h);
+    let nh = dst_players.spawn(dst_physics, cfg, DVec3::from(p), state.input.look_yaw);
+    let (pd, vd) = (
+        DVec3::from(p),
+        Vec3::new(v[0] as f32, v[1] as f32, v[2] as f32),
+    );
+    dst_players.restore(dst_physics, nh, &state, pd, vd);
+    dst_players.settle_face(dst_physics, nh);
+    dst_players.set_gravity_scale(nh, gravity_scale);
+    nh
+}
+
 /// One grid's simulation space: its chunks, physics and players, in its local frame.
 pub struct GridSpace {
     pub def: &'static GridDef,
@@ -324,22 +353,22 @@ impl Travel {
         let from = t.grid;
         let (world_p, world_v) = self.world(*t, world_s);
         let (p, v) = self.frame(to, world_s).capture(world_p, world_v);
-        let src = &mut self.spaces[from];
-        let state = *src.players.controller(t.handle);
-        let cfg: PlayerControllerConfig = *src.players.config(t.handle);
-        src.players.despawn(&mut src.physics, t.handle);
-        let dst = &mut self.spaces[to];
-        let h = dst
-            .players
-            .spawn(&mut dst.physics, cfg, DVec3::from(p), state.input.look_yaw);
-        let (pd, vd) = (
-            DVec3::from(p),
-            Vec3::new(v[0] as f32, v[1] as f32, v[2] as f32),
+        let (src, dst) = if from < to {
+            let (a, b) = self.spaces.split_at_mut(to);
+            (&mut a[from], &mut b[0])
+        } else {
+            let (a, b) = self.spaces.split_at_mut(from);
+            (&mut b[0], &mut a[to])
+        };
+        let scale = dst.def.gravity_scale as f32;
+        let h = carry(
+            (&mut src.players, &mut src.physics),
+            t.handle,
+            (&mut dst.players, &mut dst.physics),
+            scale,
+            p,
+            v,
         );
-        dst.players.restore(&mut dst.physics, h, &state, pd, vd);
-        dst.players.settle_face(&dst.physics, h);
-        dst.players
-            .set_gravity_scale(h, dst.def.gravity_scale as f32);
         *t = Traveller {
             grid: to,
             handle: h,
