@@ -604,8 +604,10 @@ struct Session {
     /// Ticks still to wait before this session's currents are sent (`CURRENTS_AFTER_JOIN`).
     currents_wait: u32,
     /// Applied at the start of the next step, by edit number: (edit number, edit, ticks held while
-    /// it would go into a player, EDIT_HOLD_TICKS).
-    edits: Vec<(u32, BlockEditRequest, u8)>,
+    /// it would go into a player, EDIT_HOLD_TICKS), and a tool's hit's contact (the tick it lands
+    /// and the tool it was swung with; WORK_QUEUE item 25: a break with a tool waits for its swing's
+    /// `contactS`, and is dropped if the tool is no longer held then).
+    edits: Vec<(u32, BlockEditRequest, u8, Option<Contact>)>,
     /// Body edits (docs/BUILT_BODIES.md §4), applied after the block edits.
     body_edits: Vec<BodyEditRequest>,
     edit_credit: f64,
@@ -644,6 +646,8 @@ struct Session {
     /// swing may land.
     chop_hello: bool,
     chop_ready: u32,
+    /// Swings on their way to their contact (WORK_QUEUE item 25): the tick each lands, and it.
+    pending_chops: Vec<(u32, ChopAction)>,
     /// Whether its client understands `Vitals` and the `Drown` cause (`VitalsHello`, ADR 0069),
     /// and the ticks it has been out of air since the last drowning damage.
     vitals_hello: bool,
@@ -719,6 +723,7 @@ impl Session {
             flight_grace: false,
             chop_hello: false,
             chop_ready: 0,
+            pending_chops: Vec::new(),
             vitals_hello: false,
             known_cause: 0,
             drown_ticks: 0,
@@ -1612,6 +1617,7 @@ impl Server {
     /// else is ignored.
     fn handle_joined(&mut self, id: SessionId, m: Message) {
         let verification_hash = self.verification_hash;
+        let (uses_items, tick) = (self.uses_items(), self.tick);
         let s = self.sessions.get_mut(&id).expect("session");
         match m {
             Message::WorldgenCheck(hash) if s.chunk_mode == ChunkMode::AwaitingCheck => {
@@ -1637,8 +1643,17 @@ impl Server {
             Message::BlockEditRequest(edit) => {
                 s.swung(edit.action == BlockEditAction::Break, SwingKind::Plain);
                 s.edit_seq += 1;
+                // A tool's hit lands at its swing's contact, never before the client's (the
+                // request left at the click): that long after it arrives (WORK_QUEUE item 25).
+                let contact = (edit.action == BlockEditAction::Break)
+                    .then(|| held_break_item(s, uses_items))
+                    .flatten()
+                    .and_then(|t| {
+                        let c = dwell_protocol::chopping::break_contact_s(Some(t));
+                        (c > 0.0).then(|| (tick + contact_ticks(c), t.to_owned()))
+                    });
                 if s.edits.len() < MAX_QUEUED_EDITS {
-                    s.edits.push((s.edit_seq, edit, 0));
+                    s.edits.push((s.edit_seq, edit, 0, contact));
                 } else {
                     s.stats.edits_rejected += 1;
                     s.edit_refused.push(s.edit_seq);
@@ -1834,6 +1849,8 @@ impl Server {
         self.phase_ms[0] += watch.lap_ms();
 
         // 1. Block edits queued since the last tick (§6.5); collision syncs in the controller pass.
+        // Swings whose head reaches what they hit this tick (WORK_QUEUE item 25).
+        self.land_swings();
         self.apply_edits();
         self.apply_body_edits();
         // Fuses burn; the ones out blow (docs/EXPLOSIVES.md §3): their knockbacks go with this
@@ -2656,7 +2673,18 @@ impl Server {
             let s = self.sessions.get_mut(&id).expect("session");
             s.edit_credit = (s.edit_credit + EDITS_PER_TICK).min(EDIT_BURST);
             let mut held = Vec::new();
-            for (seq, edit, ticks) in std::mem::take(&mut s.edits) {
+            for (seq, edit, ticks, contact) in std::mem::take(&mut s.edits) {
+                // A tool's hit waits for its contact; switched away from by then, it is dropped.
+                if let Some((at, tool)) = &contact {
+                    if self.tick < *at {
+                        held.push((seq, edit, ticks, contact));
+                        continue;
+                    }
+                    if held_break_item(s, uses_items) != Some(tool.as_str()) {
+                        s.edit_refused.push(seq);
+                        continue;
+                    }
+                }
                 let Some(eye) = eye.filter(|_| may_edit && s.edit_credit >= 1.0) else {
                     s.stats.edits_rejected += 1;
                     s.edit_refused.push(seq);
@@ -2667,7 +2695,7 @@ impl Server {
                 s.stats.last_edit_check = outcome.check;
                 // Into a body: it waits for the body's queued inputs to move it (EDIT_HOLD_TICKS).
                 if outcome.check == EditCheck::IntoPlayer && ticks < EDIT_HOLD_TICKS {
-                    held.push((seq, edit, ticks + 1));
+                    held.push((seq, edit, ticks + 1, None));
                     continue;
                 }
                 if outcome.check != EditCheck::Ok {
@@ -5104,6 +5132,16 @@ impl Server {
     pub fn damage_of(&self, cell: [i32; 3]) -> Option<&dwell_protocol::damage::CellDamage> {
         self.damage.cells.get(&cell)
     }
+}
+
+/// A tool hit's contact: the tick it lands and the tool it was swung with (WORK_QUEUE item 25).
+type Contact = (u32, String);
+
+/// Ticks from now to a contact `s` seconds away, rounded up: never before it.
+pub(crate) fn contact_ticks(s: f64) -> u32 {
+    (s * f64::from(dwell_protocol::SIM_HZ) - 1e-9)
+        .ceil()
+        .max(0.0) as u32
 }
 
 /// The item a session's break is made with (docs/BLOCK_DAMAGE.md): the held inventory slot's

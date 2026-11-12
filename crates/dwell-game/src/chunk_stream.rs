@@ -1308,6 +1308,11 @@ where
         }
     }
 
+    /// The damage drawn on `cell`, if any.
+    pub fn damage_at(&self, cell: [i32; 3]) -> Option<&dwell_protocol::damage::DamageView> {
+        self.damage.get(&cell)
+    }
+
     /// Sets world cell `cell`'s damage (none: undamaged), as the server sent it
     /// (docs/BLOCK_DAMAGE.md): its chunk is meshed again with the marks drawn.
     pub fn set_damage(

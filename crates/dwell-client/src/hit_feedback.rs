@@ -56,6 +56,104 @@ impl RemoteHits {
     }
 }
 
+/// Our own tool hit on its way to its swing's contact (WORK_QUEUE item 25; owner, 2026-11-12: "the
+/// gashes in blocks from tools show up on click instead of when the animation lines up with the
+/// block"): the click starts the swing and sends the hit (the server lands it at the contact too);
+/// its sound, chips and, for a one-hit break, the break's sound wait for `due_ms`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PendingHit {
+    pub due_ms: f64,
+    /// The tool it was swung with (`breaking.tools`' item): put away before the contact, the hit
+    /// lands nothing.
+    pub item: &'static str,
+    pub cell: [i32; 3],
+    pub block: dwell_blocks::StateId,
+    /// Where it strikes (world m), if known.
+    pub at: Option<[f64; 3]>,
+    /// It breaks the block (one hit by the data), else a hit short of breaking.
+    pub breaks: bool,
+}
+
+/// The tool hits under way (at most one: a swing at a time).
+#[derive(Clone, Debug, Default)]
+pub struct PendingHits {
+    hits: Vec<PendingHit>,
+}
+
+impl PendingHits {
+    /// When a hit with `item` lands, `contact_s` after a click at `now_ms`.
+    pub fn due(now_ms: f64, contact_s: f64) -> f64 {
+        now_ms + contact_s * 1000.0
+    }
+
+    pub fn push(&mut self, hit: PendingHit) {
+        self.hits.push(hit);
+    }
+
+    /// A swing is still on its way to its contact: no new one starts.
+    pub fn busy(&self, now_ms: f64) -> bool {
+        self.hits.iter().any(|h| now_ms < h.due_ms)
+    }
+
+    /// The hits whose contact has come with `held` still in hand, in order; those whose tool was
+    /// put away are dropped (cancelled: nothing shown).
+    pub fn take_due(&mut self, now_ms: f64, held: Option<&str>) -> Vec<PendingHit> {
+        self.hits.retain(|h| held == Some(h.item));
+        let (due, later) = std::mem::take(&mut self.hits)
+            .into_iter()
+            .partition(|h| now_ms >= h.due_ms);
+        self.hits = later;
+        due
+    }
+}
+
+#[cfg(test)]
+mod pending_tests {
+    use super::*;
+
+    fn hit(due_ms: f64) -> PendingHit {
+        PendingHit {
+            due_ms,
+            item: "dwell:stone_pickaxe",
+            cell: [1, 2, 3],
+            block: 1,
+            at: None,
+            breaks: false,
+        }
+    }
+
+    #[test]
+    fn a_hit_lands_at_its_contact_once_and_not_before() {
+        let mut p = PendingHits::default();
+        let due = PendingHits::due(1000.0, 0.26);
+        assert_eq!(due, 1260.0);
+        p.push(hit(due));
+        assert!(p.busy(1259.0));
+        assert!(p.take_due(1259.0, Some("dwell:stone_pickaxe")).is_empty());
+        assert_eq!(
+            p.take_due(1260.0, Some("dwell:stone_pickaxe")),
+            vec![hit(due)]
+        );
+        assert!(
+            p.take_due(2000.0, Some("dwell:stone_pickaxe")).is_empty(),
+            "once"
+        );
+        assert!(!p.busy(1260.0));
+    }
+
+    #[test]
+    fn a_hit_whose_tool_is_put_away_before_contact_lands_nothing() {
+        let mut p = PendingHits::default();
+        p.push(hit(1260.0));
+        assert!(p.take_due(1100.0, Some("dwell:wooden_shovel")).is_empty());
+        assert!(
+            p.take_due(1300.0, Some("dwell:stone_pickaxe")).is_empty(),
+            "dropped"
+        );
+        assert!(!p.busy(1100.0));
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -467,12 +467,14 @@ mod tests {
                 class: "trowel",
                 tier: "stone",
                 speed: 2.0,
+                contact_s: 0.0,
             },
             BreakTool {
                 item: "test:golden_trowel",
                 class: "trowel",
                 tier: "metal",
                 speed: 2.5,
+                contact_s: 0.0,
             },
         ];
         let h = |held| hits_to_break_in(&damage, &tools, "test:clay", held);
