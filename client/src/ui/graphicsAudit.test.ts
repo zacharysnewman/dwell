@@ -42,7 +42,8 @@ function tierFunctions(): string[] {
   for (const f of readdirSync(RENDER)) {
     if (!f.endsWith('.rs')) continue;
     const src = readFileSync(join(RENDER, f), 'utf8');
-    for (const m of src.matchAll(/pub(?:\(crate\))? fn ([a-z_]+)_for\(/g)) names.add(m[1]);
+    for (const m of src.matchAll(/pub(?:\(crate\))? fn ([a-z_]+)_for\(/g))
+      if (m[1]) names.add(m[1]);
   }
   return [...names].sort();
 }
