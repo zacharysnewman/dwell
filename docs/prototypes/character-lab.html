@@ -8073,7 +8073,7 @@ const DATA = {
    ]
   },
   "biped_guard_level": {
-   "$comment": "The sword's block raised in the level stance, seen by others (WORK_QUEUE item 35; shared/tools `guard.stances.level.raisedPose` names the role `guard_level`): the right arm up in front at the shoulder, the forearm across the chest, the hand turned so the blade lies level across the body; over the gait in place of the hold.",
+   "$comment": "The sword's block raised in the level stance, seen by others (WORK_QUEUE item 35; shared/tools `guard.stances.level.raisedPose` names the role `guard_level`): the fist before the chest and the arm turned so the blade lies level across the body, its tip out past the left shoulder (fitted with `clip_probe --fit`: grip 0.06, 1.30, 0.44 and tip -0.72, 1.38, 0.53 m from the feet); over the gait in place of the hold.",
    "rig": "biped",
    "layer": "hold",
    "duration": 1,
@@ -8085,23 +8085,23 @@ const DATA = {
      "bones": {
       "chest": [
        0,
-       -12,
+       -1,
        0
       ],
       "arm_r": [
-       -80,
-       -10,
-       -20
+       -19,
+       90,
+       -54
       ],
       "forearm_r": [
-       -70,
+       -58,
        0,
        0
       ],
       "hand_r": [
-       0,
-       0,
-       -35
+       66,
+       1,
+       -10
       ]
      }
     }
@@ -10046,7 +10046,7 @@ const DATA = {
    ]
   },
   "fp_guard_level": {
-   "$comment": "First person: the sword's block raised in the level stance (role `guard_level`): the fist drawn in toward the middle and up, the blade lying level across the view below the crosshair; over the arms' gait. Root is the arm's anchor offset in view space.",
+   "$comment": "First person: the sword's block raised in the level stance (role `guard_level`): the arm turned so the blade lies level across the view below the crosshair, the grip low right and the tip off the left edge (fitted with `clip_probe --fit`: grip 0.22, -0.12, 0.52 and tip -0.54, -0.08, 0.74 m from the eye); over the arms' gait. Root is the arm's anchor offset in view space.",
    "rig": "biped",
    "space": "arms",
    "layer": "hold",
@@ -10057,25 +10057,25 @@ const DATA = {
     {
      "t": 0,
      "root": [
-      0.14,
-      0.1,
-      0.04
+      0.094,
+      -0.037,
+      -0.038
      ],
      "bones": {
       "arm_r": [
-       -82,
-       34,
-       0
+       -123,
+       90,
+       2
       ],
       "forearm_r": [
-       -38,
+       -43,
        0,
        0
       ],
       "hand_r": [
-       8,
-       0,
-       -38
+       64,
+       14,
+       -9
       ]
      }
     }
