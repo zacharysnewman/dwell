@@ -207,6 +207,10 @@ Last updated: 2026-11-11 (0.52.108).
    32³, which the server validates as any paste; a `structures` mode ability (creative only). Sharing:
    FUTURE.md. Open: the server can't refuse a structure placement as such outside creative (both
    capability flag bytes are full; a paste there is paid in items), the anchor, a ghost of the blocks.
+   Owner, 2026-11-12, on the server not refusing placements outside creative because `welcome_flags` and
+   `inventory_flags` are full: **"Sounds like we need a new flags field for server protocol."** In progress
+   (cloud): an extendable capability field, then the server refuses a structure placement where the mode lacks
+   the `structures` ability.
 13. **Volumetric clouds** (owner 2026-11-11: "volumetric clouds in the sky. These clouds will likely be
    useful for weather sim, and volcano smoke. So they need to be performant."). **Built (branch
    `claude/volumetric-clouds`, CLOUDS.md §8):** a ray-marched layer in its own reduced-resolution pass
