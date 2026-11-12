@@ -30,6 +30,7 @@ pub mod render_clock;
 pub mod settle_glide;
 pub mod steam;
 pub mod telemetry;
+pub mod vent_plumes;
 #[cfg(target_arch = "wasm32")]
 mod web;
 pub mod world_clock;

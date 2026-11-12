@@ -1418,8 +1418,13 @@ struct CloudOut {
 fn clouds_fs(i: SkyOut) -> CloudOut {
     let dir = normalize(view_ray(i.ndc));
     let p = vec2i(i.clip.xy);
-    let m = dwell_cloud_march(sky(dir), dir, frame.eye.y, 1e9, cloud_jitter(p, u32(cloud_prev.params.y)), frame.clouds, frame.cloud_cfg, frame.cloud_inside, cloud_lighting());
-    let cur = vec4f(m.layer.rgb * m.layer.a, m.layer.a);
+    let m = dwell_cloud_march(dir, frame.eye.y, 1e9, cloud_jitter(p, u32(cloud_prev.params.y)), frame.clouds, frame.cloud_cfg, frame.cloud_inside, cloud_lighting());
+    // The sky behind is worked out only where there is cloud to haze toward it (§8.7's cut).
+    var layer = vec4f(0.0);
+    if (m.first >= 0.0) {
+        layer = dwell_cloud_hazed(m, sky(dir), frame.cloud_cfg);
+    }
+    let cur = vec4f(layer.rgb * layer.a, layer.a);
     let first = select(65000.0, m.first, m.first >= 0.0);
     var out = cur;
     let f = dot(dir, cloud_prev.forward.xyz);
@@ -3421,7 +3426,8 @@ fn scene_bindings(samples: u32) -> String {
          @group(2) @binding(6) var bloom_tex: texture_2d<f32>;\n\
          @group(3) @binding(1) var cloud_history: texture_2d<f32>;\n\
          @group(3) @binding(2) var cloud_history_sampler: sampler;\n\
-         @group(3) @binding(3) var<uniform> cloud_prev: CloudPrev;\n",
+         @group(3) @binding(3) var<uniform> cloud_prev: CloudPrev;\n{}",
+        dwell_look::clouds::cloud_march_wgsl(3, 4),
     )
 }
 

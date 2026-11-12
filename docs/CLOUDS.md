@@ -211,12 +211,9 @@ amendment records the decision. Built in two rounds the same day: the march and 
   coverage's cut rises with height (`topFloor`), so each cloud narrows into a rounded top over a
   flat base and the densest clouds are the tallest. 3D value noise of `detailCellM` cells erodes it
   (`detailErosion`; it tiles with the deck: `scaleM` is a whole multiple of it).
-- **Extra sources: plumes.** `clouds.json`'s `plumes` is a list of vertical columns (a future
-  volcano's ash, a smoke stack): a position, a radius that grows by `spread` from base to top, the
-  heights, a density, a colour (ash grey). The generator writes each into the shader (`cloud_plumes`); the march's height
-  span grows to cover them (`volume_span`). The shipped list is empty; a test adds one by data alone
-  (`clouds.rs` `volume_tests`, `clouds.test.mjs`). A source a weather or volcano system moves at run
-  time will need them as uniforms (§8.5).
+- **Extra sources: plumes,** at run time (§8.7): vertical columns (steam over lava, a volcano's ash,
+  a smoke stack) the game adds, moves and removes, marched apart from the layer. `clouds.json`'s
+  `plumes` are the list's defaults (empty as shipped).
 - **Light.** The sun or the moon, whichever is over the face, as the deck. At each step with cloud,
   `lightSteps` samples toward the light (without the detail) give the optical depth; Beer's law over
   it, a powder term (`powder`) darkening thin unlit edges, mixed between the deck's shade and lit
@@ -290,12 +287,14 @@ Screenshots (bench shots, judged honestly):
 ### 8.5 Left for the next rounds
 
 - Find the clouds pass's fixed cost from above (a trace), so Medium meets 0.8 ms and High gains
-  headroom; then perhaps a second light sample on High (better shading from above).
-- **Plumes at run time** (a volcano or weather system moving them): the list as frame uniforms, the
-  data's entries their defaults.
+  headroom; then perhaps a second light sample on High (better shading from above). The shader read
+  of §8.7 says it isn't the march's arithmetic; the bench numbers with §8.7's cuts are to take on a GPU.
 - A CPU twin of the whole density (the in-cloud fog for other systems, e.g. the ink's fade).
 - The far field: past `maxDistanceM` the volume ends; the deck could take over there.
-- Face B's plumes use world x, z; a face-local placement through `FaceFrame` is not done.
+- Plumes don't shadow the layer or take its light samples, and overlapping plumes are put
+  together by their first distance (not sample by sample): fine for apart columns (§8.7).
+- A remote server's lava with no column loaded near its vent has no plume (the client looks only in
+  the cells it holds); a server message for plumes (eruptions' ash) comes with the eruptions.
 - A phone check (phones keep the deck, Low, by default).
 
 ### 8.6 The clouds pass: reduced resolution, accumulated
@@ -315,6 +314,65 @@ Screenshots (bench shots, judged honestly):
   hides the clouds where the scene is nearer than the nearest of the four texels' first cloud
   (`textureGather`), so no cloud bleeds over a mountain in front of it. A cloud with terrain inside
   it is drawn whole over that terrain: the march doesn't stop at the scene.
-- **Plumes' colour.** Each plume has a `color`. The march tints the lit cloud by it where the plume
-  is the density there.
+- **Plumes' colour.** Each plume has a `color`; its own march (§8.7) tints its lit cloud by it.
 - **Timing:** `gpu.clouds` in the telemetry.
+
+### 8.7 Run-time plumes and the pass's cost (2026-11-12)
+
+The owner (WORK_QUEUE item 13): "These clouds will likely be useful for weather sim, and volcano smoke.
+So they need to be performant." Next was "trace the clouds pass's fixed cost; plumes as run-time
+uniforms for a volcano or weather".
+
+- **The list** (`dwell_look::plumes::PlumeList`): plumes by name, at most `plumeSlots` (8; the
+  uniform's size, data), each on a face (`FaceFrame`) with its axis at world x, z, its base and top
+  face-local over sea level, a radius growing by `spread` to the top, a density, a colour and
+  `riseMps` (its billows rise). `set` adds or replaces one by name (refused when full, or for a
+  plume that can't be drawn: non-finite numbers, its top not over its base, no radius),
+  `move_to`, `remove`, `remove_prefixed` (a source's own), `clear`. It starts with the data's
+  `plumes` (on face A). The renderer holds it (`Renderer::plumes`); a source replaces its own
+  plumes through `Scene::set_plumes(prefix, …)`.
+- **The uniform** (`PlumeList::pack`, `CloudPlumes` at the clouds pass's group 3, binding 4): a head
+  (plumes in use, samples through each: the tier's `plumeSteps`) and the slots (axis offset from the
+  eye in metres, worked out in f64 on the CPU, so no wrap; radius, spread; base, top, density, the
+  billows' rise so far; colour). Only the eye's face's plumes within `maxDistanceM` (plus their
+  widest radius) across, nearest first; on a tier with no plume samples (Low, Off; the CPU adapter
+  runs no clouds pass) the head says none. One fixed-size uniform: a new plume is a buffer write,
+  never a pipeline.
+- **The march** (`cloud_march_wgsl`, only in the clouds pass's module, so the deck-only modules need
+  no binding): the layer as before, then each plume the ray crosses: its bounding column (the
+  widest radius, base to top) met analytically (`cloud_plume_span`, twin `plume_span`), and
+  `plumeSteps` jittered samples over that span alone, so a 15 m steam column gets its samples where
+  it is, not 1–2 km apart along the layer's span. Density as before (`plume_density`) broken up by
+  rising 3D value noise of cells the plume's width (`volume.plumeBillow`); lit by Beer over its own
+  radius toward the light, tinted by its colour. Plume and layer are put together front to back by
+  their first distance; the silver lining, haze and distance fade apply once to the result.
+- **Tiers:** `plumeSteps` High 8, Medium 6, Low 0.
+- **The first source: steam over lava vents** (`dwell-client` `vent_plumes`): the world's vents
+  from its worldgen config (`lava_vent_sites`, on the faces each lists), and every 2 s each vent
+  column is looked down in the cells the client holds (air where unloaded) for its top
+  `dwell:lava` cell: a plume of `sources.lavaVent`'s look (14 m wide at the lava, ×3.5 at the top,
+  180 m tall, density 0.35, near-white, rising 3 m/s) over it, removed when no lava is found. Local
+  and remote servers alike, with no protocol change.
+- **Dev tools:** `__dwell.plume(op, args)` (DEV_TOOLS.md).
+
+**The pass's fixed cost, read from the shader** (no GPU in the cloud session that built this; the
+timings are left for a local `npm run bench -- --warm` before and after). Counting a 2D value-noise
+look-up as 4 hashes (~45 ALU) and a 3D one as 8 (~100 ALU): a layer step with no cloud is the weather
+map (a one-octave warp and two octaves: 4 look-ups, ~180 ALU); a cloudy step adds the detail (~100)
+and each light sample (another ~180). Medium's 10 steps are ~1.8–3k ALU a texel; at ¼ of 1280 × 720
+(57.6k texels) that is ~0.15 G ALU a frame, well under 0.1 ms on the Apple GPU the 0.8–0.9 ms was
+measured on. So the pass's cost from above isn't the march's arithmetic, as §8.3 suspected: it is
+the fixed part (the pass's start and end on a tile GPU after the heavy scene, the history copy, the
+timestamps around it). Cut here, cheaply:
+
+| Cut | Before | After |
+|---|---|---|
+| The clear sky the haze needs (`sky(dir)`, the sky gradient) | every texel | only texels with cloud |
+| Data plumes in the layer's density | every layer step and light sample, per plume (~25 ALU each, ×2 a cloudy step) | none: plumes marched apart, only where the ray crosses one |
+| No coverage (a clear-sky weather) | every step sampled the weather map | no layer samples |
+| Plumes off the view or past the reach | in the shader's code for every texel | culled on the CPU; a missed column costs ~30 ALU (its span test) |
+
+A plume the ray crosses costs `plumeSteps` × ~140 ALU (Medium: ~0.8k) on the texels it covers only.
+The march's resolution and step counts were already by tier (§8.2). Left: the trace on a GPU of the
+pass's start and copy (§8.5).
+

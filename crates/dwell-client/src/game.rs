@@ -138,6 +138,10 @@ pub trait Scene: TerrainRenderer {
     }
     /// Your first-person arms this frame (docs/CHARACTERS.md §5), or none.
     fn set_arms(&mut self, _arms: Option<ArmsView>) {}
+    /// A source's run-time plumes (docs/CLOUDS.md §8.7): every plume whose name starts with
+    /// `prefix` replaced by `plumes`.
+    fn set_plumes(&mut self, _prefix: &str, _plumes: Vec<(String, dwell_look::plumes::PlumeSpec)>) {
+    }
     /// Your own body this frame, cast into the shadow maps only (none while it is drawn).
     fn set_own_shadow(&mut self, _body: Option<PlayerView>) {}
     /// Your own body drawn in first person from the neck down (docs/CHARACTERS.md §5.1), or none.
@@ -645,6 +649,8 @@ pub struct Game<S: Scene> {
     pub chips: crate::chips::Chips,
     /// Steam where lava boils water away (crate::steam; the server's `Steam`, VOLCANOES.md §6.3).
     pub steam: crate::steam::Steam,
+    /// The steam plumes over the world's lava vents (crate::vent_plumes, docs/CLOUDS.md §8.7).
+    pub vent_plumes: crate::vent_plumes::VentPlumes,
     /// When the burning edge has faded (ms; a `Burn` hit sets it).
     burn_until_ms: f64,
     /// Said `SteamHello` (the server has `inventory_flags::STEAM`).
@@ -1017,6 +1023,7 @@ impl<S: Scene> Game<S> {
             chop: Default::default(),
             chips: Default::default(),
             steam: Default::default(),
+            vent_plumes: Default::default(),
             burn_until_ms: 0.0,
             steam_on: false,
             swing_hello: dwell_game::remotes::SwingHello::default(),
@@ -3037,11 +3044,32 @@ impl<S: Scene> Game<S> {
         crate::far_herds::puffs(&self.far_heads, eye, false)
     }
 
+    /// The steam plumes over the world's lava vents, every few seconds: over each vent column's
+    /// top molten cell, gone with the lava (crate::vent_plumes).
+    fn update_vent_plumes(&mut self, now_s: f64) {
+        if !self.vent_plumes.due(now_s) {
+            return;
+        }
+        let world = self.streamer.store_mut();
+        let plumes = self.vent_plumes.plumes(|f, c| {
+            crate::vent_plumes::top_lava_in(
+                f,
+                c,
+                |cell| world.get_voxel_if_loaded(cell),
+                crate::vent_plumes::is_lava,
+            )
+        });
+        self.scene
+            .borrow_mut()
+            .set_plumes(crate::vent_plumes::PREFIX, plumes);
+    }
+
     fn update_blast_effects(&mut self, eye: [f64; 3], now_ms: f64) -> (f64, f64) {
         let now = now_ms / 1000.0;
         self.blasts.prune(now);
         self.chips.prune(now);
         self.steam.prune(now);
+        self.update_vent_plumes(now);
         let mut extra = self.chips.puffs(now);
         extra.extend(self.steam.puffs(now));
         extra.extend(self.far_herd_puffs(eye));

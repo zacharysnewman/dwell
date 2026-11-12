@@ -1319,6 +1319,11 @@ pub struct Renderer {
     /// last frame's camera (right, up, forward, tangents; the eye) and the frame count (jitter).
     cloud_layout: wgpu::BindGroupLayout,
     cloud_prev_buffer: wgpu::Buffer,
+    /// The run-time plumes' uniform (docs/CLOUDS.md §8.7), written each frame from `plumes`.
+    cloud_plume_buffer: wgpu::Buffer,
+    /// The run-time plume list (steam over lava, a volcano's ash, a weather system's towers): the
+    /// game and the dev tools add, move and remove plumes here.
+    pub plumes: dwell_look::plumes::PlumeList,
     clouds_pipeline: pipeline::Lazy,
     cloud_prev: std::cell::Cell<Option<([[f32; 4]; 4], V3)>>,
     cloud_frames: std::cell::Cell<u32>,
@@ -2047,6 +2052,12 @@ impl Renderer {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
+        let cloud_plume_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("cloud plumes"),
+            size: frame::cloud_plume_bytes(),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
         let clouds_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("clouds"),
             bind_group_layouts: &[
@@ -2293,6 +2304,8 @@ impl Renderer {
             bloom_pipelines,
             cloud_layout,
             cloud_prev_buffer,
+            cloud_plume_buffer,
+            plumes: dwell_look::plumes::PlumeList::new(&CLOUDS),
             clouds_pipeline,
             cloud_prev: std::cell::Cell::new(None),
             cloud_frames: std::cell::Cell::new(0),
@@ -2639,6 +2652,10 @@ impl Renderer {
     /// Bloom's tier this frame draws (`bloom::bloom_for`: none on a CPU adapter or a phone).
     fn bloom_tier(&self) -> Option<dwell_look::bloom::BloomTier> {
         bloom::bloom_for(self.adapter, self.phone, self.bloom).tier()
+    }
+    /// The eye this frame is drawn from (world m).
+    pub fn eye_position(&self) -> [f64; 3] {
+        self.eye
     }
     /// The clouds' coverage, 0 (clear) to 1 (overcast): the data's by default; a weather system's
     /// to set.
@@ -3838,6 +3855,7 @@ impl Renderer {
                 clouds,
                 cloud_layout: &self.cloud_layout,
                 cloud_prev: &self.cloud_prev_buffer,
+                cloud_plumes: &self.cloud_plume_buffer,
                 bloom,
                 bloom_layout: &self.bloom_layout,
             },
@@ -4450,6 +4468,15 @@ impl Renderer {
             let block = self.cloud_prev_uniform(view, tier.history_blend);
             self.queue
                 .write_buffer(&self.cloud_prev_buffer, 0, floats(block.as_flattened()));
+            let plumes = self.plumes.pack(
+                &CLOUDS,
+                self.eye,
+                self.face,
+                self.cloud_seconds,
+                clouds_for(self.adapter, self.clouds),
+            );
+            self.queue
+                .write_buffer(&self.cloud_plume_buffer, 0, floats(&plumes));
             let query = self.timer.as_mut().and_then(|t| t.pass(timing::CLOUDS));
             let clear = wgpu::Operations {
                 load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
@@ -5912,6 +5939,13 @@ impl TerrainRenderer for Renderer {
 }
 
 impl crate::game::Scene for Renderer {
+    fn set_plumes(&mut self, prefix: &str, plumes: Vec<(String, dwell_look::plumes::PlumeSpec)>) {
+        self.plumes.remove_prefixed(prefix);
+        for (name, p) in plumes {
+            // A full list keeps the plumes it has (the dev tools' or another source's).
+            let _ = self.plumes.set(&name, p);
+        }
+    }
     fn draws_cards(&self) -> bool {
         cards_for(self.adapter, self.phone, self.cards_override)
     }
@@ -7355,6 +7389,7 @@ mod tests {
             light_steps: 1,
             divisor,
             history_blend: 0.2,
+            plume_steps: 8,
         };
         assert_eq!(cloud_buffer_size((1280, 720), Some(tier(2))), (640, 360));
         assert_eq!(cloud_buffer_size((1281, 721), Some(tier(4))), (321, 181));

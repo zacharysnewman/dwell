@@ -2986,9 +2986,16 @@ chunks), keeps the last selection (`LodSystem::update`; ~1 ms a frame standing s
   direction (a `CloudPrev` uniform with the last camera; reset on new buffers or a jump), then copied
   to the history. The composite upsamples it in place of the eye's deck (`upsampled_clouds`,
   depth-aware: hidden where the scene is nearer than the four texels' nearest first cloud). Density:
-  the deck's noise as a weather map (the same coverage uniform), a cut rising with height, 3D detail,
-  plus `plumes` (extra density columns with a colour, as data, generated into the shader); Beer and
-  powder lighting. Snell's window, the reflections and the other face's sky keep the deck. The
+  the deck's noise as a weather map (the same coverage uniform), a cut rising with height, 3D detail;
+  Beer and powder lighting; no samples at all with no coverage. **Run-time plumes** (`CLOUDS.md`
+  §8.7): columns of cloud (steam, smoke, ash) the game adds, moves and removes by name in a list
+  (`dwell_look::plumes::PlumeList`, `plumeSlots` of them, `clouds.json`'s `plumes` its defaults),
+  packed each frame into a uniform at the clouds pass's group 3 binding 4 (`CloudPlumes`: the eye's
+  face's plumes within the march's reach, nearest first, axes relative to the eye) and marched apart
+  from the layer, `plumeSteps` samples (per tier; none on Low, Off or the CPU adapter) over each
+  plume's own span for the plumes the ray crosses, with rising billows (`riseMps`). Sources: the
+  world's lava vents (`dwell-client` `vent_plumes`: the worldgen config's `lavaVents`, a plume over
+  the vent column's top molten cell while it has one, look `sources.lavaVent`); `__dwell.plume`. Snell's window, the reflections and the other face's sky keep the deck. The
   deck's CPU in-cloud fog is off on a volume tier (the march fogs by density). Telemetry
   `gpu.clouds`.
 - Coarse sections: where a cell is taller than the relief, the column's top cell takes the
