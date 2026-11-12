@@ -37,6 +37,7 @@ const N: i32 = CHUNK_SIZE;
 mod damage_mesh;
 mod ground_mesh;
 pub(crate) mod leaves;
+mod ramp_damage;
 pub mod relief;
 pub use ground_mesh::{GroundJob, look_mesh, look_swatch, scatter as ground_scatter};
 
@@ -913,20 +914,43 @@ fn neighbour_of(x: i32, y: i32, z: i32, axis: usize, sign: i32) -> [i32; 3] {
     n
 }
 
-/// A shaped voxel: each polygon of its shape, but the parts of cell faces a neighbour covers.
-fn shaped_voxel(b: &mut Builder, cells: &Cells<'_>, k: &Kind, x: i32, y: i32, z: i32) {
+/// A shaped voxel: each polygon of its shape, but the parts of cell faces a neighbour covers. A
+/// damaged one (`damage`: its view, face-local) is carved where struck and cracked once staged
+/// (BUGS.md #110, BLOCK_DAMAGE.md §6.5; `ramp_damage`).
+fn shaped_voxel(
+    b: &mut Builder,
+    cells: &Cells<'_>,
+    k: &Kind,
+    [x, y, z]: [i32; 3],
+    damage: Option<&DamageView>,
+) {
     let Some(def) = k.def else {
         return;
     };
-    for f in faces_of(def) {
-        let tag = usize::from(f.tag);
-        if tag < 6 {
+    let faces = faces_of(def);
+    let visible: Vec<bool> = faces
+        .iter()
+        .map(|f| {
+            let tag = usize::from(f.tag);
+            if tag >= 6 {
+                return true;
+            }
             let (axis, sign) = FACES[tag];
             let [nx, ny, nz] = neighbour_of(x, y, z, axis, sign);
-            if face_covered(def, tag, cover(&cells.kind(nx, ny, nz))) {
-                continue;
-            }
+            !face_covered(def, tag, cover(&cells.kind(nx, ny, nz)))
+        })
+        .collect();
+    let hits = damage.and_then(|view| {
+        let look = dwell_protocol::damage::look_of(k.style.block)?;
+        let fraction = f64::from(view.fraction) / 255.0;
+        let carved = dwell_protocol::damage::carved_m3(k.style.block, fraction);
+        ramp_damage::RampDamage::new(def, look, carved, view, [x, y, z], &visible)
+    });
+    for (fi, f) in faces.iter().enumerate() {
+        if !visible[fi] {
+            continue;
         }
+        let tag = usize::from(f.tag);
         let pts: Vec<[f64; 3]> = f.v[..usize::from(f.count)]
             .iter()
             .map(|p| p.map(f64::from))
@@ -962,7 +986,23 @@ fn shaped_voxel(b: &mut Builder, cells: &Cells<'_>, k: &Kind, x: i32, y: i32, z:
             .iter()
             .map(|p| vertex_light(AO_OPEN, cells.sky_rays([x, y, z], *p, n_m, salt)))
             .collect();
-        let flood = vec![cells.flood.shaped([x, y, z], normal); pts.len()];
+        let flood_at = cells.flood.shaped([x, y, z], normal);
+        if let Some(h) = &hits {
+            let sky = |p: [f64; 3]| vertex_light(AO_OPEN, cells.sky_rays([x, y, z], p, n_m, salt));
+            let face = ramp_damage::RampFace {
+                cell: [x, y, z],
+                color,
+                tint,
+                tile: &tile,
+                side_top: side_top_of(def, tag),
+                light: &sky,
+                flood: flood_at,
+            };
+            if h.draw(&mut b.m, fi, &face) {
+                continue;
+            }
+        }
+        let flood = vec![flood_at; pts.len()];
         b.polygon(
             &pts,
             at,
@@ -1936,7 +1976,13 @@ fn damaged_cells(
         .iter()
         .filter(|(c, _)| in_chunk(*c))
         .map(|(c, v)| {
+            // Face-local as the mirrored chunk's cells are (a ramp's `half` turned over).
             let state = inner[padded_index(c[0], c[1], c[2])];
+            let state = if mirror {
+                mirror_material(state)
+            } else {
+                state
+            };
             let (at, v) = damage_mesh::face_local(*c, v, mirror);
             (at, state, v)
         })
@@ -2184,6 +2230,21 @@ fn mesh_cells(
             }
         }
     }
+    // Damaged ramps (BUGS.md #110): carved and cracked in `shaped_voxel`, by cell.
+    let ramp_hits: HashMap<[i32; 3], usize> = damaged
+        .iter()
+        .enumerate()
+        .filter(|(_, (c, state, _))| {
+            let k = kinds.of(*state);
+            padded[padded_index(c[0], c[1], c[2])] == *state
+                && k.shape == Shape::Shaped
+                && k.style.render == RenderMode::Opaque
+                && !k.style.octagon
+                && !k.style.leafy
+                && !carved.contains_key(c)
+        })
+        .map(|(i, (c, _, _))| (*c, i))
+        .collect();
     let mut struck_faces: Vec<(damage_mesh::StruckFace, usize)> = Vec::new();
     // A cut cell is carved only if it is drawn as an opaque cube.
     let carved: HashMap<[i32; 3], Cut> = carved
@@ -2531,7 +2592,11 @@ fn mesh_cells(
                 let k = cells.kind(cx, cy, cz);
                 // A wood ramp with the log's octagon (Phase 55 T4) is drawn as its cut prism below.
                 if k.shape == Shape::Shaped && !k.style.octagon {
-                    shaped_voxel(&mut opaque, &cells, &k, cx, cy, cz);
+                    let hit = (!ramp_hits.is_empty())
+                        .then(|| ramp_hits.get(&[cx, cy, cz]))
+                        .flatten()
+                        .map(|&i| &damaged[i].2);
+                    shaped_voxel(&mut opaque, &cells, &k, [cx, cy, cz], hit);
                 }
                 if let Some(cut) = (!carved.is_empty())
                     .then(|| carved.get(&[cx, cy, cz]))

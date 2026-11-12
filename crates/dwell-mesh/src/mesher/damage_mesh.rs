@@ -104,14 +104,32 @@ pub(crate) fn carve_for(
     look: &DamageLook,
     target_m3: f64,
 ) -> Carve {
+    carve_fit(
+        target_m3,
+        DEEPEST * ext(face / 2),
+        look,
+        |r, d| carve_sized(face, marks, look, r, d, DEEPEST),
+        |c| carve_volume(face, c),
+    )
+}
+
+/// The carve `build(radius ×, depth ×)` sized so `volume` of it is `target_m3`: deepened, and
+/// once its depth reaches `cap` (m), widened (a face's worth at most). Shared by a cube's faces
+/// and a ramp's (`ramp_damage`).
+pub(crate) fn carve_fit(
+    target_m3: f64,
+    cap: f64,
+    look: &DamageLook,
+    build: impl Fn(f64, f64) -> Carve,
+    volume: impl Fn(&Carve) -> f64,
+) -> Carve {
     let (mut r, mut d) = (1.0, 1.0);
-    let mut carve = carve_sized(face, marks, look, r, d, DEEPEST);
     if target_m3 <= 0.0 {
-        return carve_sized(face, marks, look, r, 0.0, DEEPEST);
+        return build(r, 0.0);
     }
-    let cap = DEEPEST * ext(face / 2);
+    let mut carve = build(r, d);
     for _ in 0..24 {
-        let got = carve_volume(face, &carve);
+        let got = volume(&carve);
         if got <= 0.0 {
             break;
         }
@@ -125,7 +143,7 @@ pub(crate) fn carve_for(
         } else {
             d *= ratio;
         }
-        carve = carve_sized(face, marks, look, r, d, DEEPEST);
+        carve = build(r, d);
     }
     carve
 }
@@ -143,11 +161,35 @@ fn carve_sized(
     let axis = face / 2;
     let (u, v) = plane_axes(axis);
     let (eu, ev) = (ext(u), ext(v));
+    let at: Vec<[f64; 2]> = marks
+        .iter()
+        .map(|m| {
+            [
+                f64::from(m.point[u]) / 255.0 * eu,
+                f64::from(m.point[v]) / 255.0 * ev,
+            ]
+        })
+        .collect();
+    carve_shape([eu, ev], &at, marks, look, rmul, dmul, deepest * ext(axis))
+}
+
+/// The height field of `marks` struck at `at` (face metres) on a face `dims` (m) across, with the
+/// look's radius × `rmul` and depth × `dmul`, each mark weighed by its chunk, no deeper than
+/// `deepest` (m): a cube's face's ([`carve_sized`]) or a ramp polygon's (`ramp_damage`).
+pub(crate) fn carve_shape(
+    dims: [f64; 2],
+    at: &[[f64; 2]],
+    marks: &[&HitMark],
+    look: &DamageLook,
+    rmul: f64,
+    dmul: f64,
+    deepest: f64,
+) -> Carve {
+    let [eu, ev] = dims;
     let radius = 0.5 * look.size * rmul;
     let depth = look.depth * dmul;
     // Each mark scaled by its chunk (its bite against the others', `HitMark::chunk`), its depth
     // kept inside the cell.
-    let deepest = deepest * ext(axis);
     let mean =
         marks.iter().take(4).map(|m| m.scale()).sum::<f64>() / marks.len().clamp(1, 4) as f64;
     let rel = |m: &HitMark| m.scale() / mean.max(1e-6);
@@ -160,18 +202,19 @@ fn carve_sized(
         .fold(0.0, f64::max)
         .max(1.0);
     let (bowl_r, bowl_d) = (radius * big, (depth * big).min(deepest));
-    // A mark's centre on the face (m), kept far enough in for its dent to fit the cell.
-    let centre = |m: &HitMark, keep: f64| -> [f64; 2] {
-        let at = |a: usize, e: f64| {
+    // Mark `i`'s centre on the face (m), kept far enough in for its dent to fit the face.
+    let centre = |i: usize, keep: f64| -> [f64; 2] {
+        let p = at.get(i).copied().unwrap_or([0.5 * eu, 0.5 * ev]);
+        let at = |x: f64, e: f64| {
             let k = keep.min(0.5 * e);
-            (f64::from(m.point[a]) / 255.0 * e).clamp(k, e - k)
+            x.clamp(k, e - k)
         };
-        [at(u, eu), at(v, ev)]
+        [at(p[0], eu), at(p[1], ev)]
     };
     let (lo, hi) = ([0.0, 0.0], [eu, ev]);
     match look.profile {
         CarveProfile::Bowl => Carve::Bowl(Dent {
-            centres: marks.iter().take(4).map(|m| centre(m, bowl_r)).collect(),
+            centres: (0..marks.len().min(4)).map(|i| centre(i, bowl_r)).collect(),
             lo,
             hi,
             radius: bowl_r,
@@ -186,7 +229,7 @@ fn carve_sized(
                 .take(4)
                 .map(|(i, m)| {
                     let (r, d) = sized(m);
-                    shard(m, i, look.facets.max(3), r, d, centre(m, r))
+                    shard(m, i, look.facets.max(3), r, d, centre(i, r))
                 })
                 .collect(),
             lo,
@@ -199,7 +242,7 @@ fn carve_sized(
                 .take(4)
                 .flat_map(|(i, m)| {
                     let (r, d) = sized(m);
-                    flakes(m, i, look.flakes.max(1), r, d, centre(m, r))
+                    flakes(m, i, look.flakes.max(1), r, d, centre(i, r))
                 })
                 .collect(),
             lo,
@@ -223,7 +266,7 @@ fn jitter_of(m: &HitMark, index: usize) -> impl Fn(u32) -> f64 {
 }
 
 /// The convex hull of `pts`, counter-clockwise (Andrew's monotone chain).
-fn hull(mut pts: Vec<[f64; 2]>) -> Vec<[f64; 2]> {
+pub(crate) fn hull(mut pts: Vec<[f64; 2]>) -> Vec<[f64; 2]> {
     pts.sort_by(|a, b| a[0].total_cmp(&b[0]).then(a[1].total_cmp(&b[1])));
     let cross = |o: [f64; 2], a: [f64; 2], b: [f64; 2]| {
         (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])

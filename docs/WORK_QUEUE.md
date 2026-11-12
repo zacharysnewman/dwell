@@ -731,6 +731,11 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    it; by the fell the gash's V, both faces turned out of the notch. Fell and stump unchanged. Left: in the
    octagon the fell's half is more than a V holds (0.36 of 0.41, never drawn: the cell splits); the chips are
    half the cell's, ~20 % over an octagon's carve; the owner's look in game (checked locally after).
+   Owner, 2026-11-12 (BUGS.md #110): **"Slopes aren't affected visually by tools when hit, though they do break."**
+   **Status (ramp-hit-marks):** built (BLOCK_DAMAGE.md §6.5): a ramp's struck planes carved by the bite rule (a
+   ramp's volume ½), inside the solid and watertight, cracks over its planes once staged; the pieces already were
+   the bite. Left: a 45° upper half holds ¼ cell, under the rule's ½, so its carve is capped by its solid; the
+   owner's look in game.
 19. **Lava glow, remaining** (owner 2026-11-11: "Lava should have bloom glow"; "Lava looks dark red instead of
    bright red/orange"; "It should darken as it solidifies though"). Built 0.52.107: colour by heat stops, heat in
    cells. **Bloom built (pending release, `claude/bloom`):** keyed on the scene's self-lit flag (lava, torches,
