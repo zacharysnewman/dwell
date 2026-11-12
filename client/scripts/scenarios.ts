@@ -1004,13 +1004,15 @@ type BudgetStat = (typeof BUDGET_STATS)[number];
 export function overBudget(
   frames: Partial<Record<string, Partial<Record<BudgetStat, number>>>>,
   budget: Record<string, number>,
+  samples: Partial<Record<string, Partial<Record<BudgetStat, number>>>> = {},
 ): string[] {
   const out: string[] = [];
   for (const [k, max] of Object.entries(budget)) {
     const i = k.lastIndexOf('.');
     const series = k.slice(0, i);
     const stat = k.slice(i + 1) as BudgetStat;
-    const v = frames[series]?.[stat];
+    // The GPU timings (`gpu.*`) are samples, not per-frame series.
+    const v = (frames[series] ?? samples[series])?.[stat];
     if (v === undefined) out.push(`${k}: not recorded`);
     else if (v > max) out.push(`${k} ${v.toFixed(2)} over ${String(max)}`);
   }

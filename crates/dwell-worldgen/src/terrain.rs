@@ -3252,6 +3252,35 @@ impl TerrainGenerator {
             .collect()
     }
 
+    /// The species trees anchored in columns [x0, x1] × [z0, z1] (face-local), each listed once
+    /// (by its anchor, so neighbouring sections never share a tree), sorted: the far tree list an
+    /// impostor section draws (docs/proposals/TREE_IMPOSTORS.md I-2). Placements that are not
+    /// species trees (hand-built structures) have no impostor and are left out.
+    pub fn far_trees(&self, lo: (i32, i32), hi: (i32, i32)) -> Vec<crate::impostor::FarTree> {
+        if !self.planters.iter().any(|p| p.active() && p.grows()) {
+            return Vec::new();
+        }
+        let mut out: Vec<_> = self
+            .trees_in(lo, hi)
+            .into_iter()
+            .filter(|t| {
+                (lo.0..=hi.0).contains(&t.anchor[0]) && (lo.1..=hi.1).contains(&t.anchor[2])
+            })
+            .filter_map(|t| {
+                let (species, seed, stage) = self.planters[t.planter as usize].grown(&t)?;
+                Some(crate::impostor::FarTree {
+                    anchor: t.anchor,
+                    species,
+                    seed,
+                    stage,
+                })
+            })
+            .collect();
+        out.sort_unstable();
+        out.dedup();
+        out
+    }
+
     /// The leaf tints of an LOD section's tree cells (ADR 0079), at the levels whose cells hold
     /// the trees' own (`lod_trees`): for each non-air cell of `rows` (rows of `cells`, the
     /// section's world rows; `row_of` the face-local row each was generated at, from `origin_y`),

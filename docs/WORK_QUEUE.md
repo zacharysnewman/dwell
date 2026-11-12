@@ -972,8 +972,17 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    `far.tiers`: `on` an impostor from 96 m over a 24 m fade, `off` none), the crossfade's shares, the dithered
    view pick, the baked stage/variant per tree and the view direction through `FaceFrame` (tests on both faces).
    **Not built:** the GPU half (atlas upload, instance buffer, the billboard shader with the baked normals and
-   depth offset) and I-2's tree lists; the far trees are still `lod_trees.rs`'s. Next (local): I-2, then the
-   draw, measured with `forest-perf`.
+   depth offset); the far trees are still `lod_trees.rs`'s.
+   **I-2's tree lists built (2026-11-12, local, `claude/forest-edge-impostors`):** `TerrainGenerator::far_trees(lo,
+   hi)` lists the species trees anchored in a rectangle (each tree in one list, by its anchor: four quarters'
+   lists are the square's, tested on both faces in `forest_world`), and `impostor::Config::instances` turns a list
+   into instances (the tree's foot, its baked layer `species × stages × variants`, a quarter turn from its seed).
+   Felled trees are not yet left out (the growth records are the server's). Next (local, one session): the GPU
+   draw on these lists — the bake run at load in a worker, the atlas array, an instance buffer per LOD section,
+   the billboard shader (`Config::dither`'s view pick, the baked normals, depth offset), `Far::share`'s
+   crossfade, then the LOD sections stop drawing tree cells. The forest edge says it is also the frame-rate
+   lever (item 32): the near pass there is bound by the leaves' triangles, and `lod_trees.rs` draws the same
+   chamfered cells past 96 m.
 
 32. **A tall dense forest for performance reference** (owner 2026-11-12: "We should have a tall dense forest
    biome/climate for performance reference on trees."). A biome preset (tall, closely spaced mature trees — an
@@ -1002,9 +1011,16 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    drawn out to the full-detail distance and discarded per fragment; any plant past its fade is now dropped
    whole in the vertex stage, as leaf cards were. After: inside **14.7 / 15.4** (under 16.7), edge 24.3 / 25.7
    (unchanged: its cutout cost is the cards and grass within their fades, seen from just over the crowns),
-   above 14.5 / 15.8. **Outstanding:** the edge, ~9 ms over. Next: split the edge's 14.8 ms between the leaf
-   cards and the near grass (`?cards=0` against the default) and cut it inside the High look (the cards'
-   fade 24–40 m, cards seen edge-on from above, grass under a closed canopy).
+   above 14.5 / 15.8. **Outstanding:** the edge, ~9 ms over.
+   **The edge split (2026-11-12, local, `claude/forest-edge-impostors`; docs/DEV_TOOLS.md "The tree performance
+   reference"):** leaf cards off −0.5 ms, tall grass off (`?tallgrass=0`, a new dev override) −0.6 at the edge
+   (−1.3 inside): neither is the edge's 14.8 ms; the cutout **leaf blocks** are. The near pass there is bound by
+   geometry, not pixels (render scale 0.5 → 1: `gpu.near` +17 % for 4× the pixels). A cutout depth prepass
+   (alpha-tested depth first, colour on equal depth) was built and measured: +6–8 ms at every spot (edge 23.8 →
+   31.4), not adopted. Also fixed: `forest-perf`'s 16.7 ms `gpu.frame` budget was never checked (the GPU
+   timings are samples, not per-frame series: "not recorded"). Next: fewer leaf triangles — impostors from
+   nearer than 96 m (item 31) and a plainer leaf mesh with distance (no chamfer, merged faces past the cards'
+   fade) — measured with `forest-edge`.
 33. **Licensed music replaces the generated music** (owner 2026-11-12: "I downloaded a big music set as a Unity
    asset, I'd like the casual game music setup in a prototype and make it play randomly in the game. Probably
    needs compression. It'll replace the current music which is AI generated."). The pack: *Andrew Sitkov Music*
