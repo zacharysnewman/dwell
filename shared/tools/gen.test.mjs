@@ -62,7 +62,7 @@ test("the axe's held item, the log's chips and its breakWith reach the Rust tabl
 test("a tool's swing, its two holds and a wood's leaves, sway and sounds are data", () => {
   const d = validateTools(...fresh());
   const rs = toolsRust(d);
-  assert.match(rs, /held_vertical: Some\("stone_axe_vertical"\), swing: SwingDef \{ windup_s: 0\.12, active_s: 0\.14, hit_stop_s: 0\.08/);
+  assert.match(rs, /held_vertical: Some\("stone_axe_vertical"\), swing: SwingDef \{ windup_s: 0\.3, active_s: 0\.12, hit_stop_s: 0\.08/);
   assert.match(rs, /stamina_cost: 8\.0, swish: Some\("axe_swish"\), bounce: Some\("axe_clank"\)/);
   assert.match(rs, /leaves: Leaves \{ block: Some\("dwell:leaves"\), count: 6/);
   assert.match(rs, /sway: Sway \{ from_fraction: 0\.4, max_deg: 3\.5 \}, sounds: &\[\(0\.0, "chop_bark"\), \(0\.2, "chop_wood"\), \(0\.4, "chop_creak"\)\]/);
@@ -84,7 +84,7 @@ test('a bad swing, leaves, sway or sound fails naming it', () => {
   };
   bad((d) => (d.tools[0].swing.arcDeg = 400), /tools\.dwell:stone_axe\.swing\.arcDeg must be a number/);
   bad((d) => (d.tools[0].swing.recoverMissS = 0.1), /recoverMissS \(0\.1\) must not be below recoverHitS/);
-  bad((d) => ((d.tools[0].swing.windupS = 0), (d.tools[0].swing.recoverMissS = 0.25)), /a miss \(0\.390 s\) must last at least swingSeconds/);
+  bad((d) => ((d.tools[0].swing.windupS = 0), (d.tools[0].swing.recoverMissS = 0.25)), /a miss \(0\.370 s\) must last at least swingSeconds/);
   bad((d) => (d.tools[0].swing.swish = 'nope'), /swing\.swish: no sound event "nope"/);
   bad((d) => (d.tools[0].swing.spin = 1), /swing: unknown field spin/);
   bad((d) => (d.tools[0].heldVertical = 'nope'), /heldVertical: no item "nope"/);
