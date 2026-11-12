@@ -314,7 +314,10 @@ it. Tests: `herds.rs` `a_hurt_deer_flees_and_a_hurt_wolf_fights_unless_badly_hur
 
 NPCs (the villager) are struck by the same rule but react by their `npc.combat` and `npc.fight`
 (CHARACTERS.md §11.11): a `fightBack` NPC holding a sword blocks its foe's wind-up, strikes back in its
-recovery and gives up `giveUpS` after the last hit; its blows never hurt players (owner's open question).
+recovery and gives up `giveUpS` after the last hit; a blow past the player's raised block hurts the
+player (WORK_QUEUE item 38; owner, 2026-11-12: "Villagers should be able to hurt players."): the
+weapon's `damage`, cause `Weapon`, and its `knockbackMps`/`liftMps` push; none in creative
+(ARCHITECTURE.md "Weapons"). Wolves still can't bite players.
 
 ### 8.2 Players, roaming packs and idles (WORK_QUEUE item 39)
 

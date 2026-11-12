@@ -6,12 +6,22 @@
 //! striker) deciding by the blades' angle whether the strike is blocked, glances or connects
 //! (`GuardDef::clash`); a creature killed drops its kind's `drops`; the weapon wears once a
 //! creature struck. A blocked strike recoils the striker (its next swing waits `recoilS`).
+//!
+//! An NPC's strike at a player (WORK_QUEUE item 38; owner, 2026-11-12: "Villagers should be able to
+//! hurt players.") is resolved against the player's raised block by the same angle rule: blocked,
+//! the NPC recoils and the player is unhurt; a glance or a connecting strike takes the weapon's
+//! `damage` (a glance its `glanceDamage` share) through the damage rules, cause `Weapon` (a mode
+//! without the `damage` ability, creative, is neither hurt nor pushed), and pushes the player away
+//! by the weapon's `knockbackMps` and `liftMps`. Players never strike players.
 
 use super::{Server, SessionId};
 use crate::creatures::{FoeView, NpcSwing, SwingPhase};
+use dwell_physics::Vec3;
+use dwell_protocol::DamageCause;
 use dwell_protocol::capability_names::WEAPONS_CLASH;
 use dwell_protocol::chopping::{self as chop, Clash};
 use dwell_protocol::inventory::{self as inv, Stack};
+use dwell_protocol::modes::Ability;
 use dwell_protocol::{
     Channel, ClashNet, Fighter, GuardNet, MAX_GUARDS_PER_MESSAGE, Message, SwordplayMessage,
 };
@@ -43,9 +53,9 @@ impl WeaponSwing {
     }
 }
 
-/// One NPC's strike at a player (round 2): never hurts the player (WORK_QUEUE item 35: animals and
-/// NPCs only can be struck; whether NPCs may hurt players is the owner's open question). The
-/// clash with the player's raised block, if it met one; None: out of reach.
+/// One NPC's strike at a player: the clash with the player's raised block, if it met one (None:
+/// out of reach), and the health it took (WORK_QUEUE item 38: 0 when blocked or in a mode without
+/// player damage).
 #[derive(Clone, Debug, PartialEq)]
 pub struct NpcStrikeLog {
     pub npc: u32,
@@ -53,6 +63,8 @@ pub struct NpcStrikeLog {
     pub vertical: bool,
     /// The outcome: None out of reach; else the clash (Connected when no block met it).
     pub outcome: Option<Clash>,
+    /// Health taken from the player.
+    pub damage: i32,
 }
 
 /// Whether `them` (face-local) is within `front_deg` round the facing `yaw` (degrees, 0 faces +z)
@@ -424,8 +436,8 @@ impl Server {
 
     /// The NPCs' fights, a tick (after the creatures move): each reads the player it fights, its
     /// guard's changes go to the clients with `weapons.clash`, and its swings landing now are
-    /// resolved against the player's block: an outcome sent, a block recoiling the NPC, and never
-    /// any damage to the player (WORK_QUEUE item 35: only animals and NPCs can be struck).
+    /// resolved against the player's block: an outcome sent, a block recoiling the NPC, a strike
+    /// past the block hurting the player (WORK_QUEUE item 38).
     pub(super) fn step_npc_fights(&mut self) {
         if self
             .creatures
@@ -477,7 +489,8 @@ impl Server {
     }
 
     /// An NPC's swing at a player lands: out of its weapon's reach it misses; else it meets the
-    /// player's raised block (facing it) by the blades' angle, or connects. No damage either way.
+    /// player's raised block (facing it) by the blades' angle, or connects. Blocked: the NPC
+    /// recoils; past the block: the player is hurt and pushed away ([`Self::npc_hit`]).
     fn npc_swing(&mut self, sw: NpcSwing) {
         let Some(w) = chop::tool(sw.weapon).and_then(|t| t.weapon.map(|w| (t, w))) else {
             return;
@@ -510,9 +523,12 @@ impl Server {
                 g => (Clash::Connected, g.is_some_and(|g| g.0)),
             }
         });
+        let mut hurt = 0;
         if let Some((k, defender_vertical)) = outcome {
             if k == Clash::Blocked {
                 self.creatures.recoil(sw.npc, w.guard.recoil_s);
+            } else {
+                hurt = self.npc_hit(id, &w, w.guard.damage_share(k), them, me, f);
             }
             // Where the blades met: the NPC's arc toward the player's eye against the player's
             // raised blade when it clashed, else the player's body.
@@ -550,10 +566,48 @@ impl Server {
             player_id: sw.player,
             vertical: sw.vertical,
             outcome: outcome.map(|o| o.0),
+            damage: hurt,
         });
         if self.npc_strike_log.len() > STRIKE_LOG {
             self.npc_strike_log.remove(0);
         }
+    }
+}
+
+impl Server {
+    /// A strike past a player's block (an NPC's: WORK_QUEUE item 38): `share` of the weapon's
+    /// damage through the damage rules (cause `Weapon`) and its push away from the striker at `from`
+    /// (face-local, as the player's eye `at`, both on face `f`): `knockbackMps` along the ground and
+    /// `liftMps` up. A mode without player damage (creative) is neither hurt nor pushed. The health
+    /// taken.
+    fn npc_hit(
+        &mut self,
+        id: SessionId,
+        w: &chop::WeaponDef,
+        share: f64,
+        at: [f64; 3],
+        from: [f64; 3],
+        f: FaceFrame,
+    ) -> i32 {
+        if !self.settings.allows(Ability::Damage) {
+            return 0;
+        }
+        let amount = (w.damage * share).round() as i32;
+        let player_id = self.sessions[&id].player_id;
+        let (dx, dz) = (at[0] - from[0], at[2] - from[2]);
+        let len = dx.hypot(dz);
+        let (ax, az) = if len > 1e-9 {
+            (dx / len, dz / len)
+        } else {
+            (0.0, 0.0)
+        };
+        let v = f.vector([ax * w.knockback_mps, w.lift_mps, az * w.knockback_mps]);
+        if v.iter().any(|x| *x != 0.0) {
+            self.knockback(player_id, Vec3::new(v[0] as f32, v[1] as f32, v[2] as f32));
+        }
+        let before = self.sessions[&id].health;
+        self.damage(id, amount, DamageCause::Weapon);
+        before - self.sessions.get(&id).map_or(before, |s| s.health)
     }
 }
 

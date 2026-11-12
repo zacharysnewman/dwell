@@ -291,6 +291,10 @@ pub struct WeaponDef {
     pub damage: f64,
     /// How far a hit pushes the creature away from the striker (metres, along the ground).
     pub knockback_m: f64,
+    /// The push a connecting hit gives a player (WORK_QUEUE item 38: an NPC's strike), m/s away
+    /// from the striker along the ground, and `lift_mps` up.
+    pub knockback_mps: f64,
+    pub lift_mps: f64,
     /// The most creatures one swing hits (in the order the arc reaches them).
     pub max_targets: u32,
     /// Its swordplay (owner, 2026-11-12: the perpendicular-vs-parallel defence).

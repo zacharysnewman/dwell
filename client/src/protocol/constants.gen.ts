@@ -214,6 +214,7 @@ export const DamageCause = {
   Explosion: 3,
   Drown: 4,
   Burn: 5,
+  Weapon: 6,
 } as const;
 export type DamageCause = (typeof DamageCause)[keyof typeof DamageCause];
 
