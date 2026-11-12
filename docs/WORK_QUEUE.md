@@ -1821,6 +1821,10 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    capped by the grazing's carrying capacity), wolves at real (~1 per 60 km²: 4–8 packs), as data; far herds
    visible to ~2.5 km and growing with distance; a test/dev command to list herds and go to the nearest.
 
+47. **Wind only when flying** (owner 2026-11-12: "let's disable the wind for now it doesn't seem right like should just be
+   for flying or high altitude only." / "Wind SFX"). Built: the wind bed reads the eye's height above the ground
+   (silent below 12 m, full at 60 m) instead of altitude above the sea.
+
 ## Future (needs owner answers)
 
 - **Waterlogging** (owner 2026-11-12: "Eventually we'll want to make it so some blocks if they don't move for a little
