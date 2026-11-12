@@ -127,9 +127,32 @@ fn dwell_maria(p: vec2f) -> f32 {
     return smoothstep(0.46, 0.64, f);
 }
 
+// The moon's ground at a point of its disc: its albedo (1 the brightest highland) and its normal
+// (moon-local: z toward the viewer). `dwell_moon_ground(p, px)` comes from whoever includes the sky:
+// the client's reads the moon's baked maps (render/moon.rs, MOON_WORLD.md §5); without one, this.
+struct MoonGround {
+    albedo: f32,
+    normal: vec3f,
+}
+
+// The moon before its bake: the procedural maria on a flat disc.
+fn dwell_moon_ground_procedural(p: vec2f) -> MoonGround {
+    return MoonGround(1.0 - MOON_MARIA * dwell_maria(p), vec3f(0.0, 0.0, 1.0));
+}
+
+// Toward the sun from the moon, moon-local (z toward the viewer): by the phase, the sun behind the
+// viewer at full (0.5) and behind the moon at new (0). The seam the celestial model (MOON_WORLD.md
+// §6, M-4) fills with the real sun direction turned into the moon's frame.
+fn dwell_moon_sun(day: DaySky) -> vec3f {
+    let a = SKY_TAU * day.moon.w;
+    return vec3f(sin(a), 0.0, -cos(a));
+}
+
 // The moon's light toward `dir` (added) and how much of the pixel its disc covers (w). Its frame is
 // built from world vectors (its direction and the sky's axis), so it keeps its face through the
-// camera's turn across the midplane. Lit from the sun's side by its phase: full faces the viewer, new faces away.
+// camera's turn across the midplane. Its face A (tidally locked) is a flat disc of real terrain:
+// lit by the sun as N·L of each point's baked normal (full: all of it; quarters: the crater walls
+// facing the sun), plus the earthshine; as bright as the moon before at full.
 fn dwell_moon(dir: vec3f, day: DaySky, px: f32) -> vec4f {
     let z = day.moon.xyz;
     let x = normalize(cross(day.axis.xyz, z));
@@ -140,13 +163,9 @@ fn dwell_moon(dir: vec3f, day: DaySky, px: f32) -> vec4f {
     if (edge <= 0.0 || dot(dir, z) <= 0.0) {
         return vec4f(0.0);
     }
-    let n = vec3f(p, sqrt(max(1.0 - r * r, 0.0)));
-    let a = SKY_TAU * day.moon.w;
-    let l = vec3f(sin(a), 0.0, -cos(a));
-    let lit = smoothstep(-0.05, 0.09, dot(n, l));
-    let albedo = MOON_COLOR * (1.0 - MOON_MARIA * dwell_maria(p));
-    let limb = 0.7 + 0.3 * n.z;
-    return vec4f(albedo * limb * (lit + MOON_EARTHSHINE), edge);
+    let g = dwell_moon_ground(p / max(r, 1.0), px / MOON_RADIUS);
+    let lit = max(dot(g.normal, dwell_moon_sun(day)), 0.0);
+    return vec4f(MOON_COLOR * g.albedo * (lit + MOON_EARTHSHINE), edge);
 }
 
 // The sun's disc toward `dir` (rgb) and its coverage (w): limb-darkened, larger and in the

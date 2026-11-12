@@ -3500,7 +3500,7 @@ pub fn lighting_source() -> String {
         dwell_look::daynight::DAY_SKY_WGSL,
         super::water::wgsl(),
         super::reflection::wgsl(),
-        dwell_look::sky_wgsl(),
+        dwell_look::sky_wgsl_with(&super::moon::wgsl()),
         dwell_look::clouds::cloud_wgsl(&dwell_look::clouds::CLOUDS),
         super::lights::wgsl(),
         super::point_shadows::wgsl(),

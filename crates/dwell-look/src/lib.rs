@@ -244,6 +244,18 @@ pub fn sky_behind(dir: Rgb, eye_y: f64, day: &DayState) -> Rgb {
 ///   moon (its phase lit from the sun's side, with maria and earthshine) and the sun (limb-darkened,
 ///   larger near the horizon) over `base`, cut at the viewer's horizon — drawn behind the world only.
 pub fn sky_wgsl() -> String {
+    sky_wgsl_with(MOON_GROUND_PROCEDURAL)
+}
+
+/// The procedural moon ground (no bake): what [`sky_wgsl`] gives `dwell_moon`.
+pub const MOON_GROUND_PROCEDURAL: &str = "fn dwell_moon_ground(p: vec2f, px: f32) -> MoonGround {
+    return dwell_moon_ground_procedural(p);
+}
+";
+
+/// [`sky_wgsl`] with the moon's ground from `moon_ground` (a WGSL `fn dwell_moon_ground(p: vec2f,
+/// px: f32) -> MoonGround`: the client's reads the moon's baked maps, MOON_WORLD.md §5).
+pub fn sky_wgsl_with(moon_ground: &str) -> String {
     let d = &DAY_NIGHT;
     let consts = [
         ("GRADIENT_POWER", d.sky.gradient_power),
@@ -289,6 +301,7 @@ pub fn sky_wgsl() -> String {
         vec3(d.moon.glow_color)
     ));
     s.push(SKY_WGSL.to_string());
+    s.push(moon_ground.to_string());
     s.join("\n")
 }
 

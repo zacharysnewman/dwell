@@ -37,6 +37,7 @@ const SCHEMA = {
     glow: [0, 1],
     glowColor: 'color',
     newMoonLight: [0, 1],
+    relief: [1, 50],
   },
   stars: {
     cells: [10, 2000],

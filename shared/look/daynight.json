@@ -22,7 +22,7 @@
     "glow": 0.3
   },
   "moon": {
-    "$comment": "The disc, its phases (a cycle of cycleDays in-game days; startPhase at day 0: 0 new, 0.5 full), its surface (maria darkness, earthshine on the unlit part) and its cool halo (a bloom and a glow, as the sun's, scaled by each keyframe's moonGlow and the lit share). newMoonLight is the share of the moonlight left at new moon, so every night stays readable.",
+    "$comment": "The disc, its phases (a cycle of cycleDays in-game days; startPhase at day 0: 0 new, 0.5 full), its surface (maria darkness, earthshine on the unlit part) and its cool halo (a bloom and a glow, as the sun's, scaled by each keyframe's moonGlow and the lit share). newMoonLight is the share of the moonlight left at new moon, so every night stays readable. relief scales the slopes of the moon's baked normals (its real terrain, MOON_WORLD.md §5) as the sky draws them: its craters are a few degrees steep, too shallow to see from home at 1:1.",
     "radiusDeg": 1.2,
     "cycleDays": 8,
     "startPhase": 0.5,
@@ -34,7 +34,8 @@
     "glowDeg": 12,
     "glow": 0.14,
     "glowColor": "#c6d6ff",
-    "newMoonLight": 0.55
+    "newMoonLight": 0.55,
+    "relief": 8
   },
   "stars": {
     "$comment": "Procedural stars on the turning sky: cells per radian, the share of cells with a star, size in pixels, peak brightness, twinkle depth (0\u20131) and rate, and how far up from the horizon (elevation sine) they fade in.",

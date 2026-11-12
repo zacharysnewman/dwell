@@ -65,6 +65,8 @@ pub struct MoonLook {
     pub glow: f64,
     pub glow_color: Rgb,
     pub new_moon_light: f64,
+    /// The sky moon's baked normals' slopes × this (render/moon.rs).
+    pub relief: f64,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]

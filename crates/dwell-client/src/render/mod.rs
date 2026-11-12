@@ -23,6 +23,7 @@ pub mod heightfield;
 pub mod lights;
 pub mod lod_map;
 pub mod lod_shadows;
+pub mod moon;
 pub mod pacing;
 pub mod pipeline;
 pub mod pixel_art;
@@ -260,6 +261,12 @@ pub fn cards_for(device_type: wgpu::DeviceType, phone: bool, forced: Option<bool
     } else {
         tiers.desktop
     })
+}
+
+/// Whether the moon's disc is lit by its baked normals (moon.rs): not on a CPU adapter, which
+/// draws its baked albedo alone, lit as a flat disc.
+pub fn moon_normals_for(device_type: wgpu::DeviceType) -> bool {
+    !is_cpu(device_type)
 }
 
 /// Whether the night sky draws its stars (a hashed grid per pixel): not on a CPU adapter.
@@ -1576,6 +1583,7 @@ impl Renderer {
             .chain(point_shadows::layout_entries())
             .chain(lod_map::layout_entries())
             .chain([flow::layout_entry()])
+            .chain([moon::layout_entry()])
             .collect();
         let frame_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("frame"),
@@ -2155,6 +2163,7 @@ impl Renderer {
             fluid_buffer,
             light_buffer: lights::buffer(&device),
             flow: flow::FlowGpu::new(&device),
+            moon: moon::MoonGpu::new(&device, &queue),
         };
         // No maps until the first frame asks for some (`ensure_shadow_maps`): a 1×1 stand-in.
         let shadow_maps = frame_bindings.shadow_maps(&device, (1, 1));
@@ -2592,6 +2601,22 @@ impl Renderer {
     }
     pub fn adapter(&self) -> wgpu::DeviceType {
         self.adapter
+    }
+    /// The moon's far-body maps from a world's bake (MOON_WORLD.md §5): written in place, the
+    /// adapter's tier choosing whether its normals go too (`moon_normals_for`).
+    pub fn set_moon(&mut self, bake: &dwell_worldgen::grids::FarBake) {
+        let words = moon::pack(
+            bake,
+            moon_normals_for(self.adapter),
+            dwell_look::daynight::DAY_NIGHT.moon.relief,
+        );
+        if !self.frame_bindings.moon.write(&self.queue, &words) {
+            debug_assert!(
+                false,
+                "the moon bake ({}²) is bigger than its buffer",
+                bake.size
+            );
+        }
     }
     /// The Anti-aliasing setting's FXAA post pass and the Anisotropic filtering setting
     /// (shared/render/antialias.json), live; the sample count is the renderer's (`with_samples`).
@@ -5630,6 +5655,8 @@ struct FrameBindings {
     light_buffer: wgpu::Buffer,
     /// The water's flow around the eye (flow.rs), written when the game's current table changes.
     flow: flow::FlowGpu,
+    /// The moon's baked maps (moon.rs), written once a world's bake is done.
+    moon: moon::MoonGpu,
 }
 
 impl FrameBindings {
@@ -5728,6 +5755,7 @@ impl FrameBindings {
                 .chain(point_maps.group_entries())
                 .chain(color_map.group_entries())
                 .chain([self.flow.group_entry()])
+                .chain([self.moon.group_entry()])
                 .collect();
             device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some("frame"),
@@ -6518,6 +6546,19 @@ mod tests {
         );
         assert_eq!(u[water_w] as u32 & 1, 0, "no scene copy read there");
         assert_eq!(u[blur], 0.0, "no edge blur on a CPU adapter");
+    }
+
+    #[test]
+    fn a_cpu_adapter_lights_the_moon_by_its_albedo_alone() {
+        assert!(!super::moon_normals_for(wgpu::DeviceType::Cpu));
+        for t in [
+            wgpu::DeviceType::DiscreteGpu,
+            wgpu::DeviceType::IntegratedGpu,
+            wgpu::DeviceType::VirtualGpu,
+            wgpu::DeviceType::Other,
+        ] {
+            assert!(super::moon_normals_for(t), "{t:?}");
+        }
     }
 
     #[test]
