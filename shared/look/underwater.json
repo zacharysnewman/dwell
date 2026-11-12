@@ -39,8 +39,8 @@
         "mirrorWarpPx": 10
       },
       "underside": { "texture": 0.45, "breakup": 0.6, "sunPatch": 5, "sunPower": 8, "cellScale": 2 },
-      "window": { "cells": 0.1, "bodies": 1, "sunGlow": 3, "sunPower": 24, "rimGlow": 0.8 },
-      "tone": { "fogColor": "#2fc3dc", "fogShare": 0.6, "brightness": 1.35, "mirror": 1.4, "floorLight": 0.35 },
+      "window": { "cells": 0.1, "bodies": 1, "sunGlow": 3, "sunPower": 24, "rimGlow": 0.5 },
+      "tone": { "fogColor": "#16b2d4", "fogShare": 0.55, "brightness": 1.12, "mirror": 1.25, "floorLight": 0.35 },
       "fog": { "clearM": 6, "density": 0.22 }
     }
   }

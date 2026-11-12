@@ -2027,6 +2027,10 @@ fn window_sky(out: vec3f, out_px: vec3f, bodies: f32) -> vec3f {
 // The composite with the eye under a fluid's surface (the W4 stub): the fluid's fog over the
 // distance in it — to what the pixel shows, or to the surface where the ray reaches it first —
 // replaces the height fog; past the surface, the sky.
+// How far from the flat surface a pixel's depth may be and still count as the surface's own mesh
+// from below (m, along the face's up; render/water.rs `SURFACE_SLACK_M`).
+const SURFACE_SLACK_M: f32 = 0.3;
+
 fn composite_underwater(p: vec2i, ray: vec3f, c: vec4f) -> vec3f {
     let fluid = min(u32(frame.water.y), arrayLength(&fluids) - 1u);
     let f = eye_fluid();
@@ -2055,8 +2059,16 @@ fn composite_underwater(p: vec2i, ray: vec3f, c: vec4f) -> vec3f {
         depth = scene_depth_at(p).x;
         dist = select(1e6, depth * length(ray), depth > 0.0);
     }
+    // A pixel showing the surface's own mesh from below (within `SURFACE_SLACK_M` of the surface
+    // the ray is measured to) takes the composite's surface: the window's sky or the mirror, not
+    // the mesh's tinted body, which near the window's rim (Fresnel) read as flat blue blobs in a
+    // brighter mirror (WATER_RENDERING.md §19). What stands above the surface (a tree seen
+    // through the window) still shows.
+    let slack = SURFACE_SLACK_M / max(rise, 0.05);
+    let past = dist > to_surface - slack;
+    let at_surface = reaches && c.a > 0.0 && abs(dist - to_surface) < slack;
     var back = vec3f(0.0);
-    if (reaches && (c.a < 1.0 || (!leaves && dist > to_surface))) {
+    if (reaches && (c.a < 1.0 || at_surface || (!leaves && past))) {
         // The underside where the ray meets the surface: its cells and sun patch, under the fog
         // over the distance to it (`underwater` to to_surface), so toward level they fade into
         // the fog with no hard horizon (render/water.rs `underside_contrast`).
@@ -2114,7 +2126,7 @@ fn composite_underwater(p: vec2i, ray: vec3f, c: vec4f) -> vec3f {
         back = display(underwater(sky_radiance(dir), to_surface, f));
     }
     // Past a mirroring surface nothing above it shows.
-    if (reaches && !leaves && (c.a <= 0.0 || dist > to_surface)) {
+    if (at_surface || (reaches && !leaves && (c.a <= 0.0 || past))) {
         return back;
     }
     if (c.a <= 0.0) {
