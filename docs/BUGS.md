@@ -6,6 +6,14 @@ pins it.
 
 ## Open
 
+### 73. A felled trunk lying diagonally up a slope loses most of its cells when it settles
+
+Owner, 2026-11-12: "I've also seen big chunks of a tree disappear if it settled diagonal long ways up a high, it
+settles flat and most of the tree disappears into the ground." A felled trunk that comes to rest lying along a
+slope (tilted, its length up the hill) is settled back into the grid as flat cells, and the cells that land
+inside the ground are dropped, so most of the tree vanishes. Expected: the settled trunk follows the slope (or
+cells that would overlap the ground are lifted onto it, or the trunk stays a body), never losing wood.
+
 ### 69. A dark vertical column in the far terrain before the starter world's volcano
 
 Found 2026-11-11 (0.52.64) on the starter world's tour: `?worldgen=test:starter&fresh=1&at=8571.5,350,-4866.5`
