@@ -618,6 +618,13 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    shattered (the crack overlay dominates; the scar is low-contrast and never reaches the silhouette); next
    levers listed there. Round 3: faint late cracks, a fresh-rock tint and 3D flying fragments (4 a hit) built; close up
    it reads as chipped stone. Left: flakes breaking the cell's edge (the silhouette), the owner's look.
+   Owner, 2026-11-12: **"One of my requirements that I think might not have been coming through for tools is that
+   the chunks that fly off and show chunked off the blocks should be equivalent to 50% of the block's volume /
+   number of swings required to break it."** The rule, for every tool on every block (digging, mining, chopping —
+   items 18, 24–26): each hit carves away, and throws off as pieces, a volume of 0.5 × the block's volume ÷ the hits
+   that block takes to break with that tool; so when it breaks, half the block has been carved and flown off (the
+   block breaks at 50 % broken; metal tools take fewer, bigger bites). The carved mark and the flying pieces both
+   match that volume (the pieces' total ≈ the bite).
 19. **Lava glow, remaining** (owner 2026-11-11: "Lava should have bloom glow"; "Lava looks dark red instead of
    bright red/orange"; "It should darken as it solidifies though"). Built 0.52.107: colour by heat stops, heat in
    cells. **Bloom built (pending release, `claude/bloom`):** keyed on the scene's self-lit flag (lava, torches,
