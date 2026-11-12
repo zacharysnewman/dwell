@@ -465,7 +465,7 @@ face, or the placement check against its shape.
 
 ## Fixed
 
-### 111. Slopes show no mark when hit with a tool, though they break (fixed after 0.55.11)
+### 111. Slopes show no mark when hit with a tool, though they break (fixed after 0.55.13)
 
 Owner, 2026-11-12: "Slopes aren't affected visually by tools when hit, though they do break." A ½ m stored ramp
 (`dwell:dirt_ramp`, `dwell:stone_ramp`, …; HALF_HEIGHT_GRID.md) takes damage and breaks by the bite rule (#794,
