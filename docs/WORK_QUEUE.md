@@ -515,6 +515,8 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    the moon."** So the far view is symmetric: any grid seen from far enough (the home world from the moon, the
    moon from home) is drawn as a disc with a normal map and albedo baked from its real terrain, lit by the sun;
    one far-body renderer for every grid.
+   Owner, 2026-11-12: **"Add a moon starting spawn too side A and B."** A world can start the player on the moon,
+   on face A or face B, as well as at home (a spawn choice, with the moon's own spawn search per face).
 
 ## Done
 
