@@ -1029,7 +1029,7 @@ fn wood_span(m: StateId, grain: usize) -> [f64; 2] {
     }
 }
 
-/// `damage`: a damaged wood's fraction to breaking (WORK_QUEUE item 50), its cut made of its marks
+/// `damage`: a damaged wood's fraction to breaking (WORK_QUEUE item 51), its cut made of its marks
 /// ([`dwell_protocol::chopping::cut_of_marks`]): the carve's progress and the cracks' stage.
 fn carved_voxel(
     b: &mut Builder,
@@ -2208,7 +2208,7 @@ fn mesh_cells(
         }
     }
     let mut struck_faces: Vec<(damage_mesh::StruckFace, usize)> = Vec::new();
-    // A damaged wood (the log hit by the axe through block damage, WORK_QUEUE item 50) is drawn
+    // A damaged wood (the log hit by the axe through block damage, WORK_QUEUE item 51) is drawn
     // with the axe's bites at its marks, grown by its damage fraction (the bite rule): the
     // octagon's carve. A cell with an older save's cut keeps the cut's.
     let mut progress: HashMap<[i32; 3], f64> = HashMap::new();

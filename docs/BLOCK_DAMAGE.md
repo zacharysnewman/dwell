@@ -74,7 +74,7 @@ D3 (tuning) to come. The owner's direction and answers are §1; §2 was the prop
   Prototype values: stone and its ramp `{ default: null, pickaxe: 7 }` (stone pickaxe 5, metal 3, by
   hand or another tool: can't); dirt, grass, snowy grass, sand and their ramps `{ default: 11, shovel: 7 }`
   (shovel 5, metal 3, by hand or another tool 11). Logs: *superseded by §11* (they take damage
-  like the others since WORK_QUEUE item 50).
+  like the others since WORK_QUEUE item 51).
 - **Generator and validation:** `shared/tools/gen.mjs` reads every block's `damage` (as it does
   `breakWith`), emits `BLOCK_DAMAGE` into `dwell_protocol::chopping`'s table and `client/src/ui/tools.gen.ts`,
   and fails on a missing `default`, a count outside 1..255, an unknown class or item, or a non-object
@@ -617,7 +617,7 @@ the block's volume / number of swings required to break it."** One rule in one p
   `dwell-client` `a_hits_pieces_total_its_bite` (stone, dirt, grass, wood chips); `dwell-sim` `damage`
   (marks' chunks 26/43, both faces); `shared/tools/gen.test.mjs` (the ramp's volume, no tier chunk).
 
-## 11. The axe like the other tools (WORK_QUEUE item 50)
+## 11. The axe like the other tools (WORK_QUEUE item 51)
 
 Owner, 2026-11-12: "Also the axe doesn't behave like the other tools. I think it should." Answer to how:
 **"Like the others, felling on top"**: logs take block damage like stone or dirt, and breaking a trunk's log

@@ -219,7 +219,7 @@ Tier 2 debris (Phase 21).
 
 ## 8. Felled by an axe (ADR 0067)
 
-**Since WORK_QUEUE item 50 (2026-11-12):** a log takes block damage (docs/BLOCK_DAMAGE.md §11) and the axe's
+**Since WORK_QUEUE item 51 (2026-11-12):** a log takes block damage (docs/BLOCK_DAMAGE.md §11) and the axe's
 last hit breaks it; a standing trunk above falls as one body, tipped toward the side struck (the uncut side
 the hinge), with no fell wedges. What follows describes the older cut model, still read from old saves.
 

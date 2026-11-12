@@ -705,15 +705,16 @@ function zoomMap(app: App, delta: number): void {
 
 /** The game's sound events since the last frame, and the listener at the camera (docs/AUDIO.md). */
 function playSounds(app: App, player: EventPlayer, beds: AmbiencePlayer): void {
-  player.playAll(decodeSounds(app.client.takeSounds()));
-  beds.update(decodeSurroundings(app.client.ambience()));
-  // The eye under water muffles the world's buses (AUDIO.md §3a).
-  audio().setUnderwater(app.client.underwater());
+  // The listener first: this frame's own sounds are placed round this frame's ear (§5a).
   const l = app.client.listener();
   if (l.length === 9) {
     const v = (i: number): [number, number, number] => [l[i] ?? 0, l[i + 1] ?? 0, l[i + 2] ?? 0];
     audio().setListener(v(0), v(3), v(6));
   }
+  player.playAll(decodeSounds(app.client.takeSounds()));
+  beds.update(decodeSurroundings(app.client.ambience()));
+  // The eye under water muffles the world's buses (AUDIO.md §3a).
+  audio().setUnderwater(app.client.underwater());
 }
 
 /** Keyboard and mouse: the DOM's events, forwarded to the client's input (dwell-game input.rs). */
@@ -1069,6 +1070,7 @@ async function start(): Promise<App | null> {
         at: o.at,
         gain: o.gain,
         ...(o.pan !== undefined ? { pan: o.pan } : {}),
+        ...(o.reverb !== undefined ? { reverb: o.reverb } : {}),
       });
     },
     {
@@ -1078,12 +1080,15 @@ async function start(): Promise<App | null> {
           intensity: o.intensity,
           at: o.at,
           gain: o.gain,
+          ...(o.reverb !== undefined ? { reverb: o.reverb } : {}),
         }),
       update: (voice, intensity, at) => sfx.updateLoop(voice, intensity, at),
       stop: (voice) => {
         sfx.stopLoop(voice);
       },
     },
+    undefined,
+    () => sfx.listenerPose(),
   );
   // The game menu (top left, or Esc): settings applied as the sliders move.
   const settings = new SettingsMenu(document.body, mobile, (stored) => {
@@ -1495,7 +1500,8 @@ async function start(): Promise<App | null> {
     },
     ecology: () => client.ecology() as EcologyReadout | null,
     impostors: () => client.impostorStatus() as ImpostorStatus,
-    impostorDebug: (mode, ambient, albedo) => client.setImpostorDebug(mode, ambient ?? -1, albedo ?? -1),
+    impostorDebug: (mode, ambient, albedo) =>
+      client.setImpostorDebug(mode, ambient ?? -1, albedo ?? -1),
     herds: (kind) => client.herds(kind === undefined ? '' : `dwell:${kind}`) as HerdFound[],
     goToHerd: (kind, back) =>
       app.loopback?.lavaDev('goToHerd', [

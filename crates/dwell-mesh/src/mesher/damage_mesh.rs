@@ -923,7 +923,7 @@ mod tests {
     );
 
     dwell_world::both_faces!(
-        /// A log hit by the axe through block damage (WORK_QUEUE item 50) is carved with the axe's
+        /// A log hit by the axe through block damage (WORK_QUEUE item 51) is carved with the axe's
         /// bites at its marks, grown by the bite rule: after k of its n hits the closed mesh has
         /// lost k × ½ ÷ n of the log's own volume (the octagon's), within 10 %; undamaged, it is
         /// the plain log; on both faces.

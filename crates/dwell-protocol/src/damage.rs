@@ -148,7 +148,7 @@ pub fn hits_to_break(block: &str, held: Option<&str>) -> Option<u32> {
 }
 
 /// Whether `block` takes hits to break (it has a `damage` entry in the block data). A wood with one
-/// (the log; WORK_QUEUE item 50, owner 2026-11-12: "Like the others, felling on top") is hit by the
+/// (the log; WORK_QUEUE item 51, owner 2026-11-12: "Like the others, felling on top") is hit by the
 /// axe through block damage, not cut ([`crate::chopping::Cut`]).
 pub fn takes_damage(block: &str) -> bool {
     BLOCK_DAMAGE.iter().any(|d| d.block == block)

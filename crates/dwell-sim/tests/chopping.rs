@@ -25,7 +25,7 @@ fn config(f: FaceFrame, mode: &str) -> ServerConfig {
         generator_override: Some(empty_generator()),
         spawn: Some(f.point([0.5, m_of_row(BASE), 0.5])),
         mode: mode.into(),
-        // The axe hits a log through block damage (WORK_QUEUE item 50): its real hits to break.
+        // The axe hits a log through block damage (WORK_QUEUE item 51): its real hits to break.
         one_hit_breaks: false,
         ..flat()
     }
@@ -393,7 +393,7 @@ fn sweep(fx: &mut Fixture, f: FaceFrame, look: [f64; 3], vertical: bool) {
 }
 
 /// The trunk's cells (face-local rows BASE..BASE + 10 at x = 3) that were hit: damaged (the log
-/// takes block damage, WORK_QUEUE item 50) or cut (the chopping prototype's).
+/// takes block damage, WORK_QUEUE item 51) or cut (the chopping prototype's).
 fn cut_rows(fx: &Fixture, f: FaceFrame) -> Vec<i32> {
     (BASE..BASE + 10)
         .filter(|&r| {
@@ -1092,7 +1092,7 @@ dwell_world::both_faces!(
     }
 );
 
-// The axe like the other tools (WORK_QUEUE item 50; owner, 2026-11-12: "Like the others, felling
+// The axe like the other tools (WORK_QUEUE item 51; owner, 2026-11-12: "Like the others, felling
 // on top"): a log takes block damage, hits to break by the axe (its `damage` data), a mark where
 // each hit struck, its drops spread over the hits; the hit that breaks it fells the tree above.
 

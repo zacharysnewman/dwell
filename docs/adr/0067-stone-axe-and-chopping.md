@@ -384,7 +384,7 @@ chopped as that wood (`chopped_wood`) and never cleared: a bite and a wear a hit
 fraction with the wood's `buckDrops`; no tool's `clears` may name one (the generator fails it). The
 cut model (§2) and felling at 11 swings are unchanged. BLOCK_DAMAGE.md §6.4 "Round 2".
 
-## Note 2026-11-12: superseded for new hits: the axe like the other tools (WORK_QUEUE item 50)
+## Note 2026-11-12: superseded for new hits: the axe like the other tools (WORK_QUEUE item 51)
 
 Owner: "Also the axe doesn't behave like the other tools. I think it should." and, asked how, **"Like the
 others, felling on top"**. A log now takes block damage (ADR 0078, docs/BLOCK_DAMAGE.md §11): its `damage`

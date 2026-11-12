@@ -12,7 +12,43 @@ line's height numbers (owner: "Text could be in that as part of the 'measure' ef
 titles"). Send it with SendUserFile: the upload limit is **30 MB**, so re-encode
 (`crf 28`) if it's larger. Never commit video files to the repo.
 
-## 1. Run the game
+## 0. The fast path: re-record a video with one command
+
+A video that has been recorded before has a **manifest**, `videos/<video>/video.json` (owner, WORK_QUEUE item 50:
+"Yeah build thst"): the world link and its localStorage, the capture size and fps, and the shots in order — each
+one's kind (`"path"`: a theater path file; `"take"`: a take script for gameplay, like the portal drop, with its
+`args`), its setup (`reload`, `url` for another link — e.g. an `at=` on face B, `timeOfDay`, `view` for `d.setView`,
+`hud`, `warmS` to hold a path's first keyframe while the LOD streams, `eval` for anything else) and its splice parts
+(`from`/`to`, `speed`, `vf`, `cut`; a `label` names a part of one take). Re-recording needs no agent in the loop:
+
+```sh
+node .claude/skills/record/scripts/take.mjs bifacial --only s5 --cache "$SCRATCH/record"   # just the landing, re-spliced
+node .claude/skills/record/scripts/take.mjs bifacial                    # records missing/stale shots, reuses the rest
+node .claude/skills/record/scripts/take.mjs bifacial --splice-only      # only re-splice (after editing a part's from/to)
+node .claude/skills/record/scripts/take.mjs bifacial --dry-run          # what would record or be reused, and the plan
+node .claude/skills/record/scripts/take.mjs --clean bifacial            # after the owner approves: delete the clips
+```
+
+It starts the warm preview (`npm run bench:warm`, :4174) and the driver (:4999) if they aren't up (and quits a driver
+it started; `--keep` leaves it), records each shot named by `--only` (a shot id, or a part label: `s5` is part of
+the `portal` take, so the whole take re-records), plus any shot with no cached clip or a **stale** one (its recipe —
+world, capture, setup, args, path or script file — changed since; changing a splice part never re-records). Each shot's
+frames are encoded to `<cache>/<video>/<shot>.mp4` (h264 crf 18 at the measured frame rate, the splice's timeline)
+right after capture and the frames deleted; then `splice.py` splices the whole video to `<cache>/<video>/<video>.mp4`
+and the path and length are printed. The cache is `--cache`, `$DWELL_RECORD_CACHE`, or `<tmp>/dwell-record`.
+`node --test scripts/take.test.mjs` tests the manifests and plans without a browser (CI runs it).
+
+**Change a shot by editing the manifest**, not the script: e.g. the bifacial shot 5 camera is the `portal` shot's
+`args.camB` / `fov` / `up` (`"a"` holds face A's up; `"auto"` takes face B's frame — upright on face B). Shot `s6` (the
+drone rise) starts from shot 5's camera: move both together. **An agent is needed only for new camera spots**
+(trial and error in the browser): find the spot with the driver, write it into the manifest, then re-run `take.mjs`.
+A new video: add `videos/<name>/video.json` with its paths and scripts beside it (the validator names unknown keys
+and missing files).
+
+**Footage policy:** raw frames are deleted as soon as a shot is encoded; the per-shot clips stay in the cache until
+the owner approves the video (so a re-record of one shot is minutes), then `--clean`. Never commit footage.
+
+## 1. Run the game (new camera spots)
 
 Use the warm bench preview (`docs/DEV_TOOLS.md`, the `bench` skill): `npm run bench:warm` from `client/`
 builds once and serves on :4174 (stop it after with `--stop`). Open a local world by link (never menu
@@ -118,14 +154,16 @@ parts at different speeds or grades). A frame folder is encoded once and reused.
 `crf 28` if over 30 MB.
 
 **Helpers:** `scripts/ev.mjs` posts JS to the driver (`node ev.mjs file.js` or `node ev.mjs -e 'expr' [/path]`; the
-worktree guard refuses curl bodies); `scripts/take.mjs path.json clipName [warmS]` holds the camera at the path's first
-keyframe for `warmS` (the LOD streams), starts the screencast, plays the path to its end and stops. Paths and take
-scripts that worked are in `paths/<video>/`.
+worktree guard refuses curl bodies); `scripts/take.mjs path.json clipName [warmS]` (the old single-path take) holds the
+camera at the path's first keyframe for `warmS` (the LOD streams), starts the screencast, plays the path to its end and
+stops. The driver takes `$RECORD_STORAGE` (localStorage set before each load) and `/viewport?w=&h=`. Earlier videos'
+paths are in `paths/<video>/`; a video that will be re-recorded gets a manifest (section 0).
 
 ## 5. Judge and report
 
-Look at a still from every clip before sending. Delete the raw footage and segments once the owner has the
-video (owner: "Delete that footage so it doesn't take up hard drive space"). Report honestly what shows well and what didn't happen or
+Look at a still from every clip before sending. Delete raw frames right after encoding (take.mjs does), keep the
+per-shot clips until the owner approves the video, then delete them (`take.mjs --clean <video>`; owner: "Delete that
+footage so it doesn't take up hard drive space"). Report honestly what shows well and what didn't happen or
 looks broken, and log bugs in `docs/BUGS.md` (the first video found four: #79–#82). Clean up: stop the
 preview and the driver, remove any `client/node_modules` symlink or built `client/src/pkg` in a worktree.
 

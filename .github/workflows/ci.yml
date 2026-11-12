@@ -49,6 +49,7 @@ jobs:
           node shared/ecology/gen.mjs
           node --test shared/ecology/gen.test.mjs
           node --test shared/input/gen.test.mjs
+          node --test .claude/skills/record/scripts/take.test.mjs
           node --test shared/look/gen.test.mjs
           node shared/look/clouds.mjs
           node --test shared/look/clouds.test.mjs

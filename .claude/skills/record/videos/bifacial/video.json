@@ -1,0 +1,49 @@
+{
+  "formatVersion": 1,
+  "name": "bifacial",
+  "description": "Showcase #1, the bifacial world (seed 7): the outline, a crane under the disc, the portal drop to face B and the landing, a drone rise back to the outline. Reproduces v4 (paths/bifacial-v4/plan.json).",
+  "world": {
+    "url": "/dwell/?fresh=1&seed=7&spawn=portal",
+    "storage": { "dwell.clouds": "\"off\"", "dwell.music": "\"off\"" }
+  },
+  "capture": { "size": [1080, 1920], "fps": 30 },
+  "shots": [
+    {
+      "id": "s1",
+      "note": "the outline edge-on from 160 km, a slow push in",
+      "kind": "path",
+      "path": "videos/bifacial/s1_outline_push.json",
+      "setup": { "timeOfDay": 0.29, "view": { "clouds": "off" }, "warmS": 10 },
+      "splice": [{ "from": 0, "to": 10.2 }]
+    },
+    {
+      "id": "s2",
+      "note": "an orbit-crane over face A, through edge-on, under to face B (face A's up held)",
+      "kind": "path",
+      "path": "videos/bifacial/s2_crane_a_to_b.json",
+      "setup": { "timeOfDay": 0.29, "view": { "clouds": "off" }, "warmS": 10 },
+      "splice": [{ "from": 0, "to": 11.3 }]
+    },
+    {
+      "id": "portal",
+      "note": "one take, three parts: s3 first person to the hole and the drop, s4 the motes slowed, s5 a hard cut to the face-B camera (camB, fov, up) as the player rises out and lands. For an upright face-B shot set args.up to \"auto\"; move the camera with args.camB",
+      "kind": "take",
+      "script": "videos/bifacial/portal_take.js",
+      "args": { "camB": [1789.5, -58, 20700.5], "fov": 50, "up": "a", "timeOfDay": 0.29 },
+      "setup": { "reload": true, "view": { "clouds": "off" } },
+      "splice": [
+        { "label": "s3", "from": 0.5, "to": 4.28 },
+        { "label": "s4", "from": 4.28, "to": 5.08, "speed": 0.35, "cut": true },
+        { "label": "s5", "from": 5.13, "to": 12.1, "cut": true, "vf": "eq=gamma=1.5" }
+      ]
+    },
+    {
+      "id": "s6",
+      "note": "a drone rise from shot 5's camera out under the disc and round the rim to the outline; its first keyframe matches s5's camera (change both together)",
+      "kind": "path",
+      "path": "videos/bifacial/s6_drone_rise_b.json",
+      "setup": { "timeOfDay": 0.29, "view": { "clouds": "off" }, "warmS": 10 },
+      "splice": [{ "from": 0, "to": 22.2, "vf": "eq=gamma=1.2" }]
+    }
+  ]
+}

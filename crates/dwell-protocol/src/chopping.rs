@@ -740,7 +740,7 @@ pub fn chop_bite_m3(tool: &ToolDef, wood: &WoodDef) -> f64 {
     crate::damage::bite_m3(crate::damage::CELL_M3, swings_to_fell(tool, wood))
 }
 
-/// A damaged wood cell's hit marks as the axe's bites (WORK_QUEUE item 50: the axe hits a log
+/// A damaged wood cell's hit marks as the axe's bites (WORK_QUEUE item 51: the axe hits a log
 /// through block damage, and the octagonal log's carve is the bites'): each mark on a side (an
 /// edit face, `axis × 2 + negative`, its point in 1/255ths of the cell along each axis, in the
 /// frame the cell is drawn in) recorded where it struck ([`Cut::bite_in`], its band along the grain
