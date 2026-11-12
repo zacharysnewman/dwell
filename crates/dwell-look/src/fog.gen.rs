@@ -63,6 +63,51 @@ pub const PRESETS: &[(&str, FogSettings)] = &[
             veil_contrast: 0.35,
         },
     ),
+    (
+        "fog-11k",
+        FogSettings {
+            distance_m: 11000.0,
+            density: 0.95,
+            height_m: 1400.0,
+            air_elevation_deg: 0.0,
+            sun_tint: 0.0,
+            warm: [1.08, 1.0, 0.86],
+            cool: [0.9, 0.97, 1.08],
+            veil_half_m: 8000.0,
+            veil_saturation: 0.0,
+            veil_contrast: 0.0,
+        },
+    ),
+    (
+        "fog-8k",
+        FogSettings {
+            distance_m: 8000.0,
+            density: 0.95,
+            height_m: 1200.0,
+            air_elevation_deg: 0.0,
+            sun_tint: 0.0,
+            warm: [1.08, 1.0, 0.86],
+            cool: [0.9, 0.97, 1.08],
+            veil_half_m: 8000.0,
+            veil_saturation: 0.0,
+            veil_contrast: 0.0,
+        },
+    ),
+    (
+        "fog-6k",
+        FogSettings {
+            distance_m: 6000.0,
+            density: 0.95,
+            height_m: 1000.0,
+            air_elevation_deg: 0.0,
+            sun_tint: 0.0,
+            warm: [1.08, 1.0, 0.86],
+            cool: [0.9, 0.97, 1.08],
+            veil_half_m: 8000.0,
+            veil_saturation: 0.0,
+            veil_contrast: 0.0,
+        },
+    ),
 ];
 
 /// The validator's ranges (shared/look/fog.mjs `FOG_RANGES`): the shader stays finite over them.

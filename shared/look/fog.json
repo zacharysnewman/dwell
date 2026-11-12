@@ -30,6 +30,9 @@
       "heightM": 1200,
       "air": { "elevationDeg": 4, "sunTint": 1 },
       "veil": { "saturation": 0.45, "contrast": 0.35 }
-    }
+    },
+    "fog-11k": { "distanceM": 11000, "heightM": 1400 },
+    "fog-8k": { "distanceM": 8000, "heightM": 1200 },
+    "fog-6k": { "distanceM": 6000, "heightM": 1000 }
   }
 }

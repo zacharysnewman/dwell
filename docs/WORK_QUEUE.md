@@ -776,8 +776,13 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    that thins as you ascend? Something like that?"**; **"Shouldn't that be what's tuned, your screenshots seem to
    describe a lot of other effects?"** So: tune only the existing height fog's three numbers (fog.json
    `distanceM`, `density`, `heightM`); shoot a few settings from ground level and a hilltop (not from 3000 m,
-   above the haze) with clouds off; the extra aerial-perspective mechanisms stay off. Queued (local, after
-   item 30).
+   above the haze) with clouds off; the extra aerial-perspective mechanisms stay off.
+   **Shots ready (2026-11-12, branch `claude/haze-tune`):** presets over the height fog's numbers only,
+   `?haze=fog-11k` (11 km / 1400 m), `fog-8k` (8 km / 1200 m), `fog-6k` (6 km / 1000 m), density 0.95 throughout,
+   no air or veil; defaults unchanged, no new shader work (frame cost as today). A 4×4 contact sheet, clouds off:
+   the mixed-forest valley at 25 m looking east at the hills and the cones (noon), 300 m over the steppe across
+   the ranges toward the tall cone 14 km off (noon), and the tall cone from ~8 km at ground level (noon and
+   16:48). **Waiting on the owner:** pick A–D (or a value between); its numbers move to the top of fog.json.
 30. **Desktop frame rate on the M1 and hidden graphics settings (P0)** (owner 2026-11-12: "It seems like we're
    hiding some performance settings. I don't see 'tree' options in our settings for graphics. I think cards are
    killing my m1 mac too." / "Running 26fps." / "GPU at 31ms"). The desktop default preset is High (leaf cards
