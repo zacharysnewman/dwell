@@ -115,7 +115,7 @@ colour to keep in step. The keyframes vary only the fog's density.
 
 `dwell-look` evaluates the cycle on the CPU each frame (`DayNight::state`: the time of day, the
 sun, moon and axis, the moon's phase, and each face's keyframe sample) and packs it into the
-`DaySky` uniform block (`daynight::DAY_SKY_WGSL`, 23 vec4: the directions, the viewer's face's sky
+`DaySky` uniform block (`daynight::DAY_SKY_WGSL`, 24 vec4: the directions, the viewer's face's sky
 colours, each face's lights, and the other face's sky colours and fog density). The renderer's frame carries it as `frame.day`; clouds and water read it.
 
 - **The sky** (`sky.wgsl` `dwell_sky`): the gradient, the horizon band toward the sun, the sun's
@@ -729,3 +729,49 @@ minimum still." for new-moon nights; and "the moon should look bright": today's 
   and the daily lag; tidally locked (face A toward home at every phase, both faces); both faces'
   phases equal; the moonlight floor (both faces); the world's phase; an orbit by fixture data alone.
   `daynight.test.mjs`: the distance keeps grids.json's moon at `radiusDeg`.
+
+## 15. The atmosphere: the sky thinning to space
+
+**[built]** (`dwell-look` `atmosphere.rs`, data `shared/look/atmosphere.json` → `atmosphere.gen.rs`;
+WORK_QUEUE item 28). Owner, 2026-11-12: "Yes for now, let's just do earth gravity out to moon. We
+likely need an atmosphere transition now between sky thinning to space. Clouds shouldn't extend past
+the earth atmosphere either." With far flight to the moon (~597 km) a player climbs far above the sky.
+
+- **The curve.** The viewer's altitude is its height above sea level on its own face (face-local, so
+  both faces alike). At or below `baseM` (3 km, over the clouds' tops) the sky is today's **exactly**:
+  `DayState::air` is `Air::GROUND` and every shader change sits behind `day.space.x > 0`, a uniform
+  branch. Above it the share of the sky's scattering left is the air column over the eye,
+  `(e^(−x/H) − e^(−X/H)) / (1 − e^(−X/H))` (x over the base, X = `topM` − `baseM`, H = `scaleHeightM`
+  9 km), so the thinning (`Atmosphere::thinning`) is 0 at the base, rises fastest just over it, and is
+  1 at `topM` (80 km) and beyond — the moon is in space.
+- **The sky** (`sky.wgsl` `dwell_space`, CPU `atmosphere::space_sky` inside `sky_color`): today's sky
+  mixed by the thinning toward space: `spaceColor`, plus the **limb** — the horizon's colour in the
+  ray's azimuth (with the warm band toward the sun) gathered in a Gaussian `limbWidthDeg` wide at
+  the rim of the world, `limbDistanceM` away, at elevation −atan(height / distance) below the
+  viewer's horizon — plus the sun's tight white bloom (`sunBloom`, the sun's bloom width). The broad
+  glow, the band and the moon's glow go with the air. The limb follows the time of day (a night limb
+  is the night horizon's colour). In the other face's frame (rays that leave by its air) the limb's
+  rise flips (`Air::other`, `dwell_other_day`).
+- **Stars by day** (`starsInSpace`): the packed visibility is at least the thinning × it, both faces'
+  (`Air::stars`); in space the stars' horizon fade is off, so they reach down to the limb.
+- **The sun** (`dwell_sun_disc`): in space no air swells it at the horizon, and its colour goes
+  `sunWhiteness` of the way to white.
+- **The fog** thins with the air: `DayState::fog_density` × (1 − thinning), for the eye's face and
+  the other's, so it is gone in space.
+- **Clouds stay inside it.** `clouds.mjs` refuses a deck, a volume top, a data plume's top or a
+  source's height above `topM` (and reads it from `atmosphere.json`); run-time plumes are cut at it
+  (`PlumeList::pack`). From above the deck is already a layer below to its own horizon (`deck_fade`).
+- **The block.** `DaySky.space` (the 24th vec4): x the thinning, y the limb's elevation sine. The
+  renderer fills it from the eye each frame (`render/mod.rs` `day_in_air`).
+- **Cost.** Nothing on the ground; above the base a few ALU in `dwell_sky` (no pass, no texture), so
+  every tier including the CPU adapter draws it.
+- **Out of scope.** The home world seen from far (the M-6 bake, drawn with M-5/M-7) — beyond the LOD's
+  reach the disc below is not drawn yet, so from very high there is space and the limb; the moon has
+  no atmosphere (its sky is space when its own view comes).
+- **Tests.** `cargo test -p dwell-look --lib`: `the_sky_on_the_ground_is_todays_exactly` (a golden
+  pin of `sky_color` recorded before the atmosphere, at four altitudes up to the base, and the packed
+  block unchanged), `climbing_thins_the_sky_to_black_space_with_a_limb_below_the_horizon` (both
+  faces: space's colour overhead, the limb, no fog, stars by day), `atmosphere::tests::*` (the
+  curve, space, the limb, face-local air, every cloud under the top), `plumes::tests::no_plume_is_drawn_past_the_atmospheres_top`
+  (both faces), the naga validation of the sky; `atmosphere.test.mjs`, `clouds.test.mjs`. Not yet
+  checked in the browser (cloud session: no GPU).

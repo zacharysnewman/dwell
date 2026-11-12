@@ -614,7 +614,13 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
 28. **An atmosphere: the sky thinning to space** (owner 2026-11-12: "We likely need an atmosphere transition now
    between sky thinning to space. Clouds shouldn't extend past the earth atmosphere either."). With flight to the
    moon, climbing should fade the sky's scattering to black space with stars by day, the horizon glow becoming a
-   thin limb; clouds and plumes stay below the atmosphere's top (data); the moon has none. In progress (cloud).
+   thin limb; clouds and plumes stay below the atmosphere's top (data); the moon has none.
+   **Built 2026-11-12** (branch `claude/atmosphere-rendering-data-q5axre`; DAY_NIGHT.md §15):
+   `shared/look/atmosphere.json` (base 3 km, top 80 km above sea level, face-local; a scale-height curve;
+   space colour; stars by day in space; the limb; the sun whiter and sharper), the sky shader's
+   `dwell_space` and its CPU twin, the fog thinning to none, clouds' and plumes' tops refused above the
+   top (clouds.mjs) and run-time plumes cut there; today's sky exactly on the ground (a golden pin), both
+   faces. **Left:** the browser check (local, a GPU), the home world drawn from far (M-6's bake).
 
 ## Done
 

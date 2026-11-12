@@ -6,6 +6,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { loadAtmosphere } from './atmosphere.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, '..', '..');
@@ -143,8 +144,10 @@ function checkValue(where, v, spec) {
     fail(`${where} must be a whole number, got ${v}`);
 }
 
-/** Checks the tunables against the schema and each other; returns them. Throws naming the entry. */
-export function validateClouds(data) {
+/** Checks the tunables against the schema and each other, and their tops against the atmosphere's
+ * (`atmosphere`: shared/look/atmosphere.json's; owner, 2026-11-12: "Clouds shouldn't extend past the
+ * earth atmosphere either."); returns them. Throws naming the entry. */
+export function validateClouds(data, atmosphere = loadAtmosphere()) {
   checkKeys('(root)', data, [...Object.keys(SCHEMA), 'tiers', 'plumeSlots', 'sources', 'plumes']);
   checkValue('plumeSlots', data.plumeSlots, ['count', 1, MAX_PLUME_SLOTS]);
   checkKeys('sources', data.sources, SOURCES);
@@ -176,6 +179,14 @@ export function validateClouds(data) {
   }
   const { deck, shape, volume } = data;
   if (volume.topM <= volume.baseM) fail('volume.topM must be greater than volume.baseM');
+  const top = atmosphere.topM;
+  const under = (where, v) => {
+    if (v > top) fail(`${where} (${v} m) must not be above the atmosphere's top (atmosphere.json topM ${top} m)`);
+  };
+  under('deck.altitudeM', deck.altitudeM);
+  under('volume.topM', volume.topM);
+  data.plumes.forEach((p, i) => under(`plumes[${i}].topM`, p.topM));
+  for (const src of SOURCES) under(`sources.${src}.heightM`, data.sources[src].heightM);
   if (!Number.isInteger(shape.scaleM / volume.detailCellM)) {
     fail(
       'shape.scaleM must be a whole multiple of volume.detailCellM (the detail noise tiles with the deck)',

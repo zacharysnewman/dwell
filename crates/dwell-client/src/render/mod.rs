@@ -2557,6 +2557,12 @@ impl Renderer {
         self.day = *day;
         self.day_seconds = seconds;
     }
+    /// The time of day in the eye's air: thinned toward space with its height above sea level on its
+    /// own face (docs/DAY_NIGHT.md §15; the ground's sky untouched).
+    fn day_in_air(&self) -> DayState {
+        self.day
+            .at_altitude(self.face.y(self.eye[1]) - dwell_world::SEA_LEVEL_M)
+    }
     /// How far the viewer is toward face A (1) from face B (0), eased across the flip band: what
     /// the eye adapts toward (`adapt_eye`).
     fn viewer_weight_a(&self) -> f64 {
@@ -3192,7 +3198,7 @@ impl Renderer {
             self.eye[1] as f32,
             self.face.sign_f32(),
             (self.exposure * adapted.exposure) as f32,
-            dwell_look::daynight::fog_density(self.day.of(self.face)) as f32,
+            self.day_in_air().fog_density(self.face) as f32,
         ]);
         // The water's scroll time, seconds of render time since the renderer started (the
         // render clock: frozen while the look is paused, render_clock.rs).
@@ -3264,9 +3270,9 @@ impl Renderer {
             put(&v);
         }
         let pixel_angle = 2.0 * tan_y / f64::from(self.size.1.max(1));
-        let mut day = self
-            .day
-            .pack(self.face, self.adapted_a, self.day_seconds, pixel_angle);
+        let mut day =
+            self.day_in_air()
+                .pack(self.face, self.adapted_a, self.day_seconds, pixel_angle);
         if !stars_for(self.adapter) {
             day[DAY_STARS] = 0.0;
         }
