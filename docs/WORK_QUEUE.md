@@ -1358,6 +1358,12 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    Video 1 (bifacial) owner review, 2026-11-12: **"That bifacial video is pretty bad. The cool part of the bifacial is
    how the world looks from the side far away showcasing the world outline. What it looks like to go down a portal.
    Etc. give me a shot plan before doing that."** — every showcase gets a shot plan approved before recording.
+   Shot plan v2 (bifacial): (1) the outline edge-on from far beyond the rim, a slow push in; (2) a crane from
+   edge-on over face A and under to face B; (3) first person walking to a portal; (4) **jump** down the shaft (owner:
+   **"Dont climb down the ladder, jump through the hole. And after you go past the glittery particles it should switch
+   to showing the other side as the player flies up out of the hole."**) — past the portal's motes the view flips
+   and the player rises out on face B; (5) out on face B, a drone rise back to the edge-on outline. Defaults while
+   unanswered: face A golden hour, face B night; clouds on for the far shots, off for the portal.
 41. **Theater mode** (owner 2026-11-12: "We should use full camera tools to do the things you were doing and expand
    this tool set as you go, we could call it theater mode. Even make it available ingame as a feature that could be
    toggled on for any world type."). Answers: **both** presets (pick a target and a move: orbit, dolly, track,
