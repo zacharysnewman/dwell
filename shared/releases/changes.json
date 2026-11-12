@@ -2,6 +2,18 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.54.131",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.130",
+      "changes": [
+        "Distant hills and mountains now fade into a thicker, more realistic haze, while peaks stay crisp above it"
+      ]
+    },
+    {
       "version": "0.54.129",
       "changes": [
         "Theater mode: press F9 (or Settings → Theater, the right stick press, or the Theater button on a touch screen) to fly a free camera while your character stays put; the HUD hides.",
