@@ -474,6 +474,12 @@ pub fn wood(block: &str) -> Option<&'static WoodDef> {
     WOODS.iter().find(|w| w.block == block)
 }
 
+/// The wood an axe chops a block as: a wood's own block, or its `fellWedge` (a stump's ramp,
+/// chopped as its wood and never cleared: WORK_QUEUE item 26, the stump keeps its gash).
+pub fn chopped_wood(block: &str) -> Option<&'static WoodDef> {
+    wood(block).or_else(|| WOODS.iter().find(|w| w.fell_wedge == Some(block)))
+}
+
 /// Sides of a wood cell: the faces across its grain.
 pub const SIDES: usize = 4;
 /// Bands of a side: its halves along the grain.
@@ -672,23 +678,39 @@ impl Cut {
         self.bites.iter().any(|b| b.n > 0)
     }
 
-    /// Records a hit on `side` in band `band` aimed at `u` across the side (0..1, [`Bite::u`]):
-    /// a bite `look.width_m` wide centred there, or, where a bite in that band already lies
-    /// closer than `look.step` × the width, beside the nearest one in the open wood (the head
-    /// comes in beside the last bite, as [`Cut::open_band`] does along the grain), so hacking
-    /// one spot widens the notch across the side. Kept inside the cell; a side whose band has no
-    /// room left (or [`MAX_BITES`] bites) keeps its bites, which the cut deepens. Returns the
-    /// centre used.
+    /// [`Cut::bite_in`] on a log as wide as its cell (`span` 0..1).
     pub fn bite(&mut self, grain: usize, side: usize, band: usize, u: f64, look: &BiteLook) -> f64 {
+        self.bite_in(grain, side, band, u, look, [0.0, 1.0])
+    }
+
+    /// Records a hit on `side` in band `band` aimed at `u` across the side (0..1, [`Bite::u`]):
+    /// a bite `look.width_m` wide centred there, or, where a bite already lies closer than
+    /// `look.step` × the width (in either band: round 2, the bites spread across the side, not
+    /// down it), beside the nearest one in the open wood, nearest the aim (the head comes in
+    /// beside the last bite, as [`Cut::open_band`] does along the grain), so hacking one spot
+    /// widens the notch across the log, one head's step a hit. Kept inside `span` (the log's
+    /// extent across the side, 0..1 of the cell: a thinner trunk's octagon is narrower than its
+    /// cell); a side with no room left (or [`MAX_BITES`] bites) keeps its bites, which the cut
+    /// deepens. Returns the centre used.
+    pub fn bite_in(
+        &mut self,
+        grain: usize,
+        side: usize,
+        band: usize,
+        u: f64,
+        look: &BiteLook,
+        span: [f64; 2],
+    ) -> f64 {
         let size = extent(across_axes(grain)[1 - side / 2]);
-        let w = (look.width_m / size).clamp(0.01, 1.0);
-        let (lo, hi) = (0.5 * w, (1.0 - 0.5 * w).max(0.5 * w));
+        let [s0, s1] = [span[0].clamp(0.0, 1.0), span[1].clamp(0.0, 1.0)];
+        let (s0, s1) = (s0.min(s1), s1.max(s0));
+        let w = (look.width_m / size).clamp(0.01, (s1 - s0).max(0.01));
+        let (lo, hi) = (s0 + 0.5 * w, (s1 - 0.5 * w).max(s0 + 0.5 * w));
         let step = (look.step * w).max(1e-3);
         let band = band.min(1) as u8;
         let mine: Vec<f64> = self.bites[side]
             .all()
             .iter()
-            .filter(|b| b.band == band)
             .map(|b| f64::from(b.u))
             .collect();
         let free = |c: f64| mine.iter().all(|&m| (m - c).abs() >= step - 1e-6);
@@ -1286,7 +1308,7 @@ mod tests {
     }
 
     /// WORK_QUEUE item 26: each hit records where it struck across the side; a hit on a bitten
-    /// spot in the same band lands beside it, nearest the aim, in the open wood; bites stay in
+    /// spot (either band) lands beside it, nearest the aim, in the open wood; bites stay in
     /// the cell and a side keeps at most `MAX_BITES`.
     #[test]
     fn a_hit_bites_where_it_struck_or_beside_a_bite_there() {
@@ -1299,8 +1321,8 @@ mod tests {
         // The same spot again: beside it (the nearer of the two sides to a slightly-right aim).
         assert!((c.bite(Y, 0, 0, 0.52, &l) - (0.5 + step)).abs() < 1e-6);
         assert!((c.bite(Y, 0, 0, 0.5, &l) - (0.5 - step)).abs() < 1e-6);
-        // The other band: where aimed.
-        assert!((c.bite(Y, 0, 1, 0.5, &l) - 0.5).abs() < 1e-9);
+        // The other band lands beside them too (round 2: across the side, not down it).
+        assert!((c.bite(Y, 0, 1, 0.5, &l) - (0.5 + 2.0 * step)).abs() < 1e-6);
         // At the cell's edge: kept inside it (the mouth in the cell).
         assert!((c.bite(Y, 2, 0, 0.0, &l) - 0.5 * l.width_m).abs() < 1e-9);
         // A lying log's side across y (½ m): the width is a larger share of it.
@@ -1316,6 +1338,54 @@ mod tests {
         us.sort_by(f64::total_cmp);
         assert!(us.windows(2).all(|w| w[1] - w[0] >= step - 1e-5), "{us:?}");
         assert!(us[0] >= 0.5 * l.width_m - 1e-6 && us[n - 1] <= 1.0 - 0.5 * l.width_m + 1e-6);
+    }
+
+    /// WORK_QUEUE item 26 round 2: eleven hits at one spot of a standing trunk, the bands
+    /// alternating as [`Cut::open_band`] has them, spread across the side to span the log (red
+    /// before: per band they reached only ~0.56 of a full log), and on a thinner trunk (an octagon
+    /// half the cell wide) they stay on the log and span it too.
+    #[test]
+    fn eleven_hits_at_one_spot_spread_across_the_log() {
+        let l = BITE_LOOK;
+        for span in [[0.0, 1.0], [0.25, 0.75]] {
+            let mut c = Cut::default();
+            for _ in 0..11 {
+                let band = c.open_band(0, 0);
+                c.swing(axe(), Y, 0, band, 1.0);
+                c.bite_in(Y, 0, band, 0.5, &l, span);
+            }
+            let us: Vec<f64> = c.bites[0].all().iter().map(|b| f64::from(b.u)).collect();
+            let lo = us.iter().copied().fold(f64::INFINITY, f64::min) - 0.5 * l.width_m;
+            let hi = us.iter().copied().fold(f64::NEG_INFINITY, f64::max) + 0.5 * l.width_m;
+            assert!(
+                lo >= span[0] - 1e-6 && hi <= span[1] + 1e-6,
+                "{span:?}: {us:?}"
+            );
+            let covered = (hi - lo) / (span[1] - span[0]);
+            assert!(
+                covered > 0.9,
+                "{span:?}: the bites span {covered:.2} of the log: {us:?}"
+            );
+        }
+    }
+
+    /// WORK_QUEUE item 26: a wood's fell wedge (the stump's ramp) is chopped as that wood and no
+    /// axe clears it; leaves are still cleared.
+    #[test]
+    fn a_stumps_wedge_is_chopped_as_its_wood_not_cleared() {
+        let log = wood("dwell:log").expect("log");
+        let wedge = log.fell_wedge.expect("the log's wedge");
+        assert!(wood(wedge).is_none());
+        assert_eq!(chopped_wood(wedge).map(|w| w.block), Some("dwell:log"));
+        assert_eq!(
+            chopped_wood("dwell:log").map(|w| w.block),
+            Some("dwell:log")
+        );
+        assert!(chopped_wood("dwell:stone").is_none());
+        for t in TOOLS {
+            assert!(!t.clears_block(wedge), "{} clears {wedge}", t.name);
+        }
+        assert!(axe().clears_block("dwell:leaves"));
     }
 
     /// The bites ride the save record after its cells: read back; a record without them (an

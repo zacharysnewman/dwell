@@ -53,7 +53,7 @@ pub fn crosshair_impact(
         face: hit.face ^ 1,
         point: [0, 1, 2].map(|i| eye[i] + look[i] * d),
         step: tool.swing.samples / 2,
-        wood: dwell_protocol::chopping::wood(dwell_blocks::block_of(m).name).is_some(),
+        wood: dwell_protocol::chopping::chopped_wood(dwell_blocks::block_of(m).name).is_some(),
     })
 }
 

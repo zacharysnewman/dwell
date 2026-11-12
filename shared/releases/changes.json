@@ -2,6 +2,26 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.54.62",
+      "changes": [
+        "Design: seed-rolled orbits to set each world's climate band, sky and later seasons, no change in game yet"
+      ]
+    },
+    {
+      "version": "0.54.61",
+      "changes": [
+        "The full moon is lit evenly to its edge again, so it looks as big as the old moon; its phases still darken past the terminator."
+      ]
+    },
+    {
+      "version": "0.54.60",
+      "changes": [
+        "Flying to the moon: the server now carries you onto the moon when you get close, with its own lower gravity, and back home when you fly away",
+        "Blocks you break or place on the moon are saved with the world",
+        "Behind the scenes: the moon's ground is streamed to newer clients (the game's own view of the moon follows in a later update)"
+      ]
+    },
+    {
       "version": "0.54.59",
       "changes": [
         "Behind the scenes: work queue notes"

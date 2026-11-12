@@ -20,9 +20,10 @@ type Aimed = ([i32; 3], u8, [f64; 3]);
 /// server's eye differ by a tick.
 const REACH_SLACK_M: f64 = 0.75;
 
-/// A wood state's grain: its `axis` property as a world axis (0 x, 1 y, 2 z).
+/// A wood state's grain: its `axis` property as a world axis (0 x, 1 y, 2 z); a wood's fell wedge
+/// (a stump, chopped as its wood: WORK_QUEUE item 26) stands, along y.
 pub(super) fn grain_of(m: dwell_blocks::StateId) -> Option<usize> {
-    chop::wood(block_of(m).name)?;
+    chop::chopped_wood(block_of(m).name)?;
     Some(match state_property(m, "axis") {
         Some("x") => 0,
         Some("z") => 2,
@@ -57,6 +58,18 @@ pub(super) fn across_of(
         point[other] - f64::from(cell[other])
     };
     frac.clamp(0.0, 1.0)
+}
+
+/// A wood cell's extent across its sides (0..1 of the cell): a standing log's octagon `width` of
+/// its cell, centred (ADR 0079; a thinner trunk), else the whole cell. Where its bites may lie.
+pub(super) fn log_span(m: dwell_blocks::StateId, grain: usize) -> [f64; 2] {
+    match dwell_blocks::octagon::section_of(m) {
+        Some((section, _)) if grain == 1 && section.width < 1.0 => {
+            let w = f64::from(section.width).clamp(0.05, 1.0);
+            [0.5 - 0.5 * w, 0.5 + 0.5 * w]
+        }
+        _ => [0.0, 1.0],
+    }
 }
 
 impl Server {
@@ -515,10 +528,22 @@ impl Server {
         let Some(grain) = grain_of(m) else {
             return;
         };
-        let Some(side) = chop::side_of(grain, usize::from(face / 2), face % 2 == 1) else {
+        let wood = chop::chopped_wood(block_of(m).name).expect("a wood");
+        // A stump's wedge (WORK_QUEUE item 26) is struck on its slope too, a face along the grain:
+        // the side the swing comes in from.
+        let wedge = wood.block != block_of(m).name;
+        let side = chop::side_of(grain, usize::from(face / 2), face % 2 == 1).or_else(|| {
+            wedge
+                .then(|| {
+                    let k = if to.x.abs() >= to.z.abs() { 0 } else { 2 };
+                    let v = if k == 0 { to.x } else { to.z };
+                    chop::side_of(grain, k, v < 0.0)
+                })
+                .flatten()
+        });
+        let Some(side) = side else {
             return;
         };
-        let wood = chop::wood(block_of(m).name).expect("a wood");
         let s = self.sessions.get_mut(&id).expect("session");
         // A chop wears the axe (owner, 2026-11-11: "It should survive 32 hits of durability").
         if super::wear_tool(&mut s.inventory, uses_items) != inv::Wear::None {
@@ -542,12 +567,13 @@ impl Server {
             let band = cut.open_band(side, band);
             cut.swing(t, grain, side, band, share);
             // Where it struck across the side (WORK_QUEUE item 26): the bite the client carves.
-            cut.bite(
+            cut.bite_in(
                 grain,
                 side,
                 band,
                 across_of(f, cell, grain, side, point),
                 &wood.cut.bite,
+                log_span(m, grain),
             );
         }
         let cut = *cut;
@@ -581,7 +607,7 @@ impl Server {
         // The trunk's bottom needs the log above the cut (else no wedges: it falls as before).
         let wedges = wood
             .fell_wedge
-            .filter(|_| standing && self.world.get_voxel_if_loaded(above) == m)
+            .filter(|_| standing && !wedge && self.world.get_voxel_if_loaded(above) == m)
             .and_then(|w| {
                 // The prototype's split keeps the notch: the trunk's bottom is its upper face.
                 let matching = if v2 {
@@ -613,6 +639,15 @@ impl Server {
             let mut changes = TickChanges::default();
             changes.set(&mut self.world, cell, f.state(stump));
             self.broadcast_changes(changes, VoxelModificationReason::Edit);
+        } else if wedge {
+            // A stump chopped down (WORK_QUEUE item 26): its wood drops, as a log cut through.
+            if uses_items {
+                let stacks = inv::roll(wood.buck_drops, &mut || self.random());
+                for st in stacks {
+                    self.loose.drop(st, centre.to_array());
+                }
+            }
+            self.fell(&[cell], 0, Some(DVec3::from(eye)));
         } else if standing {
             // No wedge: it falls toward the notch, as real felling does (owner, 2026-11-08): the
             // uncut side is the hinge, so it tips away from a point out past the side opposite the

@@ -202,11 +202,13 @@ impl PlumeList {
             return out;
         }
         let reach = t.volume.max_distance_m;
+        // No cloud past the atmosphere's top (docs/DAY_NIGHT.md §15): a plume is cut there.
+        let ceiling = crate::atmosphere::ATMOSPHERE.top_m;
         let mut near: Vec<(f64, &PlumeSpec)> = self
             .items
             .iter()
             .map(|(_, p)| p)
-            .filter(|p| p.face == face)
+            .filter(|p| p.face == face && p.base_m < ceiling)
             .filter_map(|p| {
                 let r = p.radius_m * (1.0 + p.spread);
                 let d = ((p.x_m - eye[0]).powi(2) + (p.z_m - eye[2]).powi(2)).sqrt();
@@ -227,7 +229,7 @@ impl PlumeList {
                 p.radius_m,
                 p.spread,
                 p.base_m,
-                p.top_m,
+                p.top_m.min(ceiling),
                 p.density,
                 rise,
                 p.color[0],
@@ -422,6 +424,38 @@ mod tests {
             "a refused move changes nothing"
         );
     }
+
+    both_faces!(
+        fn no_plume_is_drawn_past_the_atmospheres_top(f: FaceFrame) {
+            // A plume reaching past the top is cut at it; one based above it is not drawn.
+            let top = crate::atmosphere::ATMOSPHERE.top_m;
+            let mut list = PlumeList::empty(4);
+            list.set(
+                "tall",
+                PlumeSpec {
+                    top_m: top + 50_000.0,
+                    ..steam(f, 0.0)
+                },
+            )
+            .unwrap();
+            list.set(
+                "space",
+                PlumeSpec {
+                    base_m: top + 10.0,
+                    top_m: top + 500.0,
+                    ..steam(f, 10.0)
+                },
+            )
+            .unwrap();
+            let p = list.pack(&CLOUDS, [0.0, f.y(300.0), 0.0], f, 0.0, CloudQuality::High);
+            assert_eq!(p[0], 1.0, "the one above the top is left out");
+            assert_eq!(
+                p[HEAD_FLOATS + 5],
+                top as f32,
+                "the tall one is cut at the top"
+            );
+        }
+    );
 
     #[test]
     fn packing_puts_the_nearest_first_relative_to_the_eye_and_drops_the_out_of_reach() {

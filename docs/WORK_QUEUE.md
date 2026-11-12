@@ -293,11 +293,25 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    should be seed determined."** So the climate band is not a list to pick from: the seed sets the world's orbit
    (its distance from the sun → overall warmth, its axial tilt → seasons and how climate changes across the disc,
    its day and year length within playable bounds) and the moon's orbit, and the latitude band and seasons follow
-   from them; one celestial model (MOON_WORLD.md §6) shared by the sky and the Realistic climate (R3). Design
-   update in progress (cloud).
+   from them; one celestial model (MOON_WORLD.md §6) shared by the sky and the Realistic climate (R3).
+   **Design written 2026-11-12** (docs only, REALISTIC_WORLD.md §8 "Orbits by seed", cross-linked from
+   MOON_WORLD.md §6): a flat disc's latitude is its sky's pole height (today's 60° noon = 30° N on face A,
+   30° S on B; parallel sunlight gives no gradient, so R3's 14° span across the map stays a game-scale
+   stretch); the seed rolls the pole height and yaw (latitude and north), the distance (± a few °C), the
+   axial tilt and year (seasons: opposite on the faces, optional/later; generation reads the annual mean),
+   the clock within a range, and the moon's month, inclination, node and phase (its distance kept for its
+   size); R3's bands become names and `rainMm`; data `shared/look/orbits.json` (ranges, limits, today's
+   orbit), rolled once at creation and stored as world settings (`CELESTIAL`, required for a world whose
+   terrain reads it); default and starter keep today's sky exactly, only Realistic rolls; phases O1–O5.
+   Open for the owner (§8.10): seasons now or later; how varied orbits may be (and whether the day length or
+   default-generator worlds vary); the moon's orbit by seed; how much the faces' climates differ; the
+   gradient across the disc.
    Owner, 2026-11-12: q6 "dormant volcanoes only for now."; q8 "also on the big map" (overlays in Chisel and the
    in-game big map); q9 asked "how does the default biome fill them?" (answer pending). Big map q5: "No, no
    hitches" — region maps built ahead of the player.
+   Orbits by seed (REALISTIC_WORLD.md §8), owner 2026-11-12: orbits first, seasons after; "a great setting to have
+   default with some presets. Like proposed ranges, fixed day, day varies, more extreme with hotter/colder."; the
+   moon's orbit by seed too (size kept); Realistic worlds only. O1–O3 in progress (cloud).
 16. **Phone frame rate (P0)** (owner 2026-11-11, iPhone 17, Safari, setting Low: "I'm only getting ~23 fps on
    mobile, seeing lots of z-fighting on tree trunks with the leaf cards. What might be dropping frames since the
    last while. Used to get 60 fps"). Suspect: leaf cards are on in every tier but CPU, Low included; cards lying
@@ -492,6 +506,8 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    Owner, 2026-11-12, on BUGS.md #75 (trees couldn't be felled: one aim hacked one binding kerf): **"Merge the
    fix"** — a swing at the deeper band lands in the other one, so chopping at one spot notches and fells in ~11
    swings; ADR 0067's "clumsy straight hacking 3–4× more" rule is dropped.
+   Owner, 2026-11-12, on the gash wiped by a swing after the fall: "I think let's do your recommendation" —
+   the stump keeps its gash (built with item 26's round 2: the axe chops the stump's ramp, never clears it).
 25. **Marks appear at contact, not on click** (owner 2026-11-12: "the gashes in blocks from tools show up on
    click instead of when the animation lines up with the block. We want that timing."). Every tool's hit (axe
    chop, pickaxe, shovel; the carve, cracks, chips, drops and sound) lands when the swing's head reaches the
@@ -518,8 +534,14 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    instead of across into a notch, and no wood cracks showed. A swing after the fall cleared the stump's slanted
    top (the gash), because the axe clears `dwell:log_ramp` like leaves. Owner, 2026-11-12, on that: **"I think
    let's do your recommendation."** — the stump keeps its gash: the axe chops a fell wedge (a hit, a bite) instead
-   of clearing it; the stump comes down only when chopped deliberately like a log. In progress (cloud), with the
-   bites spreading across and the cracks showing.
+   of clearing it; the stump comes down only when chopped deliberately like a log. With the bites
+   spreading across and the cracks showing, **built 2026-11-12** (cloud, branch `claude/axe-bites-2-pllttm`),
+   waiting on the owner's look in game: hits at one spot alternate beside each other across the side (either
+   band) and 11 span the log, a thinner trunk's too; every V within the notch's band (the cell's middle ¼ m),
+   carved over the octagon's chamfers; the wood cracks painted in ink (they were the bark's own streak colour)
+   at 0.85; the stump's `dwell:log_ramp` is chopped as the log (a bite, a wear), never cleared, and comes
+   down only when cut through, dropping wood. Not done: the stump's bites aren't drawn (recorded only).
+   BLOCK_DAMAGE.md §6.4 "Round 2", ADR 0067 note.
 27. **A felled trunk landing on its chopper flings them (BUGS.md #52)** (the owner's brief, 2026-11-12: fix the
    cause, "we shouldn't be capping player kick like that" (2026-11-08): no cap on the kick; a trunk hitting a
    player at speed must still knock them as physics says). **Built 2026-11-12** (branch `claude/pinch-fling`):
@@ -602,6 +624,20 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    moon's faces. **Left for the follow-up:** the server's session loop holding the spaces, the moon's chunks on the
    wire per grid, the grid id in snapshots and the `grid.frames` capability (not announced until a build sends it),
    the client's view roll to the new down, and the predictor's far-flight speed (MOON_WORLD.md §7.1).
+   **M-7b server + wire built 2026-11-12** (branch `claude/moon-m7b`; the brief: the server's session loop holds the
+   grid spaces and runs travel per player, the moon's chunks streamed per grid and stored per grid (additive), the
+   grid id and frame in snapshots behind `grid.frames` (in capabilities.json now), the predictor and drawing on the
+   client, tests through LocalCore; "if it doesn't fit, do the server + wire + predictor first and leave the
+   client's drawing for a local follow-up"): built the server (`dwell-sim` `server/grids.rs`: the moon's space,
+   capture/release per session with no jump, far flight for every player, the moon's chunks streamed to a
+   `grid.frames` client, an away player's edits applied to the moon), the wire (`grid.frames`: the snapshot's
+   `GridView`, the chunks' grid byte) and the per-grid save table (`grid_chunks`). Tested natively (`dwell-sim`
+   `tests/grids.rs`, both faces: capture ≤ 1 cm, landing and walking at ⅙ g, chunks and grid ids to the new
+   client only, release, a moon edit saved and reopened). **Left for the local follow-up:** the client's side —
+   this build's client withholds `grid.frames` (`capabilities::CLIENT_PENDING`) until its predictor runs in the
+   grid's space (its chunks, its gravity, the far-flight speed) and it draws the moon's chunks in its frame and
+   rolls the view; the `game_local` flight through LocalCore; away players in the other systems; the player's grid
+   in its saved record (MOON_WORLD.md §7.2).
    **M-6's bake built 2026-11-12** (branch `claude/moon-m6-home-bake`; the owner's "The earth should use the same
    normal map kinda technique when far enough away, when on the moon."): `dwell-worldgen` `home_far.rs`, the home
    grid's `FarSource` over its world map — heights from the map's cells (water flat at its level), the albedo from
@@ -629,7 +665,13 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
 28. **An atmosphere: the sky thinning to space** (owner 2026-11-12: "We likely need an atmosphere transition now
    between sky thinning to space. Clouds shouldn't extend past the earth atmosphere either."). With flight to the
    moon, climbing should fade the sky's scattering to black space with stars by day, the horizon glow becoming a
-   thin limb; clouds and plumes stay below the atmosphere's top (data); the moon has none. In progress (cloud).
+   thin limb; clouds and plumes stay below the atmosphere's top (data); the moon has none.
+   **Built 2026-11-12** (branch `claude/atmosphere-rendering-data-q5axre`; DAY_NIGHT.md §15):
+   `shared/look/atmosphere.json` (base 3 km, top 80 km above sea level, face-local; a scale-height curve;
+   space colour; stars by day in space; the limb; the sun whiter and sharper), the sky shader's
+   `dwell_space` and its CPU twin, the fog thinning to none, clouds' and plumes' tops refused above the
+   top (clouds.mjs) and run-time plumes cut there; today's sky exactly on the ground (a golden pin), both
+   faces. **Left:** the browser check (local, a GPU), the home world drawn from far (M-6's bake).
 
 ## Done
 

@@ -141,7 +141,7 @@ test('breaking: a fixture tool class and tier by data alone, and bad entries fai
 
 test("a wood's cut look (its carved faces, ADR 0067 §11) is validated and reaches the Rust table", () => {
   const rs = toolsRust(validateTools(...fresh()));
-  assert.match(rs, /block: "dwell:log", .*cut: CutLook \{ tile: Some\("logCut"\), tint: \[255, 226, 184\], open: 2\.5, kerf_width_m: 0\.035, bite: BiteLook \{ width_m: 0\.14, ends_m: 0\.03, step: 0\.6 \}, cracks: Some\(Cracks \{ tiles: &\["crackWood1", "crackWood2", "crackWood3", "crackWood4"\], stages: &\[0\.15, 0\.4, 0\.65, 0\.85\], strength: 0\.6, span: 1\.5 \}\) \}/);
+  assert.match(rs, /block: "dwell:log", .*cut: CutLook \{ tile: Some\("logCut"\), tint: \[255, 226, 184\], open: 2\.5, kerf_width_m: 0\.035, bite: BiteLook \{ width_m: 0\.14, ends_m: 0\.03, step: 0\.6 \}, cracks: Some\(Cracks \{ tiles: &\["crackWood1", "crackWood2", "crackWood3", "crackWood4"\], stages: &\[0\.15, 0\.4, 0\.65, 0\.85\], strength: 0\.85, span: 1\.5 \}\) \}/);
   const bad = (edit, re) => {
     const [data, items, blocks] = fresh();
     edit(data);
@@ -185,11 +185,11 @@ test("a wood's bites and their cracks (WORK_QUEUE item 26) are data: validated, 
   bad((c) => (c.cracks.stages = [0.5, 0.2, 0.6, 0.9]), /cut\.cracks\.stages must ascend/);
 });
 
-test("the axe clears leaves and the stump's wood ramp; a fixture tool clearing another block by data alone is emitted", () => {
+test("the axe clears leaves, not the stump's wood ramp (chopped); a fixture tool clearing another block by data alone is emitted", () => {
   const d = validateTools(...fresh());
   const axe = d.tools.find((t) => t.name === 'dwell:stone_axe');
-  assert.deepEqual(axe.clears, ['dwell:leaves', 'dwell:snowy_leaves', 'dwell:log_ramp']);
-  assert.match(toolsRust(d), /rustle: Some\("axe_rustle"\), rustle_leaves: 5 \}, clears: &\["dwell:leaves", "dwell:snowy_leaves", "dwell:log_ramp"\], chop2_bite: [\d.]+ \}/);
+  assert.deepEqual(axe.clears, ['dwell:leaves', 'dwell:snowy_leaves']);
+  assert.match(toolsRust(d), /rustle: Some\("axe_rustle"\), rustle_leaves: 5 \}, clears: &\["dwell:leaves", "dwell:snowy_leaves"\], chop2_bite: [\d.]+ \}/);
   const [data, items, blocks] = fresh();
   items.add('test:sickle');
   data.tools.push({ name: 'test:sickle', kind: 'axe', swingSeconds: 0.3, biteM: 0.1, bindM: 0.1, across: 1, along: 0.3, sharpness: 1, clears: ['dwell:tall_grass'] });
@@ -204,6 +204,8 @@ test("the axe clears leaves and the stump's wood ramp; a fixture tool clearing a
   bad((d) => (d.tools[0].clears = 'dwell:leaves'), /clears must be a list of block names/);
   bad((d) => (d.tools[0].clears = ['dwell:leaves', 'dwell:leaves']), /clears: dwell:leaves listed twice/);
   bad((d) => (d.tools[0].clears = ['dwell:log']), /clears: dwell:log is a wood/);
+  // WORK_QUEUE item 26: the stump keeps its gash, a fell wedge is chopped, not cleared.
+  bad((d) => (d.tools[0].clears = ['dwell:leaves', 'dwell:log_ramp']), /clears: dwell:log_ramp is a wood's fellWedge/);
   bad((d) => (d.tools[0].swing.rustle = 'nope'), /swing\.rustle: no sound event "nope"/);
   bad((d) => (d.tools[0].swing.rustleLeaves = 99), /rustleLeaves must be a whole number/);
 });

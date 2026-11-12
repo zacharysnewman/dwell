@@ -83,6 +83,12 @@ const ECOLOGY: TableDefinition<u32, &[u8]> = TableDefinition::new("ecology");
 /// grown chunk's last world day. Optional: older builds ignore it; a world without it (an older
 /// save) has no grass growth.
 const GRASS: TableDefinition<u32, &[u8]> = TableDefinition::new("grass_growth");
+/// The chunks of the other grids (docs/proposals/MOON_WORLD.md §7.2, M-7b): (grid name, cx, cy, cz)
+/// → (revision, LZ4 palette + RLE of world state ids, as `chunks`), the grid's local chunks that
+/// were edited. Optional and additive: a world without it has every other grid as generated, and an
+/// older build on the line never opens it (the home grid's chunks stay in `chunks`).
+type GridKey<'a> = (&'a str, i32, i32, i32);
+const GRID_CHUNKS: TableDefinition<GridKey, (u32, &[u8])> = TableDefinition::new("grid_chunks");
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct WorldMeta {
@@ -253,6 +259,9 @@ pub struct SaveBatch {
     pub ecology: Option<Vec<u8>>,
     /// The grass growth now, replacing what was saved before (None: leave it; ADR 0075 T3c).
     pub grass: Option<Vec<u8>>,
+    /// Chunks of the other grids (by the grid's name; MOON_WORLD.md §7.2), each replacing its saved
+    /// one. The home grid's go in `chunks`.
+    pub grid_chunks: Vec<(String, SavedChunk)>,
 }
 
 /// A [`SaveBatch`] being encoded for its commit (`WorldDb::prepare`): its chunks mapped to the
@@ -266,6 +275,7 @@ pub struct PreparedSave {
     new_states: Vec<(u32, String)>,
     /// The blobs encoded so far, in the batch's order.
     chunks: Vec<Vec<u8>>,
+    grid_chunks: Vec<Vec<u8>>,
     lod: Vec<Vec<u8>>,
     bodies: Vec<Vec<u8>>,
     water: Option<Vec<u8>>,
@@ -277,29 +287,12 @@ impl PreparedSave {
         let b = &mut self.batch;
         if let Some(c) = b.chunks.get_mut(self.chunks.len()) {
             let voxels = std::mem::take(&mut c.voxels);
-            let mut world_voxels = Vec::with_capacity(voxels.len());
-            for v in voxels {
-                // Unknown ids read as air.
-                let v = if dwell_blocks::try_info(v).is_some() {
-                    v
-                } else {
-                    0
-                };
-                let id = match self.states.to_world.get(usize::from(v)).copied().flatten() {
-                    Some(id) => id,
-                    None => {
-                        let id = self.states.strings.len() as u32;
-                        let name = info(v).name;
-                        self.new_states.push((id, name.to_owned()));
-                        self.states.strings.push(name.to_owned());
-                        self.states.to_runtime.push(Some(v));
-                        self.states.set_world(v, id);
-                        id
-                    }
-                };
-                world_voxels.push(id as u16);
-            }
-            self.chunks.push(compress_chunk(&world_voxels));
+            let blob = encode_world_voxels(&mut self.states, &mut self.new_states, voxels);
+            self.chunks.push(blob);
+        } else if let Some((_, c)) = b.grid_chunks.get_mut(self.grid_chunks.len()) {
+            let voxels = std::mem::take(&mut c.voxels);
+            let blob = encode_world_voxels(&mut self.states, &mut self.new_states, voxels);
+            self.grid_chunks.push(blob);
         } else if let Some(l) = b.lod_sections.get(self.lod.len()) {
             self.lod.push(if l.encoded.is_empty() {
                 Vec::new()
@@ -315,6 +308,37 @@ impl PreparedSave {
         }
         true
     }
+}
+
+/// A chunk's runtime ids as the file's world state ids (new states numbered on), compressed.
+fn encode_world_voxels(
+    states: &mut States,
+    new_states: &mut Vec<(u32, String)>,
+    voxels: Vec<u16>,
+) -> Vec<u8> {
+    let mut world_voxels = Vec::with_capacity(voxels.len());
+    for v in voxels {
+        // Unknown ids read as air.
+        let v = if dwell_blocks::try_info(v).is_some() {
+            v
+        } else {
+            0
+        };
+        let id = match states.to_world.get(usize::from(v)).copied().flatten() {
+            Some(id) => id,
+            None => {
+                let id = states.strings.len() as u32;
+                let name = info(v).name;
+                new_states.push((id, name.to_owned()));
+                states.strings.push(name.to_owned());
+                states.to_runtime.push(Some(v));
+                states.set_world(v, id);
+                id
+            }
+        };
+        world_voxels.push(id as u16);
+    }
+    compress_chunk(&world_voxels)
 }
 
 fn err(e: impl std::fmt::Display) -> String {
@@ -627,6 +651,44 @@ impl WorldDb {
             .collect()
     }
 
+    /// The saved chunks of grid `grid` (not the home grid's; MOON_WORLD.md §7.2), in runtime ids;
+    /// an unreadable one or one holding a state this build doesn't know is left out (generated).
+    pub fn grid_chunks(&self, grid: &str) -> Vec<SavedChunk> {
+        let rows: Vec<(ChunkCoord, u32, Vec<u8>)> = (|| {
+            let txn = self.db.begin_read().ok()?;
+            let t = txn.open_table(GRID_CHUNKS).ok()?;
+            let range = t
+                .range((grid, i32::MIN, i32::MIN, i32::MIN)..=(grid, i32::MAX, i32::MAX, i32::MAX))
+                .ok()?;
+            Some(
+                range
+                    .flatten()
+                    .map(|(k, v)| {
+                        let (_, x, y, z) = k.value();
+                        let (revision, blob) = v.value();
+                        (ChunkCoord::new(x, y, z), revision, blob.to_vec())
+                    })
+                    .collect(),
+            )
+        })()
+        .unwrap_or_default();
+        let _ = self.refresh_states();
+        let states = self.states.lock().expect("states");
+        rows.into_iter()
+            .filter_map(|(coord, revision, blob)| {
+                let voxels: Option<Vec<u16>> = decompress_chunk(&blob)?
+                    .iter()
+                    .map(|&w| states.to_runtime.get(usize::from(w)).copied().flatten())
+                    .collect();
+                Some(SavedChunk {
+                    coord,
+                    revision,
+                    voxels: voxels?,
+                })
+            })
+            .collect()
+    }
+
     /// A saved chunk in runtime ids; `None` if missing, unreadable, or holding a state this build
     /// does not know (the chunk is generated instead).
     pub fn load_chunk(&self, c: ChunkCoord) -> Option<SavedChunk> {
@@ -909,6 +971,7 @@ impl WorldDb {
             states: self.states.lock().expect("states").clone(),
             new_states: Vec::new(),
             chunks: Vec::with_capacity(batch.chunks.len()),
+            grid_chunks: Vec::with_capacity(batch.grid_chunks.len()),
             lod: Vec::with_capacity(batch.lod_sections.len()),
             bodies: Vec::new(),
             water: None,
@@ -925,6 +988,7 @@ impl WorldDb {
             states,
             new_states,
             chunks: chunk_blobs,
+            grid_chunks: grid_chunk_blobs,
             lod: lod_blobs,
             bodies: body_records,
             water,
@@ -1000,6 +1064,16 @@ impl WorldDb {
                         (c.revision, generator_version, blob.as_slice()),
                     )
                     .map_err(err)?;
+            }
+        }
+        if !batch.grid_chunks.is_empty() {
+            let mut t = txn.open_table(GRID_CHUNKS).map_err(err)?;
+            for ((grid, c), blob) in batch.grid_chunks.iter().zip(&grid_chunk_blobs) {
+                t.insert(
+                    (grid.as_str(), c.coord.x, c.coord.y, c.coord.z),
+                    (c.revision, blob.as_slice()),
+                )
+                .map_err(err)?;
             }
         }
         if batch.clear_lod {

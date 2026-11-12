@@ -184,6 +184,7 @@ export function validateTools(data, items, blocks, heldItems = loadHeldItems(), 
       if (typeof b !== 'string' || !blocks.has(b)) fail(`${at}.clears[${j}]: no block named ${JSON.stringify(b)}`);
       if (clears.indexOf(b) !== j) fail(`${at}.clears: ${b} listed twice`);
       if ((data.woods ?? []).some((w) => w.block === b)) fail(`${at}.clears: ${b} is a wood (chopped, not cleared)`);
+      if ((data.woods ?? []).some((w) => w.fellWedge === b)) fail(`${at}.clears: ${b} is a wood's fellWedge (a stump: chopped, not cleared)`);
     });
     // The chopping prototype's bite: the share of the cross-section a good chop across the grain
     // removes (WORK_QUEUE item 7: the stone axe about 12 chops to past half).

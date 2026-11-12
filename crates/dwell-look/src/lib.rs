@@ -5,6 +5,7 @@
 //! `shared/look/daynight.json`).
 
 pub mod ambient;
+pub mod atmosphere;
 pub mod bloom;
 pub mod celestial;
 pub mod clouds;
@@ -174,7 +175,25 @@ pub fn sky_color(dir: Rgb, face: FaceFrame, s: &Sample, day: &DayState) -> Rgb {
             ml.glow,
             ml.glow_deg,
         );
-    mix(c, ml.glow_color, m.clamp(0.0, 1.0))
+    let c = mix(c, ml.glow_color, m.clamp(0.0, 1.0));
+    // Thinned toward space above the atmosphere's base (docs/DAY_NIGHT.md §15); the ground's sky
+    // is returned untouched.
+    if day.air.thin <= 0.0 || day.air.thin.is_nan() {
+        return c;
+    }
+    let horizon = mix(
+        s.sky_horizon,
+        s.band,
+        (s.band_strength * toward.max(1e-6).powf(shape.band_spread)).clamp(0.0, 1.0),
+    );
+    atmosphere::space_sky(
+        c,
+        horizon,
+        dot(dir, up),
+        dot(dir, sun),
+        gauss_k(sl.bloom_deg),
+        day.air,
+    )
 }
 
 /// The moon's glow strength: the keyframe's, by how much of the disc is lit (a crescent still
@@ -230,9 +249,14 @@ pub fn sky_behind(dir: Rgb, eye_y: f64, day: &DayState) -> Rgb {
     if e >= 0.0 {
         return clear;
     }
-    let other = sky_color(dir, face.other(), day.of(face.other()), day);
+    // The other face's sky in its own frame: the viewer's air, its limb's rise flipped.
+    let other_day = DayState {
+        air: day.air.other(),
+        ..*day
+    };
+    let other = sky_color(dir, face.other(), day.of(face.other()), &other_day);
     let height = face.y(eye_y) - face.y(dwell_world::MIDPLANE_M);
-    let haze = behind_haze(e, height, daynight::fog_density(day.of(face)));
+    let haze = behind_haze(e, height, day.fog_density(face));
     mix(other, clear, haze)
 }
 
@@ -298,6 +322,19 @@ pub fn sky_wgsl_with(moon_ground: &str) -> String {
         .iter()
         .map(|(name, v)| format!("const {name}: f32 = {};", f(*v)))
         .collect();
+    let a = &atmosphere::ATMOSPHERE;
+    for (name, v) in [
+        ("LIMB_BRIGHTNESS", a.limb_brightness),
+        ("LIMB_WIDTH", a.limb_width().max(1e-6)),
+        ("SPACE_SUN_BLOOM", a.sun_bloom),
+        ("SUN_WHITENESS", a.sun_whiteness),
+    ] {
+        s.push(format!("const {name}: f32 = {};", f(v)));
+    }
+    s.push(format!(
+        "const SPACE_COLOR: vec3f = {};",
+        vec3(a.space_color)
+    ));
     s.push(format!("const MOON_COLOR: vec3f = {};", vec3(d.moon.color)));
     s.push(format!(
         "const MOON_GLOW_COLOR: vec3f = {};",
@@ -330,6 +367,7 @@ pub fn srgb_to_linear(c: f64) -> f64 {
 mod tests {
     use super::*;
     use daynight::{DayNight, Keyframe};
+    use dwell_world::both_faces;
 
     const FACES: [(usize, i32); 6] = [(0, 1), (0, -1), (1, 1), (1, -1), (2, 1), (2, -1)];
 
@@ -525,6 +563,112 @@ mod tests {
         assert_eq!(sanitize_exposure(Some(0.0)), EXPOSURE_MIN);
         assert_eq!(sanitize_exposure(Some(1.3)), 1.3);
     }
+
+    /// The ground's sky is today's exactly (docs/DAY_NIGHT.md §15): the atmosphere's thinning is a
+    /// no-op at or below its base. Values recorded from `sky_color` before the atmosphere existed
+    /// (times of day, unit directions, face B, sRGB).
+    #[test]
+    // both-faces: the golden rows hold face A's and face B's sky, recorded together.
+    fn the_sky_on_the_ground_is_todays_exactly() {
+        #[rustfmt::skip]
+        const GOLDEN: &[(f64, [f64; 3], bool, [f64; 3])] = &[
+            (0.2, [0.0, 1.0, 0.0], false, [0.38409214212618453, 0.5754214357588502, 0.8188363934362151]),
+            (0.2, [0.0, 1.0, 0.0], true, [0.25921036669236586, 0.269744985774374, 0.42146004407450616]),
+            (0.2, [0.6007212985974549, 0.30036064929872747, 0.7408896016035278], false, [0.7048075437585622, 0.720371982959662, 0.7192978197111929]),
+            (0.2, [0.6007212985974549, 0.30036064929872747, 0.7408896016035278], true, [0.3321248534977868, 0.2860217013564675, 0.42247781182914984]),
+            (0.2, [-0.7011930431234068, 0.050085217365957634, 0.7112100865965983], false, [0.8131952767653877, 0.7848904503092697, 0.7272860852052879]),
+            (0.2, [-0.7011930431234068, 0.050085217365957634, 0.7112100865965983], true, [0.26280774673624896, 0.2704956628406189, 0.42157131327218406]),
+            (0.2, [0.300006600217808, -0.4000088002904107, 0.8660190526287391], false, [0.9474745756636238, 0.8317990450540357, 0.6588294351108632]),
+            (0.2, [0.300006600217808, -0.4000088002904107, 0.8660190526287391], true, [0.14143983592313, 0.17039292657992838, 0.3232672403657627]),
+            (0.5, [0.0, 1.0, 0.0], false, [0.447706878949242, 0.6280573894076935, 0.833448163903671]),
+            (0.5, [0.0, 1.0, 0.0], true, [0.1488984390351255, 0.18809382408363134, 0.3017923479924079]),
+            (0.5, [0.6007212985974549, 0.30036064929872747, 0.7408896016035278], false, [0.6211527186350552, 0.7369695916612756, 0.8670605200903769]),
+            (0.5, [0.6007212985974549, 0.30036064929872747, 0.7408896016035278], true, [0.1488984390351255, 0.18809382408363134, 0.3017923479924079]),
+            (0.5, [-0.7011930431234068, 0.050085217365957634, 0.7112100865965983], false, [0.7848243232205723, 0.8322164449677124, 0.8762090285691256]),
+            (0.5, [-0.7011930431234068, 0.050085217365957634, 0.7112100865965983], true, [0.14889843903537206, 0.18809382408388714, 0.3017923479926822]),
+            (0.5, [0.300006600217808, -0.4000088002904107, 0.8660190526287391], false, [0.8975349925514059, 0.8977435094949167, 0.8823182317665337]),
+            (0.5, [0.300006600217808, -0.4000088002904107, 0.8660190526287391], true, [0.07213217240318102, 0.09894647617139048, 0.19531010001504084]),
+            (0.8, [0.0, 1.0, 0.0], false, [0.37311052718144266, 0.5609569260977587, 0.7970131169272978]),
+            (0.8, [0.0, 1.0, 0.0], true, [0.2606378051448973, 0.2834347949259903, 0.43560726643558595]),
+            (0.8, [0.6007212985974549, 0.30036064929872747, 0.7408896016035278], false, [0.6283031260020305, 0.6816560473678887, 0.7403649748863715]),
+            (0.8, [0.6007212985974549, 0.30036064929872747, 0.7408896016035278], true, [0.2503584299468882, 0.28048239009242515, 0.4342980080988895]),
+            (0.8, [-0.7011930431234068, 0.050085217365957634, 0.7112100865965983], false, [0.8134899088731719, 0.7683449340293006, 0.6978263816353129]),
+            (0.8, [-0.7011930431234068, 0.050085217365957634, 0.7112100865965983], true, [0.252864398713008, 0.28120175935221287, 0.4346187383564934]),
+            (0.8, [0.300006600217808, -0.4000088002904107, 0.8660190526287391], false, [0.9374553068596571, 0.8278412467477312, 0.6716624195310075]),
+            (0.8, [0.300006600217808, -0.4000088002904107, 0.8660190526287391], true, [0.14186467819420184, 0.18089147629674138, 0.33247624578197044]),
+            (0.0, [0.0, 1.0, 0.0], false, [0.028905393193166266, 0.0485971513341277, 0.13501581809948343]),
+            (0.0, [0.0, 1.0, 0.0], true, [0.89753314883075, 0.8977448726599567, 0.8823254325707794]),
+            (0.0, [0.6007212985974549, 0.30036064929872747, 0.7408896016035278], false, [0.08239390991623335, 0.11086325582470048, 0.20954412397483954]),
+            (0.0, [0.6007212985974549, 0.30036064929872747, 0.7408896016035278], true, [0.8975355834485959, 0.8977430726118188, 0.8823159239684509]),
+            (0.0, [-0.7011930431234068, 0.050085217365957634, 0.7112100865965983], false, [0.1218131967502732, 0.1566401970780125, 0.26422249326271907]),
+            (0.0, [-0.7011930431234068, 0.050085217365957634, 0.7112100865965983], true, [0.8977857875809502, 0.8975580828060103, 0.8813387309360889]),
+            (0.0, [0.300006600217808, -0.4000088002904107, 0.8660190526287391], false, [0.1488984390351255, 0.18809382408363134, 0.3017923479924079]),
+            (0.0, [0.300006600217808, -0.4000088002904107, 0.8660190526287391], true, [0.5791502372866741, 0.71240686131407, 0.864353414664328]),
+        ];
+        for alt in [0.0, 1.6, 500.0, atmosphere::ATMOSPHERE.base_m] {
+            for &(t, dir, b, want) in GOLDEN {
+                let day = DAY_NIGHT.state(0.0, Some(t), None).at_altitude(alt);
+                let face = if b { FaceFrame::B } else { FaceFrame::A };
+                let got = sky_color(dir, face, day.of(face), &day);
+                for i in 0..3 {
+                    assert!(
+                        (got[i] - want[i]).abs() < 1e-9,
+                        "{t} {dir:?} {b} @{alt}: {got:?} vs {want:?}"
+                    );
+                }
+            }
+            // And the packed block is the ground's, its air zero.
+            let ground = DAY_NIGHT.state(0.0, Some(0.5), None);
+            assert_eq!(
+                ground.at_altitude(alt).pack(FaceFrame::A, 1.0, 3.0, 1e-3),
+                ground.pack(FaceFrame::A, 1.0, 3.0, 1e-3)
+            );
+        }
+    }
+
+    both_faces!(
+        fn climbing_thins_the_sky_to_black_space_with_a_limb_below_the_horizon(f: FaceFrame) {
+            // Noon on face A (face B's midnight): from high above, straight up is space's colour,
+            // the limb below the horizon takes the horizon's colour, and the fog is gone.
+            let a = &atmosphere::ATMOSPHERE;
+            let ground = DAY_NIGHT.state(0.0, Some(0.5), None);
+            let space = ground.at_altitude(a.top_m * 1.5);
+            assert_eq!(space.air.thin, 1.0);
+            let up = f.vector([0.0, 1.0, 0.0]);
+            let zenith = sky_color(up, f, space.of(f), &space);
+            assert!(
+                zenith
+                    .iter()
+                    .zip(a.space_color)
+                    .all(|(c, s)| (c - s).abs() < 0.02),
+                "{zenith:?}"
+            );
+            let lit = sky_color(up, f, ground.of(f), &ground);
+            assert!(luma(lit) > luma(zenith));
+            // Toward the limb, away from the sun's azimuth.
+            let l = space.air.limb;
+            let level = (1.0 - l * l).sqrt();
+            let sun = ground.sun;
+            let away = [-sun[0], 0.0, -sun[2]];
+            let n = (away[0] * away[0] + away[2] * away[2]).sqrt().max(1e-9);
+            let toward_limb = f.vector([away[0] / n * level, l, away[2] / n * level]);
+            let limb = sky_color(toward_limb, f, space.of(f), &space);
+            assert!(
+                luma(limb) > 4.0 * luma(zenith),
+                "the limb {limb:?} over space {zenith:?}"
+            );
+            assert_eq!(space.fog_density(f), 0.0);
+            assert!(ground.fog_density(f) > 0.0);
+            // Halfway up the thinning, between the two.
+            let mid = ground.at_altitude(a.base_m + 0.25 * a.scale_height_m);
+            let between = sky_color(up, f, mid.of(f), &mid);
+            assert!(luma(between) < luma(lit) && luma(between) > luma(zenith));
+            // Stars by day in space.
+            let packed = space.pack(f, if f.is_b() { 0.0 } else { 1.0 }, 0.0, 1e-3);
+            assert_eq!(f64::from(packed[8 * 4]), a.stars_in_space);
+            assert_eq!(f64::from(packed[23 * 4]), 1.0);
+        }
+    );
 
     #[test]
     fn the_shader_sky_is_valid_wgsl_with_the_uniform_block() {

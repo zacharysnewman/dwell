@@ -279,7 +279,8 @@ There are **no official game servers**; players host (ADR 0003, details in §10)
   /dwell-mesh        Chunk and LOD-section meshers, the block texture atlas and hotbar swatches.
   /dwell-look        The look as data: palette, face tints, the day/night cycle (clock, sun path,
                      keyframed sky, lights and fog, generated from shared/look/daynight.json), the
-                     sky and its WGSL, height fog, exposure, the sky's clouds (tunables generated
+                     sky and its WGSL, height fog, exposure, the atmosphere thinning the sky to
+                     space with altitude (shared/look/atmosphere.json), the sky's clouds (tunables generated
                      from shared/look/clouds.json), the spyglass's zoom (shared/look/spyglass.json),
                      the dynamic lights' falloff, flicker and choice (shared/look/lights.json).
   /dwell-ecology     The far ecology (§5.4, ECOLOGY.md): herds and packs as records on a face's
@@ -1018,6 +1019,14 @@ rules that spawn the species' creatures are left out (`Creatures::reserved`).
 (`dwell-sim` `server/grass.rs`, every 5 s, loaded chunks, bounded catch-up) and its optional
 `grass_growth` world table (the switch, each chunk's last day; on for new worlds only). The ecology's
 island forage is scaled by the same climate share.
+
+**Other grids on the server** (MOON_WORLD.md §7.2, M-7b) **[in progress: server and wire built]**:
+`dwell-sim` `server/grids.rs` holds a space per grid with its own generator (the moon's: its voxels in
+its local frame, physics, players) beside the home world, carries fliers into it inside its
+`captureM` and home past × `releaseFactor` (`travel::carry`, nothing jumps), streams its chunks to an
+away `grid.frames` client and applies an away player's edits to it. Its edited chunks are saved in the
+optional `grid_chunks` world table ((grid name, cx, cy, cz) → (revision, chunk blob); additive). The
+client's side (predicting and drawing another grid) is outstanding.
 
 ### 6.1 Grid & chunks **[in progress]**
 
@@ -3981,6 +3990,7 @@ in the code yet.
 | Ambient light (`shared/look/ambient.json`; DAY_NIGHT.md §9) | AO strength 0.6; 16 rays of 4 m, a 3.5 m probe; floor 0.08; sky apron 6 cells across, 16 rows up and down (`dwell_world::SKY_APRON`, code constant) | The baked corner occlusion and sky visibility of terrain vertices (Phase 43): each occlusion level below open darkens the ambient by strength/3; a ray escapes if it runs its length through no light-blocking cell and nothing is within the probe above its end; a fully occluded vertex keeps the floor of the hemisphere light. The reach must fit the apron (checked at build time), and an edit within the apron of a border re-meshes the chunk across it |
 | Flood light (`shared/look/light.json`; DAY_NIGHT.md §11) | Falloff 1 level per cell across and vertically; sky curve 4, block curve 3; direct from level 8 (none) to 15 (all); block light #ff9a52 × 1.2; blocks: leaves filter 2, water 1, full non-see-through cubes 15 (default), the rest 0 | Per-cell sky and block light on the client (Phase 45): light spreads 15 m across, 7.5 m vertically; the sky curve sets how dark a tunnel gets with depth (about the floor 10 m in), the direct ramp how far daylight reaches in (none past about 7 m) |
 | Day/night look (`shared/look/daynight.json`) | 14 keyframes; noon elevation 60°; sun 1.5° (×1.4 at the horizon); moon 1.2°, 8-day phases, 55% light at new moon; stars 6% of 160² cells per cube face | First pass, for the owner's review (`DAY_NIGHT.md` §8). GPU: about +0.1 ms `gpu.composite` for the sun, moon and stars at 1280×720 (Apple GPU, `day-night-cost`) |
+| Atmosphere (`shared/look/atmosphere.json`; DAY_NIGHT.md §15) **[built]** | Base 3 km, top 80 km above sea level (face-local), scale height 9 km; space #020309; stars at full in space; limb 1.6° wide at the rim 50 km away; sun 85% to white, bloom 0.3; fog × (1 − thinning); clouds' and plumes' tops under the top (clouds.mjs, `PlumeList::pack`) | Today's sky exactly at or below the base (golden test); one uniform-gated branch in `dwell_sky`, so every tier, the CPU adapter included, pays nothing on the ground |
 | Water ripples (client, `render/water.rs` `LAYERS`, `FADE_LO`/`FADE_HI`, `WRAP_M`, `MIN_ALPHA`) | 3 layers at 1, 0.43, 0.17 × the fluid's wave scale; fade over ⅛–½ wavelength per pixel; wrap 1,024 m; glint α ≥ 0.05 | The water shader's normal detail (Phase 26 W1b); per-fluid values are registry data |
 | Water tiles (client, `render/water.rs` `NOISE_TILE`/`NOISE_TEXELS`, `CAUSTIC_TILE`/`CAUSTIC_TEXELS`) | noise 32 cells × 16 texels (512²); caustics 16 cells × 32 texels (512²) | What the ripples and caustics sample (WATER_RENDERING.md §8 "Cost"); periods round to whole tiles |
 | Frames in flight (client, `render/pacing.rs` `MAX_IN_FLIGHT`, `GIVE_UP_MS`) | 2; 1,000 ms | A draw is skipped while the GPU is this far behind |
@@ -4402,7 +4412,13 @@ and the TS constants. A feature adds an entry and checks it by name. The exchang
    server). A name a build doesn't know (a newer build's, a mod's) is kept and matches nothing.
 
 Existing flags and hellos stay as they are. The first capability is `structures.place` (a saved
-structure's placement as `RegionEdit`'s `Structure` op, below).
+structure's placement as `RegionEdit`'s `Structure` op, below). The second is `grid.frames`
+(MOON_WORLD.md §7.2): `PhysicsSnapshot` ends with the local player's grid (a byte, its index in
+`grids.json`, 0 home; off home the grid's frame, origin f64 × 3 and rotation f64 × 4, and `local` in
+the grid's space), and `ChunkData`/`ChunkUnload` end with their grid's byte when not home (a trailing
+0 is malformed). The server lists it; this build's client doesn't say it yet
+(`capabilities::CLIENT_PENDING`: its predictor and renderer don't follow another grid), so a player
+off home is sent its world position, as an older client is.
 ```
 S→C  WorldSettings field 0x85 (optional): u8 count (≤ 64), each str name (≤ 48 bytes, no repeat)
 C→S  Capabilities 0x69, control: the same form — the client's capabilities, once after Welcome,
