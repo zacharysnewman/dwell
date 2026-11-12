@@ -1,22 +1,22 @@
 {
  "formatVersion": 1,
- "name": "bifacial v4 s5: from the landing camera (face A's up held), drone rise out under the disc, round the rim to the outline",
+ "name": "bifacial v5 s6: from the landing camera (upright on face B), drone rise out under the disc, round the rim to the outline",
  "keyframes": [
   {
    "t": 0,
    "position": [
-    1789.5,
-    -58,
-    20700.5
+    1796.3,
+    -50.5,
+    20707.3
    ],
    "target": [
     1784.8,
-    -45.5,
+    -44.5,
     20695.6
    ],
    "fov": 50,
    "timeOfDay": 0.29,
-   "up": "a"
+   "up": "auto"
   },
   {
    "t": 4,

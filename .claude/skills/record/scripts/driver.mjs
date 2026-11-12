@@ -61,4 +61,7 @@ http.createServer(async (req, res) => {
     else if (u.pathname === '/quit') { res.end('bye'); await browser.close(); process.exit(0); }
     res.end(JSON.stringify(out, null, 1));
   } catch (e) { res.statusCode = 500; res.end(String(e?.stack ?? e)); }
-}).listen(+(process.env.RECORD_PORT || 4999), () => console.log('driver on :' + (process.env.RECORD_PORT || 4999)));
+})
+// take.mjs posts after long encodes: keep its idle socket longer than Node's 5 s, and let a long take's eval run
+.on('listening', function () { this.keepAliveTimeout = 10 * 60_000; this.requestTimeout = 0; })
+.listen(+(process.env.RECORD_PORT || 4999), () => console.log('driver on :' + (process.env.RECORD_PORT || 4999)));
