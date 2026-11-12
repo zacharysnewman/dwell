@@ -1,8 +1,10 @@
 # Proposal: a seed-driven Realistic world
 
 **Status:** written 2026-11-11, not adopted. Questions for the owner in §7 (q1, q3, q4, q5 and q7 answered
-2026-11-11). R1 built: the plate layout (`shared/worldgen/plates.json`, `dwell-worldgen` `plates.rs`), not
-wired into any world, so nothing in the game changes yet.
+2026-11-11). R1 built: the plate layout (`shared/worldgen/plates.json`, `dwell-worldgen` `plates.rs`). R2
+built (2026-11-12): uplift from the boundaries (`plate_tectonics.rs`, `plates.json` `uplift`) in the
+Realistic test world (`shared/worldgen/worlds/realistic.json`, `?worldgen=test:realistic`, not in the New
+world form); the default and the starter are unchanged.
 
 ## 1. The owner's direction
 
@@ -293,6 +295,36 @@ debug views go (an overlay and sliders), since it already runs the generator's W
   *Exit:* for seed fixtures, ranges stand along convergent boundaries above the plain map, rifts below,
   arcs on the overriding side, hotspot chains older along the motion; the map builds in ≤ 1.3× the
   default's time; goldens unchanged.
+  **Built (2026-11-12):** `terrain.json` `tectonics.plates` (0 off; 1 the face seed's layout) turns it on;
+  `worlds/realistic.json` (`test:realistic`) is the one world that does. The plates decide land and sea:
+  the base field's coast is the layout's signed coast distance (`PlateLayout::coast_distance`: the warped
+  Voronoi bisector to the nearest plate of the other kind, capped by the sea margin) in place of the
+  island's, so the inland rise, hills and shelf follow the plates. `Boundary::polylines` orders R1's scan
+  points (nearest within `link`, the scan's staircase absorbed, thinned to `segment` m). `plate_tectonics.rs`
+  adds every boundary's landform by rule (`plates.json` `uplift`): a range on a subducting boundary's
+  overriding side with a trench on the diving side, a collision range astride two continents, a rift with
+  shoulders on a divergent one, a low ridge on a transform, each scaled by the boundary's rate over
+  `speedRef` (clamped to `speedScale`), only on the boundary's own two plates, summed on a 500 m coarse grid
+  (`cell`) and read bilinearly (§4: no new 100 m grid). Arcs: one dormant cone per `spacing` m of each
+  subducting polyline ≥ `minLength` m (≤ `maxCones`), `distance` m off the line on the overriding plate,
+  hardened by `hardness`. Hotspot chains: `islands` shields along the plate's motion, older ones lower and
+  wider. The map adds them as T5's boundary (the landform also as uplift; the uplift layer's random ranges
+  and plates off). Tests: `plate_tectonics::tests` (polyline order, each kind's landform on the fixtures,
+  the coarse grid against the exact field, chains), `tests/realistic_world.rs` on both faces (the plates'
+  land/sea on the map, ranges ≥ 0.4 × their height above the plain map — the same plates with every landform
+  0 — and land rifts ≥ 0.2 × their depth below it, arc cones on the overriding plate standing over it, chains
+  older along the motion), `gen.test.mjs` (bad `uplift` entries). The map builds in 1.09 s against the
+  default's 1.58 s (release, best of 3; a release-only test pins ≤ 1.3×): it skips the uplift layer's random
+  ranges. Default and starter goldens unchanged. *Deviations:* R1's hotspot trail ran against the plate's
+  motion; fixed to along it (a plate carries its older islands off the fixed hotspot, Hawaii). A rift inside
+  a continent keeps about half its cut through the erosion (its lakes and deposits fill it), so the test's
+  bar is 0.2 of its depth. A rift between an ocean and a continent is the coast itself, its sea side held by
+  the map's floor. The plate coast has no fractal coast detail yet (smoother coasts than the island's). The
+  chunk generator's own `BaseField` (only its noise offset is read) still uses the island; the portals'
+  inland rule reads the island's coast in a Realistic world until R6. Lengths in `plates.json` are for the
+  default size (BIG_MAP.md): the layout and uplift scale with the radius when the world size reaches the
+  generators (M2), as the island's shape does. **Not done:** the Chisel plates overlay (a WASM export and a
+  Chisel view; moved to R3 with the latitude and wind overlays).
 - **R3 Climate.** `climate.json`: latitude bands, wind cells; temperature in °C from latitude and height;
   the rain march with the band's wind; the one rain field feeding the discharge (Realistic only). Chisel:
   latitude and wind overlays. *Exit:* the windward side of a seed's main range is ≥ 2× wetter than its

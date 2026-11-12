@@ -1,0 +1,5 @@
+{
+  "changes": [
+    "Test world: the Realistic world's seed now raises mountain ranges, trenches, rift valleys, volcano arcs and island chains from its own tectonic plates, and the plates decide where land and sea are (?worldgen=test:realistic)"
+  ]
+}

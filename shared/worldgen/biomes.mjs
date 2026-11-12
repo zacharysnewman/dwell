@@ -21,6 +21,7 @@ export const TERRAIN = {
   // volcanic arc and one hotspot chain (tectonics.rs).
   tectonics: {
     kind: [0, 3, true],
+    plates: [0, 1, true],
     angle: [-360, 360],
     offset: [-50_000, 50_000],
     width: [{ above: 0 }, 20_000],

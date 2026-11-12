@@ -781,6 +781,7 @@ function fixtureWorldEdit(f, world, pool, fail) {
 function tectonicsRs(g) {
   const whole = [
     "kind",
+    "plates",
     "arcCount",
     "hotspotCount",
     "ridgeCount",
@@ -2085,8 +2086,23 @@ const PLATES_TOP = [
   "warp",
   "transformBelow",
   "hotspots",
+  "uplift",
   "fixtures",
 ];
+/** plates.json `uplift`'s landforms (R2, `plate_tectonics.rs`): each a height, half-width, distance. */
+const UPLIFT_LANDFORMS = ["range", "trench", "collision", "rift", "transform"];
+const UPLIFT_ARC = [
+  "distance",
+  "spacing",
+  "minLength",
+  "maxCones",
+  "coneHeight",
+  "coneRadius",
+  "craterRadius",
+  "craterDepth",
+  "hardness",
+];
+const UPLIFT_CHAIN = ["islands", "spacing", "height", "radius", "decay", "widen"];
 
 /** Checks the plate layout's data; throws `plates.json: <key> …` naming the bad entry. */
 export function validatePlates(data) {
@@ -2155,6 +2171,52 @@ export function validatePlates(data) {
   obj("hotspots", data.hotspots, ["count", "within"]);
   range("hotspots.count", data.hotspots.count, 0, 32, true);
   num("hotspots.within", data.hotspots.within, 0, data.reach);
+  const u = data.uplift;
+  obj("uplift", u, [
+    "speedRef",
+    "speedScale",
+    "link",
+    "segment",
+    "cell",
+    ...UPLIFT_LANDFORMS,
+    "riftShoulder",
+    "arc",
+    "hotspot",
+  ]);
+  num("uplift.speedRef", u.speedRef, 0.01, 100);
+  range("uplift.speedScale", u.speedScale, 0, 10);
+  num("uplift.link", u.link, 1, 20_000);
+  num("uplift.segment", u.segment, 1, 20_000);
+  // The landforms sum on a coarse grid: no new 100 m whole-map grid (REALISTIC_WORLD.md §4).
+  num("uplift.cell", u.cell, 500, 10_000);
+  for (const k of UPLIFT_LANDFORMS) {
+    if (u[k] === undefined) fail(`uplift.${k} is missing`);
+    obj(`uplift.${k}`, u[k], ["height", "width", "distance"]);
+    num(`uplift.${k}.height`, u[k].height, 0, 5000);
+    num(`uplift.${k}.width`, u[k].width, 1, 50_000);
+    num(`uplift.${k}.distance`, u[k].distance, 0, 50_000);
+  }
+  num("uplift.riftShoulder", u.riftShoulder, 0, 2);
+  obj("uplift.arc", u.arc, UPLIFT_ARC);
+  for (const k of UPLIFT_ARC) if (!(k in u.arc)) fail(`uplift.arc.${k} is missing`);
+  num("uplift.arc.distance", u.arc.distance, 0, 50_000);
+  num("uplift.arc.spacing", u.arc.spacing, 1, 100_000);
+  num("uplift.arc.minLength", u.arc.minLength, 0, 200_000);
+  num("uplift.arc.maxCones", u.arc.maxCones, 0, 32, true);
+  num("uplift.arc.coneHeight", u.arc.coneHeight, 0, 8000);
+  num("uplift.arc.coneRadius", u.arc.coneRadius, 1, 20_000);
+  num("uplift.arc.craterRadius", u.arc.craterRadius, 0, 5000);
+  num("uplift.arc.craterDepth", u.arc.craterDepth, 0, 1000);
+  num("uplift.arc.hardness", u.arc.hardness, 0, 1);
+  obj("uplift.hotspot", u.hotspot, UPLIFT_CHAIN);
+  for (const k of UPLIFT_CHAIN)
+    if (!(k in u.hotspot)) fail(`uplift.hotspot.${k} is missing`);
+  num("uplift.hotspot.islands", u.hotspot.islands, 0, 32, true);
+  num("uplift.hotspot.spacing", u.hotspot.spacing, 1, 50_000);
+  num("uplift.hotspot.height", u.hotspot.height, 0, 5000);
+  num("uplift.hotspot.radius", u.hotspot.radius, 1, 20_000);
+  num("uplift.hotspot.decay", u.hotspot.decay, 0, 1);
+  num("uplift.hotspot.widen", u.hotspot.widen, 0, 2);
   if (!Array.isArray(data.fixtures)) fail("fixtures must be a list");
   const seen = new Set();
   data.fixtures.forEach((f, i) => {
@@ -2197,6 +2259,7 @@ export function platesRust(data) {
   const rs = [
     `// ${platesHeader}`,
     "",
+    "use crate::plate_tectonics::{ArcRule, ChainRule, Landform, PlateUplift};",
     "use crate::plates::{BoundaryKind, FixturePlate, KindRule, PlateFixture, PlateKind, PlateRules};",
     "",
     "/// The plate layout's rules (shared/worldgen/plates.json).",
@@ -2227,6 +2290,33 @@ export function platesRust(data) {
     ["hotspots_within", rf(data.hotspots.within)],
   ];
   for (const [k, v] of fields) rs.push(`    ${k}: ${v},`);
+  rs.push("};");
+  rs.push("");
+  const u = data.uplift;
+  const landform = (l) =>
+    `Landform { height: ${rf(l.height)}, width: ${rf(l.width)}, distance: ${rf(l.distance)} }`;
+  const a = u.arc;
+  const h = u.hotspot;
+  rs.push("/// The uplift from the boundaries (plates.json `uplift`, R2).");
+  rs.push("pub const UPLIFT: PlateUplift = PlateUplift {");
+  for (const [k, v] of [
+    ["speed_ref", rf(u.speedRef)],
+    ["speed_scale", `[${rf(u.speedScale[0])}, ${rf(u.speedScale[1])}]`],
+    ["link", rf(u.link)],
+    ["segment", rf(u.segment)],
+    ["cell", rf(u.cell)],
+    ...UPLIFT_LANDFORMS.map((k) => [k, landform(u[k])]),
+    ["rift_shoulder", rf(u.riftShoulder)],
+    [
+      "arc",
+      `ArcRule { distance: ${rf(a.distance)}, spacing: ${rf(a.spacing)}, min_length: ${rf(a.minLength)}, max_cones: ${a.maxCones}, cone_height: ${rf(a.coneHeight)}, cone_radius: ${rf(a.coneRadius)}, crater_radius: ${rf(a.craterRadius)}, crater_depth: ${rf(a.craterDepth)}, hardness: ${rf(a.hardness)} }`,
+    ],
+    [
+      "hotspot",
+      `ChainRule { islands: ${h.islands}, spacing: ${rf(h.spacing)}, height: ${rf(h.height)}, radius: ${rf(h.radius)}, decay: ${rf(h.decay)}, widen: ${rf(h.widen)} }`,
+    ],
+  ])
+    rs.push(`    ${k}: ${v},`);
   rs.push("};");
   rs.push("");
   rs.push("/// Two-plate layouts and the boundary each must give (plates.json `fixtures`).");

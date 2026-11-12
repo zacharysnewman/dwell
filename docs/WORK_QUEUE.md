@@ -238,8 +238,12 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    plate count unanswered (the proposal's 3–5, as data). **Status:** R1 built: the plate layout
    (`shared/worldgen/plates.json`, `plates.gen.rs`, `dwell-worldgen` `plates.rs`: plates by kind, motion and
    age, boundaries classified by relative motion with the subducting side, hotspots, a land/sea mask), tested
-   on both faces, not wired into any world (goldens unchanged). The Chisel plates overlay moved to R2. Next:
-   R2 (uplift from boundaries); q2's bands, q6 and q8 still open. q5 (2026-11-11): no new rock blocks
+   on both faces. R2 built (2026-11-12): uplift from the boundaries (`plate_tectonics.rs`, `plates.json`
+   `uplift`: ranges on the overriding side and trenches, collision ranges, rifts, low transform ridges,
+   scaled by each boundary's rate; arc cones on the overriding side; hotspot chains older along the plate's
+   motion) and the plates' coast, in the Realistic test world (`worlds/realistic.json`, `test:realistic`, not
+   in the New world form); default and starter goldens unchanged; the map builds faster than the default's.
+   The Chisel plates overlay moved again, to R3. Next: R3 (climate); q2's bands, q6 and q8 still open. q5 (2026-11-11): no new rock blocks
    for now; R5 uses today's blocks (stone, basalt, sandstone, red sandstone, sand, dirt) named in data, so
    new ones can replace them later.
 
