@@ -1148,8 +1148,19 @@ npm run bench -- --warm --compare forest-perf   # a configuration against the ba
 Numbers (2026-11-12, M1 Air, `--unthrottled`, `gpu.frame` p50 / p95 ms), before → after tall grass past
 its fade was dropped in the vertex stage: inside 17.0 / 18.8 → 14.7 / 15.4, edge 25.2 / 26.4 → 24.3 / 25.7,
 above 14.6 / 15.8 → 14.5 / 15.8. `forest-edge-ablate` splits the edge's frame by switching each suspect off
-for 4 s (cutout meshes −14.8 ms, sun shadows −3.3, full detail 192 → 96 m −1.8): the leaf cards and grass
-within their fades are the edge's cost.
+for 4 s (cutout meshes −14.8 ms, sun shadows −3.3, full detail 192 → 96 m −1.8).
+
+**The cutout's split** (2026-11-12, same machine, `--compare` with the configurations `cards-off` (`?cards=0`)
+and `grass-off` (`?tallgrass=0`, the Tall grass share as a dev override), `gpu.frame` p50 ms, base → off): leaf
+cards inside 14.3 → 13.8, edge 23.8 → 23.3, above 14.1 → 13.8; tall grass inside 14.3 → 13.0, edge 23.8 → 23.2,
+above 14.1 → 13.8. Neither is the edge's cost: the cutout **leaf blocks** themselves are (the `grass` view
+switch hides every cutout mesh, leaves included). The edge's near pass is bound by its **geometry**, not its
+pixels: at render scale 1 (`scale-full`, four times High's pixels) `gpu.near` p50 went only 21.1 → 24.8. A
+depth prepass for the cutout (an alpha-tested depth-only draw, then the colour on equal depth, shading each
+sample once) was built and measured and made it worse, every spot +6–8 ms (edge 31.4, inside 20.2, above 18.4):
+drawing the leaves' geometry twice costs more than the overdraw it saves. Not adopted. The levers left are
+fewer leaf triangles past the near trees (impostors from nearer than 96 m, or a plainer leaf mesh with
+distance). `forest-edge` is the edge alone (6 s) for quick A/Bs.
 
 Cloud sessions have no GPU: there it is not run; `cargo test --release -p dwell-worldgen --test forest_world`
 checks the world (every column old-growth, the density in range on both faces, deterministic), and its

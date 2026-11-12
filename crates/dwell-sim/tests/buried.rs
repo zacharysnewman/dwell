@@ -83,3 +83,40 @@ dwell_world::both_faces!(
         );
     }
 );
+
+dwell_world::both_faces!(
+    fn a_player_inside_leaves_is_not_buried_and_falls_through_them(f: FaceFrame) {
+        // BUGS.md #94: leaves are solid but passable (players pass through them), so a player
+        // whose centre is in a crown isn't buried. The lift took them for ground and put the player
+        // on the crown's top, which the client's prediction (colliding as the terrain does) never
+        // did: a rubber band down through the leaves for as long as the player stayed in them.
+        let mut fx = scene(f, BASE);
+        let leaves = f.state(require("dwell:leaves"));
+        for x in 1..=4 {
+            for z in -3..=0 {
+                for r in 2..10 {
+                    let [x, y, z] = f.cell([x, BASE + r, z]);
+                    fx.server.world().set_voxel(x, y, z, leaves);
+                }
+            }
+        }
+        feet_after(&mut fx, f, 30);
+        let h = fx.server.player_handle_of(1).unwrap();
+        let (_, physics, players) = fx.server.sim();
+        let half = f64::from(players.half_height(h));
+        let centre = f.point([2.5, m_of_row(BASE + 6) + half, -1.5]);
+        players.teleport(
+            physics,
+            h,
+            dwell_physics::DVec3::from(centre),
+            dwell_physics::Vec3::ZERO,
+        );
+        let feet = feet_after(&mut fx, f, 120);
+        assert!(
+            (feet[1] - m_of_row(BASE)).abs() < 0.3,
+            "fell through the leaves to the ground: feet {:.2}, ground {:.2}",
+            feet[1],
+            m_of_row(BASE)
+        );
+    }
+);

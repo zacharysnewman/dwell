@@ -350,6 +350,21 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    resolution or steps near or inside the layer by data per tier, a CPU test of a sharp silhouette and stability
    under the jitter. **Built (same branch, CLOUDS.md §9.6).** Next (local): the in-game look (sun high, low sun,
    from above, night, through the layer) against the old blobs and the bench before/after; tune by the data.
+   Owner, 2026-11-12: **"I wonder if the clouds would look better and be cheaper if they were opaque to each other,
+   like you can't see through them to the ones behind?"** Finding: the march already stops once a ray is 98 % blocked
+   (`trans < 0.02`), but `volume.extinction` is 0.006 /m, so a ray needs ~650 m of dense cloud to get there: clouds stay
+   see-through, march their full length and self-shadow weakly (part of the flat white look). Real cumulus is ~0.05 /m.
+   Next, in the in-game cloud check: an A/B of extinction 0.006 → ~0.03–0.05 (data), measuring the look and
+   `gpu.clouds`; keep soft eroded edges so higher opacity doesn't read as solid blobs.
+   Owner, clarifying: **"to be clear, light should still go through the clouds, but what is looking bad is the
+   clouds behind the one in front and you usually can't see other separate clouds blocked behind ones in front of
+   you?"** So: raise the view ray's opacity (`volume.extinction`, what hides a cloud behind another) and leave the
+   light's path as it is (`light.absorption`, the sun through the cloud: lit edges, silver lining, glow); they are
+   separate numbers already.
+   Owner, 2026-11-12: **"Another thing about the clouds is that they don't look pretty and tinted during sunrise and
+   sunset like our old 2D clouds."** The volume should take the deck's golden-hour tint: the sun's colour low in the
+   sky, the warm underside glow and the horizon colour the deck mixed in; compare at sunrise/sunset against
+   `?clouds=` the 2D deck (the reference since the lighting rework).
 14. **Tall grass grows and spreads** (owner 2026-11-11: "I want tall grass to steadily grow and spread. It
    should probably have a max depending on climate/biome."). **Built** (ADR 0075 T3c, docs/ECOLOGY.md §10):
    `shared/worldgen/grass.json` (the rule as data: the block, the ground, the decoration whose climate
@@ -363,6 +378,14 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    makes a ½ m ramp of its ground ground too (validated as decorations' `onRamps`: the ramp exists and
    the tuft's `placeOn` allows it), so a tuft on a ramp that is eaten or cut regrows and spreading
    reaches ramp cells, under the same climate cap; never a 1 m ramp's pieces (tests on both faces).
+   Owner, 2026-11-12: **"Seems like tall grass isn't growing in height like I expected. I thought it would get
+   taller over time?"** (the built growth only spreads; every tuft is 0.85 m from the start). Answers: max height
+   **depends on climate**; **4+ stages, slower** (a week or more of game time to full height); **cutting resets it**
+   (cut or eaten grass goes back to a sprout and regrows); **more drops when tall**; the hide mechanic: "I like the
+   hide mechanic idea, save this for later" (tall grass hiding a crouched player from animals/NPCs — Future).
+   Plan: a growth-stage property on the plant (a new property, default the full stage, so not breaking, ADR 0063),
+   stages and days per stage as data in grass.json, each stage's height from the block's look, the climate share
+   capping the top stage, drops per stage; one cell (≤ ~1 m) first, a two-cell top for the tallest climates later.
 
 15. **Realistic world** (owner 2026-11-11: "The realistic world should come from our systems (which may not be
    properly defined or built yet to support this) the seed should determine tectonic plates, rain shadow,
@@ -536,6 +559,14 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    Owner, 2026-11-12: **"I wanted you to be able to hold the key down for tools like the axe."** Holding the use
    button keeps swinging a tool (axe, pick, shovel, sword) at its swing rate until released, each swing hitting
    what is targeted then; data per tool (`repeatOnHold`). Also bug #93: vertical swings play twice.
+   Owner, 2026-11-12, on #93: **"The animation double swings"** (the clip itself, not two hits).
+   **Status (swings-hold):** built: #93 fixed (a hit's pull-out played the clip backwards over the shoulder and
+   then let it run on, a second swing; now the contact pose fades to rest and the clip stops at the swing's end;
+   `clip_probe` stroke-count test red → green); hold to keep swinging (ITEMS.md "Hold to keep swinging"): per-tool
+   `repeatOnHold` (both axes and the sword in `tools`, the pickaxes and shovels with `repeatS` in
+   `breaking.tools`), validated in the generator with a fixture by data alone, each repeat a whole new swing sent
+   as a click's (others see each by its swing count; wear on a hit only), mouse, controller and touch (a still
+   hold in Break mode with such a tool). Left: the feel in game (no GPU in the cloud).
 18. **Digging marks that look carved** (owner 2026-11-11: "the 'chunks' of dirt aren't at all what we
    discussed. It should be like a normal map change (do we support normal/bump maps)? It's completely flat
    should look like mesh deformation (preferably without actually doing it for performance)"; "That part was
@@ -587,6 +618,13 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    shattered (the crack overlay dominates; the scar is low-contrast and never reaches the silhouette); next
    levers listed there. Round 3: faint late cracks, a fresh-rock tint and 3D flying fragments (4 a hit) built; close up
    it reads as chipped stone. Left: flakes breaking the cell's edge (the silhouette), the owner's look.
+   Owner, 2026-11-12: **"One of my requirements that I think might not have been coming through for tools is that
+   the chunks that fly off and show chunked off the blocks should be equivalent to 50% of the block's volume /
+   number of swings required to break it."** The rule, for every tool on every block (digging, mining, chopping —
+   items 18, 24–26): each hit carves away, and throws off as pieces, a volume of 0.5 × the block's volume ÷ the hits
+   that block takes to break with that tool; so when it breaks, half the block has been carved and flown off (the
+   block breaks at 50 % broken; metal tools take fewer, bigger bites). The carved mark and the flying pieces both
+   match that volume (the pieces' total ≈ the bite).
 19. **Lava glow, remaining** (owner 2026-11-11: "Lava should have bloom glow"; "Lava looks dark red instead of
    bright red/orange"; "It should darken as it solidifies though"). Built 0.52.107: colour by heat stops, heat in
    cells. **Bloom built (pending release, `claude/bloom`):** keyed on the scene's self-lit flag (lava, torches,
@@ -941,8 +979,17 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    `far.tiers`: `on` an impostor from 96 m over a 24 m fade, `off` none), the crossfade's shares, the dithered
    view pick, the baked stage/variant per tree and the view direction through `FaceFrame` (tests on both faces).
    **Not built:** the GPU half (atlas upload, instance buffer, the billboard shader with the baked normals and
-   depth offset) and I-2's tree lists; the far trees are still `lod_trees.rs`'s. Next (local): I-2, then the
-   draw, measured with `forest-perf`.
+   depth offset); the far trees are still `lod_trees.rs`'s.
+   **I-2's tree lists built (2026-11-12, local, `claude/forest-edge-impostors`):** `TerrainGenerator::far_trees(lo,
+   hi)` lists the species trees anchored in a rectangle (each tree in one list, by its anchor: four quarters'
+   lists are the square's, tested on both faces in `forest_world`), and `impostor::Config::instances` turns a list
+   into instances (the tree's foot, its baked layer `species × stages × variants`, a quarter turn from its seed).
+   Felled trees are not yet left out (the growth records are the server's). Next (local, one session): the GPU
+   draw on these lists — the bake run at load in a worker, the atlas array, an instance buffer per LOD section,
+   the billboard shader (`Config::dither`'s view pick, the baked normals, depth offset), `Far::share`'s
+   crossfade, then the LOD sections stop drawing tree cells. The forest edge says it is also the frame-rate
+   lever (item 32): the near pass there is bound by the leaves' triangles, and `lod_trees.rs` draws the same
+   chamfered cells past 96 m.
 
 32. **A tall dense forest for performance reference** (owner 2026-11-12: "We should have a tall dense forest
    biome/climate for performance reference on trees."). A biome preset (tall, closely spaced mature trees — an
@@ -971,9 +1018,16 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    drawn out to the full-detail distance and discarded per fragment; any plant past its fade is now dropped
    whole in the vertex stage, as leaf cards were. After: inside **14.7 / 15.4** (under 16.7), edge 24.3 / 25.7
    (unchanged: its cutout cost is the cards and grass within their fades, seen from just over the crowns),
-   above 14.5 / 15.8. **Outstanding:** the edge, ~9 ms over. Next: split the edge's 14.8 ms between the leaf
-   cards and the near grass (`?cards=0` against the default) and cut it inside the High look (the cards'
-   fade 24–40 m, cards seen edge-on from above, grass under a closed canopy).
+   above 14.5 / 15.8. **Outstanding:** the edge, ~9 ms over.
+   **The edge split (2026-11-12, local, `claude/forest-edge-impostors`; docs/DEV_TOOLS.md "The tree performance
+   reference"):** leaf cards off −0.5 ms, tall grass off (`?tallgrass=0`, a new dev override) −0.6 at the edge
+   (−1.3 inside): neither is the edge's 14.8 ms; the cutout **leaf blocks** are. The near pass there is bound by
+   geometry, not pixels (render scale 0.5 → 1: `gpu.near` +17 % for 4× the pixels). A cutout depth prepass
+   (alpha-tested depth first, colour on equal depth) was built and measured: +6–8 ms at every spot (edge 23.8 →
+   31.4), not adopted. Also fixed: `forest-perf`'s 16.7 ms `gpu.frame` budget was never checked (the GPU
+   timings are samples, not per-frame series: "not recorded"). Next: fewer leaf triangles — impostors from
+   nearer than 96 m (item 31) and a plainer leaf mesh with distance (no chamfer, merged faces past the cards'
+   fade) — measured with `forest-edge`.
 33. **Licensed music replaces the generated music** (owner 2026-11-12: "I downloaded a big music set as a Unity
    asset, I'd like the casual game music setup in a prototype and make it play randomly in the game. Probably
    needs compression. It'll replace the current music which is AI generated."). The pack: *Andrew Sitkov Music*
@@ -1092,6 +1146,11 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    held item on `hand.R`; `?fparms=rigid` keeps the old arms for comparison (CHARACTERS.md §11.10). Round 2: the fist round
    a handle as data (`grips`), the arm turned about the hand to show more forearm, and the held item on
    other players' skinned hands turned once, not twice.
+   Owner, 2026-11-12: **"Im noticing my hands look like the new model, but my legs/body doesn't? What's up with
+   that?"** Your own body seen in first person (CHARACTERS.md §5.1: legs, feet, torso when looking down or sliding)
+   is still the old rigid parts (§11.5 "Still rigid"); only the arms moved to the Peasant. Next: draw your own body
+   in first person from the Peasant too (the skinned body minus head, the arm cut hidden where the fp arms draw,
+   the same clips as your shadow), the rigid body retired; `?fparms=rigid` keeps both old for comparison.
 38. **Wandering NPCs** (owner 2026-11-12: "Another item to queue up, wandering NPCs. They'll use the same player
    character model."). People using the Peasant model who wander the world like the animals do. Owner's answers
    (2026-11-12): wander, idle (look around, sit), turn to look at a nearby player, step aside when bumped — no
@@ -1386,6 +1445,10 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
 
 ## Smaller items, after the queue
 
+- **Leaves rubber-band (BUGS.md #94, 2026-11-12, `claude/leaves-rubberband-dy5tni`), done.** Owner: "seems to be a mismatch
+  between server and client for leaves collision. Jumping into the leaves of a tree makes you rubberband falling to
+  the ground endlessly until you back out of the leaves." The server's buried-player lift took leaves (solid but
+  passable) for ground; it now uses the terrain collision's own test. Tests in `netcode` and `buried` (both faces).
 - **Realistic and forest look (2026-11-12, `claude/realistic-forest-look`), seen in Chrome on the GPU** (Realistic
   seeds 1–3 face A, `test:forest`; stills, a contact sheet and a 9:16 video handed to the owner). What reads: the big
   map (M, widest level) shows the plates' story at a glance — one continent a seed, snow-capped ranges, a green wet
@@ -1531,6 +1594,9 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
   the in-game editor and a biome choice in the New world form.
 
 ## Future (needs owner answers)
+
+- **Tall grass hides you** (owner 2026-11-12: "I like the hide mechanic idea, save this for later."): tall grass
+  hides a crouched player from animals and NPCs (and deer bed down in it).
 
 - **Geography presets for Realistic worlds** (owner 2026-11-12: "Let's hold that for a possible future feature."):
   Mixed (today), Archipelago (oceanic plates only plus more hotspots: Hawaii-style chains and Japan-style arcs),

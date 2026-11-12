@@ -253,8 +253,11 @@ and chain; the rigid parts below are drawn only with the dev switch `?fparms=rig
   same parts, another `pose`), so toggling the swing changes the grip (0.50.39). The blade faces away
   from the eye in both holds and leads the head through each swing (`tests/axe.rs`; it was held
   backwards before). The clips are timed to a miss (0.62 s: wind-up, arc, follow-through,
-  recovery); a hit drives them (`Animator::drive_action`): held through the hit-stop, then played
-  back to the rest.
+  recovery); a hit drives them (`Animator::drive_action_weighted`): held at contact through the
+  hit-stop, then the held pose faded straight back to the arms' rest over `recoverHitS`, and the clip
+  stopped at the swing's end (`Animator::stop_action`). Before 0.54.x a hit played the clip backwards
+  to its start (a vertical swing's head back up over the shoulder and down again) and let it run on
+  from there, a second swing (BUGS.md #93; `clip_probe` `one_swing_draws_one_stroke_hit_or_miss`).
 
 **The sword (WORK_QUEUE item 35).** A `weapon` tool swings through the same arms clips as the axe
 (`chop_level` right to left, `chop_vertical` top to bottom, fitted with `clip_probe --fit`), so its

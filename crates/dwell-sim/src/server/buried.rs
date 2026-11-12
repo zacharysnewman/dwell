@@ -10,14 +10,18 @@ use dwell_world::{FaceFrame, cell_of_pos, chunk_of, m_of_row, rows_for_m};
 /// The most rows (½ m) a buried player is searched up for a free space (a mountain's 2 km).
 const MAX_LIFT_ROWS: i32 = 4096;
 
-/// What a cell holds for the lift: None when its chunk isn't loaded.
+/// What a cell holds for the lift (whether it collides, and whether it is a full cell that does):
+/// None when its chunk isn't loaded. "Collides" is the terrain collision's own test
+/// (`dwell_blocks::collision_class`), so a passable block such as leaves buries no one (BUGS.md
+/// #94: the lift took a crown for ground, and the client's prediction fell through it).
 fn cell_solid(world: &dwell_world::VoxelWorld, c: [i32; 3]) -> Option<(bool, bool)> {
     world.find(chunk_of(c[0], c[1], c[2]))?;
     let m = world.get_voxel_if_loaded(c);
+    let collides = !matches!(dwell_blocks::collision_class(m), 0 | u16::MAX);
     Some(dwell_blocks::try_info(m).map_or((false, false), |i| {
         (
-            i.solid,
-            i.solid && i.shape == dwell_blocks::VoxelShape::Full,
+            collides,
+            collides && i.shape == dwell_blocks::VoxelShape::Full,
         )
     }))
 }
@@ -59,7 +63,7 @@ fn lift_to(
 }
 
 impl Server {
-    /// Lifts every player whose capsule's centre is inside a solid full cell to the first free
+    /// Lifts every player whose capsule's centre is inside a colliding full cell to the first free
     /// space above it, at rest; one whose way up isn't loaded yet is held where it is.
     pub(super) fn lift_buried_players(&mut self) {
         let handles: Vec<_> = self.sessions.values().filter_map(|s| s.handle).collect();

@@ -1,9 +1,10 @@
 {
-  "$comment": "The tools fixture (tests only; shared/tools/gen.mjs writes crates/dwell-protocol/src/tools_fixture.gen.rs): a weapon added by data alone, its tools in place of the build's (the build's other tables round them), the stick as a club (WORK_QUEUE item 35's test). Not in any build's tools.",
+  "$comment": "The tools fixture (tests only; shared/tools/gen.mjs writes crates/dwell-protocol/src/tools_fixture.gen.rs): a weapon added by data alone, its tools in place of the build's (the build's other tables round them), the stick as a club (WORK_QUEUE item 35's test) that keeps swinging while held (`repeatOnHold`, WORK_QUEUE item 17). Not in any build's tools.",
   "tools": [
     {
       "name": "dwell:stick",
       "kind": "weapon",
+      "repeatOnHold": true,
       "swingSeconds": 0.4,
       "swing": { "windupS": 0.1, "activeS": 0.1, "recoverHitS": 0.2, "recoverMissS": 0.3, "reachM": 1.5, "arcDeg": 90, "samples": 8 },
       "weapon": { "damage": 3, "knockbackM": 0.25, "maxTargets": 1, "durability": 4 }

@@ -1,7 +1,0 @@
-{
-  "changes": [
-    "Bigger worlds (up to 10×) now shape their world map in seconds instead of minutes, and no longer run out of memory starting up.",
-    "The loading screen shows each step of the world map as it's shaped, like \"rivers (5/6), face 1 of 2\", with the bar moving through it.",
-    "If a world's server stops (for example, out of memory), the game now says so instead of only \"Could not connect\"."
-  ]
-}

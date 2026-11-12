@@ -6,13 +6,16 @@ pins it.
 
 ## Open
 
-### 93. Vertical swings (axe, sword, …) play twice for one swing
+### 95. Far trees seen from above have holes through to the sky below
 
-Owner, 2026-11-12: "For vertical swings on axe, sword, etc, it sort of double swings." One vertical swing shows two
-down-strokes (or a stroke, a snap back and a second stroke). Suspects: the vertical clip's keyframes loop or include a
-second stroke; the swing restarted by a second trigger (the click and the hit event, or the server's echo of the
-swing re-starting the local one); the level/vertical choice flipping mid-swing. Check with `clip_probe` and the
-swing's trace, both faces.
+Owner, 2026-11-12 (screenshot at night, looking straight down from high up): "looking down at trees from high up,
+where you can first make out individual trees, they seem to have visible holes through them into the ground (sky on
+the other side). This is most obvious at night, so the day sky shines through the ground." In the shot each far
+tree (the LOD's crownless trees: dark crosses and squares on the grass) shows bright light-blue pixels at its
+centre — through the tree and the ground under it, the other face's (day) sky shows. Suspects: the LOD terrain
+leaves a hole (or an unfilled cell) under each far tree's trunk/column (the tree cells cut from the LOD's ground and
+not filled), or T-junction cracks where the far tree's mesh meets the LOD ground; at that distance the gap is a
+pixel or two and the sky behind the disc shows through.
 
 ### 92. Downhill water shows edge triangles and thin lines at its ½ m level steps
 
@@ -429,6 +432,46 @@ face, or the placement check against its shape.
 
 
 ## Fixed
+
+### 94. Jumping into a tree's leaves rubber-bands you toward the ground until you back out (fixed after 0.54.14x)
+
+Owner, 2026-11-12: "A bug I just found seems to be a mismatch between server and client for leaves collision.
+Jumping into the leaves of a tree makes you rubberband falling to the ground endlessly until you back out of the
+leaves." Suspects: the client's predicted controller and the server's disagree about leaves — one treats leaf cells
+as solid (or as a climbable/slowing medium) and the other as passable, so every snapshot corrects the predicted
+position and prediction falls again; candidates: leaves' collision shape or `solid` flag read from different data
+(block registry vs the mesher's leaf cards / leaf density), trees composed at chunk load on one side only
+(TREE_GROWTH layer, tombstones/growers) so the server or client has no leaf blocks there, or leaves' `flooded`/state
+aliasing differing across the registry sync.
+Cause: not the collision or the leaf cells — both sides built the same crown voxel for voxel, and both controllers pass
+through leaves (`passable`). The server alone also runs the buried-player lift (`server/buried.rs`, BUGS #82), which
+read any `solid` full cell as ground to be lifted out of: leaves are `solid` (and `passable`), so a player whose centre
+entered a crown was teleported to the crown's top every tick while the client's prediction fell through it — each
+snapshot pulled the prediction back up and it fell again, until the player left the leaves. Fixed: the lift asks
+`dwell_blocks::collision_class`, the terrain collision's own test, so a passable block buries no one. Tests:
+`netcode` `jumping_into_a_trees_leaves_is_predicted_exactly_without_latency` (the real server and a predicting
+client on a flat world with a pine, walking and jumping in and out of the crown: 10 replays of 1–3 m on the unfixed
+code → 0, every acknowledged position exact) and `buried` `a_player_inside_leaves_is_not_buried_and_falls_through_them`
+(both faces: held at the crown's top 4.6 m up on the unfixed code → falls to the stone).
+
+### 93. Vertical swings (axe, sword, …) play twice for one swing (fixed after 0.54.14x; the look in game left local)
+
+Owner, 2026-11-12: "For vertical swings on axe, sword, etc, it sort of double swings." One vertical swing shows two
+down-strokes (or a stroke, a snap back and a second stroke). Suspects: the vertical clip's keyframes loop or include a
+second stroke; the swing restarted by a second trigger (the click and the hit event, or the server's echo of the
+swing re-starting the local one); the level/vertical choice flipping mid-swing. Check with `clip_probe` and the
+swing's trace, both faces.
+Owner, 2026-11-12, clarifying: **"The animation double swings"**: the vertical swing's animation itself (the arms and
+tool show two strokes per swing), not two hits.
+Cause (`clip_probe`, a swing played frame by frame through the arms' animator as `game.rs` drives it): the miss's clip
+has one stroke; a **hit** drew three. After the hit-stop the pull-out played the clip backwards from contact to its start,
+so the head went back up over the shoulder (screen y +3.3) and came down to rest again, and when the swing ended the
+clip was let go at that start (`drive_action(None)`) and ran on by itself: the whole swing a second time. The level
+swing did the same, reading as a pull back and a second chop. Fixed: the contact's pose is held and faded straight
+back to the arms' rest over `recoverHitS` (`SwingRun::clip_weight`, `Animator::drive_action_weighted`), and an ended
+swing stops its clip (`ArmsDrive::Release` → `Animator::stop_action`). Test: `clip_probe`
+`one_swing_draws_one_stroke_hit_or_miss` (vertical and level, a hit at the arc's middle, an early hit and a miss: one
+stroke, back at rest), red on the unfixed code (vertical hit: 3 down-strokes) → green.
 
 ### 88. Volumetric clouds z-fight against tall terrain (fixed after 0.54.135; the browser check left local)
 
