@@ -1480,6 +1480,14 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
 
 ## Done
 
+- **Tall grass steps (owner 2026-11-12: "Walking through tall grass is really loud and obnoxious. Bad sound effect for
+  it I think, it's also playing really fast. ... the feet are moving really fast, way faster than normal legs
+  step/walk. And there's an occasional crackly sound too, are there 3 SFX playing while walking on grass?"; brief: one
+  footstep per step plus at most a soft brush, never per tick or per cell, a voice limit per sound, the walk/sprint
+  clip at ground speed ÷ stride, ~1.8–2 steps a second):** BUGS.md #103. A rustle on each footstep only (data
+  `brush`), a softer `leaf_brush`, per-sound `voices`/`minGapS`, strides walk 2.5 m / run 2.8 m and the gait clips
+  two strides a loop. The listening and the look on a GPU are the owner's.
+
 - **dwell-mesh's face-B parity test green (owner's brief 2026-11-12: "a_chunk_meshes_the_same_face_local_on_either_face::b
   fails on main (\"cutout plants\"), reported by two sessions … fix the cause at the source so face B's plants are face
   A's mirror … keep the density setting's behaviour"):** BUGS.md #98. Not the Tall grass density (6578783: cleared,

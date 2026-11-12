@@ -451,6 +451,69 @@ mod tests {
         }
     }
 
+    /// Footsteps a second (two a loop) the body's gait clip plays while the controller moves at
+    /// `speed` in `state`, over 10 s after the cross-fade in.
+    fn steps_per_second(space: Space, state: PlayerState, speed: f32) -> f32 {
+        let mut a = Animator::new(&TABLES, player(), space);
+        let i = input(state, [speed, 0.0, 0.0]);
+        let dt = 1.0 / 240.0;
+        for _ in 0..240 {
+            a.update(&i, dt);
+        }
+        let b = a.base.expect("a gait");
+        let t0 = b.t;
+        for _ in 0..2400 {
+            a.update(&i, dt);
+        }
+        let b = a.base.expect("a gait");
+        2.0 * (b.t - t0) / a.clip(b.clip).duration / 10.0
+    }
+
+    /// BUGS.md #103 (owner, 2026-11-12): "the feet are moving really fast, way faster than normal
+    /// legs step/walk." The walk looped every 1.6 m: at the 5 m/s walk, 6.25 steps a second (the
+    /// sprint 5.3 at 8 m/s). Your own body in first person, other players and your shadow all play
+    /// these clips (the Peasant through the retarget, the rigid body too): the walk now steps ~2 a
+    /// second and the sprint under 3, at speed ÷ the clip's `cycle` (2 footsteps of the sound's
+    /// stride, so feet and footsteps agree), and the rate follows the speed.
+    #[test]
+    fn the_gaits_step_at_a_natural_cadence_at_the_controllers_speeds() {
+        let m = dwell_physics::config::PlayerControllerConfig::default();
+        let (walk, run, crouch) = (m.movement.walk_speed, m.movement.run_speed, m.crouch.speed);
+        let w = steps_per_second(Space::Body, PlayerState::Walking, walk);
+        assert!(
+            (1.8..=2.2).contains(&w),
+            "the walk steps {w}/s at {walk} m/s"
+        );
+        let s = steps_per_second(Space::Body, PlayerState::Running, run);
+        assert!(
+            (2.5..=3.1).contains(&s),
+            "the sprint steps {s}/s at {run} m/s"
+        );
+        assert!(
+            s > w,
+            "the sprint ({s}/s) steps faster than the walk ({w}/s)"
+        );
+        let c = steps_per_second(Space::Body, PlayerState::Crouching, crouch);
+        assert!(
+            (1.2..=1.8).contains(&c),
+            "the crouch-walk steps {c}/s at {crouch} m/s"
+        );
+        // The rate is speed ÷ cycle: half the speed, half the cadence.
+        let half = steps_per_second(Space::Body, PlayerState::Walking, walk / 2.0);
+        assert!(
+            (half / w - 0.5).abs() < 0.02,
+            "{half}/s at half the walk's {w}/s"
+        );
+        for (role, clip_speed, got) in [("walk", walk, w), ("sprint", run, s)] {
+            let clip = TABLES.clip(player().clip(role).expect(role));
+            let want = 2.0 * clip_speed / clip.cycle;
+            assert!(
+                (got - want).abs() < 0.02 * want,
+                "{role}: {got}/s, speed / cycle {want}"
+            );
+        }
+    }
+
     fn input(state: PlayerState, v: [f32; 3]) -> MoveInput {
         MoveInput {
             state,

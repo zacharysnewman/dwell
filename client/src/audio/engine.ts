@@ -8,6 +8,7 @@ import { SOUND_DATA } from './sounds.gen';
 import { makeNoise, playSound, startLoop, type LoopVoice, type NoiseBank } from './synth';
 import { SampleBank } from './samples';
 import { mulberry32, Variation } from './variation';
+import { VoiceLimits } from './voices';
 import type { MusicElement } from './music';
 import type { SamplePlay } from './samples';
 import type { SoundData, SoundDef } from './types';
@@ -37,6 +38,8 @@ export class AudioEngine {
   private readonly variation = new Variation((Date.now() & 0xffff) + 1);
   private volumes: Volumes = DEFAULT_VOLUMES;
   private readonly ends: number[] = [];
+  /** Each sound's own voice limit and retrigger gap (`voices`, `minGapS`). */
+  private readonly perSound = new VoiceLimits();
   /** Loop voices by mover (a slide's scrape). */
   private readonly loops = new Map<string, { voice: LoopVoice; panner: PannerNode | undefined }>();
   private listener: Vec3 = [0, 0, 0];
@@ -205,6 +208,7 @@ export class AudioEngine {
     const now = ctx.currentTime;
     while (this.ends.length && (this.ends[0] ?? 0) <= now) this.ends.shift();
     if (this.ends.length >= MAX_VOICES) return false;
+    if (!this.perSound.admit(id, sound, now)) return false;
     let panner: PannerNode | undefined;
     if (at) {
       panner = this.panner(ctx);
@@ -230,6 +234,7 @@ export class AudioEngine {
       });
     }
     this.ends.push(end);
+    this.perSound.started(id, now, end);
     this.recent.push(id);
     if (this.recent.length > 64) this.recent.shift();
     this.ends.sort((a, b) => a - b);

@@ -238,8 +238,8 @@ impl Gait {
     /// Metres travelled between footsteps.
     pub const fn stride(self) -> f64 {
         match self {
-            Gait::Walk => 2.0,
-            Gait::Run => 2.7,
+            Gait::Walk => 2.5,
+            Gait::Run => 2.8,
             Gait::Crouch => 1.1,
             Gait::Climb => 0.75,
             Gait::Swim => 2.4,
@@ -276,4 +276,11 @@ pub mod creature_sounds {
         ("deer", 1.2, None),
         ("doe", 1.1, None),
     ];
+}
+
+/// Brushing through foliage (shared/sounds `brush`; AUDIO.md §5, BUGS.md #103): on its feet a body
+/// rustles only with a footstep; off them every `EVERY_M` moved; never closer than `MIN_S`.
+pub mod brush_sounds {
+    pub const EVERY_M: f64 = 2.5;
+    pub const MIN_S: f64 = 0.3;
 }

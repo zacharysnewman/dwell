@@ -31,7 +31,10 @@ name the entry) and emits `client/src/audio/sounds.gen.ts` (the data the synth p
 `crates/dwell-game/src/sound.gen.rs` (the event kinds, gaits and their strides and speed ranges for
 the Rust game). CI regenerates both and fails on a diff, as for the block registry.
 
-- **`sounds`** — named sounds. A sound is `{ gain, reverb?, variation, intensity?, layers }`.
+- **`sounds`** — named sounds. A sound is `{ gain, reverb?, voices?, minGapS?, variation, intensity?,
+  layers }`. `voices` (1–24, default 4, `DEFAULT_SOUND_VOICES`): at most that many plays of the sound
+  at once; `minGapS` (0–2 s, default 0): no second play within it of the last. A play over either is
+  dropped; a sounding voice is never cut off or restarted (`voices.ts` `VoiceLimits`, BUGS.md #103).
   - A **layer** is one *source* through a chain of *filters* under an *envelope*:
     - `source: "noise"` with `color` `white | pink | brown | crackle` (crackle: sparse decaying
       pops, about 30 a second, mostly small — band-passed, a fire's crackle; it loops too);
@@ -275,10 +278,15 @@ Owner (2026-11-10): ongoing, ambient and looping sounds stay quiet ("more flavor
   entered; a jump off and back on is a second step), `hit` as the break action knocks it loose. The
   stick has both: `stick_snap` at the item. Validated against the events by `shared/ground/gen.mjs`.
 - **Leaves brushed.** A new set event `brush` (`"fallback": false`: a set without one is silent):
-  the grass and snow sets have `leaf_brush` (procedural, a soft rustle; the pack has no foliage
-  brush). The local player's body in a passable block (`foliage_at`: shins, waist or head; leaves,
-  tall grass) rustles every `BRUSH_EVERY_M` (0.8 m) moved through it, at most every `BRUSH_MIN_S`
-  (0.18 s), intensity by speed (`speed: [0.4, 6]`); standing still is silent (`BrushSounds`).
+  the grass and snow sets have `leaf_brush` (procedural, a soft swish: pink noise, a 50 ms attack, no
+  grains; the pack has no foliage brush; one voice, `minGapS` 0.25). The local player's body in a
+  passable block (`foliage_at`: shins, waist or head; leaves, tall grass) rustles **with its
+  footsteps**: on its feet (walking, running, crouching) at most one rustle a step, in the step's
+  tick (`Stride`); off them (falling, flying, climbing) every `brush.everyM` (2.5 m) moved; never
+  closer than `brush.minS` (0.3 s), never on entering a cell; intensity by speed (`speed: [0.4,
+  6]`); standing still is silent (`BrushSounds`). Both rates are data (`shared/sounds` `brush`,
+  generated into `brush_sounds`). BUGS.md #103: it rustled every 0.8 m (~5 a second at the walk,
+  two or three over each footstep), its white-noise grains crackling.
   **Other players** brush and snap too, at their feet, from their drawn (interpolated) snapshot
   positions — no wire message (`RemoteContacts`: each player its own `ContactSounds`, the local
   player's id passed over). A body snaps at most one stick every `SNAP_MIN_S` (0.15 s).
@@ -373,7 +381,7 @@ tick and each remote player's interpolated state each frame, and turns changes i
 | `fell` | a tree begins to fall: a carrying piece spawns (`EntitySpawn`, [`FELLING.md`](./FELLING.md)), at its origin | `fell_crack` | — |
 | `piece_land` | a falling piece hits something: its velocity changes by over 2 m/s between snapshots, at most every 250 ms a piece and 45 ms for all (`dwell-client` `pieces.rs`) | its first cell's `impact` + a body thud | from that change (2 → 20 m/s) |
 | `fell_land` | a felled trunk comes to a stop (§2e), once | `fell_impact` | from that change, by the trunk's size |
-| `brush` | any player moving through foliage (§2e), every 0.8 m, at most every 0.18 s | the foliage (its `brush`; none: silent) | from speed (0.4 → 6 m/s) |
+| `brush` | any player moving through foliage (§2e): with each footstep on its feet, every 2.5 m off them, at most every 0.3 s | the foliage (its `brush`; none: silent) | from speed (0.4 → 6 m/s) |
 | `stick_snap` | stepping onto (any player, at most every 0.15 s) or knocking loose a ground item whose kind names it (§2e) | — | 1 |
 | `hurt` | the server's `PlayerEvent` Damage, any player's | — | from the damage (0 → 80 points) |
 | `death` / `respawn` | the server's `PlayerEvent` Death / Respawn, any player's | — | 1 |
@@ -434,7 +442,8 @@ simulation, and it reads only the predicted state the game already has.
 - `engine.ts`: the AudioContext (created and resumed on the first pointer, key or touch gesture —
   browser autoplay rules, iOS Safari's "interrupted" state), the buses, volumes, muting while the tab
   is hidden, spatial playback (`PannerNode`, HRTF on desktop and equal-power on phones, inverse
-  distance rolloff, events past 48 m dropped), and the listener following the camera.
+  distance rolloff, events past 48 m dropped), at most 24 plays at once and each sound's own
+  `voices` and `minGapS` (`voices.ts`), and the listener following the camera.
 - `events.ts`: decodes the event numbers, resolves block state → block → set → sound (the
   generated `BLOCK_DEFS`), applies the gait gain and the step alternation.
 - `uiSounds.ts`: **delegated** listeners on the document (installed once by the game page and the
@@ -535,7 +544,8 @@ simulation, and it reads only the predicted state the game already has.
 1. Is fully procedural right, or do you want recorded samples for some materials later (the data
    format could gain a `sample` source)?
 2. Should remote players' footsteps be audible (they are now, spatialised), and how far?
-3. Footstep loudness and cadence per gait (walk 2.0 m, run 2.7 m, crouch 1.1 m between steps):
+3. Footstep loudness and cadence per gait (walk 2.5 m, run 2.8 m, crouch 1.1 m between steps, since
+   BUGS.md #103 the legs' clips loop every two of them):
    tune after listening?
 4. Should UI sounds be on by default, and at what level relative to effects (now 60 %)?
 5. Should the main menu (launcher) have its own volume control, or only the in-game Settings?

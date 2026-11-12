@@ -6,17 +6,6 @@ pins it.
 
 ## Open
 
-### 103. Walking through tall grass is loud, fast and crackly; the first-person legs step too fast
-
-Owner, 2026-11-12: "Walking through tall grass is really loud and obnoxious. Bad sound effect for it I think, it's
-also playing really fast. ... the feet are moving really fast, way faster than normal legs step/walk. And there's an
-occasional crackly sound too, are there 3 SFX playing while walking on grass?" (On 0.54.153: the own-body change
-#791 hadn't shipped — releases failed from ~18:45 until the typecheck fix.) Check: how many sounds play per step on
-grass with tall grass (the footstep on the grass block, a brush sound per tall-grass cell entered, the cross plant's
-own sound — possibly all three, each per cell or per tick rather than per step), their volume and rate; the crackle
-(clipping from stacked sounds, or a sound restarted every tick); the first-person body's walk clip speed against the
-walk speed (stride length 1.6 m a loop vs the controller's speed — too high a playback rate).
-
 ### 101. Clouds draw in the void beyond the world's rim, under a far camera
 
 Found 2026-11-12 recording the bifacial showcase (seed 7, a theater camera 140 km from the centre, 11 km up,
@@ -495,6 +484,34 @@ shallow ramp, maybe same problem with steep ramps too?" Not investigated yet: ta
 face, or the placement check against its shape.
 
 ## Fixed
+
+### 103. Walking through tall grass is loud, fast and crackly; the first-person legs step too fast (fixed after 0.54.201; the listening check is the owner's)
+
+Owner, 2026-11-12: "Walking through tall grass is really loud and obnoxious. Bad sound effect for it I think, it's
+also playing really fast. ... the feet are moving really fast, way faster than normal legs step/walk. And there's an
+occasional crackly sound too, are there 3 SFX playing while walking on grass?" (On 0.54.153: the own-body change
+#791 hadn't shipped — releases failed from ~18:45 until the typecheck fix.) Check: how many sounds play per step on
+grass with tall grass (the footstep on the grass block, a brush sound per tall-grass cell entered, the cross plant's
+own sound — possibly all three, each per cell or per tick rather than per step), their volume and rate; the crackle
+(clipping from stacked sounds, or a sound restarted every tick); the first-person body's walk clip speed against the
+walk speed (stride length 1.6 m a loop vs the controller's speed — too high a playback rate).
+**Fixed (branch `claude/grass-steps`):** what played per step on grass with tall grass, walking at 5 m/s: the
+footstep (`step` on the grass block → `dwell:grass_step`, a sample at 0.5 × the walk's 0.55, one per 2.0 m: 2.5 a
+second) and the rustle (`brush` on the tall grass → `dwell:leaf_brush`, procedural, gain 0.35 with five to nine
+2 ms white-noise grains, one per 0.8 m but ≥ 0.18 s apart: ~5.3 a second, each ~0.35 s long, so two or three
+overlapping over every step, and one at once on entering each patch). No third sound on open grass (a stick's snap
+only under trees); the "three" was the stacked rustles, and the crackle their grains. No one-shot was restarted while
+playing (each play is a new voice; nothing per-sound limited them). The legs: `biped_walk` looped every 1.6 m, so
+6.25 steps a second at the walk (the sprint 5.3 at 8 m/s), on your own body, other players and the shadow alike.
+Now: on its feet a body rustles only with a footstep, at most one a step (`Stride`, `brush` `minS` 0.3 s; off its
+feet every `everyM` 2.5 m); `leaf_brush` is a soft pink-noise swish (gain 0.16, no grains, one voice, `minGapS`
+0.25); every sound has a voice limit (`voices`, default 4, over it a play is dropped, never restarted); grass steps
+at 0.4; the strides are walk 2.5 m, run 2.8 m (2.0 and 2.9 steps a second) and the gait clips loop every two of
+them (walk 5 m, sprint 5.6 m, crouch-walk 2.2 m). Tests, red on main → green:
+`walking_through_tall_grass_is_one_footstep_a_step_and_at_most_one_rustle_on_it` (main: 15 steps, 32 rustles over
+30 m), `rustles_on_feet_are_never_closer_than_the_min_interval`, `voices.test.ts` (main: the step + rustle stack
+0.635, no voice limit, crackle grains), `the_gaits_step_at_a_natural_cadence_at_the_controllers_speeds` (main: 6.25
+steps a second), `gen.test.mjs` (a gait's cycle = two footstep strides).
 
 ### 92. Downhill water shows edge triangles and thin lines at its ½ m level steps (fixed after 0.54.142; the browser check left local)
 
