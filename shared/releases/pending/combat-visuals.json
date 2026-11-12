@@ -1,7 +1,0 @@
-{
-  "changes": [
-    "The sword shows its own hint (stance and block), not the axe's.",
-    "Raising a sword's block shows it: your arms and body lift the blade in its stance, and you see other players' and villagers' raised blocks.",
-    "Dev: spawnHerd puts a deer herd or a wolf pack by you in a local world."
-  ]
-}
