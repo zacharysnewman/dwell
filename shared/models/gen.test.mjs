@@ -531,11 +531,11 @@ test("idle poses are data: the fixture's lie by data alone, bad entries fail by 
   const f = fixture();
   const m = validate(f, palette, fixtures).two_bone;
   assert.deepEqual(m.poses, [
-    { name: "lie", turns: [{ joint: 1, rot: [90, 0, 0] }] },
+    { name: "lie", turns: [{ joint: 1, rot: [90, 0, 0] }], drop: 0 },
   ]);
   assert.match(
     rust(f, validate(f, palette, fixtures), "../../../shared/models/fixtures"),
-    /poses: &\[Grip \{ name: "lie", turns: &\[\(1, \[90\.0, 0\.0, 0\.0\]\)\] \}\], pose_blend_s: 1\.0/,
+    /poses: &\[Grip \{ name: "lie", turns: &\[\(1, \[90\.0, 0\.0, 0\.0\]\)\], drop: 0\.0 \}\], pose_blend_s: 1\.0/,
   );
   const bad = (edit, re) => {
     const g = fixture();
@@ -560,4 +560,13 @@ test("idle poses are data: the fixture's lie by data alone, bad entries fail by 
   const shipped = validate(data(), palette, here);
   assert.ok(shipped.deer.poses.some((p) => p.name === "graze"));
   assert.ok(shipped.wolf.poses.some((p) => p.name === "lie"));
+});
+
+test("a pose's $drop lowers the body: the wolf sits and lies down on the ground, a bad drop fails", () => {
+  const rs = rust(data(), validate(data(), palette, here));
+  assert.match(rs, /name: "sit", turns: [^\n]*?drop: 0\.3 \}/);
+  assert.match(rs, /name: "lie", turns: [^\n]*?drop: 0\.5 \}/);
+  const d = data();
+  d.models.wolf.poses.sit.$drop = -1;
+  assert.throws(() => validate(d, palette, here), /\$drop -1 is outside/);
 });

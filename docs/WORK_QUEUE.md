@@ -915,6 +915,15 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    metres off, the villager faced the player but never raised its block or struck back, so there is no
    shot of sparks, a connecting hit or the third-person poses. Next: check whether `edit('break')` starts
    a server-side weapon swing the fight rules can see (a native duel test through `LocalCore`).
+   **Round 5 (local, 2026-11-12, combat visuals 3):** the native duel through `LocalCore` passes on main
+   (`game_local.rs` `a_sword_swing_through_the_game_meets_a_villagers_block_and_it_strikes_back`): the
+   block rises in the wind-up, the slash is blocked, and the villager strikes back. Round 4's browser miss
+   was the shot's timing, not a bug: the whole exchange lasts under a second, longer than a screenshot
+   takes to come back. Filmed with a screencast instead (2026-11-12). Seen: the villager raises its
+   sword upright in the player's wind-up (its third-person raised pose), then swings back with the rig's
+   chop clips (`npcs.swings`). The clash's sparks show, but **about 1.5 m off to the side of the blades,
+   in the air** (the clash point looks wrong; to check next). Your own body isn't drawn from a placed
+   camera, so the player's side of the duel isn't seen in third person.
 36. **A showcase video of the deer and wolves** (owner 2026-11-12: "have you observed the animals simulation? Make
    some clips of the deer/wolves behavior, really showcase it and try to get good angles. Keep it under 2 minutes
    of video. Splice it together into a single video."). Queued (local, after item 30).
@@ -964,7 +973,7 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    combat-visuals PR: the Peasant GLB paints its hat, its hair and its boots with the same palette stop
    (`hair_brown`'s base, 2754 vertices from the feet to the hat's top), so a remap of one recolours all
    three; a hat slot needs the hat's vertices painted with a ramp of their own at import
-   (shared/models `import.mjs`, by mesh or joint), then a `colours` part `hat` in shared/creatures. Queued. Not started in round 4 either (the time box went to the duel and the poses).
+   (shared/models `import.mjs`, by mesh or joint), then a `colours` part `hat` in shared/creatures. Queued. Not started in rounds 4 and 5 either; the time boxes went to the duel and the poses.
 
 39. **Livelier animals** (owner 2026-11-12, after the video had no chase or fleeing — on day one every pack is
    kilometres from any herd and players can't scare deer): chose **deer flee from players** (they notice a player
@@ -993,6 +1002,13 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    down toward the grass, not quite to it) and lookUp positive (heads raised a little, alert). Both read now.
    **The wolves' sit and lie don't read:** a side view of a forced `sit` shows a standing wolf, so the leg
    turns have no visible effect. The joint names or axes need checking against the dog rig. Next.
+   **Round 5 (2026-11-12):** the wolf GLB's joints listed: `spine.004` is the hips (the hind legs and the
+   chest hang from it), and `spine`…`spine.003` is the **tail** (the first `sit` turned the tail). A pose
+   can now lower the body (`$drop`, metres; models.json, `Grip::drop`, tested in `gen.test.mjs`), because
+   turns alone can't bring the hips or belly down. Sit: the hips turned 35° front-up, the hind legs folded
+   and the body dropped 0.3 m. Lie: all four legs folded and dropped 0.5 m. Seen in game: **the wolf reads
+   as sitting** (chest up, rump on the ground, front legs straight) **and as lying down** (belly on the
+   ground, head up).
    Owner on the first video: **"The recording was a really good start. I'd like to record at 9:16 1080/1920."** —
    the next video (after this item lands) is portrait 1080×1920, framed for portrait, with a chase and fleeing.
 

@@ -137,6 +137,8 @@ pub struct Grip {
     pub name: &'static str,
     /// (skin joint index, degrees Euler XYZ in the joint's frame).
     pub turns: &'static [(usize, [f32; 3])],
+    /// Metres the whole body is lowered while posed (an idle pose's `$drop`; 0 for a grip).
+    pub drop: f32,
 }
 
 impl ModelData {

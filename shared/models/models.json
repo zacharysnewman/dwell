@@ -230,8 +230,8 @@
       "poseBlendS": 0.8,
       "poses": {
         "$comment": "Idle poses as joint turns on the idle clip (WORK_QUEUE item 39; degrees, Euler XYZ in each joint's frame). Seen in game with `__dwell.animalPose` (2026-11-12): +x on the neck joints raises the head, so graze is negative and lookUp positive.",
-        "sit": { "spine": [30, 0, 0], "thigh.L": [-60, 0, 0], "thigh.R": [-60, 0, 0], "shin.L": [70, 0, 0], "shin.R": [70, 0, 0], "spine.007": [-15, 0, 0] },
-        "lie": { "thigh.L": [-80, 0, 0], "thigh.R": [-80, 0, 0], "shin.L": [110, 0, 0], "shin.R": [110, 0, 0], "front_thigh.L": [-80, 0, 0], "front_thigh.R": [-80, 0, 0], "front_shin.L": [100, 0, 0], "front_shin.R": [100, 0, 0], "spine.007": [-10, 0, 0] },
+        "sit": { "$drop": 0.3, "spine.004": [35, 0, 0], "shoulder.L": [-35, 0, 0], "shoulder.R": [-35, 0, 0], "thigh.L": [-60, 0, 0], "thigh.R": [-60, 0, 0], "shin.L": [90, 0, 0], "shin.R": [90, 0, 0], "front_shoulder.L": [-35, 0, 0], "front_shoulder.R": [-35, 0, 0], "spine.007": [-20, 0, 0] },
+        "lie": { "$drop": 0.5, "thigh.L": [-70, 0, 0], "thigh.R": [-70, 0, 0], "shin.L": [100, 0, 0], "shin.R": [100, 0, 0], "front_thigh.L": [-70, 0, 0], "front_thigh.R": [-70, 0, 0], "front_shin.L": [90, 0, 0], "front_shin.R": [90, 0, 0], "spine.007": [-10, 0, 0] },
         "earFlick": { "ear.L": [0, 0, 30] }
       },
       "roles": {

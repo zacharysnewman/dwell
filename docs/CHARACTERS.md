@@ -848,6 +848,10 @@ by default) and a combat hook; the combat AI waits for the sword mechanic.
   with the `npcs.swings` capability: its NPC part's pose is 3 (level) or 4 (vertical) while it swings
   (`NPC_STRIKE_POSES`), and the client plays the rig's `chop_level` or `chop_vertical` for it
   (`creatures::npc_role`).
+- **Idle poses' `$drop`** (§11.6, models.json `poses`): metres the whole body is lowered while posed, for
+  a sitting or lying animal, since joint turns can't bring the hips down. It is blended in with the
+  pose (`Grip::drop`, render/skinned.rs). The wolf's skeleton: `spine.004` is the hips, `spine`…`spine.003`
+  the tail, and `spine.005`…`spine.008` the chest and neck to `scull`.
 - **Hints**: the line shown while a tool is held is its kind's (shared/tools `hints`: `{ <kind>:
   { level, vertical } }`, every kind a tool uses needs one; `dwell_protocol::chopping::hint`).
 - **Client** (`dwell-client` `creatures.rs`): `CreatureView::npc` holds the NPC's colours (from its
