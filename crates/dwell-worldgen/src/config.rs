@@ -618,6 +618,47 @@ pub fn geology_from_json(v: &Value) -> Result<Geology, String> {
             .and_then(|t| t.get("ice"))
             .and_then(Value::as_str)
             .map_or(GEOLOGY.ice_block, leak),
+        plate_provinces: plate_provinces_from_json(v.get("plateProvinces"))?,
+    })
+}
+
+/// The rock provinces from plate history (rocks.json `plateProvinces`, R5); absent (an edit
+/// stored before R5): the build's.
+fn plate_provinces_from_json(v: Option<&Value>) -> Result<crate::geology::PlateProvinces, String> {
+    use crate::geology::{PlateProvinces, PlateRule, PlateSetting};
+    let Some(v) = v else {
+        return Ok(GEOLOGY.plate_provinces);
+    };
+    let at = |e: String| format!("rocks.json: plateProvinces.{e}");
+    let range = v
+        .get("rangeCore")
+        .and_then(Value::as_array)
+        .and_then(|a| match a.as_slice() {
+            [a, b] => Some([a.as_f64()?, b.as_f64()?]),
+            _ => None,
+        })
+        .ok_or_else(|| at("rangeCore must be [near, far]".into()))?;
+    let mut rules = Vec::new();
+    for r in v
+        .get("rules")
+        .and_then(Value::as_array)
+        .ok_or_else(|| at("rules must be a list".into()))?
+    {
+        let name = text(r, "setting").map_err(at)?;
+        let setting = PlateSetting::parse(name)
+            .ok_or_else(|| at(format!("rules: {name} is not a setting")))?;
+        rules.push(PlateRule {
+            setting,
+            stack: text(r, "stack").map_err(at)?,
+        });
+    }
+    Ok(PlateProvinces {
+        accreted_width: num(v, "accretedWidth").map_err(at)?,
+        core_width: num(v, "coreWidth").map_err(at)?,
+        range_core: range,
+        rift_width: num(v, "riftWidth").map_err(at)?,
+        basin_distance: num(v, "basinDistance").map_err(at)?,
+        rules: Box::leak(rules.into_boxed_slice()),
     })
 }
 
@@ -698,10 +739,24 @@ pub fn vegetation_from_json(v: &Value) -> Result<Vegetation, String> {
             .ok_or(at(format!("{n} is not a soil type")))
     };
     let soil = |r: &Value, rock: &'static str| -> Result<RockSoil, String> {
+        let range = |k: &str| -> Result<[f64; 2], String> {
+            match r.get(k) {
+                None => Ok(crate::vegetation::NO_RANGE),
+                Some(v) => match v.as_array().map(Vec::as_slice) {
+                    Some([a, b]) => match (a.as_f64(), b.as_f64()) {
+                        (Some(a), Some(b)) if a < b => Ok([a, b]),
+                        _ => Err(at(format!("rockSoils {rock}: {k} must be [least, most]"))),
+                    },
+                    _ => Err(at(format!("rockSoils {rock}: {k} must be [least, most]"))),
+                },
+            }
+        };
         Ok(RockSoil {
             rock,
             depth: num(r, "depth").map_err(at)?,
             soil_type: type_of(r.get("type").unwrap_or(&Value::Null))?,
+            celsius: range("celsius")?,
+            moisture: range("moisture")?,
         })
     };
     let fallback = soil(v.get("fallback").unwrap_or(&Value::Null), "")?;

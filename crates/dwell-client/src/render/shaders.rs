@@ -935,16 +935,20 @@ fn card_normal(packed: f32) -> vec3f {
 }
 // BUGS.md #78 (the M1 at High): a leaf card the eye can't see costs no pixels. Dropped when the
 // eye is more than CARD_BACK_CULL_M behind its plane (the crown's far side, facing away; the
-// plane's distance is the same at its four corners, so a card goes whole) or every corner of it is
-// past its fade's end (the margin over its size). `rel` the corner before the wind's sway, `n` the
-// card's normal in the world.
+// plane's distance is the same at its four corners, so a card goes whole). Any plant (a card, a
+// blade of tall grass) is dropped when its corner is past its fade's end by more than its size
+// (2 m: every corner is then past the end, so it goes whole): the forest's edge drew every blade
+// out to the full-detail distance, all discarded in the fragment stage (WORK_QUEUE item 32, the
+// edge's 14 ms of cutout). `rel` the corner before the wind's sway, `n` the card's normal in the
+// world.
 fn card_dropped(rel: vec3f, n: vec3f, plant: vec4f) -> bool {
+    if (plant.w > 0.0 && length(rel) > plant.w + 2.0) {
+        return true;
+    }
     if (plant.y >= 0.0) {
         return false;
     }
-    let behind = dot(n, rel);
-    return (CARD_BACK_CULL_M > 0.0 && behind > CARD_BACK_CULL_M)
-        || (plant.w > 0.0 && length(rel) > plant.w + 2.0);
+    return CARD_BACK_CULL_M > 0.0 && dot(n, rel) > CARD_BACK_CULL_M;
 }
 
 // The wind sways a vertex by its `plant.x` (m): leaning with the gusts, a faster flutter on top.
@@ -4238,6 +4242,29 @@ mod tests {
         // And the height fog takes the ink toward the sky as it takes the ground.
         let o = body("outlined");
         assert!(o.contains("mix(frame.outline_ink.rgb, s.clear, fog_amount(rel))"));
+    }
+
+    #[test]
+    fn every_plant_past_its_fade_is_dropped_in_the_vertex_stage() {
+        // WORK_QUEUE item 32: the forest edge drew every blade of tall grass out to the
+        // full-detail distance and discarded it in the fragment stage (14 of the edge's 25 ms
+        // on the M1 at High). Any plant past its fade's end (plant.w) is dropped whole, not only
+        // leaf cards (plant.y < 0): the fade check comes before the cards-only return.
+        let src = super::source(4);
+        let at = src.find("fn card_dropped(").expect("card_dropped");
+        let body = &src[at..at + src[at..].find("\n}\n").expect("end")];
+        let fade = body
+            .find("plant.w > 0.0 && length(rel) > plant.w + 2.0")
+            .expect("the fade drop");
+        let cards_only = body.find("plant.y >= 0.0").expect("the cards-only return");
+        assert!(
+            fade < cards_only,
+            "grass past its fade is not dropped:\n{body}"
+        );
+        assert!(
+            src.contains("if (card_dropped(still,"),
+            "cutout_vs drops by it"
+        );
     }
 
     #[test]

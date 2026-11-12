@@ -627,12 +627,35 @@ export function validateVegetation(data, rocks, placements, refs = {}) {
   };
   soil(data.fallback, "fallback");
   if (!Array.isArray(data.rockSoils)) fail("rockSoils must be a list");
+  // A rock's entries in order, the first whose climate holds winning (R5); one without a climate
+  // ends them (later ones could never be read).
   const seen = new Set();
   for (const r of data.rockSoils) {
     if (rocks && !rocks.has(r?.rock))
       fail(`rockSoils: ${JSON.stringify(r?.rock)} is not a rock of rocks.json`);
-    if (seen.has(r.rock)) fail(`rockSoils: ${r.rock} is listed twice`);
-    seen.add(r.rock);
+    if (seen.has(r.rock))
+      fail(
+        `rockSoils: ${r.rock} is listed after its entry without a climate (never read)`,
+      );
+    const re = Object.keys(r).filter(
+      (k) => !["rock", "depth", "type", "celsius", "moisture", "$comment"].includes(k),
+    );
+    if (re.length) fail(`rockSoils: ${r.rock}: unknown ${re.join(", ")}`);
+    for (const [k, lo, hi] of [
+      ["celsius", -100, 100],
+      ["moisture", 0, 1],
+    ]) {
+      const v = r[k];
+      if (v === undefined) continue;
+      if (
+        !Array.isArray(v) ||
+        v.length !== 2 ||
+        !v.every((x) => isNum(x) && x >= lo && x <= hi) ||
+        v[0] >= v[1]
+      )
+        fail(`rockSoils: ${r.rock}: ${k} must be [least, most] in [${lo}, ${hi}]`);
+    }
+    if (r.celsius === undefined && r.moisture === undefined) seen.add(r.rock);
     soil(r, `rock ${r.rock}`);
   }
   if (!Array.isArray(data.kinds)) fail("kinds must be a list");
@@ -757,6 +780,17 @@ function checkSnow(s, blocks, fail) {
 
 /** A rock's jointing (code, a fixed vocabulary; systemic terrain T2). */
 export const JOINTING = ["bedded", "vertical", "massive"];
+
+/** The plate settings a `plateProvinces` rule may name (R5; the code's vocabulary). */
+export const PLATE_SETTINGS = [
+  "arc",
+  "hotspot",
+  "accreted",
+  "core",
+  "rift",
+  "basin",
+  "default",
+];
 /** The geology's groups' ranges (rocks.json `provinces`, `shaping`), as `TERRAIN`'s. */
 export const GEOLOGY = {
   provinces: { wavelength: [256, 1_000_000, true] },
@@ -799,6 +833,7 @@ export function validateRocks(data, blocks) {
         "shaping",
         "erosion",
         "tectonic",
+        "plateProvinces",
       ].includes(k),
   );
   if (extra.length) fail(`unknown ${extra.join(", ")}`);
@@ -904,6 +939,53 @@ export function validateRocks(data, blocks) {
   for (const k of ["volcanic", "core"]) {
     if (!stacks.has(t[k]))
       fail(`tectonic.${k} must name a stack (${String(t[k])} is none)`);
+  }
+  // The rock provinces from plate history (R5): widths and rules of setting → stack; optional.
+  const pp = data.plateProvinces;
+  if (pp !== undefined) {
+    const pf = (m) => fail(`plateProvinces: ${m}`);
+    if (typeof pp !== "object" || pp === null) pf("must be an object");
+    const known = [
+      "$comment",
+      "accretedWidth",
+      "coreWidth",
+      "rangeCore",
+      "riftWidth",
+      "basinDistance",
+      "rules",
+    ];
+    const pe = Object.keys(pp).filter((k) => !known.includes(k));
+    if (pe.length) pf(`unknown ${pe.join(", ")}`);
+    for (const k of ["accretedWidth", "coreWidth", "riftWidth", "basinDistance"]) {
+      if (!between(pp[k], 0, 100000)) pf(`${k} must be in [0, 100000] m`);
+    }
+    const rc = pp.rangeCore;
+    if (
+      !Array.isArray(rc) ||
+      rc.length !== 2 ||
+      !between(rc[0], 0, 100000) ||
+      !between(rc[1], 0, 100000) ||
+      rc[0] > rc[1]
+    )
+      pf("rangeCore must be [near, far] m with near ≤ far");
+    if (!Array.isArray(pp.rules)) pf("rules must be a list");
+    const seen = new Set();
+    for (const r of pp.rules) {
+      if (!PLATE_SETTINGS.includes(r?.setting))
+        pf(
+          `rule setting ${JSON.stringify(r?.setting)} must be one of ${PLATE_SETTINGS.join(", ")}`,
+        );
+      if (seen.has(r.setting)) pf(`rule ${r.setting} is listed twice`);
+      seen.add(r.setting);
+      const re = Object.keys(r).filter(
+        (k) => !["setting", "stack", "$comment"].includes(k),
+      );
+      if (re.length) pf(`rule ${r.setting}: unknown ${re.join(", ")}`);
+      if (!stacks.has(r.stack))
+        pf(
+          `rule ${r.setting}: stack ${JSON.stringify(r.stack)} is not a stack of rocks.json`,
+        );
+    }
   }
   // The snow line's cover (terrain.json tectonics.snowBelowC): a full block.
   const sb = blocks.get(t.snow);

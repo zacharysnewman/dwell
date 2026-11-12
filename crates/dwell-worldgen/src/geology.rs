@@ -80,6 +80,151 @@ pub struct Geology {
     pub snow_block: &'static str,
     /// The glacier's cover (`rocks.json` `tectonic.ice`; `terrain.json` `tectonics.iceBelowC`).
     pub ice_block: &'static str,
+    /// The rock provinces from plate history (`rocks.json` `plateProvinces`, R5).
+    pub plate_provinces: PlateProvinces,
+}
+
+/// A column's setting on its face's plate layout (R5; the code's vocabulary, `plateProvinces`
+/// `rules[].setting`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PlateSetting {
+    /// On an arc's cone.
+    Arc,
+    /// On a hotspot chain's island.
+    Hotspot,
+    /// Old seafloor scraped onto the overriding plate at a subducting boundary.
+    Accreted,
+    /// A collision's core, or a subducting boundary's range crest.
+    Core,
+    /// A divergent boundary's floor.
+    Rift,
+    /// A plate's quiet interior, far from every boundary.
+    Basin,
+    /// Anywhere.
+    Default,
+}
+
+impl PlateSetting {
+    /// Every setting, in the bit order of [`PlateSettings`].
+    pub const ALL: [Self; 7] = [
+        Self::Arc,
+        Self::Hotspot,
+        Self::Accreted,
+        Self::Core,
+        Self::Rift,
+        Self::Basin,
+        Self::Default,
+    ];
+
+    /// The setting named `name` (the data's spelling).
+    pub fn parse(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|s| s.name() == name)
+    }
+
+    /// Its name in the data.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Arc => "arc",
+            Self::Hotspot => "hotspot",
+            Self::Accreted => "accreted",
+            Self::Core => "core",
+            Self::Rift => "rift",
+            Self::Basin => "basin",
+            Self::Default => "default",
+        }
+    }
+
+    fn bit(self) -> u8 {
+        1 << Self::ALL.iter().position(|&s| s == self).unwrap_or(0)
+    }
+}
+
+/// The settings that hold at a column (a set; `Default` always).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub struct PlateSettings(u8);
+
+impl PlateSettings {
+    pub fn has(self, s: PlateSetting) -> bool {
+        self.0 & s.bit() != 0
+    }
+
+    fn add(&mut self, s: PlateSetting) {
+        self.0 |= s.bit();
+    }
+}
+
+/// A `plateProvinces` rule: a setting and the stack it takes (by name).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PlateRule {
+    pub setting: PlateSetting,
+    pub stack: &'static str,
+}
+
+/// The rock provinces from plate history (`rocks.json` `plateProvinces`, R5): the settings'
+/// widths (m) and the rules, the first rule whose setting holds winning.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PlateProvinces {
+    pub accreted_width: f64,
+    pub core_width: f64,
+    /// [near, far] m behind a subducting boundary on the overriding side: the range's core.
+    pub range_core: [f64; 2],
+    pub rift_width: f64,
+    pub basin_distance: f64,
+    pub rules: &'static [PlateRule],
+}
+
+impl PlateProvinces {
+    /// The settings at (x, z) on the plate tectonics `t` (face-local m).
+    pub fn settings(
+        &self,
+        t: &crate::plate_tectonics::PlateTectonics,
+        x: f64,
+        z: f64,
+    ) -> PlateSettings {
+        use crate::plates::BoundaryKind;
+        let mut s = PlateSettings::default();
+        s.add(PlateSetting::Default);
+        for v in &t.volcanoes {
+            if (x - v.x).powi(2) + (z - v.z).powi(2) < (0.85 * v.radius).powi(2) {
+                s.add(if v.chain == 0 {
+                    PlateSetting::Arc
+                } else {
+                    PlateSetting::Hotspot
+                });
+            }
+        }
+        let plate = t.layout.plate_at(x, z);
+        let mut nearest = f64::INFINITY;
+        for (line, d) in t.lines_of(plate, x, z) {
+            nearest = nearest.min(d);
+            match line.kind {
+                BoundaryKind::Convergent => match line.over {
+                    Some(over) if over == plate => {
+                        if d < self.accreted_width {
+                            s.add(PlateSetting::Accreted);
+                        }
+                        if (self.range_core[0]..=self.range_core[1]).contains(&d) {
+                            s.add(PlateSetting::Core);
+                        }
+                    }
+                    Some(_) => {}
+                    None if d < self.core_width => s.add(PlateSetting::Core),
+                    None => {}
+                },
+                BoundaryKind::Divergent if d < self.rift_width => s.add(PlateSetting::Rift),
+                _ => {}
+            }
+        }
+        if nearest > self.basin_distance {
+            s.add(PlateSetting::Basin);
+        }
+        s
+    }
+
+    /// The first rule whose setting holds in `s`, if any.
+    pub fn rule(&self, s: PlateSettings) -> Option<&PlateRule> {
+        self.rules.iter().find(|r| s.has(r.setting))
+    }
 }
 
 mod table {
@@ -215,6 +360,15 @@ pub struct Resolved {
     seed: u32,
     /// The tectonics (T5) and their volcanoes, when on: the stacks they place, by index.
     tectonic: Option<Tectonic>,
+    /// The noise's stacks (weight above 0), by index; `cumulative` is over these.
+    noise_stacks: Vec<usize>,
+    /// The face's plate tectonics and each `plateProvinces` rule's stack (index), in a world
+    /// whose tectonics come from plates (R5).
+    plates: Option<(
+        std::sync::Arc<crate::plate_tectonics::PlateTectonics>,
+        Vec<usize>,
+    )>,
+    world_seed: u64,
 }
 
 /// The tectonics, their volcanoes, and the volcanic and core stacks (indices).
@@ -236,13 +390,16 @@ impl Resolved {
             .iter()
             .map(|s| Profile::of(&geology, s))
             .collect();
-        let total: f64 = geology.stacks.iter().map(|s| s.weight).sum();
+        // A stack of weight 0 is never the noise's (only a rule names it, R5).
+        let noise_stacks: Vec<usize> = (0..geology.stacks.len())
+            .filter(|&i| geology.stacks[i].weight > 0.0)
+            .collect();
+        let total: f64 = noise_stacks.iter().map(|&i| geology.stacks[i].weight).sum();
         let mut c = 0.0;
-        let cumulative = geology
-            .stacks
+        let cumulative = noise_stacks
             .iter()
-            .map(|s| {
-                c += s.weight / total.max(1e-12);
+            .map(|&i| {
+                c += geology.stacks[i].weight / total.max(1e-12);
                 c
             })
             .collect();
@@ -252,12 +409,51 @@ impl Resolved {
             cumulative,
             seed: crate::noise::seed_word(world_seed, 0x6E01_0001),
             tectonic: None,
+            noise_stacks,
+            plates: None,
+            world_seed,
         }
+    }
+
+    /// With the rock provinces from the plate tectonics `t` (R5, `rocks.json` `plateProvinces`):
+    /// a column's setting on `t` picks its stack by the first rule that holds, else the noise.
+    pub fn with_plates(
+        mut self,
+        t: std::sync::Arc<crate::plate_tectonics::PlateTectonics>,
+    ) -> Self {
+        let stacks = self
+            .geology
+            .plate_provinces
+            .rules
+            .iter()
+            .map(|r| {
+                self.geology.stack(r.stack).unwrap_or_else(|| {
+                    panic!(
+                        "rocks.json plateProvinces {}: no stack {}",
+                        r.setting.name(),
+                        r.stack
+                    )
+                })
+            })
+            .collect();
+        self.plates = Some((t, stacks));
+        self
+    }
+
+    /// The plate settings at (x, z), in a world whose rocks come from plates (R5).
+    pub fn plate_settings(&self, x: i64, z: i64) -> Option<PlateSettings> {
+        let (t, _) = self.plates.as_ref()?;
+        Some(self.geology.plate_provinces.settings(t, x as f64, z as f64))
     }
 
     /// With the tectonic provinces of `t` (T5): a volcano's ground is the volcanic stack, the old
     /// core's the core stack. Off (`t` disabled): the noise's provinces alone.
     pub fn with_tectonics(mut self, t: crate::tectonics::Tectonics) -> Self {
+        if t.from_plates() {
+            // R5: the face seed's plates (the world map's, `hydrology::generate_with_height`).
+            let plates = crate::plate_tectonics::PlateTectonics::for_seed(self.world_seed);
+            self = self.with_plates(std::sync::Arc::new(plates));
+        }
         if t.enabled() {
             let find = |n: &str| {
                 self.geology
@@ -275,6 +471,13 @@ impl Resolved {
 
     /// The province's stack at (x, z) and how fully it shapes there (fading to 0 at a border).
     pub fn province(&self, x: i64, z: i64) -> (usize, f64) {
+        if let Some((t, stacks)) = &self.plates {
+            let pp = &self.geology.plate_provinces;
+            let s = pp.settings(t, x as f64, z as f64);
+            if let Some(k) = pp.rules.iter().position(|r| s.has(r.setting)) {
+                return (stacks[k], 1.0);
+            }
+        }
         if let Some((t, v, volcanic, core)) = &self.tectonic
             && let Some(on_volcano) = t.province(v, x as f64, z as f64)
         {
@@ -295,7 +498,7 @@ impl Resolved {
             self.cumulative[i]
         };
         let edge = (t - lo).min(hi - t);
-        (i, (edge / PROVINCE_FADE).clamp(0.0, 1.0))
+        (self.noise_stacks[i], (edge / PROVINCE_FADE).clamp(0.0, 1.0))
     }
 }
 
@@ -566,4 +769,136 @@ pub fn soft_top(g: &Geology, stack: &Stack) -> f64 {
         }
     }
     0.0
+}
+
+#[cfg(test)]
+mod plate_province_tests {
+    //! R5 (docs/proposals/REALISTIC_WORLD.md §3.4): the rock provinces from plate history, by
+    //! the two-plate fixtures (plates.json `fixtures`: plates at ±5 km on x, the boundary at x 0).
+    use super::*;
+    use crate::plate_tectonics::{PlateTectonics, UPLIFT};
+    use crate::plates::{FIXTURES, PLATES, Plate, PlateLayout};
+    use std::sync::Arc;
+
+    fn fixture(name: &str) -> Arc<PlateTectonics> {
+        let f = FIXTURES.iter().find(|f| f.name == name).unwrap();
+        let plates = f.plates.map(Plate::from).to_vec();
+        Arc::new(PlateTectonics::new(
+            PlateLayout::of_plates(&PLATES, plates),
+            &UPLIFT,
+        ))
+    }
+
+    fn resolved(g: Geology, t: &Arc<PlateTectonics>) -> Resolved {
+        Resolved::new(g, 1).with_plates(t.clone())
+    }
+
+    fn stack_at(r: &Resolved, x: f64, z: f64) -> &'static str {
+        r.geology.stacks[r.province(x as i64, z as i64).0].name
+    }
+
+    fn rule(setting: PlateSetting) -> &'static str {
+        GEOLOGY
+            .plate_provinces
+            .rules
+            .iter()
+            .find(|r| r.setting == setting)
+            .unwrap()
+            .stack
+    }
+
+    #[test]
+    fn each_setting_takes_its_rules_stack() {
+        let pp = &GEOLOGY.plate_provinces;
+        // Subduction: the continent (+x) overrides; its accreted strip by the line, the range's
+        // core behind it, the arc's cones farther in, the quiet interior beyond.
+        let t = fixture("ocean_under_continent");
+        let r = resolved(GEOLOGY, &t);
+        let cones: Vec<_> = t.volcanoes.iter().filter(|v| v.chain == 0).collect();
+        assert!(!cones.is_empty(), "the fixture has an arc");
+        for v in cones {
+            assert!(pp.settings(&t, v.x, v.z).has(PlateSetting::Arc));
+            assert_eq!(stack_at(&r, v.x, v.z), rule(PlateSetting::Arc));
+        }
+        let near = 0.5 * pp.accreted_width;
+        assert!(pp.settings(&t, near, 0.0).has(PlateSetting::Accreted));
+        assert_eq!(stack_at(&r, near, 0.0), rule(PlateSetting::Accreted));
+        // The diving ocean's side has no strip.
+        assert!(!pp.settings(&t, -near, 0.0).has(PlateSetting::Accreted));
+        let crest = 0.5 * (pp.range_core[0] + pp.range_core[1]);
+        assert!(crest > pp.accreted_width);
+        assert_eq!(stack_at(&r, crest, 0.0), rule(PlateSetting::Core));
+        let far = pp.basin_distance + 3000.0;
+        assert!(pp.settings(&t, far, 0.0).has(PlateSetting::Basin));
+        assert_eq!(stack_at(&r, far, 0.0), rule(PlateSetting::Basin));
+        // Collision: the core astride the line, on both plates.
+        let t = fixture("continents_collide");
+        let r = resolved(GEOLOGY, &t);
+        for x in [-0.5 * pp.core_width, 0.5 * pp.core_width] {
+            assert_eq!(stack_at(&r, x, 2000.0), rule(PlateSetting::Core), "x {x}");
+        }
+        // A rift: its fill along the line.
+        let t = fixture("rift_opens");
+        let r = resolved(GEOLOGY, &t);
+        for x in [-0.5 * pp.rift_width, 0.5 * pp.rift_width] {
+            assert_eq!(stack_at(&r, x, 2000.0), rule(PlateSetting::Rift), "x {x}");
+        }
+    }
+
+    #[test]
+    fn the_build_names_todays_blocks_for_each_setting() {
+        // §7 q5: no new rock blocks; each setting's top rock shows a block of today's registry.
+        let face = |s: PlateSetting| {
+            let st = &GEOLOGY.stacks[GEOLOGY.stack(rule(s)).unwrap()];
+            GEOLOGY.rocks[GEOLOGY.rock(st.layers[0].rock).unwrap()].face
+        };
+        assert_eq!(face(PlateSetting::Arc), "dwell:basalt");
+        assert_eq!(face(PlateSetting::Hotspot), "dwell:basalt");
+        assert_eq!(face(PlateSetting::Core), "dwell:stone");
+        assert_eq!(face(PlateSetting::Accreted), "dwell:stone");
+        assert_eq!(face(PlateSetting::Basin), "dwell:red_sandstone");
+        assert_eq!(face(PlateSetting::Rift), "dwell:red_sandstone");
+    }
+
+    #[test]
+    fn a_rule_or_a_rocks_block_changed_by_data_alone_changes_the_province() {
+        let t = fixture("continents_collide");
+        let at = (0.0, 2000.0);
+        // The core's rule now names the basalt flows: the province follows.
+        let mut rules = GEOLOGY.plate_provinces.rules.to_vec();
+        for r in &mut rules {
+            if r.setting == PlateSetting::Core {
+                r.stack = "dwell:basalt_flows";
+            }
+        }
+        let mut g = GEOLOGY;
+        g.plate_provinces.rules = Box::leak(rules.into_boxed_slice());
+        assert_eq!(stack_at(&resolved(g, &t), at.0, at.1), "dwell:basalt_flows");
+        // A later granite block: the core's rock shows it by data alone.
+        let mut rocks = GEOLOGY.rocks.to_vec();
+        let gi = GEOLOGY.rock("dwell:granite").unwrap();
+        rocks[gi].face = "dwell:bedrock";
+        let mut g = GEOLOGY;
+        g.rocks = Box::leak(rocks.into_boxed_slice());
+        let r = resolved(g, &t);
+        let (stack, _) = r.province(at.0 as i64, at.1 as i64);
+        // The stack's top layer (granite over schist, built from sea level up: 40..100 m).
+        let (_, rock, _) = r.profiles[stack].map(70.0);
+        assert_eq!(r.geology.rocks[rock].face, "dwell:bedrock");
+        // No rule holds (an empty list): the noise's provinces, as without plates.
+        let mut g = GEOLOGY;
+        g.plate_provinces.rules = &[];
+        let (with, without) = (resolved(g, &t), Resolved::new(g, 1));
+        assert_eq!(with.province(0, 2000), without.province(0, 2000));
+    }
+
+    #[test]
+    fn a_zero_weight_stack_is_never_the_noises() {
+        let r = Resolved::new(GEOLOGY, 7);
+        for i in 0..400 {
+            let (x, z) = (i * 1733 - 300_000, i * 977 - 200_000);
+            let (k, _) = r.province(x, z);
+            assert!(GEOLOGY.stacks[k].weight > 0.0, "{}", GEOLOGY.stacks[k].name);
+        }
+    }
 }
