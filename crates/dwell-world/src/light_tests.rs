@@ -771,10 +771,12 @@ crate::both_faces!(
         }
         w.light_begin(*last);
         assert!(!w.light_resume(64), "still part way");
-        // A chunk arriving away from it leaves it part way (the chunks streaming in all round).
-        let far = ChunkCoord::new(last.x + 5, last.y, last.z);
-        w.put(far, Chunk::default());
-        assert_eq!(w.light_pending(), Some(*last), "a far chunk's arrival finished it");
+        // A chunk arriving beside it, not held yet (the chunks streaming in all round), leaves it
+        // part way: the light reads only the chunks it holds.
+        let beside = ChunkCoord::new(last.x + 1, last.y, last.z);
+        assert!(!chunks.contains(&beside));
+        w.put(beside, Chunk::default());
+        assert_eq!(w.light_pending(), Some(*last), "a new chunk's arrival finished it");
         apply(&mut w);
         assert_eq!(w.light_pending(), None, "finished by the edit");
         let (a, b) = (snapshot(&want, &chunks), snapshot(&w, &chunks));

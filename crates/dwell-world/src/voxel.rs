@@ -621,13 +621,16 @@ impl VoxelWorld {
     }
 
     /// Finishes a light part way before chunk `coord` changes, if the light may read it: a chunk
-    /// in its column or the eight beside them (the light reaches 15 cells sideways, under half a
-    /// chunk; an open column's sky lost under a new chunk goes down any distance). Others, the
-    /// chunks arriving all round while it lights, leave it be.
+    /// the light holds, in its column or the eight beside them (the light reaches 15 cells
+    /// sideways, under half a chunk; an open column's sky lost under a new chunk goes down any
+    /// distance). Others leave it be: the chunks arriving all round while it lights aren't held
+    /// until their own light, and the light reads only the chunks it holds (BUGS.md #72: finishing
+    /// it at each arrival put 14–19 ms into `jobs.apply` at CPU 6×).
     fn settle_light_near(&mut self, coord: ChunkCoord) {
         if let Some(c) = self.light_pending
             && (c.x - coord.x).abs() <= 1
             && (c.z - coord.z).abs() <= 1
+            && self.light.as_deref().is_some_and(|l| l.holds(coord))
         {
             self.settle_light();
         }

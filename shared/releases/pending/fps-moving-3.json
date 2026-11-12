@@ -1,0 +1,5 @@
+{
+  "changes": [
+    "Smoother frame rate on phones while exploring: lighting newly loaded terrain is spread over several frames instead of stalling one"
+  ]
+}
