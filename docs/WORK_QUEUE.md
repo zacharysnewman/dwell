@@ -1747,6 +1747,14 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    page's core against `parts.mjs` (the Peasant's export byte for byte). Left: the owner repaints the Peasant's face
    and hair with it.
 
+44. **Trees on slopes hang over the edge** (owner 2026-11-12: **"I notice a lot of trees on slopes are hanging out over
+   the edge. Perhaps trees should always have flats under them? Don't limit trees to flats, since they might not
+   spawn on wide sections of terrain? Check implications of this and possible fixes."**). Finding: placements
+   (`placements.rs`) anchor a tree at its anchor column's top + 1 and test the slope only by the height field's
+   gradient over ±2 m (`maxSlopeDeg` up to 44°); the other trunk columns (thick old-growth trunks) and ½ m ramps under
+   the trunk are not levelled, so a trunk's downhill side stands over a ramp or a drop. Options, analysis and the
+   owner's pick follow.
+
 ## Future (needs owner answers)
 
 - **Tall grass hides you** (owner 2026-11-12: "I like the hide mechanic idea, save this for later."): tall grass
