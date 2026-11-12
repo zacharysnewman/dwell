@@ -486,6 +486,11 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    about ¼ of our disc (~12.5 km radius); terrain from the world's seed with moon rules (cratered plains, ridges,
    maria), gray dirt everywhere for now — every world its own moon; today's motion, size in the sky, glow and
    moonlight kept, the face shown follows its orbit. Design first (docs/proposals/MOON_WORLD.md), then build.
+   Owner, 2026-11-12: **"This moon is potentially an extension of our 'other' buildable surfaces that aren't
+   always oriented the same way like our physics objects."** So the moon is designed as one case of a general
+   system: a voxel grid with its own transform (position, orientation, its own up/gravity), like the built
+   bodies and physics pieces (docs/BUILT_BODIES.md) — the home world being the one at rest — so moons, ships
+   and other buildable surfaces share one frame abstraction, one streamer, one mesher and one collider.
 
 ## Done
 
