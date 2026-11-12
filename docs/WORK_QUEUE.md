@@ -881,6 +881,10 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    some clips of the deer/wolves behavior, really showcase it and try to get good angles. Keep it under 2 minutes
    of video. Splice it together into a single video."). Queued (local, after item 30).
 
+   Made 2026-11-12: 85.6 s (sunrise herd with its stag: dolly, orbits, a follow, a drone rise; a wolf pack on a
+   cliff at evening). Not in it: a chase or deer fleeing (on day 0 every pack is kilometres from any herd and
+   players can't scare deer), far herds (none seen from above, unconfirmed), grazing (no grazing pose). Bugs found:
+   BUGS.md (a herd popping up in size, deer overlapping, a wolf in a cliff, `?at=` into the ground).
 37. **First-person arms from the player model** (owner 2026-11-12: "I thought we were going to swap out the AI
    generated first person character model? We discussed this yesterday."). The Peasant (the owner's Asset Store
    model) became other players' body and your shadow in 0.52.35 (CHARACTERS.md §11.5), but "Still rigid: your
