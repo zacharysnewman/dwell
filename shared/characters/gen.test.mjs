@@ -120,9 +120,12 @@ test('a held item rides the grip socket; the first-person chain shares the body\
   assert.equal(block.material, '$block');
   const chain = m.firstPerson.bones;
   const arms = m.parts.filter((p) => chain.includes(p.bone) && p.view !== 'body');
-  const body = m.parts.filter((p) => chain.includes(p.bone) && p.view !== 'arms');
-  // Everything the body draws on the arm is drawn in first person too (arms-only parts add detail).
-  for (const p of body) assert.ok(arms.includes(p), `${p.id} is in the arms view`);
+  const shared = m.parts.filter((p) => chain.includes(p.bone) && p.view === undefined);
+  // Every part the data shares (no `view`) is drawn in first person too; arms-only parts add
+  // detail, and a part marked `view: "body"` (the upper arm, which the first-person view hides
+  // past the shoulder) is the body's alone.
+  for (const p of shared) assert.ok(arms.includes(p), `${p.id} is in the arms view`);
+  for (const p of m.parts.filter((p) => p.view === 'body')) assert.ok(!arms.includes(p), `${p.id} is the body's alone`);
   assert.ok(arms.some((p) => p.view === 'arms'), 'there is arms-only detail');
 });
 

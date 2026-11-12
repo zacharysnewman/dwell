@@ -4522,7 +4522,10 @@ striker vertical 1 | defender vertical 2; 1 the guards: u16 count, each a fighte
 `Chop`'s action 4, `Guard` (u8 raised); neither goes to a peer without the capability. The sixth is
 `creatures.poses` (WORK_QUEUE item 39): `Creatures` ends, after the NPCs' part, with the animals' idle
 poses (above), drawn from `models.json` `poses` (CHARACTERS.md §11.6); without it the animals play
-their idle clip.
+their idle clip. The seventh is `npcs.swings` (WORK_QUEUE item 35): while an NPC swings its sword,
+its NPC part's pose is 3 (level) or 4 (vertical) (`NPC_STRIKE_POSES`), and the client plays the rig's
+chop clip; without it the server sends the NPC's idle pose, as older clients (whose decode refuses a
+pose past 2) read it.
 ```
 S→C  WorldSettings field 0x85 (optional): u8 count (≤ 64), each str name (≤ 48 bytes, no repeat)
 C→S  Capabilities 0x69, control: the same form — the client's capabilities, once after Welcome,

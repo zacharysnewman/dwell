@@ -906,6 +906,15 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    single strike in the time box) and the third-person raised poses. Found: BUGS.md #85 (a NaN look kicks
    the player). **Outstanding:** fit the level block; NPCs' own swings drawn (the server sends no NPC swing
    to clients yet); a duel shot with sparks; the owner's answer on NPCs hurting players.
+   **Round 4 (local, 2026-11-12, combat visuals 2):** the level block fitted with `clip_probe --fit` (an
+   arm turn; the probe now poses guard roles as the game does, `clip_probe.rs`
+   `the_level_block_lies_across_the_view_and_the_body`): seen in game, the blade lies level across the
+   view. NPC swings on the wire behind the `npcs.swings` capability (an NPC mid-swing is sent in strike pose
+   3 level / 4 vertical, drawn with the rig's chop clips; older clients get its idle pose). Dev `npcsFight()`
+   turns every NPC on the player. **Not seen:** a duel. With `npcsFight` and dev `edit('break')` swings two
+   metres off, the villager faced the player but never raised its block or struck back, so there is no
+   shot of sparks, a connecting hit or the third-person poses. Next: check whether `edit('break')` starts
+   a server-side weapon swing the fight rules can see (a native duel test through `LocalCore`).
 36. **A showcase video of the deer and wolves** (owner 2026-11-12: "have you observed the animals simulation? Make
    some clips of the deer/wolves behavior, really showcase it and try to get good angles. Keep it under 2 minutes
    of video. Splice it together into a single video."). Queued (local, after item 30).
@@ -955,7 +964,7 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    combat-visuals PR: the Peasant GLB paints its hat, its hair and its boots with the same palette stop
    (`hair_brown`'s base, 2754 vertices from the feet to the hat's top), so a remap of one recolours all
    three; a hat slot needs the hat's vertices painted with a ramp of their own at import
-   (shared/models `import.mjs`, by mesh or joint), then a `colours` part `hat` in shared/creatures. Queued.
+   (shared/models `import.mjs`, by mesh or joint), then a `colours` part `hat` in shared/creatures. Queued. Not started in round 4 either (the time box went to the duel and the poses).
 
 39. **Livelier animals** (owner 2026-11-12, after the video had no chase or fleeing — on day one every pack is
    kilometres from any herd and players can't scare deer): chose **deer flee from players** (they notice a player
@@ -978,6 +987,12 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    player yet; the wolves stayed and idled (one read as sitting from a low camera). The poses are still
    unjudged first guesses: filming them needs a placed camera near a herd with the player out of its
    notice distance (a dev switch to make animals ignore the player, or `near.players` off) — next.
+   **Round 4 (2026-11-12):** dev `animalsIgnorePlayers(true)` (the near animals see no player; a
+   both-faces test) and `animalPose(name)` (every near animal drawn in one pose). Seen in game: +x on the
+   deer's neck joints *raises* the head, so the first guesses were inverted; graze is now negative (heads
+   down toward the grass, not quite to it) and lookUp positive (heads raised a little, alert). Both read now.
+   **The wolves' sit and lie don't read:** a side view of a forced `sit` shows a standing wolf, so the leg
+   turns have no visible effect. The joint names or axes need checking against the dog rig. Next.
    Owner on the first video: **"The recording was a really good start. I'd like to record at 9:16 1080/1920."** —
    the next video (after this item lands) is portrait 1080×1920, framed for portrait, with a chase and fleeing.
 

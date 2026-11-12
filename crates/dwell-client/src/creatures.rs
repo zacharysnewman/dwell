@@ -6,7 +6,9 @@
 
 use std::collections::HashMap;
 
-use dwell_protocol::{CREATURE_POSES, CreatureNet, CreaturesMessage, NPC_POSES, NpcNet};
+use dwell_protocol::{
+    CREATURE_POSES, CreatureNet, CreaturesMessage, NPC_POSES, NPC_STRIKE_POSES, NpcNet,
+};
 use dwell_sim::creatures::{Table, npc_colours};
 use dwell_world::FaceFrame;
 
@@ -31,6 +33,13 @@ pub fn role_for_speed(speed: f32) -> &'static str {
 /// The role an NPC plays: its speed's while it moves, else its idle pose's (`stand` plays
 /// `idle`; `look` and `sit` play their own roles, a model without them its fallback).
 pub fn npc_role(speed: f32, pose: u8) -> &'static str {
+    // Its sword's swing (`npcs.swings`): the rig's chop clips, whatever its feet do.
+    match usize::from(pose).checked_sub(NPC_POSES.len()) {
+        Some(0) => return "chop_level",
+        Some(1) => return "chop_vertical",
+        _ => {}
+    }
+    debug_assert_eq!(NPC_STRIKE_POSES.len(), 2);
     match (role_for_speed(speed), NPC_POSES.get(usize::from(pose))) {
         ("idle", Some(&"look")) => "look",
         ("idle", Some(&"sit")) => "sit",
@@ -204,6 +213,14 @@ impl ClientCreatures {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // WORK_QUEUE item 35: an NPC sent striking (`npcs.swings`) plays the rig's chop clip.
+    #[test]
+    fn an_npc_striking_plays_its_swing() {
+        assert_eq!(npc_role(0.0, 3), "chop_level");
+        assert_eq!(npc_role(2.0, 4), "chop_vertical");
+        assert_eq!(npc_role(0.0, 2), "sit");
+    }
 
     #[test]
     fn the_client_picks_idle_walk_or_run_from_speed() {

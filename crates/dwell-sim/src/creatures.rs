@@ -380,14 +380,29 @@ impl Creature {
     }
 
     /// Its NPC part on the wire; None for an animal.
-    pub fn npc_net(&self, table: &Table) -> Option<NpcNet> {
+    /// Its NPC part; with `swings` (the client's `npcs.swings`) its pose is its strike's while it
+    /// swings its sword (`NPC_STRIKE_POSES`), else its idle pose.
+    pub fn npc_net(&self, table: &Table, swings: bool) -> Option<NpcNet> {
         let def = &table.creatures[self.kind];
+        let striking = self
+            .guard
+            .filter(|g| swings && self.own_swing.is_some() && g.attacking > 0)
+            .map(|g| (NPC_POSES.len() + usize::from(g.vertical)) as u8);
         def.npc.map(|_| NpcNet {
             id: self.id,
             kind: def.name.to_string(),
-            pose: self.pose as u8,
+            pose: striking.unwrap_or(self.pose as u8),
             variant: self.variant,
         })
+    }
+
+    /// Starts its own swing now (tests and the dev tools: an NPC mid-strike).
+    pub fn strike_now(&mut self, ticks: u32) {
+        if let Some(g) = &mut self.guard {
+            g.raised = false;
+            g.attack(ticks);
+            self.own_swing = Some(ticks / 2);
+        }
     }
 }
 
@@ -2010,15 +2025,41 @@ mod tests {
             .unwrap();
         assert_eq!(t.creatures[kind].model, "peasant");
         let cs = npcs(FaceFrame::A, [0.5, 0.5]);
-        let net = cs.list[0].npc_net(&cs.table).expect("an NPC part");
+        let net = cs.list[0].npc_net(&cs.table, false).expect("an NPC part");
         assert_eq!(
             (net.kind.as_str(), net.variant),
             ("test:person", cs.list[0].variant)
         );
         assert!(
             spawn(FaceFrame::A).list[0]
-                .npc_net(&Table::FIXTURE)
+                .npc_net(&Table::FIXTURE, false)
                 .is_none()
+        );
+    }
+    // WORK_QUEUE item 35: an NPC mid-swing is sent in its strike's pose to a client with
+    // `npcs.swings`, and in its idle pose to one without (older clients reject poses past 2).
+    #[test]
+    fn an_npc_mid_swing_is_sent_striking_only_to_a_capable_client() {
+        let mut cs = npcs(FaceFrame::A, [0.5, 0.5]);
+        let c = &mut cs.list[0];
+        if c.guard.is_none() {
+            c.guard = Some(Guard::holding("dwell:sword", false));
+        }
+        let idle = c.npc_net(&cs.table, true).unwrap().pose;
+        assert!(usize::from(idle) < NPC_POSES.len());
+        let c = &mut cs.list[0];
+        c.strike_now(30);
+        assert_eq!(c.npc_net(&cs.table, true).unwrap().pose, 3, "level strike");
+        assert_eq!(
+            c.npc_net(&cs.table, false).unwrap().pose,
+            idle,
+            "older client"
+        );
+        c.guard.as_mut().unwrap().vertical = true;
+        assert_eq!(
+            c.npc_net(&cs.table, true).unwrap().pose,
+            4,
+            "vertical strike"
         );
     }
 }

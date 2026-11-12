@@ -26,6 +26,10 @@
     {
       "name": "creatures.poses",
       "description": "A Creatures message ends, after its NPCs' part (written empty if need be), with the animals' idle poses (WORK_QUEUE item 39): per creature its id and pose (stand, graze, lookUp, earFlick, sit, lie; the ecology's idle poses), drawn as the model's `poses` data (shared/models/models.json) blended over its idle clip. Without it the server leaves the part out and the animals play their idle clip."
+    },
+    {
+      "name": "npcs.swings",
+      "description": "An NPC's pose in a Creatures message's NPCs' part may be 3 or 4 (`NPC_STRIKE_POSES`: striking level, striking vertical) while it swings its sword (WORK_QUEUE item 35), and the client plays that swing's clip. Without it the server sends its idle pose instead, as older clients read it."
     }
   ]
 }

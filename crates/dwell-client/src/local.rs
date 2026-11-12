@@ -464,6 +464,42 @@ impl LocalCore {
                     Err(e) => format!(r#"{{"error":{e:?}}}"#),
                 }
             }
+            ("npcsFight", []) => {
+                // Every NPC turns on the local player as if struck by it (its `npc.fight` rules
+                // then block and strike back; DEV_TOOLS.md): a duel without the first blow.
+                let Some(p) = self.server.player_of_session(LOCAL_SESSION) else {
+                    return r#"{"error":"no local player"}"#.into();
+                };
+                let Some(feet) = self.server.feet_of(p) else {
+                    return r#"{"error":"no local player"}"#.into();
+                };
+                let ids: Vec<u32> = self.server.creatures().iter().map(|c| c.id).collect();
+                let cs = self.server.creatures_mut();
+                let n = ids
+                    .into_iter()
+                    .filter(|&id| {
+                        let on = cs.attacked(id, feet);
+                        if on {
+                            cs.set_foe_player(id, p);
+                        }
+                        on
+                    })
+                    .count();
+                format!(r#"{{"fighting":{n}}}"#)
+            }
+            ("animalPose", [pose]) => {
+                // Every near animal drawn in pose `pose` (CREATURE_POSES' index; -1: as it
+                // idles), to judge a pose by eye (DEV_TOOLS.md).
+                let p = (*pose >= 0.0 && *pose < dwell_protocol::CREATURE_POSES.len() as f64)
+                    .then_some(*pose as u8);
+                self.server.force_animal_pose(p);
+                format!(r#"{{"pose":{p:?}}}"#)
+            }
+            ("animalsIgnorePlayers", [on]) => {
+                // The near animals see no player (filming their idles up close; DEV_TOOLS.md).
+                self.server.set_animals_ignore_players(*on != 0.0);
+                format!(r#"{{"ignore":{}}}"#, *on != 0.0)
+            }
             ("spawnHerd", [kind, size, offset]) => {
                 // A herd (`kind` 0, deer) or a pack (1, wolves) of `size` put `offset` m along +x
                 // from the local player, brought in by the near ecology (DEV_TOOLS.md).

@@ -1,0 +1,7 @@
+{
+  "changes": [
+    "The sword's level block now lies across the view.",
+    "Villagers swinging their swords are drawn mid-swing.",
+    "Deer graze with their heads down and look up with their heads raised (they had it the wrong way round)."
+  ]
+}

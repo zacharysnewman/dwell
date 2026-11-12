@@ -254,6 +254,16 @@ fn swing_of(role: &str) -> Option<Swing> {
     }
 }
 
+/// A raised block's role (`guard_level`: a hold-layer clip the animator lays over the gait,
+/// `MoveInput::guard`), if `role` is one; the probe poses it as the game does instead of a swing.
+fn guard_of(role: &str) -> Option<&'static str> {
+    let fp = player().first_person?;
+    fp.clips
+        .iter()
+        .map(|(r, _)| *r)
+        .find(|r| *r == role && r.starts_with("guard_"))
+}
+
 /// The arms role and clip a probe names (a role, or a clip the arms or body play).
 fn resolve(name: &str) -> Result<(&'static str, &'static dwell_characters::Clip), String> {
     let ch = player();
@@ -375,6 +385,7 @@ fn arms_bones(role: &str, held: Held, t: f32) -> [Affine; MAX_BONES] {
     let mut a = Animator::new(&TABLES, ch, Space::Arms);
     let input = MoveInput {
         holding: held != Held::Empty,
+        guard: guard_of(role),
         ..Default::default()
     };
     a.update(&input, 0.0);
@@ -579,6 +590,7 @@ fn body_bones(role: &str, held: Held, t: f32) -> [Affine; MAX_BONES] {
     let mut a = Animator::new(&TABLES, ch, Space::Body);
     let input = MoveInput {
         holding: held != Held::Empty,
+        guard: guard_of(role),
         ..Default::default()
     };
     a.update(&input, 0.0);
@@ -1231,6 +1243,49 @@ mod chop_swing_tests {
             .iter()
             .filter(|s| s.t >= ph.from - 1e-4 && s.t <= ph.to + 1e-4)
             .collect()
+    }
+
+    // WORK_QUEUE item 35: the sword's level block lies across the view and across the body: the
+    // blade within 20° of level, its tip well left of the grip (on screen, and on the body).
+    // face-a-only: the screen and the body's frame are the same on both faces.
+    #[test]
+    fn the_level_block_lies_across_the_view_and_the_body() {
+        let level = |v: [f32; 3]| {
+            let h = v[0].hypot(v[2]);
+            v[1].atan2(h).to_degrees().abs()
+        };
+        let mut p = Probe::new("fp_guard_level");
+        p.item = Some("dwell:sword");
+        p.points = vec![Point::Grip, Point::ToolHead];
+        p.samples = 2;
+        let r = probe(&p).expect("probe");
+        let s = &r.samples[0];
+        let (grip, head) = (s.at[0], s.at[1]);
+        let d: [f32; 3] = std::array::from_fn(|k| head.local[k] - grip.local[k]);
+        assert!(
+            level(d) < 20.0,
+            "first person: {:.0}° off level {d:?}",
+            level(d)
+        );
+        assert!(
+            head.screen[0] < grip.screen[0] - 0.8,
+            "across the view: grip {:?} tip {:?}",
+            grip.screen,
+            head.screen
+        );
+        let mut p = Probe::new("guard_level");
+        p.item = Some("dwell:sword");
+        p.points = vec![Point::Grip, Point::ToolHead];
+        p.samples = 2;
+        let r = probe(&p).expect("probe");
+        let s = &r.samples[0];
+        let d: [f32; 3] = std::array::from_fn(|k| s.at[1].body[k] - s.at[0].body[k]);
+        assert!(
+            level(d) < 20.0,
+            "the body: {:.0}° off level {d:?}",
+            level(d)
+        );
+        assert!(d[0] < -0.5, "across the body to its left: {d:?}");
     }
 
     #[test]
