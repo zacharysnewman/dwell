@@ -6,6 +6,19 @@ pins it.
 
 ## Open
 
+### 92. Downhill water shows edge triangles and thin lines at its ½ m level steps
+
+Owner, 2026-11-12 (screenshot + block dump): "I'm seeing some edge triangles and thin lines at slope transitions on
+downhill water." Build 0.54.142 (f68d23af), seed 950418385, generatorVersion 8, feet (1061.8, 79.6, 12359.4), yaw 313°,
+pitch −15.6°. A held, asleep river on sand (`dwell:sand[flooded=true]`, `dwell:sand_ramp[facing=south,flooded=true,
+half=bottom,shape=ramp]`): the surface grid's levels step down ½ m at a time along the flow (81 → 80.5 → 80 → … → 68.5,
+in diagonal bands), every column `held`, none awake. In the screenshot each band edge draws a bright vertical
+triangle where a step meets another step at a corner, and thin light lines along the step edges. Suspects: the water
+mesher's side faces (skirts) at a level step — drawn as full quads/triangles between neighbours whose corner heights
+are averaged differently, so a corner shared by three levels leaves a sliver or wedge; or the surface's per-corner
+smoothing across a step (T-junction cracks showing the sky/specular through). Expected: a downhill river reads as
+one continuous sloped surface (or clean steps), with no wedges or cracks.
+
 ### 91. A 10× world sits for minutes on "Shaping the world map… 0/2" with no sign of progress
 
 Owner, 2026-11-12 (M4 Max MacBook Pro): "I tried to start a 10x world … And it's up to 3 minutes so far on 'Shaping the
