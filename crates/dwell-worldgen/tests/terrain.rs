@@ -870,8 +870,18 @@ fn generated_ramps_follow_the_rule_across_chunk_borders_and_hold_the_sea_at_the_
     let (sx, sz) = steepest_near_centre(&g);
     let strips = [(cx - 3000, cx + 40, cz), (sx - 300, sx + 300, sz)];
     for (x0, x1, zc) in strips {
+        // A tree's trunk stands on a flat pad, no ramp (WORK_QUEUE item 44): its columns are not
+        // the rule's.
+        let pads: std::collections::HashSet<(i32, i32)> = g
+            .trees_in((x0, zc - 8), (x1 - 1, zc + 7))
+            .iter()
+            .flat_map(|t| g.planters()[t.planter as usize].pad(t).0)
+            .collect();
         for z in zc - 8..zc + 8 {
             for x in x0..x1 {
+                if pads.contains(&(x, z)) {
+                    continue;
+                }
                 let top = g.ground_y(x, z).expect("inside");
                 let around: Around = std::array::from_fn(|r| {
                     std::array::from_fn(|c| {

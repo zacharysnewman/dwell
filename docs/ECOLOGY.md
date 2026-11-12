@@ -457,6 +457,30 @@ depending on climate/biome." Data: `shared/worldgen/grass.json` (`gen.mjs` `vali
   grass over `maxDensity`. Applied to the islands made from world maps while the world grows grass (a
   world without grass growth keeps its forage as before; the default world's single biome has share 1
   everywhere, so its forage is unchanged).
+- **Growing in height** (owner 2026-11-12: "I thought it would get taller over time?"): tall grass has
+  a `stage` property (`0` a sprout … `3` full height; the default `3`, so tall grass placed by hand,
+  generated in a world of one biome, or saved before stages is full height as before, ADR 0063), each
+  stage's height block data (`cross.heights`: 0.25, 0.45, 0.65, 0.85 of a ½ m cell; the mesher draws
+  the state's, the selection box scales with it). grass.json's `stages` (`property`, `order` a sprout to
+  full, `days`, `share`; `gen.mjs` `validateGrassStages`: at least 4 stages, the last the property's
+  default, the mean days adding up to a week or more) drive it: each world day a tuft below its
+  column's **top stage** grows one stage with chance 1/`days[i]` (3, 3, 4 days: about 10 days a sprout
+  to full; memoryless, so a few race and most take a week or more), by a roll hashed on (seed, day,
+  face-local cell) apart from the spread's, in the same step and catch-up (≤ `catchUpDays`) as the
+  spread. The top stage is the last whose `share` the column's climate share reaches (`0, 0.2, 0.4,
+  0.6`): dry or cold ground stays short, a lush meadow grows full; a tuft past its top (placed full) is
+  never cut back. Grown and regrown tufts start as a sprout. **Eaten**: a grazer's bite leaves a
+  sprout over the rule's ground in a world that grows grass (`Server::eaten_to`, `Rule::eaten`: the
+  roots stay and it regrows stage by stage), air as before otherwise. **Broken by hand** it is
+  removed, as before (a player clears grass to build), and regrows from the roots as a sprout where
+  generated grass stood. **Drops by stage**: the drop rules' `when` (ADR 0066 amended): fiber 25 %,
+  50 %, 75 %, 100 % and seed 0, 10 %, 25 %, 50 % from a sprout to full; the gem chance only at full
+  height (full drops exactly as before). **Generation** places each tuft at its column's top stage
+  (`grass::generated_tuft`, the decoration's undergrowth factor as the share): the default world (one
+  biome, share 1) is unchanged; a world of several biomes gets shorter grass where it is dry (the starter: a
+  change to the terrain its seed generates, re-pinned, for the owner's next line). Full
+  height is still one ½ m cell's 0.85; a ~1 m stand needs a two-cell top for the tallest climates
+  (later).
 - **The world's switch**: saved in the optional `grass_growth` table (a version byte, the switch, each
   grown chunk's last day; another version's is kept unread and the growth stays off). `ServerConfig::grass`
   (on) is a **new** world's; a world saved before this (meta, no table) has none, so existing worlds'
@@ -475,4 +499,13 @@ over the ground's is the near cap over `maxDensity`, and a dry cell's forage sta
 test -p dwell-sim --test grass` (both faces): the server grows a loaded chunk's missed days and a
 player's block stands; the switch and the days survive a save; an opted-out world keeps its choice;
 the saved form round-trips and another version is unread. `node --test shared/worldgen/gen.test.mjs`:
-grass.json validates, bad entries fail naming the field.
+grass.json validates, bad entries fail naming the field (the stages too). Growing in height:
+`cargo test -p dwell-worldgen --test grass` (both faces) `sprouts_grow_a_stage_at_a_time_…`,
+`the_climate_caps_the_top_stage`, `new_and_regrown_tufts_start_as_a_sprout` (eaten → sprout → full),
+`stages_by_data_alone`, `the_default_stage_is_full_height`,
+`generation_places_tall_grass_at_its_climates_top_stage`; `cargo test -p dwell-sim --test grass`
+`the_server_grows_sprouts_taller_and_an_eaten_tuft_goes_back_to_a_sprout` (both faces); `dwell-sim`
+`a_broken_tufts_drops_follow_its_growth_stage`, `dwell-protocol`
+`taller_tall_grass_drops_more_fiber_and_seeds`; `dwell-mesh`
+`tall_grass_draws_each_growth_stage_at_its_height` (both faces); `client/src/world/blocksGen.test.ts`
+and `shared/inventory/gen.test.mjs` the `cross.heights` and `when` data.

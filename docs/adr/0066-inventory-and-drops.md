@@ -53,7 +53,9 @@ build (data), inventories per player per world, the rules per mode.
 3. **Drops are block data.** A block's optional `drops` in `shared/blocks/*.json` is a list of
    `{ "item": name, "count": n or [min, max], "chance": 0..1 }`, or a weighted pick:
    `{ "chance": 0.125, "pick": [{ "item", "count", "weight" }, …] }` (tall grass's gems: value 1 ×95,
-   value 5 ×5). Absent: the block drops one of itself, except that a stored ramp drops what its
+   value 5 ×5). **Amended 2026-11-12** (docs/ECOLOGY.md §10): a rule's optional `"when":
+   { property: [values] }` holds only for states whose properties take one of them (tall grass's
+   drops by growth `stage`: more fiber and seed the taller it is); without it, every state. Absent: the block drops one of itself, except that a stored ramp drops what its
    base (`of`) drops, a block's extra cell
    (`partOf`) and a liquid drop nothing, and an indestructible block can't be broken. `[]` drops
    nothing. A bad entry fails naming the block and the problem (an item no block or item list

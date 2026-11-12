@@ -46,7 +46,7 @@ use dwell_world::hash::HashMap;
 
 use dwell_game::brush_tool::{BrushOutline, GhostFace, GhostKind};
 use dwell_lod::fade::Fade;
-use dwell_look::clouds::{CLOUDS, CloudQuality, cloud_uniforms};
+use dwell_look::clouds::{CLOUDS, CloudQuality, cloud_disc, cloud_uniforms, rim_cover};
 use dwell_look::daynight::{DAY_SKY_FLOATS, DayState};
 use dwell_look::fog::{self, fog_sigma};
 use dwell_look::lod_shadows::LOD_SHADOWS;
@@ -1628,6 +1628,9 @@ pub struct Renderer {
     /// The adapter's kind (`clouds_for`): a CPU adapter draws no clouds.
     adapter: wgpu::DeviceType,
     cloud_coverage: f64,
+    /// The world's radius (m, its size's: `WorldSize::world_radius_m`): the clouds stop at its rim
+    /// (`cloud_disc`, BUGS.md #101) and the atmosphere's limb fades out past it (BUGS.md #102).
+    world_radius_m: f64,
     /// The view ray's cloud opacity over the data's (`?cloudExtinction=`, a dev A/B knob; 0: the
     /// data's `volume.extinction`).
     cloud_extinction: f64,
@@ -2518,6 +2521,7 @@ impl Renderer {
             warmup: pipeline::Warmup::default(),
             adapter: wgpu::DeviceType::Other,
             cloud_coverage: CLOUDS.shape.coverage,
+            world_radius_m: dwell_protocol::world::WORLD_RADIUS as f64,
             cloud_extinction: 0.0,
             cloud_seconds: 0.0,
             stats: RenderStats::default(),
@@ -2758,8 +2762,11 @@ impl Renderer {
     /// The time of day in the eye's air: thinned toward space with its height above sea level on its
     /// own face (docs/DAY_NIGHT.md §15; the ground's sky untouched).
     fn day_in_air(&self) -> DayState {
-        self.day
-            .at_altitude(self.face.y(self.eye[1]) - dwell_world::SEA_LEVEL_M)
+        self.day.at_eye(
+            self.face.y(self.eye[1]) - dwell_world::SEA_LEVEL_M,
+            self.eye[0].hypot(self.eye[2]),
+            self.world_radius_m,
+        )
     }
     /// How far the viewer is toward face A (1) from face B (0), eased across the flip band: what
     /// the eye adapts toward (`adapt_eye`).
@@ -2923,6 +2930,10 @@ impl Renderer {
     /// to set.
     pub fn set_cloud_coverage(&mut self, coverage: f64) {
         self.cloud_coverage = coverage.clamp(0.0, 1.0);
+    }
+    /// The world's radius (m; its size's, at the join): where the clouds and the limb stop.
+    pub fn set_world_radius(&mut self, radius_m: f64) {
+        self.world_radius_m = radius_m.max(1.0);
     }
     /// The view ray's cloud opacity (per m at density 1) over the data's `volume.extinction`, for
     /// an A/B of how much a cloud hides the ones behind it (`?cloudExtinction=`; 0 or less: the
@@ -3506,6 +3517,9 @@ impl Renderer {
         for v in air.iter().chain(lit.iter()) {
             put(v);
         }
+        // The clouds' edge round the disc's axis (BUGS.md #101).
+        let disc = cloud_disc(&CLOUDS, self.eye, self.world_radius_m);
+        put(&disc);
         // The exposure follows the eye's adaptation; the fog is the air's the eye is in (the other
         // face's rides in the day block, for rays that cross the midplane: docs/DAY_NIGHT.md §13).
         let adapted = self.day.viewer(self.adapted_a);
@@ -3543,6 +3557,8 @@ impl Renderer {
             self.clouds_now(),
             self.cloud_coverage,
         );
+        // No cloud to be in past the rim (BUGS.md #101).
+        clouds[2][0] *= rim_cover(disc, [0.0, 0.0]) as f32;
         // Near or in the layer the tier's near steps (BUGS.md #90).
         if let Some(t) = self.cloud_tier() {
             clouds[2][3] = t.steps as f32 + t.light_steps as f32 / 8.0;
@@ -6187,13 +6203,13 @@ pub(crate) fn frame_extras(
 const WIND_PERIOD: f64 = 1024.0;
 
 /// Floats in the frame uniform block (`Frame` in shaders.rs): a matrix, the outline's and the
-/// pixel-art preview's vec4s, 22 more (the lines', then after `tan` the clouds' three and the other face's deck's
+/// pixel-art preview's vec4s, 22 more (the lines', the clouds' disc before `eye`, then after `tan` the clouds' three and the other face's deck's
 /// two, then the water's, the wind's six, the wrap and the reflections' two) and the day/night
 /// cycle's block.
 pub(crate) const FRAME_FLOATS: usize = 16
     + dwell_look::outline::OUTLINE_FLOATS
     + dwell_look::pixel_art::LIGHT_FLOATS
-    + 26 * 4
+    + 27 * 4
     + LEAN_FLOATS
     + dwell_look::shafts::LIGHT_SHAFT_VEC4S * 4
     + DAY_SKY_FLOATS;

@@ -55,7 +55,8 @@ fn dwell_sky(dir: vec3f, face: f32, day: DaySky) -> vec3f {
 // sine) and the sun's tight white bloom (`sun_cos`, the ray's cosine to the sun).
 fn dwell_space(ground: vec3f, horizon: vec3f, rise: f32, sun_cos: f32, day: DaySky) -> vec3f {
     let off = (rise - day.space.y) / LIMB_WIDTH;
-    let limb = LIMB_BRIGHTNESS * exp(-off * off);
+    // z: how much of the limb shows (none for a viewer far past the rim: BUGS.md #102).
+    let limb = LIMB_BRIGHTNESS * day.space.z * exp(-off * off);
     let bloom = SPACE_SUN_BLOOM * exp((sun_cos - 1.0) * SUN_BLOOM_K);
     let space = min(SPACE_COLOR + horizon * limb + vec3f(bloom), vec3f(1.0));
     return mix(ground, space, day.space.x);

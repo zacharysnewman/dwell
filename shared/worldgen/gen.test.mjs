@@ -239,12 +239,34 @@ test('a placement added by data alone is emitted', () => {
   assert.ok(rs.includes(`PLACEMENTS: [Placement; ${String(n + 1)}]`));
   assert.match(
     rs,
-    /name: "rock_scatter",\n\s+structures: &\[\("dwell:proto_rock", 1\)\],\n\s+on: &\["dwell:grass", "dwell:dirt"\],\n\s+footprint_on: false,\n\s+grid: 24,/,
+    /name: "rock_scatter",\n\s+structures: &\[\("dwell:proto_rock", 1\)\],\n\s+on: &\["dwell:grass", "dwell:dirt"\],\n\s+footprint_on: false,\n\s+pad_trunk: false,\n\s+grid: 24,/,
   );
   // No groves: everywhere; no rise: flat; 30° as a squared gradient (tan² 30° = 1/3); quarter turns.
   assert.match(rs, /grove_wavelength: 0,\n\s+grove_coverage: 1\.0,\n\s+grove_outside: 1\.0,/);
   assert.match(rs, /rise_full: 0,\n\s+rise_low: 1\.0,\n\s+max_gradient_sq: 0\.33333334,/);
   assert.match(rs, /rotations: &\[0, 2\],/);
+});
+
+test('a placement pads its trunks by its `pad`, by default when it lists a tree species', () => {
+  // WORK_QUEUE item 44: the ground under the trunk's columns is levelled to its base.
+  const d = loadPlacements();
+  const base = { on: ['dwell:grass'], footprint: 'anchor', grid: 24, density: 0.2, height: [0, 600], maxSlopeDeg: 30, spacing: 0, rotate: [0] };
+  d.placements = [
+    { ...base, name: 'species_default', structures: { 'dwell:oak': 1 } },
+    { ...base, name: 'structure_default', structures: { 'dwell:proto_rock': 1 } },
+    { ...base, name: 'species_none', structures: { 'dwell:oak': 1 }, pad: 'none' },
+    { ...base, name: 'structure_trunk', structures: { 'dwell:proto_tree': 1 }, pad: 'trunk' },
+  ];
+  const rs = placementsRust(validatePlacements(d, blocks, structures));
+  const pads = [...rs.matchAll(/pad_trunk: (true|false),/g)].map((m) => m[1]);
+  assert.deepEqual(pads, ['true', 'false', 'false', 'true']);
+  // The checked-in tree placements all pad; the boulders don't.
+  const built = placementsRust(validatePlacements(loadPlacements(), blocks, structures));
+  const names = [...built.matchAll(/name: "([a-z_]+)",\n(?:.*\n){3}\s+pad_trunk: (true|false)/g)].map((m) => [m[1], m[2]]);
+  assert.deepEqual(
+    names.filter(([, p]) => p === 'false').map(([n]) => n),
+    ['boulders'],
+  );
 });
 
 test('a bad placement fails with its name and the problem', () => {
@@ -256,6 +278,7 @@ test('a bad placement fails with its name and the problem', () => {
     [(p) => (p.on = ['dwell:moss']), /on names unknown block dwell:moss/],
     [(p) => (p.on = ['dwell:water']), /on block dwell:water is not a full block/],
     [(p) => (p.footprint = 'crown'), /footprint must be one of on, anchor/],
+    [(p) => (p.pad = 'ring'), /pine_groves: pad must be one of trunk, none/],
     [(p) => (p.grid = 1), /grid must be a whole number of metres in \[2, 256\]/],
     [(p) => (p.density = 1.5), /density must be in \(0, 1\]/],
     [(p) => (p.groves.wavelength = 4), /groves\.wavelength/],
@@ -993,6 +1016,23 @@ test('grass.json validates, its output is current, and bad entries fail naming t
   // A rule by data alone: another ground and rates.
   const fixture = validateGrass({ ...grass(), on: ['dwell:dirt'], spreadPerDay: 1, reach: 2 }, blocks, decorations);
   assert.match(grassRust(fixture), /on: &\["dwell:dirt"\]/);
+  // Growing in height (docs/ECOLOGY.md §10): the stages, by data.
+  const stages = (patch) => ({ ...grass(), stages: { ...grass().stages, ...patch } });
+  const badStages = (patch, re) => assert.throws(() => validateGrass(stages(patch), blocks, decorations), re);
+  badStages({ property: 'nope' }, /stages.property "nope" is not a property of dwell:tall_grass/);
+  badStages({ order: ['0', '1', '3'], days: [3, 4], share: [0, 0.5, 1] }, /at least 4 values/);
+  badStages({ order: ['3', '2', '1', '0'] }, /must end with the property's default 3/);
+  badStages({ order: ['0', '1', '1', '3'] }, /each of dwell:tall_grass's stage values once/);
+  badStages({ days: [1, 1, 1] }, /add up to at least 7/);
+  badStages({ days: [3, 4] }, /stages.days must give each stage but the last/);
+  badStages({ share: [0.1, 0.2, 0.4, 0.6] }, /must start at 0/);
+  badStages({ share: [0, 0.5, 0.4, 0.6] }, /must not fall/);
+  badStages({ extra: 1 }, /stages: unknown extra/);
+  assert.throws(() => validateGrass({ ...grass(), stages: undefined }, blocks, decorations), /stages must be an object/);
+  // A fixture's slower stages by data alone.
+  const slow = validateGrass(stages({ days: [10, 10, 10], share: [0, 0, 0, 0.9] }), blocks, decorations);
+  assert.match(grassRust(slow), /GrassStage \{ value: "1", days: 10\.0, share: 0\.0 \}/);
+  assert.match(grassRust(slow), /GrassStage \{ value: "3", days: 0\.0, share: 0\.9 \}/);
 });
 
 const loadClimate = () => JSON.parse(readFileSync(join(here, 'climate.json'), 'utf8'));

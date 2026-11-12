@@ -1,6 +1,6 @@
 // The ambience (docs/AUDIO.md §2c): looping beds — wind, the sea, a river, a stream, birds, leaves —
 // under the Ambience volume, each at its data's gain times every condition's ramp over the
-// listener's surroundings (the Rust game's probe, `ambience()`: 9 numbers in INPUTS order), never
+// listener's surroundings (the Rust game's probe, `ambience()`: 10 numbers in INPUTS order), never
 // above the data's cap, gliding to each new level over `fadeS`. Pure apart from the output the
 // engine gives it (loops on the ambience bus), so the levels and the start/stop/crossfade are
 // tested without an AudioContext.
@@ -17,6 +17,7 @@ export const INPUTS = [
   'trees',
   'day',
   'fireM',
+  'underwater',
 ] as const;
 export type Input = (typeof INPUTS)[number];
 export type Surroundings = Record<Input, number>;

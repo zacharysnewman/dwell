@@ -1,5 +1,5 @@
 {
-  "$comment": "The atmosphere (docs/DAY_NIGHT.md §15; WORK_QUEUE item 28, owner 2026-11-12: \"We likely need an atmosphere transition now between sky thinning to space. Clouds shouldn't extend past the earth atmosphere either.\"). Heights are metres above sea level on the viewer's own face (face-local, so both faces alike). At or below baseM the sky is today's exactly; above it the air thins: the share of the sky's scattering left is (e^(-x/H) - e^(-X/H)) / (1 - e^(-X/H)), x the height over baseM, X = topM - baseM, H = scaleHeightM, so it is all gone at topM (space). In space the sky is spaceColor; the stars show at least starsInSpace (0-1) by day; the horizon's colour gathers into a limb limbBrightness bright and limbWidthDeg wide at the rim of the world limbDistanceM away (its elevation -atan(height / limbDistanceM)), below the viewer's horizon; the sun's disc goes sunWhiteness of the way to white, keeps its size at the horizon, and keeps a tight white bloom of sunBloom; the fog thins with the air to none. The clouds' and plumes' tops must stay under topM (clouds.mjs checks the data; run-time plumes are cut at it). The moon has no atmosphere. Run `node shared/look/atmosphere.mjs` after editing; CI fails if crates/dwell-look/src/atmosphere.gen.rs is stale.",
+  "$comment": "The atmosphere (docs/DAY_NIGHT.md §15; WORK_QUEUE item 28, owner 2026-11-12: \"We likely need an atmosphere transition now between sky thinning to space. Clouds shouldn't extend past the earth atmosphere either.\"). Heights are metres above sea level on the viewer's own face (face-local, so both faces alike). At or below baseM the sky is today's exactly; above it the air thins: the share of the sky's scattering left is (e^(-x/H) - e^(-X/H)) / (1 - e^(-X/H)), x the height over baseM, X = topM - baseM, H = scaleHeightM, so it is all gone at topM (space). In space the sky is spaceColor; the stars show at least starsInSpace (0-1) by day; the horizon's colour gathers into a limb limbBrightness bright and limbWidthDeg wide at the rim of the world limbDistanceM away (its elevation -atan(height / limbDistanceM)), below the viewer's horizon, for a viewer over the disc: past the rim it fades out over limbFadeM (from the disc's axis, beyond the world's radius), where there is no world to make a limb (BUGS.md #102); the sun's disc goes sunWhiteness of the way to white, keeps its size at the horizon, and keeps a tight white bloom of sunBloom; the fog thins with the air to none. The clouds' and plumes' tops must stay under topM (clouds.mjs checks the data; run-time plumes are cut at it). The moon has no atmosphere. Run `node shared/look/atmosphere.mjs` after editing; CI fails if crates/dwell-look/src/atmosphere.gen.rs is stale.",
   "baseM": 3000,
   "topM": 80000,
   "scaleHeightM": 9000,
@@ -8,6 +8,7 @@
   "limbBrightness": 1,
   "limbWidthDeg": 1.6,
   "limbDistanceM": 50000,
+  "limbFadeM": 10000,
   "sunWhiteness": 0.85,
   "sunBloom": 0.3
 }

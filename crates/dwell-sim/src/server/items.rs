@@ -57,8 +57,8 @@ impl Server {
         }
         let name = block_of(was).name;
         let stacks = match inv::drops_of(name) {
-            // Rolled with the server's entropy.
-            Some(d) => inv::roll(d.drops, &mut || self.random()),
+            // Rolled with the server's entropy, the rules that hold for the state (a stage's).
+            Some(d) => inv::roll(&rules_of(d, was), &mut || self.random()),
             None => vec![Stack::new(name, 1)],
         };
         for s in stacks {
@@ -97,7 +97,7 @@ impl Server {
         }
         let name = block_of(was).name;
         let mut stacks = match inv::drops_of(name) {
-            Some(d) => inv::roll(d.drops, &mut || self.random()),
+            Some(d) => inv::roll(&rules_of(d, was), &mut || self.random()),
             None => vec![Stack::new(name, 1)],
         };
         for (item, total) in certain_drops_of(was) {
@@ -394,7 +394,45 @@ fn certain_drops_of(was: StateId) -> Vec<(&'static str, u32)> {
     }
     let name = block_of(was).name;
     match inv::drops_of(name) {
-        Some(d) => dwell_protocol::damage::certain_drops(d.drops),
+        Some(d) => dwell_protocol::damage::certain_drops(&rules_of(d, was)),
         None => vec![(name, 1)],
+    }
+}
+
+/// The drop rules of `d` that hold for state `was` (each rule's `when`, by the state's properties).
+pub(super) fn rules_of(d: &inv::BlockDrops, was: StateId) -> Vec<inv::DropRule> {
+    inv::rules_for(d.drops, |p| dwell_blocks::state_property(was, p))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_broken_tufts_drops_follow_its_growth_stage() {
+        // face-a-only: block states and drop rules, no world.
+        // docs/ECOLOGY.md §10: the rules that hold for a state by its `stage` (`when`).
+        let grass = dwell_blocks::require("dwell:tall_grass");
+        let d = inv::drops_of("dwell:tall_grass").unwrap();
+        let stage = |v| dwell_blocks::with_property(grass, "stage", v).unwrap();
+        let chance = |s: StateId, item: &str| -> f64 {
+            rules_of(d, s)
+                .iter()
+                .filter(|r| r.choices.iter().any(|c| c.item == item))
+                .map(|r| r.chance)
+                .sum()
+        };
+        // The default (full, as placed or saved before stages) drops as before.
+        assert_eq!(chance(grass, "dwell:grass_fiber"), 1.0);
+        assert_eq!(chance(grass, "dwell:grass_seed"), 0.5);
+        assert_eq!(certain_drops_of(grass), vec![("dwell:grass_fiber", 1)]);
+        assert!(
+            certain_drops_of(stage("0")).is_empty(),
+            "a sprout: nothing certain"
+        );
+        for item in ["dwell:grass_fiber", "dwell:grass_seed"] {
+            let by = ["0", "1", "2", "3"].map(|v| chance(stage(v), item));
+            assert!(by.windows(2).all(|w| w[0] < w[1]), "{item}: {by:?}");
+        }
     }
 }
