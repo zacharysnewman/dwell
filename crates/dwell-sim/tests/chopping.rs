@@ -347,7 +347,7 @@ fn player_at(fx: &mut Fixture, f: FaceFrame) -> [f64; 3] {
     f.point(players.position(physics, h).to_array())
 }
 
-// both-faces: run on each face by the two ignored tests below (the macro can't ignore its tests).
+// both-faces: run on each face by the two tests below (BUGS.md #52; they were ignored until fixed).
 fn a_felled_trunk_falling_on_the_chopper_does_not_fling_them(f: FaceFrame) {
     // 0.50.36's screenshots: the trunk tips toward the notch, where the chopper stands, and
     // its fall threw them ~20 m. A falling piece may knock a player down or aside, not
@@ -386,13 +386,11 @@ fn a_felled_trunk_falling_on_the_chopper_does_not_fling_them(f: FaceFrame) {
 }
 
 #[test]
-#[ignore = "BUGS.md #52: the kick cap is removed (owner, 2026-11-08); the fling's root fix is later"]
 fn a_felled_trunk_falling_on_the_chopper_does_not_fling_them_a() {
     a_felled_trunk_falling_on_the_chopper_does_not_fling_them(FaceFrame::A);
 }
 
 #[test]
-#[ignore = "BUGS.md #52: the kick cap is removed (owner, 2026-11-08); the fling's root fix is later"]
 fn a_felled_trunk_falling_on_the_chopper_does_not_fling_them_b() {
     a_felled_trunk_falling_on_the_chopper_does_not_fling_them(FaceFrame::B);
 }

@@ -404,6 +404,12 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    hit carves a bite the size of the axe head where it struck (a wedge into the wood, like the dirt bowl and stone
    facets), the bites growing together into the notch as the chop goes on; cracks/splits along the grain from
    the cracks work. Next after item 24 (same code).
+27. **A felled trunk landing on its chopper flings them (BUGS.md #52)** (the owner's brief, 2026-11-12: fix the
+   cause, "we shouldn't be capping player kick like that" (2026-11-08): no cap on the kick; a trunk hitting a
+   player at speed must still knock them as physics says). **Built 2026-11-12** (branch `claude/pinch-fling`):
+   a piece's contact pressing a player down takes the piece's friction (`physics::PinchGrip`, a Rapier contact
+   hook; PLAYER_CONTROLLER.md §6.6), so the frictionless capsule is pinned, not squeezed out; side hits stay
+   frictionless and uncapped. The repro is un-ignored (0.4–0.5 m, was 155–160 m; both faces).
 
 ## Done
 

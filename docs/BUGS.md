@@ -133,22 +133,6 @@ preload's screen from opening in its 3 frames (`with_the_lod_a_preloaded_respawn
 and was dropped. **Left:** the owner's check on the river in the browser, and the report's other half
 (edited chunks refined only up close).
 
-### 52. A felled trunk landing on its chopper can fling them far
-
-Owner, 2026-11-08: "we shouldn't be capping player kick like that" — "the cap is removed". 0.50.37's
-`max_body_kick` cap is gone (0.50.39), so this is open again: a 10 m trunk felled toward its
-chopper throws them ~150 m at ~75 m/s (`dwell-sim` `tests/chopping.rs`
-`a_felled_trunk_falling_on_the_chopper_does_not_fling_them`, ignored until fixed; both faces).
-Measured (2026-11-08): the trunk's slanted underside comes down on the player standing on the
-ground at ~5–9 m/s at the contact; the frictionless capsule is pinched between it and the ground,
-the grounded controller cancels the downward part of the push each step, and the solver's
-separation compounds sideways each step (16 → 48 m/s over 12 ticks). Later options: the tree's
-mass (a non-dominant piece), contact softness or a corrective-velocity limit for player–piece
-contacts, CCD so the overlap stays shallow, or the controller keeping the pinch's downward push.
-Measured again 2026-11-12 (WORK_QUEUE item 24): with the log's `fellWedgeTrunk` now `open` (the gash, the
-trunk's foot thin at the notch) the ignored repro flings the chopper ~155–160 m (face A 154.7 m, face B 160.0 m),
-up from ~104–108 m on the `matching` wedge (103.8 m, 107.8 m) just before; still open.
-
 ### 51. Reopening a world in the same tab stalls on CI: spawn's reload and settings' reload
 
 Found 2026-11-08 getting CI green (PR #421). On CI's software renderer, two specs fail on all three
@@ -264,6 +248,36 @@ face, or the placement check against its shape.
 
 
 ## Fixed
+
+### 52. A felled trunk landing on its chopper can fling them far (fixed after 0.54.15)
+
+Owner, 2026-11-08: "we shouldn't be capping player kick like that" — "the cap is removed". 0.50.37's
+`max_body_kick` cap is gone (0.50.39), so this is open again: a 10 m trunk felled toward its
+chopper throws them ~150 m at ~75 m/s (`dwell-sim` `tests/chopping.rs`
+`a_felled_trunk_falling_on_the_chopper_does_not_fling_them`, ignored until fixed; both faces).
+Measured (2026-11-08): the trunk's slanted underside comes down on the player standing on the
+ground at ~5–9 m/s at the contact; the frictionless capsule is pinched between it and the ground,
+the grounded controller cancels the downward part of the push each step, and the solver's
+separation compounds sideways each step (16 → 48 m/s over 12 ticks). Later options: the tree's
+mass (a non-dominant piece), contact softness or a corrective-velocity limit for player–piece
+contacts, CCD so the overlap stays shallow, or the controller keeping the pinch's downward push.
+Measured again 2026-11-12 (WORK_QUEUE item 24): with the log's `fellWedgeTrunk` now `open` (the gash, the
+trunk's foot thin at the notch) the ignored repro flings the chopper ~155–160 m (face A 154.7 m, face B 160.0 m),
+up from ~104–108 m on the `matching` wedge (103.8 m, 107.8 m) just before; still open.
+Fixed 2026-11-12, at the cause, with no cap on the kick: the fling is the frictionless squeeze (a "watermelon
+seed"). Pinched between a nearly flat underside (normal 14° off vertical, flattening to 0°) and the ground, a
+capsule with no friction can only go sideways, at the descent over the slant's slope: 5 m/s at 14° is 20 m/s,
+and as the slant flattens the speed grows without bound (−15 → −57 m/s over 10 ticks, then airborne). The
+solver did what rigid frictionless bodies must; real bodies grip what they press on. So a piece's contact
+whose normal toward the player points down (face-local y below −0.5) takes the piece's own friction
+(`PIECE_FRICTION`, 0.8: it holds a wedge flatter than 39°), in a Rapier contact hook (`physics::PinchGrip`,
+the player's collider asking for it); the capsule stays frictionless on the ground, walls and side hits.
+The chopper is now shoved ~2 m/s as the trunk passes and moves 0.5 m (face A) / 0.4 m (face B)
+(`a_felled_trunk_falling_on_the_chopper_does_not_fling_them_{a,b}`, un-ignored). `dwell-physics`
+`tests/pieces.rs`: `a_piece_coming_down_on_a_standing_player_pins_them_not_squeezes_them_out` (red without
+the grip: 1.88 m at 12.1 m/s; green 0.04 m at 0.7 m/s) and
+`a_piece_moving_into_a_standing_player_throws_them_as_hard_as_physics_says` (a 900 kg log at 10 m/s throws the
+player at 9.26 m/s, the inelastic momentum's 9.2, uncapped). Both faces (`DWELL_FACE=b`).
 
 ### 73. A felled trunk lying diagonally up a slope loses most of its cells when it settles (fixed after 0.54.10)
 
