@@ -1420,9 +1420,9 @@ mod tests {
     fn a_cuts_progress_is_its_swings_over_the_swings_to_fell_for_any_axe() {
         let wood = wood("dwell:log").unwrap();
         let look = wood.cut.bite;
-        for (name, n) in [("dwell:stone_axe", 11), ("dwell:metal_axe", 5)] {
+        for (name, n) in [("dwell:stone_axe", 11u32), ("dwell:metal_axe", 5)] {
             let t = tool(name).unwrap();
-            assert_eq!(swings_to_fell(t, wood), n, "{name}");
+            assert_eq!(super::swings_to_fell(t, wood), n, "{name}");
             let mut c = Cut::default();
             for k in 1..=n {
                 let band = c.open_band(0, 0);
