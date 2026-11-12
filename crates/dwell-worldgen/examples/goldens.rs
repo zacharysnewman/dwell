@@ -10,7 +10,7 @@ use dwell_world::lod::{LodCells, LodCoord, lod_hash, section_size};
 use dwell_world::{CHUNK_SIZE, Chunk, ChunkCoord, Face, chunk_hash, mirror_chunk_y};
 use dwell_worldgen::BifacialTerrain;
 
-const VERSION: u32 = 30; // tall grass over ½ m grass ramps, wider and denser meadow patches (0.54.0); 29: ramps beside the water flooded (0.43.0); 28: the cliffs are terraces along the hill (stepped country and escarpments by region, more in the mountains); 27: the cliffs volume is the terrain (default, strength 1), kept off the water; 26: river valleys carved by every channel near, no step where two meet; 25: rivers meet at one level, banks flush with the water (no ridges); 24: the soil mantles the slopes (terrace risers soil, not stone); 23: portal monuments (BIFACIAL_WORLD.md §12.2); 22: rivers below their banks; 21: the world map (ADR 0049)
+const VERSION: u32 = 31; // trees stand on a levelled pad under their trunks (WORK_QUEUE item 44, 0.55); 30: tall grass over ½ m grass ramps, wider and denser meadow patches (0.54.0); 29: ramps beside the water flooded (0.43.0); 28: the cliffs are terraces along the hill (stepped country and escarpments by region, more in the mountains); 27: the cliffs volume is the terrain (default, strength 1), kept off the water; 26: river valleys carved by every channel near, no step where two meet; 25: rivers meet at one level, banks flush with the water (no ridges); 24: the soil mantles the slopes (terrace risers soil, not stone); 23: portal monuments (BIFACIAL_WORLD.md §12.2); 22: rivers below their banks; 21: the world map (ADR 0049)
 const SEEDS: [u64; 2] = [0, 20_260_925];
 
 fn section_at(level: i32, p: [i64; 3]) -> LodCoord {

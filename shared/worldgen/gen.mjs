@@ -186,6 +186,7 @@ const PLACEMENT_KEYS = [
   "structures",
   "on",
   "footprint",
+  "pad",
   "grid",
   "density",
   "groves",
@@ -198,6 +199,21 @@ const PLACEMENT_KEYS = [
 ];
 /** What `footprint` may say: "on" (every column under the structure is one of `on`) or "anchor". */
 export const FOOTPRINTS = ["on", "anchor"];
+/**
+ * What `pad` may say (WORK_QUEUE item 44): "trunk" (the ground under the trunk's columns, the
+ * structure's lowest cells, is levelled up to its base, ramps there made full) or "none". Default:
+ * "trunk" for a placement that lists a tree species, else "none".
+ */
+export const PADS = ["trunk", "none"];
+/** A placement's pad, its default filled in (`species`: the build's tree species' names). */
+export function padOf(p, species) {
+  return (
+    p.pad ??
+    (Object.keys(p.structures ?? {}).some((n) => species.has(n))
+      ? "trunk"
+      : "none")
+  );
+}
 /** The widest reach of a placed structure from its anchor, in blocks (bounds a chunk's search). */
 export const MAX_REACH = 16;
 
@@ -292,6 +308,8 @@ export function validatePlacements(
     }
     if (!FOOTPRINTS.includes(p.footprint))
       fail(`${at}: footprint must be one of ${FOOTPRINTS.join(", ")}`);
+    if (p.pad !== undefined && !PADS.includes(p.pad))
+      fail(`${at}: pad must be one of ${PADS.join(", ")}`);
     if (!(Number.isInteger(p.grid) && p.grid >= 2 && p.grid <= 256))
       fail(`${at}: grid must be a whole number of metres in [2, 256]`);
     if (!(isNum(p.density) && p.density > 0 && p.density <= 1))
@@ -386,7 +404,7 @@ export function validatePlacements(
 }
 
 /** The Rust table for validated placements. The slope limit is emitted as the squared gradient. */
-export function placementsRust(data) {
+export function placementsRust(data, species = registrySpecies()) {
   const rs = [
     `// ${placementsHeader}`,
     "",
@@ -419,6 +437,7 @@ export function placementsRust(data) {
     rs.push(`        structures: &[${ss.join(", ")}],`);
     rs.push(`        on: &[${p.on.map((o) => JSON.stringify(o)).join(", ")}],`);
     rs.push(`        footprint_on: ${p.footprint === "on"},`);
+    rs.push(`        pad_trunk: ${padOf(p, species) === "trunk"},`);
     rs.push(`        grid: ${p.grid},`);
     rs.push(`        density: ${rf(p.density)},`);
     rs.push(`        grove_wavelength: ${g.wavelength},`);
