@@ -3454,6 +3454,14 @@ impl TerrainGenerator {
             return;
         }
         let near = self.portals_near((x0, z0), (x0 + S - 1, z0 + S - 1));
+        // The placed structures reaching this chunk, and the pads under their trunks (WORK_QUEUE
+        // item 44): each such column's ground levelled up to the row under its trunk's base.
+        let trees = self.chunk_trees(coord, &cols);
+        let pads = if trees.is_empty() {
+            Vec::new()
+        } else {
+            placements::pads_over(&self.planters, &trees, (x0, z0), (x0 + S - 1, z0 + S - 1))
+        };
         let voxels = chunk.voxels_mut();
         for z in 0..S {
             for x in 0..S {
@@ -3461,7 +3469,8 @@ impl TerrainGenerator {
                 if col.outside {
                     continue;
                 }
-                let top = top_voxel(col.height);
+                let pad = pads.get((z * S + x) as usize).copied().flatten();
+                let top = top_voxel(col.height).max(pad.map_or(i32::MIN, |b| b - 1));
                 let water = col.water_row();
                 let flood = col.flood_row();
                 let (part, portal) = near
@@ -3504,7 +3513,8 @@ impl TerrainGenerator {
                 };
                 // The stored ramp pieces over the top (HALF_HEIGHT_GRID.md §4), from the bottom;
                 // a portal's rim stands on flat ground.
-                let pieces = if rim.is_some() {
+                // A trunk's pad is flat: full cells to its top, no ramp under the trunk.
+                let pieces = if rim.is_some() || pad.is_some() {
                     &[]
                 } else {
                     self.top_pieces(&cols, x0, z0, x, z, top)
@@ -3589,7 +3599,7 @@ impl TerrainGenerator {
             self.carve_volume(v, coord, &cols, volume, chunk);
         }
         self.carve_arches(coord, &cols, volume, chunk);
-        self.stamp_trees(coord, &cols, volume, chunk);
+        self.stamp_trees(coord, &trees, volume, chunk);
         self.stamp_monuments(coord, volume, chunk);
     }
 
@@ -3853,13 +3863,12 @@ impl TerrainGenerator {
         }
     }
 
-    /// Stands the placed structures reaching this chunk in it, over air and replaceable cells
-    /// only (decorations; never the ground or water). Only chunks holding a row between the lowest
-    /// ground and the highest crown look.
-    fn stamp_trees(&self, coord: ChunkCoord, cols: &[Column], volume: Overlap, chunk: &mut Chunk) {
+    /// The placed structures reaching this chunk: none unless it holds a row between the lowest
+    /// ground and the highest crown (their trunks' pads lie in those rows too).
+    fn chunk_trees(&self, coord: ChunkCoord, cols: &[Column]) -> Vec<Tree> {
         const S: i32 = CHUNK_SIZE;
         if self.planters.is_empty() {
-            return;
+            return Vec::new();
         }
         let (x0, y0, z0) = (coord.x * S, coord.y * S, coord.z * S);
         let (mut lo, mut hi) = (i32::MAX, i32::MIN);
@@ -3870,11 +3879,18 @@ impl TerrainGenerator {
         }
         let reach = self.rise as i32;
         if lo == i32::MAX || y0 + S <= lo - reach || y0 > hi + reach {
-            return;
+            return Vec::new();
         }
-        let trees = self.trees_in((x0, z0), (x0 + S - 1, z0 + S - 1));
+        self.trees_in((x0, z0), (x0 + S - 1, z0 + S - 1))
+    }
+
+    /// Stands the placed structures reaching this chunk (`chunk_trees`) in it, over air and
+    /// replaceable cells only (decorations; never the ground or water).
+    fn stamp_trees(&self, coord: ChunkCoord, trees: &[Tree], volume: Overlap, chunk: &mut Chunk) {
+        const S: i32 = CHUNK_SIZE;
+        let (x0, y0, z0) = (coord.x * S, coord.y * S, coord.z * S);
         let voxels = chunk.voxels_mut();
-        for t in &trees {
+        for t in trees {
             let placed = self.planters[t.planter as usize].place(t);
             if placed.misses(coord) {
                 continue;
@@ -4042,10 +4058,10 @@ impl TerrainGenerator {
             })
             .filter(|(_, p)| !ramp || p.on_ramps())
             // The rules' heights are metres above sea level.
-            .find(|(i, p)| {
+            .find_map(|(i, p)| {
                 let factor = || match biome {
                     Some(b) => {
-                        let kind = self.vegetation.kind_for_decoration(DECORATIONS[*i].name);
+                        let kind = self.vegetation.kind_for_decoration(DECORATIONS[i].name);
                         self.undergrowth_factor(b, kind, || {
                             self.climate_with(x.into(), z.into(), &height)
                         }) as f32
@@ -4060,8 +4076,16 @@ impl TerrainGenerator {
                     |nx, nz| neighbour_top(nx, nz) - SEA_LEVEL,
                     factor,
                 )
+                // Tall grass stands at its climate's top stage (docs/ECOLOGY.md §10).
+                .then(|| {
+                    let name = DECORATIONS[i].name;
+                    if name == crate::grass::GRASS.decoration {
+                        crate::grass::generated_tuft(name, p.state(), f64::from(factor()))
+                    } else {
+                        p.state()
+                    }
+                })
             })
-            .map(|(_, p)| p.state())
     }
 
     // --- level of detail (§6.6) -------------------------------------------------------------------
@@ -4479,6 +4503,36 @@ impl TerrainGenerator {
             let (x1, z1) = (centre(o.x, n), centre(o.z, n));
             for t in self.trees_in((x0, z0), (x1, z1)) {
                 let p = &self.planters[t.planter as usize];
+                // The trunk's pad (WORK_QUEUE item 44): a cell column whose centre is a trunk
+                // column fills its air cells under the base down to its ground with the ground's
+                // top block, so a far tree has no hole under it.
+                let (pad, base) = p.pad(&t);
+                for (wx, wz) in pad {
+                    let (dx, dz) = (i64::from(wx) - o.x, i64::from(wz) - o.z);
+                    if dx.rem_euclid(cell) != half || dz.rem_euclid(cell) != half {
+                        continue;
+                    }
+                    let (xi, zi) = (dx.div_euclid(cell) as i32, dz.div_euclid(cell) as i32);
+                    if !(-1..=n).contains(&xi) || !(-1..=n).contains(&zi) {
+                        continue;
+                    }
+                    let col = cols[lod::column_index(xi, zi)];
+                    if col.outside {
+                        continue;
+                    }
+                    let state = self.top_state(&col);
+                    for yi in (-1..=n).rev() {
+                        let a = o.y + i64::from(yi) * cell;
+                        if a >= i64::from(base) {
+                            continue;
+                        }
+                        let m = &mut cells[lod::cell_index(xi, yi, zi)];
+                        if *m != M.air {
+                            break;
+                        }
+                        *m = state;
+                    }
+                }
                 let placed = p.place(&t);
                 let fp = p.footprint(&t);
                 for zi in -1..=n {

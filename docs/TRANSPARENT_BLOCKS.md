@@ -65,6 +65,10 @@ step is taken, but never one that empties the tile: distant ladders stay drawn.
 - `quads` (2–4) vertical quads through the cell's centre, evenly turned (two: an X seen from
   above; three is the "extra quad"), each a full cell wide on the diagonal, `height` tall.
 - Double-sided: drawn without culling, each face once.
+- `heights` (optional, 2026-11-12): `{ "property": "stage", "heights": { "0": 0.25, …, "3": 0.85 } }`
+  gives each value of a property its own height (a plant's growth stages, docs/ECOLOGY.md §10); the
+  property's default value must have `height`, so the block placed or saved without it draws as
+  before. The selection box's top scales with the state's height.
 - **Jitter**, seeded by the cell's world position (deterministic, the same on every client and
   every re-mesh): an offset in x and z up to `offset` m, a turn up to ±`rotation`°, and a height
   scale in `height` [min, max].

@@ -458,9 +458,25 @@ impl Server {
         }
         let mut changes = super::TickChanges::default();
         for c in eaten {
-            changes.set(&mut self.world, c, dwell_blocks::AIR);
+            let to = self.eaten_to(c);
+            if self.world.get_voxel_if_loaded(c) != to {
+                changes.set(&mut self.world, c, to);
+            }
         }
         self.broadcast_changes(changes, dwell_protocol::VoxelModificationReason::Edit);
+    }
+
+    /// What a grazer's eaten tuft at world cell `c` becomes (docs/ECOLOGY.md §10): in a world that
+    /// grows grass, a sprout over the rule's ground (the roots stay and it regrows stage by stage);
+    /// else air, as before. Public for tests and tools.
+    pub fn eaten_to(&self, c: [i32; 3]) -> dwell_blocks::StateId {
+        if !self.grass.enabled {
+            return dwell_blocks::AIR;
+        }
+        let f = dwell_world::FaceFrame::at_row(c[1]);
+        let [x, y, z] = f.cell(c);
+        let below = f.state(self.world.get_voxel_if_loaded(f.cell([x, y - 1, z])));
+        f.state(self.grass_rule.eaten(below))
     }
 
     /// A client reads the far ecology (`EcologyHello`): the far groups now, then every

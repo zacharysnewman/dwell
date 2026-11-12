@@ -29,6 +29,9 @@ pub struct Placement {
     pub on: &'static [&'static str],
     /// Every column under the structure must be one of `on` (else only the anchor's).
     pub footprint_on: bool,
+    /// The ground under the trunk's columns (the structure's lowest cells) is levelled up to the
+    /// trunk's base, ramps there made full cells (`pad: "trunk"`, WORK_QUEUE item 44).
+    pub pad_trunk: bool,
     /// One candidate per cell of this size (m).
     pub grid: i32,
     /// The chance a cell's candidate is kept, inside a grove.
@@ -97,6 +100,11 @@ struct Shape {
     boxes: [[i32; 4]; 4],
     /// The rise of its top voxel above its anchor (blocks).
     rise: i32,
+    /// Its trunk's columns relative to the anchor in each quarter turn (the columns of its lowest
+    /// row's cells: a species tree's foot logs, a hand-built tree's trunk), and that row's offset
+    /// from the anchor.
+    trunk: [Vec<(i32, i32)>; 4],
+    base: i32,
 }
 
 /// A placement resolved for one world: block ids, structures and noise seeds.
@@ -199,12 +207,34 @@ impl Planter {
                             [placed.min[0], placed.min[2], placed.max[0], placed.max[2]]
                         });
                         let rise = structure.size[1] - 1 - structure.anchor[1];
+                        let trunk = std::array::from_fn(|t| {
+                            let placed = structure.place_oriented(
+                                [0, 0, 0],
+                                Orientation {
+                                    quarter_turns: t as u8,
+                                    mirror: None,
+                                },
+                                0,
+                            );
+                            let low = placed.cells().map(|(c, _)| c[1]).min().unwrap_or(0);
+                            let mut cols: Vec<(i32, i32)> = placed
+                                .cells()
+                                .filter(|(c, _)| c[1] == low)
+                                .map(|(c, _)| (c[0], c[2]))
+                                .collect();
+                            cols.sort_unstable();
+                            cols.dedup();
+                            cols
+                        });
+                        let base = trunk_base(&structure).unwrap_or(0);
                         Shape {
                             structure,
                             weight,
                             grown,
                             boxes,
                             rise,
+                            trunk,
+                            base,
                         }
                     })
                     .collect();
@@ -446,6 +476,21 @@ impl Planter {
         ]
     }
 
+    /// A tree's pad (`pad: "trunk"`): the trunk's columns (x, z) and its base row (face-local y:
+    /// the lowest row of its cells); empty for a placement without one. The ground under each
+    /// column is levelled up to the row below the base (WORK_QUEUE item 44).
+    pub fn pad(&self, t: &Tree) -> (Vec<(i32, i32)>, i32) {
+        let s = &self.shapes[t.shape as usize];
+        if !self.rule.pad_trunk {
+            return (Vec::new(), t.anchor[1] + s.base);
+        }
+        let cols = s.trunk[t.quarter_turns as usize % 4]
+            .iter()
+            .map(|&(dx, dz)| (t.anchor[0] + dx, t.anchor[2] + dz))
+            .collect();
+        (cols, t.anchor[1] + s.base)
+    }
+
     /// The variant (index + 1) a structure anchored `above_sea` m above sea level takes by its
     /// hash `h`: the first whose band takes it.
     fn variant_at(&self, above_sea: i32, h: u32) -> u8 {
@@ -544,6 +589,34 @@ impl Planter {
         }
         factor.is_none_or(|f| roll < share * f())
     }
+}
+
+/// The lowest row of a structure's cells relative to its anchor.
+fn trunk_base(s: &Structure) -> Option<i32> {
+    s.place([0, 0, 0], 0).cells().map(|(c, _)| c[1]).min()
+}
+
+/// The pads of `trees` (each `Planter::pad`) over columns [x0, x1] × [z0, z1]: for each column
+/// (row-major from (x0, z0)) the highest base row of a trunk standing on it, if any.
+pub fn pads_over(
+    planters: &[Planter],
+    trees: &[Tree],
+    (x0, z0): (i32, i32),
+    (x1, z1): (i32, i32),
+) -> Vec<Option<i32>> {
+    let w = (x1 - x0 + 1).max(0);
+    let l = (z1 - z0 + 1).max(0);
+    let mut out = vec![None; (w * l) as usize];
+    for t in trees {
+        let (cols, base) = planters[t.planter as usize].pad(t);
+        for (x, z) in cols {
+            if (x0..=x1).contains(&x) && (z0..=z1).contains(&z) {
+                let k = ((z - z0) * w + (x - x0)) as usize;
+                out[k] = Some(out[k].map_or(base, |b: i32| b.max(base)));
+            }
+        }
+    }
+    out
 }
 
 /// How far beyond a rectangle `trees_in` asks for ground (m): a neighbour's reach and spacing,
@@ -694,6 +767,7 @@ mod tests {
             structures: &[("dwell:oak", 1)],
             on: &["dwell:grass"],
             footprint_on: false,
+            pad_trunk: false,
             grid: 12,
             density: 1.0,
             grove_wavelength: 0,
@@ -737,6 +811,7 @@ mod tests {
             structures: &[("dwell:proto_rock", 1)],
             on: &["dwell:dirt"],
             footprint_on: true,
+            pad_trunk: true,
             grid: 10,
             density: 1.0,
             grove_wavelength: 0,
