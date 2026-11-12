@@ -13,6 +13,11 @@ use super::{Mouth, RiverEnd, WorldMap};
 use crate::hydrology::math::sin_cos;
 use crate::terrain::SURFACE as S;
 
+/// The index's square (m) at today's size; a bigger world's is × its radius scale (BUGS.md #91):
+/// its map's segments are as many cells long, so as many times longer, and a 64 m square under a
+/// 10× world's ~1 km segments and their valleys listed each segment in thousands of squares (20 s
+/// of a 10× face's build natively). The query measures every listed segment's reach itself, so the
+/// square changes only how many are listed, not what a query finds.
 const BUCKET: f64 = 64.0;
 
 /// A point of a channel's course: face-local m, `s` the water surface (m above sea level).
@@ -79,12 +84,25 @@ pub struct Hit {
     pub river: u32,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct Channels {
     pub segs: Vec<Seg>,
     /// The smoothed courses, rivers first (by index), then the deltas' distributaries.
     pub courses: Vec<Vec<Point>>,
     buckets: HashMap<(i32, i32), Vec<u32>>,
+    /// The index's square (m): [`BUCKET`] × the world's radius scale.
+    bucket: f64,
+}
+
+impl Default for Channels {
+    fn default() -> Self {
+        Self {
+            segs: Vec::new(),
+            courses: Vec::new(),
+            buckets: HashMap::default(),
+            bucket: BUCKET,
+        }
+    }
 }
 
 /// Corner cutting (Chaikin), the ends kept.
@@ -344,11 +362,12 @@ impl Channels {
                 });
             }
         }
+        let bucket = BUCKET * f64::from(map.size.radius_scale);
         let mut buckets: HashMap<(i32, i32), Vec<u32>> = HashMap::default();
         for (id, s) in segs.iter().enumerate() {
             // The query's point is warped (the meander) by up to twice its amplitude.
             let r = s.radius + 2.0 * S.river_meander + 2.0;
-            let b = |v: f64| (v / BUCKET).floor() as i32;
+            let b = |v: f64| (v / bucket).floor() as i32;
             let (x0, x1) = (b(s.a.x.min(s.b.x) - r), b(s.a.x.max(s.b.x) + r));
             let (z0, z1) = (b(s.a.z.min(s.b.z) - r), b(s.a.z.max(s.b.z) + r));
             for bz in z0..=z1 {
@@ -361,14 +380,23 @@ impl Channels {
             segs,
             courses,
             buckets,
+            bucket,
         }
+    }
+
+    /// How many (segment, square) entries its index holds: the build's cost (BUGS.md #91).
+    pub fn index_entries(&self) -> usize {
+        self.buckets.values().map(Vec::len).sum()
     }
 
     /// Whether any channel may reach within `extra` m of face-local (x, z) (a quick test before the
     /// meander's warp and the query).
     pub fn near(&self, x: f64, z: f64, extra: f64) -> bool {
-        let span = (extra / BUCKET).ceil() as i32;
-        let (bx, bz) = ((x / BUCKET).floor() as i32, (z / BUCKET).floor() as i32);
+        let span = (extra / self.bucket).ceil() as i32;
+        let (bx, bz) = (
+            (x / self.bucket).floor() as i32,
+            (z / self.bucket).floor() as i32,
+        );
         (-span..=span)
             .any(|dz| (-span..=span).any(|dx| self.buckets.contains_key(&(bx + dx, bz + dz))))
     }
@@ -397,8 +425,11 @@ impl Channels {
         min_width: f64,
         mut f: impl FnMut(u32, Hit),
     ) {
-        let span = (min_half / BUCKET).ceil() as i32;
-        let (bx, bz) = ((x / BUCKET).floor() as i32, (z / BUCKET).floor() as i32);
+        let span = (min_half / self.bucket).ceil() as i32;
+        let (bx, bz) = (
+            (x / self.bucket).floor() as i32,
+            (z / self.bucket).floor() as i32,
+        );
         let mut seen: Vec<u32> = Vec::new();
         for dz in -span..=span {
             for dx in -span..=span {

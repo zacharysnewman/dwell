@@ -24,6 +24,8 @@ export interface StageRun {
   /** When it first counted something (ms): the wait before a count moves. */
   firstMs: number | null;
   total: number | null;
+  /** What it is doing now, after its label ("rivers (5/6), face 1 of 2"; BUGS.md #91), or null. */
+  detail: string | null;
 }
 
 /** A line of the screen's list. */
@@ -75,7 +77,9 @@ export function formatProgress(run: StageRun): string {
   if (run.progress === 'bytes') {
     return run.total ? `${mb(run.done)} / ${mb(run.total)} MB` : `${mb(run.done)} MB`;
   }
-  return run.total !== null ? `${String(run.done)} / ${String(run.total)}` : String(run.done);
+  // A count can move in fractions (the world map's faces by their steps): whole ones are shown.
+  const done = Math.floor(run.done);
+  return run.total !== null ? `${String(done)} / ${String(run.total)}` : String(done);
 }
 
 /** A time in seconds as the screen shows it: "0.4 s", "12.3 s". */
@@ -131,18 +135,29 @@ export class StageTracker {
       done: null,
       firstMs: null,
       total: null,
+      detail: null,
     });
     this.marks?.begin(id, atMs);
   }
 
-  /** Its progress: `done` of `total` (null: not known); begins it if it had not (not once ended). */
-  progress(id: LoadingStageId, done: number, total: number | null, atMs: number): void {
+  /**
+   * Its progress: `done` of `total` (null: not known), and what it is doing (`detail`, shown after
+   * its label; null: nothing); begins it if it had not (not once ended).
+   */
+  progress(
+    id: LoadingStageId,
+    done: number,
+    total: number | null,
+    atMs: number,
+    detail: string | null = null,
+  ): void {
     this.begin(id, atMs);
     const r = this.run(id);
     if (!r || r.endedMs !== null) return;
     if (done > 0 && r.firstMs === null) r.firstMs = atMs;
     r.done = done;
     r.total = total;
+    r.detail = detail;
   }
 
   /** Stage `id` ended at `atMs` (nothing if it was not running). */
@@ -187,7 +202,7 @@ export class StageTracker {
       const running = r.endedMs === null;
       return {
         id: r.id,
-        text: running ? `${r.label}…` : r.label,
+        text: running ? `${r.label}${r.detail ? ` — ${r.detail}` : ''}…` : r.label,
         running,
         progress: formatProgress(r),
         time: formatStageTime(ms),

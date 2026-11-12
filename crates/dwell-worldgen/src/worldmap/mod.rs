@@ -335,8 +335,10 @@ impl WorldMap {
             tectonics: crate::terrain::HEIGHT.tectonics,
             worldgen: None,
         };
+        crate::progress::report(crate::progress::MapStep::Shores, 0.0);
         map.channels = Channels::build(&map);
         map.shores = Shores::build(&map);
+        crate::progress::report(crate::progress::MapStep::Shores, 1.0);
         map
     }
 

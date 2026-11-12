@@ -6,7 +6,9 @@ import {
   type MapStore,
   oldest,
   worldMaps,
+  workerBuilder,
 } from './worldMaps';
+import { mapProgress } from '../ui/mapProgress';
 
 class MemoryStore implements MapStore {
   readonly entries = new Map<string, Uint8Array>();
@@ -65,6 +67,75 @@ describe('world maps (ADR 0049)', () => {
     const later = deps(store);
     expect(await worldMaps(7n, GENERATOR_TERRAIN, later)).toEqual(maps);
     expect(later.builds).toEqual([]);
+  });
+
+  it("reports each face's build steps in order, the count reaching both faces (BUGS.md #91)", async () => {
+    const seen: { done: number; detail: string | null }[] = [];
+    const d: MapDeps = {
+      keys: (seed) => [`a-${seed.toString()}`, `b-${seed.toString()}`],
+      build: async (_seed, face, _w, _s, onStep) => {
+        // Face B's build trails face A's by a step.
+        for (let step = 0; step < 6; step++) {
+          await Promise.resolve();
+          if (face === 1) await Promise.resolve();
+          onStep?.(step, 0);
+          onStep?.(step, 0.5);
+          onStep?.(step, 1);
+        }
+        return new Uint8Array([face]);
+      },
+      store: null,
+      onProgress: (ready, needed, faces) => {
+        const p = mapProgress(faces);
+        expect(needed).toBe(2);
+        seen.push({ done: Math.max(ready, p.done), detail: p.detail });
+      },
+    };
+    await worldMaps(5n, GENERATOR_TERRAIN, d);
+    const dones = seen.map((s) => s.done);
+    // Never backward, and to 100 %: both faces.
+    for (let i = 1; i < dones.length; i++)
+      expect(dones[i]).toBeGreaterThanOrEqual(dones[i - 1] ?? 0);
+    expect(dones[0]).toBe(0);
+    expect(dones.at(-1)).toBe(2);
+    // Fractions between whole faces: the bar moves inside a face's build.
+    expect(dones.some((v) => v > 0 && v < 1)).toBe(true);
+    expect(seen.map((s) => s.detail)).toContain('rivers (5/6), face 2 of 2');
+    expect(seen.at(-1)?.detail).toBeNull();
+  });
+
+  it('says when a face cannot be built, rather than waiting at its count', async () => {
+    const failed: string[] = [];
+    const d: MapDeps = {
+      keys: () => ['a', 'b'],
+      build: () => Promise.reject(new Error('out of memory')),
+      store: null,
+      onFailed: (m) => failed.push(m),
+    };
+    await expect(worldMaps(6n, GENERATOR_TERRAIN, d)).rejects.toThrow('out of memory');
+    expect(failed).toContain('out of memory');
+  });
+
+  it("passes a map worker's step messages on before its map", async () => {
+    const posted: unknown[] = [];
+    const fake = {
+      onmessage: null as ((e: MessageEvent) => void) | null,
+      onerror: null,
+      terminate: () => posted.push('terminated'),
+      postMessage: (m: unknown) => {
+        posted.push(m);
+        queueMicrotask(() => {
+          fake.onmessage?.({ data: { step: 4, fraction: 0.25 } } as MessageEvent);
+          fake.onmessage?.({ data: { map: new Uint8Array([9]) } } as MessageEvent);
+        });
+      },
+    };
+    const steps: [number, number][] = [];
+    const build = workerBuilder(() => fake as unknown as Worker);
+    const map = await build(1n, 0, '', 1, (s, f) => steps.push([s, f]));
+    expect(steps).toEqual([[4, 0.25]]);
+    expect(map).toEqual(new Uint8Array([9]));
+    expect(posted.at(-1)).toBe('terminated');
   });
 
   it('shares one promise between the local world and the client on a page', async () => {

@@ -39,6 +39,17 @@ The running order across the items below; each line names its item, where the ow
    cell's outline (item 18 lever 3); half the hit shards on phones (the flag nothing sets yet).
 9. **Big worlds (BIG_MAP.md)** — BUGS.md #76 (browser memory grows with world size) before 8×/10×; #77 (bigger
    islands lose their ranges, speckled lakes: an owner look question); region maps built ahead with no hitches.
+   **10× world creation (BUGS.md #91, owner 2026-11-12):** "I tried to start a 10x world … up to 3 minutes so far
+   on 'Shaping the world map...' 0/2. Doesn't indicate well what it's doing."; then "started the server 200+
+   seconds in … almost 1 minute looking for a place to stand … still 0/2 280+ seconds in"; then "Loaded in 300s
+   in, but I can only see the skies of both faces, no world." / "Can't move." Target: a 10× world playable in
+   well under 30 s on a fast Mac, with progress inside each face's map build.
+   Then (owner): the empty-sky world shows "Could not connect to 10x…": the client must wait for the local server's
+   ready signal, not a fixed timeout, and a dead worker must report its error clearly.
+   **Fixed natively (2026-11-12):** the uplift and the channels' index grew with the radius (a 10× face 43.7 s and a
+   12.4 GB server natively); now a 10× face is 3.1 s (1×: 1.9 s) and its server 6.2 s at 484 MB; the map stage shows
+   each face's steps; a dying server worker says why (BUGS.md #91, BIG_MAP.md §3.1). **Next: the owner tries 10× in
+   the browser again.**
 10. **Realistic R5–R6 (item 15)** — geology by plate history with today's blocks; the World option.
 
 ### Waiting on the owner (each with what it means and the default meanwhile)

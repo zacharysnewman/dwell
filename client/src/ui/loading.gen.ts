@@ -38,6 +38,16 @@ export const LOADING_STAGES: readonly LoadingStageDef[] = [
 /** A stage running longer than this (s) is marked slow. */
 export const LOADING_STAGE_SLOW_S = 3;
 
+/** A face's world map build's steps, in the builder's order (shared/look/loading.json `mapSteps`). */
+export const MAP_STEPS: readonly { id: string; label: string }[] = [
+  { id: 'base', label: "the land" },
+  { id: 'uplift', label: "mountains" },
+  { id: 'erosion', label: "erosion" },
+  { id: 'lakes', label: "lakes" },
+  { id: 'rivers', label: "rivers" },
+  { id: 'shores', label: "shores" },
+];
+
 /** A stage's opening cost on the reference desktop (shared/look/loading.json `estimate.stages`). */
 export interface LoadingStageCost {
   scales: 'device' | 'network';
