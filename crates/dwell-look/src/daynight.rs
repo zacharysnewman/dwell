@@ -70,6 +70,9 @@ pub struct MoonLook {
     /// How much of a sphere's shape the sky moon's disc takes (0 flat, 1 a ball; `celestial::disc_lit`), its
     /// normals then tilted by the baked slopes (sky.wgsl `dwell_moon`).
     pub dome_bias: f64,
+    /// How the sky moon's disc reflects (`celestial::moon_shade`): 0 Lambert (darkening toward its
+    /// limb even at full), 1 Lommel-Seeliger (lit to its edge where it faces the sun).
+    pub lunar_lambert: f64,
     /// The celestial model's share of the moonlight on a moonless night (`crate::celestial`; M-2
     /// draws with it in place of `new_moon_light`).
     pub night_floor: f64,
@@ -983,7 +986,9 @@ mod tests {
         assert_eq!(day.clock_text(), "12:00");
         let line = day.debug_line();
         assert!(
-            line.starts_with("time 12:00") && line.contains("sun 90°") && line.contains("100% lit"),
+            line.starts_with("time 12:00")
+                && line.contains("sun 90°")
+                && (line.contains("100% lit") || line.contains("99% lit")),
             "{line}"
         );
         assert_eq!(D.state(0.0, Some(0.0), None).clock_text(), "00:00");

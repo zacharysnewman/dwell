@@ -39,6 +39,7 @@ const SCHEMA = {
     newMoonLight: [0, 1],
     relief: [1, 50],
     domeBias: [0, 1],
+    lunarLambert: [0, 1],
     nightFloor: [0, 1],
   },
   moonOrbit: {

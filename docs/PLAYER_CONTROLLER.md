@@ -577,7 +577,10 @@ layer — so a player can rise from the ground to see the whole world (ARCHITECT
   take about 90 s. `Players::set_gravity_scale` (a grid's `gravityScale`, the moon's ⅙) scales
   gravity wherever the layers apply it (fall, swim band, slides, the vertical layer) with the jump's
   take-off speed kept, so a jump rises 1/scale as high (scale 1: the same bits). Neither is on the
-  wire: the predictor predicts the slider's speed and home gravity until M-7's follow-up. A player
+  wire: the predictor predicts the slider's speed and home gravity until M-7b's client follow-up. The
+  server (M-7b, MOON_WORLD.md §7.2) sets both on every player each tick (far flight from its world
+  position; the grid's scale when carried in, 1 when carried home) and runs an away player's
+  controller in its grid's space; `travel::carry` moves it between the spaces. A player
   moved into another grid's space keeps its controller state (`restore`) and takes that grid's face
   (`settle_face`, the vertical state mirrored as at a midplane crossing).
 - **Leaving flight** hands back to the normal layers with the current velocity, like leaving

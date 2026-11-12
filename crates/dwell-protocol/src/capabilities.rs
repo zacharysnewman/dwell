@@ -21,7 +21,14 @@
 //! mod's) is kept and simply never matches a feature here.
 
 use crate::bytes::{ByteReader, ByteWriter};
-use crate::capability_names::{ALL, MAX_NAME_BYTES, MAX_NAMES};
+use crate::capability_names::{ALL, GRID_FRAMES, MAX_NAME_BYTES, MAX_NAMES};
+
+/// Capabilities this build's server has and its client doesn't say yet: the client's side is still
+/// to come. `grid.frames` (docs/proposals/MOON_WORLD.md §7.2): the server sends other grids'
+/// chunks and the player's grid; the client says it once its predictor and renderer follow a
+/// player onto another grid (M-7b's local follow-up). Until then a player off home is sent its
+/// world position, as an older client is.
+pub const CLIENT_PENDING: &[&str] = &[GRID_FRAMES];
 
 /// A set of capability names, in the order they arrived (or the table's).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -42,6 +49,16 @@ impl Capabilities {
     /// Every capability this build has (the table's).
     pub fn this_build() -> Self {
         Self(ALL.iter().map(|s| s.to_string()).collect())
+    }
+
+    /// The capabilities this build's client says (`this_build` without [`CLIENT_PENDING`]).
+    pub fn this_client() -> Self {
+        Self(
+            ALL.iter()
+                .filter(|n| !CLIENT_PENDING.contains(n))
+                .map(|s| s.to_string())
+                .collect(),
+        )
     }
 
     /// These names (badly formed ones and repeats dropped, at most `MAX_NAMES`).
@@ -119,6 +136,15 @@ mod tests {
         // Every name in the table fits one WorldSettings field (the server announces them there).
         assert!(c.to_bytes().len() <= crate::world_settings::MAX_FIELD_BYTES);
         assert!(ALL.iter().all(|n| valid_name(n)));
+    }
+
+    #[test]
+    fn the_client_says_all_but_the_pending_ones() {
+        let c = Capabilities::this_client();
+        assert!(c.has(STRUCTURES_PLACE));
+        assert!(!c.has(GRID_FRAMES), "the client follows no other grid yet");
+        assert!(Capabilities::this_build().has(GRID_FRAMES));
+        assert!(CLIENT_PENDING.iter().all(|n| ALL.contains(n)));
     }
 
     #[test]

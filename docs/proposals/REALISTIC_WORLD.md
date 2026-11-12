@@ -421,7 +421,7 @@ R1–R5 are logic-only and suit cloud sessions (docs/CLOUD_SESSIONS.md); R6's br
 
 ## 7. Questions for the owner
 
-Open: q6, q8, q9, and §8.10's orbit questions. q2 moved to §8 (orbits by seed). Answered: q1 (by default), q3, q4, q5, q7.
+Open: q9 (waiting on the owner), and §8.10's orbit questions. q2 moved to §8 (orbits by seed). Answered: q1 (by default), q3, q4, q5, q6, q7, q8.
 
 1. **Plate count and size for the first region:** 3–5 plates with one or two boundaries crossing the
    island, or more, smaller plates?
@@ -448,15 +448,20 @@ Open: q6, q8, q9, and §8.10's orbit questions. q2 moved to §8 (orbits by seed)
    naming its rock by block name in data, so andesite, schist or limestone can replace them later by data
    alone.
 6. **Volcanoes in Realistic:** dormant cones only at first, or lava vents by rule (VOLCANOES.md)?
+   **Answered (owner, 2026-11-12):** "dormant volcanoes only for now."
 7. **Determinism of tuning:** while Realistic is a test world, may its seeds' terrain change between
    releases (hashes updated with a note), as the starter's does?
    **Answered (owner, 2026-11-11):** yes: while Realistic is a test world its seeds' terrain may change
    between releases, with a note (and its hashes updated). The seed picks the latitude band (q2's second
    half); which bands to offer is still open.
 8. **Debug view home:** Chisel's overlays (proposed), or also the in-game big map?
+   **Answered (owner, 2026-11-12):** "also on the big map" — the plates, wind and climate overlays in Chisel and
+   on the in-game big map.
 9. **Climates no preset covers (R4):** in the Realistic world the default biome takes the cool, nearly
    rainless interior (a cold desert) and the very wet tropics (a tropical rainforest). Add presets for
-   them, or keep the fallback there?
+   them, or keep the fallback there? Owner asked (2026-11-12): "how does the default biome fill them?" (explained:
+   the default is plain temperate grassland with generic trees and rocks, so a cold dry interior and a wet
+   tropical coast would both look like ordinary meadow); waiting on the answer.
 
 ## 8. Orbits by seed: the sky sets the climate band
 

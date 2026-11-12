@@ -6,7 +6,9 @@ game), **M-3 built** (the `GridFrame` abstraction, §2.1), **M-4 built** (the ce
 (the sky draws the moon from both: its baked face A lit by the real sun, today's size and halo × the lit share;
 baked at the join on the main thread, not cached yet) and **M-6's bake built** (the home world's far-body bake,
 §5: logic and tests, not drawn yet) and **M-7 partial** (travel natively: spaces per grid, capture and
-release, gravity per grid, far flight; §7.1). Not architecture until an ADR adopts it; open questions in §12.
+release, gravity per grid, far flight; §7.1) and **M-7b's server and wire built** (the server holds the
+moon's space, carries players across, streams and saves its chunks per grid, the `grid.frames` wire;
+§7.2; the client's side outstanding). Not architecture until an ADR adopts it; open questions in §12.
 
 ## 1. Brief and the owner's answers (2026-11-12)
 
@@ -346,13 +348,53 @@ Proposed: positions as data (`shared/look/sky_bodies.json`, or an `orbit` block 
   to the new grid (its wish is a speed in that grid, which moves ~1.8 km/s), so the path turns over
   the next ticks as a change of heading does; the position never jumps.
 
-**Left for the follow-up (M-7b):** the server holding the spaces per session (`server.rs`), the
-moon's chunks streamed per grid (keyed `(grid, chunk)`, storage per grid), the player's grid id in
-snapshots behind the **`grid.frames`** capability (not in `capabilities.json` yet: a build that
-listed it without sending the id would mislead newer ones), the client drawing a captured player and
-rolling its view to the new down, and the predictor taking the far-flight speed (it predicts the
-slider's speed and is corrected). Tier 1 bodies on the moon fall at the home gravity (their space's
-`Physics` default) until then.
+### 7.2 The server and the wire [M-7b server + wire built, 2026-11-12; the client outstanding]
+
+`dwell-sim` `server/grids.rs`:
+
+- **The spaces.** `Grids` holds one `GridSlot` per grid of `grids.json` with a generator of its own
+  (the moon): its `GridSpace` and the chunks edited since the last save. The home grid stays the
+  server's own world, physics and players, so everything built on them is unchanged. Each tick the
+  spaces holding a player step after the home physics.
+- **Travel** (`Server::travel_players`, before the inputs): a home flier inside `captureM` is carried
+  into the moon's space (`travel::carry`, shared with `Travel::transfer`: the world position and
+  velocity through `release`/`capture`, the controller state, the face, the ⅙ g); an away player past
+  `captureM × releaseFactor` back home. While away the session's home handle is `None` and `away`
+  names its slot and handle; its inputs go to that space; the home view's streaming waits. Every
+  player's far-flight speed is set from its world distance to the nearest slab (home's included).
+- **The wire, behind `grid.frames`** (`shared/protocol/capabilities.json`; the server lists it):
+  `PhysicsSnapshot` ends with a `GridView` (after the swing kinds, which are written whenever it is):
+  a byte, the grid's index in `grids.json` (0 home), and off home the grid's frame at the tick (origin
+  f64 × 3, rotation f64 × 4); `local` is then grid-local. `ChunkData` and `ChunkUnload` end with the
+  grid's byte when not home (a trailing 0 is malformed: home is no byte). A client without the
+  capability gets its world position and never a grid id or another grid's chunk.
+- **Streaming per grid** (`stream_grid_chunks`): an away `grid.frames` client gets its grid's chunks
+  round its grid-local position, nearest first (8 a tick; Air off the slab, Generated unedited for a
+  client that generates, else the voxels), unloaded past the view; all of them unloaded on release.
+- **Edits per grid**: an away player's `BlockEditRequest` is its grid's (the cell in the grid's own
+  space), applied at once (a break clears the cell, a place sets the cell against `face`), acked in
+  the edit numbering, the chunk sent whole to that grid's clients that have it.
+- **Saved per grid**: the world file's optional `grid_chunks` table, (grid name, cx, cy, cz) →
+  (revision, the chunk as the `chunks` table encodes it), additive (an older build on the line never
+  opens it); put back into the grid's space when the server opens the world.
+- **Tests:** `dwell-sim` `tests/grids.rs` (both faces): two players, this build's capabilities and
+  an older client's, flown in over the capture sphere (no jump: ≤ 1 cm, ≤ 5 cm/s), landed and walking
+  under ⅙ g, the moon's chunks to the new client only (the older one: no grid id, its world position),
+  released home with no jump and the moon's chunks unloaded; a moon edit not touching the home cell
+  of the same coordinates, saved in `grid_chunks` and there again on reopening. `dwell-protocol`
+  `tests/grid_frames.rs`: the tails round-trip and are absent unless sent; `dwell-storage`: the table
+  round-trips apart from home's chunks.
+
+**Deviations and outstanding (the local follow-up):** this build's **client doesn't say
+`grid.frames` yet** (`capabilities::CLIENT_PENDING`): its predictor and renderer don't follow a
+player onto another grid, so a captured player is sent its world position as an older client is,
+and is corrected each snapshot. Outstanding there: the predictor in the grid's space (its chunks,
+its gravity, the far-flight speed), drawing the moon's chunks in its `GridFrame` and rolling the view
+to the new down, the edit prediction per grid, and the `game_local` scripted flight through
+`LocalCore`. Also outstanding: the other systems for away players (items, vitals, creatures, water,
+felling: they skip them), remotes drawn across grids (they are sent at their world positions), the
+player's grid in its saved record (a player who leaves on the moon is saved at its world position),
+the moon's unedited chunks never evicted, tier 1 bodies in the moon's space (none are made there yet).
 
 ## 8. Moon spawn, faces A and B [search built, M-1; the choice M-8]
 
@@ -389,7 +431,7 @@ starts in the moon's frame with its gravity, and the home world streams in only 
 | **M-4** [built] | The celestial model (§6): the moon's orbit as data, phases from geometry, moonlight by lit share with a night floor; the orbit's phase an optional world setting | `cargo test -p dwell-look --lib celestial` (13 tests, both faces): full when opposite the sun, new when between, lit share monotonic; face A toward home at every phase; both faces' phases equal; the floor kept; the clock and the sun unchanged (golden); `MOON_PHASE` round-trips and is absent by default (`dwell-protocol`) |
 | M-5 | LOD per grid: the moon's LOD terrain inside `farM`, the far body beyond, crossfaded | the moon's LOD from its generator at 150 km; no seam at the switch (screenshot) |
 | M-6 | The home world's bake from its world map (water mask), drawn from far. **Bake built** (§5); drawing it from the moon outstanding (with M-5/M-7) | `cargo test -p dwell-worldgen --test home_far` (10 tests, both faces): deterministic, the water mask the map's sea, normals out of mountain slopes, block colours, size/cost/memory bounded ✓; a screenshot from 600 km (outstanding: needs the drawing) |
-| M-7 [partial] | Streaming the moon's chunks per grid; far flight; capture and release; gravity per grid; the grid id in snapshots (new line) | a scripted flight home → moon → home with no jump in position (≤ 1 cm) on both of the moon's faces; ⅙ g jump height |
+| M-7 [partial; M-7b server + wire built] | Streaming the moon's chunks per grid; far flight; capture and release; gravity per grid; the grid id in snapshots (behind `grid.frames`) | a scripted flight home → moon → home with no jump in position (≤ 1 cm) on both of the moon's faces; ⅙ g jump height |
 | M-8 | Moon spawn A and B in the New world form and `?spawn=moon`, `moon-b` | a new world spawned on each face stands on the moon's ground in its frame |
 
 ## 12. Open questions for the owner
