@@ -516,6 +516,10 @@ the contact circled, the screen's edge dashed in `fp`; the sheet is square (five
 so `qlmanage -t -s 1600 -o DIR sheet.svg` makes a PNG with every panel. Saved sheets of the 2026-11-11
 fixes: `docs/clip_probe/` (`*_before`/`*_after`: the directions; `*_arms`: the arm-driven refit).
 
+**The camera's sway** (CHARACTERS.md §5.2): for a chop each sample also carries the view's sway at
+that clip time (`Sample::camera`, a miss's, `chop::swing_camera`), printed as the table's last column
+`camera yaw,pitch,roll ° bob r,u,b cm` and the CSV's `cam_yaw … cam_bob_back`.
+
 **Orientation** (owner, 2026-11-11: "Ensure your tooling helps you tell rotation too"): each sample
 also carries how things are turned (`Sample::orient`, `clip_probe::Orient`): the blade's edge facing
 (`edge_points`: from the `axe_lashing` out through the `axe_blade`) and the handle's axis (grip to

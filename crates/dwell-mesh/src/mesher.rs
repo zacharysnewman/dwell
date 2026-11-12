@@ -80,6 +80,10 @@ pub struct MeshArrays {
     /// the vertex touches (`flood.rs`). The shader turns them into brightness by
     /// shared/look/light.json's curves.
     pub flood: Vec<f32>,
+    /// The opaque mesh only, and empty when no face in it is cracked: per vertex, the crack
+    /// overlay (docs/BLOCK_DAMAGE.md §6.3) as four unorm bytes, little-endian: the crack tile's s
+    /// and t (over [−½, 1½]), its atlas slot + 1 (0: no crack) and its strength.
+    pub cracks: Vec<u32>,
     /// The transparent mesh's fluid id per vertex (`crate::NO_FLUID` for a see-through face that
     /// is no fluid's); empty in the opaque mesh.
     pub fluids: Vec<f32>,
@@ -100,6 +104,7 @@ impl MeshArrays {
             + self.light.len()
             + self.flood.len()
             + self.fluids.len()
+            + self.cracks.len()
             + self.indices.len())
     }
 }
@@ -2022,6 +2027,8 @@ fn mesh_cells(
 ) -> ChunkMeshes {
     // The struck faces of damaged cubes with a damage look (a cell holding another state than
     // the one hit is undamaged), by cell and face: carved instead of merged.
+    // A cell cracked (BLOCK_DAMAGE.md §6.3: its look's crack stage reached) leaves the merge on
+    // every face, each drawn with the crack overlay.
     let mut struck: HashMap<([i32; 3], usize), usize> = HashMap::new();
     for (i, (c, state, view)) in damaged.iter().enumerate() {
         let k = kinds.of(*state);
@@ -2031,9 +2038,16 @@ fn mesh_cells(
             || k.style.octagon
             || k.style.leafy
             || carved.contains_key(c)
-            || dwell_protocol::damage::look_of(k.style.block).is_none()
         {
             continue;
+        }
+        let Some(look) = dwell_protocol::damage::look_of(k.style.block) else {
+            continue;
+        };
+        if damage_mesh::CrackLayer::of(&look, view, *c).is_some() {
+            for face in 0..6 {
+                struck.insert((*c, face), i);
+            }
         }
         for mk in &view.marks {
             if mk.face < 6 {
@@ -2323,9 +2337,11 @@ fn mesh_cells(
         let Some(look) = dwell_protocol::damage::look_of(kinds.of(*state).style.block) else {
             continue;
         };
+        let on = |f: usize| view.marks.iter().any(|m| usize::from(m.face) == f);
+        // The cell's carved faces share its budget; a cracked cell's unstruck faces are flat.
         let faces = struck_faces
             .iter()
-            .filter(|(o, _)| o.cell == sf.cell)
+            .filter(|(o, _)| o.cell == sf.cell && on(o.face))
             .count();
         let marks: Vec<_> = view
             .marks
@@ -2333,13 +2349,17 @@ fn mesh_cells(
             .filter(|m| usize::from(m.face) == sf.face)
             .collect();
         let fraction = f64::from(view.fraction) / 255.0;
-        let carve = damage_mesh::carve_of(sf.face, &marks, &look, fraction);
+        let carve =
+            (!marks.is_empty()).then(|| damage_mesh::carve_of(sf.face, &marks, &look, fraction));
+        let crack = damage_mesh::CrackLayer::of(&look, view, sf.cell)
+            .map(|c| c.for_face(sf.face, &view.marks));
         damage_mesh::carve_face(
             &mut opaque.m,
             sf,
-            &carve,
+            carve.as_ref(),
             &look,
             damage_mesh::grid_for(&look, faces),
+            crack.as_ref(),
         );
     }
     // Leaves (shared/look/leaves.json): whole cells, chamfered where exposed, lit as a crown.
@@ -2411,6 +2431,10 @@ fn mesh_cells(
                 }
             }
         }
+    }
+    // The crack overlay's stream, once any face has it, covers every opaque vertex (0: none).
+    if !opaque.m.cracks.is_empty() {
+        opaque.m.cracks.resize(opaque.m.positions.len() / 3, 0);
     }
     // Ladders carry no sway or fade, and take the ink.
     let vertices = cutout.m.positions.len() / 3;

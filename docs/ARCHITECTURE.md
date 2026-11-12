@@ -842,8 +842,14 @@ stone's angular facets round each hit, flat-lit), with the face's uvs, corner li
 occluded floor; the field is 0 on the cell's edge, so the face's outline and its neighbours' are
 unchanged (watertight); each cell's struck faces share a triangle budget (`damage.look` `profile`,
 `facets`, `grid`, `triangles`). The decals and §6.1's per-pixel relief quads are no longer emitted (the
-shader's relief path is unreached, kept until the owner's look review); cracks are not drawn on carved
-faces; face-local through the face-B turn-over; collision unchanged), from the block's `damage.look` data. A hit short of breaking plays the
+shader's relief path is unreached, kept until the owner's look review); face-local through the face-B
+turn-over; collision unchanged), from the block's `damage.look` data. **Cracks [built, 0.54.x]**
+(BLOCK_DAMAGE.md §6.3): past its look's first `cracks.stages` fraction a cell leaves the merge on every
+exposed face (unstruck ones one flat quad each), and each vertex carries the crack overlay in the opaque
+mesh's optional `cracks` stream (four unorm bytes: the crack tile's s and t round the hit nearest the
+face, the stage tile's atlas slot + 1, the strength; empty for a chunk without cracks, filled with 0 in
+the terrain buffer, whose vertex grows 72 → 76 bytes); `terrain_fs` multiplies the face by the stage's
+painterly crack tile (`shared/textures/cracks.json`), one atlas lookup on cracked faces only, every tier. A hit short of breaking plays the
 material's `Hit` sound at the struck point.
 **Drawing** (`render/skinned.rs`, inside `CharacterRenderer`): the model's one mesh (36-byte
 vertices: position, normal, sRGB colour, 4 × u8 joints, 4 × unorm8 weights; the Peasant 1,834

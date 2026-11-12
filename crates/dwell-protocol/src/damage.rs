@@ -71,6 +71,31 @@ pub struct DamageLook {
     /// The cell's triangle budget for its carved faces (data `triangles`, 128–2048; default 256): the grid is
     /// coarsened until every struck face fits.
     pub triangles: u32,
+    /// The crack overlay over the damaged cell's faces (BLOCK_DAMAGE.md §6.3; data `cracks`); none:
+    /// no cracks.
+    pub cracks: Option<Cracks>,
+}
+
+/// A block's crack overlay (`damage.look.cracks`, BLOCK_DAMAGE.md §6.3): its crack set's tiles
+/// (`shared/textures/cracks.json`), the damage fraction each starts at, and how far it darkens.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Cracks {
+    /// The set's atlas tiles in stage order, hairline to branching.
+    pub tiles: &'static [&'static str],
+    /// The damage fraction (0–1) each stage starts at, ascending, one a tile.
+    pub stages: &'static [f64],
+    /// How far a crack darkens the face (0–1; the tile multiplied over it).
+    pub strength: f64,
+    /// The width a crack tile covers round the hit (m; cracks.json `span`).
+    pub span: f64,
+}
+
+impl Cracks {
+    /// The crack stage (an index into `tiles`) at damage `fraction` (0–1): the last stage whose
+    /// start it has reached; none below the first.
+    pub fn stage(&self, fraction: f64) -> Option<usize> {
+        self.stages.iter().rposition(|&s| fraction >= s)
+    }
 }
 
 /// The damage look of a block, by name.

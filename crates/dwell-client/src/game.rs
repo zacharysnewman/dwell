@@ -43,6 +43,7 @@ use dwell_physics::config::PlayerControllerConfig;
 use dwell_physics::net::to_net;
 use dwell_physics::predictor::{Predictor, PredictorStats};
 use dwell_physics::{DVec3, Vec3};
+use dwell_protocol::chopping::CameraOffset;
 use dwell_protocol::{
     GroundKind, InputFrame, MAX_INPUTS_PER_DATAGRAM, Message, PlayerEventKind, PlayerInput,
     PlayerState, SIM_HZ, controller_flags, player_flags, players,
@@ -717,6 +718,8 @@ pub struct Game<S: Scene> {
     held_sent: Option<u16>,
     /// The Show your arms setting (the settings menu; on by default).
     pub show_arms: bool,
+    /// The Camera sway setting (Settings → Motion): the swing's sway on the view.
+    pub camera_sway: bool,
     /// Stand-in players for the dev tools (`__dwell.puppets`): the frame cost of N bodies and
     /// their clips without N clients.
     pub puppets: Option<Puppets>,
@@ -1002,6 +1005,7 @@ impl<S: Scene> Game<S> {
                 &dwell_game::block_interaction::palette(),
             ),
             show_arms: true,
+            camera_sway: true,
             lod_drawn: true,
             puppets: None,
         };
@@ -2774,23 +2778,32 @@ impl<S: Scene> Game<S> {
     /// The blasts' effects this frame (docs/EXPLOSIVES.md §4): their puffs and flash lights to the
     /// scene, and the camera's shake at `eye` (yaw, pitch degrees).
     /// The axe's chips (crate::chips) ride the same billboard pass.
-    fn update_blasts(&mut self, eye: [f64; 3], now_ms: f64) -> (f64, f64) {
-        let (swing_yaw, swing_pitch) = self.update_swing(eye, now_ms);
-        let (y, p) = self.update_blast_effects(eye, now_ms);
-        (y + swing_yaw, p + swing_pitch)
+    fn update_blasts(&mut self, eye: [f64; 3], now_ms: f64) -> (CameraOffset, (f64, f64)) {
+        let sway = self.update_swing(now_ms);
+        (sway, self.update_blast_effects(eye, now_ms))
+    }
+
+    /// The view drawn from the aim's pose this frame: the swing's sway (with the Camera sway
+    /// setting) and a blast's shake added (crate::chop::swayed_view); the aim keeps `aim`.
+    fn view_pose(
+        &self,
+        aim: crate::chop::ViewPose,
+        effects: (CameraOffset, (f64, f64)),
+        face: FaceFrame,
+    ) -> crate::chop::ViewPose {
+        crate::chop::swayed_view(aim, effects.0, self.camera_sway, effects.1, face)
     }
 
     /// The swing under way this frame (crate::chop `SwingRun`): the arms held through the
-    /// hit-stop and pulled back, the impact's effects at its moment, and the camera's motion
-    /// (yaw, pitch degrees).
-    fn update_swing(&mut self, eye: [f64; 3], now_ms: f64) -> (f64, f64) {
+    /// hit-stop and pulled back, the impact's effects at its moment, and the view's sway.
+    fn update_swing(&mut self, now_ms: f64) -> CameraOffset {
         let Some(mut run) = self.chop.run else {
-            return (0.0, 0.0);
+            return CameraOffset::ZERO;
         };
         if run.done(now_ms) {
             self.chop.run = None;
             self.bodies.drive_arms(None);
-            return (0.0, 0.0);
+            return CameraOffset::ZERO;
         }
         let t = run.elapsed(now_ms);
         self.bodies.drive_arms(Some(run.clip_time(t)));
@@ -2801,9 +2814,7 @@ impl<S: Scene> Game<S> {
             self.swing_impact(run.tool, hit, now_ms);
         }
         self.chop.run = Some(run);
-        let (right, up) = run.camera(t);
-        let f = FaceFrame::at_height(eye[1]);
-        (f.handed(-right), up)
+        run.camera(t)
     }
 
     /// What a swing's impact shows: into a wood its chips, its hit's sound by how far the wood is
@@ -3650,7 +3661,8 @@ impl<S: Scene> Game<S> {
             scene.set_own_body(None);
             camera_eye = cam.eye;
             drop(scene);
-            let (sy, sp) = self.update_blasts(cam.eye, now_ms);
+            // Third person: a blast's shake, no swing's sway (the swing is the body's).
+            let (_, (sy, sp)) = self.update_blasts(cam.eye, now_ms);
             self.scene
                 .borrow_mut()
                 .set_camera(cam.eye, yaw + sy, cam.pitch + sp, cam.face, 0.0);
@@ -3665,11 +3677,19 @@ impl<S: Scene> Game<S> {
             // Eye height is smoothed per tick (steps, crouching; eye.rs), then interpolated.
             let eye = [center[0], self.eye.draw(alpha), center[2]];
             camera_eye = eye;
-            // A blast's shake turns the view drawn, never the aim.
-            let (sy, sp) = self.update_blasts(eye, now_ms);
+            // A blast's shake and the swing's sway turn the view drawn, never the aim: the
+            // targeting below, the listener and the facing keep `eye`, `yaw` and `pitch`.
+            let effects = self.update_blasts(eye, now_ms);
+            let aim = crate::chop::ViewPose {
+                eye,
+                yaw,
+                pitch,
+                roll,
+            };
+            let v = self.view_pose(aim, effects, face);
             self.scene
                 .borrow_mut()
-                .set_camera(eye, yaw + sy, pitch + sp, face, roll);
+                .set_camera(v.eye, v.yaw, v.pitch, face, v.roll);
             self.listener = listener(eye, yaw, pitch, face);
             let ready = self.terrain_ready();
             self.target(ready.then_some(eye), input, now_ms);

@@ -130,6 +130,9 @@ pub struct Sample {
     pub at: Vec<At>,
     /// How the tool and the arm are turned at `t`.
     pub orient: Orient,
+    /// The view's sway at `t` for a chop (a miss's, the clip's timeline; crate::chop::swing_camera):
+    /// yaw toward the screen's right, pitch up, roll leaning right (degrees), bob right, up, back (m).
+    pub camera: Option<dwell_protocol::chopping::CameraOffset>,
 }
 
 /// What a glyph on the sheet stands for.
@@ -685,7 +688,16 @@ pub fn probe(p: &Probe) -> Result<Report, String> {
                 }
             }
             o.hand_roll = hand_roll(o.axes[1], o.axes[2]);
-            Sample { t, at, orient: o }
+            let camera = swing_def(p.item, role).map(|s| {
+                let vertical = swing_of(role) == Some(Swing::ChopVertical);
+                crate::chop::swing_camera(&s, vertical, None, f64::from(t))
+            });
+            Sample {
+                t,
+                at,
+                orient: o,
+                camera,
+            }
         })
         .collect();
     // Angular speeds, and the blade's facing against the edge's motion.
@@ -753,7 +765,7 @@ pub fn probe(p: &Probe) -> Result<Report, String> {
         phases: Vec::new(),
         peak_speed,
         peak_t,
-        contact_t: swing.map(|s| s.time_of_step(s.samples.max(2).saturating_sub(1) / 2) as f32),
+        contact_t: swing.map(|s| s.centre_s() as f32),
         skeleton: Vec::new(),
     };
     // The phases' travel, from exact samples at their ends (not the table's nearest).
@@ -813,7 +825,10 @@ pub fn table(r: &Report) -> String {
             format!("{} fp x,y,depth / body r,u,a", p.name())
         );
     }
-    let _ = writeln!(s, " | edge∠motion | hand roll | spin arm,fore,hand °/s");
+    let _ = writeln!(
+        s,
+        " | edge∠motion | hand roll | spin arm,fore,hand °/s | camera yaw,pitch,roll ° bob r,u,b cm"
+    );
     for smp in &r.samples {
         let _ = write!(s, "{:>6.3}", smp.t);
         for a in &smp.at {
@@ -824,9 +839,20 @@ pub fn table(r: &Report) -> String {
             );
         }
         let o = &smp.orient;
+        let cam = smp.camera.map_or("-".to_string(), |c| {
+            format!(
+                "{:+.2} {:+.2} {:+.2} / {:+.1} {:+.1} {:+.1}",
+                c.yaw,
+                c.pitch,
+                c.roll,
+                c.bob[0] * 100.0,
+                c.bob[1] * 100.0,
+                c.bob[2] * 100.0
+            )
+        });
         let _ = writeln!(
             s,
-            " | {:>11} | {:>+8.0}° | {:>4.0} {:>4.0} {:>4.0}",
+            " | {:>11} | {:>+8.0}° | {:>4.0} {:>4.0} {:>4.0} | {cam}",
             o.blade_vs_motion
                 .map_or("-".to_string(), |a| format!("{a:.0}°")),
             o.hand_roll,
@@ -873,12 +899,13 @@ pub fn table(r: &Report) -> String {
 /// The samples as CSV: one row per sample and point.
 pub fn csv(r: &Report) -> String {
     let mut s = String::from(
-        "t,point,screen_x,screen_y,depth,right,up,ahead,world_x,world_y,world_z,body_right,body_up,body_ahead\n",
+        "t,point,screen_x,screen_y,depth,right,up,ahead,world_x,world_y,world_z,body_right,body_up,body_ahead,cam_yaw,cam_pitch,cam_roll,cam_bob_right,cam_bob_up,cam_bob_back\n",
     );
     for smp in &r.samples {
+        let c = smp.camera.unwrap_or_default();
         for (p, a) in r.points.iter().zip(&smp.at) {
             s.push_str(&format!(
-                "{:.4},{},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4}\n",
+                "{:.4},{},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4}\n",
                 smp.t,
                 p.name(),
                 a.screen[0],
@@ -892,7 +919,13 @@ pub fn csv(r: &Report) -> String {
                 a.world[2],
                 a.body[0],
                 a.body[1],
-                a.body[2]
+                a.body[2],
+                c.yaw,
+                c.pitch,
+                c.roll,
+                c.bob[0],
+                c.bob[1],
+                c.bob[2]
             ));
         }
     }
@@ -1520,5 +1553,35 @@ mod chop_swing_tests {
         let c = csv(&r);
         assert_eq!(c.lines().count(), 1 + r.samples.len() * r.points.len());
         assert!(Point::parse("elbow").unwrap() == Point::Bone("forearm_r"));
+    }
+
+    #[test]
+    fn the_probe_prints_the_cameras_sway_turning_left_through_the_level_strike() {
+        // Each chop sample carries the view's sway (CHARACTERS.md §5.2), at rest at both ends.
+        let r = run("chop_level");
+        let cams: Vec<_> = r
+            .samples
+            .iter()
+            .map(|s| s.camera.expect("a chop"))
+            .collect();
+        assert_eq!(cams[0].size(), 0.0);
+        assert!(cams.last().unwrap().size() < 1e-6);
+        let strike = r.phase("strike").unwrap();
+        let yaw_at = |t: f32| {
+            r.samples
+                .iter()
+                .min_by(|a, b| (a.t - t).abs().total_cmp(&(b.t - t).abs()))
+                .and_then(|s| s.camera)
+                .unwrap()
+                .yaw
+        };
+        // The head goes right → left on screen and the view turns left with it.
+        assert_eq!(strike.screen_way(), "right→left");
+        assert!(yaw_at(strike.to) < yaw_at(strike.from) - 1.0);
+        let t = table(&r);
+        assert!(t.contains("camera yaw,pitch,roll"), "{t}");
+        assert!(csv(&r).starts_with("t,point,") && csv(&r).contains(",cam_yaw,"));
+        // A clip that is not a chop has none.
+        assert!(run("break").samples.iter().all(|s| s.camera.is_none()));
     }
 }

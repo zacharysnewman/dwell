@@ -281,6 +281,14 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    Owner, 2026-11-12: **"The camera could have some sway with the chop."** In progress (cloud): a small camera
    sway following the swing (a lean into the wind-up, a kick at contact, settling in the recovery), as tool
    data, honouring the camera-shake/motion settings.
+   **Status (chop-sway):** built (CHARACTERS.md §5.2): each tool's `swing.camera` per swing kind (keyed yaw,
+   pitch, roll and a bob over the swing's phase time, a kick at contact; replaces `kickDeg` and the hardcoded
+   jolt), validated in the generator (at rest at both ends, in order, ±10° and ±0.1 m); the level chop leans
+   back and right into the wind-up and turns left through the strike, the vertical pitches up and dips at
+   contact; a miss kicks at 0.35, a hit into wood at 1, a bounce at 1.6; the view only, never the aim (tested
+   on both faces); Settings → Motion → Camera sway (the explosions' Screen shake names blasts only, so a new
+   toggle; off with reduced motion); `clip_probe` prints the offset per sample. Left: the owner's feel review
+   in game (no GPU in the cloud).
 18. **Digging marks that look carved** (owner 2026-11-11: "the 'chunks' of dirt aren't at all what we
    discussed. It should be like a normal map change (do we support normal/bump maps)? It's completely flat
    should look like mesh deformation (preferably without actually doing it for performance)"; "That part was
@@ -312,6 +320,16 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    flat `code` varying) is removed; dwell-look's tier bit 11 (`relief_parallax`) and dwell-mesh's
    `relief::pack`/`unpack` are now unread, left for a cleanup. By design the carve fades to 0 at the cell's
    edge (watertight), so it never shows in a block's silhouette. Left: the owner's review.
+   Owner, 2026-11-12: **"Perhaps we also show a 'cracking' texture around the block too as you do more
+   damage."** **Status (cracks):** built (BLOCK_DAMAGE.md §6.3): painterly crack tile sets as data
+   (`shared/textures/cracks.json`: stone, soil's drier fissures, wood's splits along the grain; four stages
+   each, hairline to branching, painted by the stroke generator into the atlas); per block
+   `damage.look.cracks` (`set`, `stages` by damage fraction, `strength`); every exposed face of a damaged cell
+   past its first stage carries the stage's tile centred on the hit nearest the face (running over the edge
+   from the struck face), multiplied over the block texture by one atlas lookup in `terrain_fs`, on carved faces
+   following the carve; every tier. Measured: 50 damaged cells +212 triangles a cell (as before), 6.0 ms
+   against 2.6 ms undamaged; the terrain vertex 72 → 76 bytes. Left: the owner's look in game (no GPU in the
+   cloud); the wood set has no block yet (logs have no `damage.look`).
 19. **Lava glow, remaining** (owner 2026-11-11: "Lava should have bloom glow"; "Lava looks dark red instead of
    bright red/orange"; "It should darken as it solidifies though"). Built 0.52.107: colour by heat stops, heat in
    cells. **Bloom built (pending release, `claude/bloom`):** keyed on the scene's self-lit flag (lava, torches,

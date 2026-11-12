@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { ENGINE_TILES, atlasTiles, bake, labPage, rustSource, tileEmissive, tileHang, tileMolten } from './gen.mjs';
+import { ENGINE_TILES, atlasTiles, bake, crackTiles, labPage, loadCracks, rustSource, tileEmissive, tileHang, tileMolten, validateCracks } from './gen.mjs';
 import { TILE, imageRows, materialRamp, paintMaterial, resolveColor, validateMaterials, validatePalette } from './paint.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -309,4 +309,30 @@ test("the utility tiles: plain is white, grid is white with a faint edge line, m
       assert.deepEqual(texel(missing, x, y), want, `${x}, ${y}`);
     }
   }
+});
+
+test('the crack sets (BLOCK_DAMAGE.md §6.3) are atlas tiles, painted, growing stage by stage; bad sets fail naming them', () => {
+  const cracks = loadCracks();
+  for (const t of crackTiles(cracks)) assert.ok(tiles.includes(t), `the atlas has ${t}`);
+  for (const [set, names] of Object.entries(cracks.sets)) {
+    let last = 0;
+    for (const n of names) {
+      const tile = paintMaterial(materials.tiles[n], materials, palette);
+      assert.deepEqual(texel(tile, 0, 0), [255, 255, 255, 255], `${n}: white (no darkening) where uncracked`);
+      let dark = 0;
+      for (let k = 0; k < TILE * TILE; k++) if (tile[k * 4] < 200) dark++;
+      assert.ok(dark > last, `${set}: ${n} covers more than the stage before (${dark} ≤ ${last})`);
+      last = dark;
+    }
+  }
+  // A fixture set by data alone becomes atlas tiles the materials must paint.
+  const extra = { span: 1, sets: { glass: ['crackGlass1'] } };
+  assert.ok(atlasTiles({ blocks: [] }, [], [], crackTiles(extra)).includes('crackGlass1'));
+  const bad = (c, re) => assert.throws(() => validateCracks(c), re);
+  bad({ span: 1, sets: {} }, /cracks\.json: sets must be a non-empty object/);
+  bad({ span: 9, sets: { a: ['x1'] } }, /cracks\.json: span must be a number of metres in \[0\.5, 4\]/);
+  bad({ span: 1, sets: { Bad: ['x1'] } }, /cracks\.json: set name "Bad" must be lower_snake_case/);
+  bad({ span: 1, sets: { a: [] } }, /cracks\.json: sets\.a must list 1–8 tiles/);
+  bad({ span: 1, sets: { a: ['x1'], b: ['x1'] } }, /cracks\.json: sets\.b: tile "x1" is already in set a/);
+  bad({ span: 1, sets: { a: ['x1'] }, extra: 1 }, /cracks\.json: unknown entry extra/);
 });

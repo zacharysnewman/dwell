@@ -230,7 +230,7 @@ test("block damage: the data's hits reach Rust and TS; a fixture block by data a
   blocks.set('test:clay', { damage: { default: 3, look: { kind: 'scoops', size: 0.3, color: '#806040', crack: '#302010' } } });
   assert.match(
     toolsRust(validateTools(data, items, blocks)),
-    /block: "test:clay", .*look: Some\(DamageLook \{ kind: DamageLookKind::Scoops, size: 0\.3, color: \[128, 96, 64\], crack: \[48, 32, 16\], depth: 0\.1, rim: 0\.012, parallax: 6, darken: 0\.35, profile: CarveProfile::Bowl, facets: 5, grid: 8, triangles: 256 \}\)/,
+    /block: "test:clay", .*look: Some\(DamageLook \{ kind: DamageLookKind::Scoops, size: 0\.3, color: \[128, 96, 64\], crack: \[48, 32, 16\], depth: 0\.1, rim: 0\.012, parallax: 6, darken: 0\.35, profile: CarveProfile::Bowl, facets: 5, grid: 8, triangles: 256, cracks: None \}\)/,
   );
   bad({ default: 3, look: { kind: 'dents', size: 0.3, color: '#806040', crack: '#302010' } }, /test:clay\.damage\.look\.kind must be one of shards, scoops, chips/);
   bad({ default: 3, look: { kind: 'scoops', size: 0.3, color: '#806040', crack: '#302010', depth: 0.9 } }, /test:clay\.damage\.look\.depth must be a number in \[0, 0\.5\]/);
@@ -240,13 +240,28 @@ test("block damage: the data's hits reach Rust and TS; a fixture block by data a
   bad({ default: 3, look: { kind: 'scoops', size: 0.3, color: '#806040', crack: '#302010', darken: -1 } }, /test:clay\.damage\.look\.darken must be a number in \[0, 1\]/);
   // The carved mesh's data (§6.2): a fixture's facets by data alone, bad values failing by name.
   blocks.set('test:clay', { damage: { default: 3, look: { kind: 'chips', size: 0.3, color: '#806040', crack: '#302010', profile: 'facets', facets: 7, grid: 6, triangles: 160 } } });
-  assert.match(toolsRust(validateTools(data, items, blocks)), /block: "test:clay", .*profile: CarveProfile::Facets, facets: 7, grid: 6, triangles: 160 \}\)/);
+  assert.match(toolsRust(validateTools(data, items, blocks)), /block: "test:clay", .*profile: CarveProfile::Facets, facets: 7, grid: 6, triangles: 160, cracks: None \}\)/);
   bad({ default: 3, look: { kind: 'scoops', size: 0.3, color: '#806040', crack: '#302010', profile: 'spiky' } }, /test:clay\.damage\.look\.profile must be one of bowl, facets/);
   bad({ default: 3, look: { kind: 'scoops', size: 0.3, color: '#806040', crack: '#302010', facets: 2 } }, /test:clay\.damage\.look\.facets must be a whole number from 3 to 8/);
   bad({ default: 3, look: { kind: 'scoops', size: 0.3, color: '#806040', crack: '#302010', grid: 40 } }, /test:clay\.damage\.look\.grid must be a whole number from 2 to 16/);
   bad({ default: 3, look: { kind: 'scoops', size: 0.3, color: '#806040', crack: '#302010', triangles: 64 } }, /test:clay\.damage\.look\.triangles must be a whole number from 128 to 2048/);
   bad({ default: 3, look: { kind: 'shards', size: 2, color: '#806040', crack: '#302010' } }, /test:clay\.damage\.look\.size must be a number/);
   bad({ default: 3, look: { kind: 'shards', size: 0.3, color: 'red', crack: '#302010' } }, /test:clay\.damage\.look\.color must be a #rrggbb colour/);
+  // The crack overlay (BLOCK_DAMAGE.md §6.3): a fixture's set, stages and strength by data alone,
+  // resolved to the set's tiles; bad ones fail naming them.
+  const look = { kind: 'scoops', size: 0.3, color: '#806040', crack: '#302010' };
+  blocks.set('test:clay', { damage: { default: 3, look: { ...look, cracks: { set: 'wood', stages: [0.1, 0.3, 0.5, 0.9], strength: 0.4 } } } });
+  assert.match(
+    toolsRust(validateTools(data, items, blocks)),
+    /block: "test:clay", .*cracks: Some\(Cracks \{ tiles: &\["crackWood1", "crackWood2", "crackWood3", "crackWood4"\], stages: &\[0\.1, 0\.3, 0\.5, 0\.9\], strength: 0\.4, span: 1\.5 \}\) \}\)/,
+  );
+  assert.match(toolsRust(d), /block: "dwell:stone", .*cracks: Some\(Cracks \{ tiles: &\["crackStone1",/);
+  bad({ default: 3, look: { ...look, cracks: { set: 'glass', stages: [0.5], strength: 0.4 } } }, /test:clay\.damage\.look\.cracks\.set must be a crack set of shared\/textures\/cracks\.json/);
+  bad({ default: 3, look: { ...look, cracks: { set: 'wood', stages: [0.5], strength: 0.4 } } }, /test:clay\.damage\.look\.cracks\.stages must list 4 damage fractions/);
+  bad({ default: 3, look: { ...look, cracks: { set: 'wood', stages: [0.1, 0.5, 0.4, 0.9], strength: 0.4 } } }, /test:clay\.damage\.look\.cracks\.stages must ascend/);
+  bad({ default: 3, look: { ...look, cracks: { set: 'wood', stages: [0, 0.5, 0.6, 0.9], strength: 0.4 } } }, /test:clay\.damage\.look\.cracks\.stages\[0\] must be a damage fraction in \(0, 1\]/);
+  bad({ default: 3, look: { ...look, cracks: { set: 'wood', stages: [0.1, 0.3, 0.5, 0.9], strength: 2 } } }, /test:clay\.damage\.look\.cracks\.strength must be a number in \[0, 1\]/);
+  bad({ default: 3, look: { ...look, cracks: { set: 'wood', stages: [0.1, 0.3, 0.5, 0.9], strength: 0.4, glow: 1 } } }, /test:clay\.damage\.look\.cracks/);
   // Its hit's chips (sounds round 2b) by data alone, and a bad one fails naming it.
   blocks.set('test:clay', { damage: { default: 3, chips: { count: 5, color: '#806040', speed: 1.5, size: 0.05 } } });
   assert.match(
@@ -280,4 +295,36 @@ test('durability: the stone axe, stone pickaxe and wooden shovel survive 32 hits
   bad((x) => (x.items['dwell:stone_axe'] = 0), /hits must be/);
   bad((x) => (x.creativeWear = 'no'), /creativeWear/);
   bad((x) => (x.breakSound = 'nope'), /no sound event/);
+});
+
+test("a swing's camera sway (CHARACTERS.md §5.2): the axe's per kind, a fixture tool's by data alone, bad curves fail naming them", () => {
+  const d = validateTools(...fresh());
+  const rs = toolsRust(d);
+  // The stone axe's level sway leans right into the wind-up and turns left through the strike.
+  assert.match(rs, /name: "dwell:stone_axe".*camera_level: SwingCamera \{ keys: &\[CameraKey \{ t: 0\.0, yaw: 0\.0, .*CameraKey \{ t: 1\.0, yaw: 1\.8, pitch: 0\.5, roll: 1\.4/);
+  assert.match(rs, /camera_vertical: SwingCamera \{ keys: &\[.*CameraKey \{ t: 1\.0, yaw: 0\.3, pitch: 2\.2/);
+  // A fixture tool with its own sway by data alone; one without has none (no keys, no kick).
+  const [data, items, blocks] = fresh();
+  items.add('test:maul');
+  items.add('test:club');
+  const keys = [{ t: 0 }, { t: 1.2, pitch: 3, bob: [0, 0.02, 0] }, { t: 3 }];
+  data.tools.push({ name: 'test:maul', kind: 'axe', swingSeconds: 0.45, biteM: 0.3, bindM: 0.1, across: 1, along: 0.2, sharpness: 2, swing: { camera: { vertical: { keys, kick: { pitch: -2, decayS: 0.2 } } } } });
+  data.tools.push({ name: 'test:club', kind: 'axe', swingSeconds: 0.45, biteM: 0.3, bindM: 0.1, across: 1, along: 0.2, sharpness: 2 });
+  const out = toolsRust(validateTools(data, items, blocks));
+  assert.match(out, /name: "test:maul".*camera_level: SwingCamera \{ keys: &\[\], .*camera_vertical: SwingCamera \{ keys: &\[CameraKey \{ t: 0\.0, .*CameraKey \{ t: 1\.2, yaw: 0\.0, pitch: 3\.0, roll: 0\.0, bob: \[0\.0, 0\.02, 0\.0\] \}.*kick: CameraKick \{ offset: CameraOffset \{ yaw: 0\.0, pitch: -2\.0, .*decay_s: 0\.2, miss: 0\.4, bounce: 1\.6/);
+  assert.match(out, /name: "test:club".*camera_level: SwingCamera \{ keys: &\[\], .*camera_vertical: SwingCamera \{ keys: &\[\],/);
+  const bad = (edit, re) => {
+    const [x, i, b] = fresh();
+    edit(x.tools[0].swing.camera);
+    assert.throws(() => validateTools(x, i, b), re);
+  };
+  bad((c) => (c.sideways = {}), /swing\.camera: unknown field sideways/);
+  bad((c) => (c.level.keys[0].yaw = 1), /camera\.level\.keys must start at rest at t 0/);
+  bad((c) => c.level.keys.pop(), /camera\.level\.keys must end at rest at t 3/);
+  bad((c) => (c.level.keys[2].t = 0.5), /camera\.level\.keys\[2\]\.t \(0\.5\) must be after the key before \(1\)/);
+  bad((c) => (c.vertical.keys[1].pitch = 40), /camera\.vertical\.keys\[1\]\.pitch must be a number in \[-10, 10\]/);
+  bad((c) => (c.level.keys[1].bob = [0, 1]), /camera\.level\.keys\[1\]\.bob must be \[right, up, back\] metres/);
+  bad((c) => (c.level.kick.decayS = 0), /camera\.level\.kick\.decayS must be a number in \(0, 1\]/);
+  bad((c) => (c.level.kick.spin = 1), /camera\.level\.kick: unknown field spin/);
+  bad((c) => (c.level.keys = [{ t: 0 }]), /camera\.level\.keys must be a list of at least two keys/);
 });

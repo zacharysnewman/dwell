@@ -9,6 +9,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { loadBlocks, loadInventory } from '../inventory/gen.mjs';
+import { loadCracks } from '../textures/gen.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, '..', '..');
@@ -22,9 +23,17 @@ const CHOP2_TOOL_FIELDS = ['bite'];
 const CHOP2_WOOD_FIELDS = ['fellFraction', 'along', 'fellWedgeTrunk'];
 const CHOP2_FIELDS = ['enabled'];
 const TOOL_FIELDS = ['name', 'kind', 'swingSeconds', 'biteM', 'bindM', 'across', 'along', 'sharpness', 'held', 'heldVertical', 'swing', 'clears', 'chop2'];
-const SWING_FIELDS = ['windupS', 'activeS', 'hitStopS', 'recoverHitS', 'recoverMissS', 'reachM', 'arcDeg', 'samples', 'kickDeg', 'staminaCost', 'swish', 'bounce', 'rustle', 'rustleLeaves'];
+const SWING_FIELDS = ['windupS', 'activeS', 'hitStopS', 'recoverHitS', 'recoverMissS', 'reachM', 'arcDeg', 'samples', 'camera', 'staminaCost', 'swish', 'bounce', 'rustle', 'rustleLeaves'];
 /** A swing's defaults (a tool without `swing`): a short wind-up, a committed arc, a hit-stop. */
-export const SWING_DEFAULTS = { windupS: 0.12, activeS: 0.14, hitStopS: 0.07, recoverHitS: 0.22, recoverMissS: 0.36, reachM: 2.2, arcDeg: 110, samples: 12, kickDeg: 1.5, staminaCost: 0, swish: null, bounce: null, rustle: null, rustleLeaves: 4 };
+export const SWING_DEFAULTS = { windupS: 0.12, activeS: 0.14, hitStopS: 0.07, recoverHitS: 0.22, recoverMissS: 0.36, reachM: 2.2, arcDeg: 110, samples: 12, camera: {}, staminaCost: 0, swish: null, bounce: null, rustle: null, rustleLeaves: 4 };
+/** A swing's camera sway (docs/CHARACTERS.md §5.2): per swing kind, keyed offsets and a kick. */
+const CAMERA_KINDS = ['level', 'vertical'];
+const CAMERA_FIELDS = ['keys', 'kick'];
+const CAMERA_KEY_FIELDS = ['t', 'yaw', 'pitch', 'roll', 'bob'];
+const CAMERA_KICK_FIELDS = ['yaw', 'pitch', 'roll', 'bob', 'decayS', 'miss', 'bounce'];
+/** The sway's bounds: a few degrees and centimetres (it sells the swing; it must not sicken). */
+const SWAY_MAX_DEG = 10;
+const SWAY_MAX_BOB_M = 0.1;
 const WOOD_FIELDS = ['block', 'fellFraction', 'buckFraction', 'buckDrops', 'chips', 'leaves', 'sway', 'sounds', 'cut', 'fellWedge', 'fellWedgeTrunk', 'fellTip', 'chop2'];
 const CUT_FIELDS = ['tile', 'tint', 'open', 'kerfWidthM'];
 const LEAF_FIELDS = ['block', 'count', 'color', 'radiusM', 'heightM'];
@@ -57,6 +66,56 @@ function validateChips(c, at) {
   inRange(chips, 'speed', 0, 10, at, true);
   inRange(chips, 'size', 0, 0.2, at, true);
   return chips;
+}
+
+/** An offset (a key's or the kick's): degrees of yaw, pitch and roll and a bob in metres. */
+function validateOffset(o, at) {
+  const v = { yaw: o.yaw ?? 0, pitch: o.pitch ?? 0, roll: o.roll ?? 0, bob: o.bob ?? [0, 0, 0] };
+  for (const k of ['yaw', 'pitch', 'roll']) inRange(v, k, -SWAY_MAX_DEG, SWAY_MAX_DEG, at);
+  if (!Array.isArray(v.bob) || v.bob.length !== 3 || v.bob.some((b) => !num(b) || Math.abs(b) > SWAY_MAX_BOB_M)) fail(`${at}.bob must be [right, up, back] metres, each in [-${SWAY_MAX_BOB_M}, ${SWAY_MAX_BOB_M}]`);
+  return v;
+}
+const atRest = (k) => k.yaw === 0 && k.pitch === 0 && k.roll === 0 && k.bob.every((b) => b === 0);
+
+/**
+ * A swing's `camera`: for each swing kind (level, vertical) its `keys` over the phase time (0 the
+ * start, 1 the wind-up's end, 2 the arc's end, 3 a miss's recovery's end), at rest at 0 and 3, in
+ * order, and its `kick` at contact. A kind left out has no sway.
+ */
+export function validateCamera(c, at) {
+  known(c, CAMERA_KINDS, at);
+  const out = {};
+  for (const kind of CAMERA_KINDS) {
+    const kat = `${at}.${kind}`;
+    const v = c[kind];
+    if (v === undefined) {
+      out[kind] = { keys: [], kick: { ...validateOffset({}, kat), decayS: 0.1, miss: 0, bounce: 0 } };
+      continue;
+    }
+    known(v, CAMERA_FIELDS, kat);
+    if (!Array.isArray(v.keys) || v.keys.length < 2) fail(`${kat}.keys must be a list of at least two keys`);
+    const keys = v.keys.map((k, i) => {
+      const kk = `${kat}.keys[${i}]`;
+      known(k, CAMERA_KEY_FIELDS, kk);
+      inRange(k, 't', 0, 3, kk);
+      return { t: k.t, ...validateOffset(k, kk) };
+    });
+    keys.forEach((k, i) => {
+      if (i > 0 && k.t <= keys[i - 1].t) fail(`${kat}.keys[${i}].t (${k.t}) must be after the key before (${keys[i - 1].t})`);
+    });
+    const first = keys[0];
+    const last = keys[keys.length - 1];
+    if (first.t !== 0 || !atRest(first)) fail(`${kat}.keys must start at rest at t 0 (every offset 0)`);
+    if (last.t !== 3 || !atRest(last)) fail(`${kat}.keys must end at rest at t 3 (every offset 0)`);
+    const kick = v.kick ?? {};
+    known(kick, CAMERA_KICK_FIELDS, `${kat}.kick`);
+    const kv = { ...validateOffset(kick, `${kat}.kick`), decayS: kick.decayS ?? 0.1, miss: kick.miss ?? 0.4, bounce: kick.bounce ?? 1.6 };
+    inRange(kv, 'decayS', 0, 1, `${kat}.kick`, true);
+    inRange(kv, 'miss', 0, 2, `${kat}.kick`);
+    inRange(kv, 'bounce', 0, 4, `${kat}.kick`);
+    out[kind] = { keys, kick: kv };
+  }
+  return out;
 }
 
 /**
@@ -103,7 +162,7 @@ export function validateTools(data, items, blocks, heldItems = loadHeldItems(), 
     inRange(sw, 'recoverMissS', 0, 3, sat);
     inRange(sw, 'reachM', 0, 6, sat, true);
     inRange(sw, 'arcDeg', 0, 180, sat, true);
-    inRange(sw, 'kickDeg', 0, 10, sat);
+    sw.camera = validateCamera(sw.camera, `${sat}.camera`);
     inRange(sw, 'staminaCost', 0, 1000, sat);
     if (!Number.isInteger(sw.samples) || sw.samples < 2 || sw.samples > 64) fail(`${sat}.samples must be a whole number in [2, 64]`);
     if (sw.recoverMissS < sw.recoverHitS) fail(`${sat}: recoverMissS (${sw.recoverMissS}) must not be below recoverHitS (${sw.recoverHitS}): a miss follows through`);
@@ -260,7 +319,22 @@ const LOOKS = ['shards', 'scoops', 'chips'];
 /** A carved mark's height field (BLOCK_DAMAGE.md §6.2): a smooth bowl, or angular facets. */
 const PROFILES = ['bowl', 'facets'];
 
-export function validateDamage(blocks, items, breaking) {
+/** A damage look's `cracks` against the crack tile sets (shared/textures/cracks.json): resolved to its tiles. */
+export function validateCracksLook(c, at, crackSets) {
+  if (c === null || typeof c !== 'object' || Array.isArray(c)) fail(`${at} must be an object`);
+  known(c, ['set', 'stages', 'strength'], at);
+  const tiles = crackSets.sets[c.set];
+  if (typeof c.set !== 'string' || !tiles) fail(`${at}.set must be a crack set of shared/textures/cracks.json (${Object.keys(crackSets.sets).join(', ')}), not ${JSON.stringify(c.set)}`);
+  if (!Array.isArray(c.stages) || c.stages.length !== tiles.length) fail(`${at}.stages must list ${tiles.length} damage fractions, one for each of set ${c.set}'s tiles`);
+  c.stages.forEach((v, i) => {
+    if (!(num(v) && v > 0 && v <= 1)) fail(`${at}.stages[${i}] must be a damage fraction in (0, 1]`);
+    if (i > 0 && !(v > c.stages[i - 1])) fail(`${at}.stages must ascend (stage ${i} at ${v} is not past ${c.stages[i - 1]})`);
+  });
+  if (!(num(c.strength) && c.strength >= 0 && c.strength <= 1)) fail(`${at}.strength must be a number in [0, 1]`);
+  return { set: c.set, tiles, stages: c.stages, strength: c.strength, span: crackSets.span };
+}
+
+export function validateDamage(blocks, items, breaking, crackSets = loadCracks()) {
   const classes = new Set(Object.keys(breaking?.classes ?? {}).filter((k) => k[0] !== '$'));
   const hits = (v, at) => {
     if (!(Number.isInteger(v) && v >= 1 && v <= 255)) fail(`${at} is a hit count from 1 to 255, not ${JSON.stringify(v)}`);
@@ -292,7 +366,7 @@ export function validateDamage(blocks, items, breaking) {
     if (d.look !== undefined) {
       const lat = `${at}.look`;
       if (d.look === null || typeof d.look !== 'object' || Array.isArray(d.look)) fail(`${lat} must be an object`);
-      known(d.look, ['kind', 'size', 'color', 'crack', 'depth', 'rim', 'parallax', 'darken', 'profile', 'facets', 'grid', 'triangles'], lat);
+      known(d.look, ['kind', 'size', 'color', 'crack', 'depth', 'rim', 'parallax', 'darken', 'profile', 'facets', 'grid', 'triangles', 'cracks'], lat);
       if (!LOOKS.includes(d.look.kind)) fail(`${lat}.kind must be one of ${LOOKS.join(', ')}`);
       if (!(num(d.look.size) && d.look.size >= 0.05 && d.look.size <= 0.9)) fail(`${lat}.size must be a number in [0.05, 0.9]`);
       for (const c of ['color', 'crack']) if (!/^#[0-9a-f]{6}$/i.test(d.look[c] ?? '')) fail(`${lat}.${c} must be a #rrggbb colour`);
@@ -307,8 +381,13 @@ export function validateDamage(blocks, items, breaking) {
       whole('facets', 3, 8);
       whole('grid', 2, 16);
       whole('triangles', 128, 2048);
+      // The crack overlay (BLOCK_DAMAGE.md §6.3, WORK_QUEUE item 18): `cracks` (optional) `set` a
+      // crack tile set of shared/textures/cracks.json, `stages` the damage fraction each of its tiles
+      // starts at (ascending in (0, 1], one a tile), `strength` (0–1) how far a crack darkens the face.
+      const cracks = d.look.cracks === undefined ? null : validateCracksLook(d.look.cracks, `${lat}.cracks`, crackSets);
       look = {
         ...d.look,
+        cracks,
         depth: d.look.depth ?? 0.1,
         rim: d.look.rim ?? 0.012,
         parallax: d.look.parallax ?? 6,
@@ -406,11 +485,14 @@ const rgb = (c) => [1, 3, 5].map((i) => parseInt(c.slice(i, i + 2), 16));
 const f64 = (v) => (Number.isInteger(v) ? `${v}.0` : `${v}`);
 const optStr = (v) => (v === null ? 'None' : `Some("${v}")`);
 
+const offsetRust = (o) => `CameraOffset { yaw: ${f64(o.yaw)}, pitch: ${f64(o.pitch)}, roll: ${f64(o.roll)}, bob: [${o.bob.map(f64).join(', ')}] }`;
+const cameraRust = (c) =>
+  `SwingCamera { keys: &[${c.keys.map((k) => `CameraKey { t: ${f64(k.t)}, yaw: ${f64(k.yaw)}, pitch: ${f64(k.pitch)}, roll: ${f64(k.roll)}, bob: [${k.bob.map(f64).join(', ')}] }`).join(', ')}], kick: CameraKick { offset: ${offsetRust(c.kick)}, decay_s: ${f64(c.kick.decayS)}, miss: ${f64(c.kick.miss)}, bounce: ${f64(c.kick.bounce)} } }`;
 const swingRust = (s) =>
-  `SwingDef { windup_s: ${f64(s.windupS)}, active_s: ${f64(s.activeS)}, hit_stop_s: ${f64(s.hitStopS)}, recover_hit_s: ${f64(s.recoverHitS)}, recover_miss_s: ${f64(s.recoverMissS)}, reach_m: ${f64(s.reachM)}, arc_deg: ${f64(s.arcDeg)}, samples: ${s.samples}, kick_deg: ${f64(s.kickDeg)}, stamina_cost: ${f64(s.staminaCost)}, swish: ${optStr(s.swish)}, bounce: ${optStr(s.bounce)}, rustle: ${optStr(s.rustle)}, rustle_leaves: ${s.rustleLeaves} }`;
+  `SwingDef { windup_s: ${f64(s.windupS)}, active_s: ${f64(s.activeS)}, hit_stop_s: ${f64(s.hitStopS)}, recover_hit_s: ${f64(s.recoverHitS)}, recover_miss_s: ${f64(s.recoverMissS)}, reach_m: ${f64(s.reachM)}, arc_deg: ${f64(s.arcDeg)}, samples: ${s.samples}, camera_level: ${cameraRust(s.camera.level)}, camera_vertical: ${cameraRust(s.camera.vertical)}, stamina_cost: ${f64(s.staminaCost)}, swish: ${optStr(s.swish)}, bounce: ${optStr(s.bounce)}, rustle: ${optStr(s.rustle)}, rustle_leaves: ${s.rustleLeaves} }`;
 
 export function toolsRust(d) {
-  const rs = [`// ${header}`, '', 'use crate::chopping::{BlockDamageDef, BreakTool, CarveProfile, DamageLook, DamageLookKind, Chips, CutLook, Leaves, Sway, SwingDef, ToolDef, ToolKind, WoodDef, Chop2Wood};', 'use crate::inventory::{DropChoice, DropRule};', ''];
+  const rs = [`// ${header}`, '', 'use crate::chopping::{BlockDamageDef, BreakTool, CameraKey, CameraKick, CameraOffset, CarveProfile, Cracks, DamageLook, DamageLookKind, Chips, CutLook, Leaves, Sway, SwingCamera, SwingDef, ToolDef, ToolKind, WoodDef, Chop2Wood};', 'use crate::inventory::{DropChoice, DropRule};', ''];
   rs.push('/// Whether the chopping prototype (`chop2`, WORK_QUEUE item 7) is on by default.');
   rs.push(`pub const CHOP2_DEFAULT: bool = ${d.chop2.enabled};`);
   rs.push('');
@@ -448,7 +530,7 @@ export function toolsRust(d) {
   rs.push('');
   rs.push("/// Each block's hits to destroy (its `damage`): by bare hands, and by tool class or item.");
   rs.push('pub static BLOCK_DAMAGE: &[BlockDamageDef] = &[');
-  for (const b of d.damage) rs.push(`    BlockDamageDef { block: "${b.block}", default: ${b.default === null ? 'None' : `Some(${b.default})`}, tools: &[${b.tools.map((t) => `("${t.tool}", ${t.hits})`).join(', ')}], look: ${b.look === null ? 'None' : `Some(DamageLook { kind: DamageLookKind::${b.look.kind[0].toUpperCase() + b.look.kind.slice(1)}, size: ${f64(b.look.size)}, color: [${rgb(b.look.color).join(', ')}], crack: [${rgb(b.look.crack).join(', ')}], depth: ${f64(b.look.depth)}, rim: ${f64(b.look.rim)}, parallax: ${b.look.parallax}, darken: ${f64(b.look.darken)}, profile: CarveProfile::${b.look.profile[0].toUpperCase() + b.look.profile.slice(1)}, facets: ${b.look.facets}, grid: ${b.look.grid}, triangles: ${b.look.triangles} })`}, chips: ${b.chips === null ? 'None' : `Some(Chips { count: ${b.chips.count}, color: [${rgb(b.chips.color).join(', ')}], speed: ${f64(b.chips.speed)}, size: ${f64(b.chips.size)} })`} },`);
+  for (const b of d.damage) rs.push(`    BlockDamageDef { block: "${b.block}", default: ${b.default === null ? 'None' : `Some(${b.default})`}, tools: &[${b.tools.map((t) => `("${t.tool}", ${t.hits})`).join(', ')}], look: ${b.look === null ? 'None' : `Some(DamageLook { kind: DamageLookKind::${b.look.kind[0].toUpperCase() + b.look.kind.slice(1)}, size: ${f64(b.look.size)}, color: [${rgb(b.look.color).join(', ')}], crack: [${rgb(b.look.crack).join(', ')}], depth: ${f64(b.look.depth)}, rim: ${f64(b.look.rim)}, parallax: ${b.look.parallax}, darken: ${f64(b.look.darken)}, profile: CarveProfile::${b.look.profile[0].toUpperCase() + b.look.profile.slice(1)}, facets: ${b.look.facets}, grid: ${b.look.grid}, triangles: ${b.look.triangles}, cracks: ${b.look.cracks === null ? 'None' : `Some(Cracks { tiles: &[${b.look.cracks.tiles.map((t) => `"${t}"`).join(', ')}], stages: &[${b.look.cracks.stages.map(f64).join(', ')}], strength: ${f64(b.look.cracks.strength)}, span: ${f64(b.look.cracks.span)} })`} })`}, chips: ${b.chips === null ? 'None' : `Some(Chips { count: ${b.chips.count}, color: [${rgb(b.chips.color).join(', ')}], speed: ${f64(b.chips.speed)}, size: ${f64(b.chips.size)} })`} },`);
   rs.push('];');
   rs.push('');
   rs.push('/// Tools that wear (`durability.items`): (item, hits it survives).');

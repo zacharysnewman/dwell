@@ -1,6 +1,0 @@
-{
-  "changes": [
-    "Pickaxe hits now chip a bigger, darker hollow out of stone, so the damage reads from standing height.",
-    "The terrain shader is smaller: the old flat dent effect, replaced by real carved geometry, is gone."
-  ]
-}

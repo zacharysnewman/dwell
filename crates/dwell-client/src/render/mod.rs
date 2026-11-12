@@ -451,11 +451,11 @@ struct GpuMesh {
 /// Bytes per vertex of each `Kind`'s interleaved format (the pipelines' vertex layouts), in the
 /// enum's order: `Kind as usize` indexes it.
 const STRIDES: [u64; 6] = [
-    4 * (3 + 3 + 3 + 2 + 4 + 1 + 2), // Terrain: position, normal, colour, uv, tile, light, flood
-    4 * (3 + 3 + 3),                 // Flat: position, normal, colour
-    4 * (3 + 3 + 3 + 1),             // Line: position, colour, the other end, side (a quad corner)
-    4 * (3 + 3),                     // Ghost: position, colour (triangles)
-    4 * (3 + 3 + 3 + 1 + 2),         // Fluid: position, normal, colour, fluid id, flood
+    4 * (3 + 3 + 3 + 2 + 4 + 1 + 2 + 1), // Terrain: position, normal, colour, uv, tile, light, flood, crack (4 bytes)
+    4 * (3 + 3 + 3),                     // Flat: position, normal, colour
+    4 * (3 + 3 + 3 + 1), // Line: position, colour, the other end, side (a quad corner)
+    4 * (3 + 3),         // Ghost: position, colour (triangles)
+    4 * (3 + 3 + 3 + 1 + 2), // Fluid: position, normal, colour, fluid id, flood
     4 * (3 + 3 + 3 + 2 + 4 + 4 + 1 + 1 + 2), // Cutout: the terrain's, plant (sway, wind speed, fade), bare, light, flood
 ];
 
@@ -550,6 +550,17 @@ fn textured_vertices(m: &MeshArrays, kind: Kind) -> Vec<f32> {
     }
     streams.push((&light, 1));
     streams.push((&flood, 2));
+    // The terrain's crack overlay (docs/BLOCK_DAMAGE.md §6.3): four unorm bytes a vertex in one
+    // float's slot, its bits copied as they are (0: no crack, a chunk without cracks has none).
+    let cracks: Vec<f32>;
+    if kind == Kind::Terrain {
+        cracks = if m.cracks.len() == count {
+            m.cracks.iter().map(|&b| f32::from_bits(b)).collect()
+        } else {
+            vec![0.0; count]
+        };
+        streams.push((&cracks, 1));
+    }
     interleave(&streams)
 }
 
@@ -1518,7 +1529,14 @@ impl Renderer {
                 .collect();
             (offset, attributes)
         };
-        let terrain_attrs = attrs(&[(0, 3), (1, 3), (2, 3), (3, 2), (4, 4), (5, 1), (6, 2)]);
+        let mut terrain_attrs = attrs(&[(0, 3), (1, 3), (2, 3), (3, 2), (4, 4), (5, 1), (6, 2)]);
+        // The crack overlay (docs/BLOCK_DAMAGE.md §6.3): four unorm bytes.
+        terrain_attrs.1.push(wgpu::VertexAttribute {
+            format: wgpu::VertexFormat::Unorm8x4,
+            offset: terrain_attrs.0,
+            shader_location: 7,
+        });
+        terrain_attrs.0 += 4;
         let cutout_attrs = attrs(&[
             (0, 3),
             (1, 3),
@@ -6063,7 +6081,7 @@ mod tests {
     fn every_kind_has_its_own_stride() {
         let ghost = 4 * (3 + 3);
         for (kind, stride) in [
-            (Kind::Terrain, 4 * (3 + 3 + 3 + 2 + 4 + 1 + 2)),
+            (Kind::Terrain, 4 * (3 + 3 + 3 + 2 + 4 + 1 + 2 + 1)),
             (Kind::Flat, 4 * (3 + 3 + 3)),
             (Kind::Line, 4 * (3 + 3 + 3 + 1)),
             (Kind::Ghost, ghost),
@@ -6094,6 +6112,48 @@ mod tests {
                 "{kind:?}"
             );
         }
+    }
+
+    /// A cracked face's overlay (docs/BLOCK_DAMAGE.md §6.3) reaches the terrain buffer bit for
+    /// bit in the vertex's last slot (the pipeline reads it as unorm8x4); a mesh without the stream
+    /// fills it with "none" (0).
+    #[test]
+    fn terrain_vertices_carry_the_crack_bytes() {
+        let stone = dwell_blocks::require("dwell:stone");
+        let mut padded = vec![0u16; dwell_mesh::PADDED_VOLUME];
+        padded[dwell_mesh::padded_index(2, 2, 2)] = stone;
+        let view = dwell_protocol::damage::DamageView {
+            fraction: 255,
+            marks: vec![dwell_protocol::damage::HitMark {
+                face: 2,
+                point: [128, 255, 128],
+            }],
+        };
+        let m = dwell_mesh::mesh_chunk_damaged(
+            &padded,
+            &[],
+            false,
+            [0, 0, 0],
+            &[],
+            None,
+            Default::default(),
+            &[([2, 2, 2], view)],
+        )
+        .expect("meshed")
+        .opaque;
+        let stride = (STRIDES[Kind::Terrain as usize] / 4) as usize;
+        let v = textured_vertices(&m, Kind::Terrain);
+        assert_eq!(m.cracks.len(), m.positions.len() / 3);
+        for (k, &c) in m.cracks.iter().enumerate() {
+            assert_ne!(c >> 16 & 0xff, 0, "every face of the cracked cell");
+            assert_eq!(v[k * stride + stride - 1].to_bits(), c);
+        }
+        let plain = dwell_mesh::mesh_chunk(&padded, false)
+            .expect("meshed")
+            .opaque;
+        assert!(plain.cracks.is_empty());
+        let v = textured_vertices(&plain, Kind::Terrain);
+        assert!(v.chunks_exact(stride).all(|x| x[stride - 1].to_bits() == 0));
     }
 
     #[test]

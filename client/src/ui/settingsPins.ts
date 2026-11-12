@@ -92,7 +92,7 @@ export function settingFields(keys: StoreKeys): SettingField[] {
       ['water'],
     ),
     ...rec('shadows', SHADOWS_KEY, ['quality', 'torch'], ['shadows', 'torchShadows']),
-    ...rec('motion', keys.motion, ['speedEffects', 'fovBoost', 'plantSway']),
+    ...rec('motion', keys.motion, ['speedEffects', 'fovBoost', 'plantSway', 'cameraSway']),
     ...rec('explosions', keys.explosions, ['flash', 'smoke', 'shake']),
     one(['fovDeg'], keys.view, ['fovDeg']),
     one(['showArms'], keys.view, ['showArms']),
