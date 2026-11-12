@@ -20,7 +20,7 @@ use dwell_protocol::{Message, RegionEdit, RegionEditOp, region_edit};
 use dwell_world::FaceFrame;
 use dwell_world::VoxelWorld;
 use dwell_world::edit::unbreakable;
-use dwell_world::region::{KEEP, PasteTransform, box_distance_sq, box_in_world, read_box};
+use dwell_world::region::{KEEP, PasteTransform, box_distance_sq, box_in_world_of, read_box};
 
 /// Undo steps kept (each holds its boxes' states twice; a brush stroke's boxes are trimmed to
 /// the cells it changes).
@@ -167,6 +167,9 @@ pub struct RegionTools {
     /// server refuses outside a mode with `structures`. Without it (an older server), plain
     /// `Paste`s, validated as any paste (STRUCTURES.md §9).
     pub structure_ops: bool,
+    /// The world's disc and build volume (its size, `Game::set_world`): a box outside them is not
+    /// sent (BUGS.md #109).
+    pub bounds: dwell_world::WorldBounds,
     a: Option<[i32; 3]>,
     b: Option<[i32; 3]>,
     clipboard: Option<Clipboard>,
@@ -230,6 +233,7 @@ impl RegionTools {
             reach: region_edit::REACH,
             structures: false,
             structure_ops: false,
+            bounds: dwell_world::WorldBounds::DEFAULT,
             a: None,
             b: None,
             clipboard: None,
@@ -551,7 +555,7 @@ impl RegionTools {
         let Some(eye) = ctx.eye else {
             return false;
         };
-        if !box_in_world(min, size) {
+        if !box_in_world_of(&self.bounds, min, size) {
             self.note = "Outside the build volume".into();
             return false;
         }
@@ -683,7 +687,7 @@ impl RegionTools {
             return None;
         }
         // The server refuses a box not wholly inside the build volume (ADR 0025).
-        if !box_in_world(edit.min, dims(edit.size)) {
+        if !box_in_world_of(&self.bounds, edit.min, dims(edit.size)) {
             self.note = "Outside the build volume".into();
             return None;
         }

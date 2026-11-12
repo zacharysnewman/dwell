@@ -547,6 +547,11 @@ pub struct VoxelWorld {
     /// from the generator (`dwell_worldgen::portal_shafts_for_sized`), the server and the client's
     /// prediction alike; the player controller reads them. None by default.
     pub portals: crate::portal_shafts::PortalShafts,
+    /// The world's disc and build volume (docs/proposals/BIG_MAP.md M2): what bounds an edit's
+    /// cells (`edit::check_block_edit`, `region::check_region_edit`). The holder sets it from the
+    /// world's size, the server and the client's prediction alike (BUGS.md #109); a 1× world's
+    /// (the build's) by default.
+    pub bounds: crate::WorldBounds,
 }
 
 /// Whether a state is a placed light source: it gives off a light (`light`) and block light (the
@@ -577,6 +582,7 @@ impl VoxelWorld {
             light_pending: None,
             currents: Default::default(),
             portals: Default::default(),
+            bounds: crate::WorldBounds::DEFAULT,
         }
     }
 

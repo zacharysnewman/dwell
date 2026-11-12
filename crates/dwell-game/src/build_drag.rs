@@ -15,7 +15,7 @@ use std::collections::{HashSet, VecDeque};
 
 use dwell_blocks::{Facing, StateId, Support, info};
 use dwell_protocol::{BlockEditRequest, RegionEdit, RegionEditOp, SIM_HZ, region_edit};
-use dwell_world::region::{box_distance_sq, box_in_world};
+use dwell_world::region::{box_distance_sq, box_in_world_of};
 use dwell_world::{CELL, pos_of_cell};
 
 pub use crate::items::{BUILD_CLEARANCE, BUILD_HOLD_MS, BUILD_MODE_KEY, BUILD_MODES, ItemDrag};
@@ -63,6 +63,10 @@ pub trait DragWorld {
     /// place rules, so the drag checks it.
     fn holds(&mut self, _cell: [i32; 3], _material: StateId) -> bool {
         true
+    }
+    /// The world's disc and build volume: a piece outside them is not filled (BUGS.md #109).
+    fn bounds(&self) -> dwell_world::WorldBounds {
+        dwell_world::WorldBounds::DEFAULT
     }
     /// The server has answered every fill of the stroke sent so far: a line builds its next
     /// piece only then, so it never runs on past one the server refused (owner, 2026-10-28: a
@@ -314,7 +318,7 @@ impl Stroke {
 
     /// The piece at `min` may be filled now: in the world, within `reach` of the eye, every cell free.
     fn fits(&self, min: [i32; 3], eye: [f64; 3], reach: f64, world: &mut impl DragWorld) -> bool {
-        box_in_world(min, self.size())
+        box_in_world_of(&world.bounds(), min, self.size())
             && box_distance_sq(min, self.size(), eye) <= reach * reach
             && (0..self.rows).all(|r| {
                 let c = [min[0], min[1] + r, min[2]];

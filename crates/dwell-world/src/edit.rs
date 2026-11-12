@@ -12,8 +12,8 @@ use dwell_blocks::{
 use dwell_protocol::{BlockEditAction, BlockEditRequest, ChunkChanges, MAX_PIECE_ROWS, players};
 
 use crate::{
-    CELL, CELL_H, ChunkCoord, FaceFrame, M, VoxelWorld, cell_dir, cell_space, inside_build_volume,
-    inside_world_disc, m_of_row, metres, normal_to_m, pos_of_cell, up_of_y,
+    CELL, CELL_H, ChunkCoord, FaceFrame, M, VoxelWorld, cell_dir, cell_space, m_of_row, metres,
+    normal_to_m, pos_of_cell, up_of_y,
 };
 
 /// Face index → outward direction: 0 +X, 1 −X, 2 +Y, 3 −Y, 4 +Z, 5 −Z.
@@ -301,7 +301,11 @@ pub fn edit_writes_all(
         // The block standing on it, if this leaves it unsupported.
         let up = above(c);
         if below(up) == c
-            && inside_build_volume(i64::from(up[0]), i64::from(up[1]), i64::from(up[2]))
+            && world.bounds.volume().contains_voxel(
+                i64::from(up[0]),
+                i64::from(up[1]),
+                i64::from(up[2]),
+            )
         {
             let there = current(world, &out, up);
             if there != M.air
@@ -392,7 +396,11 @@ pub fn unsupported_after(
         let up = FaceFrame::at_row(at[1]).sign();
         let next = [at[0], at[1] + up, at[2]];
         if below(next) != at
-            || !inside_build_volume(i64::from(next[0]), i64::from(next[1]), i64::from(next[2]))
+            || !world.bounds.volume().contains_voxel(
+                i64::from(next[0]),
+                i64::from(next[1]),
+                i64::from(next[2]),
+            )
         {
             break;
         }
@@ -793,10 +801,9 @@ pub fn check_block_edit(
     });
     let mut material = request.material;
     for (i, p) in std::iter::once(cell).chain(also).enumerate() {
-        // The build volume bounds building (ADR 0025); the disc, the terrain's columns.
-        if !inside_build_volume(i64::from(p[0]), i64::from(p[1]), i64::from(p[2]))
-            || !inside_world_disc(i64::from(p[0]), i64::from(p[2]))
-        {
+        // The world's build volume bounds building (ADR 0025); its disc, the terrain's columns
+        // (`VoxelWorld::bounds`, the world's size: BUGS.md #109).
+        if !world.bounds.contains_cell(p) {
             return EditOutcome::fail(EditCheck::OutOfWorld);
         }
         let existing = world.get_voxel(p[0], p[1], p[2]);
@@ -849,9 +856,7 @@ pub fn check_block_edit(
         let Some(part) = dwell_blocks::state(name) else {
             return EditOutcome::fail(EditCheck::NotPlaceable);
         };
-        if !inside_build_volume(i64::from(p[0]), i64::from(p[1]), i64::from(p[2]))
-            || !inside_world_disc(i64::from(p[0]), i64::from(p[2]))
-        {
+        if !world.bounds.contains_cell(p) {
             return EditOutcome::fail(EditCheck::OutOfWorld);
         }
         let there = world.get_voxel(p[0], p[1], p[2]);

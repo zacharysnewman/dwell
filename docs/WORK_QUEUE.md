@@ -77,6 +77,10 @@ The running order across the items below; each line names its item, where the ow
    LOD classified sections by the 1× disc, so everything past 50 km read as empty space at every size; it now
    classifies in the world's own disc (`kind_from_bounds_of`), and `__dwell.debug().lod` counts what the view wants,
    has built, draws as nothing and the budget dropped. Next: the owner flies a 4× and spawns in an 8×/10× world.
+   **Placing past 50 km (BUGS.md #109, found 2026-11-12 fixing #108):** in a 4×–10× world a Place past the 1×
+   disc's 50 km did nothing (the client dropped it, and the server refused it as out of the world); breaking worked.
+   **Fixed (2026-11-12):** every edit check (the client's pre-checks and prediction, the server's block and region
+   checks) reads the world's own bounds (`VoxelWorld::bounds`).
 10. **Realistic R5–R6 (item 15)** — geology by plate history with today's blocks; the World option.
 
 ### Waiting on the owner (each with what it means and the default meanwhile)
