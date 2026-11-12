@@ -374,6 +374,15 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    chevron right when closed and down when open, a hover and pressed background, a focus ring; About is a
    real disclosure button (aria-expanded, aria-controls). The world card's ⋯ menu keeps its button.
 
+24. **Felling: the gash, and trunks lost on slopes** (owner 2026-11-12: "The tree chop currently makes 2 half
+   slopes both at the same angle, which doesn't line up with the chop you make in the side of the tree. It just
+   slices the tree after it's broken like you cut it through with a sword in one swipe. The tree is supposed to
+   have the big gash I was imagining 2 half blocks one upside down one right side up, both with the 'short
+   side' facing the cut."). Restated to the owner: the stump an upright ramp low at the notch side, the trunk's
+   new bottom an upside-down ramp thin at the notch side, opening a V gash toward the side chopped (the data's
+   `fellWedgeTrunk: open`, today `matching`), lined up with the notch and the fall. Waiting on the owner's
+   confirmation. Also BUGS.md #73: a trunk settled diagonally up a slope loses most of its cells into the ground.
+
 ## Done
 
 - **Axe swing directions and animation tools (owner 2026-11-11: "The axe animations are still trash.
