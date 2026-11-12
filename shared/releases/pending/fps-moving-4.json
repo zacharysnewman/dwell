@@ -1,5 +1,0 @@
-{
-  "changes": [
-    "Fewer hitches on phones while running and flying: the collision for new terrain is built in smaller pieces each step"
-  ]
-}

@@ -29,11 +29,11 @@ use dwell_world::edit::{
     DEFAULT_REACH, EditCapsule, EditCheck, check_block_edit, edit_writes, held_in_place,
     medium_kept, overlaps_player,
 };
-use dwell_world::lod::{INDEX_LEVEL, LodCoord, in_world, lod_of_chunk, parent};
+use dwell_world::lod::{INDEX_LEVEL, LodCoord, lod_of_chunk, parent};
 use dwell_world::region::{RegionCheck, check_region_edit, region_reach};
 use dwell_world::{
-    AirChunkTest, BUILD_VOLUME, CHUNK_SIZE, Chunk, ChunkCoord, ChunkGenerator, FaceFrame, M,
-    SavedChunks, VoxelWorld, chunk_distance, chunk_hash, chunk_of, local_index,
+    AirChunkTest, CHUNK_SIZE, Chunk, ChunkCoord, ChunkGenerator, FaceFrame, M, SavedChunks,
+    VoxelWorld, chunk_distance, chunk_hash, chunk_of, local_index,
 };
 
 use dwell_protocol::auth::verify_ed25519;
@@ -359,6 +359,26 @@ pub fn default_settings(water_speed: f64) -> WorldSettings {
         mode: dwell_protocol::modes::DEFAULT_MODE,
         size: dwell_protocol::world_size::WorldSize::DEFAULT,
     }
+}
+
+/// The size of a saved world from its settings' bytes (BIG_MAP.md M2): today's for a world saved
+/// without settings or from before sizes, or whose settings this build can't read.
+fn saved_world_size(
+    settings: Option<&[u8]>,
+    water_speed: f64,
+) -> dwell_protocol::world_size::WorldSize {
+    use dwell_protocol::world_size::WorldSize;
+    let before = WorldSettings {
+        size: WorldSize::DEFAULT,
+        ..default_settings(water_speed)
+    };
+    settings
+        .and_then(SettingsFields::from_bytes)
+        .and_then(|f| f.settings(before).ok())
+        .map(|s| s.size)
+        // A size this build's LOD root can't hold (a newer build's) opens as today's.
+        .filter(|s| s.fits_lod_root())
+        .unwrap_or(WorldSize::DEFAULT)
 }
 
 /// A new world's settings under `config`: [`default_settings`] with its water speed and mode.
@@ -1025,6 +1045,9 @@ impl Server {
             if meta.spawn.is_some() && !(config.join_at_spawn && config.spawn.is_some()) {
                 config.spawn = meta.spawn;
             }
+            // And its own size (BIG_MAP.md M2): its settings' (`init_storage` reads the rest); a
+            // world from before sizes, or saved without settings, is today's size.
+            config.world_size = saved_world_size(meta.settings.as_deref(), config.water_speed);
         }
         // A world from an older line (or a launch naming a retired version) opens on this build's
         // generator of its kind.
@@ -1032,12 +1055,17 @@ impl Server {
         let (generator, air_test, sky) = match &config.generator_override {
             Some(g) => (g.clone(), config.air_test_override.clone(), None),
             None => {
-                let air = dwell_worldgen::AirColumns::for_generator(
+                let air = dwell_worldgen::AirColumns::for_generator_sized(
                     config.generator_version,
                     config.world_seed,
+                    config.world_size,
                 );
                 (
-                    dwell_worldgen::generator_for(config.generator_version, config.world_seed),
+                    dwell_worldgen::generator_for_sized(
+                        config.generator_version,
+                        config.world_seed,
+                        config.world_size,
+                    ),
                     Some(air.test()),
                     Some(crate::sky_columns::SkyColumns::new(
                         air,
@@ -1053,7 +1081,11 @@ impl Server {
             .lod_threads
             .unwrap_or(usize::from(config.worldgen_threads > 0));
         let spawn = *config.spawn.get_or_insert_with(|| {
-            dwell_worldgen::spawn_point_for(config.generator_version, config.world_seed)
+            dwell_worldgen::spawn_point_for_sized(
+                config.generator_version,
+                config.world_seed,
+                config.world_size,
+            )
         });
         let mut server = Self {
             edit_log: std::collections::VecDeque::new(),
@@ -1170,16 +1202,22 @@ impl Server {
             next_save_tick: 0,
             save_stats: SaveStats::default(),
             lod: if config.jobs_remote {
-                LodPropagation::new_remote(dwell_worldgen::lod_generator_for(
+                LodPropagation::new_remote(dwell_worldgen::lod_generator_for_sized(
                     config.generator_version,
                     config.world_seed,
+                    config.world_size,
                 ))
             } else {
                 LodPropagation::new(
-                    dwell_worldgen::lod_generator_for(config.generator_version, config.world_seed),
+                    dwell_worldgen::lod_generator_for_sized(
+                        config.generator_version,
+                        config.world_seed,
+                        config.world_size,
+                    ),
                     lod_threads,
                 )
-            },
+            }
+            .with_world(dwell_world::WorldBounds::of(config.world_size)),
             index_updates: BTreeMap::new(),
             next_index_update_tick: 0,
             lod_unsaved: HashSet::default(),
@@ -2068,7 +2106,11 @@ impl Server {
         for k in 0..self.prefetch_offsets.len() {
             for &center in &centers {
                 let c = add(center, self.prefetch_offsets[k]);
-                if !BUILD_VOLUME.chunk_may_hold(c) || self.world.find(c).is_some() {
+                if !dwell_world::WorldBounds::of(self.config.world_size)
+                    .volume()
+                    .chunk_may_hold(c)
+                    || self.world.find(c).is_some()
+                {
                     continue;
                 }
                 if self.is_saved(c) {
@@ -2091,7 +2133,9 @@ impl Server {
             for k in 0..self.preload_offsets.len() {
                 for &center in &preloads {
                     let c = add(center, self.preload_offsets[k]);
-                    if BUILD_VOLUME.chunk_may_hold(c)
+                    if dwell_world::WorldBounds::of(self.config.world_size)
+                        .volume()
+                        .chunk_may_hold(c)
                         && self.world.find(c).is_none()
                         && !self.is_saved(c)
                         && self.air_known(c) == Some(false)
@@ -2106,7 +2150,11 @@ impl Server {
         // it flows on until it sleeps.
         let water = self.water_link.wanted.clone();
         for &c in &water {
-            if !BUILD_VOLUME.chunk_may_hold(c) || self.world.find(c).is_some() {
+            if !dwell_world::WorldBounds::of(self.config.world_size)
+                .volume()
+                .chunk_may_hold(c)
+                || self.world.find(c).is_some()
+            {
                 continue;
             }
             if self.is_saved(c) {
@@ -2182,7 +2230,9 @@ impl Server {
             }
             let ok = s.chunk_mode != ChunkMode::AwaitingCheck
                 && in_range
-                && BUILD_VOLUME.chunk_may_hold(c)
+                && dwell_world::WorldBounds::of(self.config.world_size)
+                    .volume()
+                    .chunk_may_hold(c)
                 && s.chunk_request_credit >= 1.0
                 && s.chunk_requests.len() < MAX_QUEUED_CHUNK_REQUESTS;
             if !ok {
@@ -2285,7 +2335,11 @@ impl Server {
             let c = add(center, self.view_offsets[i]);
             let s = &self.sessions[&id];
             // Chunks wholly outside the build volume are air everywhere: never sent (ADR 0025).
-            if !BUILD_VOLUME.chunk_may_hold(c) || s.streamed.contains(&c) {
+            if !dwell_world::WorldBounds::of(self.config.world_size)
+                .volume()
+                .chunk_may_hold(c)
+                || s.streamed.contains(&c)
+            {
                 continue;
             }
             complete = false;
@@ -2327,7 +2381,11 @@ impl Server {
         for i in 0..self.preload_offsets.len() {
             let c = add(center, self.preload_offsets[i]);
             let s = &self.sessions[&id];
-            if !BUILD_VOLUME.chunk_may_hold(c) || s.streamed.contains(&c) {
+            if !dwell_world::WorldBounds::of(self.config.world_size)
+                .volume()
+                .chunk_may_hold(c)
+                || s.streamed.contains(&c)
+            {
                 continue;
             }
             complete = false;
@@ -3806,6 +3864,11 @@ impl Server {
         &self.worldgen_text
     }
 
+    /// The world's disc and build volume (its size's, BIG_MAP.md M2).
+    pub fn bounds(&self) -> dwell_world::WorldBounds {
+        dwell_world::WorldBounds::of(self.config.world_size)
+    }
+
     pub fn world_settings(&self) -> WorldSettings {
         self.settings
     }
@@ -4304,7 +4367,7 @@ impl Server {
                 revision: 0,
                 cells: Vec::new(),
             };
-            if !in_world(c) {
+            if !dwell_world::lod::in_world_of(c, &self.bounds()) {
                 // Nothing there: the client's generator says so too.
             } else if let Some(section) = self.lod.find(c) {
                 m.revision = section.revision;

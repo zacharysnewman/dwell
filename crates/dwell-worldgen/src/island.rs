@@ -68,6 +68,11 @@ impl IslandLayout {
     }
 
     /// The layout of a world of `size` (BIG_MAP.md M0; the generators read only today's yet, M2).
+    /// The island's shape tunables.
+    pub fn shape(&self) -> &IslandShape {
+        &self.shape
+    }
+
     pub fn sized(world_seed: u64, size: dwell_protocol::world_size::WorldSize) -> Self {
         Self {
             shape: IslandShape::sized(size),

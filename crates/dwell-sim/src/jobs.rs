@@ -72,11 +72,24 @@ pub struct JobRunner {
 impl JobRunner {
     /// For the world of generator `generator_version` and `world_seed`.
     pub fn for_world(generator_version: u32, world_seed: u64) -> Self {
+        Self::for_world_sized(
+            generator_version,
+            world_seed,
+            dwell_protocol::world_size::WorldSize::DEFAULT,
+        )
+    }
+
+    /// [`JobRunner::for_world`] in a world of `size` (BIG_MAP.md M2).
+    pub fn for_world_sized(
+        generator_version: u32,
+        world_seed: u64,
+        size: dwell_protocol::world_size::WorldSize,
+    ) -> Self {
         Self {
-            air: AirColumns::for_generator(generator_version, world_seed),
+            air: AirColumns::for_generator_sized(generator_version, world_seed, size),
             ..Self::new(
-                dwell_worldgen::generator_for(generator_version, world_seed),
-                dwell_worldgen::lod_generator_for(generator_version, world_seed),
+                dwell_worldgen::generator_for_sized(generator_version, world_seed, size),
+                dwell_worldgen::lod_generator_for_sized(generator_version, world_seed, size),
             )
         }
     }

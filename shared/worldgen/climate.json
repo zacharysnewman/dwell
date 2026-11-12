@@ -1,0 +1,35 @@
+{
+  "$comment": "The Realistic world's climate (docs/proposals/REALISTIC_WORLD.md R3; owner 2026-11-11: \"latitude + prevailing wind + terrain\", the seed picks the latitude band). Read only where terrain.json `tectonics.climate` is 1 (worlds/realistic.json); the default and the other worlds keep biomeMap's wind and a uniform rain. bands: the latitude bands a face's seed draws from (by weight); a band spans the whole map north–south, from latitude[0] at the map's south edge to latitude[1] at its north edge (game scale: a real 100 km map spans under one degree), along a north axis the seed turns; northern hemisphere. seaLevel: the sea-level temperature (°C) by latitude (degrees), straight between the points, ascending; the temperature is that less lapseRate °C per 1000 m above the sea. winds: the prevailing wind cells by latitude (trade winds, westerlies, polar easterlies), each blowing from `from` degrees of compass bearing (0 from the north, 90 from the east, clockwise; turned with the map's north); the band's wind is the cell at its middle latitude, turned by up to ± windJitter degrees by the seed. rain: the march along that wind over the seed's mountains (biomemap.rs `rainfall`, systemic terrain T1) on a coarse grid of `cell` m (coarser when the map would need more than maxCells a side, so a bigger map keeps the grid's size: BIG_MAP.md; no new whole-map 100 m grid, BUGS.md #70) over the uplifted ground before the erosion (§3.3's order), low-passed over smoothM m; baseRain per km on flat land, more by upliftRain per 10 % grade the ground rises along the wind, less by leeDry per 10 % grade it falls; the air dries over reachM m of full rain. maxGridBytes: the bound the coarse grid's memory must stay under (a test). discharge: the rain the rivers carry, the march's rain over its mean on land, kept within [min, max] (the windward rivers big, the lee's fed by the range). Prototype tuning.",
+  "bands": [
+    { "name": "subtropical", "weight": 1, "latitude": [14, 28] },
+    { "name": "temperate", "weight": 2, "latitude": [38, 52] },
+    { "name": "subarctic", "weight": 1, "latitude": [61, 72] }
+  ],
+  "seaLevel": [
+    [0, 27],
+    [15, 25],
+    [30, 19],
+    [45, 11],
+    [60, 2],
+    [75, -10],
+    [90, -24]
+  ],
+  "lapseRate": 6.5,
+  "winds": [
+    { "name": "trade_winds", "latitude": [0, 30], "from": 60 },
+    { "name": "westerlies", "latitude": [30, 60], "from": 240 },
+    { "name": "polar_easterlies", "latitude": [60, 90], "from": 70 }
+  ],
+  "windJitter": 15,
+  "rain": {
+    "cell": 500,
+    "maxCells": 400,
+    "smoothM": 3000,
+    "reachM": 5000,
+    "baseRain": 0.15,
+    "upliftRain": 1.5,
+    "leeDry": 1
+  },
+  "maxGridBytes": 1048576,
+  "discharge": { "min": 0.05, "max": 4 }
+}

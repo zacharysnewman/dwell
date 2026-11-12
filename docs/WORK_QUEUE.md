@@ -243,7 +243,15 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    scaled by each boundary's rate; arc cones on the overriding side; hotspot chains older along the plate's
    motion) and the plates' coast, in the Realistic test world (`worlds/realistic.json`, `test:realistic`, not
    in the New world form); default and starter goldens unchanged; the map builds faster than the default's.
-   The Chisel plates overlay moved again, to R3. Next: R3 (climate); q2's bands, q6 and q8 still open. q5 (2026-11-11): no new rock blocks
+   The Chisel plates overlay moved again, to R3. R3 built (2026-11-12): the climate from latitude, wind and
+   terrain (`shared/worldgen/climate.json`, `climate.rs`): each face's seed draws a latitude band (subtropical,
+   temperate, subarctic, by weight) spanning the map north–south, temperature in °C from latitude and height
+   (6.5 °C/km), the band's prevailing wind (trade winds, westerlies, polar easterlies) marched over the seed's
+   mountains on a coarse grid (≥ 500 m, ≤ 400 a side, under 1 MiB), its rain feeding the rivers' discharge
+   where `tectonics.climate` is 1 (only `realistic.json`); windward sides of the seeds' main ranges ≥ 3× wetter
+   than their lees, both faces; default and starter goldens unchanged. The Chisel plates, latitude and wind
+   overlays moved to R4. Next: R4 (biomes by climate); q2's bands (R3 offers three, as data), q6 and q8 still
+   open. q5 (2026-11-11): no new rock blocks
    for now; R5 uses today's blocks (stone, basalt, sandstone, red sandstone, sand, dirt) named in data, so
    new ones can replace them later.
 
@@ -638,7 +646,10 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
   regional maps. **M0 built:** the size is a per-world setting (optional tag, today's worlds unchanged) and the
   LOD levels, big map cells, hydrology cell (≤ 1 M cells at every size), island shape and uplift counts derive
   from it. **M1 built:** the LOD root (level 15) holds every size; protocol v23, so it needs a new
-  compatibility line (the owner's call). Next: M2 (the generators read the world's size; 2× first).
+  compatibility line (the owner's call). **M2a built (native):** the generators, the disc and build volume
+  (`WorldBounds`), the LOD and the server read the world's size; a saved 2× world reopens at 2×; 1× unchanged;
+  a 2× world creates natively in 4.6 s at 176 MB (1×: 3.7 s, 164 MB). Next: M2b (the browser's workers and
+  the dev link `?size=2x` / New world → "World size", desktop only), then 4×, 8×, 10×.
 
 - **Sharing saved structures between players** (owner 2026-11-11: "eventually shareable").
 

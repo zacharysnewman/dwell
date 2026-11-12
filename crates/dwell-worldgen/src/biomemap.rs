@@ -130,6 +130,8 @@ pub struct BiomeField {
     dither_seed: u32,
     /// The climate gradient's direction (a unit vector from the seed).
     dir: (f64, f64),
+    /// The world's disc radius (m; its map's size's): the climate's gradient spans it.
+    radius: f64,
     /// Per map cell: the rain shadow's rainfall (0..1, [`rainfall`]; the sea's flat rate over the
     /// sea, stored by its exceptions).
     rain: SparseGrid<f32>,
@@ -308,6 +310,7 @@ impl BiomeField {
             climate_seed: seed_word(world_seed, 0xB10E_0002),
             dither_seed: seed_word(world_seed, 0xB10E_0003),
             dir: (a.cos(), a.sin()),
+            radius: map.world_radius() as f64,
             rain,
         }
     }
@@ -343,7 +346,7 @@ impl BiomeField {
     pub fn geography(&self, x: i64, z: i64, elevation: f64) -> Geography {
         let p = &self.params;
         let (xf, zf) = (x as f64, z as f64);
-        let r = f64::from(dwell_world::WORLD_RADIUS);
+        let r = self.radius;
         let along = ((xf * self.dir.0 + zf * self.dir.1) / r).clamp(-1.0, 1.0);
         let climate = 0.5
             + 0.5 * along
