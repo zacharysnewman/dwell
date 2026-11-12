@@ -429,6 +429,9 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    `tests/chopping.rs` `felled_from_each_side_the_cut_opens_a_gash_toward_the_notch`, red on `matching`); a trunk
    at rest tilted settles column by column along its pose, a blocked column rising to free rows, no wood lost
    (BUGS.md #73 Fixed; docs/FELLING.md §4).
+   Owner, 2026-11-12, on BUGS.md #75 (trees couldn't be felled: one aim hacked one binding kerf): **"Merge the
+   fix"** — a swing at the deeper band lands in the other one, so chopping at one spot notches and fells in ~11
+   swings; ADR 0067's "clumsy straight hacking 3–4× more" rule is dropped.
 25. **Marks appear at contact, not on click** (owner 2026-11-12: "the gashes in blocks from tools show up on
    click instead of when the animation lines up with the block. We want that timing."). Every tool's hit (axe
    chop, pickaxe, shovel; the carve, cracks, chips, drops and sound) lands when the swing's head reaches the
