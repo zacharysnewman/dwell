@@ -806,8 +806,13 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    real tree models (each species, growth stage and seed variant; views around the tree and from above,
    albedo + normal + depth so they're lit by the sun and fog like the real ones), switched or blended by view
    angle, crossfaded with the near trees with no pop; replaces the LOD's blob trees (lod_trees.rs) and makes
-   dense forests cheap (one quad a tree, instanced). In progress (cloud): the bake (a CPU ray cast of the voxel
-   tree into an atlas) and the data; drawing them is local after.
+   dense forests cheap (one quad a tree, instanced). **Status (cloud, 2026-11-12):** the design is
+   [`proposals/TREE_IMPOSTORS.md`](proposals/TREE_IMPOSTORS.md) (ring of 8 × 2 views + 1 from above, 3 stages ×
+   4 seeds per species with the tint at draw, ~640 KB a tree at desktop, a dithered hand-over, instances from tree
+   lists, phases I-1–I-5, open questions for the owner); phase I-1, the bake, is built
+   (`dwell_worldgen::impostor`, data `shared/trees/impostors/impostors.json`, preview sheet
+   `docs/proposals/tree-impostors-bake.png`). Next: I-2 tree lists per section (cloud-able), then I-3 drawing
+   (local, GPU, measured on the M1 at High). Waiting on the owner: the proposal's questions.
 
 32. **A tall dense forest for performance reference** (owner 2026-11-12: "We should have a tall dense forest
    biome/climate for performance reference on trees."). A biome preset (tall, closely spaced mature trees — an
