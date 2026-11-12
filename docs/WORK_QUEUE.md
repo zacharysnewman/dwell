@@ -1106,6 +1106,11 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    held item on `hand.R`; `?fparms=rigid` keeps the old arms for comparison (CHARACTERS.md §11.10). Round 2: the fist round
    a handle as data (`grips`), the arm turned about the hand to show more forearm, and the held item on
    other players' skinned hands turned once, not twice.
+   Owner, 2026-11-12: **"Im noticing my hands look like the new model, but my legs/body doesn't? What's up with
+   that?"** Your own body seen in first person (CHARACTERS.md §5.1: legs, feet, torso when looking down or sliding)
+   is still the old rigid parts (§11.5 "Still rigid"); only the arms moved to the Peasant. Next: draw your own body
+   in first person from the Peasant too (the skinned body minus head, the arm cut hidden where the fp arms draw,
+   the same clips as your shadow), the rigid body retired; `?fparms=rigid` keeps both old for comparison.
 38. **Wandering NPCs** (owner 2026-11-12: "Another item to queue up, wandering NPCs. They'll use the same player
    character model."). People using the Peasant model who wander the world like the animals do. Owner's answers
    (2026-11-12): wander, idle (look around, sit), turn to look at a nearby player, step aside when bumped — no
