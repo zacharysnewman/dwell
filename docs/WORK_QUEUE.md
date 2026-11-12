@@ -1385,6 +1385,9 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    Owner: **"Also it looked like the player flew out of the hole instead of physics carrying it out of the hole. Like
    was flying."** — no flight in the portal shot: momentum alone carries the player up out of face B's hole (v2
    turned flight on at the top of the rise). **"Face b should be night."** — keep face B at night.
+   Portal exit (owner's answer, 2026-11-12): **land beside the hole** — today a player rises ~12 m out of the far
+   face's hole, falls back and bounces between the faces forever; the portal gives a small sideways push (or slows
+   the fall-back) so the player arcs out and lands on the far face's ground beside the hole.
    Owner refinement for (4)/(5), 2026-11-12: **"Like a farther out non first person view of the other side."** — after
    the motes, cut to a third-person camera farther out on face B (15–40 m from the portal, looking at the hole) as the
    player flies up out of it, not first person; the jump stays first person on face A.
