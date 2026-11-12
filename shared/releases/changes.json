@@ -2,6 +2,13 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.54.143",
+      "changes": [
+        "Realistic test world: rocks now follow the plates, with volcanic rock on the arc volcanoes and hotspot islands, granite and schist in the collision ranges, a limestone shelf by the trenches, and sandstone in the rifts and quiet basins",
+        "Realistic test world: soils weather from that rock by climate, so the same volcanic rock is thin and stony in the cold, sandy where it is dry, and deep and loamy where it is warm and wet"
+      ]
+    },
+    {
       "version": "0.54.142",
       "changes": [
         "Behind the scenes: bug notes"
