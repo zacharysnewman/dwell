@@ -122,10 +122,20 @@ When a piece has moved less than `SLEEP_LINEAR_THRESHOLD` / `SLEEP_ANGULAR_THRES
    tipped onto its side is ½ m wide and 1 m tall: alone it lands as the lower cell of its column,
    and two side by side fill the column (owner, 2026-10-29: it had filled both rows, "effectively
    doubling itself", or tipped the other way neither; `a_half_cell_tipped_onto_its_side_…`).
-2. A rider whose cell is taken (by terrain, a player or another piece's cell) is destroyed (the
-   owner). A carrier whose cell is taken tries one cell up, then sideways; else it is destroyed.
-   Cells overlapping a player count as taken, so nobody is buried.
-3. The cells are written in one reliable change (reason `Rebake`) with `EntityDespawn`; the placed
+2. A piece at rest tilted (more than `TILTED_RAD`, 0.05 rad, from its snapped rotation: a trunk
+   lying up a hill) follows its pose: snapped flat about its reference cell, one end hung in the air
+   and the other lay inside the hill, whose cells were dropped (BUGS.md #73: "most of the tree
+   disappears into the ground"). Each column (x, z) of it moves up or down by the rows the real
+   pose has it higher or lower there (`follow_pose`: the mean of its cells', so a lying log's two
+   rows stay together), so it steps along the hill as it lay, the log's axis along the trunk.
+3. A carrier whose cell is taken lifts the whole piece one or two rows if that frees all of them
+   (a log on a bump); else (and always when tilted) each column rises on its own to the first rows
+   free for its carriers (up to 32), and a tilted column with room a row under it drops onto what
+   is there (its rows were rounded): no wood is lost. A rider whose cell is still taken (by
+   terrain, a player or another piece's cell) is destroyed (the owner); falling sand slides beside
+   a player. Cells overlapping a player count as taken, so nobody is buried. Pinned by
+   `felling.rs` `a_trunk_at_rest_up_a_slope_settles_whole_along_the_hill` (both faces).
+4. The cells are written in one reliable change (reason `Rebake`) with `EntityDespawn`; the placed
    carriers then pass through integrity again (owner, 2026-11-02: a piece falls once; with
    `maxSettles` 1 what settled stays where it lands, anchored or not, a log on leaves included).
 

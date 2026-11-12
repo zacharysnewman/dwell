@@ -6,14 +6,6 @@ pins it.
 
 ## Open
 
-### 73. A felled trunk lying diagonally up a slope loses most of its cells when it settles
-
-Owner, 2026-11-12: "I've also seen big chunks of a tree disappear if it settled diagonal long ways up a high, it
-settles flat and most of the tree disappears into the ground." A felled trunk that comes to rest lying along a
-slope (tilted, its length up the hill) is settled back into the grid as flat cells, and the cells that land
-inside the ground are dropped, so most of the tree vanishes. Expected: the settled trunk follows the slope (or
-cells that would overlap the ground are lifted onto it, or the trunk stays a body), never losing wood.
-
 ### 69. A dark vertical column in the far terrain before the starter world's volcano
 
 Found 2026-11-11 (0.52.64) on the starter world's tour: `?worldgen=test:starter&fresh=1&at=8571.5,350,-4866.5`
@@ -269,6 +261,18 @@ face, or the placement check against its shape.
 
 
 ## Fixed
+
+### 73. A felled trunk lying diagonally up a slope loses most of its cells when it settles (fixed after 0.54.10)
+
+Owner, 2026-11-12: "I've also seen big chunks of a tree disappear if it settled diagonal long ways up a high, it
+settles flat and most of the tree disappears into the ground." The settle snapped the body's rotation to lying flat
+about its reference cell (its foot), so a trunk resting up a hill was laid level at its foot's height, inside the
+hill; lifting the whole piece one or two rows didn't free it, and every carrier whose cell was taken was dropped.
+Now a piece at rest tilted follows its pose column by column (`felling::follow_pose`), and a column whose carriers
+are blocked rises to the first free rows (or drops a row onto the ground under it): it steps along the hill, the log
+axis along the trunk, no wood lost (docs/FELLING.md §4). Pinned by `dwell-sim` `felling.rs`
+`a_trunk_at_rest_up_a_slope_settles_whole_along_the_hill` (both faces; an 8 m trunk on a 1:2 hillside): red before
+(3 of 16 logs settled), green with the fix.
 
 ### 72. ~23 fps on an iPhone at Low, and z-fighting where leaf cards meet tree trunks (fixed after 0.52.109; the frame rate partly)
 
