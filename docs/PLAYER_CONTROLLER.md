@@ -340,7 +340,8 @@ meshes keeps the ground (`walking_a_grass_field_across_chunk_seams_never_loses_t
   apart from the cells it should (`solid`), and the chunks behind; each `tick_terrain` ends with
   `catch_up`: every behind cell within the players' reach (the box above) and the pieces' boxes at
   once — an edit's near cells the same tick, as before — then up to `COLLISION_CELLS_PER_TICK`
-  (8,192) more, in a fixed order (server and prediction alike); dropped chunks' cells come out the
+  (8,192) more, in a fixed order (server and prediction alike; a phone's prediction takes 1,024,
+  `Players::set_collision_cells_per_tick`, the cells in reach the same); dropped chunks' cells come out the
   same way. `ensure_box` puts its box's cells in at once. Counted as `collisionCells`
   (`Server::tick_counts`; `dwell-sim` `tests/teleport_cost.rs`: ≤ 8,829 cells a teleport's tick,
   65,536 before).
