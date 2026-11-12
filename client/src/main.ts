@@ -310,6 +310,8 @@ interface DwellDebug {
   /** A deer herd (`'deer'`) or a wolf pack (`'wolf'`) of `size` put `offset` m along +x from the
    * local player, brought in by the near ecology (a local world; docs/DEV_TOOLS.md). */
   spawnHerd(kind: 'deer' | 'wolf', size?: number, offset?: number): Promise<string | null>;
+  /** The near animals see no player while `on` (filming their idles up close; a local world). */
+  animalsIgnorePlayers(on: boolean): Promise<string | null>;
   /**
    * The run-time cloud plumes (docs/CLOUDS.md §8.7; JSON back): `list`; `add` [name, x, y, z,
    * radius?, height?, density?, riseMps?] a steam plume based at a world point; `near` [name, dx,
@@ -1336,6 +1338,8 @@ async function start(): Promise<App | null> {
     waterReport: (x, y, z, radius) =>
       app.loopback?.waterReport([x, y, z], radius ?? WATER_REPORT_RADIUS) ?? Promise.resolve(null),
     lava: (op, args) => app.loopback?.lavaDev(op ?? 'report', args ?? []) ?? Promise.resolve(null),
+    animalsIgnorePlayers: (on) =>
+      app.loopback?.lavaDev('animalsIgnorePlayers', [on ? 1 : 0]) ?? Promise.resolve(null),
     spawnHerd: (kind, size, offset) =>
       app.loopback?.lavaDev('spawnHerd', [kind === 'wolf' ? 1 : 0, size ?? 5, offset ?? 12]) ??
       Promise.resolve(null),

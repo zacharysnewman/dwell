@@ -464,6 +464,11 @@ impl LocalCore {
                     Err(e) => format!(r#"{{"error":{e:?}}}"#),
                 }
             }
+            ("animalsIgnorePlayers", [on]) => {
+                // The near animals see no player (filming their idles up close; DEV_TOOLS.md).
+                self.server.set_animals_ignore_players(*on != 0.0);
+                format!(r#"{{"ignore":{}}}"#, *on != 0.0)
+            }
             ("spawnHerd", [kind, size, offset]) => {
                 // A herd (`kind` 0, deer) or a pack (1, wolves) of `size` put `offset` m along +x
                 // from the local player, brought in by the near ecology (DEV_TOOLS.md).

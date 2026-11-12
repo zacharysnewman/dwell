@@ -68,6 +68,8 @@ pub type GrassShare = Arc<dyn Fn(usize, f64, f64) -> f64 + Send + Sync>;
 /// switch and speed, and the last tick's figures.
 pub struct Ecology {
     pub enabled: bool,
+    /// Dev (`animalsIgnorePlayers`, docs/DEV_TOOLS.md): the near animals see no player.
+    pub ignore_players: bool,
     pub speed: f64,
     /// Where the islands come from: a test's, or the world maps of this seed (None: no map).
     given: Option<Arc<[Island; 2]>>,
@@ -149,6 +151,7 @@ impl Ecology {
             grass_share: None,
             written: None,
             writes: 0,
+            ignore_players: false,
         }
     }
 
@@ -388,6 +391,11 @@ impl Server {
         Ok(faces[k].push(s, local[0] + offset_m, local[2], size.max(1.0), 0.0, 1.0))
     }
 
+    /// Dev tools (`animalsIgnorePlayers`): the near animals see no player while `on`.
+    pub fn set_animals_ignore_players(&mut self, on: bool) {
+        self.ecology.ignore_players = on;
+    }
+
     pub(super) fn step_herds(&mut self) {
         let running =
             self.ecology.enabled && self.ecology.unread.is_none() && self.ecology.faces.is_some();
@@ -429,6 +437,7 @@ impl Server {
                 get: &get,
                 night,
                 seed: self.config.world_seed,
+                ignore_players: e.ignore_players,
             };
             e.near.tick(&mut w, &mut self.creatures)
         };

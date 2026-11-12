@@ -195,6 +195,9 @@ pub struct World<'a> {
     /// Whether it is night on each face.
     pub night: [bool; 2],
     pub seed: u64,
+    /// The animals see no player (the dev tools' `animalsIgnorePlayers`, for filming their idles
+    /// up close): no fleeing, avoiding or noticing; the players still bring groups near.
+    pub ignore_players: bool,
 }
 
 /// The herds and packs near players.
@@ -566,7 +569,13 @@ impl Near {
 
     fn think(&mut self, w: &mut World, creatures: &mut Creatures, dt: f64) -> Vec<[i32; 3]> {
         let seen_players: Vec<Vec<([f64; 3], Stance)>> = (0..FACES.len())
-            .map(|k| players_seen_on(w.players, w.stances, k))
+            .map(|k| {
+                if w.ignore_players {
+                    Vec::new()
+                } else {
+                    players_seen_on(w.players, w.stances, k)
+                }
+            })
             .collect();
         // A herd that flees players flees as one (WORK_QUEUE item 39): a member that notices one
         // alarms its whole group, from that player, for the data's `calmS`.
@@ -1157,6 +1166,7 @@ mod tests {
         data: Data,
         /// The players' stances (none: standing still).
         stances: Vec<Stance>,
+        ignore_players: bool,
         near: Near,
         creatures: Creatures,
         islands: Vec<Island>,
@@ -1209,6 +1219,7 @@ mod tests {
                 f,
                 data,
                 stances: Vec::new(),
+                ignore_players: false,
                 near: Near::default(),
                 creatures: Creatures::new(Table::SHIPPED),
                 islands: vec![isl.clone(), isl],
@@ -1238,6 +1249,7 @@ mod tests {
                     get: &g,
                     night: [self.night; 2],
                     seed: self.seed,
+                    ignore_players: self.ignore_players,
                 };
                 self.eaten
                     .extend(self.near.tick(&mut w, &mut self.creatures));
@@ -1834,6 +1846,23 @@ mod tests {
                     .iter()
                     .all(|m| m.mind != Mind::Fleeing && m.alarm_s <= 0.0),
                 "calmed"
+            );
+        }
+    );
+
+    both_faces!(
+        fn animals_told_to_ignore_players_keep_their_idles_beside_one(f: FaceFrame) {
+            // The dev tools' `animalsIgnorePlayers` (for filming the idles): a walking player 16 m
+            // from the herd, inside its notice distance, and no deer flees.
+            let mut s = Scene::with_data(f, DATA, &[("dwell:deer", -14.0, 0.0, 3.0, 0.1)], 5);
+            s.stances = vec![WALKING];
+            s.ignore_players = true;
+            s.run(&[(-30.0, 0.0)], 3.0, |_| {});
+            let minds: Vec<_> = members(&s, "dwell:deer").iter().map(|m| m.mind).collect();
+            assert!(!minds.is_empty(), "the herd came near");
+            assert!(
+                minds.iter().all(|&m| m != Mind::Fleeing),
+                "none flees: {minds:?}"
             );
         }
     );
