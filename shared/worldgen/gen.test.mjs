@@ -431,7 +431,9 @@ test('portal rules changed by data alone are emitted', () => {
   m.portals.ladder.wall = 'east';
   m.portals.rim = { block: 'dwell:sand', width: 2, height: 1 };
   m.bedrock.thickness = 2.5;
+  m.portals.exit = { push: 12.5, depth: 3, minRise: 9 };
   const rs = midplaneRust(validateMidplane(m, blocks));
+  assert.match(rs, /exit: PortalExit \{ push: 12\.5, depth: 3\.0, min_rise: 9\.0 \},/);
   assert.match(rs, /count_min: 2,/);
   assert.match(rs, /radius: 4\.0,/);
   assert.match(rs, /ladder: "dwell:ladder\[facing=west\]",/);
@@ -460,6 +462,11 @@ test('bad bedrock or portal entries fail with the key and the problem', () => {
     [(m) => (m.portals.clear = 1), /portals\.monument\.structure dwell:portal_arch reaches 7\.1 m from the axis, past the clear ground \(4\.5 m\)/],
     [(m) => (m.portals.monument.lodCellM = 3), /portals\.monument\.lodCellM must be a power of two in \[1, 64\]/],
     [(m) => (m.portals.monument.extra = 1), /portals\.monument: unknown extra/],
+    [(m) => delete m.portals.exit, /portals\.exit must be an object/],
+    [(m) => (m.portals.exit.push = -1), /portals\.exit\.push must be in \[0, 1000\]/],
+    [(m) => (m.portals.exit.depth = 100), /portals\.exit\.depth must be in \[0, 64\]/],
+    [(m) => (m.portals.exit.speed = 3), /portals\.exit: unknown speed/],
+    [(m) => (m.portals.exit.minRise = 5), /portals\.exit\.minRise must be at least 8 m\/s/],
   ];
   for (const [change, message] of cases) {
     const m = loadMidplane();

@@ -10,6 +10,12 @@ use dwell_physics::DVec3;
 use dwell_world::{Face, FaceFrame, GENERATOR_TERRAIN, m_of_row};
 use dwell_worldgen::BifacialTerrain;
 
+fn portals_of(seed: u64) -> dwell_world::portal_shafts::PortalShafts {
+    let p = dwell_worldgen::portal_shafts_for_sized(GENERATOR_TERRAIN, seed, Default::default());
+    assert!(p.exit.push > 0.0, "the build's portals push");
+    p
+}
+
 #[test]
 fn a_player_climbs_down_a_portal_from_face_a_and_up_to_face_b() {
     // both-faces: the climb crosses from face A to face B.
@@ -24,6 +30,8 @@ fn a_player_climbs_down_a_portal_from_face_a_and_up_to_face_b() {
         dwell_worldgen::generator_for(GENERATOR_TERRAIN, seed),
         Some(dwell_worldgen::air_test_for(GENERATOR_TERRAIN, seed)),
     );
+    // The shafts' exit push live (BIFACIAL_WORLD.md §12.3): it never touches a climb.
+    w.world.portals = portals_of(seed);
     // In the shaft, one column in front of the ladder and 2 m under its top, facing its wall.
     let [wx, wz] = p.rules.wall;
     let start = DVec3::new(
@@ -95,6 +103,8 @@ fn walking_off_the_rim_at_the_portal_spawn_takes_hold_of_the_ladder() {
         dwell_worldgen::generator_for(GENERATOR_TERRAIN, seed),
         Some(dwell_worldgen::air_test_for(GENERATOR_TERRAIN, seed)),
     );
+    // The shafts' exit push live (BIFACIAL_WORLD.md §12.3): it never touches a climb.
+    w.world.portals = portals_of(seed);
     // Facing the shaft (away from the ladder's wall), looking down.
     let yaw = f64::from(-wx).atan2(f64::from(-wz)).to_degrees() as f32;
     let h = w.spawn_at(DVec3::new(x, y, z), yaw);

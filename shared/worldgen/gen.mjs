@@ -1566,6 +1566,11 @@ const MIDPLANE = {
     clear: [0, 64],
   },
   rim: { width: [0, 8], height: [0, 8] },
+  exit: {
+    push: [0, 1000],
+    depth: [0, 64],
+    minRise: [0, 1000],
+  },
 };
 
 /** Checks the bedrock and portals against `blocks` (id → block data); throws naming the key. */
@@ -1629,6 +1634,7 @@ export function validateMidplane(
     "ladder",
     "motes",
     "monument",
+    "exit",
   ]);
   if (!moteNames(loadMotes()).includes(p.motes))
     fail(
@@ -1644,6 +1650,11 @@ export function validateMidplane(
     fail("portals.count must be [min, max], whole numbers 0–64 with min ≤ max");
   }
   checkGroup("portals.rim", p.rim, MIDPLANE.rim, ["block"]);
+  // The exit push (BIFACIAL_WORLD.md §12.3): a jump must never take it, so its least rise is
+  // above any jump's take-off speed (a few m/s).
+  checkGroup("portals.exit", p.exit, MIDPLANE.exit, []);
+  if (p.exit.push > 0 && p.exit.minRise < 8)
+    fail("portals.exit.minRise must be at least 8 m/s (above a jump's take-off) while it pushes");
   if (block("portals.rim.block", p.rim.block).shape !== "full")
     fail(`portals.rim.block ${p.rim.block} must be a full block`);
   if (!Number.isInteger(p.rim.height / cell))
@@ -1722,6 +1733,7 @@ export function midplaneRust(data) {
     `// ${midplaneHeader}`,
     "",
     "use crate::portals::{Midplane, PortalRules};",
+    "use dwell_world::portal_shafts::PortalExit;",
     "",
   ];
   rs.push("/// The bedrock and the portals (shared/worldgen/midplane.json).");
@@ -1755,6 +1767,10 @@ export function midplaneRust(data) {
     ],
     ["monument_lod_cell", `${p.monument.lodCellM}`],
     ["motes", JSON.stringify(p.motes)],
+    [
+      "exit",
+      `PortalExit { push: ${rf(p.exit.push)}, depth: ${rf(p.exit.depth)}, min_rise: ${rf(p.exit.minRise)} }`,
+    ],
   ];
   for (const [k, v] of fields) rs.push(`        ${k}: ${v},`);
   rs.push("    },");

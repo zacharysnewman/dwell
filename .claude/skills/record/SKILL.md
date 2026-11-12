@@ -177,3 +177,8 @@ preview and the driver, remove any `client/node_modules` symlink or built `clien
   ~30 m up on a diagonal, looking down at the hole between two pillars, shows the rise; lift it with a grade
   (`"vf": "eq=gamma=1.5"`). `?spawn=portal` sits next to a plant on one diagonal: shoot a still from the start before
   the take. `setTime` doesn't change face B's night between 0.2 and 0.36.
+- **Upside-down face-B wides: `"up": "a"`** on the path's first keyframe (it carries over). Owner, reviewing v2:
+  "The camera shouldn't flip on the wide shot, show it's upside down." A camera on face B's side otherwise takes
+  face B's frame (`"auto"`) and the player rising out of face B's hole looks upright; with `"up": "a"` it keeps
+  face A's up, so face B and the player hang under the disc, and a crane through the midplane doesn't turn over.
+  Its `look` is read in face A's frame too (or aim with `target`). Presets take it in `params` (`"up": "a"`).
