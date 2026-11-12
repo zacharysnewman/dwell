@@ -404,7 +404,7 @@ pub(crate) fn carve_face(
     let deepest = carve.map_or(1.0, Carve::depth).max(1e-6);
     // A spall's scar is fresh rock: lifted toward the look's `color`, barely occluded.
     let fresh = carve.map_or(0.0, Carve::fresh);
-    let lift = look.color.map(|c| 1.4 * f64::from(c) / 255.0);
+    let lift = look.color.map(|c| 1.8 * f64::from(c) / 255.0);
     let occlude = if fresh > 0.0 { 0.15 } else { 0.4 };
     // The crack overlay's packed bytes at a point of the face (face metres); before this face's
     // vertices, the stream is filled with "none" for the mesh's earlier ones.
@@ -507,7 +507,7 @@ pub(crate) fn carve_face(
     };
     let vertex = |m: &mut MeshArrays, g: &Pt, n: [f64; 3]| {
         let rgb = vertex_rgb(sf.color, dwell_look::normal_tint(n[0], n[1], n[2]));
-        let t = fresh * (g.s * 4.0).min(1.0);
+        let t = fresh * (g.s * 8.0).min(1.0);
         let dim = if fresh > 0.0 {
             1.0
         } else {
@@ -954,6 +954,14 @@ mod tests {
             assert_eq!(l.profile, CarveProfile::Spall, "{b}");
             assert!(l.depth <= 0.1, "{b}: a scar {} m deep", l.depth);
             assert!(l.flakes >= 1, "{b}: flakes");
+            // The cracks stay faint and late on a spalled face: the chip-outs, not a dark starburst.
+            let c = l.cracks.expect("stone cracks");
+            assert!(
+                c.strength <= 0.35 && c.stages[0] >= 0.5,
+                "{b}: cracks {} from {}",
+                c.strength,
+                c.stages[0]
+            );
         }
         let look = look_of("dwell:stone").unwrap();
         let mark = HitMark {
@@ -986,7 +994,7 @@ mod tests {
         let lum = |i: usize| m.colors[i * 3..i * 3 + 3].iter().sum::<f32>();
         assert!(low < 1.0 - 0.01, "carved: {low}");
         assert!(
-            lum(at) > lum(flat) * 1.05,
+            lum(at) > lum(flat) * 1.35,
             "fresh rock lighter: {} vs {}",
             lum(at),
             lum(flat)

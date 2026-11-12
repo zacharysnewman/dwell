@@ -78,7 +78,7 @@
     },
     {
       "name": "stone",
-      "damage": { "default": null, "pickaxe": 7, "look": { "kind": "shards", "profile": "spall", "flakes": 1, "grid": 12, "triangles": 512, "size": 0.6, "color": "#e4ddcf", "crack": "#7a7266", "depth": 0.1, "darken": 0, "cracks": { "set": "stone", "stages": [0.15, 0.4, 0.6, 0.8], "strength": 0.75 } }, "chips": { "count": 7, "color": "#9a948c", "speed": 2.6, "size": 0.045 } },
+      "damage": { "default": null, "pickaxe": 7, "look": { "kind": "shards", "profile": "spall", "flakes": 1, "grid": 12, "triangles": 512, "size": 0.6, "color": "#e4ddcf", "crack": "#7a7266", "depth": 0.1, "darken": 0, "cracks": { "set": "stone", "stages": [0.5, 0.7, 0.85, 0.95], "strength": 0.3 } }, "chips": { "count": 7, "shards": 4, "color": "#9a948c", "speed": 2.6, "size": 0.045 } },
       "drops": [{"item": "dwell:rock_shard", "count": 8}],
       "sound": "dwell:stone",
       "density": 2400,
@@ -345,7 +345,7 @@
     {
       "$comment": "The stored ramps (rampFamilies) at their own slots, as generated before the torch was added: blocks added after them keep every earlier state id (the worldgen goldens hash ids). Stone's are placeable: the hotbar's stone slopes (shared/items, owner 2026-10-30).",
       "name": "stone_ramp",
-      "damage": { "default": null, "pickaxe": 7, "look": { "kind": "shards", "profile": "spall", "flakes": 1, "grid": 12, "triangles": 512, "size": 0.6, "color": "#e4ddcf", "crack": "#7a7266", "depth": 0.1, "darken": 0, "cracks": { "set": "stone", "stages": [0.15, 0.4, 0.6, 0.8], "strength": 0.75 } }, "chips": { "count": 7, "color": "#9a948c", "speed": 2.6, "size": 0.045 } },
+      "damage": { "default": null, "pickaxe": 7, "look": { "kind": "shards", "profile": "spall", "flakes": 1, "grid": 12, "triangles": 512, "size": 0.6, "color": "#e4ddcf", "crack": "#7a7266", "depth": 0.1, "darken": 0, "cracks": { "set": "stone", "stages": [0.5, 0.7, 0.85, 0.95], "strength": 0.3 } }, "chips": { "count": 7, "shards": 4, "color": "#9a948c", "speed": 2.6, "size": 0.045 } },
       "family": "ramp",
       "of": "stone",
       "palette": "all"
@@ -630,7 +630,7 @@
     {
       "$comment": "Glacier ice (owner approved 2026-11-11): old, compacted ice, a pale blue-white with deeper blue cracks and a painted sheen (glossy-looking but opaque: no new render path). On a tall peak it covers the coldest gentle ground and the crater's dome above the snow (shared/worldgen/rocks.json `tectonic.ice`, terrain.json `tectonics.iceBelowC`). Like stone, hands can't break it; a pickaxe breaks it in fewer hits than stone. Drops itself. Its ramps are stored like stone's (`rampFamilies`). Prototype content.",
       "name": "glacier_ice",
-      "damage": { "default": null, "pickaxe": 4, "look": { "kind": "shards", "profile": "spall", "flakes": 2, "grid": 12, "triangles": 512, "size": 0.3, "color": "#eef6fa", "crack": "#4f7fb8", "cracks": { "set": "stone", "stages": [0.15, 0.4, 0.6, 0.8], "strength": 0.75 } }, "chips": { "count": 8, "color": "#cfe6f2", "speed": 2.8, "size": 0.04 } },
+      "damage": { "default": null, "pickaxe": 4, "look": { "kind": "shards", "profile": "spall", "flakes": 2, "grid": 12, "triangles": 512, "size": 0.3, "color": "#eef6fa", "crack": "#4f7fb8", "cracks": { "set": "stone", "stages": [0.5, 0.7, 0.85, 0.95], "strength": 0.3 } }, "chips": { "count": 8, "shards": 4, "color": "#cfe6f2", "speed": 2.8, "size": 0.04 } },
       "sound": "dwell:stone",
       "density": 917,
       "shape": "full",
@@ -641,14 +641,14 @@
     },
     {
       "name": "glacier_ice_ramp",
-      "damage": { "default": null, "pickaxe": 4, "look": { "kind": "shards", "profile": "spall", "flakes": 2, "grid": 12, "triangles": 512, "size": 0.3, "color": "#eef6fa", "crack": "#4f7fb8", "cracks": { "set": "stone", "stages": [0.15, 0.4, 0.6, 0.8], "strength": 0.75 } }, "chips": { "count": 8, "color": "#cfe6f2", "speed": 2.8, "size": 0.04 } },
+      "damage": { "default": null, "pickaxe": 4, "look": { "kind": "shards", "profile": "spall", "flakes": 2, "grid": 12, "triangles": 512, "size": 0.3, "color": "#eef6fa", "crack": "#4f7fb8", "cracks": { "set": "stone", "stages": [0.5, 0.7, 0.85, 0.95], "strength": 0.3 } }, "chips": { "count": 8, "shards": 4, "color": "#cfe6f2", "speed": 2.8, "size": 0.04 } },
       "family": "ramp",
       "of": "glacier_ice"
     },
     {
       "$comment": "Red sandstone (0.52.66, the mesa's red layers): bedded red rock, the face of shared/worldgen/rocks.json's dwell:sandstone, so a stack's sandstone layers read red on a mesa's walls and tops. Breaks and drops like stone. Its ramps are stored like stone's (`rampFamilies`). Prototype content.",
       "name": "red_sandstone",
-      "damage": { "default": null, "pickaxe": 7, "look": { "kind": "shards", "profile": "spall", "flakes": 2, "grid": 12, "triangles": 512, "size": 0.34, "color": "#efc6a4", "crack": "#7a3e28", "cracks": { "set": "stone", "stages": [0.15, 0.4, 0.6, 0.8], "strength": 0.75 } }, "chips": { "count": 7, "color": "#b5643f", "speed": 2.6, "size": 0.045 } },
+      "damage": { "default": null, "pickaxe": 7, "look": { "kind": "shards", "profile": "spall", "flakes": 2, "grid": 12, "triangles": 512, "size": 0.34, "color": "#efc6a4", "crack": "#7a3e28", "cracks": { "set": "stone", "stages": [0.5, 0.7, 0.85, 0.95], "strength": 0.3 } }, "chips": { "count": 7, "shards": 4, "color": "#b5643f", "speed": 2.6, "size": 0.045 } },
       "drops": [{ "item": "dwell:rock_shard", "count": 8 }],
       "sound": "dwell:stone",
       "density": 2300,
@@ -660,14 +660,14 @@
     },
     {
       "name": "red_sandstone_ramp",
-      "damage": { "default": null, "pickaxe": 7, "look": { "kind": "shards", "profile": "spall", "flakes": 2, "grid": 12, "triangles": 512, "size": 0.34, "color": "#efc6a4", "crack": "#7a3e28", "cracks": { "set": "stone", "stages": [0.15, 0.4, 0.6, 0.8], "strength": 0.75 } }, "chips": { "count": 7, "color": "#b5643f", "speed": 2.6, "size": 0.045 } },
+      "damage": { "default": null, "pickaxe": 7, "look": { "kind": "shards", "profile": "spall", "flakes": 2, "grid": 12, "triangles": 512, "size": 0.34, "color": "#efc6a4", "crack": "#7a3e28", "cracks": { "set": "stone", "stages": [0.5, 0.7, 0.85, 0.95], "strength": 0.3 } }, "chips": { "count": 7, "shards": 4, "color": "#b5643f", "speed": 2.6, "size": 0.045 } },
       "family": "ramp",
       "of": "red_sandstone"
     },
     {
       "$comment": "Basalt (lava V1, docs/proposals/VOLCANOES.md §6): the rock lava cools into (shared/fluids/lava.json `cooling.rock`), new land where a lava river crusts over. Breaks, drops and sounds like stone. Its look: the painterly `basalt` tile (shared/textures/materials.json, ropey pahoehoe folds). Prototype content.",
       "name": "basalt",
-      "damage": { "default": null, "pickaxe": 7, "look": { "kind": "shards", "profile": "spall", "flakes": 2, "grid": 12, "triangles": 512, "size": 0.34, "color": "#8c8a90", "crack": "#2a282c", "cracks": { "set": "stone", "stages": [0.15, 0.4, 0.6, 0.8], "strength": 0.75 } }, "chips": { "count": 7, "color": "#4a4648", "speed": 2.6, "size": 0.045 } },
+      "damage": { "default": null, "pickaxe": 7, "look": { "kind": "shards", "profile": "spall", "flakes": 2, "grid": 12, "triangles": 512, "size": 0.34, "color": "#8c8a90", "crack": "#2a282c", "cracks": { "set": "stone", "stages": [0.5, 0.7, 0.85, 0.95], "strength": 0.3 } }, "chips": { "count": 7, "shards": 4, "color": "#4a4648", "speed": 2.6, "size": 0.045 } },
       "drops": [{ "item": "dwell:rock_shard", "count": 8 }],
       "sound": "dwell:stone",
       "density": 2900,
@@ -680,7 +680,7 @@
     {
       "$comment": "Obsidian (lava V1): the quench edge, lava chilled at once where water touches it (shared/fluids/lava.json `quench.rock`). Breaks, drops and sounds like stone, harder. Its look: the painterly `obsidian` tile (near-black glass with a violet sheen). Prototype content.",
       "name": "obsidian",
-      "damage": { "default": null, "pickaxe": 12, "look": { "kind": "shards", "profile": "spall", "flakes": 2, "grid": 12, "triangles": 512, "size": 0.34, "color": "#6e6080", "crack": "#0c0a10", "cracks": { "set": "stone", "stages": [0.15, 0.4, 0.6, 0.8], "strength": 0.75 } }, "chips": { "count": 7, "color": "#2a2236", "speed": 2.6, "size": 0.045 } },
+      "damage": { "default": null, "pickaxe": 12, "look": { "kind": "shards", "profile": "spall", "flakes": 2, "grid": 12, "triangles": 512, "size": 0.34, "color": "#6e6080", "crack": "#0c0a10", "cracks": { "set": "stone", "stages": [0.5, 0.7, 0.85, 0.95], "strength": 0.3 } }, "chips": { "count": 7, "shards": 4, "color": "#2a2236", "speed": 2.6, "size": 0.045 } },
       "drops": [{ "item": "dwell:rock_shard", "count": 8 }],
       "sound": "dwell:stone",
       "density": 2400,

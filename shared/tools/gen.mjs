@@ -38,7 +38,7 @@ const WOOD_FIELDS = ['block', 'fellFraction', 'buckFraction', 'buckDrops', 'chip
 const CUT_FIELDS = ['tile', 'tint', 'open', 'kerfWidthM'];
 const LEAF_FIELDS = ['block', 'count', 'color', 'radiusM', 'heightM'];
 const SWAY_FIELDS = ['fromFraction', 'maxDeg'];
-const CHIP_FIELDS = ['count', 'color', 'speed', 'size'];
+const CHIP_FIELDS = ['count', 'shards', 'color', 'speed', 'size'];
 const COLOR = /^#[0-9a-f]{6}$/i;
 const DROP_FIELDS = ['item', 'count', 'chance'];
 
@@ -60,8 +60,11 @@ const inRange = (o, k, lo, hi, at, open = false) => {
 function validateChips(c, at) {
   if (c === null || typeof c !== 'object' || Array.isArray(c)) fail(`${at} must be an object`);
   known(c, CHIP_FIELDS, at);
-  const chips = { count: c.count ?? 6, color: c.color ?? '#c8a070', speed: c.speed ?? 2.5, size: c.size ?? 0.05 };
+  const chips = { count: c.count ?? 6, shards: c.shards ?? 0, color: c.color ?? '#c8a070', speed: c.speed ?? 2.5, size: c.size ?? 0.05 };
   if (!Number.isInteger(chips.count) || chips.count < 0 || chips.count > 32) fail(`${at}.count must be a whole number in [0, 32]`);
+  // `shards` (optional, 0–8; default 0): real 3D fragments a hit flings, visual only (the client's
+  // `hit_shards`, the item's `shard` look smaller; WORK_QUEUE item 18).
+  if (!Number.isInteger(chips.shards) || chips.shards < 0 || chips.shards > 8) fail(`${at}.shards must be a whole number in [0, 8]`);
   if (typeof chips.color !== 'string' || !COLOR.test(chips.color)) fail(`${at}.color must be #rrggbb`);
   inRange(chips, 'speed', 0, 10, at, true);
   inRange(chips, 'size', 0, 0.2, at, true);
@@ -521,7 +524,7 @@ export function toolsRust(d) {
       (x) => `DropRule { chance: ${f64(x.chance)}, choices: &[DropChoice { item: "${x.item}", min: ${x.min}, max: ${x.max}, weight: 1.0 }] }`,
     );
     rs.push(
-      `    WoodDef { block: "${w.block}", fell_fraction: ${f64(w.fellFraction)}, buck_fraction: ${f64(w.buckFraction)}, buck_drops: &[${drops.join(', ')}], chips: Chips { count: ${w.chips.count}, color: [${rgb(w.chips.color).join(', ')}], speed: ${f64(w.chips.speed)}, size: ${f64(w.chips.size)} }, leaves: Leaves { block: ${optStr(w.leaves.block)}, count: ${w.leaves.count}, color: [${rgb(w.leaves.color).join(', ')}], radius_m: ${f64(w.leaves.radiusM)}, height_m: ${f64(w.leaves.heightM)} }, sway: Sway { from_fraction: ${f64(w.sway.fromFraction)}, max_deg: ${f64(w.sway.maxDeg)} }, sounds: &[${w.sounds.map((x) => `(${f64(x.from)}, "${x.event}")`).join(', ')}], cut: CutLook { tile: ${optStr(w.cut.tile)}, tint: [${rgb(w.cut.tint).join(', ')}], open: ${f64(w.cut.open)}, kerf_width_m: ${f64(w.cut.kerfWidthM)} }, fell_wedge: ${optStr(w.fellWedge)}, fell_wedge_matching: ${w.fellWedgeTrunk === 'matching'}, fell_tip: ${f64(w.fellTip)}, chop2: Chop2Wood { fell_fraction: ${f64(w.chop2.fellFraction)}, along: ${f64(w.chop2.along)}, wedge_matching: ${w.chop2.fellWedgeTrunk === 'matching'} } },`,
+      `    WoodDef { block: "${w.block}", fell_fraction: ${f64(w.fellFraction)}, buck_fraction: ${f64(w.buckFraction)}, buck_drops: &[${drops.join(', ')}], chips: Chips { count: ${w.chips.count}, shards: ${w.chips.shards}, color: [${rgb(w.chips.color).join(', ')}], speed: ${f64(w.chips.speed)}, size: ${f64(w.chips.size)} }, leaves: Leaves { block: ${optStr(w.leaves.block)}, count: ${w.leaves.count}, color: [${rgb(w.leaves.color).join(', ')}], radius_m: ${f64(w.leaves.radiusM)}, height_m: ${f64(w.leaves.heightM)} }, sway: Sway { from_fraction: ${f64(w.sway.fromFraction)}, max_deg: ${f64(w.sway.maxDeg)} }, sounds: &[${w.sounds.map((x) => `(${f64(x.from)}, "${x.event}")`).join(', ')}], cut: CutLook { tile: ${optStr(w.cut.tile)}, tint: [${rgb(w.cut.tint).join(', ')}], open: ${f64(w.cut.open)}, kerf_width_m: ${f64(w.cut.kerfWidthM)} }, fell_wedge: ${optStr(w.fellWedge)}, fell_wedge_matching: ${w.fellWedgeTrunk === 'matching'}, fell_tip: ${f64(w.fellTip)}, chop2: Chop2Wood { fell_fraction: ${f64(w.chop2.fellFraction)}, along: ${f64(w.chop2.along)}, wedge_matching: ${w.chop2.fellWedgeTrunk === 'matching'} } },`,
     );
   }
   rs.push('];');
@@ -538,7 +541,7 @@ export function toolsRust(d) {
   rs.push('');
   rs.push("/// Each block's hits to destroy (its `damage`): by bare hands, and by tool class or item.");
   rs.push('pub static BLOCK_DAMAGE: &[BlockDamageDef] = &[');
-  for (const b of d.damage) rs.push(`    BlockDamageDef { block: "${b.block}", default: ${b.default === null ? 'None' : `Some(${b.default})`}, tools: &[${b.tools.map((t) => `("${t.tool}", ${t.hits})`).join(', ')}], look: ${b.look === null ? 'None' : `Some(DamageLook { kind: DamageLookKind::${b.look.kind[0].toUpperCase() + b.look.kind.slice(1)}, size: ${f64(b.look.size)}, color: [${rgb(b.look.color).join(', ')}], crack: [${rgb(b.look.crack).join(', ')}], depth: ${f64(b.look.depth)}, rim: ${f64(b.look.rim)}, parallax: ${b.look.parallax}, darken: ${f64(b.look.darken)}, profile: CarveProfile::${b.look.profile[0].toUpperCase() + b.look.profile.slice(1)}, facets: ${b.look.facets}, flakes: ${b.look.flakes}, grid: ${b.look.grid}, triangles: ${b.look.triangles}, cracks: ${b.look.cracks === null ? 'None' : `Some(Cracks { tiles: &[${b.look.cracks.tiles.map((t) => `"${t}"`).join(', ')}], stages: &[${b.look.cracks.stages.map(f64).join(', ')}], strength: ${f64(b.look.cracks.strength)}, span: ${f64(b.look.cracks.span)} })`} })`}, chips: ${b.chips === null ? 'None' : `Some(Chips { count: ${b.chips.count}, color: [${rgb(b.chips.color).join(', ')}], speed: ${f64(b.chips.speed)}, size: ${f64(b.chips.size)} })`} },`);
+  for (const b of d.damage) rs.push(`    BlockDamageDef { block: "${b.block}", default: ${b.default === null ? 'None' : `Some(${b.default})`}, tools: &[${b.tools.map((t) => `("${t.tool}", ${t.hits})`).join(', ')}], look: ${b.look === null ? 'None' : `Some(DamageLook { kind: DamageLookKind::${b.look.kind[0].toUpperCase() + b.look.kind.slice(1)}, size: ${f64(b.look.size)}, color: [${rgb(b.look.color).join(', ')}], crack: [${rgb(b.look.crack).join(', ')}], depth: ${f64(b.look.depth)}, rim: ${f64(b.look.rim)}, parallax: ${b.look.parallax}, darken: ${f64(b.look.darken)}, profile: CarveProfile::${b.look.profile[0].toUpperCase() + b.look.profile.slice(1)}, facets: ${b.look.facets}, flakes: ${b.look.flakes}, grid: ${b.look.grid}, triangles: ${b.look.triangles}, cracks: ${b.look.cracks === null ? 'None' : `Some(Cracks { tiles: &[${b.look.cracks.tiles.map((t) => `"${t}"`).join(', ')}], stages: &[${b.look.cracks.stages.map(f64).join(', ')}], strength: ${f64(b.look.cracks.strength)}, span: ${f64(b.look.cracks.span)} })`} })`}, chips: ${b.chips === null ? 'None' : `Some(Chips { count: ${b.chips.count}, shards: ${b.chips.shards}, color: [${rgb(b.chips.color).join(', ')}], speed: ${f64(b.chips.speed)}, size: ${f64(b.chips.size)} })`} },`);
   rs.push('];');
   rs.push('');
   rs.push('/// Tools that wear (`durability.items`): (item, hits it survives).');

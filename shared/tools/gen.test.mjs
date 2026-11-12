@@ -55,7 +55,7 @@ test("the axe's held item, the log's chips and its breakWith reach the Rust tabl
   const d = validateTools(...fresh());
   const rs = toolsRust(d);
   assert.match(rs, /name: "dwell:stone_axe", kind: ToolKind::Axe, held: Some\("stone_axe"\)/);
-  assert.match(rs, /block: "dwell:log", .*chips: Chips \{ count: 7, color: \[217, 179, 122\]/);
+  assert.match(rs, /block: "dwell:log", .*chips: Chips \{ count: 7, shards: 0, color: \[217, 179, 122\]/);
   assert.match(rs, /\("dwell:log", ToolKind::Axe\),/);
 });
 
@@ -271,10 +271,14 @@ test("block damage: the data's hits reach Rust and TS; a fixture block by data a
   blocks.set('test:clay', { damage: { default: 3, chips: { count: 5, color: '#806040', speed: 1.5, size: 0.05 } } });
   assert.match(
     toolsRust(validateTools(data, items, blocks)),
-    /block: "test:clay", .*chips: Some\(Chips \{ count: 5, color: \[128, 96, 64\], speed: 1\.5, size: 0\.05 \}\)/,
+    /block: "test:clay", .*chips: Some\(Chips \{ count: 5, shards: 0, color: \[128, 96, 64\], speed: 1\.5, size: 0\.05 \}\)/,
   );
   bad({ default: 3, chips: { count: 5, color: 'brown' } }, /test:clay\.damage\.chips\.color must be #rrggbb/);
   bad({ default: 3, chips: { count: 99 } }, /test:clay\.damage\.chips\.count must be a whole number/);
+  // A hit's 3D fragments by data alone (WORK_QUEUE item 18), a bad count failing by name.
+  blocks.set('test:clay', { damage: { default: 3, chips: { count: 5, shards: 3 } } });
+  assert.match(toolsRust(validateTools(data, items, blocks)), /block: "test:clay", .*chips: Some\(Chips \{ count: 5, shards: 3,/);
+  bad({ default: 3, chips: { count: 5, shards: 9 } }, /test:clay\.damage\.chips\.shards must be a whole number in \[0, 8\]/);
 });
 
 test('durability: the stone axe, stone pickaxe and wooden shovel survive 32 hits, creative does not wear, a fixture tool by data alone', () => {
