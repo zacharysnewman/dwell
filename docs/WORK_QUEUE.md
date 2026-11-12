@@ -1328,6 +1328,31 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
 
 ## Smaller items, after the queue
 
+- **Realistic and forest look (2026-11-12, `claude/realistic-forest-look`), seen in Chrome on the GPU** (Realistic
+  seeds 1–3 face A, `test:forest`; stills, a contact sheet and a 9:16 video handed to the owner). What reads: the big
+  map (M, widest level) shows the plates' story at a glance — one continent a seed, snow-capped ranges, a green wet
+  coast on one side of each range and a red-brown dry interior on the other (the rain shadow), hotspot chains; in
+  world, a range behind a coastal plain, red badlands with mesas under a jagged range on the dry side, the
+  tall-broadleaf rainforest at seed 1's spawn; the old growth at ground level (tall pines and oaks to a beach edge) is
+  the best-looking forest yet. Issues, for later:
+  - **Land is one continent in an empty ocean** (~15–20 % of the disc each seed) and the island arcs are
+    **uniform-width green ribbons** with no relief or breaks — they read as ropes, not arcs of islands.
+  - **Range cores are flat plateaus** on the F4 height overlay and in the LOD (broad slabs, few ridges or valleys);
+    steep far LOD faces show **moiré stripes** (seed 3, the cone across the strait).
+  - **Dry interiors dominate** (more brown than green on all three seeds), and lowland grass reads as one flat lawn
+    at LOD, with no forest patches beyond the near range.
+  - **The rainforest is open, not closed:** tall-broadleaf "lollipops" spaced on lawn read as savanna from above
+    (seed 1 spawn); it wants a closed canopy and undergrowth like the old growth's.
+  - **Far old-growth trees lose their crowns at LOD** (`lod_trees.rs`'s coarse cells): beyond the full-detail range
+    the forest becomes lawn dotted with brown trunk stubs — a hard edge from 150 m up (`forest:above`) and across the
+    canopy (`forest:edge`). Item 31's impostors (I-2/I-3) are the fix.
+  - **`forest-perf` at High on the owner's Mac** (first GPU run): GPU frame p50 14.7 ms inside, **24.7 ms at the
+    edge** (≈ 40 fps), 14.4 ms above; CPU ~2 ms everywhere. The edge view (the whole canopy at once) is over budget.
+  - The F4 overlay (height only) and the big map (M, materials) are drawn in different orientations; the big map has
+    no climate or plate overlays yet (q8).
+  - A `?at=` y at the forest stand's ground (40.5, −39.5) put the player inside the ground or a crown twice; the
+    bench's `above` spots land right, so use `--spot` or the world's own spawn for the forest.
+
 - **Chisel's world knobs take every key gen.mjs takes (owner 2026-11-12: "fix a failing test on main": `state.test.ts`
   "opens the starter world as a valid edit" failed with "tectonics.lavaVents is not a world knob"; "make Chisel
   accept every key the generator's world config accepts — ideally derived from the same schema … so new keys never
