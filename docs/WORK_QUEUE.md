@@ -878,6 +878,23 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    villager holds the sword as its guard from its spawn, lowered, and turns on its striker: item 38's
    `fightBack`; the sword in its drawn hand is item 38's renderer work); wolves biting back (no creature damage
    to players yet).
+   **Round 2 (owner's brief, 2026-11-12):** a strike outcome event behind a capability (`weapons.clash`) with
+   the clash's sound, sparks and the striker's recoil on clients; the player's block input (hold right-click / a
+   gamepad button / a touch button, bindings as data) raising the sword in the stance, attacking drops it, the
+   server knowing the player's guard and telling others; minimal NPC combat AI by data rules (face the attacker,
+   pick a stance random/counter, raise the block on the wind-up, strike back on the recovery, give up after N
+   seconds); NPCs never hurt players (open question for the owner: should NPCs be able to hurt players?).
+   **Built (server, wire, client logic, tests; 2026-11-12):** `Swordplay` (clash outcomes to capable clients
+   within `guard.clash.hearM`, raised guards of players and NPCs), `ChopAction::Guard`; the clash's sound
+   (`guard.clash.sound`, the metal `axe_clank`), sparks (`guard.clash.sparks`, chips by data) and recoil;
+   Place held past `guard.raiseAfterS` raises the block (a tap still turns the stance; the existing Place
+   bindings of mouse, controller and touch), the stance's raised pose named by data (`raisedPose`); NPCs'
+   `npc.fight` rules (`stance` counter/random, `raiseOnWindup`, `strikeBack`, `strikeWithinM`, `cooldownS`,
+   `giveUpS`); an NPC's blow is resolved against the player's block but never hurts (owner's question open).
+   Found along the way: the villager was 2 rows (1 m) tall, so a level slash at eye height passed over it; now 4.
+   **Outstanding (local):** the raised-pose clips (`fp_guard_level`, `fp_guard_vertical`) and drawing the
+   raised sword on others and NPCs (`Game::guard_pose`, `Game::remote_guards`); the owner's answer on NPCs
+   hurting players.
 36. **A showcase video of the deer and wolves** (owner 2026-11-12: "have you observed the animals simulation? Make
    some clips of the deer/wolves behavior, really showcase it and try to get good angles. Keep it under 2 minutes
    of video. Splice it together into a single video."). Queued (local, after item 30).
@@ -910,7 +927,8 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    sidestep, held, disposition, combat hook `fightBack`, colour parts), rules' `spacingM` and `biomes`, the
    server's behaviour, the `creatures.npcs` capability's NPC part on `Creatures`, the client's pose roles and
    colours; CHARACTERS.md §11.11. Left (local): the colour remap and held item in the renderer, sit/look
-   clips, combat with the swords.
+   clips. Combat with the swords built in item 35's round 2 (`npc.fight`: an NPC blocks its foe's wind-up by
+   its stance rule, strikes back on the recovery, gives up after `giveUpS`; it never hurts a player).
 
 39. **Livelier animals** (owner 2026-11-12, after the video had no chase or fleeing — on day one every pack is
    kilometres from any herd and players can't scare deer): chose **deer flee from players** (they notice a player

@@ -153,7 +153,8 @@
     "Ecology": 102,
     "SteamHello": 103,
     "Steam": 104,
-    "Capabilities": 105
+    "Capabilities": 105,
+    "Swordplay": 106
   },
   "rejectReasons": {
     "ProtocolVersion": 1,

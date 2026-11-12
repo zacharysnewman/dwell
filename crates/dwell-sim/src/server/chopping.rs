@@ -85,6 +85,7 @@ impl Server {
                 if !self.swing_stamina(id, tool) => {}
             a @ (ChopAction::Swing { .. } | ChopAction::Sweep { .. }) => self.start_swing(id, a),
             ChopAction::Held { tool, vertical } => self.held_tool(id, tool, vertical),
+            ChopAction::Guard { raised } => self.guard_action(id, raised),
         }
     }
 
@@ -196,6 +197,17 @@ impl Server {
         let tick = self.tick;
         let s = self.sessions.get_mut(&id).expect("session");
         s.chop_ready = tick + (t.swing_seconds * f64::from(dwell_protocol::SIM_HZ)) as u32;
+        // A weapon's swing is read by the NPCs fighting it, and drops its block meanwhile.
+        if t.is_weapon() {
+            let at = contact.unwrap_or_else(|| t.swing.centre_s());
+            s.weapon_swing = Some(super::WeaponSwing {
+                start: tick,
+                contact: tick + super::contact_ticks(at),
+                end: s.chop_ready,
+                vertical: *vertical,
+                weapon: t.name,
+            });
+        }
         // A free swing at nothing lands nothing.
         if let Some(c) = contact {
             s.pending_chops.push((tick + super::contact_ticks(c), a));
@@ -460,6 +472,13 @@ impl Server {
             return;
         };
         let first = s.held_tool.is_none();
+        // Its block drops with the weapon put away; a raised one turns with the stance.
+        let weapon = chop::tool(&tool).is_some_and(|t| t.is_weapon());
+        let guard_changed =
+            s.guard_raised && (!weapon || s.held_tool.as_ref().is_none_or(|(_, v)| *v != vertical));
+        if !weapon {
+            s.guard_raised = false;
+        }
         s.held_tool = Some((tool.clone(), vertical));
         let player_id = s.player_id;
         let entry = dwell_protocol::HeldTool {
@@ -476,6 +495,9 @@ impl Server {
         let m = Message::HeldTools(vec![entry]);
         for o in &others {
             self.send_reliable(*o, &m, Channel::World);
+        }
+        if guard_changed {
+            self.send_player_guard(id);
         }
         if first {
             let all: Vec<_> = others
