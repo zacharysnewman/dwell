@@ -380,6 +380,21 @@ pub struct BreakTool {
     pub tier: &'static str,
     /// The tier's break speed, a multiple of the bare hand's.
     pub speed: f64,
+    /// When its swing's head meets the block (s after the click; `contactS`, 0: at once): a hit
+    /// with it lands then (WORK_QUEUE item 25).
+    pub contact_s: f64,
+}
+
+/// When a break made holding `held` lands (s after the click), in `tools`: its `contact_s`, else at
+/// once (a hand, a block, an item that is not a breaking tool).
+pub fn break_contact_s_in(tools: &[BreakTool], held: Option<&str>) -> f64 {
+    held.and_then(|h| tools.iter().find(|t| t.item == h))
+        .map_or(0.0, |t| t.contact_s)
+}
+
+/// [`break_contact_s_in`] over the game's data.
+pub fn break_contact_s(held: Option<&str>) -> f64 {
+    break_contact_s_in(BREAK_TOOLS, held)
 }
 
 /// The break speed of `block` holding `held` (an item name; none: an empty hand), from tables
@@ -727,6 +742,7 @@ mod tests {
             class: "trowel",
             tier: "bronze",
             speed: 2.0,
+            contact_s: 0.4,
         }];
         assert_eq!(
             break_speed_in(&classes, &tools, "test:clay", Some("test:trowel")),
@@ -737,6 +753,25 @@ mod tests {
             break_speed_in(&classes, &tools, "test:rock", Some("test:trowel")),
             1.0
         );
+    }
+
+    #[test]
+    fn a_tools_contact_time_is_its_data_and_a_hand_lands_at_once() {
+        // WORK_QUEUE item 25: a fixture tool's contact by data alone.
+        let tools = [BreakTool {
+            item: "test:trowel",
+            class: "trowel",
+            tier: "bronze",
+            speed: 2.0,
+            contact_s: 0.4,
+        }];
+        assert_eq!(break_contact_s_in(&tools, Some("test:trowel")), 0.4);
+        assert_eq!(break_contact_s_in(&tools, None), 0.0);
+        assert_eq!(break_contact_s_in(&tools, Some("dwell:dirt")), 0.0);
+        // The game's pickaxes and shovels strike with the arms' break clip.
+        for t in ["dwell:stone_pickaxe", "dwell:metal_shovel"] {
+            assert!(break_contact_s(Some(t)) > 0.2, "{t}");
+        }
     }
     const UP: [f64; 3] = [0.0, 1.0, 0.0];
     const Y: usize = 1;

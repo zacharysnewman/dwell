@@ -113,7 +113,7 @@ test('breaking: the right tool class per material and a speed per tier reach the
   assert.ok(speed('dwell:metal_pickaxe') > speed('dwell:stone_pickaxe') && speed('dwell:stone_pickaxe') > 1);
   const rs = toolsRust(d);
   assert.match(rs, /\("dwell:stone", "pickaxe"\)/);
-  assert.match(rs, /BreakTool \{ item: "dwell:metal_shovel", class: "shovel", tier: "metal", speed: 2\.5 \}/);
+  assert.match(rs, /BreakTool \{ item: "dwell:metal_shovel", class: "shovel", tier: "metal", speed: 2\.5, contact_s: 0\.26 \}/);
 });
 
 test('breaking: a fixture tool class and tier by data alone, and bad entries fail naming them', () => {
@@ -122,8 +122,8 @@ test('breaking: a fixture tool class and tier by data alone, and bad entries fai
   blocks.set('test:clay', {});
   data.breaking.tiers.bronze = 2;
   data.breaking.classes.trowel = ['test:clay'];
-  data.breaking.tools.push({ item: 'test:trowel', class: 'trowel', tier: 'bronze' });
-  assert.match(toolsRust(validateTools(data, items, blocks)), /BreakTool \{ item: "test:trowel", class: "trowel", tier: "bronze", speed: 2\.0 \}/);
+  data.breaking.tools.push({ item: 'test:trowel', class: 'trowel', tier: 'bronze', contactS: 0.4 });
+  assert.match(toolsRust(validateTools(data, items, blocks)), /BreakTool \{ item: "test:trowel", class: "trowel", tier: "bronze", speed: 2\.0, contact_s: 0\.4 \}/);
   const bad = (edit, re) => {
     const [d, i, b] = fresh();
     edit(d.breaking);
@@ -136,6 +136,7 @@ test('breaking: a fixture tool class and tier by data alone, and bad entries fai
   bad((b) => b.classes.axe.push('dwell:nope'), /breaking\.classes\.axe: no block "dwell:nope"/);
   bad((b) => (b.tiers.stone = 0), /breaking\.tiers\.stone is a speed above 0/);
   bad((b) => b.tools.push({ ...b.tools[0] }), /dwell:stone_axe is listed twice/);
+  bad((b) => (b.tools[0].contactS = -1), /breaking\.tools\[0\]: contactS is seconds in \[0, 2\]/);
 });
 
 test("a wood's cut look (its carved faces, ADR 0067 §11) is validated and reaches the Rust table", () => {

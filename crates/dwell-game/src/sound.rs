@@ -567,6 +567,12 @@ impl EditSounds {
         ));
     }
 
+    /// Our break request at `cell`, whose sound comes later (a tool's hit lands at its swing's
+    /// contact, WORK_QUEUE item 25): the server's change of it is its echo, not played again.
+    pub fn expect_break(&mut self, cell: [i32; 3], now_ms: f64) {
+        self.pending.push((cell, now_ms));
+    }
+
     /// Our place request of `block` into `cell`.
     pub fn local_place(
         &mut self,

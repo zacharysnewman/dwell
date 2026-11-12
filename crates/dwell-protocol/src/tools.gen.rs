@@ -70,10 +70,10 @@ pub const WEAR_BREAK_SOUND: Option<&str> = Some("stick_snap");
 
 /// Each tool item's class, tier and that tier's break speed (`breaking.tools`).
 pub static BREAK_TOOLS: &[BreakTool] = &[
-    BreakTool { item: "dwell:stone_axe", class: "axe", tier: "stone", speed: 1.5 },
-    BreakTool { item: "dwell:metal_axe", class: "axe", tier: "metal", speed: 2.5 },
-    BreakTool { item: "dwell:stone_pickaxe", class: "pickaxe", tier: "stone", speed: 1.5 },
-    BreakTool { item: "dwell:metal_pickaxe", class: "pickaxe", tier: "metal", speed: 2.5 },
-    BreakTool { item: "dwell:wooden_shovel", class: "shovel", tier: "stone", speed: 1.5 },
-    BreakTool { item: "dwell:metal_shovel", class: "shovel", tier: "metal", speed: 2.5 },
+    BreakTool { item: "dwell:stone_axe", class: "axe", tier: "stone", speed: 1.5, contact_s: 0.0 },
+    BreakTool { item: "dwell:metal_axe", class: "axe", tier: "metal", speed: 2.5, contact_s: 0.0 },
+    BreakTool { item: "dwell:stone_pickaxe", class: "pickaxe", tier: "stone", speed: 1.5, contact_s: 0.26 },
+    BreakTool { item: "dwell:metal_pickaxe", class: "pickaxe", tier: "metal", speed: 2.5, contact_s: 0.26 },
+    BreakTool { item: "dwell:wooden_shovel", class: "shovel", tier: "stone", speed: 1.5, contact_s: 0.26 },
+    BreakTool { item: "dwell:metal_shovel", class: "shovel", tier: "metal", speed: 2.5, contact_s: 0.26 },
 ];

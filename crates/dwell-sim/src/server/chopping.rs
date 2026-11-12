@@ -67,19 +67,105 @@ impl Server {
             // An exhausted player's swing is refused; a swing draws its cost (ADR 0069 §5).
             ChopAction::Swing { ref tool, .. } | ChopAction::Sweep { ref tool, .. }
                 if !self.swing_stamina(id, tool) => {}
-            ChopAction::Swing {
-                tool,
-                cell,
-                face,
-                point,
-                vertical,
-            } => self.swing(id, &tool, cell, face, point.map(f64::from), vertical),
-            ChopAction::Sweep {
-                tool,
-                look,
-                vertical,
-            } => self.sweep(id, &tool, look.map(f64::from), vertical),
+            a @ (ChopAction::Swing { .. } | ChopAction::Sweep { .. }) => self.start_swing(id, a),
             ChopAction::Held { tool, vertical } => self.held_tool(id, tool, vertical),
+        }
+    }
+
+    /// A swing arrives (it left the client at the click): it starts now, spending the swing's
+    /// wait, and lands at its contact (WORK_QUEUE item 25: the head reaching what it hits, the
+    /// tool's `swing` data: `windupS` and the arc's time to the hit, from a sweep now), never
+    /// before the client's. A swing too soon after the last is refused. What it meets is found
+    /// again, and checked, at the contact ([`Self::land_swings`]).
+    fn start_swing(&mut self, id: SessionId, a: ChopAction) {
+        let (ChopAction::Swing { tool, .. } | ChopAction::Sweep { tool, .. }) = &a else {
+            return;
+        };
+        let Some(t) = chop::tool(tool) else {
+            return;
+        };
+        let s = &self.sessions[&id];
+        let Some(h) = s.handle else {
+            return;
+        };
+        if !s.joined() || self.tick < s.chop_ready {
+            return;
+        }
+        let contact = match &a {
+            ChopAction::Sweep { look, vertical, .. } if !self.config.chop2 => {
+                let len = look
+                    .iter()
+                    .map(|v| f64::from(*v).powi(2))
+                    .sum::<f64>()
+                    .sqrt();
+                if !(0.5..=1.5).contains(&len) {
+                    return;
+                }
+                let look = look.map(|v| f64::from(v) / len);
+                let eye = self.eye_of(h);
+                let arc = dwell_world::swing::Arc::of(t);
+                let swept = dwell_world::swing::sweep(&mut self.world, eye, look, *vertical, &arc);
+                let step = swept
+                    .hit
+                    .map(|x| x.step)
+                    .or_else(|| swept.cleared.iter().map(|c| c.step).min());
+                step.map(|k| t.swing.time_of_step(k))
+            }
+            // An aimed swing, and the prototype's chop at the crosshair: the arc's middle.
+            _ => Some(t.swing.centre_s()),
+        };
+        let tick = self.tick;
+        let s = self.sessions.get_mut(&id).expect("session");
+        s.chop_ready = tick + (t.swing_seconds * f64::from(dwell_protocol::SIM_HZ)) as u32;
+        // A free swing at nothing lands nothing.
+        if let Some(c) = contact {
+            s.pending_chops.push((tick + super::contact_ticks(c), a));
+        }
+    }
+
+    /// The swings whose contact has come land: each swept again from the player's eye now (what
+    /// it meets, its reach) and refused if the tool is no longer in hand (switched away before the
+    /// contact: a cancelled swing lands nothing).
+    pub(super) fn land_swings(&mut self) {
+        let tick = self.tick;
+        let due: Vec<(SessionId, ChopAction)> = self
+            .sessions
+            .iter_mut()
+            .flat_map(|(&id, s)| {
+                let (now, later) = std::mem::take(&mut s.pending_chops)
+                    .into_iter()
+                    .partition::<Vec<_>, _>(|(at, _)| *at <= tick);
+                s.pending_chops = later;
+                now.into_iter().map(move |(_, a)| (id, a))
+            })
+            .collect();
+        for (id, a) in due {
+            let Some(s) = self.sessions.get(&id) else {
+                continue;
+            };
+            let (ChopAction::Swing { tool, .. } | ChopAction::Sweep { tool, .. }) = &a else {
+                continue;
+            };
+            // Where blocks are unlimited the hotbar's tool is what `Held` said (none said: an
+            // older client, trusted); in a mode with items `swing` checks the held slot.
+            if s.held_tool.as_ref().is_some_and(|(held, _)| held != tool) {
+                continue;
+            }
+            match a {
+                ChopAction::Swing {
+                    tool,
+                    cell,
+                    face,
+                    point,
+                    vertical,
+                } => self.swing(id, &tool, cell, face, point.map(f64::from), vertical),
+                ChopAction::Sweep {
+                    tool,
+                    look,
+                    vertical,
+                } => self.sweep(id, &tool, look.map(f64::from), vertical),
+                _ => {}
+            }
         }
     }
 
@@ -95,7 +181,7 @@ impl Server {
         let Some(h) = s.handle else {
             return;
         };
-        if !s.joined() || self.tick < s.chop_ready {
+        if !s.joined() {
             return;
         }
         let len = (look[0] * look[0] + look[1] * look[1] + look[2] * look[2]).sqrt();
@@ -122,11 +208,36 @@ impl Server {
         let wood = aimed.filter(|x| grain_of(self.world.get_voxel_if_loaded(x.0)).is_some());
         match wood {
             Some((cell, face, point)) => self.swing(id, tool, cell, face, point, vertical),
-            None => {
-                let s = self.sessions.get_mut(&id).expect("session");
-                s.chop_ready =
-                    self.tick + (t.swing_seconds * f64::from(dwell_protocol::SIM_HZ)) as u32;
-            }
+            // A bounce off what is not a wood is a hit: it wears the tool once (owner, 2026-11-12:
+            // "Tools should only consume durability on hit"); a miss, or a swing through only what
+            // it clears (leaves: cleared, not hit), wears nothing.
+            None if aimed.is_some() => self.wear_swung(id, tool),
+            None => {}
+        }
+    }
+
+    /// One landed hit's wear on the tool swung, where a mode wears tools: only while the tool is
+    /// the one in hand (a mode with items).
+    fn wear_swung(&mut self, id: SessionId, tool: &str) {
+        let uses_items = self.uses_items();
+        if !self
+            .sessions
+            .get(&id)
+            .is_some_and(|s| s.joined() && self.may_edit(s))
+        {
+            return;
+        }
+        let s = self.sessions.get_mut(&id).expect("session");
+        let held = s.inventory.slots.get(usize::from(s.inventory.held));
+        if uses_items
+            && held
+                .and_then(|h| h.as_ref())
+                .is_none_or(|st| st.item != tool)
+        {
+            return;
+        }
+        if super::wear_tool(&mut s.inventory, uses_items) != inv::Wear::None {
+            s.inventory_dirty = true;
         }
     }
 
@@ -318,9 +429,6 @@ impl Server {
                 return;
             }
         }
-        if self.tick < s.chop_ready {
-            return;
-        }
         let eye = self.eye_of(h);
         let to = DVec3::from(point) - DVec3::from(eye);
         if to.length() > f64::from(dwell_world::edit::DEFAULT_REACH) + REACH_SLACK_M {
@@ -342,7 +450,6 @@ impl Server {
         };
         let wood = chop::wood(block_of(m).name).expect("a wood");
         let s = self.sessions.get_mut(&id).expect("session");
-        s.chop_ready = self.tick + (t.swing_seconds * f64::from(dwell_protocol::SIM_HZ)) as u32;
         // A chop wears the axe (owner, 2026-11-11: "It should survive 32 hits of durability").
         if super::wear_tool(&mut s.inventory, uses_items) != inv::Wear::None {
             s.inventory_dirty = true;

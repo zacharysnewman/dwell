@@ -330,3 +330,44 @@ damage." Built, in addition to the carve (not instead of it):
   (`in_creative_anything_but_a_tool_breaks_any_block_in_one_hit`, both faces; adventure bare hands and a
   creative shovel still can't break stone), `dwell-client` `game_local`
   (`in_creative_a_block_in_hand_breaks_stone_at_once_as_predicted`: predicted, no refusal).
+
+## 8. Hits land at the swing's contact (WORK_QUEUE item 25)
+
+Owner, 2026-11-12: "the gashes in blocks from tools show up on click instead of when the animation lines
+up with the block. We want that timing." And: "Tools should only consume durability on hit."
+
+- **The cause:** both sides. The server applied a break the tick its request arrived (on a local world the
+  same frame as the click), and the client played the hit's sound and chips on the click; the axe's
+  `Chop::Sweep` was cut on arrival too (its chips and sound were already at the contact, `SwingRun`).
+- **Data:** a breaking tool's `contactS` (`breaking.tools[]`, seconds after the click, optional, 0 at once,
+  validated in [0, 2]; the pickaxes and shovels 0.26 s, where the arms' `break` clip strikes), read by
+  `dwell_protocol::chopping::break_contact_s`; a hand or a block lands at once. The axe's contact is its
+  `swing`'s: `windupS` plus the arc's time to the step it hits (`SwingDef::time_of_step`).
+- **Server:** a break with such a tool waits in the session's edit queue until `contactS` after it arrived
+  (`contact_ticks`, rounded up: never before the client's contact, since the request left at the click),
+  then goes through the usual checks (reach, the target, the hits, drops, wear); if the tool that swung it
+  is no longer held it is refused (a cancelled swing lands nothing). An axe swing (`Sweep`, `Swing`) starts
+  on arrival (its wait spent then, a swing too soon refused), its contact found by a sweep then, and lands
+  at it (`land_swings`): swept again from the eye at that tick, refused if the axe was put away.
+- **Wear** happens exactly once per landed hit, at contact: a break hit (as before), a chop into wood, and
+  now a bounce off a non-wood solid; never a miss, a swing through only the blocks it clears (leaves are
+  cleared, not hit: the client follows through as on a miss) or a cancelled swing. Creative unchanged.
+- **Client:** a tool's hit is sent at the click with the arms' swing; its sound and chips (a one-hit
+  break's break sound) wait for the contact (`hit_feedback::PendingHits`), dropped if the tool is put away;
+  a tool's one-hit break is not predicted (the server's change at the contact shows it); one tool swing at a
+  time. The mark (carve, cracks) comes with the server's `Damage` at the contact, so on a local world at the
+  contact and on a remote one a round trip after it. The axe's swing stops if the axe is put away before its
+  contact.
+- **No protocol change:** the wire and its timing fields are unchanged (no start time is sent; the server
+  times from arrival).
+- **Not done:** no camera kick for pickaxe and shovel hits (they have no `swing.camera` data; the axe's
+  kick was already at contact); no browser check (cloud session).
+- **Tests:** `dwell-sim` `damage` `a_tool_hit_lands_at_its_swings_contact_not_when_it_arrives` and
+  `a_hit_whose_tool_is_put_away_before_contact_lands_nothing`, `chopping`
+  `a_chop_lands_at_its_contact_not_on_the_click_and_wears_the_axe_once`,
+  `a_bounce_wears_the_axe_once_and_a_miss_or_only_leaves_wear_nothing`,
+  `a_swing_whose_axe_is_put_away_before_contact_lands_nothing` (both faces; red before the change);
+  `dwell-client` `game_local` `a_pickaxe_hit_marks_the_stone_at_its_contact_not_on_the_click` (red: the hit
+  sounded on the click) and `hit_feedback` `PendingHits`; `dwell-protocol`
+  `a_tools_contact_time_is_its_data_and_a_hand_lands_at_once` and `shared/tools/gen.test.mjs` (a fixture
+  tool's `contactS` by data alone; a bad one fails by name).

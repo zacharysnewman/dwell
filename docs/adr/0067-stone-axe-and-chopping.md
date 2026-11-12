@@ -329,6 +329,16 @@ split keeps the notch (`fellWedgeTrunk: open`). With the switch off nothing here
 pins it). Adopting it would replace §§2–5's swing share, bands and kerfs; see
 docs/proposals/CHOPPING_REDESIGN.md §7.
 
+## Note 2026-11-12: the swing lands at its contact (WORK_QUEUE item 25)
+
+The server cut a swing on its arrival, so the notch appeared on the click. Now a `Sweep` (or `Swing`)
+starts on arrival (the swing's wait spent; one too soon refused) and lands at its contact: `windupS` plus
+the arc's time to the step it hits (or to its first cleared cell), from a sweep at arrival; then it is
+swept again from the player's eye and applied as before, or dropped if the axe is no longer in hand
+(`land_swings`). A bounce off a non-wood solid now wears the axe once (owner, 2026-11-12: "Tools should
+only consume durability on hit"); a miss or a swing through only leaves does not. The client's swing stops
+if the axe is put away before its contact. docs/BLOCK_DAMAGE.md §8.
+
 ## Consequences
 
 - A new tool is an item and a `tools` entry; a new wood a block with an `axis` and a `woods` entry;

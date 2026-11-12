@@ -617,6 +617,8 @@ pub struct Game<S: Scene> {
     inventory_flags: u8,
     /// Other players' hits seen in the damage updates (docs/BLOCK_DAMAGE.md §6).
     remote_hits: crate::hit_feedback::RemoteHits,
+    /// Our tool hits on their way to their swing's contact (WORK_QUEUE item 25).
+    pending_hits: crate::hit_feedback::PendingHits,
     /// Foliage brushed through and ground items stepped onto (AUDIO.md §5): ours, and other
     /// players' from their replicated positions (AUDIO.md §2e).
     contact_sounds: dwell_game::sound::ContactSounds,
@@ -750,7 +752,11 @@ pub struct Game<S: Scene> {
     map: Option<Vec<u8>>,
     /// Finished chunk meshes waiting for their upload, taken under the frame's byte budget
     /// (`Scene::upload_budget_bytes`, `dwell_game::upload_budget`; BUGS.md #72).
-    mesh_uploads: dwell_game::upload_budget::UploadQueue<(dwell_game::chunk_stream::Coord, u64, Box<ChunkMeshes>)>,
+    mesh_uploads: dwell_game::upload_budget::UploadQueue<(
+        dwell_game::chunk_stream::Coord,
+        u64,
+        Box<ChunkMeshes>,
+    )>,
     /// The revealed big map's finished tiles, not yet taken (`crate::map_reveal::encode_tile`).
     reveal: std::collections::VecDeque<Vec<u8>>,
     /// The explored cells' generated tiles, not yet taken: (face, ti, tk), RGBA (None: no
@@ -990,6 +996,7 @@ impl<S: Scene> Game<S> {
             causes_on: false,
             inventory_flags: 0,
             remote_hits: Default::default(),
+            pending_hits: Default::default(),
             contact_sounds: Default::default(),
             remote_contacts: Default::default(),
             world_seed: 0,
@@ -1354,6 +1361,11 @@ impl<S: Scene> Game<S> {
     pub fn world(&mut self) -> &mut VoxelWorld {
         self.streamer.store_mut()
     }
+    /// The damage drawn on `cell` (its marks and cracks), if any.
+    pub fn damage_at(&self, cell: [i32; 3]) -> Option<&dwell_protocol::damage::DamageView> {
+        self.streamer.damage_at(cell)
+    }
+
     pub fn voxel(&mut self, x: i32, y: i32, z: i32) -> u16 {
         self.streamer.store_mut().get_voxel(x, y, z)
     }
@@ -1999,6 +2011,15 @@ impl<S: Scene> Game<S> {
             return false;
         };
         let placement = self.interaction.placement();
+        // A tool's hit lands at its swing's contact (`contactS`; WORK_QUEUE item 25): one swing at
+        // a time, and its effects (and a one-hit break's) wait for the contact.
+        let tool_item = (action == EditAction::Break)
+            .then(|| self.held_break_item())
+            .flatten();
+        let contact_s = dwell_protocol::chopping::break_contact_s(tool_item);
+        if contact_s > 0.0 && self.pending_hits.busy(now_ms) {
+            return false;
+        }
         // A steep slope's upper half goes with it (`act_upper`), read before the place's
         // prediction changes the target.
         let upper = (action == EditAction::Place)
@@ -2007,7 +2028,33 @@ impl<S: Scene> Game<S> {
         match self.interaction.act(action, now_ms) {
             Some(m) => {
                 // The sound first: the prediction changes the block at once.
+                let mut predict = true;
                 match (action, placement) {
+                    (EditAction::Break, _) if contact_s > 0.0 => {
+                        // Sent now (the server lands it at the contact); shown at the contact,
+                        // a one-hit break by the server's change then (not predicted).
+                        let [x, y, z] = target.cell;
+                        let block = self.voxel(x, y, z);
+                        let name = dwell_blocks::block_of(block).name;
+                        let breaks = self.hits_to_break(name) == Some(1);
+                        let at = self
+                            .struck_point(target.cell, target.face)
+                            .map(|p| point_in_cell(target.cell, p));
+                        if breaks {
+                            self.edit_sounds.expect_break(target.cell, now_ms);
+                        } else {
+                            self.remote_hits.own_hit(target.cell, now_ms);
+                        }
+                        self.pending_hits.push(crate::hit_feedback::PendingHit {
+                            due_ms: crate::hit_feedback::PendingHits::due(now_ms, contact_s),
+                            item: tool_item.expect("a tool with a contact"),
+                            cell: target.cell,
+                            block,
+                            at,
+                            breaks,
+                        });
+                        predict = false;
+                    }
                     (EditAction::Break, _) => {
                         let [x, y, z] = target.cell;
                         let block = self.voxel(x, y, z);
@@ -2052,7 +2099,8 @@ impl<S: Scene> Game<S> {
                 {
                     e.point = self.struck_point(target.cell, target.face);
                 }
-                self.send_edit(m, None);
+                let id = (!predict).then(|| self.prediction.next_id());
+                self.send_edit(m, id);
                 if let Some(u) = upper {
                     self.send_edit(u, None);
                 }
@@ -2797,6 +2845,17 @@ impl<S: Scene> Game<S> {
     /// The swing under way this frame (crate::chop `SwingRun`): the arms held through the
     /// hit-stop and pulled back, the impact's effects at its moment, and the view's sway.
     fn update_swing(&mut self, now_ms: f64) -> CameraOffset {
+        self.land_hits(now_ms);
+        // The axe put away mid-swing: the swing stops, landing nothing (the server's too).
+        if self
+            .chop
+            .run
+            .is_some_and(|r| !r.impacted && self.held_tool().is_none_or(|t| t.name != r.tool.name))
+        {
+            self.chop.run = None;
+            self.chop.cleared.clear();
+            self.bodies.drive_arms(None);
+        }
         let Some(mut run) = self.chop.run else {
             return CameraOffset::ZERO;
         };
@@ -2815,6 +2874,29 @@ impl<S: Scene> Game<S> {
         }
         self.chop.run = Some(run);
         run.camera(t)
+    }
+
+    /// Our tool hits whose swing's contact has come (WORK_QUEUE item 25): a hit short of breaking
+    /// sounds the material's hit and bursts its chips at the struck point, a one-hit break its
+    /// break sound; a hit whose tool was put away first shows nothing.
+    fn land_hits(&mut self, now_ms: f64) {
+        let held = self.held_break_item();
+        for h in self.pending_hits.take_due(now_ms, held) {
+            if h.breaks {
+                self.sounds.push(SoundEvent::new(
+                    SoundKind::Break,
+                    h.block,
+                    1.0,
+                    Some(dwell_world::centre_of_cell(h.cell)),
+                ));
+                continue;
+            }
+            self.sounds
+                .push(SoundEvent::new(SoundKind::Hit, h.block, 1.0, h.at));
+            if let Some(at) = h.at {
+                self.hit_chips(h.block, h.cell, at, now_ms);
+            }
+        }
     }
 
     /// What a swing's impact shows: into a wood its chips, its hit's sound by how far the wood is

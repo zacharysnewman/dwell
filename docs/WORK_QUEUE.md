@@ -386,7 +386,12 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
 25. **Marks appear at contact, not on click** (owner 2026-11-12: "the gashes in blocks from tools show up on
    click instead of when the animation lines up with the block. We want that timing."). Every tool's hit (axe
    chop, pickaxe, shovel; the carve, cracks, chips, drops and sound) lands when the swing's head reaches the
-   block (the swing's contact time from its data), not when the button is pressed. In progress (cloud).
+   block (the swing's contact time from its data), not when the button is pressed.
+   Owner, 2026-11-12, added to the same change: **"Tools should only consume durability on hit."** A tool wears
+   once per landed hit, at contact; never on a miss or a cancelled swing; creative unchanged (no wear).
+   Built (cloud, needs the owner's look in game): tool data `contactS` (pickaxes, shovels 0.26 s; the axe its
+   swing's), the server lands hits at contact and drops cancelled ones, the client's sound and chips at
+   contact, a bounce wears once and leaves alone don't (docs/BLOCK_DAMAGE.md §8).
 
 ## Done
 

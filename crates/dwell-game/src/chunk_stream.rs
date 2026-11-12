@@ -1038,11 +1038,9 @@ where
             let rest = keyed.into_iter().map(|(_, c)| c);
             let mut rest = rest.peekable();
             while rest.peek().is_some()
-                && self.light_cost.fits(
-                    ran + usize::from(!light_forces),
-                    t,
-                    light_deadline,
-                )
+                && self
+                    .light_cost
+                    .fits(ran + usize::from(!light_forces), t, light_deadline)
             {
                 let c = rest.next().expect("peeked");
                 self.unlit_set.remove(&c);
@@ -1269,6 +1267,11 @@ where
                 self.stale.insert(k);
             }
         }
+    }
+
+    /// The damage drawn on `cell`, if any.
+    pub fn damage_at(&self, cell: [i32; 3]) -> Option<&dwell_protocol::damage::DamageView> {
+        self.damage.get(&cell)
     }
 
     /// Sets world cell `cell`'s damage (none: undamaged), as the server sent it
@@ -2294,7 +2297,10 @@ mod tests {
         let t = clock.clone();
         let started = s.mesh_dirty([16.0; 3], StreamBudget::new(4.0, 2.0), move || t.get());
         assert_eq!(s.store().lit, vec![[0, 0, 0]], "one chunk lit, the nearest");
-        assert_eq!(started, 0, "no mesh start after the light ran past the deadline");
+        assert_eq!(
+            started, 0,
+            "no mesh start after the light ran past the deadline"
+        );
         // The next late frame is the mesh starts': no light past the deadline, a mesh started.
         let t = clock.clone();
         let started = s.mesh_dirty([16.0; 3], StreamBudget::new(4.0, 2.0), move || t.get());
