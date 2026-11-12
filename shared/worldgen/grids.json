@@ -30,7 +30,7 @@
       "surfaceM": 200,
       "generator": {
         "kind": "cratered",
-        "$comment": "Cratered plains over a datum, ridged noise for the ridges, maria as smooth low basins (fewer craters, flatter, darker), and a crater field of size classes, each `perKm2` craters a km² with radii drawn in `radiusM`. Heights never go under `minM` (the grid's floor over its midplane, where overlapping craters would dig through). A crater's profile, by radius R: a floor `depthRatio` × R deep (at most `maxDepthM`) flat over `floorFraction` of R, a bowl up to a rim `rimRatio` × R high (at most `maxRimM`) at R, and ejecta falling off as the cube of the distance out to `reach` × R. `bake.size` is the far-LOD map's texels a side per face.",
+        "$comment": "Cratered plains over a datum, ridged noise for the ridges, maria as smooth low basins (fewer craters, flatter, and their ground `maria.block`, a darker dust: a column is the mare's block where it is at least half in a mare, `block` elsewhere; the far bake's colour is each block's `color`, blended by how far in a mare a texel is), and a crater field of size classes, each `perKm2` craters a km² with radii drawn in `radiusM`. Heights never go under `minM` (the grid's floor over its midplane, where overlapping craters would dig through). A crater's profile, by radius R: a floor `depthRatio` × R deep (at most `maxDepthM`) flat over `floorFraction` of R, a bowl up to a rim `rimRatio` × R high (at most `maxRimM`) at R, and ejecta falling off as the cube of the distance out to `reach` × R. `bake.size` is the far-LOD map's texels a side per face.",
         "block": "dwell:moon_dust",
         "datumM": 72,
         "minM": 16,
@@ -44,7 +44,7 @@
           "edgeM": 900,
           "flatten": 0.15,
           "craterDensity": 0.3,
-          "albedo": 0.78
+          "block": "dwell:moon_mare_dust"
         },
         "craters": {
           "reach": 2.4,

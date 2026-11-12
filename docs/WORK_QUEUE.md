@@ -661,6 +661,15 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    aria dirt block)"; "Yes for now, let's just do earth gravity out to moon. We likely need an atmosphere
    transition now between sky thinning to space. Clouds shouldn't extend past the earth atmosphere either."; the
    moon "should match previous size for now. We'll play by ear a bit when we travel there."
+   **Built 2026-11-12** (branch `claude/moon-month-maria-wgxts3`): the month is 8.25 days
+   (`shared/look/daynight.json` `moon.cycleDays`), so each full moon comes a quarter day later on the clock and over
+   four months both faces get one near their midnight (`dwell-look` celestial test); the maria's ground is a new
+   darker block `dwell:moon_mare_dust` (prototype content: the `mare_regolith` palette ramp, a painterly tile like
+   the moon dust's; appended, no state id moves), named by `grids.json` `maria.block`, and the far bake's colour is
+   now each ground block's `color` (no separate maria albedo), so the bake is darker over the maria by the same
+   data. Owner's note on the PR: the baked maria were too faint after #682's shading, so the mare block's `color`
+   (`#555459`) is 0.55 × the moon dust's luma, the old sky moon's seas (`1 − moon.maria`); a test pins the bake's
+   maria/highland contrast at 0.55. Tests on both faces (`--test grids`, 26).
 
 28. **An atmosphere: the sky thinning to space** (owner 2026-11-12: "We likely need an atmosphere transition now
    between sky thinning to space. Clouds shouldn't extend past the earth atmosphere either."). With flight to the
@@ -692,6 +701,29 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    dust. The white below the cone in those shots is the cloud deck, not the haze. **Waiting on the owner:**
    pick a preset (or ask for a stronger C: e.g. elevationDeg 8, saturation 0.6) and its values move to the
    top level of fog.json.
+
+30. **Desktop frame rate on the M1 and hidden graphics settings (P0)** (owner 2026-11-12: "It seems like we're
+   hiding some performance settings. I don't see 'tree' options in our settings for graphics. I think cards are
+   killing my m1 mac too." / "Running 26fps." / "GPU at 31ms"). The desktop default preset is High (leaf cards
+   on, high shadows, shafts, bloom, medium volumetric clouds, distanceM 256). Found: the Leaf cards switch exists
+   but sits under Settings → View, not Graphics; several costly features have no setting at all (distant/LOD
+   shadows, tall grass, far trees, hit shards, far herds). Next (local, after item 29's variants): measure each
+   feature's GPU cost on the M1 at High; a Trees group in Settings → Graphics (leaf cards and the rest) and a
+   setting for every renderer tier feature (an audit test that none is hidden); cut what's large; reconsider the
+   desktop default for M1-class GPUs.
+   **Performance target (owner, 2026-11-12, "you can record this"): "make the game run on most hardware smooth,
+   and pretty, 'most hardware' uses my m1 MacBook Air as the baseline. So while you might be able to eek out some
+   extra graphical fidelity on ultra. I want the core experience to be High on M1 MacBook Air."** Every visual
+   feature is budgeted against High at 60 fps on an M1 Air; extra fidelity goes in Ultra.
+   Owner on the cards and trees: "I think the internal leaf cards may be sucking up a lot of unneeded power and I
+   think the leaf cards on the back sides of trees and farther out trees are rendering which is unnecessary. I
+   also wonder if we should do billboards (maybe from above billboards too, possibly a few different angles so
+   we can switch between them like old Mario kart did with carts, and some trees too)... We're going to want to
+   have dense forests and so we really need to optimize." Plan: (1) measure; (2) cull cards inside the crown
+   (faces whose way out is blocked by more leaves) and on the crown's far side (facing away from the camera),
+   shorten the cards' range; (3) multi-angle impostors for far trees (views around and from above, baked per
+   species/stage/variant, switched by view angle, lit by a baked normal), replacing the far tree meshes, and
+   instancing for dense forests.
 
 ## Done
 

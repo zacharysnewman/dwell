@@ -903,22 +903,25 @@ mod tests {
 
     #[test]
     fn the_moon_goes_through_its_phases() {
-        assert_eq!(D.moon.cycle_days, 8.0);
+        // A fractional month (owner, 2026-11-12: "Sounds good" to 8.25 days), so the full moon
+        // comes at another clock time each month.
+        let m = D.moon.cycle_days;
+        assert_eq!(m, 8.25);
         near(D.moon_phase(0.0), D.moon.start_phase, 1e-12);
-        near(D.moon_phase(8.0), D.moon_phase(0.0), 1e-12);
+        near(D.moon_phase(m), D.moon_phase(0.0), 1e-12);
         near(
-            D.moon_phase(4.0),
+            D.moon_phase(m / 2.0),
             (D.moon.start_phase + 0.5).rem_euclid(1.0),
             1e-12,
         );
         near(DayNight::moon_lit(0.5), 1.0, 1e-12);
         near(DayNight::moon_lit(0.0), 0.0, 1e-12);
         near(DayNight::moon_lit(0.25), 0.5, 1e-12);
-        // Driven by the day count: a day moves the phase on by 1/8.
+        // Driven by the day count: a day moves the phase on by 1/month.
         let a = D.state(0.0, Some(0.0), None).moon_phase;
         let b = D.state(D.day_length_s(), Some(0.0), None).moon_phase;
         // (by the celestial model's geometry, M-4: within the orbit's tilt of the count)
-        near((b - a).rem_euclid(1.0), 1.0 / 8.0, 2e-3);
+        near((b - a).rem_euclid(1.0), 1.0 / m, 2e-3);
         near(D.state(0.0, None, Some(0.25)).moon_phase, 0.25, 2e-3);
         // Domed phases (owner, `domeBias`): full lit at full, part-lit at quarters, dark at new.
         assert!(D.state(0.0, None, Some(0.5)).moon_lit > 0.99);

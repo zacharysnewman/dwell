@@ -28,7 +28,7 @@ proposed on 2026-10-16 (§8):
 | Where the data lives | `shared/look/daynight.json` (clock, sun path, sun/moon/star looks, keyframes), generated and validated |
 | Keyframes | 14 over the day, keyed by the sun's angle along its path, interpolated in Oklab |
 | Sun | A limb-darkened disc, larger near the horizon, with a bloom and a glow sized by data |
-| Moon | Opposite the sun (as the bifacial world had it), with phases over an 8-day cycle, maria and earthshine |
+| Moon | Opposite the sun (as the bifacial world had it), with phases over an 8.25-day cycle, maria and earthshine |
 | Stars | Procedural, turning with the sky, faded by the sky's brightness, twinkling |
 | Face B | Shares the one sky: its time of day is face A's + 12 hours (10 min day, 20 min night) |
 | The sky rotation setting | Removed (the time of day is the world's); dev switches replace it |
@@ -745,9 +745,11 @@ minimum still." for new-moon nights; and "the moon should look bright": today's 
   f32); a world without it (every world before it) takes `moon.startPhase`, so older worlds keep
   working and a world that sets none joins byte-identically. `Celestial::for_world` builds the model
   from a world's settings.
-- **An 8-day month brings the full moon at the same clock time** (face A's midnight with
-  `startPhase` 0.5), so face B's nights see it a half day off (92% lit); a fractional month or a
-  world's own phase moves that.
+- **The month is 8.25 days** (owner, 2026-11-12: "Sounds good" to a fractional month): each
+  month's full moon comes a quarter day later on the clock than the last, so over four months it
+  falls at face A's midnight, dawn, face B's midnight and dusk in turn, and both faces' nights get
+  full moons (`celestial::tests::the_full_moon_comes_round_the_clock_…`). The 8-day month it
+  replaced brought every full moon at face A's midnight.
 - **Tests** (`cargo test -p dwell-look --lib celestial`): the sun golden; the orbit's distance and
   latitude; full opposite the sun, new between; the lit share monotonic new → full → new; the month
   and the daily lag; tidally locked (face A toward home at every phase, both faces); both faces'

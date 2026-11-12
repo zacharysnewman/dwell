@@ -1,8 +1,0 @@
-{
-  "changes": [
-    "Chopping one spot now widens the axe's bites across the trunk into a real notch, instead of a tall narrow slot down the log.",
-    "The notch reaches round the trunk's corners, thin trunks included.",
-    "Wood cracks now show around the bites as you chop.",
-    "A swing after the tree falls bites the stump instead of wiping out the gash; chop the stump down to clear it, and it drops wood."
-  ]
-}
