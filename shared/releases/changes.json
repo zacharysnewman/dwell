@@ -2,6 +2,13 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.54.116",
+      "changes": [
+        "Villagers now walk and stand like other players, their sword held the way you hold it.",
+        "Deer lower their heads to graze, look up and flick their ears; wolves sit and lie down."
+      ]
+    },
+    {
       "version": "0.54.115",
       "changes": [
         "The sword is now one sword from the tools pack, gripped by its handle in a closed fist.",
