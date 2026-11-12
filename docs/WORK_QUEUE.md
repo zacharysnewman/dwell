@@ -911,6 +911,13 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    colours; CHARACTERS.md §11.11. Left (local): the colour remap and held item in the renderer, sit/look
    clips, combat with the swords.
 
+39. **Livelier animals** (owner 2026-11-12, after the video had no chase or fleeing — on day one every pack is
+   kilometres from any herd and players can't scare deer): chose **deer flee from players** (they notice a player
+   within a distance by data, closer when crouching, and run off; wolves keep their distance unless hungry),
+   **packs roam toward herds** (hungry packs travel toward the nearest herd, so hunts happen near players), and
+   **a grazing pose and more idle behaviour** (deer lower their heads to graze, look up, flick ears; wolves sit
+   and lie down). In progress (cloud); a new video after.
+
 ## Done
 
 - **Axe swing directions and animation tools (owner 2026-11-11: "The axe animations are still trash.
