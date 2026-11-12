@@ -67,7 +67,9 @@ it every frame from the page with `requestAnimationFrame` so the move is smooth 
 
 ## 3b. Time-lapse and the player
 
-Owner (2026-11-12): use **full or partial time-lapses** where they suit (a whole clip sped up, or a normal-speed
+Owner (2026-11-12): **part of every recording should be gameplay from the player's perspective** (first person,
+the arms and held item, actually playing: walking up, chopping, digging, swimming), mixed with the cinematic
+shots. Use **full or partial time-lapses** where they suit (a whole clip sped up, or a normal-speed
 shot that speeds up mid-way) and **include the player in the video when possible**.
 
 - **Time-lapse in the game:** drive the clock (`d.setTime(t)` stepped per frame for day→night), speed up the
