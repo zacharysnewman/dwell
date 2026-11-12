@@ -505,6 +505,12 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    bitten spot landing beside it so the bites join into the notch; the wood's `cut.cracks` (`wood` set) round them;
    felling unchanged (11 swings at one aim, both faces); bites sent after a `BitesHello` and saved, an older cut
    drawn as before (docs/BLOCK_DAMAGE.md §6.4, ADR 0067 note).
+   In-game check (0.54.x): the first bite is head-sized, but more swings grow it down into a tall narrow slot
+   instead of across into a notch, and no wood cracks showed. A swing after the fall cleared the stump's slanted
+   top (the gash), because the axe clears `dwell:log_ramp` like leaves. Owner, 2026-11-12, on that: **"I think
+   let's do your recommendation."** — the stump keeps its gash: the axe chops a fell wedge (a hit, a bite) instead
+   of clearing it; the stump comes down only when chopped deliberately like a log. In progress (cloud), with the
+   bites spreading across and the cracks showing.
 27. **A felled trunk landing on its chopper flings them (BUGS.md #52)** (the owner's brief, 2026-11-12: fix the
    cause, "we shouldn't be capping player kick like that" (2026-11-08): no cap on the kick; a trunk hitting a
    player at speed must still knock them as physics says). **Built 2026-11-12** (branch `claude/pinch-fling`):
