@@ -18,6 +18,13 @@
       }
     },
     {
+      "name": "cards-off",
+      "notes": "No leaf cards (`?cards=0`; BUGS.md #78): their cost against the default (they follow the switch only in chunks meshed after it, so a mid-run `view` cannot measure them).",
+      "params": {
+        "cards": "0"
+      }
+    },
+    {
       "name": "raster",
       "notes": "The mesher at full resolution."
     },

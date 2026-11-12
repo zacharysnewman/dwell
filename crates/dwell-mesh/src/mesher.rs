@@ -1722,6 +1722,13 @@ fn flip_arrays_y(mut m: MeshArrays) -> MeshArrays {
     for n in m.normals.iter_mut().skip(1).step_by(3) {
         *n = -*n;
     }
+    // A leaf card's packed plane normal (`leaves::card_speed`) mirrors with the rest.
+    for speed in m.plants.iter_mut().skip(1).step_by(4) {
+        if *speed < 0.0 {
+            let n = leaves::card_normal_of(*speed);
+            *speed = leaves::card_speed([n[0], -n[1], n[2]]);
+        }
+    }
     for t in m.indices.chunks_exact_mut(3) {
         t.swap(1, 2);
     }

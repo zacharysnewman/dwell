@@ -332,6 +332,17 @@ interface DwellDebug {
     flowRipples?: boolean;
     flowFoam?: boolean;
     waterfalls?: boolean;
+    /** Light shafts and bloom tiers (`off`, `low`, `high`). */
+    shafts?: 'off' | 'low' | 'high';
+    bloom?: 'off' | 'low' | 'high';
+    /** Leaf cards on (the tier's) or off (`Client.setCards`). */
+    cards?: boolean;
+    /** The tall grass and flowers drawn or not. */
+    grass?: boolean;
+    /** The render scale (shared/render/upscale.json's scales), with the current upscaler. */
+    renderScale?: number;
+    /** Torch shadows `off`, `low`, `high`. */
+    torchShadows?: 'off' | 'low' | 'high';
   }): void;
   /** The ink outline's mode (`shared/look/outline.json`, as `?outline=` names it), or `off`. */
   outline(): string;
@@ -1215,6 +1226,17 @@ async function start(): Promise<App | null> {
           v.flowParticles ?? s.water.flowParticles,
           v.waterfalls ?? s.water.waterfalls,
         );
+      }
+      if (v.shafts !== undefined) client.setShafts(v.shafts);
+      if (v.bloom !== undefined) client.setBloom(v.bloom);
+      if (v.cards !== undefined) client.setCards(v.cards ? -1 : 0);
+      if (v.grass !== undefined) client.setPlants(s.motion.plantSway ? 1 : 0, v.grass);
+      if (v.torchShadows !== undefined) {
+        client.setTorchShadows(shadowLevel(v.torchShadows));
+      }
+      if (v.renderScale !== undefined) {
+        const rs = renderScaleFromQuery(location.search, s.renderScale);
+        client.setRenderScale(v.renderScale, rs.upscaler, UPSCALE.sharpenStops);
       }
     },
     outline: () => client.outline(),

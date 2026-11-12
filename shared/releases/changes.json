@@ -2,6 +2,64 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.54.88",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.87",
+      "changes": [
+        "New biome: old-growth forest, a cool and very wet temperate rainforest of tall old pines and broadleaf standing close over thick tall grass.",
+        "The Realistic world grows it where the climate fits, and the Starter world on its cool, wet lowland by the rivers and lakes.",
+        "A forest test world (?worldgen=test:forest) and a bench scenario that measure the game's frame rate among dense trees."
+      ]
+    },
+    {
+      "version": "0.54.86",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.85",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.84",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.83",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.82",
+      "changes": [
+        "Forests draw faster: leaf cards hidden inside a tree's crown, on its far side or past their distance are no longer drawn, and they now fade out from 24 to 40 m (was 48 to 64 m)",
+        "The High preset draws full detail to 192 m (was 256 m) to stay smooth in forests on an M1 MacBook Air; Ultra still draws farther",
+        "Settings → Graphics has a Trees group; the Leaf cards switch moved there from View"
+      ]
+    },
+    {
+      "version": "0.54.81",
+      "changes": [
+        "Behind the scenes: the Tree Growth prototype compares palm fronds as leaf blocks and as painted frond cards side by side"
+      ]
+    },
+    {
+      "version": "0.54.80",
+      "changes": [
+        "Behind the scenes: work queue answers"
+      ]
+    },
+    {
       "version": "0.54.79",
       "changes": [
         "Behind the scenes: far trees can be baked into pictures from several angles, around and from above, from the real tree models: a first step to far forests that match the near trees and draw cheaply. Nothing changes on screen yet"

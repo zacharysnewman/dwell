@@ -42,12 +42,14 @@ two faces' climates and the gradient across the disc come from the orbits model 
 vs 2× comparison of screenshots for perspective (queued, local); (6) **"iOS runs at 60fps on Low settings"** —
 item 16 done; (7) **"Metal tools break double sized bigger chunks off and reach 50% broken faster, which is when
 the blocks break. Also have double durability."** (in progress, cloud); (8) **"I'd like to see a comparison of
-the two"** — palm fronds as leaf blocks vs frond cards side by side (queued: the Tree Growth prototype).
+the two"** — palm fronds as leaf blocks vs frond cards side by side: built in the Tree Growth prototype
+(`docs/prototypes/tree-growth.html`, *Palm fronds* → *Split*, or `?species=palm&fronds=split`; to be republished to its link).
 
 Still open:
 1. **Pick a haze setting** (item 29), once the ground-level and hilltop shots (clouds off) are taken. Default:
    today's fog.
-2. **The in-game Chisel editor and the textures tab extras** (Phase 56 B7/B6's outstanding parts). The owner
+2. ~~**The in-game Chisel editor and the textures tab extras**~~ — **approved (owner, 2026-11-12: "these all seem
+   solid yes"); now item 34.** (Phase 56 B7/B6's outstanding parts.) The owner
    asked what the scope is: *Chisel* is the separate worldgen page (`chisel.html`: biome sliders, a live preview,
    Export). The "in-game editor" would open those sliders inside a running world and regenerate the terrain
    around you as you tune. The "textures tab extras" would let Chisel's Textures tab add new materials and blocks
@@ -794,6 +796,14 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    shorten the cards' range; (3) multi-angle impostors for far trees (views around and from above, baked per
    species/stage/variant, switched by view angle, lit by a baked normal), replacing the far tree meshes, and
    instancing for dense forests.
+   **Round 1 (2026-11-12, BUGS.md #78; `claude/high-on-m1`):** measured on this repo's M1 at High
+   (docs/DEV_TOOLS.md "High on the M1"): the broadleaf spot 15.5–15.7 ms GPU, open ground 9.2; leaf cards 0.6 ms,
+   the cutout meshes together (leaves' cutout, tall grass, ladders, cards) 4.5–4.7, full detail 256 → 128 m 2.4–2.7,
+   sun shadows 1.4–1.7, water 0.8–0.9, bloom 0.4–0.6, the rest ≤ 0.3. Done: steps (2)'s culls (cavity faces,
+   far-side cards in the vertex shader, cards past their fade, fade 24–40 m) took the cards to 0.29 ms; Leaf cards in
+   Settings → Graphics → Trees; an audit test for tier functions without a setting. The mixed forest read 17.05 ms after them, so High's full detail
+   went 256 → 192 m (Ultra keeps 352): 13.88 ms there. Next: a Tall grass setting (a mesher flag; the renderer's cutout switch also hides
+   leaves and ladders), a dense-forest spot that reproduces the owner's 31 ms, then (3) impostors.
 
 31. **Far trees as multi-angle impostors** (owner 2026-11-12: "billboards (maybe from above billboards too,
    possibly a few different angles so we can switch between them like old Mario kart did with carts, and some
@@ -814,7 +824,58 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    biome/climate for performance reference on trees."). A biome preset (tall, closely spaced mature trees — an
    old-growth temperate rainforest of tall pines and broadleaf, thick undergrowth) placed by climate (cool and very
    wet), plus a fixed test world and bench spot that stand in the densest forest, so every tree/leaf/impostor change
-   is measured there at High on the M1 Air. In progress (cloud).
+   is measured there at High on the M1 Air. **Built (2026-11-12, cloud), the GPU run outstanding (local):** the
+   `preset:old_growth` biome (6–13 °C, 2200 mm and up; the old-growth species `dwell:old_pine` 18–26 m and
+   `dwell:old_oak` 9–14 m, mostly mature, ~220 a hectare by the `old_growth` placement, crowns interleaving
+   by a negative `spacing`; tall grass nearly everywhere), in the Realistic world by climate and the
+   starter's cool wet ground (3.5 % of its land; its terrain changed there, a new line for the owner to raise; the default unchanged); `test:forest`, old-growth
+   everywhere; the spots `forest:inside`, `forest:edge`, `forest:above` and the scenario `forest-perf` at
+   `?preset=high`, a 16.7 ms frame budget report-only until item 30 (docs/DEV_TOOLS.md "The tree performance
+   reference"). Next (local): run `forest-perf` on the M1 Air for the first numbers, look at the stand, and
+   tune the spots if a view misses the densest trees.
+
+33. **Licensed music replaces the generated music** (owner 2026-11-12: "I downloaded a big music set as a Unity
+   asset, I'd like the casual game music setup in a prototype and make it play randomly in the game. Probably
+   needs compression. It'll replace the current music which is AI generated."). The pack: *Andrew Sitkov Music*
+   (Unity Asset Store, `~/Library/Unity/Asset Store-5.x/Andrew Sitkov Music/AudioMusic/`; the download was not
+   finished at 23:10, the folder empty). Plan: extract the casual-game tracks from the .unitypackage, compress
+   (AAC/Opus at a music bitrate, loudness-matched), a music list as data (tracks, moods, gain, fade), a prototype
+   page to audition the set, the game's music player shuffling them (no repeats back to back, gaps and fades as
+   data) in place of the current tracks; licence notes as for the Imphenzia samples (AUDIO.md §2b).
+
+34. **The in-game Chisel editor and the Textures tab extras** (owner 2026-11-12: "these all seem solid yes"): open
+   Chisel's biome sliders inside a running world with the terrain around the player regenerating as they tune
+   (Phase 56 B7); the Textures tab adding new materials and blocks by data, editing water and sky colours, and
+   painting item and model textures (B6's rest). Queued.
+35. **Swords as weapons** (owner 2026-11-12: "we'll want to bring in the swords from the model pack we got the
+   tools from as weapons."). Answers: animals only for now (no PvP); a timed swing arc like the axe that hits what
+   it crosses at contact, with damage, knockback and durability per sword as data (reusing the swing and
+   clip_probe systems); in the creative inventory now, adventure recipes later. The models from the owner's
+   *3D Low Poly Tools Weapons Containers* pack (NexusArcadeStudios), as the tools were. Queued.
+   Owner, 2026-11-12: **"For the sword we'll use a perpendicular vs parallel defense attack gameplay. Wandering
+   NPCs will get swords. We'll use the Wii Resort sword fighting model, you can only hold the sword vertical or
+   horizontal, and you can choose to block or not. Attacking drops block, if you hit enemy sword within an angle
+   threshold of perpendicular you're blocked, if within an angle of parallel it connects."** So: a sword is held
+   in one of two stances, vertical or horizontal (the same two swings as the axe); holding block raises the
+   sword in its stance; attacking drops the block for the swing; a strike that meets the defender's raised sword
+   within a threshold of perpendicular to it is blocked (a clash, no damage), within a threshold of parallel it
+   slips past and connects; angles and thresholds as data. NPCs carry swords and fight by the same rules (item 38).
+36. **A showcase video of the deer and wolves** (owner 2026-11-12: "have you observed the animals simulation? Make
+   some clips of the deer/wolves behavior, really showcase it and try to get good angles. Keep it under 2 minutes
+   of video. Splice it together into a single video."). Queued (local, after item 30).
+
+37. **First-person arms from the player model** (owner 2026-11-12: "I thought we were going to swap out the AI
+   generated first person character model? We discussed this yesterday."). The Peasant (the owner's Asset Store
+   model) became other players' body and your shadow in 0.52.35 (CHARACTERS.md §11.5), but "Still rigid: your
+   first-person arms … drawing them at the eye needs its own view and clips (later)" — the swap was never queued,
+   so it was missed. Now: draw your first-person arms and hands from the Peasant's own mesh (its arm vertices by
+   their skin weights), driven by the first-person clips (the swings fitted with clip_probe) mapped onto its arm
+   bones, held items on its `hand.R`; the rigid arms retired. Priority: next after item 30.
+38. **Wandering NPCs** (owner 2026-11-12: "Another item to queue up, wandering NPCs. They'll use the same player
+   character model."). People using the Peasant model who wander the world like the animals do. Owner's answers
+   (2026-11-12): wander, idle (look around, sit), turn to look at a nearby player, step aside when bumped — no
+   talking or trading yet; a few near players by a data rule (count, spacing, biomes), simulated only nearby, like
+   the animals; colour variations of the Peasant per NPC (palette remaps, seeded, data). In progress (cloud).
 
 ## Done
 

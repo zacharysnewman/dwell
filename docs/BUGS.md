@@ -6,6 +6,36 @@ pins it.
 
 ## Open
 
+### 78. 26 fps at High on the owner's M1 MacBook Air ("I think cards are killing my m1 mac")
+
+Reported 2026-11-12 (owner): "It seems like we're hiding some performance settings. I don't see 'tree' options in
+our settings for graphics. I think cards are killing my m1 mac too." / "Running 26fps." / "GPU at 31ms". On the
+cards: "I think the internal leaf cards may be sucking up a lot of unneeded power and I think the leaf cards on the
+back sides of trees and farther out trees are rendering which is unnecessary." Target (WORK_QUEUE item 30): High at
+60 fps on an M1 Air.
+
+Measured on this M1 (8-core, 2560×1600 buffer, High = 50 % render scale, `npm run bench -- --warm --unthrottled
+high-forest high-open`, `gpu.frame` mean ms, docs/DEV_TOOLS.md "High on the M1"): the starter's broadleaf spot
+15.5–15.7 ms at High (55 fps unthrottled), open ground 9.2. The leaf cards cost **0.6 ms** there; the cutout meshes
+as a whole (the leaves' cutout cubes, tall grass, flowers, ladders and the cards) **4.5–4.7 ms**, the full-detail
+distance 256 → 128 m 2.4–2.7, sun shadows 1.4–1.7, water Medium → Low 0.8–0.9, bloom 0.4–0.6; shafts, torch
+shadows and clouds ≤ 0.3. This Mac did not reproduce 31 ms at High (the owner's view was likely denser or
+fuller-screen; not known).
+
+Done (this change): leaf cards culled three ways — no cards on a face looking into a cavity inside the crown (a leaf
+cell within `interiorCells` 4 straight out), the vertex shader drops a card whose plane the eye is more than
+`backCullM` 0.5 m behind (the crown's far side) and every card past its fade's end (they were rasterised and
+discarded per pixel), and the fade pulled in to 24–40 m (was 48–64) — card cost 0.62 → 0.29 ms; The starter's mixed forest (`high-mixed`, denser) read **17.05 ms** at High after the culls (cards 0.23, the cutout meshes 4.2), over budget, so **High's full detail went 256 → 192 m** (shared/settings/graphics-presets.json; 256 m and up are Ultra's): **13.88 ms** there (61 fps unthrottled). Leaf cards moved
+to a Graphics → Trees group; an audit test (`client/src/ui/graphicsAudit.test.ts`) fails when a renderer tier
+function has neither a Graphics setting nor a stated reason. Tests: `a_crowns_inner_cavity_draws_no_cards` (red
+with `interiorCells` 0: 36 and 42 cards in the hollow on faces A and B), `a_leaf_cards_packed_normal_is_its_plane_on_both_faces`
+(red on face B without the mirror's re-pack).
+
+Outstanding: a Tall grass setting needs a mesher flag (`ChunkFlags`): the renderer's cutout switch hides the leaves
+and ladders with the grass, so it can't be the setting; distant (LOD) shadows follow Shadows; tall grass density,
+far trees, hit shards and far herds have no tier function yet to put behind a setting; the owner's 31 ms needs his
+view (a dense forest spot) to reproduce.
+
 ### 76. A bigger world's page takes memory that grows with the area (2× +230 MB, 4× +1.07 GB)
 
 Found 2026-11-11 (0.54.59) checking BIG_MAP.md M2b on the M1's warm bench (seed 0, 1280×720, `memory()`

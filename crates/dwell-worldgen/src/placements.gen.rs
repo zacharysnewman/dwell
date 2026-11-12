@@ -3,7 +3,7 @@
 use crate::placements::{Placement, Variant};
 
 /// The structure placements (shared/worldgen/placements.json), in their file order.
-pub static PLACEMENTS: [Placement; 6] = [
+pub static PLACEMENTS: [Placement; 7] = [
     Placement {
         name: "pine_groves",
         structures: &[("dwell:pine_tree", 55), ("dwell:tall_pine_tree", 45)],
@@ -96,6 +96,25 @@ pub static PLACEMENTS: [Placement; 6] = [
         rise_low: 1.0,
         max_gradient_sq: 0.7040882,
         spacing: 2,
+        rotations: &[0, 1, 2, 3],
+        variants: &[],
+    },
+    Placement {
+        name: "old_growth",
+        structures: &[("dwell:old_pine", 65), ("dwell:old_oak", 35)],
+        on: &["dwell:grass"],
+        footprint_on: true,
+        grid: 5,
+        density: 1.0,
+        grove_wavelength: 256,
+        grove_coverage: 1.0,
+        grove_outside: 1.0,
+        min_height: 2,
+        max_height: 1100,
+        rise_full: 2,
+        rise_low: 1.0,
+        max_gradient_sq: 0.7040882,
+        spacing: -2,
         rotations: &[0, 1, 2, 3],
         variants: &[],
     },

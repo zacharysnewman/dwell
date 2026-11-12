@@ -340,6 +340,11 @@ pub fn sky_wgsl_with(moon_ground: &str) -> String {
     // `haze_air`, `haze_veiled`): HAZE_AERIAL false draws the plain fade to the horizon's colour.
     let h = fog::active();
     s.push(format!("const HAZE_AERIAL: bool = {};", h.aerial()));
+    // Leaf cards (leaves.json `cards.backCullM`; the cutout vertex shader's `card_dropped`).
+    s.push(format!(
+        "const CARD_BACK_CULL_M: f32 = {};",
+        f(leaves::LEAVES.cards.back_cull_m)
+    ));
     for (name, v) in [
         ("HAZE_LIFT", h.air_elevation_deg.to_radians().sin()),
         ("HAZE_SUN_TINT", h.sun_tint),

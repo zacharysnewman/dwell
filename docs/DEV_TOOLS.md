@@ -129,14 +129,14 @@ fields, ranges and names fail with the entry named):
 | `lava {op, args?}` | the local server's lava (`__dwell.lava(op, args)`, VOLCANOES.md §6.3), its JSON printed: `report` its fields (face, centre, origin, `molten` columns, deepest m, vents, the world's worldgen, `steamCells` sent so far), `rate` [k] every vent's rate × k (fill a lake in seconds), `vent` [x, y, z, rateM3s, depthM] a lake vent at a world point, `ventNear` [dx, dz, rateM3s, depthM] one off the player's feet; `lava-lake` shoots the starter's summit lake and lava meeting the sea. A scenario's `query` (e.g. `{"worldgen": "test:starter", "seed": "0", "at": "x,y,z"}`) opens a test world at a point for steps of its own |
 | `give {item, count}` | gives the local player `count` of `item` (`__dwell.give`, a local world that uses items, e.g. `?mode=adventure`): `pieces-combine` fills the backpack with pieces to shoot its Combine section |
 | `mark` | forgets the telemetry so far: the next `record` measures from here |
-| `record {name, budget?}` | saves everything above under `name`; a `budget` (`{"<series>.<stat>": max}`, stat `mean`, `p50`, `p95`, `p99` or `max`, e.g. `{"frame.cpu.p95": 18.5}`) fails the scenario when a value is over its maximum or not recorded (`overBudget`). `phone-moving` (walk, sprint, fly 8 s each on an iPhone-sized page; run `--touch --cpu-throttle 4` at Low, BUGS.md #72) bounds `frame.cpu`, `jobs.apply` and `mesh_dirty` while moving |
+| `record {name, budget?, reportOnly?}` | saves everything above under `name`; a `budget` (`{"<series>.<stat>": max}`, stat `mean`, `p50`, `p95`, `p99` or `max`, e.g. `{"frame.cpu.p95": 18.5}`) fails the scenario when a value is over its maximum or not recorded (`overBudget`). `phone-moving` (walk, sprint, fly 8 s each on an iPhone-sized page; run `--touch --cpu-throttle 4` at Low, BUGS.md #72) bounds `frame.cpu`, `jobs.apply` and `mesh_dirty` while moving; with `reportOnly` true a value over it prints `OVER BUDGET (report only)` and the scenario goes on (`forest-perf`, a target not met yet) |
 | `shot {name, at? \| above?, yaw?, pitch?, face?, quietFrames?, maxS?}` | screenshot; with a placement an exact one ([Screenshots of a place](#screenshots-of-a-place)): `at` [x, y, z] the eye, or `above` [x, z, height] the eye `height` m over the ground there along `face`'s up; the camera placed, the view settled, then shot; saved in `report.json`'s `shots` |
 | `spot {spot, name?}` | a placed `shot` of the saved spot `spot` (`bench/spots.json`), named `name` (default the spot's, `:` → `-`) |
 | `traceStart`, `traceStop {name}` | a Chrome performance trace (timeline, GPU, V8, the CPU profiler) and its profile summary |
 | `time {t, moon?}` | shows the time of day `t` (0–1, 0 midnight) and optionally the moon's phase on this client (`?time=`, `?moon=`; DAY_NIGHT.md) |
 | `timelapse {name, frames, from?, to?, waitS?}` | `frames` screenshots `<name>-00.png`… from time of day `from` (0) toward `to` (1), wrapping past midnight, waiting `waitS` (0.3 s) after each |
 | `lod {on}` | draws the distant terrain (LOD) or not, live (`__dwell.setLod`; the sections still stream, so it comes back at once): what the full-detail chunks alone hold. `?lod=off` (or `?lod=0`) runs with no LOD at all |
-| `view {clouds?, speedEffects?, distanceM?, pixelError?, smoke?, flowParticles?, flowRipples?, flowFoam?, waterfalls?}` | sets other settings mid-run, not stored (`__dwell.setView`): the clouds (`off`, `low`, `high`), the speed effects (motion blur and streaks), the full-detail distance (m) and the LOD's pixel error, the blasts' smoke, the water's flecks, flow ripples, flow foam and waterfalls; each one given replaces the menu's value. With `water` and `shadows`, one page can record every feature on and off in turn ([Cost profile](#cost-profile-m1-air)) |
+| `view {clouds?, speedEffects?, distanceM?, pixelError?, smoke?, flowParticles?, flowRipples?, flowFoam?, waterfalls?, shafts?, bloom?, torchShadows?, cards?, grass?, renderScale?}` | sets other settings mid-run, not stored (`__dwell.setView`): the clouds (`off`, `low`, `medium`, `high`), the speed effects (motion blur and streaks), the full-detail distance (m) and the LOD's pixel error, the blasts' smoke, the water's flecks, flow ripples, flow foam and waterfalls, the light shafts, bloom and torch shadows (`off`, `low`, `high`), the leaf cards (true/false: only chunks meshed after it follow, so measure them with a configuration, `cards-off`), every cutout mesh drawn or not (`grass`: plants, ladders and the leaf cards together) and the render scale (0.25–1); each one given replaces the menu's value. With `water` and `shadows`, one page can record every feature on and off in turn ([Cost profile](#cost-profile-m1-air)) |
 | `water {quality?, debug?}` | sets the water quality (`low`, `medium`, `high`) and/or its cost-isolation switches (`?waterdbg=` names, `""` for none) mid-run, through `__dwell.setWater` |
 | `burst {name, frames, clock?, maxFlicker?}` | a still camera's burst: `frames` screenshots `<name>-00.png`… back to back (the HUD hidden) and their **flicker** (`flickerOf`: the share of pixels whose brightness moves more than 3 of 255 from one frame to the next, and the mean move), printed and saved in `report.json`'s `bursts`; over `maxFlicker` (a share) the run fails. With `clock` the time of day runs on from it at the world clock's rate, set every animation frame (the bench's is otherwise held), so the light moves as in play. `shadows-still` reads the shadows' flicker against Off's (DAY_NIGHT.md §10). With `drift {position, yaw, pitch}` (after a `camera` step) the camera moves on by that much each frame (metres and degrees, at most 1 m and 1°): z-fighting shows only while the view moves (it stops with the camera), and a drift of millimetres and thousandths of a degree moves the view under a pixel by a fraction of a pixel, so surfaces swap only where they fight in depth. Such a burst is read by its **hue flips** (`hueFlipsOf`, also in every burst's result: the share of pixels, coloured in both frames, whose hue moves over 40° from one frame to the next — grass becoming dirt); over `maxHueFlips` the run fails. `lod-zfight` holds the LOD's z-fighting under a bar (ARCHITECTURE.md §6.6, "Known bug class") |
 | `clip-strip {name, vertical?, frames?, views?, at?}` | one axe swing frame by frame (see "Clip probe and clip strip" below): the level (or `vertical`) chop held at `frames` (2–24, default 8) clip times from 0 to the clip's end (`__dwell.holdSwing`), each shot from the `views` (`fp` your eyes; `tp-behind`, `tp-side`: a stand-in 4 m ahead of `at` holding your tool, standing still facing +Z, seen from behind-right and from its right side), `<name>-<view>-00.png`…, and a contact sheet `<name>-sheet.png` (a row per view, each frame labelled with its clip time). Hold the axe first (`give`, `pick`) |
@@ -819,6 +819,35 @@ texture, which its compositor then draws), and the native loop spinning a core (
 on a chip whose CPU and GPU share power and memory bandwidth. Whatever native gains, it is not GPU
 time, so the GPU budget is the one to spend work on.
 
+## High on the M1 (BUGS.md #78)
+
+WORK_QUEUE item 30's measurement, 2026-11-12, on this repo's M1 (8-core GPU) on the real GPU: `npm run bench --
+--warm --unthrottled high-forest high-open` (`?preset=high`, a 1280×800 window at pixel ratio 2, so a 2560×1600
+buffer drawn at High's 50 %). Each scenario settles at its spot (the starter's broadleaf forest from 8 m up; its
+beach), then switches one feature off at a time mid-run (`view`, `shadows`, `water` steps), 1.5 s to settle and 4 s
+recorded each. The leaf cards follow their switch only in chunks meshed after it, so their row is a fresh page per
+configuration (`--compare --configs raster,cards-off`). `gpu.frame` mean (ms):
+
+| Record (feature off) | Forest before | Δ | Forest after | Δ | Open ground (before) | Δ |
+| --- | --- | --- | --- | --- | --- | --- |
+| High | 15.63 / 15.73 | | 15.47 | | 9.24 | |
+| Leaf cards off (`?cards=0`, a fresh page) | 15.11 | −0.62 | 15.18 | −0.29 | — | |
+| Shadows Low | 15.43 | −0.20 | 15.23 | −0.24 | 8.91 | −0.33 |
+| Shadows Off | 13.96 | −1.67 | 14.03 | −1.44 | 8.27 | −0.97 |
+| Torch shadows Off | 15.58 | −0.05 | 15.45 | −0.02 | 9.13 | −0.12 |
+| Light shafts Off | 15.78 | +0.15 | 15.50 | +0.03 | 9.13 | −0.12 |
+| Bloom Off | 15.19 | −0.44 | 14.88 | −0.60 | 8.71 | −0.53 |
+| Clouds Off (from Medium) | 15.65 | +0.02 | 15.23 | −0.24 | 8.80 | −0.45 |
+| Water Low | 14.81 | −0.82 | 14.58 | −0.89 | 8.39 | −0.86 |
+| Every cutout mesh off (leaf cubes' cutout, tall grass, flowers, ladders, cards) | 10.90 | −4.73 | 11.00 | −4.47 | 7.68 | −1.56 |
+| Full detail 128 m (from 256) | 12.98 | −2.65 | 13.06 | −2.41 | 7.64 | −1.61 |
+| Render scale 100 % (from 50 %) | 29.93 | +14.30 | 29.58 | +14.11 | 19.92 | +10.67 |
+
+The spot's view holds few trees and much grass (its screenshot), so the cutout row is mostly tall grass. Run-to-run
+spread is ~0.3–0.5 ms. The denser mixed forest (`high-mixed`, after the culls) read 17.05 ms at High (cards 0.23, the cutout meshes 4.2),
+so High's full detail went 256 → 192 m: 13.88 ms there. The largest levers left are the cutout meshes (a Tall grass
+setting needs a mesher flag), the full-detail distance and sun shadows.
+
 ## Cost profile (M1 Air)
 
 The owner's "can you truly benchmark the game to determine our most costly pieces … each feature by CPU and
@@ -1015,6 +1044,35 @@ when still. The blast's cost is the server's (ticks of 4–6.5 ms, a 68 ms worst
 Not covered here: a moving flight (the bench's held key stalled, above), a flood after a breach, the
 first-person arms and the stand-in characters on their own, night (stars, torches). Re-run the same
 scratch scenarios after each fix to read its gain.
+
+## The tree performance reference (`forest-perf`)
+
+**THE place every tree, leaf, card or impostor change is measured** (WORK_QUEUE items 30–32; the owner's
+target: High at 60 fps on an M1 MacBook Air). The world is `test:forest` (`shared/worldgen/worlds/forest.json`):
+gentle land that is the old-growth forest (`preset:old_growth`, ADR 0074) everywhere, ~220 trees a hectare,
+old-growth pines up to 26 m and broadleaf up to 14 m over thick tall grass; fixed by its data and seed 0,
+so before and after compare the same stand. Its spots (`bench/spots.json`):
+
+| Spot | Where |
+| --- | --- |
+| `forest:inside` | standing in the densest stand (49 trees in a 40 m square, at 40, −40), eye at a player's height along the trunks |
+| `forest:edge` | 32 m over the highest ground 440 m south, just over the crowns, looking north across the canopy |
+| `forest:above` | flying 150 m over the stand, looking north and down to the horizon (every LOD tree level) |
+
+The scenario `forest-perf` opens it at `?preset=high` (1280 × 720 by default) and, at each spot, shoots it
+(`inside.png`, `edge.png`, `above.png`), then records 8 s (`inside`, `edge`, `above`): `frame.cpu`,
+`gpu.frame` and every pass. Its budget is a 16.7 ms frame (`frame.cpu.p95`, `gpu.frame.p95`), **report
+only** until item 30 lands: a record over it prints `OVER BUDGET (report only)` and the run goes on; make it
+failing (drop `reportOnly`) once High holds 60 fps there. On the M1 Air, before and after a change:
+
+```
+npm run bench -- --warm forest-perf
+npm run bench -- --warm --compare forest-perf   # a configuration against the baseline, side by side
+```
+
+Cloud sessions have no GPU: there it is not run; `cargo test --release -p dwell-worldgen --test forest_world`
+checks the world (every column old-growth, the density in range on both faces, deterministic), and its
+ignored `spots` test prints the places the spots stand at.
 
 ## Render scale and upscaling
 

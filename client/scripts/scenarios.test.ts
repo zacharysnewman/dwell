@@ -32,7 +32,8 @@ describe('scenarios', () => {
     ) as unknown;
     const without = parseScenarios(json)
       .filter((s) => s.steps.some((x) => x.do === 'record'))
-      .filter((s) => !s.steps.some((x) => x.do === 'shot'))
+      // A spot step is a placed shot (`<name>.png`, compared like a shot).
+      .filter((s) => !s.steps.some((x) => x.do === 'shot' || x.do === 'spot'))
       .map((s) => s.name);
     expect(without).toEqual([]);
   });
@@ -562,6 +563,36 @@ describe('record budgets', () => {
     const s = all.find((x) => x.name === 'phone-moving');
     const budgets = s?.steps.filter((x) => x.do === 'record' && x.budget !== undefined) ?? [];
     expect(budgets.length).toBe(3);
+  });
+
+  it('a report-only budget parses, and needs a budget (WORK_QUEUE item 32)', () => {
+    const step = (o: Record<string, unknown>) =>
+      parseScenarios({ scenarios: [{ name: 's', steps: [{ do: 'record', name: 'r', ...o }] }] })[0]
+        .steps[0];
+    expect(step({ budget: { 'gpu.frame.p95': 16.7 }, reportOnly: true })).toEqual({
+      do: 'record',
+      name: 'r',
+      budget: { 'gpu.frame.p95': 16.7 },
+      reportOnly: true,
+    });
+    expect(() => step({ reportOnly: true })).toThrow(/reports only against a budget/);
+    expect(() => step({ budget: { 'gpu.frame.p95': 1 }, reportOnly: 1 })).toThrow(/expected true/);
+  });
+
+  it('forest-perf records the three forest spots at High against a report-only 16.7 ms frame', () => {
+    const all = parseScenarios(JSON.parse(readFileSync('bench/scenarios.json', 'utf8')));
+    const s = all.find((x) => x.name === 'forest-perf');
+    expect(s?.query).toMatchObject({ worldgen: 'test:forest', preset: 'high' });
+    const spots = s?.steps.filter((x) => x.do === 'spot').map((x) => x.spot);
+    expect(spots).toEqual(['forest:inside', 'forest:edge', 'forest:above']);
+    const records = s?.steps.filter((x) => x.do === 'record') ?? [];
+    expect(records.map((r) => r.name)).toEqual(['inside', 'edge', 'above']);
+    for (const r of records) {
+      expect(r).toMatchObject({
+        reportOnly: true,
+        budget: { 'frame.cpu.p95': 16.7, 'gpu.frame.p95': 16.7 },
+      });
+    }
   });
 });
 

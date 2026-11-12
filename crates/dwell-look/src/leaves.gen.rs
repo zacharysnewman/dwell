@@ -12,8 +12,10 @@ pub const LEAVES: LeavesLook = LeavesLook {
         density: 0.55,
         size_m: 0.95,
         sway_m: 0.04,
-        fade_start_m: 48.0,
-        fade_end_m: 64.0,
+        fade_start_m: 24.0,
+        fade_end_m: 40.0,
+        interior_cells: 4,
+        back_cull_m: 0.5,
         tiers: CardTiers {
             desktop: true,
             phone: false,

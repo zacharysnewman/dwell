@@ -263,7 +263,7 @@ test('a bad placement fails with its name and the problem', () => {
     [(p) => (p.height = [500, 400]), /height must be \[min, max\]/],
     [(p) => (p.rise.full = 1900), /rise\.full must be a whole number of metres in \(height\[0\], height\[1\]\]/],
     [(p) => (p.maxSlopeDeg = 90), /maxSlopeDeg must be in \(0, 90\) degrees/],
-    [(p) => (p.spacing = -1), /spacing must be a whole number of blocks/],
+    [(p) => (p.spacing = -5), /spacing must be a whole number of blocks/],
     [(p) => (p.rotate = [0, 45]), /rotate must be distinct angles from 0, 90, 180, 270/],
     [(p) => (p.mirror = ['x']), /pine_groves: unknown mirror/],
     [(p) => (p.variants[0].replace = { 'dwell:leaves': 'dwell:moss' }), /variant snowy: replace names unknown block dwell:moss/],
