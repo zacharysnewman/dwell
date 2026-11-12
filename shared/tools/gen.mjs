@@ -316,8 +316,9 @@ export function validateDurability(d, items, soundEvents) {
  * (null: it can't be broken so), and per tool class (`breaking.classes`' keys) or item its hits, an
  * item's over its class's. A block without `damage` breaks in one hit, as before. */
 const LOOKS = ['shards', 'scoops', 'chips'];
-/** A carved mark's height field (BLOCK_DAMAGE.md §6.2): a smooth bowl, or angular facets. */
-const PROFILES = ['bowl', 'facets'];
+/** A carved mark's height field (BLOCK_DAMAGE.md §6.2): a smooth bowl, angular facets, or spalled
+ * flakes (stone: flat, shallow, elongated chip-outs, WORK_QUEUE item 18). */
+const PROFILES = ['bowl', 'facets', 'spall'];
 
 /** A damage look's `cracks` against the crack tile sets (shared/textures/cracks.json): resolved to its tiles. */
 export function validateCracksLook(c, at, crackSets) {
@@ -361,12 +362,13 @@ export function validateDamage(blocks, items, breaking, crackSets = loadCracks()
     // height field, `facets` (optional, 3–8; default 5) a shard's facets round its apex, `grid`
     // (optional, 2–16; default 8) the dent's grid per side, `triangles` (optional, 128–2048; default
     // 256) the cell's triangle budget (its struck faces share it; the grid is coarsened to fit; 128
-    // fits four struck faces at the coarsest grid).
+    // fits four struck faces at the coarsest grid). A spall profile's `flakes` (optional, 1–4; default
+    // 2) the flat chip-outs each hit spalls off, each smaller and deeper inside the last (a stepped scar).
     let look = null;
     if (d.look !== undefined) {
       const lat = `${at}.look`;
       if (d.look === null || typeof d.look !== 'object' || Array.isArray(d.look)) fail(`${lat} must be an object`);
-      known(d.look, ['kind', 'size', 'color', 'crack', 'depth', 'rim', 'parallax', 'darken', 'profile', 'facets', 'grid', 'triangles', 'cracks'], lat);
+      known(d.look, ['kind', 'size', 'color', 'crack', 'depth', 'rim', 'parallax', 'darken', 'profile', 'facets', 'flakes', 'grid', 'triangles', 'cracks'], lat);
       if (!LOOKS.includes(d.look.kind)) fail(`${lat}.kind must be one of ${LOOKS.join(', ')}`);
       if (!(num(d.look.size) && d.look.size >= 0.05 && d.look.size <= 0.9)) fail(`${lat}.size must be a number in [0.05, 0.9]`);
       for (const c of ['color', 'crack']) if (!/^#[0-9a-f]{6}$/i.test(d.look[c] ?? '')) fail(`${lat}.${c} must be a #rrggbb colour`);
@@ -379,6 +381,7 @@ export function validateDamage(blocks, items, breaking, crackSets = loadCracks()
         if (d.look[k] !== undefined && !(Number.isInteger(d.look[k]) && d.look[k] >= lo && d.look[k] <= hi)) fail(`${lat}.${k} must be a whole number from ${lo} to ${hi}`);
       };
       whole('facets', 3, 8);
+      whole('flakes', 1, 4);
       whole('grid', 2, 16);
       whole('triangles', 128, 2048);
       // The crack overlay (BLOCK_DAMAGE.md §6.3, WORK_QUEUE item 18): `cracks` (optional) `set` a
@@ -394,6 +397,7 @@ export function validateDamage(blocks, items, breaking, crackSets = loadCracks()
         darken: d.look.darken ?? 0.35,
         profile: d.look.profile ?? (d.look.kind === 'scoops' ? 'bowl' : 'facets'),
         facets: d.look.facets ?? 5,
+        flakes: d.look.flakes ?? 2,
         grid: d.look.grid ?? 8,
         triangles: d.look.triangles ?? 256,
       };
@@ -534,7 +538,7 @@ export function toolsRust(d) {
   rs.push('');
   rs.push("/// Each block's hits to destroy (its `damage`): by bare hands, and by tool class or item.");
   rs.push('pub static BLOCK_DAMAGE: &[BlockDamageDef] = &[');
-  for (const b of d.damage) rs.push(`    BlockDamageDef { block: "${b.block}", default: ${b.default === null ? 'None' : `Some(${b.default})`}, tools: &[${b.tools.map((t) => `("${t.tool}", ${t.hits})`).join(', ')}], look: ${b.look === null ? 'None' : `Some(DamageLook { kind: DamageLookKind::${b.look.kind[0].toUpperCase() + b.look.kind.slice(1)}, size: ${f64(b.look.size)}, color: [${rgb(b.look.color).join(', ')}], crack: [${rgb(b.look.crack).join(', ')}], depth: ${f64(b.look.depth)}, rim: ${f64(b.look.rim)}, parallax: ${b.look.parallax}, darken: ${f64(b.look.darken)}, profile: CarveProfile::${b.look.profile[0].toUpperCase() + b.look.profile.slice(1)}, facets: ${b.look.facets}, grid: ${b.look.grid}, triangles: ${b.look.triangles}, cracks: ${b.look.cracks === null ? 'None' : `Some(Cracks { tiles: &[${b.look.cracks.tiles.map((t) => `"${t}"`).join(', ')}], stages: &[${b.look.cracks.stages.map(f64).join(', ')}], strength: ${f64(b.look.cracks.strength)}, span: ${f64(b.look.cracks.span)} })`} })`}, chips: ${b.chips === null ? 'None' : `Some(Chips { count: ${b.chips.count}, color: [${rgb(b.chips.color).join(', ')}], speed: ${f64(b.chips.speed)}, size: ${f64(b.chips.size)} })`} },`);
+  for (const b of d.damage) rs.push(`    BlockDamageDef { block: "${b.block}", default: ${b.default === null ? 'None' : `Some(${b.default})`}, tools: &[${b.tools.map((t) => `("${t.tool}", ${t.hits})`).join(', ')}], look: ${b.look === null ? 'None' : `Some(DamageLook { kind: DamageLookKind::${b.look.kind[0].toUpperCase() + b.look.kind.slice(1)}, size: ${f64(b.look.size)}, color: [${rgb(b.look.color).join(', ')}], crack: [${rgb(b.look.crack).join(', ')}], depth: ${f64(b.look.depth)}, rim: ${f64(b.look.rim)}, parallax: ${b.look.parallax}, darken: ${f64(b.look.darken)}, profile: CarveProfile::${b.look.profile[0].toUpperCase() + b.look.profile.slice(1)}, facets: ${b.look.facets}, flakes: ${b.look.flakes}, grid: ${b.look.grid}, triangles: ${b.look.triangles}, cracks: ${b.look.cracks === null ? 'None' : `Some(Cracks { tiles: &[${b.look.cracks.tiles.map((t) => `"${t}"`).join(', ')}], stages: &[${b.look.cracks.stages.map(f64).join(', ')}], strength: ${f64(b.look.cracks.strength)}, span: ${f64(b.look.cracks.span)} })`} })`}, chips: ${b.chips === null ? 'None' : `Some(Chips { count: ${b.chips.count}, color: [${rgb(b.chips.color).join(', ')}], speed: ${f64(b.chips.speed)}, size: ${f64(b.chips.size)} })`} },`);
   rs.push('];');
   rs.push('');
   rs.push('/// Tools that wear (`durability.items`): (item, hits it survives).');

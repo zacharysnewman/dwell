@@ -11,7 +11,7 @@ use super::{MeshArrays, N, relief, vertex_rgb};
 use crate::textures::TileRect;
 use dwell_protocol::damage::{CarveProfile, DamageLook, DamageView, HitMark};
 use dwell_world::CELL_H;
-use relief::{Carve, Dent, Facets, Shard};
+use relief::{Carve, Dent, Facets, Flake, Shard, Spall};
 
 /// A damaged cell turned face-local: a face-B chunk is meshed with its rows turned over, so the
 /// cell's row, its marks' up and down faces and their points' heights turn over too.
@@ -104,7 +104,108 @@ pub(crate) fn carve_of(face: usize, marks: &[&HitMark], look: &DamageLook, fract
             lo,
             hi,
         }),
+        CarveProfile::Spall => Carve::Spall(Spall {
+            flakes: marks
+                .iter()
+                .enumerate()
+                .take(4)
+                .flat_map(|(i, m)| {
+                    flakes(m, i, look.flakes.max(1), radius, depth, centre(m, radius))
+                })
+                .collect(),
+            lo,
+            hi,
+            fresh: 1.0,
+        }),
     }
+}
+
+/// A mark's stable jitter in [0, 1) by its point and order, so a remesh carves it the same.
+fn jitter_of(m: &HitMark, index: usize) -> impl Fn(u32) -> f64 {
+    let seed = (u32::from(m.point[0]).wrapping_mul(73_856_093))
+        ^ (u32::from(m.point[1]).wrapping_mul(19_349_663))
+        ^ (u32::from(m.point[2]).wrapping_mul(83_492_791))
+        ^ (index as u32).wrapping_mul(2_654_435_761);
+    move |k: u32| {
+        let h = (seed ^ k.wrapping_mul(0x9E37_79B9)).wrapping_mul(0x85EB_CA6B);
+        let h = (h ^ (h >> 13)).wrapping_mul(0xC2B2_AE35);
+        f64::from(h >> 8) / f64::from(1u32 << 24)
+    }
+}
+
+/// The convex hull of `pts`, counter-clockwise (Andrew's monotone chain).
+fn hull(mut pts: Vec<[f64; 2]>) -> Vec<[f64; 2]> {
+    pts.sort_by(|a, b| a[0].total_cmp(&b[0]).then(a[1].total_cmp(&b[1])));
+    let cross = |o: [f64; 2], a: [f64; 2], b: [f64; 2]| {
+        (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
+    };
+    let mut out: Vec<[f64; 2]> = Vec::new();
+    for pass in 0..2 {
+        let start = out.len();
+        let it: Box<dyn Iterator<Item = &[f64; 2]>> = if pass == 0 {
+            Box::new(pts.iter())
+        } else {
+            Box::new(pts.iter().rev())
+        };
+        for &p in it {
+            while out.len() >= start + 2
+                && cross(out[out.len() - 2], out[out.len() - 1], p) <= 1e-12
+            {
+                out.pop();
+            }
+            out.push(p);
+        }
+        out.pop();
+    }
+    out
+}
+
+/// A hit's spalled flakes round its strike `c` (face metres; WORK_QUEUE item 18): `count` flat
+/// scars, the first the widest and shallowest, each next smaller, turned a little and deeper (a
+/// stepped scar), all elongated about 3:1 along a direction of the hit's own and running out from
+/// the strike (deepest there, feathering toward the far end).
+fn flakes(m: &HitMark, index: usize, count: u32, r: f64, depth: f64, c: [f64; 2]) -> Vec<Flake> {
+    let jitter = jitter_of(m, index);
+    let dir = jitter(99) * std::f64::consts::TAU;
+    (0..count)
+        .map(|k| {
+            let kf = f64::from(k);
+            let scale = 0.7f64.powi(k as i32);
+            let th = dir
+                + if k == 0 {
+                    0.0
+                } else {
+                    (jitter(40 + k) - 0.5) * 0.7
+                };
+            let (s, co) = th.sin_cos();
+            let a = r * scale * (0.85 + 0.15 * jitter(10 + k));
+            let b = a / 2.8;
+            // The flake's middle lies out from the strike along its length.
+            let mid = [c[0] + co * 0.45 * a, c[1] + s * 0.45 * a];
+            let corners = hull(
+                (0..7u32)
+                    .map(|j| {
+                        let t = f64::from(j) * std::f64::consts::TAU / 7.0
+                            + (jitter(100 + 10 * k + j) - 0.5) * 0.5;
+                        let rr = 0.8 + 0.2 * jitter(200 + 10 * k + j);
+                        let (lx, ly) = (a * rr * t.cos(), b * rr * t.sin());
+                        [mid[0] + lx * co - ly * s, mid[1] + lx * s + ly * co]
+                    })
+                    .collect(),
+            );
+            // Deep at the strike, shallower toward the far end (1.45 a out).
+            let near = depth * (0.55 + 0.45 * kf / f64::from(count.max(2) - 1)).min(1.0);
+            let far = near * 0.3;
+            let g = (near - far) / (1.45 * a);
+            Flake {
+                corners,
+                origin: c,
+                depth: near,
+                grad: [-co * g, -s * g],
+                bevel: 0.004,
+            }
+        })
+        .collect()
 }
 
 /// A shard round `c` (face metres): `facets` uneven corners and an off-centre apex, jittered
@@ -294,6 +395,10 @@ pub(crate) fn carve_face(
     let height = |q: [f64; 2]| carve.map_or(0.0, |c| c.height(q));
     let plane = f64::from(sf.cell[axis]) + if sign > 0.0 { 1.0 } else { 0.0 };
     let deepest = carve.map_or(1.0, Carve::depth).max(1e-6);
+    // A spall's scar is fresh rock: lifted toward the look's `color`, barely occluded.
+    let fresh = carve.map_or(0.0, Carve::fresh);
+    let lift = look.color.map(|c| 1.4 * f64::from(c) / 255.0);
+    let occlude = if fresh > 0.0 { 0.15 } else { 0.4 };
     // The crack overlay's packed bytes at a point of the face (face metres); before this face's
     // vertices, the stream is filled with "none" for the mesh's earlier ones.
     if crack.is_some() {
@@ -395,14 +500,24 @@ pub(crate) fn carve_face(
     };
     let vertex = |m: &mut MeshArrays, g: &Pt, n: [f64; 3]| {
         let rgb = vertex_rgb(sf.color, dwell_look::normal_tint(n[0], n[1], n[2]));
-        let dim = 1.0 - look.darken * g.s;
+        let t = fresh * (g.s * 4.0).min(1.0);
+        let dim = if fresh > 0.0 {
+            1.0
+        } else {
+            1.0 - look.darken * g.s
+        };
         m.positions.extend(g.p.map(|x| x as f32));
         m.normals.extend(n.map(|x| x as f32));
-        m.colors.extend(rgb.map(|c| (c * dim) as f32));
+        let mut k = 0;
+        m.colors.extend(rgb.map(|c| {
+            let l = 1.0 + t * (lift[k] - 1.0);
+            k += 1;
+            (c * dim * l) as f32
+        }));
         m.uvs.extend(uv(g.p));
         m.tiles.extend(tile);
         // The floor of the dent is occluded by its walls.
-        m.light.push(g.light * (1.0 - 0.4 * g.s as f32));
+        m.light.push(g.light * (1.0 - occlude * g.s as f32));
         m.flood.extend(g.flood);
         if let Some(c) = g.crack {
             m.cracks.push(c);
@@ -762,6 +877,7 @@ mod tests {
             darken: 0.2,
             profile: CarveProfile::Facets,
             facets: 7,
+            flakes: 2,
             grid: 12,
             triangles: 400,
             cracks: None,
@@ -811,27 +927,187 @@ mod tests {
         assert_eq!(look_of("dwell:dirt").unwrap().profile, CarveProfile::Bowl);
         assert_eq!(look_of("dwell:sand").unwrap().profile, CarveProfile::Bowl);
         assert_eq!(look_of("dwell:stone").unwrap().kind, DamageLookKind::Shards);
-        assert_eq!(
-            look_of("dwell:stone").unwrap().profile,
-            CarveProfile::Facets
-        );
+        assert_eq!(look_of("dwell:stone").unwrap().profile, CarveProfile::Spall);
         assert_eq!(look_of("dwell:leaves"), None);
     }
 
-    /// Stone's shard reads from standing height (browser check, 2026-11-11): at 0.34 m across,
-    /// 0.10 m deep and a 0.12 darker floor, three pickaxe hits were invisible on the top face from
-    /// 2 m; the carve is the stone look's `size`, `depth` and `darken` (`shared/blocks/dwell.json`).
+    /// Stone shatters, it doesn't dent (owner, 2026-11-12: "The stone hits should be elongated low
+    /// poly shards stone doesn't dent, it shatters"): every stone look spalls (flat, shallow
+    /// chip-outs a few cm deep), its scar lifted lighter, not a dark pit (`darken` unread).
     #[test]
-    fn a_stone_shard_is_big_and_dark_enough_to_read_from_standing_height() {
+    fn stone_spalls_shallow_and_light_not_a_dark_pit() {
         // both-faces: data only, no up.
-        let carve = |b: &str| {
+        for b in [
+            "dwell:stone",
+            "dwell:basalt",
+            "dwell:red_sandstone",
+            "dwell:obsidian",
+        ] {
             let l = look_of(b).unwrap();
-            (l.size, l.depth, l.darken)
+            assert_eq!(l.profile, CarveProfile::Spall, "{b}");
+            assert!(l.depth <= 0.1, "{b}: a scar {} m deep", l.depth);
+            assert!(l.flakes >= 2, "{b}: stepped");
+        }
+        let look = look_of("dwell:stone").unwrap();
+        let mark = HitMark {
+            face: 2,
+            point: [128, 255, 128],
         };
-        let (size, depth, darken) = carve("dwell:stone");
-        assert!(size >= 0.4, "a shard {size} m across");
-        assert!(depth >= 0.15, "a shard {depth} m deep");
-        assert!(darken >= 0.35, "its floor {darken} darker");
+        let carve = carve_of(2, &[&mark], &look, 1.0);
+        let sf = StruckFace {
+            cell: [0, 0, 0],
+            face: 2,
+            color: 0x808080,
+            tile: crate::textures::tile_rect("plain"),
+            light: [1.0; 4],
+            flood: [[1.0, 0.0]; 4],
+        };
+        let mut m = MeshArrays::default();
+        carve_face(&mut m, &sf, Some(&carve), &look, grid_for(&look, 1), None);
+        // The deepest vertex's colour is lighter than the face's, its light barely occluded.
+        let (mut low, mut at) = (f32::MAX, 0);
+        for (i, p) in m.positions.chunks_exact(3).enumerate() {
+            if p[1] < low {
+                (low, at) = (p[1], i);
+            }
+        }
+        let flat = m
+            .positions
+            .chunks_exact(3)
+            .position(|p| (p[1] - 1.0).abs() < 1e-6)
+            .unwrap();
+        let lum = |i: usize| m.colors[i * 3..i * 3 + 3].iter().sum::<f32>();
+        assert!(low < 1.0 - 0.01, "carved: {low}");
+        assert!(
+            lum(at) > lum(flat) * 1.05,
+            "fresh rock lighter: {} vs {}",
+            lum(at),
+            lum(flat)
+        );
+        assert!(m.light[at] > 0.85, "not a dark pit: {}", m.light[at]);
+    }
+
+    /// A spall is flat chip-outs (planar facets like conchoidal fractures): inside each flake past
+    /// its bevel the field is one plane; the flakes are elongated (~3:1), convex and inside the
+    /// cell; more hits add flakes that merge; by data alone for a fixture material.
+    #[test]
+    fn a_fixture_material_by_data_alone_spalls_into_flat_elongated_flakes() {
+        // both-faces: one face-local face's field, no up.
+        let look = DamageLook {
+            kind: DamageLookKind::Shards,
+            size: 0.4,
+            color: [230, 220, 200],
+            crack: [80, 60, 40],
+            depth: 0.06,
+            rim: 0.0,
+            parallax: 0,
+            darken: 0.0,
+            profile: CarveProfile::Spall,
+            facets: 5,
+            flakes: 3,
+            grid: 12,
+            triangles: 512,
+            cracks: None,
+        };
+        let marks = [
+            HitMark {
+                face: 2,
+                point: [128, 255, 128],
+            },
+            HitMark {
+                face: 2,
+                point: [150, 255, 100],
+            },
+        ];
+        let one = carve_of(2, &[&marks[0]], &look, 0.3);
+        let Carve::Spall(sp) = &one else {
+            panic!("a spall by its data");
+        };
+        assert_eq!(sp.flakes.len(), 3, "three flakes by its data");
+        for fl in &sp.flakes {
+            // Convex, counter-clockwise.
+            let n = fl.corners.len();
+            assert!(n >= 4, "{n} corners");
+            for k in 0..n {
+                let (a, b, c) = (
+                    fl.corners[k],
+                    fl.corners[(k + 1) % n],
+                    fl.corners[(k + 2) % n],
+                );
+                let cr = (b[0] - a[0]) * (c[1] - b[1]) - (b[1] - a[1]) * (c[0] - b[0]);
+                assert!(cr > 0.0, "convex");
+            }
+            // Elongated: its length over its width, through its own axes.
+            let (mut len, mut wide): (f64, f64) = (0.0, f64::MAX);
+            for th in 0..90 {
+                let t = f64::from(th) * std::f64::consts::PI / 90.0;
+                let (lo, hi) = fl.corners.iter().fold((f64::MAX, f64::MIN), |(lo, hi), c| {
+                    let d = c[0] * t.cos() + c[1] * t.sin();
+                    (lo.min(d), hi.max(d))
+                });
+                len = len.max(hi - lo);
+                wide = wide.min(hi - lo);
+            }
+            assert!(len >= 2.2 * wide, "elongated: {len} by {wide}");
+            // Planar: inside past the bevel, the height is the floor's plane exactly.
+            let pts: Vec<[f64; 2]> = (0..14_400)
+                .map(|i| {
+                    let (a, b) = (f64::from(i % 120) / 120.0, f64::from(i / 120) / 120.0);
+                    [0.2 + 0.6 * a, 0.2 + 0.6 * b]
+                })
+                .filter(|&q| fl.inside(q) > fl.bevel && fl.floor(q) > 0.0)
+                .collect();
+            assert!(pts.len() >= 3, "a floor");
+            for q in &pts {
+                let h = fl.height(*q);
+                let plane = -(fl.depth
+                    + fl.grad[0] * (q[0] - fl.origin[0])
+                    + fl.grad[1] * (q[1] - fl.origin[1]));
+                assert!((h - plane).abs() < 1e-12, "one plane: {h} vs {plane}");
+                assert!(-h <= look.depth + 1e-9, "a few cm deep");
+            }
+        }
+        // The floors step: the next flake is deeper at the strike.
+        assert!(sp.flakes[1].depth > sp.flakes[0].depth, "stepped");
+        // A second hit adds its flakes; where they overlap the deepest wins (merged).
+        let two = carve_of(2, &[&marks[0], &marks[1]], &look, 0.6);
+        let Carve::Spall(sp2) = &two else { panic!() };
+        assert_eq!(sp2.flakes.len(), 6);
+        // Meshed (one flake a hit, the grid coarse beside the stepped ones): flat-lit, one floor.
+        let sf = StruckFace {
+            cell: [0, 0, 0],
+            face: 2,
+            color: 0xffffff,
+            tile: crate::textures::tile_rect("plain"),
+            light: [1.0; 4],
+            flood: [[1.0, 0.0]; 4],
+        };
+        let mut m = MeshArrays::default();
+        let mut l1 = look;
+        l1.flakes = 1;
+        let tris = carve_face(
+            &mut m,
+            &sf,
+            Some(&carve_of(2, &[&marks[0]], &l1, 1.0)),
+            &look,
+            grid_for(&look, 1),
+            None,
+        );
+        assert!(tris <= look.triangles as usize);
+        for t in m.normals.chunks_exact(9) {
+            assert!(t[0..3] == t[3..6] && t[3..6] == t[6..9], "lit flat");
+        }
+        // Many triangles share one floor normal: the flat scars, not a pit's spikes.
+        let mut normals: HashMap<Vec<i32>, usize> = HashMap::new();
+        for t in m.normals.chunks_exact(9) {
+            if t[1] < 0.99999 {
+                *normals
+                    .entry(t[0..3].iter().map(|x| (x * 1e4).round() as i32).collect())
+                    .or_insert(0) += 1;
+            }
+        }
+        let biggest = normals.values().copied().max().unwrap_or(0);
+        assert!(biggest >= 4, "a flat scar of several triangles: {biggest}");
     }
 
     /// The crack stage (BLOCK_DAMAGE.md §6.3) is the last whose start the damage has reached:

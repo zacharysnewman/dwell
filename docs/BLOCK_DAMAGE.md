@@ -298,6 +298,40 @@ damage." Built, in addition to the carve (not instead of it):
   the wasm32 clippy and the Vitest files were not run here (no wasm target or `node_modules` in the
   container). The wood set waits for a wood block with a `damage.look`.
 
+### 6.4 Stone shatters, it doesn't dent (WORK_QUEUE item 18)
+
+Owner, 2026-11-12: **"The stone hits should be elongated low poly shards stone doesn't dent, it
+shatters."** The browser pass of §6.2 had found stone's `facets` (an apex pit) reading as near-black
+spiky wedges.
+
+- **Spall** (`damage.look.profile: "spall"`, now every stone look's; `facets` stays in the vocabulary):
+  each hit chips the face with `flakes` (data, 1–4; stone 2) flat chip-outs (`relief::Flake`): a convex,
+  elongated (~2.8:1) polygon turned along a direction of the hit's own, its floor one tilted plane
+  (deepest at the strike, `depth` × 0.55–1, feathering to 30 % at the far end, like a conchoidal scar),
+  its wall a 4 mm bevel inside its edge (on the mesh grid the wall is the straddling triangles: a
+  sharp-edged step). Each next flake is smaller (0.7×), turned a little and deeper: a stepped scar. More
+  hits add flakes; where they overlap the deepest wins (merged scars). The field is 0 at the cell's edge
+  (§6.2's fade), so the face stays watertight. Lit flat per triangle, and the scar is fresh rock: the
+  vertex colour lifted toward the look's `color` (× 1.4 × colour, by depth share), occluded 0.15 by depth
+  instead of 0.4, `darken` unread. Stone's data: `depth` 0.06 (a few cm), `darken` 0, `grid` 12,
+  `triangles` 512 (one struck face 392 triangles; four still fit at the coarser grid `grid_for` picks).
+- **Pieces:** the rock shard's `shard` look is now an elongated low-poly shard: a triangular waist and
+  two off-axis tips, 6 flat triangles, closed all round (it tumbles in the air as every loose item
+  does), size 0.18 × 0.045 × 0.06 m (~3:1). One shard a hit stays the picked-up drop (the drop rules
+  are unchanged); the hit's `chips` (data `count`, stone 7) are the extra visual-only fragments, the
+  billboard splinters of the chips pass, not 3D.
+- **Tests:** `dwell-mesh` `damage_mesh`: `a_fixture_material_by_data_alone_spalls_into_flat_elongated_flakes`
+  (convex, ≥ 2.2:1, one plane past the bevel, a few cm deep, stepped, merged, flat-lit, a floor of many
+  coplanar triangles, the budget), `stone_spalls_shallow_and_light_not_a_dark_pit` (every stone look
+  spalls; the scar lighter than the face, barely occluded; red on the old data), the watertight/outline,
+  inside-the-cell and budget tests now run on stone's spall (both faces); `ground_mesh`
+  `the_rock_shard_is_an_elongated_low_poly_shard` (6–10 triangles, ≥ 2.5:1, closed; red on the old
+  size); `shared/tools/gen.test.mjs` (a fixture's spall and flakes by data alone, a bad count fails).
+- **Not done:** the browser shots (1/3/5 hits close and from standing height, the burst) were not taken
+  within the session's time box; the look in game is for the owner's review (bench `damage-dents`).
+  Known limit: at grid 12 the stepped inner flakes (a few cm wide) are only a few grid cells, so their
+  walls follow the grid; the first flake of each hit is the one that reads.
+
 ## 7. Pieces (0.52.46)
 
 - **Pieces** (owner, 2026-11-11: "8 Rock shards make a rock slab, 8 dirt clumps make a dirt slab, 8 wood
