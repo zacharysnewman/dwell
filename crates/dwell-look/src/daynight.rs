@@ -67,6 +67,23 @@ pub struct MoonLook {
     pub new_moon_light: f64,
     /// The sky moon's baked normals' slopes × this (render/moon.rs).
     pub relief: f64,
+    /// The celestial model's share of the moonlight on a moonless night (`crate::celestial`; M-2
+    /// draws with it in place of `new_moon_light`).
+    pub night_floor: f64,
+}
+
+/// The moon's orbit (`crate::celestial`, docs/proposals/MOON_WORLD.md §6); its month is
+/// [`MoonLook::cycle_days`].
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct MoonOrbit {
+    /// The orbit's tilt to the sun's path.
+    pub inclination_deg: f64,
+    /// The ascending node's angle along the sun's path from the sun, at day 0.
+    pub node_deg: f64,
+    /// Days for the node to turn once against the sun (0: never).
+    pub node_turn_days: f64,
+    /// From the home disc's centre to the moon's (m).
+    pub distance_m: f64,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -134,6 +151,7 @@ pub struct DayNight {
     pub sun_path: SunPath,
     pub sun: SunLook,
     pub moon: MoonLook,
+    pub moon_orbit: MoonOrbit,
     pub stars: StarLook,
     pub sky: SkyShape,
     pub eye: EyeLook,
@@ -428,16 +446,21 @@ impl DayNight {
         let days = day as f64 + time_of_day;
         let solar_deg = self.solar_deg(time_of_day);
         let sun = self.sun_direction(solar_deg);
-        let moon_phase = moon.map_or_else(|| self.moon_phase(days), |m| m.rem_euclid(1.0));
+        // The moon from the celestial model (MOON_WORLD.md §6, M-4), seen from the home disc's
+        // centre at the moment the (possibly overridden) time of day names; a `moon` override
+        // starts the month so that moment has that phase.
+        let world_t = (days - self.clock.start_hour / 24.0) * self.day_length_s();
+        let start = moon.map(|m| m - days / self.moon.cycle_days);
+        let view = crate::celestial::Celestial::new(*self, start).view(world_t, [0.0; 3]);
         DayState {
             time_of_day,
             day,
             solar_deg,
             sun,
-            moon: sun.map(|c| -c),
+            moon: view.direction,
             axis: self.sky_axis(),
-            moon_phase,
-            moon_lit: Self::moon_lit(moon_phase),
+            moon_phase: view.phase,
+            moon_lit: view.lit,
             a: self.sample(solar_deg),
             b: self.sample(solar_deg + 180.0),
         }
@@ -529,8 +552,10 @@ impl DayState {
         let v = self.of(face);
         let o = self.of(face.other());
         let saturation = self.viewer(adapted_a).saturation;
+        // The celestial model's moonlight (M-4): the night floor plus the rest by the lit share
+        // (each face's own horizon weighs it in the shaders, `own`).
         let moon_light =
-            DAY_NIGHT.moon.new_moon_light + (1.0 - DAY_NIGHT.moon.new_moon_light) * self.moon_lit;
+            DAY_NIGHT.moon.night_floor + (1.0 - DAY_NIGHT.moon.night_floor) * self.moon_lit;
         let mut u = [0.0f32; DAY_SKY_FLOATS];
         let mut i = 0;
         let mut put = |v: [f64; 4]| {
@@ -551,7 +576,7 @@ impl DayState {
         put(with(v.sky_horizon, saturation));
         put(with(v.glow, v.glow_strength));
         put(with(v.band, v.band_strength));
-        put(with(v.sun_disc, v.moon_glow * self.moon_lit.max(0.25)));
+        put(with(v.sun_disc, v.moon_glow * self.moon_lit));
         put([
             v.stars,
             seconds.rem_euclid(3600.0),
@@ -570,7 +595,7 @@ impl DayState {
         put(with(o.sky_horizon, o.saturation));
         put(with(o.glow, o.glow_strength));
         put(with(o.band, o.band_strength));
-        put(with(o.sun_disc, o.moon_glow * self.moon_lit.max(0.25)));
+        put(with(o.sun_disc, o.moon_glow * self.moon_lit));
         put([o.stars, fog_density(o), 0.0, 0.0]);
         u
     }
@@ -825,11 +850,17 @@ mod tests {
             D.sun_path.rise_yaw_deg,
             1e-9,
         );
-        // The sun is up in the morning; the moon is opposite.
-        let morning = D.state(0.0, Some(0.3), None);
+        // The sun is up in the morning; the moon is where the celestial model puts it (M-2), at
+        // full (the override) about opposite the sun, off it by at most the orbit's tilt.
+        let morning = D.state(0.0, Some(0.3), Some(0.5));
         assert!(morning.sun[1] > 0.3);
+        let opposite: f64 = (0..3).map(|i| -morning.moon[i] * morning.sun[i]).sum();
+        assert!(opposite > D.moon_orbit.inclination_deg.to_radians().cos() - 1e-9);
+        let c = crate::celestial::Celestial::new(D, None);
+        let t = (0.3 - D.clock.start_hour / 24.0) * D.day_length_s();
+        let real = D.state(0.0, Some(0.3), None).moon;
         for i in 0..3 {
-            near(morning.moon[i], -morning.sun[i], 1e-12);
+            near(real[i], c.view(t, [0.0; 3]).direction[i], 1e-9);
         }
         // Face B's solar angle is face A's + 180°: its sky turns over when face A's does.
         assert_eq!(morning.b, D.sample(morning.solar_deg + 180.0));
@@ -851,8 +882,13 @@ mod tests {
         // Driven by the day count: a day moves the phase on by 1/8.
         let a = D.state(0.0, Some(0.0), None).moon_phase;
         let b = D.state(D.day_length_s(), Some(0.0), None).moon_phase;
-        near((b - a).rem_euclid(1.0), 1.0 / 8.0, 1e-9);
-        assert_eq!(D.state(0.0, None, Some(0.25)).moon_phase, 0.25);
+        // (by the celestial model's geometry, M-4: within the orbit's tilt of the count)
+        near((b - a).rem_euclid(1.0), 1.0 / 8.0, 2e-3);
+        near(D.state(0.0, None, Some(0.25)).moon_phase, 0.25, 2e-3);
+        // Physical phases on a flat face (owner): full lit at full, dark at quarters and new.
+        assert!(D.state(0.0, None, Some(0.5)).moon_lit > 0.99);
+        assert!(D.state(0.0, None, Some(0.25)).moon_lit < 0.1);
+        assert_eq!(D.state(0.0, None, Some(0.0)).moon_lit, 0.0);
     }
 
     #[test]

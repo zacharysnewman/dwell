@@ -6,6 +6,7 @@
 
 pub mod ambient;
 pub mod bloom;
+pub mod celestial;
 pub mod clouds;
 #[path = "clouds.gen.rs"]
 mod clouds_gen;
@@ -476,7 +477,7 @@ mod tests {
         let day = at(0.5);
         assert!(day.a.sun_intensity > 2.0 && day.a.stars == 0.0);
         assert!(day.b.sun_intensity == 0.0 && day.b.stars > 0.9);
-        assert!(day.sun[1] > 0.8 && (day.moon[1] + day.sun[1]).abs() < 1e-12);
+        assert!(day.sun[1] > 0.8);
         let midnight = at(0.0);
         assert!(midnight.b.sun_intensity > 2.0 && midnight.a.sun_intensity == 0.0);
         // A face B viewer at noon sees face B's night sky.

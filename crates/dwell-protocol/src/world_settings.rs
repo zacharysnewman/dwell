@@ -41,6 +41,11 @@ pub mod tag {
     /// so its fields and join are byte-identical to before. A build before it skips it (and would
     /// draw today's disc: such a build can't hold a bigger LOD root anyway, BIG_MAP.md M1).
     pub const WORLD_SIZE: u8 = 0x83;
+    /// The moon's phase at day 0 (`f32`, 0 new, 0.5 full; docs/proposals/MOON_WORLD.md §6, M-4):
+    /// where the world's month starts on its orbit. Optional: a world without it (every world
+    /// before it) takes the build's `daynight.json` `moon.startPhase`, and a world that sets none
+    /// writes none, so its fields and join are byte-identical to before.
+    pub const MOON_PHASE: u8 = 0x84;
 }
 
 /// The most fields, and the longest field.
@@ -79,6 +84,8 @@ pub struct WorldSettings {
     pub mode: &'static str,
     /// The world's size (`tag::WORLD_SIZE`; the default, today's, when the tag is absent).
     pub size: crate::world_size::WorldSize,
+    /// The moon's phase at day 0 (`tag::MOON_PHASE`; None: the build's default).
+    pub moon_phase: Option<f32>,
 }
 
 impl WorldSettings {
@@ -199,6 +206,14 @@ impl SettingsFields {
                 .flatten()
                 .ok_or(SettingsError::Invalid(tag::WORLD_SIZE))?;
         }
+        if let Some(b) = self.get(tag::MOON_PHASE) {
+            let mut r = ByteReader::new(b);
+            let p = r.f32();
+            if !r.at_end() || !(0.0..1.0).contains(&p) {
+                return Err(SettingsError::Invalid(tag::MOON_PHASE));
+            }
+            s.moon_phase = Some(p);
+        }
         Ok(s)
     }
 
@@ -235,6 +250,7 @@ impl SettingsFields {
                     tag::MODE,
                     tag::WORLDGEN,
                     tag::WORLD_SIZE,
+                    tag::MOON_PHASE,
                 ]
                 .contains(t)
             })
@@ -261,6 +277,9 @@ impl SettingsFields {
                 field(&|w| w.u16(s.size.radius_scale as u16)),
             ));
         }
+        if let Some(p) = s.moon_phase {
+            out.push((tag::MOON_PHASE, field(&|w| w.f32(p))));
+        }
         out.sort_by_key(|(t, _)| *t);
         Self(out)
     }
@@ -279,6 +298,7 @@ mod tests {
         water_speed: 1.0,
         mode: "creative",
         size: crate::world_size::WorldSize::DEFAULT,
+        moon_phase: None,
     };
 
     #[test]
@@ -292,6 +312,7 @@ mod tests {
             water_speed: 4.0,
             mode: "adventure",
             size: crate::world_size::WorldSize::DEFAULT,
+            moon_phase: Some(0.25),
         };
         let f = SettingsFields::default().with(s);
         let back = SettingsFields::from_bytes(&f.to_bytes()).expect("the tagged form");
@@ -457,6 +478,45 @@ mod tests {
             let mut f = f.clone();
             f.0.push((tag::WORLD_SIZE, bad));
             assert_eq!(f.settings(D), Err(SettingsError::Invalid(tag::WORLD_SIZE)));
+        }
+    }
+
+    #[test]
+    fn the_moon_phase_is_an_optional_field_a_world_without_it_takes_the_default() {
+        // A world that sets none writes none: its fields are what they were before the moon's orbit.
+        let f = SettingsFields::default().with(D);
+        assert!(!f.0.iter().any(|(t, _)| *t == tag::MOON_PHASE));
+        assert_eq!(f.settings(D).map(|s| s.moon_phase), Ok(None));
+        assert_ne!(
+            tag::MOON_PHASE & tag::OPTIONAL,
+            0,
+            "optional: no new compatibility line"
+        );
+        let s = WorldSettings {
+            moon_phase: Some(0.625),
+            ..D
+        };
+        let back = SettingsFields::from_bytes(&SettingsFields::default().with(s).to_bytes())
+            .expect("the tagged form");
+        assert_eq!(back.settings(D), Ok(s));
+        // Setting the other fields keeps it; a field this build doesn't know is kept beside it.
+        let mut newer = back.clone();
+        newer.0.push((0x9e, vec![7]));
+        let again = newer.with(WorldSettings {
+            water_speed: 3.0,
+            ..s
+        });
+        assert_eq!(again.settings(D).map(|s| s.moon_phase), Ok(Some(0.625)));
+        assert!(again.0.contains(&(0x9e, vec![7])));
+        // Out of range or the wrong length is refused, not read as some other phase.
+        for bad in [
+            1.0f32.to_le_bytes().to_vec(),
+            (-0.1f32).to_le_bytes().to_vec(),
+            vec![0, 0],
+        ] {
+            let mut f = f.clone();
+            f.0.push((tag::MOON_PHASE, bad));
+            assert_eq!(f.settings(D), Err(SettingsError::Invalid(tag::MOON_PHASE)));
         }
     }
 }

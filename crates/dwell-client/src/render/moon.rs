@@ -305,3 +305,51 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+mod look_tests {
+    use dwell_look::daynight::DAY_NIGHT;
+
+    #[test]
+    fn the_moon_keeps_its_size_glow_and_brightness() {
+        // Owner, 2026-11-12: the moon "should be the same size in the sky as it is now" and "glow
+        // like it is now"; "the moon should look bright". M-2 changes its disc's shading only.
+        let m = DAY_NIGHT.moon;
+        assert_eq!(m.radius_deg, 1.2);
+        assert_eq!(
+            (m.bloom_deg, m.bloom, m.glow_deg, m.glow),
+            (2.5, 0.45, 12.0, 0.14)
+        );
+        assert_eq!(m.earthshine, 0.06);
+        let wgsl = dwell_look::sky_wgsl_with(&super::wgsl());
+        assert!(
+            wgsl.contains(&format!(
+                "const MOON_RADIUS: f32 = {:?};",
+                1.2f64.to_radians() as f32
+            )) || wgsl.contains("const MOON_RADIUS: f32 = 0.0209")
+        );
+        // Lit by the baked ground, as bright as MOON_COLOR at full on the brightest highland.
+        assert!(wgsl.contains("MOON_COLOR * g.albedo * (lit + MOON_EARTHSHINE)"));
+        assert!(wgsl.contains("var<storage, read> moon_maps: array<u32>"));
+    }
+
+    #[test]
+    fn the_sky_with_the_baked_moon_validates() {
+        let src = format!(
+            "{}\n{}\n{}\n@group(0) @binding(0) var<uniform> day: DaySky;\n\
+             @fragment fn fs(@builtin(position) p: vec4f) -> @location(0) vec4f {{\n    \
+             return dwell_moon(normalize(p.xyz), day, 0.001);\n}}\n",
+            dwell_world::FaceFrame::wgsl(),
+            dwell_look::daynight::DAY_SKY_WGSL,
+            dwell_look::sky_wgsl_with(&super::wgsl()),
+        );
+        let module = naga::front::wgsl::parse_str(&src)
+            .unwrap_or_else(|e| panic!("{}", e.emit_to_string(&src)));
+        naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::all(),
+        )
+        .validate(&module)
+        .expect("valid");
+    }
+}

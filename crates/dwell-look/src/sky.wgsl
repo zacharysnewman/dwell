@@ -140,12 +140,12 @@ fn dwell_moon_ground_procedural(p: vec2f) -> MoonGround {
     return MoonGround(1.0 - MOON_MARIA * dwell_maria(p), vec3f(0.0, 0.0, 1.0));
 }
 
-// Toward the sun from the moon, moon-local (z toward the viewer): by the phase, the sun behind the
-// viewer at full (0.5) and behind the moon at new (0). The seam the celestial model (MOON_WORLD.md
-// §6, M-4) fills with the real sun direction turned into the moon's frame.
-fn dwell_moon_sun(day: DaySky) -> vec3f {
-    let a = SKY_TAU * day.moon.w;
-    return vec3f(sin(a), 0.0, -cos(a));
+// Toward the sun from the moon in the moon's disc frame (`x`, `y` across it, z toward the viewer):
+// the real sun direction (the moon's place is the celestial model's, MOON_WORLD.md §6), so its face
+// A is full when the sun is behind the viewer and dark when it is behind the moon.
+fn dwell_moon_sun(day: DaySky, x: vec3f, y: vec3f) -> vec3f {
+    let s = day.sun.xyz;
+    return vec3f(dot(s, x), dot(s, y), -dot(s, day.moon.xyz));
 }
 
 // The moon's light toward `dir` (added) and how much of the pixel its disc covers (w). Its frame is
@@ -164,7 +164,7 @@ fn dwell_moon(dir: vec3f, day: DaySky, px: f32) -> vec4f {
         return vec4f(0.0);
     }
     let g = dwell_moon_ground(p / max(r, 1.0), px / MOON_RADIUS);
-    let lit = max(dot(g.normal, dwell_moon_sun(day)), 0.0);
+    let lit = max(dot(g.normal, dwell_moon_sun(day, x, y)), 0.0);
     return vec4f(MOON_COLOR * g.albedo * (lit + MOON_EARTHSHINE), edge);
 }
 

@@ -65,8 +65,9 @@ is the **solar angle**: 0° rising, 90° noon, 180° setting, 270° lowest. To m
 `dayS` of the day, the angle runs unevenly with time: hour angle `2πu + k·sin 2πu` (u = time from
 noon as a share of the day) with `k` chosen so the sun sets `dayS / 2` after noon; it moves slower
 by day and faster by night, smoothly (k = −0.60 for 20/10 minutes; the generator rejects a split
-whose path would turn back). The **moon is always opposite the sun** (BIFACIAL_WORLD.md §6), so it is
-up exactly when the sun is down. The stars are fixed to the sky, which turns about the path's axis
+whose path would turn back). The sky draws the **moon where the celestial model puts it** (§14, its own orbit; since the moon
+world's M-2), its disc a flat face of the moon's real terrain lit by the sun (BIFACIAL_WORLD.md §6):
+full when opposite the sun, dark from last quarter to first but for the crater walls facing the sun. The stars are fixed to the sky, which turns about the path's axis
 by the solar angle.
 
 **Face B** shares the sky. The sun is over face B exactly when it is under face A, so face B's
@@ -686,3 +687,43 @@ each the same sky and clouds from both sides.
 **Not covered.** The water's reflections and the ink's fog keep the eye's face's sky (a lake on the
 other face seen down a shaft reflects the eye's face's sky); the inside-the-cloud fog is the eye's
 deck's only.
+
+## 14. The celestial model: the moon's orbit
+
+**[built, M-4; not drawn yet]** (`dwell-look` `celestial.rs`; design: [the moon world
+proposal](./proposals/MOON_WORLD.md) §6, WORK_QUEUE item 27). Owner, 2026-11-12: "We may need to
+consider a new model for the sun, world, and moon positions in order to get moon phases." Answers:
+tidally locked (home sees the moon's face A), physical phases (no dome bias), "A darker floor but a
+minimum still." for new-moon nights; and "the moon should look bright": today's glow and brightness.
+
+| Body | Model | Data |
+|---|---|---|
+| Sun | today's direction exactly (§3): `Celestial::sun_direction(world_s)` is `sun_direction(solar_deg(time_of_day))` (a golden test pins it) | `clock`, `sunPath` |
+| Home | at rest; positions are offsets from its disc's centre | — |
+| Moon | on a circle `distanceM` out, inclined `inclinationDeg` to the sun's path, once a month (new to new) against the sky's daily turn, so it rises ~1/8 of a day later each day; its ascending node `nodeDeg` along the path from the sun at day 0, turning against the sun every `nodeTurnDays` (eclipse seasons); tidally locked | `moon.cycleDays` (8), `moon.startPhase` or the world's, `moonOrbit` (5°, 90°, 96 days, 596 800 m) |
+
+- **The sky frame** turns with the sun (toward the sun, a quarter turn on along its path, the path's
+  axis); the stars are fixed in it, and the moon's orbit is placed in it, so the phase runs evenly
+  even though the solar angle doesn't.
+- **Phases from geometry** (`Celestial::view(world_s, viewer)`): the face seen (A from anywhere at
+  home), its lit share n·s (the moon is a flat disc: lit as a whole, full when opposite the sun, dark
+  from last quarter to first, crescents only in its crater walls once M-2 lights the baked normals),
+  the phase by its angle behind the sun along the path, and its direction. Both home faces see the
+  same lit share and phase (to the parallax, < 10⁻⁴ of a month).
+- **Moonlight on the ground** (`Celestial::moonlight(world_s, viewer, face)`): the share of today's
+  moonlight = `moon.nightFloor` (0.15, darker than today's `newMoonLight` 0.55) + the rest × the lit
+  share × the share of the disc over the face's horizon. Never under the floor (tested on both faces).
+- **The look** (`Celestial::glow`): today's bloom and glow × the lit share; the lit part as bright as
+  today's `moon.color` (the bake shapes the surface, not its brightness).
+- **The world's month** starts at its own phase: `WorldSettings` optional tag `MOON_PHASE` (0x84,
+  f32); a world without it (every world before it) takes `moon.startPhase`, so older worlds keep
+  working and a world that sets none joins byte-identically. `Celestial::for_world` builds the model
+  from a world's settings.
+- **An 8-day month brings the full moon at the same clock time** (face A's midnight with
+  `startPhase` 0.5), so face B's nights see it a half day off (92% lit); a fractional month or a
+  world's own phase moves that.
+- **Tests** (`cargo test -p dwell-look --lib celestial`): the sun golden; the orbit's distance and
+  latitude; full opposite the sun, new between; the lit share monotonic new → full → new; the month
+  and the daily lag; tidally locked (face A toward home at every phase, both faces); both faces'
+  phases equal; the moonlight floor (both faces); the world's phase; an orbit by fixture data alone.
+  `daynight.test.mjs`: the distance keeps grids.json's moon at `radiusDeg`.
