@@ -12,6 +12,8 @@ pub const CLOUDS: CloudTunables = CloudTunables {
         horizon_fade: 0.06,
         fade_start_m: 9000.0,
         fade_end_m: 28000.0,
+        rim_margin_m: 2000.0,
+        rim_fade_m: 6000.0,
     },
     shape: ShapeTunables {
         scale_m: 1024.0,

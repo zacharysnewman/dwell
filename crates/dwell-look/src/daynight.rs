@@ -550,6 +550,13 @@ impl DayState {
         self
     }
 
+    /// [`DayState::at_altitude`] for a viewer `from_axis_m` from the disc's axis in a world of
+    /// radius `world_radius_m`: past the rim the limb fades out (BUGS.md #102).
+    pub fn at_eye(mut self, altitude: f64, from_axis_m: f64, world_radius_m: f64) -> Self {
+        self.air = crate::atmosphere::ATMOSPHERE.air_at(altitude, from_axis_m, world_radius_m);
+        self
+    }
+
     /// Face `face`'s fog density this moment in the viewer's air: [`fog_density`], thinned with
     /// the air to none in space.
     pub fn fog_density(&self, face: FaceFrame) -> f64 {
@@ -627,7 +634,8 @@ impl DayState {
             0.0,
         ]);
         // The viewer's air (docs/DAY_NIGHT.md §15): x the thinning, y the limb's elevation sine.
-        put([self.air.thin, self.air.limb, 0.0, 0.0]);
+        // z how much of the limb shows (past the rim it fades out: BUGS.md #102).
+        put([self.air.thin, self.air.limb, self.air.limb_weight, 0.0]);
         u
     }
 }
@@ -703,7 +711,8 @@ struct DaySky {
     other_disc: vec4f,
     other_stars: vec4f,
     // The viewer's air (docs/DAY_NIGHT.md §15): x how far the sky has thinned toward space (0 the
-    // ground's sky, exactly), y the limb's elevation sine in the viewer's face's frame.
+    // ground's sky, exactly), y the limb's elevation sine in the viewer's face's frame, z how much
+    // of the limb shows (0 for a viewer far past the rim).
     space: vec4f,
 };
 ";

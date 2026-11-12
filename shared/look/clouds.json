@@ -1,14 +1,16 @@
 {
   "$comment": "The sky's cloud layer (docs/CLOUDS.md, ADR 0034, Phase 31): a thin deck at a fixed altitude drawn in the sky, its shape a domain-warped fBm, lit by the sun and the moon. Run `node shared/look/clouds.mjs` after editing; CI fails if crates/dwell-look/src/clouds.gen.rs is stale.",
   "deck": {
-    "$comment": "altitudeM: the deck's height above sea level, on the viewer's face. curvatureM: the radius of the sphere the deck lies on (smaller: the deck meets the horizon nearer). crossFadeM: the deck fades out as the eye comes within this of it, from below or above, and insideFog fades in instead: the view mixed toward the cloud colour by the density of the cloud the eye is in (0–1). horizonFade: the elevation sine over which clouds fade in above the horizon. fadeStartM/fadeEndM: the distance along the view ray over which clouds fade into the sky's haze.",
+    "$comment": "altitudeM: the deck's height above sea level, on the viewer's face. curvatureM: the radius of the sphere the deck lies on (smaller: the deck meets the horizon nearer). crossFadeM: the deck fades out as the eye comes within this of it, from below or above, and insideFog fades in instead: the view mixed toward the cloud colour by the density of the cloud the eye is in (0–1). horizonFade: the elevation sine over which clouds fade in above the horizon. fadeStartM/fadeEndM: the distance along the view ray over which clouds fade into the sky's haze. rimMarginM/rimFadeM: the deck and the volume are only over the world's disc (BUGS.md #101): out to its radius (the world size's, sent at join) plus rimMarginM from the disc's axis, fading out over the last rimFadeM, so nothing floats in the void beyond the rim.",
     "altitudeM": 1800,
     "curvatureM": 400000,
     "crossFadeM": 400,
     "insideFog": 0.9,
     "horizonFade": 0.06,
     "fadeStartM": 9000,
-    "fadeEndM": 28000
+    "fadeEndM": 28000,
+    "rimMarginM": 2000,
+    "rimFadeM": 6000
   },
   "shape": {
     "$comment": "scaleM: the size of the largest noise cell (m). wrapM: the noise repeats every this many metres (a multiple of scaleM; keeps the shader's f32 coordinates small far from the origin). octaves/lowOctaves: noise octaves on High and Low. gain: each octave's weight relative to the last. warp: how far the domain warp moves a point (in cells). coverage: the share of the sky covered, 0 (clear) to 1 (overcast); the renderer can override it at run time (weather). edgeSoftness: the width of a cloud's soft edge, in noise value. opacity: the densest cloud's opacity.",

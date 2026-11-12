@@ -3400,6 +3400,9 @@ impl Inner {
         game.debug_visible = self.debug_visible;
         game.set_capabilities(region_edits, brushes);
         game.set_world(generator_version, world_seed, world_size);
+        self.renderer
+            .borrow_mut()
+            .set_world_radius(world_size.world_radius_m() as f64);
         // The moon in the sky from its real terrain (MOON_WORLD.md §5, M-2): its face A baked once
         // at the join (~0.1 s natively at 256²), every world its own moon.
         if let Some(bake) = crate::render::moon::bake_for(world_seed) {

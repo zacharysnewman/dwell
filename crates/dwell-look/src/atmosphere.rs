@@ -32,6 +32,9 @@ pub struct Atmosphere {
     pub limb_brightness: f64,
     pub limb_width_deg: f64,
     pub limb_distance_m: f64,
+    /// Past the world's rim the limb fades out over this (m from the disc's axis beyond its radius):
+    /// a viewer out in the void has no world under it to make one (BUGS.md #102).
+    pub limb_fade_m: f64,
     /// The sun in space: how far its disc goes to white, and its tight white bloom.
     pub sun_whiteness: f64,
     pub sun_bloom: f64,
@@ -67,7 +70,18 @@ impl Atmosphere {
         self.limb_width_deg.to_radians().sin()
     }
 
-    /// The air for a viewer at `altitude` m above sea level on its own face.
+    /// How much of the limb a viewer `from_axis_m` from the disc's axis sees in a world of radius
+    /// `world_radius_m`: all of it over the disc, fading out past the rim over `limb_fade_m`.
+    pub fn limb_weight(&self, from_axis_m: f64, world_radius_m: f64) -> f64 {
+        let past = from_axis_m - world_radius_m;
+        if past <= 0.0 {
+            return 1.0;
+        }
+        let x = (past / self.limb_fade_m.max(1e-6)).min(1.0);
+        1.0 - x * x * (3.0 - 2.0 * x)
+    }
+
+    /// The air for a viewer at `altitude` m above sea level on its own face, over the disc.
     pub fn air(&self, altitude: f64) -> Air {
         let thin = self.thinning(altitude);
         if thin <= 0.0 {
@@ -76,16 +90,28 @@ impl Atmosphere {
         Air {
             thin,
             limb: self.limb_rise(altitude),
+            limb_weight: 1.0,
         }
+    }
+
+    /// [`Atmosphere::air`] for a viewer `from_axis_m` from the disc's axis in a world of radius
+    /// `world_radius_m`: past the rim the limb fades out ([`Atmosphere::limb_weight`]).
+    pub fn air_at(&self, altitude: f64, from_axis_m: f64, world_radius_m: f64) -> Air {
+        let mut air = self.air(altitude);
+        if air.thin > 0.0 {
+            air.limb_weight = self.limb_weight(from_axis_m, world_radius_m);
+        }
+        air
     }
 }
 
-/// The viewer's air this frame: how thin (0 the ground's sky, 1 space) and the limb's elevation sine
-/// in the viewer's face's frame.
+/// The viewer's air this frame: how thin (0 the ground's sky, 1 space), the limb's elevation sine
+/// in the viewer's face's frame and how much of the limb shows (0 far past the rim).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Air {
     pub thin: f64,
     pub limb: f64,
+    pub limb_weight: f64,
 }
 
 impl Air {
@@ -93,13 +119,14 @@ impl Air {
     pub const GROUND: Air = Air {
         thin: 0.0,
         limb: 0.0,
+        limb_weight: 1.0,
     };
 
     /// The same air seen in the other face's frame (its up the other way): the limb's rise flips.
     pub fn other(self) -> Air {
         Air {
-            thin: self.thin,
             limb: -self.limb,
+            ..self
         }
     }
 
@@ -131,7 +158,7 @@ pub fn space_sky(
     }
     let a = &ATMOSPHERE;
     let off = (rise - air.limb) / a.limb_width().max(1e-6);
-    let limb = a.limb_brightness * (-off * off).exp();
+    let limb = a.limb_brightness * air.limb_weight * (-off * off).exp();
     let bloom = a.sun_bloom * ((sun_cos - 1.0) * bloom_k).exp();
     let space: Rgb =
         std::array::from_fn(|i| (a.space_color[i] + horizon[i] * limb + bloom).min(1.0));
