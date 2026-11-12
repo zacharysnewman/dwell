@@ -97,6 +97,9 @@ const UNACKED_HOLD: u32 = MAX_TICKS_PER_FRAME as u32 + 30;
 const REGION_SELECTION_COLOR: u32 = 0xffffff;
 const REGION_GHOST_COLOR: u32 = 0x6fd3ff;
 
+/// Far trees tiles in flight at once (`Game::update_far_trees`).
+const FAR_TREE_JOBS: usize = 4;
+
 /// The whole cell, as an outline box.
 pub const FULL_CELL: ([f32; 3], [f32; 3]) = ([0.0; 3], [1.0; 3]);
 
@@ -146,6 +149,30 @@ pub trait Scene: TerrainRenderer {
     fn draws_far_trees(&self) -> bool {
         true
     }
+    /// How far (m) the far trees' impostors draw (render/impostors.rs): the game keeps their tiles
+    /// within it. `None` when they don't draw.
+    fn far_tree_reach(&mut self) -> Option<f32> {
+        None
+    }
+    /// Once, when the impostors first draw: (layers, texels a view) to bake in the workers.
+    fn impostor_bakes(&mut self) -> Option<(u32, u32)> {
+        None
+    }
+    /// A baked impostor layer (`Job::ImpostorBake`'s output).
+    fn impostor_layer(&mut self, _layer: u32, _centre_y: f32, _radius: f32, _a: &[u8], _n: &[u8]) {}
+    /// Whether far trees tile (face, i, k) is held.
+    fn far_tree_tile_held(&self, _key: (u8, i32, i32)) -> bool {
+        false
+    }
+    /// A far trees tile's trees (`Job::FarTrees`'s output).
+    fn far_tree_tile(
+        &mut self,
+        _key: (u8, i32, i32),
+        _trees: &[dwell_worldgen::impostor::FarTree],
+    ) {
+    }
+    /// Drops the far trees tiles `keep` doesn't hold.
+    fn retain_far_tree_tiles(&mut self, _keep: &dyn Fn(&(u8, i32, i32)) -> bool) {}
     /// How many bytes of finished chunk meshes a frame uploads (shared/render/streaming.json by
     /// tier; the first mesh of a frame always goes).
     fn upload_budget_bytes(&self) -> u64 {
@@ -855,6 +882,8 @@ pub struct Game<S: Scene> {
     lod: Option<LodSystem>,
     /// The LOD colour map's rings (`?lodmap=on`), once turned on.
     lod_map: Option<crate::lod_map::LodMap>,
+    /// Far trees tiles asked of the workers and not back yet (render/impostors.rs).
+    far_tree_jobs: std::collections::HashSet<(u8, i32, i32)>,
     lod_map_on: bool,
     /// The drawing's size in CSS pixels, for LOD selection.
     pub viewport_css: (f64, f64),
@@ -1073,6 +1102,7 @@ impl<S: Scene> Game<S> {
             lod: None,
             unloads: Default::default(),
             lod_map: None,
+            far_tree_jobs: Default::default(),
             lod_map_on: false,
             viewport_css: (1280.0, 720.0),
             debug_note: String::new(),
@@ -2112,6 +2142,29 @@ impl<S: Scene> Game<S> {
                         ),
                         _ => String::new(),
                     };
+                }
+                (
+                    Purpose::ImpostorBake(layer),
+                    Output::Impostor {
+                        centre_y,
+                        radius,
+                        albedo,
+                        normal_depth,
+                    },
+                ) => self.scene.borrow_mut().impostor_layer(
+                    layer,
+                    centre_y,
+                    radius,
+                    &albedo,
+                    &normal_depth,
+                ),
+                (Purpose::FarTrees(face, i, k), out) => {
+                    self.far_tree_jobs.remove(&(face, i, k));
+                    let trees = match out {
+                        Output::FarTrees(t) => t,
+                        _ => Vec::new(),
+                    };
+                    self.scene.borrow_mut().far_tree_tile((face, i, k), &trees);
                 }
                 (Purpose::CloudNoise(detail, z0), Output::CloudNoise(texels)) => {
                     self.scene
@@ -4797,6 +4850,7 @@ impl<S: Scene> Game<S> {
         }
         self.update_lod_map(position);
         self.update_cloud_noise();
+        self.update_far_trees(position);
     }
 
     /// The clouds' shape noise (docs/CLOUDS.md §9.4): when a volume tier first wants it, its bake
@@ -4821,6 +4875,58 @@ impl<S: Scene> Game<S> {
                     size,
                     z0,
                     z1,
+                },
+            );
+        }
+    }
+
+    /// The far trees' impostors (render/impostors.rs): once, the atlas's bakes; then the tiles of
+    /// far trees within the tier's reach of the eye (`position`, world) on its face, asked of the
+    /// workers a few at a time, nearest first, and those out of reach dropped.
+    fn update_far_trees(&mut self, position: [f64; 3]) {
+        let mut scene = self.scene.borrow_mut();
+        let Some(reach) = scene.far_tree_reach() else {
+            return;
+        };
+        let mut pool = self.pool.borrow_mut();
+        if let Some((layers, px)) = scene.impostor_bakes() {
+            for layer in 0..layers {
+                pool.submit(
+                    Purpose::ImpostorBake(layer),
+                    crate::jobs::Job::ImpostorBake { layer, px },
+                );
+            }
+        }
+        let face = FaceFrame::at_height(position[1]);
+        let local = face.point(position);
+        let bit = u8::from(face.is_b());
+        let mut want = crate::render::impostors::tiles_within([local[0], local[2]], reach);
+        let keep: std::collections::HashSet<(u8, i32, i32)> =
+            want.iter().map(|&(i, k)| (bit, i, k)).collect();
+        scene.retain_far_tree_tiles(&|t| keep.contains(t));
+        let t = f64::from(crate::render::impostors::TILE_M);
+        let d2 = |&(i, k): &(i32, i32)| {
+            let dx = (f64::from(i) + 0.5) * t - local[0];
+            let dz = (f64::from(k) + 0.5) * t - local[2];
+            dx * dx + dz * dz
+        };
+        want.sort_by(|a, b| d2(a).total_cmp(&d2(b)));
+        for (i, k) in want {
+            if self.far_tree_jobs.len() >= FAR_TREE_JOBS {
+                break;
+            }
+            let key = (bit, i, k);
+            if scene.far_tree_tile_held(key) || !self.far_tree_jobs.insert(key) {
+                continue;
+            }
+            let size = crate::render::impostors::TILE_M;
+            pool.submit(
+                Purpose::FarTrees(bit, i, k),
+                crate::jobs::Job::FarTrees {
+                    face: bit,
+                    x0: i * size,
+                    z0: k * size,
+                    size,
                 },
             );
         }

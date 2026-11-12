@@ -6,8 +6,16 @@ built** (2026-11-12): the hand-over per Far trees tier as data (`far.tiers`, §5
 over a 24 m fade, `off` none), `Far::share`/`near_share` (the crossfade, shares summing to 1),
 `Config::dither` (the one view a pixel draws, each view on its weight's share of the pixels),
 `Config::baked_for` (nearest baked stage, variant by seed) and `view_dir` (through `FaceFrame`, tested on
-both faces). The GPU half (atlas upload, instances, the billboard shader) and I-2's tree lists are not.
-Open questions for the owner at the end.
+both faces). **I-2's tree lists and I-3's GPU draw are built** (2026-11-12, client `render/impostors.rs`,
+ARCHITECTURE.md §6.6 "Far trees as impostors"): the atlas baked by the job workers and uploaded per layer, the
+instances by 64 m tile from `far_trees`, `imp_vs`/`imp_fs` (the dithered view, baked normals, sun, ambient, fog
+and received shadows at the texel's baked position), the near leaves' complementary dither and the chunks' cutout
+cut past the hand-over; the Far trees setting picks the tier, `?impostors=0` the old `lod_trees.rs` path. Changed
+from this proposal: the hand-over is **48 m over 16 m** on High (measured, §5); the depth offset (`frag_depth`) is
+not drawn (it disabled early depth: the quad writes its own depth, the texel's baked depth only places its light
+and fog); no mip-maps yet (texels loaded exactly). Not yet: felled trees left out, shadows cast (I-5), the
+LOD ground under far trees (BUGS.md #95), retiring `lod_trees.rs` (I-4), the phone run. Open questions for the
+owner at the end.
 
 The owner (2026-11-12): "billboards (maybe from above billboards too, possibly a few different angles so we
 can switch between them like old Mario kart did with carts, and some trees too)… We're going to want to have
