@@ -1,6 +1,0 @@
-{
-  "changes": [
-    "Worlds bigger than 2× now draw their terrain all the way out, instead of stopping at a stepped edge 50 km from the centre.",
-    "In 8× and 10× worlds the ground round the spawn now shows up, instead of leaving you standing on invisible terrain."
-  ]
-}
