@@ -628,6 +628,9 @@ struct Session {
     /// only to a client that said `SwingHello` (`swing_hello`; WORK_QUEUE item 17).
     swing_kind: SwingKind,
     swing_hello: bool,
+    /// Whether its client draws the axe's bites (`BitesHello`; WORK_QUEUE item 26): its `Cuts`
+    /// end with them.
+    pub(super) bites_hello: bool,
     /// Which falling pieces this player's snapshots carry (`felling::PieceBook`).
     piece_book: crate::felling::PieceBook,
     /// The player's items (ADR 0066), loaded at join and saved with the world; whether its client
@@ -757,6 +760,7 @@ impl Session {
             swing: 0,
             swing_kind: SwingKind::Plain,
             swing_hello: false,
+            bites_hello: false,
             piece_book: crate::felling::PieceBook::default(),
             stats: SessionStats::default(),
             chunk_mode: ChunkMode::AwaitingCheck,
@@ -1335,6 +1339,7 @@ impl Server {
                     s.swing_hello = true;
                 }
             }
+            Some(Message::BitesHello) => self.bites_hello(id),
             _ => {}
         }
     }

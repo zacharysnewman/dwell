@@ -654,6 +654,10 @@ pub struct Game<S: Scene> {
     steam_on: bool,
     /// Asking for the others' swing kinds (`SwingHello`: their chops by direction).
     swing_hello: dwell_game::remotes::SwingHello,
+    /// Asking for the axe's bites in the server's cuts (`BitesHello`, WORK_QUEUE item 26), repeated
+    /// on the same schedule until a `Cuts` carries them (`bites_seen`).
+    bites_hello: dwell_game::remotes::SwingHello,
+    bites_seen: bool,
     pub inventory_slot: usize,
     /// The creative hotbar's picks (docs/ITEMS.md §6a): its slots' palette items.
     pub creative: dwell_game::creative_hotbar::CreativeHotbar,
@@ -1024,6 +1028,8 @@ impl<S: Scene> Game<S> {
             burn_until_ms: 0.0,
             steam_on: false,
             swing_hello: dwell_game::remotes::SwingHello::default(),
+            bites_hello: dwell_game::remotes::SwingHello::default(),
+            bites_seen: false,
             inventory_slot: 0,
             creative: dwell_game::creative_hotbar::CreativeHotbar::new(
                 &dwell_game::block_interaction::palette(),
@@ -1479,6 +1485,12 @@ impl<S: Scene> Game<S> {
                         .borrow_mut()
                         .push(Send::Datagram(Message::SwingHello));
                 }
+                // Once the server chops (its first `Cuts`), ask for the bites too.
+                if self.chop.on && self.bites_hello.on_snapshot(self.bites_seen, now_ms) {
+                    self.outbox
+                        .borrow_mut()
+                        .push(Send::Datagram(Message::BitesHello));
+                }
                 // The pieces' poses first: drawn interpolated, and stood in for in the prediction
                 // at their latest carried on to the present, so a replay meets them where the
                 // server had them (docs/FELLING.md §3, BUILT_BODIES.md §6).
@@ -1605,6 +1617,7 @@ impl<S: Scene> Game<S> {
             }
             Message::Cuts(c) => {
                 self.chop.on = true;
+                self.bites_seen |= c.bites;
                 // Carved into the terrain mesh (ADR 0067 §11): each changed cell's chunk again.
                 for cell in &c.gone {
                     self.streamer.set_cut(*cell, None);

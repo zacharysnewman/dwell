@@ -63,7 +63,7 @@ fn ext(a: usize) -> f64 {
 }
 
 /// The face's in-plane axes (u, v), as `Builder::quad` lays them (e_u × e_v = e_axis).
-fn plane_axes(axis: usize) -> (usize, usize) {
+pub(crate) fn plane_axes(axis: usize) -> (usize, usize) {
     ((axis + 1) % 3, (axis + 2) % 3)
 }
 
@@ -171,8 +171,18 @@ impl CrackLayer {
     /// The cell's crack layer at its damage (`view`, face-local), or none below the first stage or
     /// for a look without cracks; the centre is chosen per face by [`CrackLayer::for_face`].
     pub(crate) fn of(look: &DamageLook, view: &DamageView, cell: [i32; 3]) -> Option<CrackLayer> {
-        let cracks = look.cracks?;
-        let stage = cracks.stage(f64::from(view.fraction) / 255.0)?;
+        Self::of_cracks(&look.cracks?, f64::from(view.fraction) / 255.0, cell)
+    }
+
+    /// The layer of crack data `cracks` at damage `fraction` (0–1) in `cell`, centred on the
+    /// cell's middle until [`CrackLayer::for_face`] or a caller moves it (a cut wood's: its newest
+    /// bite, WORK_QUEUE item 26).
+    pub(crate) fn of_cracks(
+        cracks: &dwell_protocol::damage::Cracks,
+        fraction: f64,
+        cell: [i32; 3],
+    ) -> Option<CrackLayer> {
+        let stage = cracks.stage(fraction)?;
         let tile = cracks.tiles[stage];
         let slot = crate::textures::TILE_ORDER
             .iter()

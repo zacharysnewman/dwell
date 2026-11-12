@@ -494,6 +494,11 @@ pub enum Message {
     /// session), so the client sends it without asking and repeats it until a snapshot carries
     /// the kinds (or gives up: an older server).
     SwingHello,
+    /// C→S datagram, with `ChopAction::Hello` (WORK_QUEUE item 26): this client draws the axe's
+    /// bites; end my `Cuts` with them (`CutsMessage::bites`; the server sends them all again on the
+    /// first). A datagram for `SwingHello`'s reason: an older server drops it; the client repeats
+    /// it until a `Cuts` carries bites (or gives up: an older server).
+    BitesHello,
     DatagramPong(DatagramPong),
     WaterCurrents(WaterCurrents),
     StatusRequest,
@@ -722,6 +727,10 @@ pub const MAX_CUTS_PER_MESSAGE: usize = 512;
 pub struct CutsMessage {
     pub cuts: Vec<([i32; 3], crate::chopping::Cut)>,
     pub gone: Vec<[i32; 3]>,
+    /// It ends with the cuts' bites (`Cut::write_bites`, WORK_QUEUE item 26): only to a client
+    /// that said `BitesHello`, so an older one (which refuses trailing bytes) never gets them; an
+    /// older server never writes them (its cuts carry none, drawn as before).
+    pub bites: bool,
 }
 
 /// What a client asks of its inventory (ADR 0066).
@@ -865,6 +874,7 @@ impl Message {
             M::CausesHello(_) => MessageType::CausesHello,
             M::SteamHello => MessageType::SteamHello,
             M::SwingHello => MessageType::SwingHello,
+            M::BitesHello => MessageType::BitesHello,
             M::Steam(_) => MessageType::Steam,
             M::Damage(_) => MessageType::Damage,
             M::Creatures(_) => MessageType::Creatures,
@@ -1559,6 +1569,7 @@ fn write_body(w: &mut ByteWriter, m: &Message) {
         | M::WorldgenRequest
         | M::SteamHello
         | M::SwingHello
+        | M::BitesHello
         | M::EcologyHello => {}
         M::Steam(cells) => {
             let n = cells.len().min(MAX_STEAM_PER_MESSAGE);
@@ -1659,6 +1670,12 @@ fn write_body(w: &mut ByteWriter, m: &Message) {
             for c in &m.gone[..n] {
                 for &v in c {
                     w.i32(v);
+                }
+            }
+            if m.bites {
+                w.u8(crate::chopping::BITES_MARK);
+                for (_, k) in &m.cuts[..m.cuts.len().min(MAX_CUTS_PER_MESSAGE)] {
+                    k.write_bites(w);
                 }
             }
         }
@@ -2093,6 +2110,7 @@ fn read_body(r: &mut ByteReader, t: MessageType) -> Option<Message> {
         T::CausesHello => M::CausesHello(r.u8()),
         T::SteamHello => M::SteamHello,
         T::SwingHello => M::SwingHello,
+        T::BitesHello => M::BitesHello,
         T::Steam => {
             let n = usize::from(r.u16());
             r.check(n <= MAX_STEAM_PER_MESSAGE);
@@ -2241,7 +2259,15 @@ fn read_body(r: &mut ByteReader, t: MessageType) -> Option<Message> {
                 }
                 gone.push([r.i32(), r.i32(), r.i32()]);
             }
-            M::Cuts(CutsMessage { cuts, gone })
+            let bites = r.ok() && !r.at_end();
+            if bites {
+                let mark = r.u8();
+                r.check(mark == crate::chopping::BITES_MARK);
+                for (_, k) in &mut cuts {
+                    k.read_bites(r);
+                }
+            }
+            M::Cuts(CutsMessage { cuts, gone, bites })
         }
         T::BodyEditRequest => {
             let body = r.u32();

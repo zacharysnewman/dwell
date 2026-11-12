@@ -296,7 +296,47 @@ damage." Built, in addition to the carve (not instead of it):
   cracks by data alone; a bad set, stage count, order, range or strength fails by name).
 - **Not done:** no browser check (cloud session, no GPU): the look in game is for the owner's review;
   the wasm32 clippy and the Vitest files were not run here (no wasm target or `node_modules` in the
-  container). The wood set waits for a wood block with a `damage.look`.
+  container). The wood set is drawn round the axe's bites on a cut log (§6.4, the wood's `cut.cracks`).
+
+### 6.4 The axe's bites (WORK_QUEUE item 26)
+
+Owner, 2026-11-12: the axe's slice "cuts a line all the way across which is much bigger than the tool
+head. It should align more with the dirt and stone ones"; the proposal approved: head-sized V bites where
+each hit lands, joining into the notch, grain cracks round them, felling unchanged. Built:
+
+- **Where it struck** (`dwell_protocol::chopping::Cut::bites`): the server records each landed chop's place
+  across the side it hit (`u`, 0..1 along the side's other axis; face-locally up for y, as the bands) and
+  the band it cut (after `open_band`). A hit on a spot already bitten in that band comes in beside the
+  nearest bite (`step` × the width away, nearest the aim, inside the cell); a side keeps 12 bites, later
+  hits deepening them. The cut that fells (notch, kerfs, the fell fraction) is ADR 0067 §2's, unchanged.
+- **The carve** (`dwell-mesh` `carve/bites.rs`): each bitten side's bark face is a height field on a
+  tensor grid through the V's and masks' breakpoints, two flat-lit triangles a quad (a hewn face): the
+  notch's V along the grain under the mask of all the side's bites, each band's kerf V (its depth notch +
+  kerf, apex in the band) under that band's bites' mask, the deepest; a bite's mask 1 over the head's
+  width, its ends sloping in over `endsM`. One hit is a V the axe head's size where it struck; bites side
+  by side merge; at the fell the notch spans more than three heads. Bites are kept on an octagonal log's
+  flat face, every V ends inside the cell, so the face's outline never moves (watertight; T-junctions on
+  straight edges as §6.2's carve); opposite sides keep the 2 cm waist.
+- **Cracks**: the wood's `cut.cracks` (the `wood` set of `shared/textures/cracks.json`, splitting along
+  the grain) over every face of the cell, §6.3's overlay and shader, its stage by the share of the fell
+  (or buck) fraction cut, centred on the deepest side's newest bite.
+- **Data** (`shared/tools/tools.json`, the wood's `cut`): `bite` (`widthM` 0.14, `endsM` 0.03, `step` 0.6)
+  and `cracks` (`set`, `stages` 0.15 / 0.4 / 0.65 / 0.85, `strength` 0.6); validated by
+  `shared/tools/gen.mjs` (ranges, unknown fields, the set and stages), a fixture wood's by data alone.
+- **Wire and save, additive**: `Cuts` ends with each cell's bites only to a client that said `BitesHello`
+  (a datagram; ARCHITECTURE.md §8.3); the `cuts` record appends them after its cells. A cut without bites
+  (an older server's or save's) is drawn as before (the notch across the side, the kerfs as slits).
+- **Budget**: one bite about 30 triangles; a cell hacked to 12 bites in both bands on all four sides stays
+  under 2,048 (`a_bitten_cells_triangles_keep_to_a_budget`).
+- **Tests**: `dwell-mesh` `carve::bites` (one hit no wider than `widthM` centred on it, bites at nearby
+  spots merge, 11 one-spot swings fell at the rule with the notch widened across the side, closed on every
+  grain and inside the octagon, the budget, an older cut unchanged and mirrored bites following their
+  side), `mesher_tests` `a_bitten_log_is_carved_where_it_was_struck_and_cracks` (both faces; red on the
+  old carve: fresh wood across the face); `dwell-protocol` the placement, the record and message round
+  trips, an older record loading without bites; `dwell-sim` `tests/chopping.rs` the bite recorded where
+  struck and the fell still at 11 (both faces), bites only after `BitesHello`, saved.
+- **Not done:** no browser check (cloud session, no GPU): the look in game is for the owner's review; the
+  rare case of two adjacent sides both cut deep near their shared edge can overlap (not clipped).
 
 ## 7. Pieces (0.52.46)
 

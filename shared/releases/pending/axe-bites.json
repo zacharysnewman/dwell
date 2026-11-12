@@ -1,0 +1,7 @@
+{
+  "changes": [
+    "Each axe chop now bites a V the size of the axe head where it strikes, instead of a slice across the whole log.",
+    "Chopping the same spot widens the bites until they join into the notch; the tree still falls in about 11 chops.",
+    "Wood cracks spread along the grain around the bites as you chop."
+  ]
+}

@@ -35,7 +35,8 @@ const CAMERA_KICK_FIELDS = ['yaw', 'pitch', 'roll', 'bob', 'decayS', 'miss', 'bo
 const SWAY_MAX_DEG = 10;
 const SWAY_MAX_BOB_M = 0.1;
 const WOOD_FIELDS = ['block', 'fellFraction', 'buckFraction', 'buckDrops', 'chips', 'leaves', 'sway', 'sounds', 'cut', 'fellWedge', 'fellWedgeTrunk', 'fellTip', 'chop2'];
-const CUT_FIELDS = ['tile', 'tint', 'open', 'kerfWidthM'];
+const CUT_FIELDS = ['tile', 'tint', 'open', 'kerfWidthM', 'bite', 'cracks'];
+const BITE_FIELDS = ['widthM', 'endsM', 'step'];
 const LEAF_FIELDS = ['block', 'count', 'color', 'radiusM', 'heightM'];
 const SWAY_FIELDS = ['fromFraction', 'maxDeg'];
 const CHIP_FIELDS = ['count', 'color', 'speed', 'size'];
@@ -123,7 +124,7 @@ export function validateCamera(c, at) {
  * maps a block's name to its definition (to check a wood has an `axis`). Returns the data with
  * defaults filled.
  */
-export function validateTools(data, items, blocks, heldItems = loadHeldItems(), soundEvents = loadSoundEvents(), tiles = loadTiles()) {
+export function validateTools(data, items, blocks, heldItems = loadHeldItems(), soundEvents = loadSoundEvents(), tiles = loadTiles(), crackSets = loadCracks()) {
   const event = (v, at) => {
     if (v === undefined || v === null) return null;
     if (!soundEvents.has(v)) fail(`${at}: no sound event ${JSON.stringify(v)} in shared/sounds/dwell.json's events`);
@@ -246,6 +247,19 @@ export function validateTools(data, items, blocks, heldItems = loadHeldItems(), 
     if (cut.tile !== null && !tiles.has(cut.tile)) fail(`${at}.cut.tile: no atlas tile named ${cut.tile}`);
     inRange(cut, 'open', 0.2, 8, `${at}.cut`, true);
     inRange(cut, 'kerfWidthM', 0.005, 0.2, `${at}.cut`, true);
+    // Each hit's bite (WORK_QUEUE item 26): `widthM` its mouth across the side (the axe head's
+    // size), `endsM` how far its two ends slope in, `step` how far beside a bitten spot (a share of
+    // the width) a hit there lands, so the bites join into the notch.
+    const bk = k.bite ?? {};
+    if (bk === null || typeof bk !== 'object' || Array.isArray(bk)) fail(`${at}.cut.bite must be an object`);
+    known(bk, BITE_FIELDS, `${at}.cut.bite`);
+    cut.bite = { widthM: bk.widthM ?? 0.14, endsM: bk.endsM ?? 0.03, step: bk.step ?? 0.6 };
+    inRange(cut.bite, 'widthM', 0.02, 1, `${at}.cut.bite`);
+    inRange(cut.bite, 'endsM', 0, cut.bite.widthM / 2, `${at}.cut.bite`);
+    inRange(cut.bite, 'step', 0.1, 1, `${at}.cut.bite`);
+    // The cracks round the bites (BLOCK_DAMAGE.md §6.3's overlay; `wood` splits along the grain),
+    // their stages by the share of the fell (or buck) fraction cut.
+    cut.cracks = k.cracks === undefined ? null : validateCracksLook(k.cracks, `${at}.cut.cracks`, crackSets);
     // Leaves shaken down from the tree's leaf blocks on each hit (the client's particles).
     const lv = { block: null, count: 0, color: '#5f9e3e', radiusM: 3, heightM: 8, ...(w.leaves ?? {}) };
     known(w.leaves ?? {}, LEAF_FIELDS, `${at}.leaves`);
@@ -318,6 +332,11 @@ export function validateDurability(d, items, soundEvents) {
 const LOOKS = ['shards', 'scoops', 'chips'];
 /** A carved mark's height field (BLOCK_DAMAGE.md §6.2): a smooth bowl, or angular facets. */
 const PROFILES = ['bowl', 'facets'];
+
+/** A crack look (validated) as Rust: `None` or `Some(Cracks { … })`. */
+function crackRust(c) {
+  return c === null ? 'None' : `Some(Cracks { tiles: &[${c.tiles.map((t) => `"${t}"`).join(', ')}], stages: &[${c.stages.map(f64).join(', ')}], strength: ${f64(c.strength)}, span: ${f64(c.span)} })`;
+}
 
 /** A damage look's `cracks` against the crack tile sets (shared/textures/cracks.json): resolved to its tiles. */
 export function validateCracksLook(c, at, crackSets) {
@@ -496,7 +515,7 @@ const swingRust = (s) =>
   `SwingDef { windup_s: ${f64(s.windupS)}, active_s: ${f64(s.activeS)}, hit_stop_s: ${f64(s.hitStopS)}, recover_hit_s: ${f64(s.recoverHitS)}, recover_miss_s: ${f64(s.recoverMissS)}, reach_m: ${f64(s.reachM)}, arc_deg: ${f64(s.arcDeg)}, samples: ${s.samples}, camera_level: ${cameraRust(s.camera.level)}, camera_vertical: ${cameraRust(s.camera.vertical)}, stamina_cost: ${f64(s.staminaCost)}, swish: ${optStr(s.swish)}, bounce: ${optStr(s.bounce)}, rustle: ${optStr(s.rustle)}, rustle_leaves: ${s.rustleLeaves} }`;
 
 export function toolsRust(d) {
-  const rs = [`// ${header}`, '', 'use crate::chopping::{BlockDamageDef, BreakTool, CameraKey, CameraKick, CameraOffset, CarveProfile, Cracks, DamageLook, DamageLookKind, Chips, CutLook, Leaves, Sway, SwingCamera, SwingDef, ToolDef, ToolKind, WoodDef, Chop2Wood};', 'use crate::inventory::{DropChoice, DropRule};', ''];
+  const rs = [`// ${header}`, '', 'use crate::chopping::{BlockDamageDef, BreakTool, CameraKey, CameraKick, CameraOffset, CarveProfile, Cracks, DamageLook, DamageLookKind, Chips, CutLook, BiteLook, Leaves, Sway, SwingCamera, SwingDef, ToolDef, ToolKind, WoodDef, Chop2Wood};', 'use crate::inventory::{DropChoice, DropRule};', ''];
   rs.push('/// Whether the chopping prototype (`chop2`, WORK_QUEUE item 7) is on by default.');
   rs.push(`pub const CHOP2_DEFAULT: bool = ${d.chop2.enabled};`);
   rs.push('');
@@ -517,7 +536,7 @@ export function toolsRust(d) {
       (x) => `DropRule { chance: ${f64(x.chance)}, choices: &[DropChoice { item: "${x.item}", min: ${x.min}, max: ${x.max}, weight: 1.0 }] }`,
     );
     rs.push(
-      `    WoodDef { block: "${w.block}", fell_fraction: ${f64(w.fellFraction)}, buck_fraction: ${f64(w.buckFraction)}, buck_drops: &[${drops.join(', ')}], chips: Chips { count: ${w.chips.count}, color: [${rgb(w.chips.color).join(', ')}], speed: ${f64(w.chips.speed)}, size: ${f64(w.chips.size)} }, leaves: Leaves { block: ${optStr(w.leaves.block)}, count: ${w.leaves.count}, color: [${rgb(w.leaves.color).join(', ')}], radius_m: ${f64(w.leaves.radiusM)}, height_m: ${f64(w.leaves.heightM)} }, sway: Sway { from_fraction: ${f64(w.sway.fromFraction)}, max_deg: ${f64(w.sway.maxDeg)} }, sounds: &[${w.sounds.map((x) => `(${f64(x.from)}, "${x.event}")`).join(', ')}], cut: CutLook { tile: ${optStr(w.cut.tile)}, tint: [${rgb(w.cut.tint).join(', ')}], open: ${f64(w.cut.open)}, kerf_width_m: ${f64(w.cut.kerfWidthM)} }, fell_wedge: ${optStr(w.fellWedge)}, fell_wedge_matching: ${w.fellWedgeTrunk === 'matching'}, fell_tip: ${f64(w.fellTip)}, chop2: Chop2Wood { fell_fraction: ${f64(w.chop2.fellFraction)}, along: ${f64(w.chop2.along)}, wedge_matching: ${w.chop2.fellWedgeTrunk === 'matching'} } },`,
+      `    WoodDef { block: "${w.block}", fell_fraction: ${f64(w.fellFraction)}, buck_fraction: ${f64(w.buckFraction)}, buck_drops: &[${drops.join(', ')}], chips: Chips { count: ${w.chips.count}, color: [${rgb(w.chips.color).join(', ')}], speed: ${f64(w.chips.speed)}, size: ${f64(w.chips.size)} }, leaves: Leaves { block: ${optStr(w.leaves.block)}, count: ${w.leaves.count}, color: [${rgb(w.leaves.color).join(', ')}], radius_m: ${f64(w.leaves.radiusM)}, height_m: ${f64(w.leaves.heightM)} }, sway: Sway { from_fraction: ${f64(w.sway.fromFraction)}, max_deg: ${f64(w.sway.maxDeg)} }, sounds: &[${w.sounds.map((x) => `(${f64(x.from)}, "${x.event}")`).join(', ')}], cut: CutLook { tile: ${optStr(w.cut.tile)}, tint: [${rgb(w.cut.tint).join(', ')}], open: ${f64(w.cut.open)}, kerf_width_m: ${f64(w.cut.kerfWidthM)}, bite: BiteLook { width_m: ${f64(w.cut.bite.widthM)}, ends_m: ${f64(w.cut.bite.endsM)}, step: ${f64(w.cut.bite.step)} }, cracks: ${crackRust(w.cut.cracks)} }, fell_wedge: ${optStr(w.fellWedge)}, fell_wedge_matching: ${w.fellWedgeTrunk === 'matching'}, fell_tip: ${f64(w.fellTip)}, chop2: Chop2Wood { fell_fraction: ${f64(w.chop2.fellFraction)}, along: ${f64(w.chop2.along)}, wedge_matching: ${w.chop2.fellWedgeTrunk === 'matching'} } },`,
     );
   }
   rs.push('];');
@@ -534,7 +553,7 @@ export function toolsRust(d) {
   rs.push('');
   rs.push("/// Each block's hits to destroy (its `damage`): by bare hands, and by tool class or item.");
   rs.push('pub static BLOCK_DAMAGE: &[BlockDamageDef] = &[');
-  for (const b of d.damage) rs.push(`    BlockDamageDef { block: "${b.block}", default: ${b.default === null ? 'None' : `Some(${b.default})`}, tools: &[${b.tools.map((t) => `("${t.tool}", ${t.hits})`).join(', ')}], look: ${b.look === null ? 'None' : `Some(DamageLook { kind: DamageLookKind::${b.look.kind[0].toUpperCase() + b.look.kind.slice(1)}, size: ${f64(b.look.size)}, color: [${rgb(b.look.color).join(', ')}], crack: [${rgb(b.look.crack).join(', ')}], depth: ${f64(b.look.depth)}, rim: ${f64(b.look.rim)}, parallax: ${b.look.parallax}, darken: ${f64(b.look.darken)}, profile: CarveProfile::${b.look.profile[0].toUpperCase() + b.look.profile.slice(1)}, facets: ${b.look.facets}, grid: ${b.look.grid}, triangles: ${b.look.triangles}, cracks: ${b.look.cracks === null ? 'None' : `Some(Cracks { tiles: &[${b.look.cracks.tiles.map((t) => `"${t}"`).join(', ')}], stages: &[${b.look.cracks.stages.map(f64).join(', ')}], strength: ${f64(b.look.cracks.strength)}, span: ${f64(b.look.cracks.span)} })`} })`}, chips: ${b.chips === null ? 'None' : `Some(Chips { count: ${b.chips.count}, color: [${rgb(b.chips.color).join(', ')}], speed: ${f64(b.chips.speed)}, size: ${f64(b.chips.size)} })`} },`);
+  for (const b of d.damage) rs.push(`    BlockDamageDef { block: "${b.block}", default: ${b.default === null ? 'None' : `Some(${b.default})`}, tools: &[${b.tools.map((t) => `("${t.tool}", ${t.hits})`).join(', ')}], look: ${b.look === null ? 'None' : `Some(DamageLook { kind: DamageLookKind::${b.look.kind[0].toUpperCase() + b.look.kind.slice(1)}, size: ${f64(b.look.size)}, color: [${rgb(b.look.color).join(', ')}], crack: [${rgb(b.look.crack).join(', ')}], depth: ${f64(b.look.depth)}, rim: ${f64(b.look.rim)}, parallax: ${b.look.parallax}, darken: ${f64(b.look.darken)}, profile: CarveProfile::${b.look.profile[0].toUpperCase() + b.look.profile.slice(1)}, facets: ${b.look.facets}, grid: ${b.look.grid}, triangles: ${b.look.triangles}, cracks: ${crackRust(b.look.cracks)} })`}, chips: ${b.chips === null ? 'None' : `Some(Chips { count: ${b.chips.count}, color: [${rgb(b.chips.color).join(', ')}], speed: ${f64(b.chips.speed)}, size: ${f64(b.chips.size)} })`} },`);
   rs.push('];');
   rs.push('');
   rs.push('/// Tools that wear (`durability.items`): (item, hits it survives).');
