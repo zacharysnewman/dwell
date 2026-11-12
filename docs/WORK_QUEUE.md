@@ -1058,6 +1058,19 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    viewpoint only where the world's mode allows it. Owner: **"Still want theater mode for adventure, just without
    camera-relative sim."** — theater mode itself stays available in every mode; only the camera viewpoint is creative-only.
 
+42. **The sun as a real world** (owner 2026-11-12: "Add this feature to the queue, the sun is an actual world like
+   the moon. Follow similar concepts as the moon. The sun is a volcano world. Constant flowing lava, oceans of
+   lava."). Queued. Built on the moon's systems (MOON_WORLD.md): a grid with its own frame in grids.json, a
+   generator (volcanic: cones and rifts, lava oceans and rivers always flowing — the lava fields of VOLCANOES.md
+   kept molten by the world's heat, basalt and obsidian crusts), the far-body renderer drawing it from its bake as
+   today's sun disc (same size in the sky, its glow and sunlight unchanged — the bake shapes the surface, the lava
+   gives the light), its place in the celestial model (the sun's path today), flight and capture like the moon.
+   Owner's answers (2026-11-12): **"The sun's doesn't really light the earth world or moon world, just
+   conceptually."** (sunlight stays today's light model; the sun world's lava doesn't light other worlds);
+   **"Players can land there."**; **"Lava has the same function on the sun as the earth world."** (same damage,
+   burn, flow and cooling rules); **"Its gravity will be the same as earth world for now."** Queued after the moon's
+   client side (M-7c) so it reuses the finished travel.
+
 ## Done
 
 - **Axe swing directions and animation tools (owner 2026-11-11: "The axe animations are still trash.
