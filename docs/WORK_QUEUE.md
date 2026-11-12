@@ -606,6 +606,15 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    eats into the bright area, so the bright part reads smaller than the old evenly lit disc. Next (local): a
    side-by-side with the old moon at the same zoom and time; keep the full moon lit to its edge (limb darkening
    only on the dark side of the terminator, rim albedo evened) so the bright disc matches the old size.
+   Owner's answers, 2026-11-12: a fractional month ("Sounds good": 8.25 days); "keep darker seas (add a dark moon
+   aria dirt block)"; "Yes for now, let's just do earth gravity out to moon. We likely need an atmosphere
+   transition now between sky thinning to space. Clouds shouldn't extend past the earth atmosphere either."; the
+   moon "should match previous size for now. We'll play by ear a bit when we travel there."
+
+28. **An atmosphere: the sky thinning to space** (owner 2026-11-12: "We likely need an atmosphere transition now
+   between sky thinning to space. Clouds shouldn't extend past the earth atmosphere either."). With flight to the
+   moon, climbing should fade the sky's scattering to black space with stars by day, the horizon glow becoming a
+   thin limb; clouds and plumes stay below the atmosphere's top (data); the moon has none. In progress (cloud).
 
 ## Done
 

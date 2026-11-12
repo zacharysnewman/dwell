@@ -389,7 +389,11 @@ starts in the moon's frame with its gravity, and the home world streams in only 
 **Answered (owner, 2026-11-12):** Q2 **tidally locked** (home always sees face A; face B is the far side);
 Q3 **keep it physical** at first, then (after M-4 showed half the month dark) **"You mentioned a dome something, maybe do that"**: blend a dome normal (`domeBias`); Q4
 **"A darker floor but a minimum still."** (new-moon nights darker than today's floor, but never black); Q7
-**about 1–1.5 minutes** to the moon (a faster far-flight speed away from ground). Q5's month: "Not sure" (kept at 8 days; a fractional month recommended). Still open: Q1, Q6, Q8
+**about 1–1.5 minutes** to the moon (a faster far-flight speed away from ground). Q5's month: "Not sure", then (2026-11-12) **"Sounds good"** to a fractional month (8.25 days). Q1: **"keep darker
+seas (add a dark moon aria dirt block)"**: a darker regolith block for the maria. Q6: **"Yes for now, let's just do
+earth gravity out to moon. We likely need an atmosphere transition now between sky thinning to space. Clouds
+shouldn't extend past the earth atmosphere either."** Q8: **"should match previous size for now. We'll play by
+ear a bit when we travel there."** No questions left open
 (the proposal's defaults until answered: darker maria by albedo, an 8-day month at 5°, home gravity until
 captured, 12.5 km at ~597 km).
 
