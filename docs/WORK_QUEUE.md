@@ -1858,6 +1858,17 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    (4–8 packs). Plan: deer at the low end of real (~2–4/km² of grazing land, herds of 4–12: a few hundred herds,
    capped by the grazing's carrying capacity), wolves at real (~1 per 60 km²: 4–8 packs), as data; far herds
    visible to ~2.5 km and growing with distance; a test/dev command to list herds and go to the nearest.
+   **Built** (2026-11-12, docs/ECOLOGY.md §3, §9, §11): a species' `start` is a density over its range
+   (`perKm2`: deer 3 a km² of grazing land in herds of 10, wolves 1 per 60 km² of land in packs of 5,
+   `minGroups` for small islands); deer `maxGroups` 40 → 600, wolves cap 7 → 8 (packs of 4–8). Seed 1:
+   ~590 herds (5,900 deer) and 7 packs a face at the start, settling at ~6,900 deer (3.5/km²) and 50–65
+   wolves in 8 packs over two simulated years; a 5-day step ~2.5 ms a face (the step's O(n²) scans cut),
+   one step a server tick; the record ~137 KB a face. Far herds fade 1.8–2.5 km (wolves 1.5–2.2 km), each
+   head at least 3 px on screen (`far.minPx`), stood past the loaded chunks on the generator's ground;
+   the server sends each client its nearest groups first. The finder: `__dwell.herds(kind?)`,
+   `__dwell.goToHerd(kind?, back?)` (local worlds) and the bench step `herd` (scenario `herds`). Near
+   creature limits (`limits.max` 64, `spawnChunks`) unchanged: at ~3 deer a km² a player meets a herd or
+   two at a time. Not yet: in-game screenshots and the frame cost from the bench (no GPU in the cloud).
 
 47. **Wind only when flying** (owner 2026-11-12: "let's disable the wind for now it doesn't seem right like should just be
    for flying or high altitude only." / "Wind SFX"). Built: the wind bed reads the eye's height above the ground

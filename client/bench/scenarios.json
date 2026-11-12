@@ -104,6 +104,28 @@
       ]
     },
     {
+      "name": "herds",
+      "notes": "Finding animals (WORK_QUEUE item 46): the finder lists the far herds nearest first, goes to the nearest deer herd (40 m short, on the ground) and the nearest wolf pack, a shot of each as its group comes near; then 600 m short of a herd, where it is drawn far (billboards at least `minPx` tall, to ~2.5 km), and its frame timings.",
+      "query": { "local": "1", "seed": "1", "fresh": "1" },
+      "steps": [
+        { "do": "settle", "maxS": 60 },
+        { "do": "herd", "kind": "deer" },
+        { "do": "settle", "maxS": 30 },
+        { "do": "wait", "s": 3 },
+        { "do": "shot", "name": "deer-near", "maxS": 10 },
+        { "do": "herd", "kind": "wolf", "back": 60 },
+        { "do": "settle", "maxS": 30 },
+        { "do": "wait", "s": 3 },
+        { "do": "shot", "name": "wolves-near", "maxS": 10 },
+        { "do": "herd", "kind": "deer", "back": 600 },
+        { "do": "settle", "maxS": 30 },
+        { "do": "shot", "name": "deer-far", "maxS": 10 },
+        { "do": "mark" },
+        { "do": "wait", "s": 5 },
+        { "do": "record", "name": "herds" }
+      ]
+    },
+    {
       "name": "lava-lake",
       "notes": "Lava's look (VOLCANOES.md §6.3): the starter world's summit lava lake, its vent's rate × 30 (the dev `lava` step) so it fills in seconds, by day and by night, the frame near it; then a dev vent by the sea for lava meeting water (obsidian, steam).",
       "query": { "worldgen": "test:starter", "seed": "0", "fresh": "1", "at": "30008.5,200,-8000.5" },
