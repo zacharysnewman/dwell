@@ -6,6 +6,17 @@ pins it.
 
 ## Open
 
+### 110. Some sound effects sound like they come from right behind your head
+
+Owner, 2026-11-12: "I think the sound 'source' direction might be the issue with some of our sound effects. They
+sound like they're coming from right behind your head. Are we using 2D sound?" The engine is 3D: positioned sounds go
+through a PannerNode (HRTF on desktop, equal-power on mobile; inverse distance, ref 2 m), the listener at the camera
+(`setListener(position, forward, up)`). Suspects: the listener's forward/up not matching the camera in world space
+(a sign or axis swap, face B's frame, or forward sent face-local while positions are world), which mirrors front and
+back; the player's own sounds (footsteps at the feet, swings, the held tool, breaking at the target, the swim
+strokes) positioned at or just behind/below the head, where HRTF puts them behind or inside the head; positions
+lagging a frame behind a moving listener.
+
 ### 109. In a big world the client won't place a block past 50 km from the centre
 
 Found 2026-11-12 fixing #108 (not reproduced in game): `dwell-game` `block_interaction.rs` drops a Place outside
