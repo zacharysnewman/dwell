@@ -889,7 +889,7 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
 
    Owner, 2026-11-12: "fix four bugs found filming the deer and wolves" (BUGS.md #79–#82): births or a double
    spawn; no spacing; creature movement not keeping the body radius out of solid cells; `?at=`/teleport into the
-   ground. Fixed (cloud, after 0.54.95): births paced by data (`near.mate.restS`, `groupEveryS`; no double spawn),
+   ground. Fixed (cloud, after 0.54.101): births paced by data (`near.mate.restS`, `groupEveryS`; no double spawn),
    bodies kept apart (`bodyRadiusM`, `limits.gapM`/`pushMps`) and out of walls, a buried player lifted onto the
    ground above.
 37. **First-person arms from the player model** (owner 2026-11-12: "I thought we were going to swap out the AI

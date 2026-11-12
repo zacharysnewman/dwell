@@ -310,7 +310,7 @@ face, or the placement check against its shape.
 
 ## Fixed
 
-### 79. A herd grows by several animals within seconds of coming near (fixed after 0.54.95)
+### 79. A herd grows by several animals within seconds of coming near (fixed after 0.54.101)
 
 Seen filming the deer (2026-11-12, seed 7, herd id 3 at 3000,2200 face A): a herd that arrived as 6 head had 9 within
 seconds and 12–13 within a minute. Not a double spawn: the record leaves its face's far groups once and becomes one
@@ -322,7 +322,7 @@ never grows in front of a player who just arrived. Pinned by `dwell-sim` `herds.
 `a_fed_herd_near_a_player_has_at_most_one_young_a_minute` (red: 6 young in a minute; it also checks the herd spawned
 once) and `births_follow_the_data_s_pace` (the pace by data alone), both faces.
 
-### 80. Deer in a herd stand inside each other (fixed after 0.54.95)
+### 80. Deer in a herd stand inside each other (fixed after 0.54.101)
 
 Seen in the deer video (still_01 and clip 1): two does occupy the same space for seconds. Herd members had no spacing:
 they spawn 1–4 m round the record, walk to a groupmate's exact place for company and mating, and young are born by a
@@ -332,7 +332,7 @@ to `limits.pushMps` (1.2 m/s) and pushes two overlapping straight out (a few pas
 ground the creature can stand on with its body clear. Pinned by `herds.rs` `herd_members_never_stand_inside_each_other`
 (red: 0.69 m of overlap), both faces.
 
-### 81. A wolf walks partly inside a cliff wall (fixed after 0.54.95)
+### 81. A wolf walks partly inside a cliff wall (fixed after 0.54.101)
 
 Seen in the wolf clip (pack id 9 at -7800,-15600, a terraced cliff): a wolf's body overlapped the stone wall at the
 cliff foot. A creature's step checked only the column under its centre, so its body went up to its radius into a
@@ -342,7 +342,7 @@ stops; knockback and separation keep to the same rule; a body already against a 
 walk out. Pinned by `creatures.rs` `a_creature_s_body_keeps_out_of_a_wall_it_walks_into` (red: 0.297 m inside the
 wall), both faces.
 
-### 82. `?at=` or a teleport to a y inside the ground drops the player through to face B (fixed after 0.54.95)
+### 82. `?at=` or a teleport to a y inside the ground drops the player through to face B (fixed after 0.54.101)
 
 `?at=3000,260,2200` where the ground is at 381 fell through to face B; a teleport while flying to a y inside a
 mountain did the same: inside a solid cell the terrain's collision has no face to stop the capsule. Fixed on the
