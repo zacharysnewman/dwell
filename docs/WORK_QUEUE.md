@@ -497,6 +497,12 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    system: a voxel grid with its own transform (position, orientation, its own up/gravity), like the built
    bodies and physics pieces (docs/BUILT_BODIES.md) — the home world being the one at rest — so moons, ships
    and other buildable surfaces share one frame abstraction, one streamer, one mesher and one collider.
+   Owner, 2026-11-12: **"Could we make it so you can fly to the moon, when you get close enough you begin
+   following its position, locked to it, gravity shifts to align like the underside of the bifacial world.
+   Gravity is lower on the moon."** So travel is by flight: past a capture distance (data) the player's frame
+   switches to the moon's grid (moving with it, locked to its position and orientation), gravity turns to the
+   moon's local down the way crossing to face B turns it, and the moon's gravity is weaker (data per grid).
+   Leaving the capture distance hands the player back to the home frame.
 
 ## Done
 
