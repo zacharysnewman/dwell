@@ -74,7 +74,7 @@ mod tests {
         assert_eq!(HIGH.scale, 0.5);
         assert_eq!(LOW.scale, HIGH.scale / 2.0);
         assert_eq!(LOW.levels + 1, HIGH.levels);
-        assert!(LOW.levels >= 4, "three blur levels or more");
+        const { assert!(LOW.levels >= 4, "three blur levels or more") };
         assert_eq!(BloomQuality::Off.tier(), None);
         assert_eq!(BloomQuality::Low.tier(), Some(LOW));
         assert_eq!(BloomQuality::High.tier(), Some(HIGH));

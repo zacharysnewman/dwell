@@ -288,8 +288,15 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    today's per-hit drops are. 0.52.11x's per-pixel relief (built) is the stopgap until (a) lands.
 19. **Lava glow, remaining** (owner 2026-11-11: "Lava should have bloom glow"; "Lava looks dark red instead of
    bright red/orange"; "It should darken as it solidifies though"). Built 0.52.107: colour by heat stops, heat in
-   cells. Left: the bloom pass (keyed on emissive; tiers, off on CPU/Low); the crust covering less of hot lava
-   (one number, `crust` of the hot stop, waiting on the owner's look); the cooling river not yet seen in game.
+   cells. **Bloom built (pending release, `claude/bloom`):** keyed on the scene's self-lit flag (lava, torches,
+   flames), a halving blur chain added before the tone curve; Settings → Graphics → Bloom, High on High and
+   Ultra, Low (half resolution) on Medium, off on Low and Mobile, never on a phone or CPU adapter; data in
+   `shared/look/bloom.json`. Bench (M1, `bloom` scenario, the summit lake at night): Medium with bloom 5.66 ms
+   GPU mean against 5.79 off (p50 5.45 against 5.44), within the noise, so under the 0.5 ms target; Low draws
+   none and builds no pipeline (a test pins it). The owner's look is pending: at intensity 0.9 the glow also
+   lifts the dark crust's cells toward orange (one number, `intensity`). Left: the crust covering less of hot
+   lava (one number, `crust` of the hot stop, waiting on the owner's look); the cooling river not yet seen in
+   game.
 20. **Starter world on iPhone, again** (owner 2026-11-11: "iOS can't handle the starter world. It crashes and
    restarts quite often. What's so much heavier about it?"). 0.52.99–0.52.104: ecology 12.5 → 0.9 MB, starter
    biome grids 53.6 → 15.9 MB a process. Re-measured at 0.53.2 on the `--touch` page (BUGS.md #70): the
