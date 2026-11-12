@@ -382,6 +382,11 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    new bottom an upside-down ramp thin at the notch side, opening a V gash toward the side chopped (the data's
    `fellWedgeTrunk: open`, today `matching`), lined up with the notch and the fall. Waiting on the owner's
    confirmation. Also BUGS.md #73: a trunk settled diagonally up a slope loses most of its cells into the ground.
+   Owner, 2026-11-12: **"Yes that was the shape I meant too."** In progress (cloud), with BUGS.md #73.
+25. **Marks appear at contact, not on click** (owner 2026-11-12: "the gashes in blocks from tools show up on
+   click instead of when the animation lines up with the block. We want that timing."). Every tool's hit (axe
+   chop, pickaxe, shovel; the carve, cracks, chips, drops and sound) lands when the swing's head reaches the
+   block (the swing's contact time from its data), not when the button is pressed. In progress (cloud).
 
 ## Done
 
