@@ -14,6 +14,11 @@ near crowns fade out from 48 m and hand over to the impostors, but the trunks do
 the impostors don't draw (atlas bake not finished/failed, the Far trees tier, a CPU adapter, a shader error) or draw
 too faint, every tree past ~48 m is a bare trunk; the faded-plant drop (#773/#784) dropping whole cutout chunks;
 the leaf-card face-B packed-normal change (#799).
+Then (owner's screenshot, 0.54.204, a grassy hill of pines): every tree past ~50–60 m is a bare dark trunk; the
+nearest trees are leafy but already dithered; no impostor crowns anywhere. So the near crowns are dropped past the
+hand-over (`card_dropped`: leaf faces past `far_trees.x + .y + 2` when `frame.far_trees.w` is set) while the
+impostors draw nothing. The leaves must not fade out unless the impostors for those trees actually draw (atlas
+uploaded, the tile's instances in), and why the impostors draw nothing on the release needs finding.
 
 ### 104. Swimming underwater sounds like swimming at the surface; underwater sound isn't muffled
 
