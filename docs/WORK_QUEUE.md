@@ -986,7 +986,7 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
        no description or titles)."): the player at the foot of the tallest peak (~5000 m), a measuring line or
        ruler rising up the mountain with height numbers ticking as part of the effect (the only text allowed),
        pulling back to the whole range and the island's scale. The text exception is the measuring effect's
-       numbers only — no titles or descriptions.
+       numbers only — no titles or descriptions. Owner: "Measure in meters" (e.g. 1000 m, 2000 m … ticking up).
 
 ## Done
 
