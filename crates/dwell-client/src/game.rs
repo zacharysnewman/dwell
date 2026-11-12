@@ -574,6 +574,35 @@ pub struct ViewOverride {
     pub fov_deg: Option<f64>,
 }
 
+/// Theater mode's free-fly step (docs/THEATER_MODE.md §2): `view` moved `forward`, `right` and `up`
+/// metres along its face-local look (forward level, up the face's up) and turned by `yaw`/`pitch`
+/// degrees, the pitch held within ±89°. Written face-local and crossed into the world through the
+/// eye's `FaceFrame`, so a flight on face B is face A's mirror image.
+pub fn fly_step(
+    view: ViewOverride,
+    forward: f64,
+    right: f64,
+    up: f64,
+    yaw: f64,
+    pitch: f64,
+) -> ViewOverride {
+    let f = dwell_world::FaceFrame::at_height(view.eye[1]);
+    let yaw_deg = (view.yaw_deg + f.handed(yaw)).rem_euclid(360.0);
+    let pitch_deg = (view.pitch_deg + pitch).clamp(-89.0, 89.0);
+    let ahead = f.look(yaw_deg, 0.0);
+    let (s, c) = yaw_deg.to_radians().sin_cos();
+    let side = [f.handed(-c), 0.0, f.handed(s)];
+    let rise = f.vector([0.0, 1.0, 0.0]);
+    let eye: [f64; 3] =
+        std::array::from_fn(|k| view.eye[k] + ahead[k] * forward + side[k] * right + rise[k] * up);
+    ViewOverride {
+        eye,
+        yaw_deg,
+        pitch_deg,
+        ..view
+    }
+}
+
 impl ViewOverride {
     /// The face the eye is over.
     fn face(&self) -> FaceFrame {
@@ -5442,6 +5471,40 @@ mod tests {
         assert_eq!(held_of(false, dirt, true), Held::Brush(dirt));
         assert_eq!(held_of(false, 0, false), Held::Empty);
     }
+
+    dwell_world::both_faces!(
+        /// Theater mode's free-fly (THEATER_MODE.md §2): forward follows the level look, up the
+        /// face's up, a turn the player's handedness; the pitch stops short of straight up.
+        fn the_theater_camera_flies_along_its_face_local_look(f: FaceFrame) {
+            let v = ViewOverride {
+                eye: f.point([0.0, 40.0, 0.0]),
+                yaw_deg: 0.0,
+                pitch_deg: 30.0,
+                fov_deg: Some(50.0),
+            };
+            let n = fly_step(v, 2.0, 0.0, 1.0, 0.0, 0.0);
+            let local = f.point(n.eye);
+            assert!(
+                (local[2] - 2.0).abs() < 1e-9,
+                "forward level along +Z: {local:?}"
+            );
+            assert!(
+                (local[1] - 41.0).abs() < 1e-9,
+                "up the face's up: {local:?}"
+            );
+            assert_eq!(n.fov_deg, Some(50.0), "the field of view kept");
+            let r = fly_step(v, 0.0, 1.0, 0.0, 0.0, 0.0);
+            let side = f.point(r.eye);
+            let mirrored = f.handed(1.0);
+            assert!(
+                (side[0] + mirrored).abs() < 1e-9,
+                "right is the camera's right: {side:?}"
+            );
+            let t = fly_step(v, 0.0, 0.0, 0.0, 10.0, 80.0);
+            assert!((t.yaw_deg - f.handed(10.0).rem_euclid(360.0)).abs() < 1e-9);
+            assert_eq!(t.pitch_deg, 89.0, "the pitch held short of straight up");
+        }
+    );
 
     dwell_world::both_faces!(
         /// Owner (2026-11-06): dead on face B, the third-person camera was upside down. The body

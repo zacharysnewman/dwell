@@ -976,13 +976,14 @@ export interface DebugTool {
   on?: () => boolean;
 }
 
-type Page = SettingsPane | 'controller' | 'controls' | 'structures' | 'debug' | 'host';
+type Page = SettingsPane | 'controller' | 'controls' | 'theater' | 'structures' | 'debug' | 'host';
 
 /** The pages in the order they are listed, whatever order they are added in. */
 const PAGE_ORDER: readonly Page[] = [
   ...SETTINGS_PANES,
   'controller',
   'controls',
+  'theater',
   'structures',
   'debug',
   'host',
@@ -995,6 +996,7 @@ const PAGE_TITLES: Record<Page, string> = {
   screen: 'On screen',
   controller: 'Controller',
   controls: 'Controls',
+  theater: 'Theater',
   structures: 'Structures',
   debug: 'Debug',
   host: 'Host',
@@ -1257,6 +1259,45 @@ export class SettingsMenu {
     entry?.tab.setAttribute('id', 'menu-controller');
     entry?.tab.addEventListener('click', onShow);
     this.leaveController = onLeave;
+  }
+
+  /**
+   * Adds the Theater page (docs/THEATER_MODE.md §2): a button that turns theater mode on (and
+   * closes the menu), with its key; `allowed` false (the host turned it off for guests) shows why.
+   */
+  addTheaterPage(key: string, enter: () => void, allowed: () => boolean): void {
+    const page = el('section');
+    const b = el('button', 'block-button theater-enter', 'Enter theater mode');
+    b.type = 'button';
+    b.id = 'menu-theater-enter';
+    const note = el(
+      'p',
+      'gm-lead gm-unavailable',
+      'The host has turned theater mode off for guests.',
+    );
+    b.addEventListener('click', () => {
+      if (!allowed()) return;
+      this.setOpen(false);
+      enter();
+    });
+    page.append(
+      el(
+        'p',
+        'gm-lead',
+        'A free camera, camera moves and keyframed paths, and recording the view to a file. ' +
+          'Your character stays where it is.',
+      ),
+      b,
+      ...keycaps(key),
+      note,
+    );
+    this.addPage('theater', page);
+    const tab = this.pages.get('theater')?.tab;
+    tab?.setAttribute('id', 'menu-theater');
+    tab?.addEventListener('click', () => {
+      b.disabled = !allowed();
+      note.hidden = allowed();
+    });
   }
 
   /** Adds the Host page (local worlds, Phase 5c): `panel` is ui/hostPanel.ts's. */

@@ -1110,6 +1110,12 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    name `camera` was taken) and the record skill. Not yet run in a browser (cloud session, no GPU). Next, locally:
    T-2 the mode and editor, T-3 recording; then T-4 the creative viewpoint (designed in THEATER_MODE.md §7: the
    `theaterViewpoint` ability, server-checked) and T-5 the MCP server.
+   **T-2 and T-3 built (2026-11-12, `client/src/theater/`):** F9 / Settings → Theater / the right stick press / a
+   touch button toggle it (key and tunables in `shared/theater/theater.json`); the free camera (`theaterFly`, both
+   faces); the HUD switch with an audit test; the toolbar's Presets, Keyframes (timeline, save/load, export/import)
+   and Record (9:16 or 16:9, 720–1440p, 24/30/60 fps, MP4 or WebM download) panels; `__dwell.theaterMode`.
+   Outstanding: the host's `theaterGuests` world setting (protocol), following a creature by id, the offline
+   frame-exact recording mode, a playtest on a phone.
    Owner, 2026-11-12: **"For players to use it would be cool if it had an MCP server so they could use an LLM agent to
    handle the recording complexities, not sure if that would help us at all but it's a to have."** A nice-to-have,
    after the in-game tools: an MCP server exposing theater mode's operations (find subjects, set time of day,
