@@ -1418,3 +1418,80 @@ fn bites_go_only_to_a_client_that_said_bites_hello_and_are_saved() {
         "saved with its bites"
     );
 }
+
+dwell_world::both_faces!(
+    /// WORK_QUEUE item 26 (owner, 2026-11-12: "I think let's do your recommendation" — the stump
+    /// keeps its gash): a 12th swing at the felled spot hits the stump's fell wedge as wood, a bite
+    /// and a wear, and never clears it (red before: the axe's `clears` broke the `dwell:log_ramp`,
+    /// leaving a flat stump); the stump comes down only after it is chopped like a log, and in
+    /// adventure drops the wood's `buckDrops`.
+    fn a_swing_after_the_fall_bites_the_stump_which_comes_down_only_when_chopped(f: FaceFrame) {
+        let mut fx = scene(f, "adventure", true);
+        let n = swings_to_fell(&mut fx, f, false, 20, |i| i % 2).expect("felled");
+        let stump = cell_is(&mut fx, f, [3, AT, 0]);
+        let name = dwell_blocks::block_of(f.state(stump)).name;
+        assert_eq!(name, "dwell:log_ramp", "the stump's wedge");
+        // On the hinge side, out of the trunk's fall (toward −x), facing the stump.
+        move_to_local(&mut fx, f, 5.0, m_of_row(BASE), 0.5);
+        for _ in 0..60 {
+            fx.server.step();
+        }
+        let worn = axe_wear(&fx).expect("the axe in hand");
+        // The 12th swing: its arc meets the stump's wedge.
+        sweep(&mut fx, f, [-1.0, 0.0, 0.0], false);
+        assert_eq!(
+            cell_is(&mut fx, f, [3, AT, 0]),
+            stump,
+            "{f:?}: the gash stays"
+        );
+        let cut = fx
+            .server
+            .cut_of(f.cell([3, AT, 0]))
+            .expect("the stump is cut");
+        assert!(cut.has_bites(), "{f:?}: a bite in the stump: {cut:?}");
+        assert_eq!(axe_wear(&fx), Some(worn + 1), "{f:?}: the hit wore the axe");
+        // Chopped like a log: down after about as many swings as the trunk took, not one.
+        let wood_before = wood_count(&fx);
+        let mut k = 1;
+        while cell_is(&mut fx, f, [3, AT, 0]) == stump && k < 40 {
+            at_trunk(&mut fx, f, k % 2, false);
+            k += 1;
+        }
+        assert_eq!(
+            cell_is(&mut fx, f, [3, AT, 0]),
+            M.air,
+            "{f:?}: chopped down"
+        );
+        assert!(
+            k + 2 >= n && k >= 6,
+            "{f:?}: {k} swings to chop the stump ({n} to fell)"
+        );
+        for _ in 0..120 {
+            fx.server.step();
+        }
+        assert!(
+            wood_count(&fx) > wood_before,
+            "{f:?}: the stump's wood dropped"
+        );
+    }
+);
+
+/// The wood lying loose and in player 1's inventory.
+fn wood_count(fx: &Fixture) -> u32 {
+    let loose: u32 = fx
+        .server
+        .loose_items()
+        .iter()
+        .filter(|it| it.stack.item == "dwell:wood")
+        .map(|it| u32::from(it.stack.count))
+        .sum();
+    let held: u32 = fx.server.inventory_of(1).map_or(0, |inv| {
+        inv.slots
+            .iter()
+            .flatten()
+            .filter(|s| s.item == "dwell:wood")
+            .map(|s| u32::from(s.count))
+            .sum()
+    });
+    loose + held
+}

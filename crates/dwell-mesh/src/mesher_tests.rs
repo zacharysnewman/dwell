@@ -2592,3 +2592,99 @@ dwell_world::both_faces!(
         }
     }
 );
+
+/// WORK_QUEUE item 26 round 2 (the in-game check: "no grain cracks seen round the bites … at 1, 3,
+/// 6 swings"): after 1, 3 and 6 hits at one spot of a standing log, the wood's crack strokes show
+/// on the bark left round the bites, not only inside the cut. Red before: the split runs along
+/// the grain through the newest bite, and the V filled the cell's height there, so every dark
+/// texel of the crack within the cell lay in the cut.
+#[test]
+fn a_bitten_logs_cracks_show_on_the_bark_round_the_bites() {
+    // both-faces: face-local geometry, no up (a face-B chunk's cut is mirrored first,
+    // `carve::mirror_cut`; the meshed cracks on both faces: `a_bitten_log_is_carved_…`).
+    use dwell_protocol::chopping as chop;
+    let wood = chop::wood("dwell:log").unwrap();
+    let axe = chop::tool("dwell:stone_axe").unwrap();
+    let look = wood.cut;
+    let face = face_of(0, -1);
+    let (pu, pv) = damage_mesh::plane_axes(0);
+    let size = |a: usize| if a == 1 { CELL_H } else { 1.0 };
+    for swings in [1, 3, 6] {
+        let mut cut = Cut::default();
+        for _ in 0..swings {
+            let band = cut.open_band(0, 0);
+            cut.swing(axe, 1, 0, band, 1.0);
+            cut.bite(1, 0, band, 0.5, &look.bite);
+        }
+        let layer = super::cut_cracks(wood, &look, 1, &cut, [0, 0, 0]).expect("cracks");
+        let tile = crate::textures::TILE_ORDER[usize::from(layer.slot) - 1];
+        let ts = crate::textures::TILE as i64;
+        let (mut on_bark, mut in_cut) = (0, 0);
+        for i in 0..=80 {
+            for k in 0..=80 {
+                let (t, u) = (f64::from(i) / 80.0, f64::from(k) / 80.0);
+                let mut p = [0.0; 3];
+                p[1] = t;
+                p[2] = u;
+                let q = [p[pu] * size(pu), p[pv] * size(pv)];
+                let [a, b] = layer.uv(face, q);
+                if !(0.0..1.0).contains(&a) || !(0.0..1.0).contains(&b) {
+                    continue;
+                }
+                let px =
+                    crate::textures::texel_of(tile, (a * ts as f64) as i64, (b * ts as f64) as i64);
+                if px[0] >= 200 {
+                    continue;
+                }
+                if crate::carve::depth_at(1, &cut, &look, 0, t, u) > 1e-9 {
+                    in_cut += 1;
+                } else {
+                    on_bark += 1;
+                }
+            }
+        }
+        assert!(
+            on_bark > 0,
+            "{swings} swings: the crack shows on the bark ({on_bark} there, {in_cut} in the cut)"
+        );
+    }
+}
+
+/// WORK_QUEUE item 26 round 2 (the in-game check: "no grain cracks seen round the bites … on the
+/// dark bark"): each wood's crack strokes, at the wood's crack `strength`, darken its bark (its
+/// block's side tile) well past the bark's own darkest streaks, so a split reads on the bark.
+/// Red before: they were painted in the bark ramp's shadow, the colour of the bark's own streaks
+/// along the grain, at 0.6: a split the same dark as the grain it runs along.
+#[test]
+fn wood_cracks_read_darker_than_the_barks_own_streaks() {
+    // both-faces: texture data only, no up.
+    let lum =
+        |p: [u8; 4]| 0.2126 * f64::from(p[0]) + 0.7152 * f64::from(p[1]) + 0.0722 * f64::from(p[2]);
+    let ts = crate::textures::TILE as i64;
+    for w in dwell_protocol::chopping::WOODS {
+        let Some(cracks) = w.cut.cracks else { continue };
+        let side = dwell_blocks::info(require(w.block))
+            .textures
+            .map(|t| t.side)
+            .expect("the wood's side tile");
+        let mut bark: Vec<f64> = (0..ts * ts)
+            .map(|k| lum(crate::textures::texel_of(side, k % ts, k / ts)))
+            .collect();
+        bark.sort_by(f64::total_cmp);
+        let (darkest, median) = (bark[bark.len() / 20], bark[bark.len() / 2]);
+        for tile in cracks.tiles {
+            let crack = (0..ts * ts)
+                .map(|k| crate::textures::texel_of(tile, k % ts, k / ts))
+                .min_by(|a, b| lum(*a).total_cmp(&lum(*b)))
+                .unwrap();
+            // The shader's multiply: mix(1, crack, strength), on the bark's median texel.
+            let k = 1.0 - cracks.strength * (1.0 - lum(crack) / 255.0);
+            let split = median * k;
+            assert!(
+                split < 0.7 * darkest,
+                "{} {tile}: a split darkens the bark to {split:.0}, its own streaks are {darkest:.0}",
+                w.block
+            );
+        }
+    }
+}

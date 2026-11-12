@@ -3002,7 +3002,7 @@ impl<S: Scene> Game<S> {
         let name = dwell_blocks::block_of(block).name;
         let wood = dwell_protocol::chopping::WOODS
             .iter()
-            .position(|w| w.block == name);
+            .position(|w| w.block == name || w.fell_wedge == Some(name));
         let at = Some(hit.point);
         let event = |n: &str| SoundKind::ALL.into_iter().find(|k| k.name() == n);
         match wood.filter(|_| hit.wood) {
@@ -3167,7 +3167,7 @@ impl<S: Scene> Game<S> {
         let name = dwell_blocks::block_of(block).name;
         if let Some(wood) = dwell_protocol::chopping::WOODS
             .iter()
-            .position(|w| w.block == name)
+            .position(|w| w.block == name || w.fell_wedge == Some(name))
         {
             self.chips.burst(
                 wood,
@@ -4696,7 +4696,8 @@ impl<S: Scene> Game<S> {
                     face: h.axis_face(),
                     point: h.point,
                     step: h.step,
-                    wood: dwell_protocol::chopping::wood(dwell_blocks::block_of(m).name).is_some(),
+                    wood: dwell_protocol::chopping::chopped_wood(dwell_blocks::block_of(m).name)
+                        .is_some(),
                 }
             })
         });

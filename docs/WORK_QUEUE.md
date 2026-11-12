@@ -483,6 +483,8 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    Owner, 2026-11-12, on BUGS.md #75 (trees couldn't be felled: one aim hacked one binding kerf): **"Merge the
    fix"** — a swing at the deeper band lands in the other one, so chopping at one spot notches and fells in ~11
    swings; ADR 0067's "clumsy straight hacking 3–4× more" rule is dropped.
+   Owner, 2026-11-12, on the gash wiped by a swing after the fall: "I think let's do your recommendation" —
+   the stump keeps its gash (built with item 26's round 2: the axe chops the stump's ramp, never clears it).
 25. **Marks appear at contact, not on click** (owner 2026-11-12: "the gashes in blocks from tools show up on
    click instead of when the animation lines up with the block. We want that timing."). Every tool's hit (axe
    chop, pickaxe, shovel; the carve, cracks, chips, drops and sound) lands when the swing's head reaches the
@@ -509,8 +511,14 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    instead of across into a notch, and no wood cracks showed. A swing after the fall cleared the stump's slanted
    top (the gash), because the axe clears `dwell:log_ramp` like leaves. Owner, 2026-11-12, on that: **"I think
    let's do your recommendation."** — the stump keeps its gash: the axe chops a fell wedge (a hit, a bite) instead
-   of clearing it; the stump comes down only when chopped deliberately like a log. In progress (cloud), with the
-   bites spreading across and the cracks showing.
+   of clearing it; the stump comes down only when chopped deliberately like a log. With the bites
+   spreading across and the cracks showing, **built 2026-11-12** (cloud, branch `claude/axe-bites-2-pllttm`),
+   waiting on the owner's look in game: hits at one spot alternate beside each other across the side (either
+   band) and 11 span the log, a thinner trunk's too; every V within the notch's band (the cell's middle ¼ m),
+   carved over the octagon's chamfers; the wood cracks painted in ink (they were the bark's own streak colour)
+   at 0.85; the stump's `dwell:log_ramp` is chopped as the log (a bite, a wear), never cleared, and comes
+   down only when cut through, dropping wood. Not done: the stump's bites aren't drawn (recorded only).
+   BLOCK_DAMAGE.md §6.4 "Round 2", ADR 0067 note.
 27. **A felled trunk landing on its chopper flings them (BUGS.md #52)** (the owner's brief, 2026-11-12: fix the
    cause, "we shouldn't be capping player kick like that" (2026-11-08): no cap on the kick; a trunk hitting a
    player at speed must still knock them as physics says). **Built 2026-11-12** (branch `claude/pinch-fling`):
