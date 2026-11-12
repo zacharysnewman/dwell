@@ -32,6 +32,7 @@ pub mod seam;
 pub mod shaders;
 pub mod shadows;
 pub mod skinned;
+pub mod staged;
 pub mod streaming;
 pub mod timing;
 pub mod upscale;
@@ -600,8 +601,41 @@ impl GpuMesh {
         parts: Vec<std::ops::Range<u32>>,
         bytes: u64,
     ) -> Self {
+        Self::upload_to(arena, kind, vertices, indices, parts, bytes, None)
+    }
+
+    /// [`Self::upload`], or with `staged` its room reserved and its bytes handed over to be
+    /// written later (`staged.rs`): not to be drawn until they are.
+    fn upload_to(
+        arena: &ArenaRef,
+        kind: Kind,
+        vertices: &[f32],
+        indices: &[u32],
+        parts: Vec<std::ops::Range<u32>>,
+        bytes: u64,
+        staged: Option<&mut Vec<staged::Write>>,
+    ) -> Self {
         let mut a = arena.borrow_mut();
-        let region = a.upload(kind as usize, floats(vertices), u32s(indices));
+        let region = match staged {
+            None => a.upload(kind as usize, floats(vertices), u32s(indices)),
+            Some(out) => {
+                let (v, i) = (floats(vertices), u32s(indices));
+                let r = a.reserve(kind as usize, v.len() as u64, i.len() as u64);
+                out.push(staged::Write {
+                    format: r.format,
+                    page: r.page,
+                    offset: r.vertex_offset,
+                    data: v.to_vec(),
+                });
+                out.push(staged::Write {
+                    format: r.format,
+                    page: r.page,
+                    offset: r.index_offset,
+                    data: i.to_vec(),
+                });
+                r
+            }
+        };
         Self {
             base_vertex: a.base_vertex(&region),
             first_index: (region.index_offset / 4) as u32,
@@ -622,24 +656,35 @@ impl GpuMesh {
     }
 
     fn textured_as(arena: &ArenaRef, m: &MeshArrays, kind: Kind) -> Option<Self> {
+        Self::textured_staged(arena, m, kind, None)
+    }
+
+    fn textured_staged(
+        arena: &ArenaRef,
+        m: &MeshArrays,
+        kind: Kind,
+        staged: Option<&mut Vec<staged::Write>>,
+    ) -> Option<Self> {
         if m.indices.is_empty() {
             return None;
         }
         let vertices = textured_vertices(m, kind);
-        Some(Self::upload(
+        Some(Self::upload_to(
             arena,
             kind,
             &vertices,
             &m.indices,
             std::iter::once(0..m.indices.len() as u32).collect(),
             m.byte_len() as u64,
+            staged,
         ))
     }
 
     /// A fluid mesh (a chunk's transparent mesh, a section's water): position, normal, colour,
     /// fluid id (`dwell_mesh::NO_FLUID` where the stream is short) and flood light per vertex
     /// (`fluid_vertices`). The water shader draws its ripples procedurally, so the chunks' uvs and
-    /// tiles are left behind.
+    /// tiles are left behind. With `staged`, its bytes are handed over to be written later.
+    #[allow(clippy::too_many_arguments)]
     fn fluid(
         arena: &ArenaRef,
         positions: &[f32],
@@ -648,19 +693,21 @@ impl GpuMesh {
         fluids: &[f32],
         flood: &[f32],
         indices: &[u32],
+        staged: Option<&mut Vec<staged::Write>>,
     ) -> Option<Self> {
         if indices.is_empty() {
             return None;
         }
         let vertices = fluid_vertices(positions, normals, colors, fluids, flood);
         let bytes = 4 * (vertices.len() + indices.len()) as u64;
-        Some(Self::upload(
+        Some(Self::upload_to(
             arena,
             Kind::Fluid,
             &vertices,
             indices,
             std::iter::once(0..indices.len() as u32).collect(),
             bytes,
+            staged,
         ))
     }
 
@@ -792,6 +839,13 @@ pub struct RasterTerrain {
     pieces: HashMap<u32, PieceMeshes>,
     shown: Vec<(i64, u8, Fade)>,
     stand_ins: Vec<StandIn>,
+    /// Chunks whose meshes are being written a slice a frame (`staged.rs`; BUGS.md #72), drawn
+    /// once whole, their old meshes until then, and the writes waiting.
+    pending: HashMap<ChunkCoord, Chunk>,
+    writes: staged::WriteQueue<ChunkCoord>,
+    /// A frame's upload budget in bytes (`shared/render/streaming.json`; unlimited: written at
+    /// once).
+    stage_budget: u64,
 }
 
 impl RasterTerrain {
@@ -803,29 +857,66 @@ impl RasterTerrain {
             pieces: HashMap::default(),
             shown: Vec::new(),
             stand_ins: Vec::new(),
+            pending: HashMap::default(),
+            writes: staged::WriteQueue::default(),
+            stage_budget: u64::MAX,
         }
+    }
+
+    /// Writes this frame's share of the staged chunk meshes; the chunks now whole replace their
+    /// old meshes.
+    fn pump_staged(&mut self) {
+        if self.writes.is_empty() {
+            return;
+        }
+        let t0 = crate::telemetry::now_ms();
+        let mut bytes = 0usize;
+        let arena = self.arena.clone();
+        let a = arena.borrow();
+        let done = self.writes.pump(self.stage_budget, |format, page, offset, data| {
+            bytes += data.len();
+            a.write_at(format, page, offset, data);
+        });
+        drop(a);
+        for c in done {
+            if let Some(chunk) = self.pending.remove(&c) {
+                self.chunks.insert(c, chunk);
+            }
+        }
+        crate::telemetry::add("upload.staged", crate::telemetry::now_ms() - t0);
+        crate::telemetry::add("upload.staged_bytes", bytes as f64);
     }
 }
 
 impl TerrainRenderer for RasterTerrain {
     /// Replaces (or, with `None`, removes) a terrain chunk; meshes are chunk-local.
     fn set_chunk(&mut self, coord: ChunkCoord, meshes: Option<&ChunkMeshes>) {
-        self.chunks.remove(&coord);
-        let Some(m) = meshes else { return };
+        // A mesh still being written is superseded either way.
+        if self.pending.remove(&coord).is_some() {
+            self.writes.cancel(coord);
+        }
+        let Some(m) = meshes else {
+            self.chunks.remove(&coord);
+            return;
+        };
         let t0 = crate::telemetry::now_ms();
         let t = &m.transparent;
-        let cutout = GpuMesh::cutout(&self.arena, &m.cutout);
-        let (opaque, water) = (
-            GpuMesh::textured(&self.arena, &m.opaque),
-            GpuMesh::fluid(
-                &self.arena,
-                &t.positions,
-                &t.normals,
-                &t.colors,
-                &t.fluids,
-                &t.flood,
-                &t.indices,
-            ),
+        // Over the frame's budget, its bytes are written a slice a frame and the old mesh drawn
+        // until they are all there; else at once, as before.
+        let mut writes = Vec::new();
+        let stage = (m.opaque.byte_len() + m.transparent.byte_len() + m.cutout.byte_len()) as u64
+            > self.stage_budget;
+        let cutout = GpuMesh::textured_staged(&self.arena, &m.cutout, Kind::Cutout, stage.then_some(&mut writes));
+        let opaque = GpuMesh::textured_staged(&self.arena, &m.opaque, Kind::Terrain, stage.then_some(&mut writes));
+        let water = GpuMesh::fluid(
+            &self.arena,
+            &t.positions,
+            &t.normals,
+            &t.colors,
+            &t.fluids,
+            &t.flood,
+            &t.indices,
+            stage.then_some(&mut writes),
         );
         crate::telemetry::add("upload.chunk", crate::telemetry::now_ms() - t0);
         crate::telemetry::add("upload.chunks", 1.0);
@@ -837,18 +928,21 @@ impl TerrainRenderer for RasterTerrain {
                 .sum::<u64>() as f64,
         );
         if opaque.is_none() && water.is_none() && cutout.is_none() {
+            self.chunks.remove(&coord);
             return;
         }
-        let origin = chunk_origin_m(coord);
-        self.chunks.insert(
-            coord,
-            Chunk {
-                origin,
-                opaque,
-                water,
-                cutout,
-            },
-        );
+        let chunk = Chunk {
+            origin: chunk_origin_m(coord),
+            opaque,
+            water,
+            cutout,
+        };
+        if stage {
+            self.pending.insert(coord, chunk);
+            self.writes.push(coord, writes);
+        } else {
+            self.chunks.insert(coord, chunk);
+        }
     }
 
     /// LOD sections (§6.6): adds, replaces or removes a section's meshes (in cells from `origin`,
@@ -869,6 +963,7 @@ impl TerrainRenderer for RasterTerrain {
             &w.fluids,
             &[],
             &w.indices,
+            None,
         );
         crate::telemetry::add("upload.section", crate::telemetry::now_ms() - t0);
         crate::telemetry::add("upload.sections", 1.0);
@@ -896,6 +991,8 @@ impl TerrainRenderer for RasterTerrain {
     }
     fn clear(&mut self) {
         self.chunks.clear();
+        self.pending.clear();
+        self.writes.clear();
         self.sections.clear();
         self.shown.clear();
         self.stand_ins.clear();
@@ -2558,6 +2655,7 @@ impl Renderer {
     /// `phone_tiers`, `shared/look/reflections.json` `phone`).
     pub fn set_phone(&mut self, phone: bool) {
         self.phone = phone;
+        self.terrain.stage_budget = streaming::StreamingBudgets::get().upload_bytes(phone);
     }
     /// Whether this adapter draws the LOD colour map (not a CPU adapter: the cheapest tier of
     /// everything there).
@@ -3778,6 +3876,8 @@ impl Renderer {
         target: &wgpu::TextureView,
         chunk_fade: &dyn Fn(ChunkCoord) -> Option<Fade>,
     ) {
+        // This frame's slice of the chunk meshes being written (staged.rs), before the draw.
+        self.terrain.pump_staged();
         self.ensure_targets();
         // With the pixel-art preview on, the composite and lines draw into its low-res picture and
         // its post pass draws that on the canvas (render/pixel_art.rs).
@@ -5805,6 +5905,9 @@ impl crate::game::Scene for Renderer {
     }
     fn upload_budget_bytes(&self) -> u64 {
         streaming::StreamingBudgets::get().upload_bytes(self.phone)
+    }
+    fn uploads_waiting(&self) -> bool {
+        !self.terrain.writes.is_empty()
     }
     fn draws_heightfield(&self) -> bool {
         heightfield_drawn(self.water().tier().heightfield, self.heightfield_override)
