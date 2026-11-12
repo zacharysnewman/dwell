@@ -3222,6 +3222,38 @@ impl Client {
             g.request_map(x0, z0, step, n, face);
         }
     }
+    /// Asks for the big map's debug layer of field index `field` (REALISTIC_WORLD.md R6; the
+    /// fields are `dwell_worldgen::map_layers::MapField`'s, by name in `mapLayerFields`).
+    #[wasm_bindgen(js_name = requestMapLayer)]
+    pub fn request_map_layer(&self, field: u8, x0: i32, z0: i32, step: i32, n: i32, face: u8) {
+        if let Some(g) = &mut self.inner.borrow_mut().game {
+            g.request_map_layer(field, x0, z0, step, n, face);
+        }
+    }
+    /// The requested debug layer once: its field index and face (0 A, 1 B) as the first two bytes,
+    /// then its `LayerGrid::encode` bytes (nothing after them: the world has no such field).
+    #[wasm_bindgen(js_name = takeMapLayer)]
+    pub fn take_map_layer(&self) -> Option<Vec<u8>> {
+        let (f, face, bytes) = self
+            .inner
+            .borrow_mut()
+            .game
+            .as_mut()
+            .and_then(|g| g.take_map_layer())?;
+        let mut out = Vec::with_capacity(2 + bytes.len());
+        out.push(f);
+        out.push(face);
+        out.extend_from_slice(&bytes);
+        Some(out)
+    }
+    /// The debug layers' field names, by index (`dwell_worldgen::map_layers::MapField::ALL`).
+    #[wasm_bindgen(js_name = mapLayerFields)]
+    pub fn map_layer_fields(&self) -> Vec<String> {
+        dwell_worldgen::map_layers::MapField::ALL
+            .iter()
+            .map(|f| f.name().to_owned())
+            .collect()
+    }
     /// The requested map (3 bytes per sample: height i16 LE, outside flag), or undefined.
     #[wasm_bindgen(js_name = takeMap)]
     pub fn take_map(&self) -> Option<Vec<u8>> {

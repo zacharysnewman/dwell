@@ -15,6 +15,8 @@ import {
   validateHud,
   validateLayout,
   validateMap,
+  validateMapLayers,
+  LAYER_FIELDS,
   validateMenuBackgrounds,
 } from './gen.mjs';
 
@@ -199,4 +201,29 @@ test('bad layout entries fail with their path named', () => {
     change(d);
     assert.throws(() => validateLayout(d), message);
   }
+});
+
+const layersData = () => JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'mapLayers.json'), 'utf8'));
+
+test('the big map debug layers are valid and name the generator fields (REALISTIC_WORLD.md R6)', () => {
+  const d = validateMapLayers(layersData());
+  for (const l of d.layers) assert.ok(l.field in LAYER_FIELDS);
+  assert.deepEqual(
+    d.layers.map((l) => l.field).sort(),
+    ['plates', 'rain', 'rocks', 'uplift'],
+  );
+});
+
+test('a debug layer added by data alone validates, and bad layers fail naming the entry', () => {
+  const d = layersData();
+  const extra = { name: 'rain_again', label: 'Rain 2', field: 'rain', opacity: 0.3, ramp: [{ at: 0, color: '#000000' }, { at: 1, color: '#ffffff' }] };
+  assert.equal(validateMapLayers({ ...d, layers: [...d.layers, extra] }).layers.length, d.layers.length + 1);
+  const bad = (layer, re) => assert.throws(() => validateMapLayers({ ...d, layers: [layer] }), re);
+  bad({ ...extra, field: 'wind' }, /layers\[0\]\.field must be one of/);
+  bad({ ...extra, ramp: [{ at: 1, color: '#000000' }, { at: 0, color: '#ffffff' }] }, /ramp\[1\]\.at must be above/);
+  bad({ ...extra, colors: {} }, /coloured by a ramp/);
+  bad({ name: 'p', label: 'P', field: 'plates', opacity: 0.5, colors: { oceanic: 'blue' } }, /colors\.oceanic must be a #rrggbb/);
+  bad({ ...extra, opacity: 0 }, /opacity/);
+  assert.throws(() => validateMapLayers({ ...d, layers: [extra, extra] }), /used twice/);
+  assert.throws(() => validateMapLayers({ ...d, key: 'L' }), /key must be/);
 });

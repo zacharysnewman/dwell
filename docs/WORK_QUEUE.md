@@ -570,8 +570,17 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    `CELESTIAL` world setting (0x86); the server rolls it at creation for a Sky preset (`--sky`, the browser's New
    world → More options → Sky, shown for a world whose climate reads the sky, and `&sky=` on a `?worldgen=test:realistic`
    link); the sky (server and clients) draws the world's orbit; default and starter today's sky exactly (golden).
-   Realistic is not in the World list yet (R6), so the Sky field shows once it is. **O3 not built** (the climate
+   Realistic is in the World list since R6, so the Sky field shows for it. **O3 not built** (the climate
    reading the orbit needs it carried to the map workers): next.
+   Owner, 2026-11-12: **"Do we have realistic worlds yet?"** (R1–R5 and O1–O2 were built; the world was reachable
+   only by link as the test world `test:realistic`.) **R6 built (2026-11-12, the browser check outstanding):**
+   New world → World → Realistic (`realistic.json` `newWorld`), its Sky preset under More options, its worldgen,
+   seed and Sky saved with the world; its own goldens (`shared/worldgen/golden/realistic-hashes.txt`,
+   `tests/realistic_golden.rs`; the default's unchanged); the big map's debug layers as data
+   (`shared/ui/mapLayers.json`: plates with their outlines and kinds, uplift, rain, rocks; `dwell-worldgen`
+   `map_layers.rs`; the map's Layer button and `L`); the memory natively: Realistic's biome sets 14.1 MB both faces
+   against the starter's 15.9 MB. **Not done:** the overlays in Chisel (next with its other overlays); the browser's
+   create → play → reload and the phone page's total at load, for a local session (REALISTIC_WORLD.md R6).
 16. **Phone frame rate (P0)** (owner 2026-11-11, iPhone 17, Safari, setting Low: "I'm only getting ~23 fps on
    mobile, seeing lots of z-fighting on tree trunks with the leaf cards. What might be dropping frames since the
    last while. Used to get 60 fps"). Suspect: leaf cards are on in every tier but CPU, Low included; cards lying
