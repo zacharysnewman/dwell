@@ -1081,6 +1081,128 @@ dwell_world::both_faces!(
     }
 );
 
+/// The held slot's wear, if it holds the axe.
+fn axe_wear(fx: &Fixture) -> Option<u16> {
+    let inv = fx.server.inventory_of(1)?;
+    inv.slots[usize::from(inv.held)]
+        .as_ref()
+        .filter(|s| s.item == AXE)
+        .map(|s| s.wear)
+}
+
+fn send_sweep(fx: &mut Fixture, f: FaceFrame, look: [f64; 3], vertical: bool) {
+    fx.send(
+        1,
+        Message::Chop(ChopAction::Sweep {
+            tool: AXE.into(),
+            look: f.vector(look).map(|v| v as f32),
+            vertical,
+        }),
+    );
+}
+
+/// The axe's wind-up in ticks (`swing.windupS`): no swing's head reaches anything sooner.
+fn windup_ticks() -> u32 {
+    let t = chopping::tool(AXE).expect("the axe");
+    (t.swing.windup_s * f64::from(SIM_HZ)) as u32
+}
+
+dwell_world::both_faces!(
+    fn a_chop_lands_at_its_contact_not_on_the_click_and_wears_the_axe_once(f: FaceFrame) {
+        // Owner, 2026-11-12: "the gashes in blocks from tools show up on click instead of when the
+        // animation lines up with the block"; "Tools should only consume durability on hit."
+        let mut fx = near(f, "adventure");
+        assert_eq!(axe_wear(&fx), Some(0));
+        fx.take_all();
+        send_sweep(&mut fx, f, [1.0, 0.0, 0.0], false);
+        for _ in 0..windup_ticks() {
+            fx.server.step();
+        }
+        assert!(cut_rows(&fx, f).is_empty(), "no cut during the wind-up");
+        assert_eq!(axe_wear(&fx), Some(0), "no wear before contact");
+        assert!(
+            !fx.take(1)
+                .iter()
+                .any(|(m, _)| matches!(m, Message::Cuts(c) if !c.cuts.is_empty())),
+            "no cut sent before contact"
+        );
+        for _ in 0..SWING_TICKS {
+            fx.server.step();
+        }
+        assert_eq!(cut_rows(&fx, f).len(), 1, "cut at contact");
+        assert_eq!(axe_wear(&fx), Some(1), "one hit, one wear");
+    }
+);
+
+dwell_world::both_faces!(
+    fn a_bounce_wears_the_axe_once_and_a_miss_or_only_leaves_wear_nothing(f: FaceFrame) {
+        // A miss at the air.
+        let mut fx = near(f, "adventure");
+        sweep(&mut fx, f, [-1.0, 0.0, 0.0], false);
+        assert_eq!(axe_wear(&fx), Some(0), "a miss");
+        // Only leaves on the path: cleared, not hit (the client follows through as on a miss).
+        let wall = leaf_wall(&mut fx, f, 0);
+        sweep(&mut fx, f, [-1.0, 0.0, 0.0], false);
+        assert!(cleared(&mut fx, f, &wall) >= 2, "the leaves are cleared");
+        assert_eq!(axe_wear(&fx), Some(0), "leaves alone");
+        // A stone post on the path: a bounce is a hit.
+        let mut fx = near(f, "adventure");
+        let stone = f.state(require("dwell:stone"));
+        for r in BASE..BASE + 6 {
+            let [x, y, z] = f.cell([2, r, right_z(f)]);
+            fx.server.world().set_voxel(x, y, z, stone);
+        }
+        fx.server.step();
+        send_sweep(&mut fx, f, [1.0, 0.0, 0.0], false);
+        for _ in 0..windup_ticks() {
+            fx.server.step();
+        }
+        assert_eq!(axe_wear(&fx), Some(0), "not before the contact");
+        for _ in 0..SWING_TICKS {
+            fx.server.step();
+        }
+        assert!(cut_rows(&fx, f).is_empty());
+        assert_eq!(axe_wear(&fx), Some(1), "a bounce wears once");
+    }
+);
+
+dwell_world::both_faces!(
+    fn a_swing_whose_axe_is_put_away_before_contact_lands_nothing(f: FaceFrame) {
+        // Adventure: another hotbar slot selected mid-swing.
+        let mut fx = near(f, "adventure");
+        let other = fx.server.inventory_of(1).unwrap().slots[..6]
+            .iter()
+            .position(|s| s.as_ref().is_none_or(|s| s.item != AXE))
+            .expect("a hotbar slot without an axe") as u8;
+        send_sweep(&mut fx, f, [1.0, 0.0, 0.0], false);
+        fx.server.step();
+        fx.send(
+            1,
+            Message::InventoryAction(InventoryAction::Select { slot: other }),
+        );
+        for _ in 0..SWING_TICKS {
+            fx.server.step();
+        }
+        assert!(cut_rows(&fx, f).is_empty(), "adventure: cancelled");
+        let inv = fx.server.inventory_of(1).unwrap();
+        assert!(inv.slots.iter().flatten().all(|s| s.wear == 0));
+        // Creative: the hotbar's tool told as another.
+        let mut fx = near(f, "creative");
+        say_held(&mut fx, 1, AXE, false);
+        send_sweep(&mut fx, f, [1.0, 0.0, 0.0], false);
+        fx.server.step();
+        say_held(&mut fx, 1, "dwell:stone_pickaxe", false);
+        for _ in 0..SWING_TICKS {
+            fx.server.step();
+        }
+        assert!(cut_rows(&fx, f).is_empty(), "creative: cancelled");
+        // Held again, the next swing cuts.
+        say_held(&mut fx, 1, AXE, false);
+        sweep(&mut fx, f, [1.0, 0.0, 0.0], false);
+        assert!(!cut_rows(&fx, f).is_empty(), "then it cuts");
+    }
+);
+
 /// The last snapshot each session was sent since the outbox was drained.
 fn last_snapshots(fx: &mut Fixture) -> std::collections::BTreeMap<SessionId, PhysicsSnapshot> {
     let mut out = std::collections::BTreeMap::new();

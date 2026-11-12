@@ -833,7 +833,14 @@ it on the last, spreads half its certain drops over the hits, and clears a chang
 mode with `instantBreaks` (creative, 0.52.51) anything but a breaking tool breaks every block in one hit
 (`dwell_protocol::damage::hits_to_break_for`, asked by the server and the client's prediction alike); the
 client predicts only one-hit breaks and tells the server its held pickaxe or shovel by
-`ChopAction::Held`. **The look [built, D2 0.52.28]:** the client keeps the server's `Damage` per cell
+`ChopAction::Held`. **Hits at contact [built, WORK_QUEUE item 25]:** a break made holding a tool with a
+`contactS` (`breaking.tools` in `shared/tools/tools.json`: the pickaxes and shovels, 0.26 s, the arms'
+`break` clip's strike; `dwell_protocol::chopping::break_contact_s`) is sent at the click and held in the
+session's edit queue until `contactS` after it arrives (never before the client's contact; later edits'
+acks wait behind it), dropped if the tool is no longer in hand then; its damage, mark, drops and wear land
+at that tick. The client shows its hit's sound and chips (a one-hit break's sound) at the contact
+(`hit_feedback::PendingHits`), does not predict a tool's one-hit break (the server's change at the
+contact shows it), and starts one tool swing at a time. Wire unchanged. **The look [built, D2 0.52.28]:** the client keeps the server's `Damage` per cell
 (`ChunkStream::set_damage`), the chunk's mesh job carries its damaged cells
 (`dwell_mesh::mesh_chunk_damaged`), and the mesher **carves** each struck face (BLOCK_DAMAGE.md §6.2,
 built): the face leaves the greedy merge and is meshed as a tensor grid over its marks' reach whose
@@ -3242,7 +3249,11 @@ face-locally (a level swing from the screen's right to its left, `FaceFrame::han
 one top to bottom) and the first solid cell any step's ray meets within the reach is hit, but
 **[built, 0.50.62]** the head goes through the blocks of the tool's `clears` (the stone axe:
 leaves and snowy leaves; validated names), recording each it touches (`Sweep { cleared, hit }`).
-The client sends the swing's start (`ChopAction::Sweep`: the look, the plane) and the server sweeps the
+The client sends the swing's start (`ChopAction::Sweep`: the look, the plane) at the click; the server
+starts it on arrival (spending `swingSeconds`; one too soon is refused), finds its contact by a sweep then
+(`windupS` and the arc's time to the step it hits, or to its first cleared cell; the prototype's
+crosshair chop and the aimed `Swing`: the arc's middle) and lands it that long after (WORK_QUEUE item 25;
+`Server::land_swings`, dropped if the tool is no longer in hand), when it sweeps the
 same arc from its own eye, breaking the cleared cells in one `Edit` modification (what they leave
 unsupported falls; in a mode that uses items each drops its block's `drops`), then cutting a wood
 it meets and spending the swing on anything else. A swing that only clears is a miss with a rustle

@@ -440,13 +440,17 @@ export function validateBreaking(b, items, blocks) {
   const seen = new Set();
   const tools = b.tools.map((t, i) => {
     const at = `breaking.tools[${i}]`;
-    known(t, ['item', 'class', 'tier'], at);
+    known(t, ['item', 'class', 'tier', 'contactS'], at);
     if (!items.has(t.item)) fail(`${at}: no item ${JSON.stringify(t.item)} (shared/inventory or a block)`);
     if (seen.has(t.item)) fail(`${at}: ${t.item} is listed twice`);
     seen.add(t.item);
     if (!Object.hasOwn(b.classes, t.class) || t.class[0] === '$') fail(`${at}: unknown class ${JSON.stringify(t.class)} (${Object.keys(b.classes).filter((k) => k[0] !== '$').join(', ')})`);
     if (!Object.hasOwn(b.tiers, t.tier) || t.tier[0] === '$') fail(`${at}: unknown tier ${JSON.stringify(t.tier)} (${Object.keys(b.tiers).filter((k) => k[0] !== '$').join(', ')})`);
-    return { item: t.item, class: t.class, tier: t.tier, speed: b.tiers[t.tier] };
+    // When the swing's head meets the block (s after the click; WORK_QUEUE item 25): the hit lands
+    // then, on the server and the client. Optional: 0, at once.
+    const contactS = t.contactS ?? 0;
+    if (typeof contactS !== 'number' || !(contactS >= 0 && contactS <= 2)) fail(`${at}: contactS is seconds in [0, 2]`);
+    return { item: t.item, class: t.class, tier: t.tier, speed: b.tiers[t.tier], contactS };
   });
   return { classes, tools };
 }
@@ -542,7 +546,7 @@ export function toolsRust(d) {
   rs.push('');
   rs.push("/// Each tool item's class, tier and that tier's break speed (`breaking.tools`).");
   rs.push('pub static BREAK_TOOLS: &[BreakTool] = &[');
-  for (const t of d.breaking.tools) rs.push(`    BreakTool { item: "${t.item}", class: "${t.class}", tier: "${t.tier}", speed: ${f64(t.speed)} },`);
+  for (const t of d.breaking.tools) rs.push(`    BreakTool { item: "${t.item}", class: "${t.class}", tier: "${t.tier}", speed: ${f64(t.speed)}, contact_s: ${f64(t.contactS)} },`);
   rs.push('];');
   rs.push('');
   return rs.join('\n');

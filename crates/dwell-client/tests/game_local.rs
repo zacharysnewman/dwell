@@ -3015,3 +3015,67 @@ fn a_test_generator_local_world_has_no_ecology() {
         "no far groups are sent"
     );
 }
+
+/// WORK_QUEUE item 25 (owner, 2026-11-12: "the gashes in blocks from tools show up on click instead
+/// of when the animation lines up with the block. We want that timing."): a pickaxe's hit on stone
+/// shows no mark, no hit sound and no chips before its swing's contact (`contactS`), and its mark
+/// once the server lands it there.
+#[test]
+fn a_pickaxe_hit_marks_the_stone_at_its_contact_not_on_the_click() {
+    use dwell_game::sound::SoundKind;
+    let mut rig = predicting_rig(2);
+    let stone = dwell_blocks::require("dwell:stone");
+    let palette = dwell_game::block_interaction::palette();
+    let half = palette
+        .iter()
+        .position(|s| s.item == "dwell:stone")
+        .expect("a ½ m stone");
+    let pick = palette
+        .iter()
+        .position(|s| s.tool == Some("dwell:stone_pickaxe"))
+        .expect("the stone pickaxe on the palette");
+    rig.game.as_mut().unwrap().interaction.select(half as i64);
+    let floor = target_at(&mut rig, 0.0, -40.0);
+    let p = [floor[0], floor[1] + 1, floor[2]];
+    assert!(rig.game.as_mut().unwrap().edit(EditAction::Place, rig.now));
+    assert!(rig.run_until(120, |r| r.game.as_ref().unwrap().prediction.pending() == 0));
+    assert_eq!(server_voxel(&mut rig, p), stone, "placed");
+    rig.game.as_mut().unwrap().interaction.select(pick as i64);
+    for _ in 0..10 {
+        rig.frame();
+    }
+    rig.game.as_mut().unwrap().take_sounds();
+    let contact = dwell_protocol::chopping::break_contact_s(Some("dwell:stone_pickaxe")) * 1000.0;
+    assert!(contact > 100.0, "the pickaxe strikes after the click");
+    let click = rig.now;
+    assert!(rig.game.as_mut().unwrap().edit(EditAction::Break, click));
+    let hit = |s: &[dwell_game::sound::SoundEvent]| s.iter().any(|e| e.kind == SoundKind::Hit);
+    assert!(
+        !hit(&rig.game.as_mut().unwrap().take_sounds()),
+        "no hit sound on the click"
+    );
+    while rig.now + 1000.0 / 60.0 < click + contact {
+        rig.frame();
+        let g = rig.game.as_mut().unwrap();
+        assert!(
+            g.damage_at(p).is_none(),
+            "no mark {:.0} ms into the swing (contact {contact:.0} ms)",
+            rig.now - click
+        );
+        assert!(!hit(&g.take_sounds()), "no hit sound before contact");
+    }
+    // One more swing waits for this one's contact.
+    assert!(
+        !rig.game.as_mut().unwrap().edit(EditAction::Break, rig.now),
+        "a swing at a time"
+    );
+    let mut heard = false;
+    assert!(rig.run_until(60, |r| {
+        let g = r.game.as_mut().unwrap();
+        heard |= hit(&g.take_sounds());
+        g.damage_at(p).is_some()
+    }));
+    assert!(heard, "the hit sounds at contact");
+    assert!(rig.now >= click + contact, "marked at contact");
+    assert_eq!(host_voxel(&mut rig, p), stone, "one hit of five: it stands");
+}

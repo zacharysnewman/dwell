@@ -1,0 +1,7 @@
+{
+  "changes": [
+    "Pickaxe, shovel and axe hits now land when the swing reaches the block, not on the click: the gash, cracks, chips, drops and hit sound all wait for the strike.",
+    "Switching away from a tool mid-swing cancels the hit.",
+    "Tools only wear when a swing lands a hit: a bounce off stone counts, a miss or a swing through only leaves doesn't."
+  ]
+}

@@ -95,11 +95,114 @@ fn hit(fx: &mut Fixture, f: FaceFrame, local: [i32; 3]) {
             point: None,
         }),
     );
-    // Within the edit rate (10 a second): one hit every 7 ticks.
-    for _ in 0..7 {
+    // Within the edit rate (10 a second), and past a tool's contact (WORK_QUEUE item 25).
+    for _ in 0..7 + contact_ticks("dwell:stone_pickaxe") {
         fx.server.step();
     }
 }
+
+/// The ticks from a hit's request to its tool's contact (`contactS` in shared/tools/tools.json).
+fn contact_ticks(item: &str) -> u32 {
+    (chopping::break_contact_s(Some(item)) * f64::from(SIM_HZ) - 1e-9).ceil() as u32
+}
+
+fn send_hit(fx: &mut Fixture, f: FaceFrame, local: [i32; 3]) {
+    fx.send(
+        1,
+        Message::BlockEditRequest(BlockEditRequest {
+            action: BlockEditAction::Break,
+            cell: f.cell(local),
+            face: f.cell_face(2) as u8,
+            material: 0,
+            rows: 1,
+            down: false,
+            point: None,
+        }),
+    );
+}
+
+fn wear_of(fx: &Fixture, item: &str) -> u16 {
+    fx.server
+        .inventory_of(1)
+        .unwrap()
+        .slots
+        .iter()
+        .flatten()
+        .find(|s| s.item == item)
+        .map_or(0, |s| s.wear)
+}
+
+dwell_world::both_faces!(
+    fn a_tool_hit_lands_at_its_swings_contact_not_when_it_arrives(f: FaceFrame) {
+        // Owner, 2026-11-12: "the gashes in blocks from tools show up on click instead of when the
+        // animation lines up with the block. We want that timing." The damage, the mark and the
+        // wear land at the pickaxe's contact (its data), never on the request's arrival.
+        for (tool, cell) in [
+            ("dwell:stone_pickaxe", STONE),
+            ("dwell:wooden_shovel", DIRT),
+        ] {
+            let mut fx = scene_with(f, config(f, "adventure"));
+            hold(&mut fx, "adventure", tool);
+            let n = contact_ticks(tool);
+            assert!(n > 5, "{tool}: a contact after the click ({n} ticks)");
+            fx.take_all();
+            send_hit(&mut fx, f, cell);
+            // The step that reads the request, and `n` - 1 ticks after it.
+            for _ in 0..n {
+                fx.server.step();
+            }
+            assert!(
+                fx.server.damage_of(f.cell(cell)).is_none(),
+                "{tool}: no mark before contact"
+            );
+            assert_eq!(wear_of(&fx, tool), 0, "{tool}: no wear before contact");
+            assert!(
+                !fx.take(1)
+                    .iter()
+                    .any(|(m, _)| matches!(m, Message::Damage(_))),
+                "{tool}: no damage sent before contact"
+            );
+            fx.server.step();
+            assert_eq!(
+                fx.server.damage_of(f.cell(cell)).map(|d| d.hits),
+                Some(1),
+                "{tool}: the hit at contact"
+            );
+            assert_eq!(wear_of(&fx, tool), 1, "{tool}: one wear, at contact");
+            for _ in 0..30 {
+                fx.server.step();
+            }
+            assert_eq!(
+                fx.server.damage_of(f.cell(cell)).map(|d| d.hits),
+                Some(1),
+                "{tool}: once"
+            );
+            assert_eq!(wear_of(&fx, tool), 1, "{tool}: worn once");
+        }
+    }
+);
+
+dwell_world::both_faces!(
+    fn a_hit_whose_tool_is_put_away_before_contact_lands_nothing(f: FaceFrame) {
+        for mode in ["adventure", "creative"] {
+            let mut fx = scene_with(f, config(f, mode));
+            hold(&mut fx, mode, "dwell:stone_pickaxe");
+            send_hit(&mut fx, f, STONE);
+            fx.server.step();
+            // Switched to the shovel mid-swing.
+            hold(&mut fx, mode, "dwell:wooden_shovel");
+            for _ in 0..40 {
+                fx.server.step();
+            }
+            assert!(
+                fx.server.damage_of(f.cell(STONE)).is_none(),
+                "{mode}: cancelled"
+            );
+            assert_eq!(wear_of(&fx, "dwell:stone_pickaxe"), 0, "{mode}: no wear");
+            assert_eq!(block_at(&mut fx, f, STONE), "dwell:stone", "{mode}");
+        }
+    }
+);
 
 fn block_at(fx: &mut Fixture, f: FaceFrame, local: [i32; 3]) -> &'static str {
     let [x, y, z] = f.cell(local);
@@ -413,7 +516,7 @@ fn damage_and_its_struck_point_reach_a_client_that_draws_it_and_go_when_it_break
             point: Some([40, 255, 200]),
         }),
     );
-    for _ in 0..7 {
+    for _ in 0..7 + contact_ticks("dwell:stone_pickaxe") {
         fx.server.step();
     }
     let d = fx.server.damage_of(f.cell(STONE)).expect("damaged");
