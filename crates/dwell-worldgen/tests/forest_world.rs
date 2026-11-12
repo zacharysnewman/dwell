@@ -147,7 +147,11 @@ dwell_world::both_faces!(
         );
         let all = g.far_trees(lo, hi);
         let placed = stand(&g);
-        assert_eq!(all.len(), placed.len(), "every stand tree is a species tree");
+        assert_eq!(
+            all.len(),
+            placed.len(),
+            "every stand tree is a species tree"
+        );
         let anchors: Vec<_> = all.iter().map(|t| t.anchor).collect();
         let want: Vec<_> = placed.iter().map(|p| p.0).collect();
         assert_eq!(anchors, want);

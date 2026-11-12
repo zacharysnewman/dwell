@@ -32,6 +32,13 @@
       }
     },
     {
+      "name": "scale-full",
+      "notes": "Render scale 1 (`?renderscale=1`; High draws at 0.5): four times the pixels, so a pass whose time grows with it is bound by its pixels, one that holds by its geometry (WORK_QUEUE item 32, the forest edge).",
+      "params": {
+        "renderscale": "1"
+      }
+    },
+    {
       "name": "raster",
       "notes": "The mesher at full resolution."
     },

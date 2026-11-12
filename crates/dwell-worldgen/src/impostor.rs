@@ -806,6 +806,38 @@ mod tests {
     }
 
     #[test]
+    fn each_species_stage_and_variant_has_its_own_layer() {
+        // face-a-only: data only.
+        let c = Config::get();
+        let mut seen = std::collections::HashSet::new();
+        for species in 0..3u16 {
+            for &stage in &c.stages {
+                for seed in 0..64u32 {
+                    let l = c.layer(species, seed, stage);
+                    assert!(l < 3 * c.layers_per_species());
+                    assert_eq!(l / c.layers_per_species(), u32::from(species));
+                    seen.insert(l);
+                }
+            }
+        }
+        assert_eq!(
+            seen.len() as u32,
+            3 * c.layers_per_species(),
+            "every layer is used"
+        );
+        let t = FarTree {
+            anchor: [4, 20, -9],
+            species: 1,
+            seed: 77,
+            stage: 5,
+        };
+        let i = c.instances(&[t])[0];
+        assert_eq!(i.foot, [4.5, 10.0, -8.5]);
+        assert_eq!(i.layer, c.layer(1, 77, 5));
+        assert!(i.quarter_turns < 4);
+    }
+
+    #[test]
     fn a_bad_entry_fails_naming_its_field() {
         // face-a-only: data only.
         let bad = IMPOSTORS_JSON.replace("\"azimuths\": 8", "\"azimuths\": 0");
