@@ -49,7 +49,7 @@ const RENDER_LOOKS = [
   'daynight',
 ];
 /** The `shared/look` scripts that also emit HUD or settings code (client/src/ui). */
-const UI_LOOKS = ['loading', 'spyglass', 'watertiers'];
+const UI_LOOKS = ['loading', 'spyglass', 'watertiers', 'orbits'];
 
 export const AREAS: Record<string, Area> = {
   protocol: {

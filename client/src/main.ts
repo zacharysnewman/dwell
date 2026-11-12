@@ -1,5 +1,6 @@
 import { buildInfo, channelOf, formatBuildInfo, recordedVersion } from './buildInfo';
 import { worldChoice } from './ui/worldChoices';
+import { skyOptions } from './ui/sky';
 import { isGameMode } from './ui/modes';
 import { blockDump, formatBlockDump, type BlockDump, type BlockTarget } from './debug/blockDump';
 import {
@@ -1739,6 +1740,8 @@ async function makeWorld(
         ...(isGameMode(launch.mode) ? { mode: launch.mode } : {}),
         // New world → More options' World size (BIG_MAP.md M2b): a bigger terrain world.
         ...(type === 'terrain' ? sizeOptions(sizeScale(launch.size)) : {}),
+        // New world → More options' Sky (REALISTIC_WORLD.md §8): a world that rolls an orbit.
+        ...skyOptions(worldgen, launch.sky),
       },
       Date.now(),
     );
@@ -1898,6 +1901,8 @@ async function connect(app: App): Promise<void> {
       ...(playing.mode && isGameMode(playing.mode) ? { mode: playing.mode } : {}),
       // A bigger world (BIG_MAP.md M2b): created at its size, its maps built at it.
       ...sizeOptions(playing.radiusScale),
+      // A Realistic world's Sky (REALISTIC_WORLD.md §8): its orbit rolled when its file is created.
+      ...(playing.sky ? { sky: playing.sky } : {}),
     };
     worldName = playing.name;
     thumbId = playing.id;
@@ -1915,6 +1920,8 @@ async function connect(app: App): Promise<void> {
         ...localWorld,
         generatorVersion: GENERATORS.terrain,
         file: testWorldId(worldgen, localWorld.worldSeed),
+        // A Realistic world's Sky (`&sky=extreme`, REALISTIC_WORLD.md §8): rolled when created.
+        ...skyOptions(worldgen, params.get('sky')),
       };
       worldgenConfig = worldgen;
     }

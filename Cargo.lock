@@ -971,6 +971,7 @@ name = "dwell-server"
 version = "0.0.0"
 dependencies = [
  "ctrlc",
+ "dwell-look",
  "dwell-net",
  "dwell-protocol",
  "dwell-sim",

@@ -3157,7 +3157,7 @@ impl Inner {
         );
         game.day_override = self.options.day;
         if let Some(w) = self.session.as_ref().and_then(|s| s.world_settings()) {
-            game.set_world_clock(w.clock);
+            game.set_world_settings(&w);
         }
         if let Some(s) = self.session.as_ref() {
             game.set_vitals_rules(s.vitals_rules());

@@ -22,6 +22,12 @@ mod species_gen {
 }
 pub use species_gen::SPECIES;
 
+/// The test fixtures (shared/trees/fixtures): species added by data alone.
+#[cfg(test)]
+pub(crate) fn species_gen_fixtures() -> &'static [Species] {
+    &species_gen::FIXTURES
+}
+
 /// Height of a cell (m): the ½ m grid.
 const CELL: f32 = 0.5;
 
@@ -136,7 +142,7 @@ pub fn index(name: &str) -> Option<usize> {
 }
 
 /// What a grown tree puts in a cell.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Part {
     /// A log along y (0), x (1) or z (2), its width in ¼ m (4: the full log; only standing
     /// trunk logs are narrower).

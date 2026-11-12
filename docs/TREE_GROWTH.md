@@ -335,6 +335,13 @@ everywhere, its `spacing` −2 (a negative spacing, new: two crowns may interlea
 ~220 trees a hectare; only the `preset:old_growth` biome lists it (ADR 0074, the old-growth forest),
 and `test:forest` is that forest everywhere, the tree performance reference (docs/DEV_TOOLS.md).
 
+**Far trees as impostors (proposal, WORK_QUEUE item 31; [`proposals/TREE_IMPOSTORS.md`](proposals/TREE_IMPOSTORS.md)):**
+the bake is built (phase I-1): `dwell_worldgen::impostor::bake(species, seed, stage, config, px)` ray casts the
+cells `grow` builds (logs as their width's octagon, leaf cells whole) from the views of
+`shared/trees/impostors/impostors.json` (8 around × 2 elevations + 1 from above) into an atlas of albedo and
+normal + depth per texel, the leaves' normals leaning out of the crown by `leaves.json` `canopyBlend`.
+Deterministic, no drawing yet; it is to replace the LOD's tree cells (`lod_trees.rs`) once drawn.
+
 ## Sources
 
 - Runions, Lane & Prusinkiewicz 2007, space colonization: https://algorithmicbotany.org/papers/colonization.egwnp2007.html
