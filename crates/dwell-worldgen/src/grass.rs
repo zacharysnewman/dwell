@@ -337,7 +337,12 @@ impl Rule {
                         })
                     });
                     let top = self.top_stage(e.1);
-                    spots.push(Spot { p, roots, near, top });
+                    spots.push(Spot {
+                        p,
+                        roots,
+                        near,
+                        top,
+                    });
                 }
             }
         }

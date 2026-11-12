@@ -1360,7 +1360,7 @@ fn a_plant_that_does_not_sit_on_its_support_keeps_to_its_cells_floor_by_data_alo
     let id = |name: &str| STATES.iter().position(|s| s.name == name).expect(name) as u16;
     let (reed, plant, water) = (
         id("test:reed"),
-        id("dwell:tall_grass"),
+        id("dwell:tall_grass[stage=3]"),
         id("dwell:water[fill=8]"),
     );
     // The fixture keeps the build's blocks first, so the build's ramp states are the fixture's.
@@ -2936,3 +2936,45 @@ fn wood_cracks_read_darker_than_the_barks_own_streaks() {
         }
     }
 }
+
+dwell_world::both_faces!(
+    /// docs/ECOLOGY.md §10: each growth stage of tall grass draws at its height from the block's
+    /// data (`cross.heights`), a sprout to full (the default, 0.85 as before), on either face.
+    fn tall_grass_draws_each_growth_stage_at_its_height(f: FaceFrame) {
+        let grass_block = require("dwell:tall_grass");
+        let stages: Vec<u16> = ["0", "1", "2", "3"]
+            .iter()
+            .map(|v| dwell_blocks::with_property(grass_block, "stage", v).expect("a stage"))
+            .collect();
+        assert_eq!(stages[3], grass_block, "the default is full height");
+        let c = ChunkCoord::new(0, dwell_world::MIDPLANE_CHUNK_Y + 4, 0);
+        let o = [0, c.y * CHUNK_SIZE, 0];
+        let mut tops = Vec::new();
+        for &s in &stages {
+            let mut source = dwell_world::VoxelWorld::new(dwell_world::empty_generator(), None);
+            for x in 0..8 {
+                source.set_voxel(o[0] + 4 + x, o[1] + 4, o[2] + 4, cube_block());
+                source.set_voxel(o[0] + 4 + x, o[1] + 5, o[2] + 4, s);
+            }
+            let m = local_mesh(f, mesh_on_face(&mut source, c, f).cutout);
+            let ys: Vec<f32> = m.positions.iter().skip(1).step_by(3).copied().collect();
+            assert!(!ys.is_empty(), "stage {s} drawn");
+            // The tallest of the 8 (their jitter scales each), above the cube's top at y 5.
+            tops.push(ys.iter().copied().fold(f32::MIN, f32::max) - 5.0);
+        }
+        for (i, &s) in stages.iter().enumerate() {
+            let cross = dwell_blocks::info(s).cross.expect("a cross");
+            assert!(
+                tops[i] <= cross.height + 1e-4 && tops[i] >= cross.height * cross.height_min - 1e-4,
+                "stage {i}: drawn {} for height {}",
+                tops[i],
+                cross.height
+            );
+        }
+        assert!(
+            tops.windows(2).all(|w| w[0] < w[1]),
+            "taller stage by stage: {tops:?}"
+        );
+        assert_eq!(dwell_blocks::info(stages[3]).cross.unwrap().height, 0.85);
+    }
+);

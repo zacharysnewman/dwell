@@ -1231,7 +1231,10 @@ don't enter the registry hash.
 
 **The cross look and plants [built, Phase 33]** (same ADR and design doc). `"look": "cross"`: 2–4
 vertical quads through the cell's centre, evenly turned, double-sided (one face each, drawn by the
-cutout pipeline without culling), with data options `cross` (`height`; `quads`; `jitter`: offset,
+cutout pipeline without culling), with data options `cross` (`height`; **[built, 2026-11-12]** `heights`:
+`{ property, heights }`, each value of a property its own height, the default's the block's `height`, the
+state's selection box scaled with it — tall grass's growth `stage`, docs/ECOLOGY.md §10; per state, so the
+registry sync's cross field carries it; `quads`; `jitter`: offset,
 turn and height scale, seeded by the cell's **world** position — mesh jobs carry the chunk's
 origin, `mesh_chunk_at` — so a plant is the same on every client and re-mesh), `wind` (strength,
 speed: the mesher writes each vertex's sway, 0 at the foot, into the cutout mesh's `plants` stream;

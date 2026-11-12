@@ -1,0 +1,8 @@
+{
+  "changes": [
+    "Tall grass now grows taller over time: new tufts start as sprouts and reach full height in about a week and a half of game days",
+    "Dry or cold ground grows shorter grass; lush meadows grow it full",
+    "Grass that deer eat goes back to a sprout and grows again",
+    "Taller grass drops more fiber and seeds"
+  ]
+}
