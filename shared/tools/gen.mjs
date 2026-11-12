@@ -184,7 +184,7 @@ export function validateTools(data, items, blocks, heldItems = loadHeldItems(), 
         known(stances[k], STANCE_FIELDS, `${gat}.stances.${k}`);
         inRange(stances[k], 'rollDeg', -180, 180, `${gat}.stances.${k}`);
         const p = stances[k].raisedPose;
-        if (p !== undefined && (typeof p !== 'string' || !/^[a-z][a-z0-9_]*$/.test(p))) fail(`${gat}.stances.${k}.raisedPose must be a clip name (lowercase)`);
+        if (p !== undefined && (typeof p !== 'string' || !/^[a-z][a-z0-9_]*$/.test(p))) fail(`${gat}.stances.${k}.raisedPose must be a role name (lowercase: the character's clips and firstPerson.clips for it, shared/characters)`);
       }
       inRange(g, 'raiseAfterS', 0, 1, gat);
       known(g.clash, CLASH_FIELDS, `${gat}.clash`);

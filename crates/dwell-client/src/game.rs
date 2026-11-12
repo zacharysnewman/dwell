@@ -3795,6 +3795,18 @@ impl<S: Scene> Game<S> {
 
         // Remote players, interpolated.
         let views = self.remotes.sample(now_ms);
+        // Their raised blocks (the server's guards, WORK_QUEUE item 35), by the weapon in hand.
+        self.bodies.guards = self
+            .remote_guards
+            .iter()
+            .filter_map(|(who, &(vertical, raised))| {
+                let dwell_protocol::Fighter::Player(id) = *who else {
+                    return None;
+                };
+                let (tool, _) = self.remote_tools.get(&id)?;
+                Some((id, crate::swordplay::guard_role(tool, vertical, raised)?))
+            })
+            .collect();
         let mut drawn = HashSet::default();
         for v in &views {
             drawn.insert(v.player_id);
@@ -3851,11 +3863,19 @@ impl<S: Scene> Game<S> {
             }
         }
         // The creatures, smoothed toward the server's points, lit where they stand (ADR 0073).
+        let guards = self.remote_guards.clone();
         let creatures: Vec<_> = self
             .creatures
             .advance(dt)
             .into_iter()
-            .map(|v| {
+            .map(|mut v| {
+                // An NPC's raised block (the server's guards, WORK_QUEUE item 35).
+                if let Some(n) = &mut v.npc
+                    && let (Some(held), Some(&(vertical, raised))) =
+                        (n.held, guards.get(&dwell_protocol::Fighter::Creature(v.id)))
+                {
+                    n.guard = crate::swordplay::guard_role(held, vertical, raised);
+                }
                 let light = self.body_light(0x4000_0000 | v.id, v.feet, v.face, dt);
                 (v, light)
             })
@@ -4016,13 +4036,15 @@ impl<S: Scene> Game<S> {
             self.update_motion(eye, dt);
             // Your arms in their own pass (CHARACTERS.md §5): not while zoomed in the spyglass, in
             // a placed camera, or with the setting off.
-            let move_input = crate::bodies::local_input(
+            let mut move_input = crate::bodies::local_input(
                 c.state,
                 c.velocity,
                 c.carry,
                 c.controller_flags,
                 c.face,
             );
+            // Your raised block, on the arms and your body (WORK_QUEUE item 35).
+            move_input.guard = self.guard_pose();
             let mut arms = self.bodies.arms(&move_input, held, dt);
             arms.light = self.eased_light(ARMS_LIGHT, eye, dt);
             let shown = self.show_arms

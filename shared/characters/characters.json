@@ -155,7 +155,9 @@
         "break": "biped_break",
         "place": "biped_place",
         "chop_level": "biped_chop_level",
-        "chop_vertical": "biped_chop_vertical"
+        "chop_vertical": "biped_chop_vertical",
+        "guard_level": "biped_guard_level",
+        "guard_vertical": "biped_guard_vertical"
       },
       "firstPerson": {
         "bones": ["arm_r", "forearm_r", "hand_r"],
@@ -182,7 +184,9 @@
           "break": "fp_break",
           "place": "fp_place",
           "chop_level": "fp_chop_level",
-          "chop_vertical": "fp_chop_vertical"
+          "chop_vertical": "fp_chop_vertical",
+          "guard_level": "fp_guard_level",
+          "guard_vertical": "fp_guard_vertical"
         }
       }
     },
@@ -745,6 +749,8 @@
         { "t": 0.45, "root": [0, 0.12, 0], "bones": { "hips": [2, 0, 0], "chest": [-4, 0, 0], "head": [6, 0, 0], "arm_l": [-32, 0, 56], "forearm_l": [-30, 0, 0], "arm_r": [-44, 0, -68], "forearm_r": [-30, 0, 0], "thigh_l": [-38, 0, 6], "shin_l": [65, 0, 0], "foot_l": [20, 0, 0], "thigh_r": [-4, 0, -6], "shin_r": [20, 0, 0], "foot_r": [20, 0, 0] } }
       ]
     },
+    "biped_guard_level": {"$comment": "The sword's block raised in the level stance, seen by others (WORK_QUEUE item 35; shared/tools `guard.stances.level.raisedPose` names the role `guard_level`): the right arm up in front at the shoulder, the forearm across the chest, the hand turned so the blade lies level across the body; over the gait in place of the hold.", "rig": "biped", "layer": "hold", "duration": 1, "loop": true, "ease": "step", "keys": [{"t": 0, "bones": {"chest": [0, -12, 0], "arm_r": [-80, -10, -20], "forearm_r": [-70, 0, 0], "hand_r": [0, 0, -35]}}]},
+    "biped_guard_vertical": {"$comment": "The sword's block raised in the vertical stance, seen by others (role `guard_vertical`): the right fist up before the chest, the blade upright ahead of the face; over the gait in place of the hold.", "rig": "biped", "layer": "hold", "duration": 1, "loop": true, "ease": "step", "keys": [{"t": 0, "bones": {"chest": [0, -8, 0], "arm_r": [-55, -15, -12], "forearm_r": [-75, 0, 0], "hand_r": [-20, 0, 0]}}]},
     "biped_land": {
       "$comment": "From the air to standing: the squash on touching down.",
       "rig": "biped",
@@ -959,6 +965,8 @@
         { "t": 0.45, "root": [-0.004, 0.032, 0], "bones": { "arm_r": [-82, 26, -8], "forearm_r": [-34, 0, 0], "hand_r": [2, 0, 0] } }
       ]
     },
+    "fp_guard_level": {"$comment": "First person: the sword's block raised in the level stance (role `guard_level`): the fist drawn in toward the middle and up, the blade lying level across the view below the crosshair; over the arms' gait. Root is the arm's anchor offset in view space.", "rig": "biped", "space": "arms", "layer": "hold", "duration": 1, "loop": true, "ease": "step", "keys": [{"t": 0, "root": [0.14, 0.1, 0.04], "bones": {"arm_r": [-82, 34, 0], "forearm_r": [-38, 0, 0], "hand_r": [8, 0, -38]}}]},
+    "fp_guard_vertical": {"$comment": "First person: the sword's block raised in the vertical stance (role `guard_vertical`): the fist in toward the middle, the blade upright before the view, right of the crosshair; over the arms' gait.", "rig": "biped", "space": "arms", "layer": "hold", "duration": 1, "loop": true, "ease": "step", "keys": [{"t": 0, "root": [0.1, 0.07, 0.04], "bones": {"arm_r": [-78, 28, 0], "forearm_r": [-34, 0, 0], "hand_r": [-6, 0, 0]}}]},
     "fp_land": {
       "$comment": "Touching down: a dip, then back to the idle hold.",
       "rig": "biped",

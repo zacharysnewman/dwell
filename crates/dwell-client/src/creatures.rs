@@ -45,6 +45,9 @@ pub struct NpcLook {
     pub kind: String,
     pub colours: Vec<(&'static str, &'static str)>,
     pub held: Option<&'static str>,
+    /// Its raised block's role (`guard_level`, `guard_vertical`) while the server says it guards
+    /// (`Swordplay`'s guards; WORK_QUEUE item 35), set by the game each frame; None lowered.
+    pub guard: Option<&'static str>,
 }
 
 impl NpcLook {
@@ -56,6 +59,7 @@ impl NpcLook {
             kind: n.kind.clone(),
             colours: def.map_or_else(Vec::new, |d| npc_colours(d, n.variant)),
             held: def.and_then(|d| d.held),
+            guard: None,
         }
     }
 }

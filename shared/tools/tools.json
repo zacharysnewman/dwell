@@ -254,8 +254,8 @@
         "durability": 120,
         "guard": {
           "stances": {
-            "level": { "rollDeg": 0, "raisedPose": "fp_guard_level" },
-            "vertical": { "rollDeg": 90, "raisedPose": "fp_guard_vertical" }
+            "level": { "rollDeg": 0, "raisedPose": "guard_level" },
+            "vertical": { "rollDeg": 90, "raisedPose": "guard_vertical" }
           },
           "blockWithinDeg": 35,
           "connectWithinDeg": 35,
