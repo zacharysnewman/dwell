@@ -1863,6 +1863,14 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    for flying or high altitude only." / "Wind SFX"). Built: the wind bed reads the eye's height above the ground
    (silent below 12 m, full at 60 m) instead of altitude above the sea.
 
+48. **Leaves flat against logs** (owner 2026-11-12: **"can we make it so the inside leave edges make a flat side against
+   the logs, so it doesn't leave quite so much gapping where they connect to the tree. Currently they're slanted edges
+   all the way around in all cases, but where it touches the tree it would look better if it was flat"**). Answers:
+   **"Flat leaf applied when a full Face touching and any new leaf touching leaf cases that need to be adjusted to fit
+   together properly."** — a leaf block's side that shares a full face with a log is flat (no chamfer); and wherever
+   that change leaves leaf-to-leaf seams that no longer meet (a flat side next to a chamfered neighbour), adjust them
+   so the crown fits together without gaps or overlaps.
+
 ## Future (needs owner answers)
 
 - **Waterlogging** (owner 2026-11-12: "Eventually we'll want to make it so some blocks if they don't move for a little
