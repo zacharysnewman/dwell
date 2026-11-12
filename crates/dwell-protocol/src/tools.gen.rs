@@ -14,7 +14,7 @@ pub static TOOLS: &[ToolDef] = &[
 
 /// The blocks an axe cuts, by block name.
 pub static WOODS: &[WoodDef] = &[
-    WoodDef { block: "dwell:log", fell_fraction: 0.55, buck_fraction: 0.55, buck_drops: &[DropRule { chance: 1.0, choices: &[DropChoice { item: "dwell:wood", min: 2, max: 3, weight: 1.0 }] }], chips: Chips { count: 7, color: [217, 179, 122], speed: 2.6, size: 0.05 }, leaves: Leaves { block: Some("dwell:leaves"), count: 6, color: [95, 158, 62], radius_m: 3.0, height_m: 9.0 }, sway: Sway { from_fraction: 0.4, max_deg: 3.5 }, sounds: &[(0.0, "chop_bark"), (0.2, "chop_wood"), (0.4, "chop_creak")], cut: CutLook { tile: Some("logCut"), tint: [255, 226, 184], open: 2.5, kerf_width_m: 0.035 }, fell_wedge: Some("dwell:log_ramp"), fell_wedge_matching: true, fell_tip: 1.0, chop2: Chop2Wood { fell_fraction: 0.5, along: 0.5, wedge_matching: false } },
+    WoodDef { block: "dwell:log", fell_fraction: 0.55, buck_fraction: 0.55, buck_drops: &[DropRule { chance: 1.0, choices: &[DropChoice { item: "dwell:wood", min: 2, max: 3, weight: 1.0 }] }], chips: Chips { count: 7, color: [217, 179, 122], speed: 2.6, size: 0.05 }, leaves: Leaves { block: Some("dwell:leaves"), count: 6, color: [95, 158, 62], radius_m: 3.0, height_m: 9.0 }, sway: Sway { from_fraction: 0.4, max_deg: 3.5 }, sounds: &[(0.0, "chop_bark"), (0.2, "chop_wood"), (0.4, "chop_creak")], cut: CutLook { tile: Some("logCut"), tint: [255, 226, 184], open: 2.5, kerf_width_m: 0.035 }, fell_wedge: Some("dwell:log_ramp"), fell_wedge_matching: false, fell_tip: 1.0, chop2: Chop2Wood { fell_fraction: 0.5, along: 0.5, wedge_matching: false } },
 ];
 
 /// Blocks a break needs a tool of a kind for, where blocks are not unlimited.

@@ -389,6 +389,10 @@ pub struct RemotePlayerState {
     pub held: u16,
     /// Its last swing (`swing_flags`: a count and break or place; v17).
     pub swing: u8,
+    /// Which swing that is (`SwingKind`'s value: `Plain` is the break or place `swing` says, the
+    /// axe's chops by their direction), sent only in a snapshot with `swing_kinds` (to a client
+    /// that said `SwingHello`); a value this build doesn't know reads as `Plain`. 0 otherwise.
+    pub swing_kind: u8,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -400,6 +404,10 @@ pub struct PhysicsSnapshot {
     pub remotes: Vec<RemotePlayerState>,
     /// The falling pieces (docs/FELLING.md §3; protocol v20).
     pub pieces: Vec<PieceState>,
+    /// It ends with the remotes' swing kinds (`RemotePlayerState::swing_kind`, in their order):
+    /// only to a client that said `SwingHello`, so an older one (which refuses trailing bytes)
+    /// never gets it; an older server never writes it.
+    pub swing_kinds: bool,
 }
 
 /// A falling piece's pose and motion in a snapshot: its origin (posfix), its rotation (each
@@ -480,6 +488,12 @@ pub struct PlayerEvent {
 #[derive(Clone, Debug, PartialEq)]
 pub enum Message {
     DatagramPing(DatagramPing),
+    /// C→S datagram, after the join (WORK_QUEUE item 17): this client draws others' swings by kind;
+    /// end my snapshots with the remotes' swing kinds (`PhysicsSnapshot::swing_kinds`). A datagram
+    /// because an older server drops one it can't read (a control message it can't read ends the
+    /// session), so the client sends it without asking and repeats it until a snapshot carries
+    /// the kinds (or gives up: an older server).
+    SwingHello,
     DatagramPong(DatagramPong),
     WaterCurrents(WaterCurrents),
     StatusRequest,
@@ -850,6 +864,7 @@ impl Message {
             M::WorldgenConfig(_) => MessageType::WorldgenConfig,
             M::CausesHello(_) => MessageType::CausesHello,
             M::SteamHello => MessageType::SteamHello,
+            M::SwingHello => MessageType::SwingHello,
             M::Steam(_) => MessageType::Steam,
             M::Damage(_) => MessageType::Damage,
             M::Creatures(_) => MessageType::Creatures,
@@ -1320,6 +1335,13 @@ fn write_body(w: &mut ByteWriter, m: &Message) {
                     w.f16(v);
                 }
             }
+            if m.swing_kinds {
+                let count = m.remotes.len().min(255);
+                w.u8(count as u8);
+                for p in &m.remotes[..count] {
+                    w.u8(p.swing_kind);
+                }
+            }
         }
         M::PlayerEvent(m) => {
             w.u8(m.kind as u8);
@@ -1536,6 +1558,7 @@ fn write_body(w: &mut ByteWriter, m: &Message) {
         | M::DamageHello
         | M::WorldgenRequest
         | M::SteamHello
+        | M::SwingHello
         | M::EcologyHello => {}
         M::Steam(cells) => {
             let n = cells.len().min(MAX_STEAM_PER_MESSAGE);
@@ -1845,6 +1868,7 @@ fn read_body(r: &mut ByteReader, t: MessageType) -> Option<Message> {
                     flags: r.u8(),
                     held: r.u16(),
                     swing: r.u8(),
+                    swing_kind: 0,
                 };
                 r.check(p.flags & !player_flags::ALL == 0);
                 remotes.push(p);
@@ -1872,12 +1896,23 @@ fn read_body(r: &mut ByteReader, t: MessageType) -> Option<Message> {
                     angular,
                 });
             }
+            // Optional: the remotes' swing kinds, one each (a newer server's, to a client that
+            // said `SwingHello`).
+            let swing_kinds = r.ok() && !r.at_end();
+            if swing_kinds {
+                let n = r.u8();
+                r.check(usize::from(n) == remotes.len());
+                for p in &mut remotes {
+                    p.swing_kind = r.u8();
+                }
+            }
             M::PhysicsSnapshot(PhysicsSnapshot {
                 server_tick,
                 ack_input_seq,
                 local,
                 remotes,
                 pieces,
+                swing_kinds,
             })
         }
         T::PlayerEvent => {
@@ -2057,6 +2092,7 @@ fn read_body(r: &mut ByteReader, t: MessageType) -> Option<Message> {
         T::VitalsHello => M::VitalsHello,
         T::CausesHello => M::CausesHello(r.u8()),
         T::SteamHello => M::SteamHello,
+        T::SwingHello => M::SwingHello,
         T::Steam => {
             let n = usize::from(r.u16());
             r.check(n <= MAX_STEAM_PER_MESSAGE);

@@ -213,7 +213,7 @@ world keeps its own; `tests/host.rs`). The LOD system's near-rim check and its i
   worker and its IndexedDB key), so they need the join's `WorldSettings.size` passed in, and
   `LodSystem::set_world` called from it; the dev link (`?size=2x`) and the New world form's "World
   size" (desktop only); Chisel's map texel (Chisel tunes a 1× world); the flat and sandbox worlds
-  stay 1×; `portal_spawn_for` (`?spawn=portal`) is 1×'s. The fog has no rim of its own at run time
+  stay 1×; Realistic worlds' plate layout and climate (`climate.rs`, R2/R3) still read the 1× radius; `portal_spawn_for` (`?spawn=portal`) is 1×'s. The fog has no rim of its own at run time
   (`fog.mjs`'s `2 × worldRadius` is the data's distance cap). Then 4×, 8× and 10× in the browser.
 - **M2b — a big dev world in the browser.** The generators built from the world's size (the
   sized constructors called from its settings, the world map and the biome and drainage fields on

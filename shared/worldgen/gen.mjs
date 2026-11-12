@@ -4,7 +4,8 @@
 // registry's data, the height field and the biomes (terrain.json, biomes/*.json → crates/dwell-worldgen/src/terrain.gen.rs) and the
 // hydrology prototype's profiles (hydrology.json → crates/dwell-worldgen/src/hydrology/profiles.gen.rs) and
 // the bedrock and portals between the faces (midplane.json → crates/dwell-worldgen/src/midplane.gen.rs), the
-// Realistic world's plate layout (plates.json → crates/dwell-worldgen/src/plates.gen.rs) and
+// Realistic world's plate layout (plates.json → crates/dwell-worldgen/src/plates.gen.rs), its climate
+// (climate.json → crates/dwell-worldgen/src/climate.gen.rs) and
 // the terrain volumes' density graphs (volume.json → crates/dwell-worldgen/src/volume.gen.rs).
 // An unknown block, a bad range or an unknown key fails with the entry named. The output is checked
 // in; CI regenerates it and fails on any diff (docs/TRANSPARENT_BLOCKS.md §10, ARCHITECTURE.md §6.3).
@@ -781,6 +782,8 @@ function fixtureWorldEdit(f, world, pool, fail) {
 function tectonicsRs(g) {
   const whole = [
     "kind",
+    "plates",
+    "climate",
     "arcCount",
     "hotspotCount",
     "ridgeCount",
@@ -2000,7 +2003,7 @@ export function validateGrass(data, blocks, decorations) {
     throw new Error(`grass.json: ${m}`);
   };
   if (typeof data !== "object" || data === null) fail("must be an object");
-  const keys = ["$comment", "block", "on", "decoration", ...Object.keys(GRASS)];
+  const keys = ["$comment", "block", "on", "onRamps", "decoration", ...Object.keys(GRASS)];
   const extra = Object.keys(data).filter((k) => !keys.includes(k));
   if (extra.length) fail(`unknown ${extra.join(", ")}`);
   if (typeof data.block !== "string" || !blocks.has(data.block))
@@ -2011,6 +2014,18 @@ export function validateGrass(data, blocks, decorations) {
     const b = blocks.get(o);
     if (!b || (b.shape ?? "full") !== "full")
       fail(`on ${JSON.stringify(o)} is not a full block of the registry`);
+  }
+  if (data.onRamps !== undefined) {
+    if (typeof data.onRamps !== "boolean") fail("onRamps must be true or false");
+    // Over a ½ m ramp of its ground (HALF_HEIGHT_GRID.md §5), as decorations' `onRamps`: the
+    // ramp must exist and the block may stand on it.
+    const grown = blocks.get(data.block);
+    for (const o of data.onRamps ? data.on : []) {
+      const ramp = `${o}_ramp`;
+      if (!blocks.get(ramp)) fail(`onRamps: ${o} has no ramps (${ramp})`);
+      if (grown.placeOn && !grown.placeOn.includes(ramp))
+        fail(`onRamps: ${data.block} may not stand on ${ramp} (its placeOn)`);
+    }
   }
   const deco = decorations.find((d) => d.name === data.decoration);
   if (!deco)
@@ -2040,6 +2055,7 @@ export function grassRust(g) {
     "pub const GRASS: GrassData = GrassData {",
     `    block: ${JSON.stringify(g.block)},`,
     `    on: &[${g.on.map((o) => JSON.stringify(o)).join(", ")}],`,
+    `    on_ramps: ${g.onRamps === true},`,
     `    decoration: ${JSON.stringify(g.decoration)},`,
     `    max_density: ${f(g.maxDensity)},`,
     `    spread_per_day: ${f(g.spreadPerDay)},`,
@@ -2072,8 +2088,23 @@ const PLATES_TOP = [
   "warp",
   "transformBelow",
   "hotspots",
+  "uplift",
   "fixtures",
 ];
+/** plates.json `uplift`'s landforms (R2, `plate_tectonics.rs`): each a height, half-width, distance. */
+const UPLIFT_LANDFORMS = ["range", "trench", "collision", "rift", "transform"];
+const UPLIFT_ARC = [
+  "distance",
+  "spacing",
+  "minLength",
+  "maxCones",
+  "coneHeight",
+  "coneRadius",
+  "craterRadius",
+  "craterDepth",
+  "hardness",
+];
+const UPLIFT_CHAIN = ["islands", "spacing", "height", "radius", "decay", "widen"];
 
 /** Checks the plate layout's data; throws `plates.json: <key> …` naming the bad entry. */
 export function validatePlates(data) {
@@ -2142,6 +2173,52 @@ export function validatePlates(data) {
   obj("hotspots", data.hotspots, ["count", "within"]);
   range("hotspots.count", data.hotspots.count, 0, 32, true);
   num("hotspots.within", data.hotspots.within, 0, data.reach);
+  const u = data.uplift;
+  obj("uplift", u, [
+    "speedRef",
+    "speedScale",
+    "link",
+    "segment",
+    "cell",
+    ...UPLIFT_LANDFORMS,
+    "riftShoulder",
+    "arc",
+    "hotspot",
+  ]);
+  num("uplift.speedRef", u.speedRef, 0.01, 100);
+  range("uplift.speedScale", u.speedScale, 0, 10);
+  num("uplift.link", u.link, 1, 20_000);
+  num("uplift.segment", u.segment, 1, 20_000);
+  // The landforms sum on a coarse grid: no new 100 m whole-map grid (REALISTIC_WORLD.md §4).
+  num("uplift.cell", u.cell, 500, 10_000);
+  for (const k of UPLIFT_LANDFORMS) {
+    if (u[k] === undefined) fail(`uplift.${k} is missing`);
+    obj(`uplift.${k}`, u[k], ["height", "width", "distance"]);
+    num(`uplift.${k}.height`, u[k].height, 0, 5000);
+    num(`uplift.${k}.width`, u[k].width, 1, 50_000);
+    num(`uplift.${k}.distance`, u[k].distance, 0, 50_000);
+  }
+  num("uplift.riftShoulder", u.riftShoulder, 0, 2);
+  obj("uplift.arc", u.arc, UPLIFT_ARC);
+  for (const k of UPLIFT_ARC) if (!(k in u.arc)) fail(`uplift.arc.${k} is missing`);
+  num("uplift.arc.distance", u.arc.distance, 0, 50_000);
+  num("uplift.arc.spacing", u.arc.spacing, 1, 100_000);
+  num("uplift.arc.minLength", u.arc.minLength, 0, 200_000);
+  num("uplift.arc.maxCones", u.arc.maxCones, 0, 32, true);
+  num("uplift.arc.coneHeight", u.arc.coneHeight, 0, 8000);
+  num("uplift.arc.coneRadius", u.arc.coneRadius, 1, 20_000);
+  num("uplift.arc.craterRadius", u.arc.craterRadius, 0, 5000);
+  num("uplift.arc.craterDepth", u.arc.craterDepth, 0, 1000);
+  num("uplift.arc.hardness", u.arc.hardness, 0, 1);
+  obj("uplift.hotspot", u.hotspot, UPLIFT_CHAIN);
+  for (const k of UPLIFT_CHAIN)
+    if (!(k in u.hotspot)) fail(`uplift.hotspot.${k} is missing`);
+  num("uplift.hotspot.islands", u.hotspot.islands, 0, 32, true);
+  num("uplift.hotspot.spacing", u.hotspot.spacing, 1, 50_000);
+  num("uplift.hotspot.height", u.hotspot.height, 0, 5000);
+  num("uplift.hotspot.radius", u.hotspot.radius, 1, 20_000);
+  num("uplift.hotspot.decay", u.hotspot.decay, 0, 1);
+  num("uplift.hotspot.widen", u.hotspot.widen, 0, 2);
   if (!Array.isArray(data.fixtures)) fail("fixtures must be a list");
   const seen = new Set();
   data.fixtures.forEach((f, i) => {
@@ -2184,6 +2261,7 @@ export function platesRust(data) {
   const rs = [
     `// ${platesHeader}`,
     "",
+    "use crate::plate_tectonics::{ArcRule, ChainRule, Landform, PlateUplift};",
     "use crate::plates::{BoundaryKind, FixturePlate, KindRule, PlateFixture, PlateKind, PlateRules};",
     "",
     "/// The plate layout's rules (shared/worldgen/plates.json).",
@@ -2216,6 +2294,33 @@ export function platesRust(data) {
   for (const [k, v] of fields) rs.push(`    ${k}: ${v},`);
   rs.push("};");
   rs.push("");
+  const u = data.uplift;
+  const landform = (l) =>
+    `Landform { height: ${rf(l.height)}, width: ${rf(l.width)}, distance: ${rf(l.distance)} }`;
+  const a = u.arc;
+  const h = u.hotspot;
+  rs.push("/// The uplift from the boundaries (plates.json `uplift`, R2).");
+  rs.push("pub const UPLIFT: PlateUplift = PlateUplift {");
+  for (const [k, v] of [
+    ["speed_ref", rf(u.speedRef)],
+    ["speed_scale", `[${rf(u.speedScale[0])}, ${rf(u.speedScale[1])}]`],
+    ["link", rf(u.link)],
+    ["segment", rf(u.segment)],
+    ["cell", rf(u.cell)],
+    ...UPLIFT_LANDFORMS.map((k) => [k, landform(u[k])]),
+    ["rift_shoulder", rf(u.riftShoulder)],
+    [
+      "arc",
+      `ArcRule { distance: ${rf(a.distance)}, spacing: ${rf(a.spacing)}, min_length: ${rf(a.minLength)}, max_cones: ${a.maxCones}, cone_height: ${rf(a.coneHeight)}, cone_radius: ${rf(a.coneRadius)}, crater_radius: ${rf(a.craterRadius)}, crater_depth: ${rf(a.craterDepth)}, hardness: ${rf(a.hardness)} }`,
+    ],
+    [
+      "hotspot",
+      `ChainRule { islands: ${h.islands}, spacing: ${rf(h.spacing)}, height: ${rf(h.height)}, radius: ${rf(h.radius)}, decay: ${rf(h.decay)}, widen: ${rf(h.widen)} }`,
+    ],
+  ])
+    rs.push(`    ${k}: ${v},`);
+  rs.push("};");
+  rs.push("");
   rs.push("/// Two-plate layouts and the boundary each must give (plates.json `fixtures`).");
   rs.push("pub const FIXTURES: &[PlateFixture] = &[");
   for (const f of data.fixtures) {
@@ -2236,6 +2341,160 @@ export function platesRust(data) {
   }
   rs.push("];");
   rs.push("");
+  return rs.join("\n");
+}
+
+// ---- The Realistic world's climate (climate.json; R3, docs/proposals/REALISTIC_WORLD.md §3.3) ----
+
+const climateHeader =
+  "Generated by shared/worldgen/gen.mjs from shared/worldgen/climate.json. Do not edit.";
+const CLIMATE_TOP = [
+  "$comment",
+  "bands",
+  "seaLevel",
+  "lapseRate",
+  "winds",
+  "windJitter",
+  "rain",
+  "maxGridBytes",
+  "discharge",
+];
+const CLIMATE_RAIN = [
+  "cell",
+  "maxCells",
+  "smoothM",
+  "reachM",
+  "baseRain",
+  "upliftRain",
+  "leeDry",
+];
+const NAME_RE = /^[a-z][a-z0-9_]*$/;
+
+/** Checks the climate's data; throws `climate.json: <key> …` naming the bad entry. */
+export function validateClimate(data) {
+  const fail = (m) => {
+    throw new Error(`climate.json: ${m}`);
+  };
+  const obj = (at, v, keys) => {
+    if (typeof v !== "object" || v === null || Array.isArray(v))
+      fail(`${at} must be an object`);
+    const extra = Object.keys(v).filter(
+      (k) => k !== "$comment" && !keys.includes(k),
+    );
+    if (extra.length) fail(`${at}: unknown ${extra.join(", ")}`);
+    const missing = keys.filter((k) => k !== "$comment" && v[k] === undefined);
+    if (missing.length) fail(`${at}: missing ${missing.join(", ")}`);
+  };
+  const num = (at, v, min, max, whole = false) => {
+    if (!(isNum(v) && v >= min && v <= max && (!whole || Number.isInteger(v))))
+      fail(`${at} must be ${whole ? "a whole number " : ""}in [${min}, ${max}]`);
+  };
+  const lat = (at, v) => {
+    if (!(Array.isArray(v) && v.length === 2 && v.every((n) => isNum(n) && n >= 0 && n <= 90) && v[0] < v[1]))
+      fail(`${at} must be [south, north] latitudes in [0, 90] with south < north`);
+  };
+  const names = (at, list) => {
+    const seen = new Set();
+    for (const [i, e] of list.entries()) {
+      if (typeof e.name !== "string" || !NAME_RE.test(e.name))
+        fail(`${at}[${i}].name must be a lowercase name`);
+      if (seen.has(e.name)) fail(`${at}[${i}]: ${e.name} is named twice`);
+      seen.add(e.name);
+    }
+  };
+  obj("the file", data, CLIMATE_TOP.filter((k) => k !== "$comment"));
+  if (!(Array.isArray(data.bands) && data.bands.length > 0)) fail("bands must be a non-empty list");
+  for (const [i, b] of data.bands.entries()) {
+    obj(`bands[${i}]`, b, ["name", "weight", "latitude"]);
+    num(`bands[${i}].weight`, b.weight, 0, 1000);
+    lat(`bands[${i}].latitude`, b.latitude);
+  }
+  names("bands", data.bands);
+  if (!data.bands.some((b) => b.weight > 0)) fail("bands: at least one band needs a weight above 0");
+  if (!(Array.isArray(data.seaLevel) && data.seaLevel.length >= 2))
+    fail("seaLevel must be at least two [latitude, °C] points");
+  for (const [i, p] of data.seaLevel.entries()) {
+    if (!(Array.isArray(p) && p.length === 2 && isNum(p[0]) && isNum(p[1])))
+      fail(`seaLevel[${i}] must be [latitude, °C]`);
+    num(`seaLevel[${i}] latitude`, p[0], 0, 90);
+    num(`seaLevel[${i}] °C`, p[1], -80, 60);
+    if (i > 0 && !(p[0] > data.seaLevel[i - 1][0]))
+      fail(`seaLevel[${i}]: latitudes must ascend`);
+  }
+  num("lapseRate", data.lapseRate, 0, 20);
+  if (!(Array.isArray(data.winds) && data.winds.length > 0)) fail("winds must be a non-empty list");
+  for (const [i, w] of data.winds.entries()) {
+    obj(`winds[${i}]`, w, ["name", "latitude", "from"]);
+    lat(`winds[${i}].latitude`, w.latitude);
+    num(`winds[${i}].from`, w.from, 0, 360);
+  }
+  names("winds", data.winds);
+  for (const [i, b] of data.bands.entries()) {
+    const mid = 0.5 * (b.latitude[0] + b.latitude[1]);
+    if (!data.winds.some((w) => w.latitude[0] <= mid && mid < w.latitude[1]))
+      fail(`bands[${i}] (${b.name}): no wind cell covers its middle latitude ${mid}`);
+  }
+  num("windJitter", data.windJitter, 0, 180);
+  obj("rain", data.rain, CLIMATE_RAIN);
+  num("rain.cell", data.rain.cell, 100, 10_000);
+  num("rain.maxCells", data.rain.maxCells, 16, 4096, true);
+  num("rain.smoothM", data.rain.smoothM, 0, 50_000);
+  num("rain.reachM", data.rain.reachM, 1, 1_000_000);
+  num("rain.baseRain", data.rain.baseRain, 0, 1);
+  num("rain.upliftRain", data.rain.upliftRain, 0, 100);
+  num("rain.leeDry", data.rain.leeDry, 0, 100);
+  num("maxGridBytes", data.maxGridBytes, 1024, 64 * 1024 * 1024, true);
+  if (data.rain.maxCells ** 2 * 4 > data.maxGridBytes)
+    fail(`rain.maxCells ${data.rain.maxCells} a side needs more than maxGridBytes (${data.maxGridBytes})`);
+  obj("discharge", data.discharge, ["min", "max"]);
+  num("discharge.min", data.discharge.min, 0, 100);
+  num("discharge.max", data.discharge.max, 0, 100);
+  if (!(data.discharge.min <= 1 && 1 <= data.discharge.max))
+    fail("discharge must be [min ≤ 1, max ≥ 1]");
+  return data;
+}
+
+/** climate.json as Rust (`crate::climate::ClimateRules`). */
+export function climateRust(data) {
+  const r = data.rain;
+  const rs = [
+    `// ${climateHeader}`,
+    "",
+    "use crate::climate::{Band, ClimateRules, RainRules, WindCell};",
+    "",
+    "/// The climate's rules (shared/worldgen/climate.json).",
+    "pub const CLIMATE: ClimateRules = ClimateRules {",
+    "    bands: &[",
+    ...data.bands.map(
+      (b) =>
+        `        Band { name: "${b.name}", weight: ${rf(b.weight)}, latitude: [${rf(b.latitude[0])}, ${rf(b.latitude[1])}] },`,
+    ),
+    "    ],",
+    "    sea_level: &[",
+    ...data.seaLevel.map((p) => `        [${rf(p[0])}, ${rf(p[1])}],`),
+    "    ],",
+    `    lapse_rate: ${rf(data.lapseRate)},`,
+    "    winds: &[",
+    ...data.winds.map(
+      (w) =>
+        `        WindCell { name: "${w.name}", latitude: [${rf(w.latitude[0])}, ${rf(w.latitude[1])}], from: ${rf(w.from)} },`,
+    ),
+    "    ],",
+    `    wind_jitter: ${rf(data.windJitter)},`,
+    "    rain: RainRules {",
+    `        cell: ${rf(r.cell)},`,
+    `        max_cells: ${r.maxCells},`,
+    `        smooth_m: ${rf(r.smoothM)},`,
+    `        reach_m: ${rf(r.reachM)},`,
+    `        base_rain: ${rf(r.baseRain)},`,
+    `        uplift_rain: ${rf(r.upliftRain)},`,
+    `        lee_dry: ${rf(r.leeDry)},`,
+    "    },",
+    `    max_grid_bytes: ${data.maxGridBytes},`,
+    `    discharge: [${rf(data.discharge.min)}, ${rf(data.discharge.max)}],`,
+    "};",
+    "",
+  ];
   return rs.join("\n");
 }
 
@@ -2322,6 +2581,13 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
     join(root, "crates/dwell-worldgen/src/plates.gen.rs"),
     platesRust(plates),
   );
+  const climate = validateClimate(
+    JSON.parse(readFileSync(join(here, "climate.json"), "utf8")),
+  );
+  writeFileSync(
+    join(root, "crates/dwell-worldgen/src/climate.gen.rs"),
+    climateRust(climate),
+  );
   const volume = validateVolume(
     JSON.parse(readFileSync(join(here, "volume.json"), "utf8")),
     registryBlocks(),
@@ -2331,6 +2597,6 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
     volumeRust(volume),
   );
   console.log(
-    `worldgen: ${data.decorations.length} decorations, ${placements.placements.length} placements, the height field and ${terrain.biomes.length} biome(s) (${terrain.presets.length} presets), ${hydrology.profiles.length} hydrology profiles, the bedrock and the portals, ${plates.fixtures.length} plate fixtures, ${volume.volumes.length} volumes generated`,
+    `worldgen: ${data.decorations.length} decorations, ${placements.placements.length} placements, the height field and ${terrain.biomes.length} biome(s) (${terrain.presets.length} presets), ${hydrology.profiles.length} hydrology profiles, the bedrock and the portals, ${plates.fixtures.length} plate fixtures, ${climate.bands.length} climate bands, ${volume.volumes.length} volumes generated`,
   );
 }

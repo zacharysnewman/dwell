@@ -193,6 +193,37 @@ pub struct LightMap {
     tunables: LightTunables,
     /// Cell writes since the map was made ([`Self::writes`]).
     writes: u64,
+    /// A chunk's load being lit a slice at a time ([`Self::begin_load`], [`Self::resume`]).
+    pending: Option<Box<Pending>>,
+}
+
+/// A chunk's load in progress (docs/BUGS.md #72): its passes, each a channel's removal then
+/// addition from the same cells as the one-shot [`LightMap::load`], kept between frames.
+struct Pending {
+    coord: ChunkCoord,
+    removal: Vec<P>,
+    add: Vec<P>,
+    /// The cells below whose open sky it now covers, checked once the first passes are done.
+    under: Option<Vec<P>>,
+    chans: VecDeque<Channel>,
+    pass: Option<Pass>,
+}
+
+/// One channel's pass of [`LightMap::run_from`] (no `from`), resumable.
+struct Pass {
+    ch: Channel,
+    stage: Stage,
+    readd: Vec<P>,
+    buckets: [Vec<P>; LIGHT_MAX as usize + 1],
+}
+
+enum Stage {
+    /// The removal's queue.
+    Remove(VecDeque<(P, u8)>),
+    /// The cells to light back, sorted into buckets from this one on.
+    Fill(usize),
+    /// Spreading the brightest first, from this level down.
+    Spread(u8),
 }
 
 impl Default for LightMap {
@@ -219,6 +250,7 @@ impl LightMap {
             changed: Vec::new(),
             tunables,
             writes: 0,
+            pending: None,
         }
     }
 
@@ -338,6 +370,15 @@ impl LightMap {
     /// The chunk is now held (stored in `voxels`, or all air): it is lit, and what it changes
     /// around it relit.
     pub fn load(&mut self, voxels: &Voxels, coord: ChunkCoord) {
+        self.begin_load(voxels, coord);
+        self.flush(voxels);
+    }
+
+    /// The chunk is held: as [`Self::load`], lit by [`Self::resume`] a slice at a time (another
+    /// update first finishes it). Until it is done ([`Self::lighting`]) its light and its
+    /// neighbours' are part way; the result equals the one-shot load's.
+    pub fn begin_load(&mut self, voxels: &Voxels, coord: ChunkCoord) {
+        self.flush(voxels);
         let replaced = self.holds(coord);
         let s = if replaced {
             self.index[&coord]
@@ -415,21 +456,180 @@ impl LightMap {
                 }
             }
         }
-        self.run_all(voxels, &removal, &add);
-        // The cells below saw the open sky through its place. Lit first, it shows which of them
-        // still do: one at full sky light under a cell of it at full sky light, filtering nothing,
-        // keeps it (full sky light in the chunk only falls from its top, never rises from them),
-        // and the column under it is left alone; the rest are cleared and relit. Clearing them all
-        // first cascaded down every open-air column under a newly held chunk (0.22.9: 5–9 ms a
-        // chunk native, 100–150 thousand cell writes).
-        if !under.is_empty() {
-            let mut cache = VoxelCache::new(voxels);
-            let lost: Vec<P> = under
-                .into_iter()
-                .filter(|&p| !self.keeps_full_sky(&mut cache, p))
-                .collect();
-            if !lost.is_empty() {
-                self.run_all(voxels, &lost, &[]);
+        // Both channels from these cells, then the cells below (see `resume`).
+        self.pending = Some(Box::new(Pending {
+            coord,
+            removal,
+            add,
+            under: (!under.is_empty()).then_some(under),
+            chans: [Channel::Sky, Channel::Block].into(),
+            pass: None,
+        }));
+    }
+
+    /// The chunk whose load is part way ([`Self::begin_load`]), if any.
+    pub fn lighting(&self) -> Option<ChunkCoord> {
+        self.pending.as_ref().map(|p| p.coord)
+    }
+
+    /// Finishes a load part way, if any.
+    pub fn flush(&mut self, voxels: &Voxels) {
+        while !self.resume(voxels, usize::MAX) {}
+    }
+
+    /// Goes on with the load part way for at most `steps` cells (at least one); whether it is
+    /// done (nothing part way: done).
+    pub fn resume(&mut self, voxels: &Voxels, steps: usize) -> bool {
+        let Some(mut pd) = self.pending.take() else {
+            return true;
+        };
+        let mut cache = VoxelCache::new(voxels);
+        let mut budget = steps.max(1);
+        loop {
+            if pd.pass.is_none() {
+                if let Some(ch) = pd.chans.pop_front() {
+                    pd.pass = Some(self.start_pass(ch, &pd.removal, &pd.add));
+                } else {
+                    self.finish();
+                    // The cells below saw the open sky through its place. Lit first, it shows
+                    // which of them still do: one at full sky light under a cell of it at full
+                    // sky light, filtering nothing, keeps it (full sky light in the chunk only
+                    // falls from its top, never rises from them), and the column under it is
+                    // left alone; the rest are cleared and relit. Clearing them all first
+                    // cascaded down every open-air column under a newly held chunk (0.22.9: 5–9
+                    // ms a chunk native, 100–150 thousand cell writes).
+                    if let Some(under) = pd.under.take() {
+                        let lost: Vec<P> = under
+                            .into_iter()
+                            .filter(|&p| !self.keeps_full_sky(&mut cache, p))
+                            .collect();
+                        if !lost.is_empty() {
+                            pd.removal = lost;
+                            pd.add = Vec::new();
+                            pd.chans = [Channel::Sky, Channel::Block].into();
+                            continue;
+                        }
+                    }
+                    return true;
+                }
+            }
+            let pass = pd.pass.as_mut().expect("started");
+            if self.advance(&mut cache, pass, &mut budget) {
+                pd.pass = None;
+            } else {
+                self.pending = Some(pd);
+                return false;
+            }
+        }
+    }
+
+    /// [`Self::run_from`]'s start (no `from`): the removal's cells cleared and queued.
+    fn start_pass(&mut self, ch: Channel, removal: &[P], add: &[P]) -> Pass {
+        let mut q: VecDeque<(P, u8)> = VecDeque::new();
+        for &p in removal {
+            let v = self.level(p, ch);
+            if v > 0 {
+                self.set_level(p, ch, 0);
+                q.push_back((p, v));
+            }
+        }
+        Pass {
+            ch,
+            stage: Stage::Remove(q),
+            readd: add.to_vec(),
+            buckets: Default::default(),
+        }
+    }
+
+    /// [`Self::run_from`]'s passes, `budget` cells at most; whether the pass is done. The same
+    /// steps in the same order, so the light is the one-shot pass's.
+    fn advance(&mut self, cache: &mut VoxelCache<'_>, pass: &mut Pass, budget: &mut usize) -> bool {
+        let Pass {
+            ch,
+            stage,
+            readd,
+            buckets,
+        } = pass;
+        let ch = *ch;
+        loop {
+            match stage {
+                Stage::Remove(q) => {
+                    while *budget > 0 {
+                        let Some((p, ov)) = q.pop_front() else {
+                            break;
+                        };
+                        *budget -= 1;
+                        readd.push(p);
+                        for d in 0..6 {
+                            let Some(n) = self.step(p, d) else {
+                                continue;
+                            };
+                            self.remove_into(cache, ch, n, d, ov, q, readd);
+                        }
+                    }
+                    if !q.is_empty() {
+                        return false;
+                    }
+                    *stage = Stage::Fill(0);
+                }
+                Stage::Fill(i) => {
+                    while *budget > 0 && *i < readd.len() {
+                        let p = readd[*i];
+                        *i += 1;
+                        *budget -= 1;
+                        let v = self.level(p, ch);
+                        let s = if v == LIGHT_MAX {
+                            v
+                        } else {
+                            self.source(cache, ch, p)
+                        };
+                        if s > v {
+                            self.set_level(p, ch, s);
+                            buckets[usize::from(s)].push(p);
+                        } else if v > 0 {
+                            buckets[usize::from(v)].push(p);
+                        }
+                    }
+                    if *i < readd.len() {
+                        return false;
+                    }
+                    readd.clear();
+                    *stage = Stage::Spread(LIGHT_MAX);
+                }
+                Stage::Spread(level) => {
+                    while *level >= 1 {
+                        let l = *level;
+                        while let Some(p) = buckets[usize::from(l)].pop() {
+                            if *budget == 0 {
+                                buckets[usize::from(l)].push(p);
+                                return false;
+                            }
+                            *budget -= 1;
+                            if self.level(p, ch) != l {
+                                continue;
+                            }
+                            for d in 0..6 {
+                                let Some(n) = self.step(p, d) else {
+                                    continue;
+                                };
+                                if self.level(n, ch) >= l {
+                                    continue;
+                                }
+                                let (f, _) = self.rules(cache, n);
+                                if f >= LIGHT_MAX {
+                                    continue;
+                                }
+                                let nv = self.passed(ch, l, n, d, f);
+                                if nv > self.level(n, ch) {
+                                    self.set_level(n, ch, nv);
+                                    buckets[usize::from(nv)].push(n);
+                                }
+                            }
+                        }
+                        *level -= 1;
+                    }
+                    return true;
+                }
             }
         }
     }
@@ -478,6 +678,7 @@ impl LightMap {
     /// The chunk is no longer held: what it lit around it is cleared and relit (cells below it
     /// take the open sky again).
     pub fn unload(&mut self, voxels: &Voxels, coord: ChunkCoord) {
+        self.flush(voxels);
         self.unload_many(voxels, &[coord]);
     }
 
@@ -487,6 +688,7 @@ impl LightMap {
     /// open sky that now enters where they were) stays, and nothing below it is touched; chunks
     /// unloaded together don't relight each other.
     pub fn unload_many(&mut self, voxels: &Voxels, coords: &[ChunkCoord]) {
+        self.flush(voxels);
         let mut gone: Vec<u32> = coords
             .iter()
             .filter_map(|c| self.index.get(c).copied())
@@ -556,6 +758,7 @@ impl LightMap {
 
     /// Cells whose blocks changed (world cells; ones in chunks not held are skipped).
     pub fn edited(&mut self, voxels: &Voxels, cells: &[[i32; 3]]) {
+        self.flush(voxels);
         let ps: Vec<P> = cells.iter().filter_map(|&c| self.p_of(c)).collect();
         let mut add = ps.clone();
         for &p in &ps {
@@ -567,6 +770,7 @@ impl LightMap {
     /// Relights every held chunk from nothing: the reference [`Self::load`], [`Self::unload`] and
     /// [`Self::edited`] must agree with.
     pub fn relit_from_scratch(&mut self, voxels: &Voxels) {
+        self.flush(voxels);
         let mut all = Vec::new();
         for (&_, &s) in &self.index {
             let slot = &mut self.slots[s as usize];

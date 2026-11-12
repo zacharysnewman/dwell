@@ -340,7 +340,8 @@ meshes keeps the ground (`walking_a_grass_field_across_chunk_seams_never_loses_t
   apart from the cells it should (`solid`), and the chunks behind; each `tick_terrain` ends with
   `catch_up`: every behind cell within the players' reach (the box above) and the pieces' boxes at
   once — an edit's near cells the same tick, as before — then up to `COLLISION_CELLS_PER_TICK`
-  (8,192) more, in a fixed order (server and prediction alike); dropped chunks' cells come out the
+  (8,192) more, in a fixed order (server and prediction alike; a phone's prediction takes 1,024,
+  `Players::set_collision_cells_per_tick`, the cells in reach the same); dropped chunks' cells come out the
   same way. `ensure_box` puts its box's cells in at once. Counted as `collisionCells`
   (`Server::tick_counts`; `dwell-sim` `tests/teleport_cost.rs`: ≤ 8,829 cells a teleport's tick,
   65,536 before).
@@ -496,6 +497,16 @@ openings), **crouch height 0.9** (fits 1-tall crawlspaces with skin to spare).
 
 ### 6.6 Interaction with Tier 1 bodies and other players
 - **Being pushed / hit:** natural solver response; absorbed as external velocity and decayed.
+  Uncapped: a body swung into a player throws them as hard as the solver says (owner, 2026-11-08: "we
+  shouldn't be capping player kick like that"; a 900 kg log at 10 m/s throws them at ~9.3 m/s).
+- **Pinned, not squeezed out [built, BUGS.md #52].** The capsule is frictionless, so a body coming down
+  on a grounded player (a felled trunk's slanted underside) could only squeeze it out sideways, at the
+  descent over the slant's slope, unbounded as the slant flattens (155 m flings). A Rapier contact hook
+  (`physics::PinchGrip`, every `Physics::step`; the player's collider sets
+  `ActiveHooks::MODIFY_SOLVER_CONTACTS`) gives a piece's contact whose push-out normal toward the
+  player points down (face-local y < −`PINCH_MIN_DOWN`, 0.5) the piece's own friction
+  (`PIECE_FRICTION`, 0.8): the player is held or carried at the body's speed there. The ground, walls,
+  side hits and other players stay frictionless. The same in the prediction (its `Physics`).
 - **Riding:** `step_platform` uses the Tier 1 body's linear + angular velocity at the player's
   position; the horizontal layer accelerates in that frame, and the vertical layer follows its
   vertical velocity, so standing on a falling slab or tipping tower needs no input. `yaw_delta`

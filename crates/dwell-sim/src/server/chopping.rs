@@ -67,19 +67,46 @@ impl Server {
             // An exhausted player's swing is refused; a swing draws its cost (ADR 0069 §5).
             ChopAction::Swing { ref tool, .. } | ChopAction::Sweep { ref tool, .. }
                 if !self.swing_stamina(id, tool) => {}
+            // The others see the swing start, by its direction (WORK_QUEUE item 17); then it lands.
             ChopAction::Swing {
                 tool,
                 cell,
                 face,
                 point,
                 vertical,
-            } => self.swing(id, &tool, cell, face, point.map(f64::from), vertical),
+            } => {
+                self.chop_swung(id, vertical);
+                self.swing(id, &tool, cell, face, point.map(f64::from), vertical);
+            }
             ChopAction::Sweep {
                 tool,
                 look,
                 vertical,
-            } => self.sweep(id, &tool, look.map(f64::from), vertical),
+            } => {
+                self.chop_swung(id, vertical);
+                self.sweep(id, &tool, look.map(f64::from), vertical);
+            }
             ChopAction::Held { tool, vertical } => self.held_tool(id, tool, vertical),
+        }
+    }
+
+    /// Steps this player's swing for the others (a chop, `vertical` or level; a break to a client
+    /// that didn't say `SwingHello`) when it may swing now.
+    fn chop_swung(&mut self, id: SessionId, vertical: bool) {
+        let tick = self.tick;
+        if let Some(s) = self.sessions.get_mut(&id)
+            && s.joined()
+            && s.handle.is_some()
+            && tick >= s.chop_ready
+        {
+            s.swung(
+                true,
+                if vertical {
+                    dwell_protocol::SwingKind::ChopVertical
+                } else {
+                    dwell_protocol::SwingKind::ChopLevel
+                },
+            );
         }
     }
 

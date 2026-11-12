@@ -1214,8 +1214,10 @@ impl Felling {
     /// Settles piece `i` (docs/FELLING.md §4): its body is removed and its cells resampled onto the
     /// grid at its rotation snapped to the nearest of the 24 axis-aligned ones, each grid cell
     /// whose centre lies in a cell of the piece taking that cell's block (a log's axis turned with
-    /// it). A rider whose cell is taken is destroyed; if a carrier's is, the whole piece tries one
-    /// and two rows higher, else that carrier is lost. `taken` says whether a cell can't be filled
+    /// it), at rest tilted each column moved to its real pose (`follow_pose`; BUGS.md #73). If a
+    /// carrier's cell is taken the whole piece tries one and two rows higher, else (and tilted)
+    /// each column rises to the first rows free for its carriers: no wood is lost. A rider whose
+    /// cell is still taken is destroyed. `taken` says whether a cell can't be filled
     /// (terrain, or a player for a block that blocks a body), asked for each block. A riders-only
     /// piece (leaves falling on their own) lands as leaves too.
     pub fn settle(
@@ -1227,7 +1229,8 @@ impl Felling {
     ) -> Settled {
         let p = self.pieces.remove(i);
         let origin = physics.position(p.body);
-        let rotation = snap(physics.rotation(p.body));
+        let real = physics.rotation(p.body);
+        let rotation = snap(real);
         physics.remove_body(p.body);
         let mut out = Settled {
             id: p.id,
@@ -1239,21 +1242,61 @@ impl Felling {
         if lost {
             return out;
         }
-        let placed = resample(&p.cells, origin, rotation).1;
+        let (aligned, placed) = resample(&p.cells, origin, rotation);
+        let placed = follow_pose(placed, aligned, rotation, real);
         let carrier = |m: StateId| info(m).support_role == dwell_blocks::SupportRole::Carrier;
         let falls = |m: StateId| info(m).support_role == dwell_blocks::SupportRole::Falls;
-        let mut lift = 0;
-        for up in 0..=2 {
-            let blocked = placed
+        let blocked_by = |world: &mut VoxelWorld, cells: &[([i32; 3], StateId)], up: i32| {
+            cells
                 .iter()
-                .any(|&(c, m)| carrier(m) && taken(world, [c[0], c[1] + up, c[2]], m));
-            if !blocked {
-                lift = up;
-                break;
+                .any(|&(c, m)| carrier(m) && taken(world, raised(c, up), m))
+        };
+        // At rest tilted (a trunk lying up a hill) its columns were moved to its pose
+        // (`follow_pose`), each to within a row of it: each column settles on its own.
+        let tilted = rotation.angle_between(real) > TILTED_RAD;
+        // Else the whole piece a row or two higher if that frees its carriers (a log on a bump).
+        let lift = if tilted {
+            None
+        } else {
+            (0..=2).find(|&up| !blocked_by(world, &placed, up))
+        };
+        // Else each column of it (x, z) rises on its own to the first rows free for its carriers
+        // (BUGS.md #73: a trunk lying up a hill, its cells inside the ground were dropped, so most
+        // of the tree vanished): no wood is lost, the column sitting on the ground there. Tilted,
+        // a column with room a row under it drops onto what is there (its rows were rounded).
+        let mut columns: Vec<([i32; 2], i32)> = Vec::new();
+        if lift.is_none() {
+            let mut keys: Vec<[i32; 2]> = placed.iter().map(|&(c, _)| [c[0], c[2]]).collect();
+            keys.sort_unstable();
+            keys.dedup();
+            for key in keys {
+                let column: Vec<([i32; 3], StateId)> = placed
+                    .iter()
+                    .copied()
+                    .filter(|&(c, m)| [c[0], c[2]] == key && carrier(m))
+                    .collect();
+                if column.is_empty() {
+                    continue;
+                }
+                let mut up = (0..=COLUMN_RISE)
+                    .find(|&up| !blocked_by(world, &column, up))
+                    .unwrap_or(0);
+                if tilted && up == 0 && !blocked_by(world, &column, -1) {
+                    up = -1;
+                }
+                columns.push((key, up));
             }
         }
+        let up_of = |c: [i32; 3]| {
+            lift.unwrap_or_else(|| {
+                columns
+                    .iter()
+                    .find(|(k, _)| *k == [c[0], c[2]])
+                    .map_or(0, |&(_, up)| up)
+            })
+        };
         for (c, m) in placed {
-            let at = [c[0], c[1] + lift, c[2]];
+            let at = raised(c, up_of(c));
             if !taken(world, at, m) {
                 out.cells.push((at, m));
                 continue;
@@ -1272,6 +1315,54 @@ impl Felling {
         }
         out
     }
+}
+
+/// A piece at rest turned more than this (rad) from its snapped rotation lay tilted: its columns
+/// settle on their own (BUGS.md #73).
+const TILTED_RAD: f64 = 0.05;
+
+/// The most rows (face-local) a settling column rises to free its carriers (BUGS.md #73).
+const COLUMN_RISE: i32 = 32;
+
+/// Cell `c` `up` rows higher, face-local.
+fn raised(c: [i32; 3], up: i32) -> [i32; 3] {
+    let f = FaceFrame::at_row(c[1]);
+    let l = f.cell(c);
+    f.cell([l[0], l[1] + up, l[2]])
+}
+
+/// The cells `placed` (resampled at the snapped `rotation` about `aligned`) each column (x, z)
+/// moved up or down by the rows the piece's real pose (`real`) has it higher or lower there than
+/// the snapped one: a trunk at rest tilted up a slope snaps to lying flat about its reference cell,
+/// which left one end in the air and the other inside the hill (BUGS.md #73); moved, its columns
+/// step along the hill as the body lay. One shift a column (the mean of its cells'), so a lying
+/// log's two rows stay together.
+fn follow_pose(
+    placed: Vec<([i32; 3], StateId)>,
+    aligned: DVec3,
+    rotation: DQuat,
+    real: DQuat,
+) -> Vec<([i32; 3], StateId)> {
+    let inverse = rotation.inverse();
+    let rise = |c: [i32; 3]| {
+        let l = inverse * (cell_centre(c) - aligned);
+        (real * l - rotation * l).y
+    };
+    let mut sums: std::collections::HashMap<[i32; 2], (f64, u32)> = Default::default();
+    for &(c, _) in &placed {
+        let e = sums.entry([c[0], c[2]]).or_default();
+        e.0 += rise(c);
+        e.1 += 1;
+    }
+    placed
+        .into_iter()
+        .map(|(c, m)| {
+            let (sum, n) = sums[&[c[0], c[2]]];
+            // World rows: a shift in metres is the same rows on either face.
+            let rows = (sum / f64::from(n) / CELL_H).round() as i32;
+            ([c[0], c[1] + rows, c[2]], m)
+        })
+        .collect()
 }
 
 /// The grid cells a piece of `cells` covers at `origin` turned by `rotation`, each with its block,
@@ -1693,6 +1784,98 @@ mod tests {
                 top_v.x > 0.5,
                 "its top away from the cutter (+x): {top_v:?}"
             );
+        }
+    );
+
+    dwell_world::both_faces!(
+        /// BUGS.md #73 (owner, 2026-11-12: "big chunks of a tree disappear if it settled diagonal
+        /// long ways up a hill, it settles flat and most of the tree disappears into the ground"):
+        /// a trunk at rest lying up a slope (8 m, tilted ~27° along +x on a 1:2 hillside) snaps to
+        /// lying flat, and settled at its middle's height its uphill half was inside the hill,
+        /// whose cells were dropped. No wood is lost: every log settles, along x, following the
+        /// slope (its uphill end higher than its downhill end), none inside the ground, each
+        /// column resting on the ground.
+        fn a_trunk_at_rest_up_a_slope_settles_whole_along_the_hill(f: dwell_world::FaceFrame) {
+            let mut world = VoxelWorld::new(dwell_world::empty_generator(), None);
+            let mut physics = Physics::new(dwell_physics::PhysicsConfig::default());
+            let mut felling = Felling::default();
+            let stone = dwell_blocks::require("dwell:stone");
+            // The hill: ground up to 20 m + ½ x (face-local), a cell solid when its top is under
+            // the slope at its low edge.
+            for x in -4..16 {
+                for z in -2..5 {
+                    for r in 30..=39 + x {
+                        let [wx, wy, wz] = f.cell([x, r, z]);
+                        world.set_voxel(wx, wy, wz, stone);
+                    }
+                }
+            }
+            // 16 rows of trunk (8 m), standing in its grid, laid along +x and tilted up the slope.
+            let a = 0.5f64.atan();
+            let cells: Vec<([i32; 3], StateId)> = (0..16)
+                .map(|y| ([0, if f.is_b() { -y } else { y }, 0], f.state(log())))
+                .collect();
+            let turn = DQuat::from_rotation_z(a - std::f64::consts::FRAC_PI_2);
+            let rotation = if f.is_b() {
+                DQuat::from_xyzw(-turn.x, turn.y, -turn.z, turn.w)
+            } else {
+                turn
+            };
+            // Its foot's axis point ½ m (the trunk's half thickness) over the slope at x = 1.
+            let (x0, normal) = (1.0, DVec3::new(-a.sin(), a.cos(), 0.0));
+            let foot = DVec3::new(x0, 20.0 + 0.5 * x0, 1.5) + normal * 0.51;
+            // The reference cell's centre: a quarter metre (half a row) up the trunk from its foot.
+            let along = DVec3::new(a.cos(), a.sin(), 0.0);
+            let origin = DVec3::from_array(f.point((foot + along * 0.25).to_array()));
+            let i = felling.spawn_body(
+                &mut physics,
+                None,
+                0,
+                0,
+                cells,
+                origin,
+                rotation,
+                DVec3::ZERO,
+                DVec3::ZERO,
+            );
+            let taken = |w: &mut VoxelWorld, c: [i32; 3], _: StateId| {
+                w.get_voxel(c[0], c[1], c[2]) != M.air
+            };
+            let settled = felling.settle(&mut world, &mut physics, i, &taken);
+            let logs: Vec<[i32; 3]> = settled.cells.iter().map(|&(c, _)| f.cell(c)).collect();
+            assert_eq!(logs.len(), 16, "no wood lost: {logs:?}");
+            assert!(
+                settled.cells.iter().all(|&(_, m)| info(m).axis == Axis::X),
+                "lying along the trunk (x)"
+            );
+            let mut unique = logs.clone();
+            unique.sort_unstable();
+            unique.dedup();
+            assert_eq!(unique.len(), 16, "one log a cell: {logs:?}");
+            for &(c, _) in &settled.cells {
+                assert_eq!(
+                    world.get_voxel(c[0], c[1], c[2]),
+                    M.air,
+                    "inside the hill: {c:?}"
+                );
+            }
+            let row_at = |x: i32| logs.iter().filter(|c| c[0] == x).map(|c| c[1]).min();
+            let xs: Vec<i32> = logs.iter().map(|c| c[0]).collect();
+            let (lo, hi) = (*xs.iter().min().unwrap(), *xs.iter().max().unwrap());
+            assert!(
+                row_at(hi).unwrap() >= row_at(lo).unwrap() + (hi - lo) - 2,
+                "following the slope (a row a 1 m up it): {logs:?}"
+            );
+            // Each column rests on the hill: its lowest log on the ground (stone or a log below).
+            for x in lo..=hi {
+                let Some(r) = row_at(x) else { continue };
+                let below = f.cell([x, r - 1, 1]);
+                assert_ne!(
+                    world.get_voxel(below[0], below[1], below[2]),
+                    M.air,
+                    "column x {x} floats: {logs:?}"
+                );
+            }
         }
     );
 

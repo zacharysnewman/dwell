@@ -346,6 +346,9 @@ pub struct HydrologyMap {
     /// The uplift layer's range spines and plate points (empty without `tectonics`).
     pub spines: Vec<uplift::Spine>,
     pub plates: Vec<(f64, f64)>,
+    /// With a climate (R3): the coarse ground its wind was marched over and the rain it dropped
+    /// (bounded by `climate.json` `maxGridBytes`; gone with this map once the world map is kept).
+    pub climate: Option<(crate::climate::CoarseGround, crate::climate::RainGrid)>,
 }
 
 /// The grid for a cell size: square, covering the world's disc, with a border of sea.
@@ -412,14 +415,57 @@ pub fn generate_with_height(
     p: &HydrologyParams,
     h: crate::terrain::HeightField,
 ) -> HydrologyMap {
-    let base = BaseField::with_height(seed, h);
-    let (grid, x0, hs) = sample_field(&base, p.cell);
-    if !h.tectonics.enabled() {
-        return from_heights(grid, f64::from(p.cell), x0, &hs, seed, p);
+    if h.tectonics.from_plates() {
+        let plates = crate::plate_tectonics::PlateTectonics::for_seed(seed);
+        return generate_with_plates(seed, p, h, &plates);
     }
-    // Tectonics (systemic terrain T5): the boundary's landform and the volcanoes on each cell.
+    tectonic_map(seed, p, h, BaseField::with_height(seed, h), None)
+}
+
+/// [`generate_with_height`] for a Realistic world (`tectonics.plates` 1, R2) over a given plate
+/// tectonics (the face seed's, or a test's): the plates' coast is the base field's, and every
+/// boundary's landform, arc cone and hotspot island is added as the hand-placed boundary's are.
+pub fn generate_with_plates(
+    seed: u64,
+    p: &HydrologyParams,
+    h: crate::terrain::HeightField,
+    plates: &crate::plate_tectonics::PlateTectonics,
+) -> HydrologyMap {
+    let layout = std::sync::Arc::new(plates.layout.clone());
+    let base = BaseField::with_plates(seed, h, Some(layout));
+    tectonic_map(seed, p, h, base, Some(plates))
+}
+
+fn tectonic_map(
+    seed: u64,
+    p: &HydrologyParams,
+    h: crate::terrain::HeightField,
+    base: BaseField,
+    plates: Option<&crate::plate_tectonics::PlateTectonics>,
+) -> HydrologyMap {
+    let (grid, x0, hs) = sample_field(&base, p.cell);
+    // The Realistic world's climate (R3): its rain weights the discharge.
+    let climate = h
+        .tectonics
+        .from_climate()
+        .then(|| crate::climate::Climate::for_seed(seed));
+    if !h.tectonics.enabled() {
+        return from_heights_with(
+            grid,
+            f64::from(p.cell),
+            x0,
+            &hs,
+            seed,
+            p,
+            None,
+            climate.as_ref(),
+        );
+    }
+    // Tectonics (systemic terrain T5): the boundary's landform and the volcanoes on each cell;
+    // with plates (R2) every boundary's, arc's and chain's too.
     let t = h.tectonics;
     let volcanoes = t.volcanoes();
+    let hand = t.kind != crate::tectonics::NONE || t.hotspot_count > 0;
     let n = grid.n;
     let (mut extra, mut rising) = (vec![0.0; grid.len()], vec![0.0; grid.len()]);
     let mut shield = vec![0.0; grid.len()];
@@ -429,10 +475,17 @@ pub fn generate_with_height(
             x0 + (i / n) as f64 * f64::from(p.cell),
         );
         if hs[i].is_finite() {
-            let coast = f64::from(base.coast_at(x as i64, z as i64));
-            extra[i] = t.height(&volcanoes, x, z, coast);
-            rising[i] = t.boundary(x, z, coast);
-            shield[i] = t.shield(&volcanoes, x, z);
+            if hand {
+                let coast = f64::from(base.coast_at(x as i64, z as i64));
+                extra[i] = t.height(&volcanoes, x, z, coast);
+                rising[i] = t.boundary(x, z, coast);
+                shield[i] = t.shield(&volcanoes, x, z);
+            }
+            if let Some(pt) = plates {
+                extra[i] += pt.height(x, z);
+                rising[i] += pt.boundary(x, z);
+                shield[i] = shield[i].max(pt.shield(x, z));
+            }
         }
     }
     from_heights_with(
@@ -443,6 +496,7 @@ pub fn generate_with_height(
         seed,
         p,
         Some((&extra, &rising, &shield)),
+        climate.as_ref(),
     )
 }
 
@@ -478,7 +532,7 @@ pub fn from_heights(
     seed: u64,
     p: &HydrologyParams,
 ) -> HydrologyMap {
-    from_heights_with(grid, cell, x0, h0, seed, p, None)
+    from_heights_with(grid, cell, x0, h0, seed, p, None, None)
 }
 
 /// [`from_heights`] with the tectonics' landforms (systemic terrain T5, m per cell) added: to the
@@ -487,7 +541,9 @@ pub fn from_heights(
 /// keeps rising as the uplift layer's do, the dormant volcanoes not, so the erosion wears them;
 /// `extra.2` the share of the erosion each cell is shielded from (a hardened cone, `coneHardness`:
 /// its erodibility × 1 − the share, and nothing deposited above its uneroded ground, so a tall
-/// cone keeps its height and its crater).
+/// cone keeps its height and its crater). With a `climate` (R3) its rain, marched over the uplifted
+/// ground before the erosion on the coarse grid, takes the profile's rain's place.
+#[allow(clippy::too_many_arguments)]
 pub fn from_heights_with(
     grid: Grid,
     cell: f64,
@@ -496,6 +552,7 @@ pub fn from_heights_with(
     seed: u64,
     p: &HydrologyParams,
     extra: Option<(&[f64], &[f64], &[f64])>,
+    climate: Option<&crate::climate::Climate>,
 ) -> HydrologyMap {
     assert_eq!(h0.len(), grid.len());
     let lifted: Vec<f64>;
@@ -581,9 +638,29 @@ pub fn from_heights_with(
         }
         h.clone()
     });
-    let rain: Vec<f64> = match &p.rain {
-        Rain::Uniform => vec![1.0; len],
-        Rain::Orographic(o) => rain::orographic(grid, cell, &h, &sea, seed, o),
+    let mut marched = None;
+    let rain: Vec<f64> = match (climate, &p.rain) {
+        (Some(c), _) => {
+            let ground = crate::climate::CoarseGround::of(&c.rules, grid.n, cell, x0, &h, &sea);
+            let r = c.rain(&ground);
+            let rain = (0..len)
+                .map(|i| {
+                    if sea[i] {
+                        1.0
+                    } else {
+                        let (x, z) = (
+                            x0 + (i % grid.n) as f64 * cell,
+                            x0 + (i / grid.n) as f64 * cell,
+                        );
+                        r.discharge(x, z)
+                    }
+                })
+                .collect();
+            marched = Some((ground, r));
+            rain
+        }
+        (None, Rain::Uniform) => vec![1.0; len],
+        (None, Rain::Orographic(o)) => rain::orographic(grid, cell, &h, &sea, seed, o),
     };
     erosion::erode(grid, cell, &mut h, &uplift, &erodibility, &rain, &sea, p);
     if let (Some(s), Some(u)) = (shield, &uneroded) {
@@ -643,6 +720,7 @@ pub fn from_heights_with(
         rain: rain.iter().map(|&v| v as f32).collect(),
         spines,
         plates,
+        climate: marched,
     }
 }
 

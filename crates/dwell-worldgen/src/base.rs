@@ -5,11 +5,14 @@
 //! distance (`coast_at`, the portals' inland rule). Its parameters are data
 //! (`shared/worldgen/terrain.json` `input`, generated into `terrain.gen.rs`).
 
+use std::sync::Arc;
+
 use dwell_protocol::world_size::WorldSize;
 use dwell_world::WorldBounds;
 
 use crate::island::IslandLayout;
 use crate::noise::{clamp01, fbm2, noise_offset, octaves_resolved, seed_word, smooth_step};
+use crate::plates::{PLATES, PlateLayout};
 use crate::terrain::{HEIGHT, HeightField};
 
 /// The input field of one face (its generator's seed).
@@ -25,6 +28,9 @@ pub struct BaseField {
     h: HeightField,
     /// The world's disc (its size's, BIG_MAP.md M2).
     world: WorldBounds,
+    /// A Realistic world's plate layout (`tectonics.plates` 1, R2): its coast is the field's
+    /// (oceanic plate = sea, continental = land, a sea margin at the edge) in place of the island's.
+    plates: Option<Arc<PlateLayout>>,
 }
 
 impl BaseField {
@@ -49,8 +55,18 @@ impl BaseField {
 
     /// The field of face seed `seed` with these parameters (a fixture world, Chisel's edit).
     pub fn with_height(seed: u64, h: HeightField) -> Self {
+        let plates = h
+            .tectonics
+            .from_plates()
+            .then(|| Arc::new(PlateLayout::generate(&PLATES, seed)));
+        Self::with_plates(seed, h, plates)
+    }
+
+    /// [`BaseField::with_height`] with a given plate layout for its coast (`None`: the island's).
+    pub fn with_plates(seed: u64, h: HeightField, plates: Option<Arc<PlateLayout>>) -> Self {
         Self {
             world: WorldBounds::DEFAULT,
+            plates,
             islands_seed: seed_word(seed, 0x1514_A010),
             h,
             hills_seed: seed_word(seed, 1),
@@ -68,7 +84,10 @@ impl BaseField {
 
     /// The island's signed distance to the coast (m) at the point itself: > 0 land, < 0 sea.
     pub fn coast_at(&self, x: i64, z: i64) -> f32 {
-        self.island.coast_at(x, z, None)
+        match &self.plates {
+            Some(p) => p.coast_distance(x as f64, z as f64) as f32,
+            None => self.island.coast_at(x, z, None),
+        }
     }
 
     /// The field's height (m, face-local from the midplane) at (x, z) with the octaves finer than
@@ -79,15 +98,18 @@ impl BaseField {
         }
         let h = &self.h;
         let (nx, nz) = (x + self.offset_x, z + self.offset_z);
-        let mut coast = self.island.coast_at(
-            x,
-            z,
-            Some(octaves_resolved(
-                self.island.shape().coast_wavelength,
-                self.island.shape().coast_octaves,
-                cell,
-            )),
-        );
+        let mut coast = match &self.plates {
+            Some(p) => p.coast_distance(x as f64, z as f64) as f32,
+            None => self.island.coast_at(
+                x,
+                z,
+                Some(octaves_resolved(
+                    self.island.shape().coast_wavelength,
+                    self.island.shape().coast_octaves,
+                    cell,
+                )),
+            ),
+        };
         // The archipelago's knob (ADR 0074 B4): the coast capped and broken by a broad noise, so
         // the land comes as many islands, each rising from its own coast. Off at 0 (the default).
         if h.island_amplitude > 0.0 {

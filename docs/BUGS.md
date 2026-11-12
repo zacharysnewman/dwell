@@ -6,14 +6,6 @@ pins it.
 
 ## Open
 
-### 73. A felled trunk lying diagonally up a slope loses most of its cells when it settles
-
-Owner, 2026-11-12: "I've also seen big chunks of a tree disappear if it settled diagonal long ways up a high, it
-settles flat and most of the tree disappears into the ground." A felled trunk that comes to rest lying along a
-slope (tilted, its length up the hill) is settled back into the grid as flat cells, and the cells that land
-inside the ground are dropped, so most of the tree vanishes. Expected: the settled trunk follows the slope (or
-cells that would overlap the ground are lifted onto it, or the trunk stays a body), never losing wood.
-
 ### 69. A dark vertical column in the far terrain before the starter world's volcano
 
 Found 2026-11-11 (0.52.64) on the starter world's tour: `?worldgen=test:starter&fresh=1&at=8571.5,350,-4866.5`
@@ -141,19 +133,6 @@ preload's screen from opening in its 3 frames (`with_the_lod_a_preloaded_respawn
 and was dropped. **Left:** the owner's check on the river in the browser, and the report's other half
 (edited chunks refined only up close).
 
-### 52. A felled trunk landing on its chopper can fling them far
-
-Owner, 2026-11-08: "we shouldn't be capping player kick like that" — "the cap is removed". 0.50.37's
-`max_body_kick` cap is gone (0.50.39), so this is open again: a 10 m trunk felled toward its
-chopper throws them ~150 m at ~75 m/s (`dwell-sim` `tests/chopping.rs`
-`a_felled_trunk_falling_on_the_chopper_does_not_fling_them`, ignored until fixed; both faces).
-Measured (2026-11-08): the trunk's slanted underside comes down on the player standing on the
-ground at ~5–9 m/s at the contact; the frictionless capsule is pinched between it and the ground,
-the grounded controller cancels the downward part of the push each step, and the solver's
-separation compounds sideways each step (16 → 48 m/s over 12 ticks). Later options: the tree's
-mass (a non-dominant piece), contact softness or a corrective-velocity limit for player–piece
-contacts, CCD so the overlap stays shallow, or the controller keeping the pinch's downward push.
-
 ### 51. Reopening a world in the same tab stalls on CI: spawn's reload and settings' reload
 
 Found 2026-11-08 getting CI green (PR #421). On CI's software renderer, two specs fail on all three
@@ -269,6 +248,48 @@ face, or the placement check against its shape.
 
 
 ## Fixed
+
+### 52. A felled trunk landing on its chopper can fling them far (fixed after 0.54.15)
+
+Owner, 2026-11-08: "we shouldn't be capping player kick like that" — "the cap is removed". 0.50.37's
+`max_body_kick` cap is gone (0.50.39), so this is open again: a 10 m trunk felled toward its
+chopper throws them ~150 m at ~75 m/s (`dwell-sim` `tests/chopping.rs`
+`a_felled_trunk_falling_on_the_chopper_does_not_fling_them`, ignored until fixed; both faces).
+Measured (2026-11-08): the trunk's slanted underside comes down on the player standing on the
+ground at ~5–9 m/s at the contact; the frictionless capsule is pinched between it and the ground,
+the grounded controller cancels the downward part of the push each step, and the solver's
+separation compounds sideways each step (16 → 48 m/s over 12 ticks). Later options: the tree's
+mass (a non-dominant piece), contact softness or a corrective-velocity limit for player–piece
+contacts, CCD so the overlap stays shallow, or the controller keeping the pinch's downward push.
+Measured again 2026-11-12 (WORK_QUEUE item 24): with the log's `fellWedgeTrunk` now `open` (the gash, the
+trunk's foot thin at the notch) the ignored repro flings the chopper ~155–160 m (face A 154.7 m, face B 160.0 m),
+up from ~104–108 m on the `matching` wedge (103.8 m, 107.8 m) just before; still open.
+Fixed 2026-11-12, at the cause, with no cap on the kick: the fling is the frictionless squeeze (a "watermelon
+seed"). Pinched between a nearly flat underside (normal 14° off vertical, flattening to 0°) and the ground, a
+capsule with no friction can only go sideways, at the descent over the slant's slope: 5 m/s at 14° is 20 m/s,
+and as the slant flattens the speed grows without bound (−15 → −57 m/s over 10 ticks, then airborne). The
+solver did what rigid frictionless bodies must; real bodies grip what they press on. So a piece's contact
+whose normal toward the player points down (face-local y below −0.5) takes the piece's own friction
+(`PIECE_FRICTION`, 0.8: it holds a wedge flatter than 39°), in a Rapier contact hook (`physics::PinchGrip`,
+the player's collider asking for it); the capsule stays frictionless on the ground, walls and side hits.
+The chopper is now shoved ~2 m/s as the trunk passes and moves 0.5 m (face A) / 0.4 m (face B)
+(`a_felled_trunk_falling_on_the_chopper_does_not_fling_them_{a,b}`, un-ignored). `dwell-physics`
+`tests/pieces.rs`: `a_piece_coming_down_on_a_standing_player_pins_them_not_squeezes_them_out` (red without
+the grip: 1.88 m at 12.1 m/s; green 0.04 m at 0.7 m/s) and
+`a_piece_moving_into_a_standing_player_throws_them_as_hard_as_physics_says` (a 900 kg log at 10 m/s throws the
+player at 9.26 m/s, the inelastic momentum's 9.2, uncapped). Both faces (`DWELL_FACE=b`).
+
+### 73. A felled trunk lying diagonally up a slope loses most of its cells when it settles (fixed after 0.54.10)
+
+Owner, 2026-11-12: "I've also seen big chunks of a tree disappear if it settled diagonal long ways up a high, it
+settles flat and most of the tree disappears into the ground." The settle snapped the body's rotation to lying flat
+about its reference cell (its foot), so a trunk resting up a hill was laid level at its foot's height, inside the
+hill; lifting the whole piece one or two rows didn't free it, and every carrier whose cell was taken was dropped.
+Now a piece at rest tilted follows its pose column by column (`felling::follow_pose`), and a column whose carriers
+are blocked rises to the first free rows (or drops a row onto the ground under it): it steps along the hill, the log
+axis along the trunk, no wood lost (docs/FELLING.md §4). Pinned by `dwell-sim` `felling.rs`
+`a_trunk_at_rest_up_a_slope_settles_whole_along_the_hill` (both faces; an 8 m trunk on a 1:2 hillside): red before
+(3 of 16 logs settled), green with the fix.
 
 ### 72. ~23 fps on an iPhone at Low, and z-fighting where leaf cards meet tree trunks (fixed after 0.52.109; the frame rate partly)
 
@@ -397,6 +418,71 @@ tree trunks with the leaf cards. What might be dropping frames since the last wh
   and answer each mesh start's padded light; a smaller step is lighting a chunk across frames (the BFS resumable
   under the stream budget). The minimap's tiles were not touched: they are under their own 2 ms budget
   (`shared/ui/map.json` `revealed.budgetMs`; `fillReveal` 0.1–0.2 s in the traces). Then a real iPhone check.
+- **Round 5 (branch `claude/fps-moving-3`): a chunk's flood light across frames.** `LightMap::begin_load` and `resume`
+  run the one-shot load's own steps (each channel's removal queue, the cells lit back, the brightest-first spread)
+  a slice at a time, the search's state kept between frames; the streamer resumes it `LIGHT_SLICE_CELLS` (1024) cells
+  between looks at the clock while the next slice fits its light budget, and the chunk stays unlit for meshing (its
+  own and its neighbours') until it is done, so no mesh starts on half its light. Any other light update finishes it
+  first, and so does a change to a chunk the light holds in its column or the ones beside it
+  (`VoxelWorld::settle_light_near`); the chunks arriving all round while it lights, not held until their own light,
+  leave it be (finishing it at each arrival put 14–19 ms into `jobs.apply` at 6× in the first try). Tests (both
+  faces): the light lit 512 cells a slice ends as the one-shot light, every slice within 7 × its cells' writes
+  (red with the budget ignored: one slice); an edit mid-light gives the load-then-edit light and matches a relight
+  from scratch, and a new chunk arriving beside it leaves it part way (red when any nearby arrival finished it);
+  the streamer's `a_big_chunks_light_runs_across_frames_within_their_budget_and_meshes_once_lit` (a 30 ms light at
+  an 8 ms budget: red at once, frame 0 spent 30 ms; green, at most 4.8 ms + one slice a frame, meshed only once lit).
+  `phone-moving` at CPU 4× and 6× (Low, default world, one run each, against main after round 4):
+
+  | Route | CPU | Build | interval p50 / p95 / p99 | dropped (> 20 ms) | frame.cpu p50 / p95 / p99 | frames > 16.7 ms CPU | mesh_dirty p95 / max | jobs.apply p95 / max |
+  | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+  | walk | 4x | main (round 4) | 16.7 / 18.5 / 18.7 | 0 of 478 | 3.9 / 13.4 / 17.5 | 6 | 7.9 / 13.3 | 2.2 / 3.7 |
+  | walk | 4x | this branch | 16.7 / 18.5 / 18.7 | 0 of 479 | 3.9 / 11.3 / 12.1 | 1 | 6.8 / 8.5 | 2.1 / 4.4 |
+  | sprint | 4x | main (round 4) | 16.7 / 18.5 / 18.6 | 0 of 479 | 3.5 / 9.1 / 15.7 | 4 | 4.0 / 12.7 | 2.3 / 4.5 |
+  | sprint | 4x | this branch | 16.7 / 18.4 / 18.7 | 0 of 479 | 3.4 / 10.1 / 12.0 | 0 | 4.6 / 8.4 | 2.3 / 4.4 |
+  | fly | 4x | main (round 4) | 16.7 / 18.3 / 18.6 | 5 of 609 | 3.7 / 12.4 / 17.8 | 12 | 5.8 / 13.5 | 2.4 / 5.3 |
+  | fly | 4x | this branch | 16.7 / 18.3 / 18.6 | 2 of 613 | 3.6 / 11.7 / 12.6 | 1 | 6.0 / 8.1 | 2.3 / 5.4 |
+  | walk | 6x | main (round 4) | 16.7 / 18.7 / 33.3 | 17 of 461 | 5.7 / 19.9 / 25.4 | 29 | 10.8 / 17.9 | 3.4 / 6.4 |
+  | walk | 6x | this branch | 16.7 / 18.6 / 32.0 | 8 of 471 | 5.9 / 13.2 / 17.8 | 6 | 7.1 / 8.4 | 3.3 / 5.8 |
+  | sprint | 6x | main (round 4) | 16.7 / 18.5 / 32.8 | 11 of 470 | 5.2 / 13.0 / 23.1 | 12 | 5.0 / 18.6 | 3.4 / 7.3 |
+  | sprint | 6x | this branch | 16.7 / 18.6 / 18.7 | 4 of 478 | 5.2 / 12.9 / 14.8 | 2 | 6.4 / 8.8 | 3.4 / 7.7 |
+  | fly | 6x | main (round 4) | 16.7 / 33.2 / 48.8 | 49 of 551 | 5.5 / 21.1 / 28.1 | 36 | 9.3 / 21.2 | 3.4 / 8.3 |
+  | fly | 6x | this branch | 16.7 / 32.9 / 34.5 | 43 of 562 | 5.6 / 15.0 / 23.9 | 16 | 6.7 / 8.4 | 3.5 / 8.2 |
+
+  **The 6× flight's worst `mesh_dirty` is 8.4 ms (21.2 before; the target was under 16.7)**, every route's at 4× and 6×
+  under 9.1 ms. Frames over 16.7 ms of CPU at 6×: 77 → 24 over the three routes; dropped frames at 6×: 77 → 55. The
+  6× flight's worst frames now are `ticks` (13–20 ms: the prediction's ticks, the terrain collision loading while
+  flying), not the loading: the next cut there. Still open: a real iPhone check while moving.
+- **Round 6 (branch `claude/fps-moving-4`): the prediction's ticks.** A tick of 13–20 ms in the 6× flight is one
+  tick (`ticks.count` 1), not a catch-up of several, and its time is the terrain collider (`Players::tick_terrain`):
+  natively, on a streamed world like the client's, a tick that reaches new chunks takes up to 1.4 ms building them
+  (`ensure_box`) and up to 1.6 ms putting cells in the voxel collider (`catch_up`: the cells in the player's reach,
+  then `COLLISION_CELLS_PER_TICK`, 8192, more of new chunks a tick), ~8–10 ms each at 6×; Rapier's step is
+  ~0.4 ms a tick. **Cut:** the prediction's tick puts fewer of those background cells in on a phone
+  (`Players::set_collision_cells_per_tick`, data: `shared/render/streaming.json` `collisionCellsPerTick`, desktop the
+  server's 8192, phone 1024); the cells within the player's reach still go in at once whatever the budget, so the
+  player moves the same, and the server is unchanged. Test `dwell-physics` `collision_budget`
+  `a_smaller_collision_budget_bounds_a_ticks_cells_and_moves_the_player_the_same`: red with the budget ignored (a
+  tick put 8437 cells in), green (≤ 1024 + the reach's), and the run's feet equal the default budget's on every one
+  of 600 ticks across a chunk border; `streaming` pins desktop at the server's budget and the phone's below it. The
+  controller suites pass on both faces (`cargo test -p dwell-physics`, 263 tests, and again with `DWELL_FACE=b`). Main's #642 (the
+  `PinchGrip` contact hook, contact recycling off for the player's pairs) measured with it (the last column): no
+  cost on the tick here, mean and p95 within the runs' noise. `phone-moving`, ms:
+
+  | Route | CPU | main (round 5) ticks mean / p95 / max | this branch, before #642 | this branch with #642 | frames > 16.7 ms CPU (main → branch) | dropped (> 20 ms) (main → branch) |
+  | --- | --- | --- | --- | --- | --- | --- |
+  | walk | 4x | 0.50 / 1.2 / 11.7 | 0.54 / 1.5 / 8.2 | 0.42 / 1.3 / 8.3 | 1 → 1 | 0 → 0 |
+  | sprint | 4x | 0.34 / 1.0 / 11.1 | 0.45 / 1.4 / 7.9 | 0.41 / 1.3 / 8.2 | 0 → 0 | 0 → 0 |
+  | fly | 4x | 0.62 / 1.7 / 14.1 | 0.73 / 2.0 / 11.2 | 0.67 / 2.0 / 10.8 | 1 → 1 | 2 → 2 |
+  | walk | 6x | 0.83 / 1.7 / 17.5 | 0.80 / 1.9 / 11.6 | 0.68 / 1.9 / 12.6 | 6 → 2 | 8 → 5 |
+  | sprint | 6x | 0.61 / 1.6 / 15.8 | 0.72 / 2.2 / 11.7 | 0.62 / 1.7 / 10.9 | 2 → 2 | 4 → 8 |
+  | fly | 6x | 1.05 / 2.5 / 19.8 | 1.25 / 3.9 / 16.4 | 1.12 / 3.3 / 18.8 | 16 → 8 | 43 → 37 |
+
+  The 6× ticks' worst: walk 17.5 → 12.6, sprint 15.8 → 10.9, fly 19.8 → 18.8 (one frame; the flight's p95 2.5 → 3.3,
+  the cells within reach now going in as the player reaches them). What is left in the worst ticks is building a
+  newly reached chunk's collision (`ensure_box`, ~1.4 ms natively): building the chunks ahead of a moving player
+  between frames was tried and parked (on the test's generated world the builds ahead read neighbours that then
+  changed, and their rebuilds landed in the ticks; it needs a streamed-world test). Still open: that, and a real
+  iPhone check while moving.
 
 ### 71. "Starting the graphics" takes a long time with no elapsed time shown (fixed after 0.52.101)
 

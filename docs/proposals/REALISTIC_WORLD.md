@@ -1,8 +1,12 @@
 # Proposal: a seed-driven Realistic world
 
 **Status:** written 2026-11-11, not adopted. Questions for the owner in §7 (q1, q3, q4, q5 and q7 answered
-2026-11-11). R1 built: the plate layout (`shared/worldgen/plates.json`, `dwell-worldgen` `plates.rs`), not
-wired into any world, so nothing in the game changes yet.
+2026-11-11). R1 built: the plate layout (`shared/worldgen/plates.json`, `dwell-worldgen` `plates.rs`). R2
+built (2026-11-12): uplift from the boundaries (`plate_tectonics.rs`, `plates.json` `uplift`) in the
+Realistic test world (`shared/worldgen/worlds/realistic.json`, `?worldgen=test:realistic`, not in the New
+world form); the default and the starter are unchanged. R3 built (2026-11-12): the climate from latitude, wind
+and terrain (`shared/worldgen/climate.json`, `dwell-worldgen` `climate.rs`) in the Realistic world, its rain
+feeding the rivers' discharge.
 
 ## 1. The owner's direction
 
@@ -293,11 +297,72 @@ debug views go (an overlay and sliders), since it already runs the generator's W
   *Exit:* for seed fixtures, ranges stand along convergent boundaries above the plain map, rifts below,
   arcs on the overriding side, hotspot chains older along the motion; the map builds in ≤ 1.3× the
   default's time; goldens unchanged.
+  **Built (2026-11-12):** `terrain.json` `tectonics.plates` (0 off; 1 the face seed's layout) turns it on;
+  `worlds/realistic.json` (`test:realistic`) is the one world that does. The plates decide land and sea:
+  the base field's coast is the layout's signed coast distance (`PlateLayout::coast_distance`: the warped
+  Voronoi bisector to the nearest plate of the other kind, capped by the sea margin) in place of the
+  island's, so the inland rise, hills and shelf follow the plates. `Boundary::polylines` orders R1's scan
+  points (nearest within `link`, the scan's staircase absorbed, thinned to `segment` m). `plate_tectonics.rs`
+  adds every boundary's landform by rule (`plates.json` `uplift`): a range on a subducting boundary's
+  overriding side with a trench on the diving side, a collision range astride two continents, a rift with
+  shoulders on a divergent one, a low ridge on a transform, each scaled by the boundary's rate over
+  `speedRef` (clamped to `speedScale`), only on the boundary's own two plates, summed on a 500 m coarse grid
+  (`cell`) and read bilinearly (§4: no new 100 m grid). Arcs: one dormant cone per `spacing` m of each
+  subducting polyline ≥ `minLength` m (≤ `maxCones`), `distance` m off the line on the overriding plate,
+  hardened by `hardness`. Hotspot chains: `islands` shields along the plate's motion, older ones lower and
+  wider. The map adds them as T5's boundary (the landform also as uplift; the uplift layer's random ranges
+  and plates off). Tests: `plate_tectonics::tests` (polyline order, each kind's landform on the fixtures,
+  the coarse grid against the exact field, chains), `tests/realistic_world.rs` on both faces (the plates'
+  land/sea on the map, ranges ≥ 0.4 × their height above the plain map — the same plates with every landform
+  0 — and land rifts ≥ 0.2 × their depth below it, arc cones on the overriding plate standing over it, chains
+  older along the motion), `gen.test.mjs` (bad `uplift` entries). The map builds in 1.09 s against the
+  default's 1.58 s (release, best of 3; a release-only test pins ≤ 1.3×): it skips the uplift layer's random
+  ranges. Default and starter goldens unchanged. *Deviations:* R1's hotspot trail ran against the plate's
+  motion; fixed to along it (a plate carries its older islands off the fixed hotspot, Hawaii). A rift inside
+  a continent keeps about half its cut through the erosion (its lakes and deposits fill it), so the test's
+  bar is 0.2 of its depth. A rift between an ocean and a continent is the coast itself, its sea side held by
+  the map's floor. The plate coast has no fractal coast detail yet (smoother coasts than the island's). The
+  chunk generator's own `BaseField` (only its noise offset is read) still uses the island; the portals'
+  inland rule reads the island's coast in a Realistic world until R6. Lengths in `plates.json` are for the
+  default size (BIG_MAP.md): the layout and uplift scale with the radius when the world size reaches the
+  generators (M2), as the island's shape does. **Not done:** the Chisel plates overlay (a WASM export and a
+  Chisel view; moved to R3 with the latitude and wind overlays).
 - **R3 Climate.** `climate.json`: latitude bands, wind cells; temperature in °C from latitude and height;
   the rain march with the band's wind; the one rain field feeding the discharge (Realistic only). Chisel:
   latitude and wind overlays. *Exit:* the windward side of a seed's main range is ≥ 2× wetter than its
   lee; a colder band's sea-level temperature is lower; the default world's rain and rivers unchanged
   (goldens); the coarse rain grid's memory under the bound.
+  **Built (2026-11-12):** `climate.json` (checked by `gen.mjs` `validateClimate`, a bad entry failing with
+  its key named; emitted as `climate.gen.rs`): `bands` (subtropical 14–28°, temperate 38–52°, subarctic
+  61–72°, by weight; a name, a weight and a latitude range each), a sea-level temperature curve by latitude
+  (`seaLevel`, °C), `lapseRate` (6.5 °C/km), wind cells by latitude (`winds`: trade winds from 60°, westerlies
+  from 240°, polar easterlies from 70°, compass bearings), `windJitter` (± 15°), the march's `rain` tunables,
+  `maxGridBytes` (1 MiB) and the `discharge` factor's [min, max]. `climate.rs`: `Climate::for_face` draws a
+  band, a north axis and the wind's jitter from the face seed; a band spans the disc from its south latitude
+  at the south edge to its north one at the north edge (game scale); `latitude`, `sea_level_c` and
+  `temperature_c` are functions (no grid); the band's wind is the cell at its middle latitude, turned with
+  the map's north. The rain is today's T1 march (`biomemap::rainfall`) along that wind on a `CoarseGround`
+  (≥ 500 m cells, at most `maxCells` 400 a side, so a bigger map coarsens the grid instead of growing it:
+  ~2.5 km cells at 10×, ≤ 640 KB), over the uplifted ground before the erosion (§3.3's order). Where
+  `terrain.json` `tectonics.climate` is 1 (only `worlds/realistic.json`) the hydrology weights the discharge by
+  it (the rain over its land mean, within [0.05, 4]) in place of the profile's uniform rain; the coarse grid
+  and rain live on the `HydrologyMap` only while the world map builds. Tests: `climate::tests` (same seed
+  same climate, every band drawn, a colder band colder at sea level, the band spanning the map, the lapse
+  rate, each band's wind, a band added by data alone, a ridge across the wind wet windward and dry in its
+  lee, the grid's bound at 1× and 10×), `tests/realistic_climate.rs` on both faces (for seeds 1, 7, 42 the
+  main range's windward side ≥ 4.8× wetter than its lee on the coarse grid and ≥ 3.6× in the discharge's
+  rain; the map's grid under `maxGridBytes`; each face its own climate; the default world's rain uniform and
+  no climate), `gen.test.mjs` (the emitted Rust, a band and wind added by data, bad entries); default and
+  starter goldens unchanged; the Realistic map still builds faster than the default's (1.40 s against
+  2.19 s, release). *Deviations:* the switch is a `tectonics` key (`climate`, beside `plates`), not a
+  section of its own. One wind for the whole map (the band's middle latitude's), not a wind per latitude
+  across it. The biome field's wetness and the snow line still read `biomeMap`'s wind and 0..1 climate: the
+  Realistic world has only the default biome until R4, which re-marches the climate on the eroded map for
+  the biomes (§3.3's second pass) and moves the presets to °C. The new rain changes Realistic seeds' terrain
+  (allowed while it is a test world, §7 q7); a young hotspot island in the wind's wet air erodes faster (face
+  B seed 0's keeps 90 of its 420 m), so R2's chain test measures the landform with the climate off. **Not
+  done:** the Chisel plates, latitude and wind overlays (a WASM export of the layout and the climate and a
+  Chisel view; moved to R4 with the biome overlay).
 - **R4 Biomes by climate.** Presets' `where` in °C and rain; the Realistic world lists the presets
   unchanged. *Exit:* for a few seeds, biome shares follow the climate (no desert in a wet band's windward
   side; tundra above the tree line); no per-world biome tuning in `realistic.json`; the starter still
@@ -325,7 +390,8 @@ Open: q2's bands (the seed picks one: answered), q6, q8. Answered: q1 (by defaul
    (`count`), with `spacing` and `reach` for their size.
 2. **Latitude bands:** which to offer at first (e.g. subtropical, temperate, subarctic), and should the
    seed pick any band, or should a world creator pick one (seed decides the rest)?
-   **Half answered (owner, 2026-11-11):** the seed picks the band. Which bands to offer is open.
+   **Half answered (owner, 2026-11-11):** the seed picks the band. Which bands to offer is open; R3 offers
+   subtropical, temperate and subarctic (`climate.json` `bands`, temperate twice as likely), changed by data.
 3. **The disc's coast:** should plates decide where land and sea are (oceanic plate = sea), keeping only
    a sea margin at the disc's edge, or keep today's central island and let plates shape it?
    **Answered (owner, 2026-11-11):** plates decide land and sea (oceanic plate = sea, continental = land);

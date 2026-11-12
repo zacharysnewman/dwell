@@ -873,10 +873,12 @@ impl RasterTerrain {
         let mut bytes = 0usize;
         let arena = self.arena.clone();
         let a = arena.borrow();
-        let done = self.writes.pump(self.stage_budget, |format, page, offset, data| {
-            bytes += data.len();
-            a.write_at(format, page, offset, data);
-        });
+        let done = self
+            .writes
+            .pump(self.stage_budget, |format, page, offset, data| {
+                bytes += data.len();
+                a.write_at(format, page, offset, data);
+            });
         drop(a);
         for c in done {
             if let Some(chunk) = self.pending.remove(&c) {
@@ -906,8 +908,18 @@ impl TerrainRenderer for RasterTerrain {
         let mut writes = Vec::new();
         let stage = (m.opaque.byte_len() + m.transparent.byte_len() + m.cutout.byte_len()) as u64
             > self.stage_budget;
-        let cutout = GpuMesh::textured_staged(&self.arena, &m.cutout, Kind::Cutout, stage.then_some(&mut writes));
-        let opaque = GpuMesh::textured_staged(&self.arena, &m.opaque, Kind::Terrain, stage.then_some(&mut writes));
+        let cutout = GpuMesh::textured_staged(
+            &self.arena,
+            &m.cutout,
+            Kind::Cutout,
+            stage.then_some(&mut writes),
+        );
+        let opaque = GpuMesh::textured_staged(
+            &self.arena,
+            &m.opaque,
+            Kind::Terrain,
+            stage.then_some(&mut writes),
+        );
         let water = GpuMesh::fluid(
             &self.arena,
             &t.positions,
@@ -5909,6 +5921,9 @@ impl crate::game::Scene for Renderer {
     fn uploads_waiting(&self) -> bool {
         !self.terrain.writes.is_empty()
     }
+    fn collision_cells_per_tick(&self) -> usize {
+        streaming::StreamingBudgets::get().collision_cells(self.phone)
+    }
     fn draws_heightfield(&self) -> bool {
         heightfield_drawn(self.water().tier().heightfield, self.heightfield_override)
     }
@@ -6037,7 +6052,9 @@ mod tests {
         let l = [5.0, 15.0, 99.0]; // a longer stream: its extra is left out
         assert_eq!(
             super::interleave(&[(&p, 3), (&uv, 2), (&l, 1)]),
-            vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0]
+            vec![
+                0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0
+            ]
         );
         assert!(super::interleave(&[]).is_empty());
         assert!(super::interleave(&[(&[], 3)]).is_empty());

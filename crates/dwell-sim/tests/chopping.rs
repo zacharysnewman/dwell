@@ -152,18 +152,18 @@ dwell_world::both_faces!(
         assert!((8..=12).contains(&n), "{n} swings");
         // Phase 55 T2 (owner, 2026-11-09): the stump keeps the wood ramp rising away from the
         // notch (the notch on −x, the player's side at x = 0.5; the uncut +x side the hinge), the
-        // trunk's new bottom is the upside-down ramp (the log's `fellWedge`, data), lying parallel
-        // to the stump's (`fellWedgeTrunk: matching`, owner 2026-11-09: no lost half).
+        // trunk's new bottom is the upside-down ramp (the log's `fellWedge`, data), thin at the
+        // notch: the gash (`fellWedgeTrunk: open`; owner 2026-11-12, WORK_QUEUE item 24).
         let wood = dwell_protocol::chopping::wood("dwell:log").expect("log");
         assert!(
-            wood.fell_wedge_matching,
-            "the log's trunk wedge is the matching one"
+            !wood.fell_wedge_matching,
+            "the log's trunk wedge is the open one (the gash)"
         );
         assert!(wood.fell_tip > 0.0, "the log tips when felled (`fellTip`)");
         let (stump, top) = dwell_sim::felling::fell_wedges(
             wood.fell_wedge.expect("the log's wedge"),
             [-1.0, 0.0],
-            dwell_sim::felling::WedgeTrunk::Matching,
+            dwell_sim::felling::WedgeTrunk::Open,
         )
         .expect("the log's wedges");
         assert_eq!(
@@ -179,8 +179,8 @@ dwell_world::both_faces!(
         );
         assert_eq!(
             (prop(top, "facing"), prop(top, "half")),
-            (Some("east"), Some("top")),
-            "upside down, parallel to the stump's slope"
+            (Some("west"), Some("top")),
+            "upside down, thin at the notch: the gash opens toward it"
         );
         let sent = fx.take(1);
         let spawn = sent
@@ -206,7 +206,8 @@ dwell_world::both_faces!(
         // owner 2026-11-09: "make the tree tip if needed, like we used to, maybe 3/4 of the
         // force"): within four seconds it is down (leaning past 60°) on that side, not sideways.
         // Without the tip a matching wedge stood on the stump's slope; at 0.75 and 0.85 of it this
-        // 3.5 m trunk leant ~5° and rocked back upright, so the log's share is 1.
+        // 3.5 m trunk leant ~5° and rocked back upright, so the log's share is 1 (kept with the
+        // open gash, 2026-11-12).
         let id = spawn.id;
         let mut lean = [0.0; 3];
         let mut ticks = 0;
@@ -235,6 +236,110 @@ dwell_world::both_faces!(
     }
 );
 
+/// The face-local heights over a cell's floor of `m`'s hull's top and bottom at its edge toward
+/// the level direction `d` (x, z) and the opposite edge: `[top toward, top away, bottom toward,
+/// bottom away]`.
+fn wedge_edges(m: u16, d: [f64; 2]) -> [f64; 4] {
+    let half = dwell_physics::DVec3::new(0.5, 0.25, 0.5);
+    let pts = dwell_physics::shape_hull_points(m, half);
+    let along = |p: &dwell_physics::DVec3| p.x * d[0] + p.z * d[1];
+    let at = |s: f64| {
+        pts.iter()
+            .filter(move |p| (along(p) - 0.5 * s).abs() < 1e-6)
+    };
+    let top = |s: f64| at(s).map(|p| p.y + 0.25).fold(f64::NEG_INFINITY, f64::max);
+    let bottom = |s: f64| at(s).map(|p| p.y + 0.25).fold(f64::INFINITY, f64::min);
+    [top(1.0), top(-1.0), bottom(1.0), bottom(-1.0)]
+}
+
+dwell_world::both_faces!(
+    /// WORK_QUEUE item 24 (owner, 2026-11-12: "2 half blocks one upside down one right side up,
+    /// both with the 'short side' facing the cut"; confirmed "Yes that was the shape I meant"):
+    /// felled from any of the four sides, the stump is the ramp low at the notch rising away from
+    /// it and the trunk's lowest cell the upside-down ramp thin at the notch, the two slopes
+    /// opening a V toward the side chopped, and the trunk falls that way. Red before: the log's
+    /// `fellWedgeTrunk` was `matching`, the trunk's ramp parallel to the stump's ("like you cut it
+    /// through with a sword in one swipe").
+    fn felled_from_each_side_the_cut_opens_a_gash_toward_the_notch(f: FaceFrame) {
+        let prop = dwell_blocks::state_property;
+        for (d, facing) in [
+            ([-1i32, 0i32], "west"),
+            ([1, 0], "east"),
+            ([0, -1], "north"),
+            ([0, 1], "south"),
+        ] {
+            let mut fx = scene(f, "creative", true);
+            let (dx, dz) = (f64::from(d[0]), f64::from(d[1]));
+            // The chopper stands 3 m out on that side, facing the trunk (centre 3.5, 0.5).
+            move_to_local(&mut fx, f, 3.5 + 3.0 * dx, m_of_row(BASE), 0.5 + 3.0 * dz);
+            for _ in 0..5 {
+                fx.server.step();
+            }
+            fx.take_all();
+            let mut felled = false;
+            for i in 0..30 {
+                let y = m_of_row(AT) + if i % 2 == 0 { 0.12 } else { 0.37 };
+                let at = [3.5 + 0.5 * dx, y, 0.5 + 0.5 * dz];
+                swing(&mut fx, f, [3, AT, 0], [dx, 0.0, dz], at, false);
+                if cell_is(&mut fx, f, [3, AT, 0]) != log(f, "y") {
+                    felled = true;
+                    break;
+                }
+            }
+            assert!(felled, "{facing}: felled");
+            let stump = f.state(cell_is(&mut fx, f, [3, AT, 0]));
+            assert_eq!(
+                (
+                    prop(stump, "shape"),
+                    prop(stump, "half"),
+                    prop(stump, "facing")
+                ),
+                (Some("ramp"), Some("bottom"), Some(facing)),
+                "{f:?} {facing}: the stump's ramp faces the notch"
+            );
+            let sent = fx.take(1);
+            let spawn = felled_piece(&sent);
+            let up = f.up()[1].signum() as i16;
+            let low = spawn
+                .cells
+                .iter()
+                .min_by_key(|c| c.offset[1] * up)
+                .expect("cells");
+            let trunk = f.state(low.state);
+            assert_eq!(
+                (prop(trunk, "shape"), prop(trunk, "half")),
+                (Some("ramp"), Some("top")),
+                "{f:?} {facing}: the trunk's bottom is upside down"
+            );
+            let to = [dx, dz];
+            let [s_top_notch, s_top_hinge, ..] = wedge_edges(stump, to);
+            let [.., t_bottom_notch, t_bottom_hinge] = wedge_edges(trunk, to);
+            assert!(
+                s_top_notch < 1e-6 && (s_top_hinge - 0.5).abs() < 1e-6,
+                "{f:?} {facing}: the stump low at the notch, rising away"
+            );
+            assert!(
+                (t_bottom_notch - 0.5).abs() < 1e-6 && t_bottom_hinge < 1e-6,
+                "{f:?} {facing}: the trunk's ramp thin at the notch (its bottom at the ceiling there)"
+            );
+            // Over the two cells (the trunk's a row up): the stump's top rises 0 → ½ m from the
+            // notch to the hinge, the trunk's bottom falls 1 → ½ m: not parallel, a V open
+            // toward the notch, closed at the hinge.
+            let gap_notch = (0.5 + t_bottom_notch) - s_top_notch;
+            let gap_hinge = (0.5 + t_bottom_hinge) - s_top_hinge;
+            assert!(
+                gap_notch > 0.9 && gap_hinge.abs() < 1e-6,
+                "{f:?} {facing}: the gash opens toward the notch ({gap_notch}, {gap_hinge})"
+            );
+            let lean = lean_of(&mut fx, f, spawn.id);
+            assert!(
+                lean[1] < 0.5 && lean[0] * dx + lean[2] * dz > 0.8,
+                "{f:?} {facing}: down toward the notch: {lean:?}"
+            );
+        }
+    }
+);
+
 /// The player's centre, face-local.
 fn player_at(fx: &mut Fixture, f: FaceFrame) -> [f64; 3] {
     let h = fx.server.player_handle_of(1).expect("a live player");
@@ -242,7 +347,7 @@ fn player_at(fx: &mut Fixture, f: FaceFrame) -> [f64; 3] {
     f.point(players.position(physics, h).to_array())
 }
 
-// both-faces: run on each face by the two ignored tests below (the macro can't ignore its tests).
+// both-faces: run on each face by the two tests below (BUGS.md #52; they were ignored until fixed).
 fn a_felled_trunk_falling_on_the_chopper_does_not_fling_them(f: FaceFrame) {
     // 0.50.36's screenshots: the trunk tips toward the notch, where the chopper stands, and
     // its fall threw them ~20 m. A falling piece may knock a player down or aside, not
@@ -281,13 +386,11 @@ fn a_felled_trunk_falling_on_the_chopper_does_not_fling_them(f: FaceFrame) {
 }
 
 #[test]
-#[ignore = "BUGS.md #52: the kick cap is removed (owner, 2026-11-08); the fling's root fix is later"]
 fn a_felled_trunk_falling_on_the_chopper_does_not_fling_them_a() {
     a_felled_trunk_falling_on_the_chopper_does_not_fling_them(FaceFrame::A);
 }
 
 #[test]
-#[ignore = "BUGS.md #52: the kick cap is removed (owner, 2026-11-08); the fling's root fix is later"]
 fn a_felled_trunk_falling_on_the_chopper_does_not_fling_them_b() {
     a_felled_trunk_falling_on_the_chopper_does_not_fling_them(FaceFrame::B);
 }
@@ -975,5 +1078,93 @@ dwell_world::both_faces!(
             stump,
             "the stump keeps its wedge"
         );
+    }
+);
+
+/// The last snapshot each session was sent since the outbox was drained.
+fn last_snapshots(fx: &mut Fixture) -> std::collections::BTreeMap<SessionId, PhysicsSnapshot> {
+    let mut out = std::collections::BTreeMap::new();
+    for o in fx.server.take_outbox() {
+        if matches!(o.kind, dwell_sim::server::OutKind::Datagram)
+            && let Some(Message::PhysicsSnapshot(s)) = Message::decode(&o.bytes)
+        {
+            out.insert(o.session, s);
+        }
+    }
+    out
+}
+
+dwell_world::both_faces!(
+    /// WORK_QUEUE item 17: others saw a chop as a `break` (the swing byte says break or place). A
+    /// chop steps the swinger's swing count as a break, so an older client still plays that, and a
+    /// client that said `SwingHello` gets its kind too: a level chop, then a vertical one. One
+    /// that didn't is never sent the kinds (an older client refuses the trailing bytes). Red
+    /// before: a chop didn't step the count at all, and no snapshot carried a kind.
+    fn a_chop_reaches_a_swing_hello_client_by_its_direction_and_others_as_a_break(f: FaceFrame) {
+        let mut fx = scene(f, "creative", true);
+        let (kinds, plain) = (fx.join(2, &Client::new(2)), fx.join(3, &Client::new(3)));
+        fx.server.on_datagram(2, &Message::SwingHello.encode());
+        for _ in 0..3 {
+            fx.server.step();
+        }
+        let before = last_snapshots(&mut fx);
+        // Player 1: the one that is neither of the watchers.
+        let swinger = |s: &PhysicsSnapshot, me: u16, other: u16| {
+            *s.remotes
+                .iter()
+                .find(|r| r.player_id != me && r.player_id != other)
+                .expect("the swinger in view")
+        };
+        let count = |r: RemotePlayerState| r.swing & swing_flags::COUNT_MASK;
+        let start = count(swinger(&before[&2], kinds.player_id, plain.player_id));
+        assert!(before[&2].swing_kinds && !before[&3].swing_kinds);
+        for (i, (vertical, want)) in [
+            (false, SwingKind::ChopLevel),
+            (true, SwingKind::ChopVertical),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            at_trunk(&mut fx, f, 0, vertical);
+            let snaps = last_snapshots(&mut fx);
+            let (k, p) = (
+                swinger(&snaps[&2], kinds.player_id, plain.player_id),
+                swinger(&snaps[&3], plain.player_id, kinds.player_id),
+            );
+            let stepped = (start + i as u8 + 1) & swing_flags::COUNT_MASK;
+            assert_eq!(
+                (count(k), count(p)),
+                (stepped, stepped),
+                "the swing counted"
+            );
+            assert!(k.swing & swing_flags::BREAK != 0 && p.swing & swing_flags::BREAK != 0);
+            assert_eq!(
+                k.swing_kind, want as u8,
+                "the hello's client: the chop's kind"
+            );
+            assert!(!snaps[&3].swing_kinds, "the other: no kinds, a plain break");
+            assert_eq!(p.swing_kind, SwingKind::Plain as u8);
+        }
+        // A break edit after the chops is plain again.
+        let [x, y, z] = f.cell([5, BASE - 1, 0]);
+        fx.send(
+            1,
+            Message::BlockEditRequest(BlockEditRequest {
+                action: BlockEditAction::Break,
+                cell: [x, y, z],
+                face: 2,
+                material: 0,
+                rows: 1,
+                down: false,
+                point: None,
+            }),
+        );
+        for _ in 0..4 {
+            fx.server.step();
+        }
+        let snaps = last_snapshots(&mut fx);
+        let k = swinger(&snaps[&2], kinds.player_id, plain.player_id);
+        assert_eq!(count(k), (start + 3) & swing_flags::COUNT_MASK);
+        assert_eq!(k.swing_kind, SwingKind::Plain as u8);
     }
 );

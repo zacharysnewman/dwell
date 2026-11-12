@@ -9,6 +9,8 @@ import {
   hydrologyRust,
   midplaneRust,
   platesRust,
+  climateRust,
+  validateClimate,
   placementsRust,
   rocksRust,
   validateRocks,
@@ -494,6 +496,12 @@ test('bad plate entries fail with the key and the problem', () => {
     [(p) => (p.transformBelow = 1.5), /transformBelow must be in \[0, 1\]/],
     [(p) => (p.hotspots.extra = 1), /hotspots: unknown extra/],
     [(p) => (p.other = 1), /the file: unknown other/],
+    [(p) => (p.uplift.cell = 100), /uplift\.cell must be in \[500, 10000\]/],
+    [(p) => delete p.uplift.rift, /uplift\.rift is missing/],
+    [(p) => (p.uplift.range.width = 0), /uplift\.range\.width must be in \[1, 50000\]/],
+    [(p) => (p.uplift.arc.maxCones = 2.5), /uplift\.arc\.maxCones must be a whole number/],
+    [(p) => delete p.uplift.hotspot.decay, /uplift\.hotspot\.decay is missing/],
+    [(p) => (p.uplift.wobble = 1), /uplift: unknown wobble/],
     [(p) => (p.fixtures[0].plates[1].kind = 'mantle'), /fixtures\[0\] \(ocean_under_continent\)\.plates\[1\]\.kind must be one of oceanic, continental/],
     [(p) => p.fixtures[0].plates.pop(), /fixtures\[0\] \(ocean_under_continent\)\.plates must be two plates/],
     [(p) => (p.fixtures[0].plates[0].at = [5000, 0]), /plates must not share a centre/],
@@ -914,7 +922,52 @@ test('grass.json validates, its output is current, and bad entries fail naming t
   bad({ maxDensity: 0.1 }, /maxDensity 0.1 is under decoration meadow_grass/);
   bad({ reach: 1.5 }, /reach must be a whole number/);
   bad({ extra: 1 }, /unknown extra/);
+  bad({ onRamps: 1 }, /onRamps must be true or false/);
+  const strict = new Map(blocks);
+  const tall = strict.get('dwell:tall_grass');
+  strict.set('dwell:tall_grass', { ...tall, placeOn: tall.placeOn.filter((b) => b !== 'dwell:grass_ramp') });
+  assert.throws(() => validateGrass(grass(), strict, decorations), /onRamps: dwell:tall_grass may not stand on dwell:grass_ramp/);
+  const noRamps = new Map(blocks);
+  noRamps.delete('dwell:grass_ramp');
+  assert.throws(() => validateGrass(grass(), noRamps, decorations), /onRamps: dwell:grass has no ramps/);
+  assert.match(grassRust(g), /on_ramps: true,/);
+  assert.match(grassRust({ ...g, onRamps: undefined }), /on_ramps: false,/);
   // A rule by data alone: another ground and rates.
   const fixture = validateGrass({ ...grass(), on: ['dwell:dirt'], spreadPerDay: 1, reach: 2 }, blocks, decorations);
   assert.match(grassRust(fixture), /on: &\["dwell:dirt"\]/);
+});
+
+const loadClimate = () => JSON.parse(readFileSync(join(here, 'climate.json'), 'utf8'));
+
+test('the checked-in climate is valid and generates the checked-in Rust', () => {
+  const rs = climateRust(validateClimate(loadClimate()));
+  const checkedIn = readFileSync(join(here, '../../crates/dwell-worldgen/src/climate.gen.rs'), 'utf8');
+  assert.equal(rs, checkedIn, 'run `node shared/worldgen/gen.mjs`');
+});
+
+test('a latitude band and a wind cell added by data alone are emitted', () => {
+  const c = loadClimate();
+  c.bands.push({ name: 'polar', weight: 0.5, latitude: [76, 86] });
+  c.winds.push({ name: 'doldrums', latitude: [0, 5], from: 90 });
+  const rs = climateRust(validateClimate(c));
+  assert.match(rs, /Band \{ name: "polar", weight: 0\.5, latitude: \[76\.0, 86\.0\] \}/);
+  assert.match(rs, /WindCell \{ name: "doldrums", latitude: \[0\.0, 5\.0\], from: 90\.0 \}/);
+});
+
+test('a bad climate entry fails naming it', () => {
+  for (const [edit, message] of [
+    [(c) => (c.bands[0].latitude = [40, 30]), /bands\[0\]\.latitude must be \[south, north\]/],
+    [(c) => (c.bands[1].name = c.bands[0].name), /bands\[1\]: subtropical is named twice/],
+    [(c) => (c.bands[0].colour = 'red'), /bands\[0\]: unknown colour/],
+    [(c) => c.seaLevel.reverse(), /seaLevel\[1\]: latitudes must ascend/],
+    [(c) => (c.winds = [{ name: 'westerlies', latitude: [30, 60], from: 240 }]), /bands\[0\] \(subtropical\): no wind cell covers its middle latitude 21/],
+    [(c) => (c.rain.maxCells = 1024), /rain\.maxCells 1024 a side needs more than maxGridBytes/],
+    [(c) => (c.rain.cell = 50), /rain\.cell must be in \[100, 10000\]/],
+    [(c) => (c.discharge = { min: 2, max: 4 }), /discharge must be \[min ≤ 1, max ≥ 1\]/],
+    [(c) => delete c.lapseRate, /the file: missing lapseRate/],
+  ]) {
+    const c = loadClimate();
+    edit(c);
+    assert.throws(() => validateClimate(c), message);
+  }
 });
