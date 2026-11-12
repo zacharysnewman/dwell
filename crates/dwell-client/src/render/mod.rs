@@ -3558,7 +3558,9 @@ impl Renderer {
         for v in lean_uniforms(self.tree_lean, self.eye) {
             put(&v);
         }
-        put(&impostors::far_uniform(self.impostors.as_ref().and_then(|i| i.far)));
+        put(&impostors::far_uniform(
+            self.impostors.as_ref().and_then(|i| i.far),
+        ));
         let pixel_angle = 2.0 * tan_y / f64::from(self.size.1.max(1));
         let mut day =
             self.day_in_air()
@@ -3767,6 +3769,8 @@ impl Renderer {
             u8::from(view.holds_box(origin, size, passes[0].0, passes[0].1))
                 | u8::from(view.holds_box(origin, size, passes[1].0, passes[1].1)) << 1
         };
+        // Past the far trees' hand-over and the plants' fades a chunk's cutout draws nothing.
+        let cutout_reach = impostors::cutout_reach(self.impostors.as_ref().and_then(|i| i.far));
         for (&coord, c) in &self.terrain.chunks {
             let fade = chunk_fade(coord).filter(|f| !f.is_hidden());
             let passes = if fade.is_some() {
@@ -3797,7 +3801,18 @@ impl Renderer {
                     mesh: DrawMesh::Chunk(coord, Part::Opaque),
                 });
             }
-            if c.cutout.is_some() && self.cutout_shown {
+            let cutout_near = cutout_reach.is_none_or(|reach| {
+                let r = self.rel(c.origin);
+                let d2: f64 = (0..3)
+                    .map(|k| {
+                        let lo = f64::from(r[k]);
+                        let d = (-lo).clamp(0.0, CHUNK_EXTENT_M[k]) + lo;
+                        d * d
+                    })
+                    .sum();
+                d2 <= f64::from(reach) * f64::from(reach)
+            });
+            if c.cutout.is_some() && self.cutout_shown && cutout_near {
                 out.push(DrawItem {
                     kind: Kind::Cutout,
                     water: false,
@@ -4572,12 +4587,8 @@ impl Renderer {
             );
         }
         // The far trees' impostors: their uniform, layers and instances for this frame.
-        let (device, queue, eye, face) = (
-            self.device.clone(),
-            self.queue.clone(),
-            self.eye,
-            self.face,
-        );
+        let (device, queue, eye, face) =
+            (self.device.clone(), self.queue.clone(), self.eye, self.face);
         if let Some(imp) = self.impostors_mut() {
             imp.prepare(&device, &queue, eye, face);
         }
@@ -6338,7 +6349,9 @@ impl crate::game::Scene for Renderer {
         self.far_trees && self.far_tier().is_none()
     }
     fn far_tree_reach(&mut self) -> Option<f32> {
-        self.impostors_mut().and_then(|i| i.far).map(|f| impostors::reach(&f))
+        self.impostors_mut()
+            .and_then(|i| i.far)
+            .map(|f| impostors::reach(&f))
     }
     fn impostor_bakes(&mut self) -> Option<(u32, u32)> {
         let i = self.impostors_mut()?;
@@ -6369,7 +6382,11 @@ impl crate::game::Scene for Renderer {
     }
     fn far_tree_tile(&mut self, key: (u8, i32, i32), trees: &[dwell_worldgen::impostor::FarTree]) {
         if let Some(i) = self.impostors.as_mut() {
-            let face = if key.0 == 1 { FaceFrame::B } else { FaceFrame::A };
+            let face = if key.0 == 1 {
+                FaceFrame::B
+            } else {
+                FaceFrame::A
+            };
             i.set_tile(face, key.1, key.2, trees);
         }
     }
@@ -6869,7 +6886,11 @@ mod tests {
         // The impostors draw the far trees (render/impostors.rs): the sections mesh their ground.
         assert_eq!((r.plant_percent(), r.draws_far_trees()), (100, false));
         r.set_impostors_override(Some(false));
-        assert_eq!(r.draws_far_trees(), true, "?impostors=0: the sections' tree cells");
+        assert_eq!(
+            r.draws_far_trees(),
+            true,
+            "?impostors=0: the sections' tree cells"
+        );
         r.set_impostors_override(None);
         r.set_terrain_detail(0.4, false);
         assert_eq!((r.plant_percent(), r.draws_far_trees()), (40, false));

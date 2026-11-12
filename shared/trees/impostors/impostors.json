@@ -9,7 +9,7 @@
   "far": {
     "$comment": "Where impostors take over from the full-detail trees, per Far trees setting tier (Settings → Graphics → Far trees; the presets pick the tier by name): `draw` `impostor` (one baked quad a tree, the view nearest the camera dithered with the next) or `none` (no far trees); `fromM` the distance (m, from the eye) the hand-over starts, `fadeM` its width (both draw, each pixel showing one by the screen dither; the impostor's share rises 0 → 1 across it), `toM` where far trees stop (0: never).",
     "tiers": {
-      "on": { "draw": "impostor", "fromM": 96, "fadeM": 24, "toM": 0 },
+      "on": { "draw": "impostor", "fromM": 48, "fadeM": 16, "toM": 0 },
       "off": { "draw": "none" }
     }
   }

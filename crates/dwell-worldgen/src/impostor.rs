@@ -825,7 +825,10 @@ mod tests {
     fn every_layer_names_the_tree_its_instances_draw() {
         // face-a-only: data only.
         let c = small();
-        assert_eq!(c.layer_count(), SPECIES.len() as u32 * c.layers_per_species());
+        assert_eq!(
+            c.layer_count(),
+            SPECIES.len() as u32 * c.layers_per_species()
+        );
         for species in 0..SPECIES.len() as u16 {
             for seed in [1u32, 77, 4096, 123_456] {
                 for stage in 0..8 {
@@ -841,7 +844,10 @@ mod tests {
         assert_eq!(c.layer_tree(c.layer_count()), None);
         let one = c.bake_layer(0, 8).expect("layer 0");
         assert_eq!(one.px, 8);
-        assert!(one.albedo.iter().any(|t| t[3] == 255), "a tree, not an empty atlas");
+        assert!(
+            one.albedo.iter().any(|t| t[3] == 255),
+            "a tree, not an empty atlas"
+        );
     }
 
     #[test]

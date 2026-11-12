@@ -2214,6 +2214,21 @@ impl Client {
             .borrow_mut()
             .set_cards_override(on);
     }
+    /// `?impostors=0|1` (docs/DEV_TOOLS.md): 0 draws the far trees as the LOD sections' tree
+    /// cells (`lod_trees.rs`, before the impostors); 1 or anything else the impostors.
+    #[wasm_bindgen(js_name = setImpostors)]
+    pub fn set_impostors(&self, mode: i32) {
+        let on = match mode {
+            0 => Some(false),
+            1 => Some(true),
+            _ => None,
+        };
+        self.inner
+            .borrow()
+            .renderer
+            .borrow_mut()
+            .set_impostors_override(on);
+    }
     /// The ink outline's mode by name (`shared/look/outline.json`; docs/ART_DIRECTION.md §7), as
     /// `?outline=` takes it; `off` or an unknown name turns it off. True when a mode is on.
     #[wasm_bindgen(js_name = setOutline)]

@@ -25,6 +25,13 @@
       }
     },
     {
+      "name": "impostors-off",
+      "notes": "The far trees as the LOD sections' tree cells and the near leaves to the full-detail distance (`?impostors=0`), as before the impostors (WORK_QUEUE item 31): the impostors' gain against the default.",
+      "params": {
+        "impostors": "0"
+      }
+    },
+    {
       "name": "grass-off",
       "notes": "No tall grass or small plants (`?tallgrass=0`, the Tall grass setting at 0 %; WORK_QUEUE item 32): their cost against the default; with `cards-off` it splits the forest's cutout cost.",
       "params": {

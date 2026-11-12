@@ -1,0 +1,7 @@
+{
+  "changes": [
+    "Far trees are now drawn as impostors baked from the real trees, so forests reach the horizon with their crowns, lit by the sun and fog like the near trees.",
+    "Near trees hand over to the far ones from 48 m with a dithered fade, and leaves past it no longer cost their geometry: the forest's edge draws faster at High.",
+    "Dev: ?impostors=0 draws the old far trees for comparison."
+  ]
+}

@@ -87,7 +87,12 @@ pub enum Job {
     ImpostorBake { layer: u32, px: u32 },
     /// The species trees anchored in the square `x0..x0 + size` × `z0..z0 + size` of face `face`
     /// (0 A, 1 B), face-local (`TerrainGenerator::far_trees`): a tile of far tree impostors.
-    FarTrees { face: u8, x0: i32, z0: i32, size: i32 },
+    FarTrees {
+        face: u8,
+        x0: i32,
+        z0: i32,
+        size: i32,
+    },
     /// The block states the main thread registered at run time (synced from a server, ADR 0038),
     /// as `dwell_blocks::sync::extension_payload`: a worker adds them to its own table, so mesh
     /// jobs naming synced ids read the same rows. Sent to every worker ([`crate::pool::Jobs::broadcast`]).

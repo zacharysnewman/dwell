@@ -1,7 +1,9 @@
 //! Far trees as impostors (docs/proposals/TREE_IMPOSTORS.md phase I-3, WORK_QUEUE item 31): one
 //! camera-facing quad a tree, drawn from the atlas `dwell_worldgen::impostor` bakes from the real
-//! tree models (albedo, normals, depth), lit by the scene's sun, ambient and fog, its texels moved
-//! to their baked depth, and handed over from the near trees' leaves by the screen dither.
+//! tree models (albedo, normals, depth), lit by the scene's sun, ambient and fog at each texel's
+//! baked position, and handed over from the near trees' leaves by the screen dither. The quad
+//! writes its own depth: a `frag_depth` offset to the baked depth disabled early depth testing and
+//! cost more than it fixed (WORK_QUEUE item 31); it is Ultra's to bring back (proposal I-5).
 //!
 //! - **The atlas:** one `texture_2d_array` layer a baked tree (`Config::layer_count`), baked by the
 //!   job workers (`Job::ImpostorBake`) and uploaded a layer at a time as they come back
@@ -77,6 +79,28 @@ pub fn far_uniform(far: Option<Far>) -> [f32; 4] {
         Some(f) if f.impostor => [f.from, f.fade, reach(&f), 1.0],
         _ => [0.0; 4],
     }
+}
+
+/// The farthest any cutout plant or leaf card draws (m): every block's distance fade end
+/// (`fade`, e.g. tall grass) and the leaf cards' (shared/look/leaves.json `cards.fadeEndM`).
+pub fn plants_reach() -> f32 {
+    static REACH: std::sync::OnceLock<f32> = std::sync::OnceLock::new();
+    *REACH.get_or_init(|| {
+        let blocks = dwell_blocks::STATES
+            .iter()
+            .filter_map(|s| s.fade.map(|f| f.end))
+            .fold(0.0f32, f32::max);
+        blocks.max(dwell_look::leaves::LEAVES.cards.fade_end_m as f32)
+    })
+}
+
+/// How far (m) a chunk's cutout mesh is drawn at all with the impostors' hand-over `far`: past
+/// both its end (every tree leaf there dropped) and the plants' fades, nothing in the mesh draws,
+/// so the chunk's cutout is not submitted (the leaves' vertices are what the forest edge is bound
+/// by, WORK_QUEUE item 32). `None`: every chunk's (no impostors).
+pub fn cutout_reach(far: Option<Far>) -> Option<f32> {
+    let f = far.filter(|f| f.impostor)?;
+    Some((f.from + f.fade).max(plants_reach()) + 2.0)
 }
 
 /// One instance's 20 bytes: `inst`'s face-local foot crossed into the world by `face`, its layer
@@ -299,7 +323,6 @@ fn imp_vs(v: ImpIn, @builtin(vertex_index) vi: u32) -> ImpOut {
 struct ImpOutFs {
     @location(0) color: vec4f,
     @location(1) depth: f32,
-    @builtin(frag_depth) frag_depth: f32,
     @builtin(sample_mask) mask: u32,
 };
 
@@ -356,8 +379,6 @@ fn imp_fs(i: ImpOut) -> ImpOutFs {
     var o: ImpOutFs;
     o.color = lit.color;
     o.depth = frame_depth(lit.depth, true);
-    let c = frame.view_proj * vec4f(rel, 1.0);
-    o.frag_depth = clamp(c.z / c.w, 0.0, 1.0);
     o.mask = mask;
     return o;
 }
@@ -712,7 +733,11 @@ impl Impostors {
         ];
         queue.write_buffer(&self.uniform, 0, super::floats(&u));
         if self.layers_dirty {
-            queue.write_buffer(&self.layer_buffer, 0, super::floats(self.layers.as_flattened()));
+            queue.write_buffer(
+                &self.layer_buffer,
+                0,
+                super::floats(self.layers.as_flattened()),
+            );
             self.layers_dirty = false;
         }
         if !self.dirty {
@@ -720,11 +745,24 @@ impl Impostors {
         }
         self.dirty = false;
         let face_bit = u8::from(face.is_b());
-        let all: Vec<u8> = self
+        // Nearest tiles first, so the depth test rejects most of the hidden quads before shading.
+        let local = face.point(eye);
+        let t = f64::from(TILE_M);
+        let d2 = |&(_, i, k): &(u8, i32, i32)| {
+            let dx = (f64::from(i) + 0.5) * t - local[0];
+            let dz = (f64::from(k) + 0.5) * t - local[2];
+            dx * dx + dz * dz
+        };
+        let mut keys: Vec<_> = self
             .tiles
+            .keys()
+            .filter(|k| k.0 == face_bit)
+            .copied()
+            .collect();
+        keys.sort_by(|a, b| d2(a).total_cmp(&d2(b)));
+        let all: Vec<u8> = keys
             .iter()
-            .filter(|(k, _)| k.0 == face_bit)
-            .flat_map(|(_, v)| v.iter().copied())
+            .flat_map(|k| self.tiles[k].iter().copied())
             .collect();
         self.count = (all.len() as u64 / INSTANCE_BYTES) as u32;
         if all.is_empty() {
@@ -774,6 +812,19 @@ mod tests {
         assert!(!t.contains(&(2, 2)), "(128..192)² is 166 m off");
         assert!(t.contains(&(-2, 0)), "x −128..−64 is 74 m off");
         assert!(!t.contains(&(-3, 0)));
+    }
+
+    #[test]
+    fn chunk_cutouts_are_cut_only_past_the_hand_over_and_the_plants() {
+        // face-a-only: distances only.
+        let c = Config::get();
+        let on = c.far("on").expect("on");
+        assert_eq!(cutout_reach(c.far("off")), None);
+        assert_eq!(cutout_reach(None), None);
+        let r = cutout_reach(Some(on)).expect("impostors");
+        assert!(r > on.from + on.fade, "every near leaf faded out first");
+        assert!(r > plants_reach(), "tall grass faded out first");
+        assert!(plants_reach() >= dwell_look::leaves::LEAVES.cards.fade_end_m as f32);
     }
 
     #[test]
@@ -834,7 +885,10 @@ mod tests {
         .validate(&module)
         .expect("validates");
         for entry in ["imp_vs", "imp_fs"] {
-            assert!(module.entry_points.iter().any(|e| e.name == entry), "{entry}");
+            assert!(
+                module.entry_points.iter().any(|e| e.name == entry),
+                "{entry}"
+            );
         }
     }
 }
