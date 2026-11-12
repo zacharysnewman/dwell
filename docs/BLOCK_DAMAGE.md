@@ -340,6 +340,19 @@ spiky wedges.
   the silhouette; needs the fade relaxed with the neighbour's face kept watertight), and real 3D flying
   fragments.
 
+- **Round 3** (2026-11-12): spalled stone's cracks start at half damage at 0.3 strength (`cracks`
+  data: stages 0.5/0.7/0.85/0.95); the scar lifted 1.8× toward the fresh-rock `color`, at full lift
+  from an eighth of the depth; each pickaxe hit flings `damage.chips.shards` (new data, 0–8; stone 4)
+  real 3D fragments: the rock shard's look at half size (6 triangles) through the pieces' renderer
+  (`dwell-client` `hit_shards.rs`, ids `0xA000_0000 | ring`), tumbling about a random axis, falling
+  toward the face's ground, removed after 1 s (no fade: pieces have no alpha); none on a CPU adapter,
+  half on a phone (the flag exists; no phone signal is wired to it yet). Browser (M1, same scenarios):
+  close up the scar now reads as light, flat chipped facets with a darker step wall, not a dark pit
+  or starburst; the burst shows the small fragments flying; from standing height the chip shows as a
+  light flake with a dark edge, small but readable. Not built: flakes reaching the cell's edge to
+  chip the silhouette (lever 3; needs the cell's own side walls meshed where the notch cuts the
+  edge), so a struck block's outline is still a perfect cube.
+
 ## 7. Pieces (0.52.46)
 
 - **Pieces** (owner, 2026-11-11: "8 Rock shards make a rock slab, 8 dirt clumps make a dirt slab, 8 wood

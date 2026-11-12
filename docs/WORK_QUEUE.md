@@ -410,7 +410,8 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    stone look, and the rock shard an elongated 6-triangle shard (~3:1); one shard a hit is still the drop,
    the hit's chips the visual-only fragments. Browser check (BLOCK_DAMAGE.md §6.4): not yet read as
    shattered (the crack overlay dominates; the scar is low-contrast and never reaches the silhouette); next
-   levers listed there.
+   levers listed there. Round 3: faint late cracks, a fresh-rock tint and 3D flying fragments (4 a hit) built; close up
+   it reads as chipped stone. Left: flakes breaking the cell's edge (the silhouette), the owner's look.
 19. **Lava glow, remaining** (owner 2026-11-11: "Lava should have bloom glow"; "Lava looks dark red instead of
    bright red/orange"; "It should darken as it solidifies though"). Built 0.52.107: colour by heat stops, heat in
    cells. **Bloom built (pending release, `claude/bloom`):** keyed on the scene's self-lit flag (lava, torches,
