@@ -36,33 +36,23 @@ The running order across the items below; each line names its item, where the ow
 
 ### Waiting on the owner (each with what it means and the default meanwhile)
 
-1. **Two missing biomes for the Realistic world** (REALISTIC_WORLD.md q9). Biomes are now chosen by climate
-   alone, and no preset covers two climates: a cold, nearly rainless interior (a cold desert, like the Gobi) and
-   very hot, very wet tropics (a rainforest). There the plain default biome (temperate grassland with generic trees)
-   fills in, so both look like an ordinary meadow. Proposed: add *cold desert* (sparse dry grass, gravel and sand,
-   few trees) and *tropical rainforest* (dense tall trees, thick undergrowth). Default meanwhile: the plain biome.
-2. **How different the two faces' climates are** (REALISTIC_WORLD.md §8.10 q4). With orbits by seed, both faces
-   share one sky: face A gets about 2/3 of the daylight and face B 1/3, which makes B about 3 °C colder, with
-   opposite seasons. Is that enough difference, or should face B be more distinct (e.g. its own climate band)?
-   Default: the 3 °C difference.
-3. **The climate gradient across the disc** (§8.10 q5). Should climate change from one side of a face to the
-   other (today: about a 14° "latitude" span across the map, so one end is warmer than the other), or be one
-   climate per face with only height and rain varying? Default: keep the 14° span.
-4. **Pick a haze setting** (item 29). Once the ground-level and hilltop shots of a few fog settings are taken
-   (clouds off), choose one. Default: today's fog.
-5. **Try a 2× world on the desktop** (BIG_MAP.md). New world → More options → World size → 2×, or `?size=2x`.
-   It's checked in the browser (11 s to play, 60 fps flying); your impressions decide the next big-map steps.
-6. **The iPhone while moving** (item 16). On the latest build at Low: how low the frame rate goes while walking,
-   sprinting and flying, and whether it's a steady drop or stutters. Four rounds cut the loading spikes; this
-   decides whether more is needed.
-7. **What "double efficiency" means for metal tools** (from the tools work, 2026-11-11: "Metal tools also double
-   efficiency."). Does a metal tool break blocks twice as fast, last twice as long (durability), or both?
-   Default: neither is applied yet.
-8. **Palm fronds: leaf cards or blocks** (item 6, TREE_GROWTH.md). Palm leaves are drawn as leaf blocks today;
-   the alternative is painted frond cards like the other leaves' cards. Default: blocks.
-9. **The in-game Chisel editor and the textures tab extras** (from the biomes work). Both need your design input
-   (what they should let you do) before they can be planned. Default: not started.
+Answered 2026-11-12: (1) **"Yes add those biomes"** — cold desert and tropical rainforest (in progress, cloud);
+(2) **"climates should align with the systems in place, orbits, etc."** and (3) **"Follow orbital systems"** — the
+two faces' climates and the gradient across the disc come from the orbits model alone, no extra tuning; (5) a 1×
+vs 2× comparison of screenshots for perspective (queued, local); (6) **"iOS runs at 60fps on Low settings"** —
+item 16 done; (7) **"Metal tools break double sized bigger chunks off and reach 50% broken faster, which is when
+the blocks break. Also have double durability."** (in progress, cloud); (8) **"I'd like to see a comparison of
+the two"** — palm fronds as leaf blocks vs frond cards side by side (queued: the Tree Growth prototype).
 
+Still open:
+1. **Pick a haze setting** (item 29), once the ground-level and hilltop shots (clouds off) are taken. Default:
+   today's fog.
+2. **The in-game Chisel editor and the textures tab extras** (Phase 56 B7/B6's outstanding parts). The owner
+   asked what the scope is: *Chisel* is the separate worldgen page (`chisel.html`: biome sliders, a live preview,
+   Export). The "in-game editor" would open those sliders inside a running world and regenerate the terrain
+   around you as you tune. The "textures tab extras" would let Chisel's Textures tab add new materials and blocks
+   by data, edit the water and sky colours, and paint item and model textures. Both were left for the owner to
+   say whether they're wanted and what they should do. Default: not started.
 
 ## Next, in order
 
