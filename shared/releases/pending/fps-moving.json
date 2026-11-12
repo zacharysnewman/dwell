@@ -1,0 +1,6 @@
+{
+  "changes": [
+    "Smoother frame rate while walking, sprinting and flying on phones: new terrain is handed to the GPU a little at a time instead of in bursts",
+    "Terrain loading no longer runs two long steps in one late frame"
+  ]
+}
