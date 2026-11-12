@@ -7,7 +7,12 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { applyCoat, validateCoat } from "./coat.mjs";
+import {
+  applyCoat,
+  applyRepaint,
+  validateCoat,
+  validateRepaint,
+} from "./coat.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..", "..");
@@ -228,6 +233,22 @@ export function validate(
       } catch (e) {
         fail(`${at}: remap ${src}: ${e.message}`);
       }
+    }
+    if (m.repaint !== undefined) {
+      try {
+        validateRepaint(m.repaint, palette);
+      } catch (e) {
+        fail(`${at}: ${e.message}`);
+      }
+      const bytes = read(path);
+      if (
+        !Buffer.from(applyRepaint(bytes, m.repaint, palette)).equals(
+          Buffer.from(bytes),
+        )
+      )
+        fail(
+          `${at}: ${m.glb} is not repainted: run node shared/models/import.mjs --coat ${name}`,
+        );
     }
     if (m.coat !== undefined) {
       try {

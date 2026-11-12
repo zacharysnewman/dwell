@@ -26,7 +26,7 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { applyCoat } from "./coat.mjs";
+import { applyCoat, applyRepaint } from "./coat.mjs";
 import { paletteStops, resolveColor } from "./gen.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -85,8 +85,13 @@ const stops = paletteStops(palette, data.palette?.exclude ?? []).map((s) => [
 /** Paints model `name`'s coat (if it has one) over its GLB (shared/models/coat.mjs). */
 function coat(name) {
   const m = data.models[name];
-  if (!m?.coat) return;
   const path = join(here, m.glb);
+  // Its `repaint` first (a part given a ramp of its own; shared/models/coat.mjs).
+  if (m?.repaint) {
+    writeFileSync(path, applyRepaint(readFileSync(path), m.repaint, palette));
+    console.log("REPAINT", path);
+  }
+  if (!m?.coat) return;
   writeFileSync(path, applyCoat(readFileSync(path), m.coat, palette));
   console.log("COAT", path);
 }

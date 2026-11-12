@@ -1,6 +1,6 @@
 {
   "changes": [
     "Wolves sit and lie down properly: rump and belly on the ground.",
-    "A dev duel test makes sure a villager blocks your sword and strikes back."
+    "Villagers' hats have their own colours (straw, browns, greys), no longer the same as their hair."
   ]
 }

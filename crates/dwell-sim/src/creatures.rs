@@ -2013,11 +2013,11 @@ mod tests {
                 slot.part
             );
         }
-        // The game's villager: the Peasant, four parts, sent with its kind and variant.
+        // The game's villager: the Peasant, five parts (the hat its own: owner 2026-11-12), sent with its kind and variant.
         let t = Table::SHIPPED;
         let v = t.npc("dwell:villager").expect("the villager");
         let parts: Vec<_> = v.colours.iter().map(|c| c.part).collect();
-        assert_eq!(parts, ["shirt", "trousers", "skin", "hair"]);
+        assert_eq!(parts, ["shirt", "trousers", "skin", "hair", "hat"]);
         let kind = t
             .creatures
             .iter()

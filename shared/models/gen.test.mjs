@@ -4,7 +4,13 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { applyCoat, coatColour, validateCoat } from "./coat.mjs";
+import {
+  applyCoat,
+  applyRepaint,
+  coatColour,
+  validateCoat,
+  validateRepaint,
+} from "./coat.mjs";
 import {
   generate,
   glbAccessor,
@@ -569,4 +575,46 @@ test("a pose's $drop lowers the body: the wolf sits and lies down on the ground,
   const d = data();
   d.models.wolf.poses.sit.$drop = -1;
   assert.throws(() => validate(d, palette, here), /\$drop -1 is outside/);
+});
+
+test("the Peasant's hat has a ramp of its own (repaint): the brim is wool_yellow, the hair stays", () => {
+  // Owner, 2026-11-12: "Hat gets its own colours".
+  const m = data().models.peasant;
+  const bytes = readFileSync(join(here, m.glb));
+  assert.ok(
+    Buffer.from(applyRepaint(bytes, m.repaint, palette)).equals(bytes),
+    "applied (idempotent)",
+  );
+  const g = glbJson(bytes);
+  const p = g.meshes[0].primitives[0];
+  const pos = glbAccessor(bytes, p.attributes.POSITION);
+  const col = glbAccessor(bytes, p.attributes.COLOR_0);
+  const lin = (h) =>
+    [1, 3, 5].map((i) => {
+      const c = parseInt(h.slice(i, i + 2), 16) / 255;
+      return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+    });
+  const is = (i, hex) =>
+    lin(hex).every(
+      (v, k) => Math.abs(v - col.values[i * col.width + k]) < 0.01,
+    );
+  let brim = 0,
+    hair = 0;
+  for (let i = 0; i < pos.values.length / 3; i++) {
+    const y = pos.values[i * 3 + 1];
+    const r = Math.hypot(pos.values[i * 3], pos.values[i * 3 + 2]);
+    if (y > 1.4 && r > 0.16 && is(i, palette.ramps.wool_yellow.base)) brim++;
+    if (y > 1.4 && y < 1.6 && r < 0.16 && is(i, palette.ramps.hair_brown.base))
+      hair++;
+  }
+  assert.ok(brim > 20, `the brim repainted: ${brim}`);
+  assert.ok(hair > 20, `the hair under it kept: ${hair}`);
+  assert.throws(
+    () =>
+      validateRepaint(
+        [{ from: "hair_brown", to: "nope", minY: 0, beyond: 0, above: 0 }],
+        palette,
+      ),
+    /no palette ramp nope/,
+  );
 });

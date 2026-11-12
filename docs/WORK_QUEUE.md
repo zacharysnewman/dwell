@@ -973,7 +973,13 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    combat-visuals PR: the Peasant GLB paints its hat, its hair and its boots with the same palette stop
    (`hair_brown`'s base, 2754 vertices from the feet to the hat's top), so a remap of one recolours all
    three; a hat slot needs the hat's vertices painted with a ramp of their own at import
-   (shared/models `import.mjs`, by mesh or joint), then a `colours` part `hat` in shared/creatures. Queued. Not started in rounds 4 and 5 either; the time boxes went to the duel and the poses.
+   (shared/models `import.mjs`, by mesh or joint), then a `colours` part `hat` in shared/creatures. Queued. **Built (round 5, 2026-11-12):** models.json `repaint` (shared/models/coat.mjs
+   `applyRepaint`, run by `import.mjs --coat`, checked by gen.mjs and `gen.test.mjs`) repaints the Peasant's
+   hair_brown vertices past the head (brim) or above the hair (crown) to `wool_yellow`. That is a ramp
+   the model uses nowhere else, so the hat now has its own slot. The villager's `hat` colour part picks
+   straw, browns or greys (`wool_yellow`, `leather`, `bark`, `soil`, `flint`, `stone`), and the body
+   remap now takes six pairs (`MAX_REMAP` 6). Seen in a group shot of eight villagers: each hat's colour
+   is now its own, separate from the hair. The hat's band keeps the pack's orange triangle pattern.
 
 39. **Livelier animals** (owner 2026-11-12, after the video had no chase or fleeing — on day one every pack is
    kilometres from any herd and players can't scare deer): chose **deer flee from players** (they notice a player

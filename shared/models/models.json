@@ -18,6 +18,9 @@
   "models": {
     "peasant": {
       "glb": "glb/peasant.glb",
+      "repaint": [
+        { "$comment": "The hat (owner, 2026-11-12: \"Hat gets its own colours\"): the pack paints it with the hair's colour; its brim (out past the head) and crown (above the hair) take wool_yellow, a ramp of their own, which the villager's `hat` colour part recolours.", "from": "hair_brown", "to": "wool_yellow", "minY": 1.4, "beyond": 0.16, "above": 1.6 }
+      ],
       "source": {
         "pack": "Stylized_NPC_-_Peasant_Nolant_DEMO",
         "fbx": "Assets/Stylized NPC - Peasant Nolant/Models/Peasant Nolant(Free Version).fbx",
