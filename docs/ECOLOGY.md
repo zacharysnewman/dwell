@@ -248,8 +248,13 @@ without one stays a record — the fixture's hare and fox).
   `feedsPackM` lose `feedsPack` of their hunger. (5) **Mating**: under `mate.belowHunger` and over
   `aboveEnergy` with a groupmate like it within `radiusM` (walking to it), within `reachM` a young
   with `chance` a try (the deer 0.5, the wolf 0.02, the mockup's), each parent's hunger + `cost`, a
-  failed try `tired` energy; never past the group's `cap`. (6) **Looking for Company**: back toward
+  failed try `tired` energy; never past the group's `cap`. Births are paced (BUGS.md #79): each parent, and the
+  young, rest `restS` before mating again (deer 600 s, wolves 1800 s), and a group has at most one young every
+  `groupEveryS` (deer 240 s, wolves 900 s), counted from when it came near. (6) **Looking for Company**: back toward
   the nearest groupmate farther than `companyM`, else **Wandering** (up to `wanderM`).
+- **Bodies** (BUGS.md #80, #81): the creatures keep their bodies (shared/creatures `bodyRadiusM`) apart, steering to
+  `limits.gapM` between them and never overlapping, and out of walls (no solid cell higher than they can climb within
+  their radius of their centre), sliding along a wall they walk into slanting.
 - **Death near players** is by kills only: hunger stops at 1 and never kills here (starving is the
   far step's, over days; owner: "slow to starve").
 - **Deterministic**: each member's own hash chain from (world seed, record id, member); the near
@@ -280,6 +285,11 @@ near a joined player becomes driven deer on the floor with no rule-spawned anima
 folds back when the player leaves; a save while near keeps the herd; an opted-out world makes no
 individuals; night is each face's own. `node --test shared/ecology/gen.test.mjs`: the `near` data
 validates, emits its creature and block, a species without it stays a record, bad entries fail.
+
+Paced births and bodies (`cargo test -p dwell-sim --lib`, both faces): a fed herd near a player has at most one
+young a minute and comes near once (`a_fed_herd_near_a_player_has_at_most_one_young_a_minute`), the pace follows the
+data (`births_follow_the_data_s_pace`), members never overlap (`herd_members_never_stand_inside_each_other`), and a
+creature's body keeps out of a wall it walks into (`a_creature_s_body_keeps_out_of_a_wall_it_walks_into`).
 
 Slice 3b tests (`cargo test -p dwell-sim --lib herds`, both faces): a herd comes near as the rule's
 mix (some herds a stag, never two; a fixture mix of two stags by data alone); individuals spawn only

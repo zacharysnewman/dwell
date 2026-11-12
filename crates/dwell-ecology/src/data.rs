@@ -207,6 +207,10 @@ pub struct NearMate {
     pub cost: f64,
     /// Energy a failed try costs.
     pub tired: f64,
+    /// Seconds each parent (and the young) waits after a young before mating again (BUGS.md #79).
+    pub rest_s: f64,
+    /// A group has at most one young every this many seconds, from when it came near.
+    pub group_every_s: f64,
 }
 
 /// One ecology: the build's ([`crate::DATA`]) or a test's fixture.

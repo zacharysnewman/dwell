@@ -68,6 +68,9 @@ fn fly(f: FaceFrame, remote: bool, threads: usize) -> Flight {
     };
     let (mut have, mut asked) = (HashSet::new(), HashSet::new());
     let mut x = at[0];
+    // The flight's height: a hill on the way (a player moved into it is lifted onto it, BUGS.md
+    // #82) raises it.
+    let mut y = at[1];
     let fly_ticks = 120 + 6 * 60;
     for t in 0..fly_ticks + 4 * 60 {
         // Held in the air (no fall), moving once the view round the join has had its time.
@@ -75,9 +78,9 @@ fn fly(f: FaceFrame, remote: bool, threads: usize) -> Flight {
             x += 20.0 / 60.0;
         }
         if fx.server.player_handle_of(w.player_id).is_some() {
-            fx.move_to(w.player_id, x, at[1], at[2]);
+            fx.move_to(w.player_id, x, y, at[2]);
         }
-        let center = dwell_world::chunk_of_pos([x, at[1], at[2]]);
+        let center = dwell_world::chunk_of_pos([x, y, at[2]]);
         let mut ask = Vec::new();
         'ask: for r in 4..=5 {
             for dz in -r..=r {
@@ -96,6 +99,11 @@ fn fly(f: FaceFrame, remote: bool, threads: usize) -> Flight {
             fx.send(1, Message::ChunkRequest(ask));
         }
         fx.server.step();
+        if let Some(feet) = fx.server.feet_of(w.player_id)
+            && f.y(feet[1]) > f.y(y) + 0.5
+        {
+            y = feet[1];
+        }
         if threads > 0 {
             // The threads keep time with the ticks, as at 60 Hz they would (a few ms apart here).
             std::thread::sleep(std::time::Duration::from_millis(4));
@@ -123,7 +131,7 @@ fn fly(f: FaceFrame, remote: bool, threads: usize) -> Flight {
         flight.stream = flight.stream.max(ms[stream].1);
         flight.worldgen = flight.worldgen.max(ms[worldgen].1);
     }
-    let center = dwell_world::chunk_of_pos([x, at[1], at[2]]);
+    let center = dwell_world::chunk_of_pos([x, y, at[2]]);
     let r = VIEW_RADIUS_CHUNKS as i32;
     for dy in -r..=r {
         for dz in -r..=r {

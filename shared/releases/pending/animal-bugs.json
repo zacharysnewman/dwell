@@ -1,0 +1,8 @@
+{
+  "changes": [
+    "Herds near you no longer grow by several animals in seconds: deer and wolves have young at a natural pace.",
+    "Deer and wolves keep a little space between them instead of standing inside each other.",
+    "Animals no longer walk partly into cliff walls.",
+    "A spawn link or teleport to a point inside the ground now puts you on the ground above instead of dropping you through the world."
+  ]
+}

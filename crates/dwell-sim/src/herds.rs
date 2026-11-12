@@ -77,6 +77,8 @@ pub struct Member {
     /// striker stood.
     pub hurt_s: f64,
     pub hurt_from: [f64; 2],
+    /// Seconds left before it may mate again (a parent's or a young's rest, BUGS.md #79).
+    pub rest_s: f64,
     rng: u64,
 }
 
@@ -90,6 +92,8 @@ pub struct NearGroup {
     /// Members killed and young born since it came near.
     pub deaths: u32,
     pub births: u32,
+    /// Seconds left before its next young may be born (its species' `mate.groupEveryS`).
+    pub birth_s: f64,
     /// The head in its far summary as last written ([`Ecosystem::near`]); a far hunter's kill
     /// lowers the summary, and the loss is read back as deaths.
     summary_size: f64,
@@ -284,6 +288,8 @@ struct Seen {
     z: f64,
     mind: Mind,
     hunger: f64,
+    /// Resting from a young: not a partner.
+    resting: bool,
 }
 
 /// A decision's outcome for one member's creature.
@@ -486,6 +492,7 @@ impl Near {
                             sleep_s: 0.0,
                             hurt_s: 0.0,
                             hurt_from: [0.0; 2],
+                            rest_s: 0.0,
                             rng,
                         });
                     }
@@ -494,6 +501,11 @@ impl Near {
                 match made {
                     Some(members) => {
                         w.ecos[k].groups.remove(i);
+                        // No young the moment it comes near (BUGS.md #79): its first after the
+                        // species' `mate.groupEveryS`.
+                        let birth_s = w.data.species[r.species]
+                            .near
+                            .map_or(0.0, |n| n.mate.group_every_s);
                         self.groups.push(NearGroup {
                             face: k,
                             record: r,
@@ -501,6 +513,7 @@ impl Near {
                             members,
                             deaths: 0,
                             births: 0,
+                            birth_s,
                             far_loss: 0.0,
                         });
                     }
@@ -511,6 +524,9 @@ impl Near {
     }
 
     fn think(&mut self, w: &mut World, creatures: &mut Creatures, dt: f64) -> Vec<[i32; 3]> {
+        for g in &mut self.groups {
+            g.birth_s = (g.birth_s - dt).max(0.0);
+        }
         let mut seen = Vec::new();
         for (gi, g) in self.groups.iter().enumerate() {
             for (mi, m) in g.members.iter().enumerate() {
@@ -523,6 +539,7 @@ impl Near {
                     z: m.z,
                     mind: m.mind,
                     hunger: m.hunger,
+                    resting: m.rest_s > 0.0,
                 });
             }
         }
@@ -553,8 +570,10 @@ impl Near {
             let pending = young.iter().filter(|y| y.0 == gi).count();
             let size =
                 self.groups[gi].members.len() + pending - dead.iter().filter(|d| d.0 == gi).count();
+            let ready = size < cap && self.groups[gi].birth_s <= 0.0;
             let go = {
                 let m = &mut self.groups[gi].members[mi];
+                m.rest_s = (m.rest_s - dt).max(0.0);
                 m.hunger = (m.hunger + def.hunger_per_s * dt).min(1.0);
                 if m.mind != Mind::Sleeping {
                     m.energy = (m.energy - def.energy_per_s * dt).max(0.0);
@@ -571,7 +590,7 @@ impl Near {
                         me,
                         night,
                         dt,
-                        room: size < cap,
+                        room: ready && m.rest_s <= 0.0,
                     },
                     m,
                     &|pick| nearest(&dead, pick),
@@ -620,10 +639,15 @@ impl Near {
                 }
                 Act::Young(partner) => {
                     let g = &mut self.groups[gi];
-                    g.members[partner.member].hunger =
-                        (g.members[partner.member].hunger + def.mate.cost).min(1.0);
+                    // Paced (BUGS.md #79): the group's next young after `groupEveryS`, each
+                    // parent's next mating after `restS`.
+                    g.birth_s = def.mate.group_every_s;
+                    let p = &mut g.members[partner.member];
+                    p.hunger = (p.hunger + def.mate.cost).min(1.0);
+                    p.rest_s = def.mate.rest_s;
                     let m = &mut g.members[mi];
                     m.hunger = (m.hunger + def.mate.cost).min(1.0);
+                    m.rest_s = def.mate.rest_s;
                     let rng = splitmix(m.rng ^ 0x0079_6f75_6e67);
                     // The young are the species' own creature (the herd's mix is its start's).
                     let kind = creatures
@@ -668,6 +692,9 @@ impl Near {
             else {
                 continue;
             };
+            let rest_s = w.data.species[self.groups[gi].record.species]
+                .near
+                .map_or(0.0, |n| n.mate.rest_s);
             let g = &mut self.groups[gi];
             g.births += 1;
             g.members.push(Member {
@@ -680,6 +707,7 @@ impl Near {
                 sleep_s: 0.0,
                 hurt_s: 0.0,
                 hurt_from: [0.0; 2],
+                rest_s,
                 rng,
             });
         }
@@ -765,7 +793,8 @@ struct DecideIn<'a> {
     me: Seen,
     night: bool,
     dt: f64,
-    /// Whether the group has room for a young.
+    /// Whether it may have a young now: room in the group, the group's pace and its own rest
+    /// allowing (BUGS.md #79).
     room: bool,
 }
 
@@ -871,6 +900,7 @@ fn decide(i: DecideIn, m: &mut Member, nearest: Nearest) -> Act {
     if i.room && m.hunger <= mt.below_hunger && m.energy >= mt.above_energy {
         let partner = nearest(&|o| {
             o.group == me.group
+                && !o.resting
                 && o.hunger <= mt.below_hunger
                 && !matches!(o.mind, Mind::Sleeping | Mind::Fleeing)
         });
@@ -1208,9 +1238,41 @@ mod tests {
         }
     );
 
+    /// The shipped ecology with the deer's births paced every `every_s` (a group) and `rest_s` (a
+    /// parent): a fixture by data alone.
+    fn paced(every_s: f64, rest_s: f64) -> Data {
+        let k = species("dwell:deer");
+        let mut list = DATA.species.to_vec();
+        let mut near = list[k].near.unwrap();
+        near.mate.group_every_s = every_s;
+        near.mate.rest_s = rest_s;
+        list[k].near = Some(near);
+        Data {
+            species: Box::leak(list.into_boxed_slice()),
+            ..DATA
+        }
+    }
+
+    both_faces!(
+        fn births_follow_the_data_s_pace(f: FaceFrame) {
+            // BUGS.md #79's pace is data: the deer's `groupEveryS` spaces a group's young.
+            let births = |every: f64| {
+                let mut s = Scene::new(f, &[("dwell:deer", 0.0, 0.0, 4.0, 0.0)], 5);
+                s.data = paced(every, 0.0);
+                s.run(&[(0.0, 0.0)], 125.0, |_| {});
+                s.near.groups[0].births
+            };
+            let (fast, slow) = (births(10.0), births(60.0));
+            assert!(fast > slow, "faster pace, more young: {fast} vs {slow}");
+            assert!(slow <= 2, "at most one every 60 s: {slow} in 125 s");
+        }
+    );
+
     both_faces!(
         fn a_fed_pair_has_young_up_to_the_cap(f: FaceFrame) {
             let mut s = Scene::new(f, &[("dwell:deer", 0.0, 0.0, 2.0, 0.0)], 5);
+            // Births paced by data alone: a young at most every 20 s, parents resting 30 s.
+            s.data = paced(20.0, 30.0);
             let cap = DATA.species[species("dwell:deer")].group.cap as usize;
             let mut most = 0;
             s.run(&[(0.0, 0.0)], 900.0, |n| {
@@ -1221,6 +1283,66 @@ mod tests {
             assert_eq!(g.members.len(), cap, "up to the cap");
             assert!(most <= cap, "never past it: {most}");
             assert_eq!(s.creatures.list.len(), cap);
+        }
+    );
+
+    both_faces!(
+        fn a_fed_herd_near_a_player_has_at_most_one_young_a_minute(f: FaceFrame) {
+            // BUGS.md #79: a fed, rested herd of 6 near a player grew to 12-13 within a minute
+            // (a young each half-second try at the deer's 0.5 chance). It comes near once (its
+            // record out of the far step, one creature per member) and its births are paced.
+            let mut s = Scene::new(f, &[("dwell:deer", 0.0, 0.0, 6.0, 0.0)], 3);
+            let k = s.k();
+            s.run(&[(0.0, 0.0)], 60.0, |_| {});
+            assert!(
+                s.ecos[k].groups.is_empty(),
+                "the record is out of the far step"
+            );
+            assert_eq!(s.near.groups.len(), 1, "spawned once");
+            let g = &s.near.groups[0];
+            assert_eq!(
+                s.creatures.list.len(),
+                g.members.len(),
+                "one creature a member"
+            );
+            assert!(g.births <= 1, "{} young in a minute", g.births);
+            assert!(
+                g.members.len() <= 7,
+                "{} head after a minute",
+                g.members.len()
+            );
+        }
+    );
+
+    /// The least gap (m) between two creatures' bodies (their centres' distance less both radii)
+    /// on face `f`, over every pair.
+    fn least_gap(s: &Scene) -> f64 {
+        let cs = &s.creatures;
+        let mut least = f64::MAX;
+        for (i, a) in cs.list.iter().enumerate() {
+            for b in &cs.list[i + 1..] {
+                let (p, q) = (s.f.point(a.position), s.f.point(b.position));
+                let body = |k: usize| cs.table.creatures[k].body_radius_m;
+                let r = body(a.kind) + body(b.kind);
+                least = least.min((p[0] - q[0]).hypot(p[2] - q[2]) - r);
+            }
+        }
+        least
+    }
+
+    both_faces!(
+        fn herd_members_never_stand_inside_each_other(f: FaceFrame) {
+            // BUGS.md #80: two does stood in the same place for seconds. A herd keeps its
+            // members' bodies apart (they spawn 1-4 m round the record, walk to each other for
+            // company and mating, and young are born by a parent).
+            let mut s = Scene::new(f, &[("dwell:deer", 0.0, 0.0, 8.0, 0.0)], 21);
+            s.run(&[(0.0, 0.0)], 1.0, |_| {});
+            let mut least = f64::MAX;
+            for _ in 0..240 {
+                s.run(&[(0.0, 0.0)], 0.25, |_| {});
+                least = least.min(least_gap(&s));
+            }
+            assert!(least >= -1e-6, "two bodies overlapped by {:.3} m", -least);
         }
     );
 
@@ -1289,6 +1411,10 @@ mod tests {
     both_faces!(
         fn at_night_fed_animals_fall_asleep(f: FaceFrame) {
             let mut s = Scene::new(f, &[("dwell:deer", 0.0, 0.0, 3.0, 0.1)], 4);
+            // Somewhat tired (not under `belowEnergy`): they don't nap by day, but a night's nap
+            // lasts past its least.
+            let k = s.k();
+            s.ecos[k].groups[0].energy = 0.45;
             s.run(&[(0.0, 0.0)], 30.0, |_| {});
             let mut slept = 0;
             s.night = true;

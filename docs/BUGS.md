@@ -6,22 +6,6 @@ pins it.
 
 ## Open
 
-### 79. A herd grows by several animals within seconds of coming near
-
-Seen filming the deer (2026-11-12, seed 7, herd id 3 at 3000,2200 face A): a herd that arrived as 6 head had 9 within seconds and 12–13 within a minute. Births (mating chance 0.5 a try, cap 12) could explain part, but it looks like animals popping in; check the near herd isn't spawned twice (far→near handover) and that births are paced.
-
-### 80. Deer in a herd stand inside each other
-
-Seen in the deer video (still_01 and clip 1): two does occupy the same space for seconds. Herd members have no spacing or separation.
-
-### 81. A wolf walks partly inside a cliff wall
-
-Seen in the wolf clip (pack id 9 at -7800,-15600, a terraced cliff): a wolf's body overlapped the stone wall at the cliff foot; creature movement doesn't keep the body's radius out of solid cells.
-
-### 82. `?at=` or a teleport to a y inside the ground drops the player through to face B
-
-`?at=3000,260,2200` where the ground is at 381 fell through to face B; a teleport while flying to a y inside a mountain did the same. Expected: put the player on the ground above (or refuse).
-
 ### 78. 26 fps at High on the owner's M1 MacBook Air ("I think cards are killing my m1 mac")
 
 Reported 2026-11-12 (owner): "It seems like we're hiding some performance settings. I don't see 'tree' options in
@@ -325,6 +309,49 @@ face, or the placement check against its shape.
 
 
 ## Fixed
+
+### 79. A herd grows by several animals within seconds of coming near (fixed after 0.54.95)
+
+Seen filming the deer (2026-11-12, seed 7, herd id 3 at 3000,2200 face A): a herd that arrived as 6 head had 9 within
+seconds and 12–13 within a minute. Not a double spawn: the record leaves its face's far groups once and becomes one
+creature per member (checked). The cause was births: a fed, rested pair within 2 m tried every half-second decision
+at the deer's 0.5 chance, so a fed herd of 6 had 6 young in its first minute. Fixed by pacing births as data (each
+species' `near.mate`): each parent, and the young, rest `restS` before mating again (deer 600 s, wolves 1800 s), and a
+group has at most one young every `groupEveryS` (deer 240 s, wolves 900 s), counted from when it came near, so a herd
+never grows in front of a player who just arrived. Pinned by `dwell-sim` `herds.rs`
+`a_fed_herd_near_a_player_has_at_most_one_young_a_minute` (red: 6 young in a minute; it also checks the herd spawned
+once) and `births_follow_the_data_s_pace` (the pace by data alone), both faces.
+
+### 80. Deer in a herd stand inside each other (fixed after 0.54.95)
+
+Seen in the deer video (still_01 and clip 1): two does occupy the same space for seconds. Herd members had no spacing:
+they spawn 1–4 m round the record, walk to a groupmate's exact place for company and mating, and young are born by a
+parent. Fixed: every creature has a body radius by data (shared/creatures `bodyRadiusM`: doe 0.35 m, stag 0.4, wolf
+0.3), and each tick `Creatures::separate` steers two closer than their radii plus `limits.gapM` (0.25 m) apart at up
+to `limits.pushMps` (1.2 m/s) and pushes two overlapping straight out (a few passes for a crowd), each move kept to
+ground the creature can stand on with its body clear. Pinned by `herds.rs` `herd_members_never_stand_inside_each_other`
+(red: 0.69 m of overlap), both faces.
+
+### 81. A wolf walks partly inside a cliff wall (fixed after 0.54.95)
+
+Seen in the wolf clip (pack id 9 at -7800,-15600, a terraced cliff): a wolf's body overlapped the stone wall at the
+cliff foot. A creature's step checked only the column under its centre, so its body went up to its radius into a
+wall. Fixed: a step is taken only if the columns its body's disc reaches (`bodyRadiusM`) have nothing solid from its
+`climbRows` up to its height (a step it can climb is no wall); else it slides along the wall on one axis, else
+stops; knockback and separation keep to the same rule; a body already against a wall moves by its centre so it can
+walk out. Pinned by `creatures.rs` `a_creature_s_body_keeps_out_of_a_wall_it_walks_into` (red: 0.297 m inside the
+wall), both faces.
+
+### 82. `?at=` or a teleport to a y inside the ground drops the player through to face B (fixed after 0.54.95)
+
+`?at=3000,260,2200` where the ground is at 381 fell through to face B; a teleport while flying to a y inside a
+mountain did the same: inside a solid cell the terrain's collision has no face to stop the capsule. Fixed on the
+server, for every way in (a spawn link, a teleport, the dev tools): each tick before the controller, a player whose
+capsule's centre is in a solid full cell is put, at rest, on the first row above its feet with ground under it and
+its height free (`server/buried.rs`); one whose way up isn't loaded yet is held where it is until it is. Pinned by
+`dwell-sim` `tests/buried.rs` `a_spawn_inside_the_ground_stands_on_the_ground_above` and
+`a_teleport_into_the_ground_lifts_the_player_out` (red: the feet fell to 6 and 10 m in a 52 m world), both faces.
+`tests/stream_cost.rs`'s held flight now rises over a hill on its way, as a player would.
 
 ### 75. A tree never falls to a player's swings (fixed after 0.54.25)
 

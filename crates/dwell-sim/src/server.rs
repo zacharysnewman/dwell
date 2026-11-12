@@ -38,6 +38,7 @@ use dwell_world::{
 
 use dwell_protocol::auth::verify_ed25519;
 
+mod buried;
 mod chopping;
 mod creatures;
 mod ecology;
@@ -1992,6 +1993,10 @@ impl Server {
                 _ => {}
             }
         }
+
+        // A player inside solid ground (a spawn link's y, a teleport) stands on the ground above
+        // it (BUGS.md #82), before it can fall through.
+        self.lift_buried_players();
 
         // 3. Controller pipeline (PLAYER_CONTROLLER.md §4), then its server-side consequences. The
         // falling pieces' terrain collision loads with the players' (docs/FELLING.md §3).

@@ -23,7 +23,7 @@ const NEAR_SLEEP_FIELDS = ['belowEnergy', 'nightChancePerS', 'nightBelowHunger',
 const NEAR_GRAZE_FIELDS = ['aboveHunger', 'fullBelow', 'eatPerS', 'foragePerS', 'block', 'blockChancePerS'];
 const NEAR_HUNT_FIELDS = ['aboveHunger', 'senseM', 'sprint', 'reachM', 'feedsPackM', 'feedsPack'];
 const NEAR_FLEE_FIELDS = ['radiusM', 'pace'];
-const NEAR_MATE_FIELDS = ['belowHunger', 'aboveEnergy', 'radiusM', 'reachM', 'chance', 'cost', 'tired'];
+const NEAR_MATE_FIELDS = ['belowHunger', 'aboveEnergy', 'radiusM', 'reachM', 'chance', 'cost', 'tired', 'restS', 'groupEveryS'];
 const ISLAND_FIELDS = ['cellM', 'stepDays'];
 const GRAZING_FIELDS = ['regrowPerDay', 'grounds'];
 const GROUND_FIELDS = ['name', 'maxHeightM', 'maxSlopeDeg', 'max', 'refuge'];
@@ -238,6 +238,10 @@ function nearOf(s, at, diet, flee) {
   for (const k of ['belowHunger', 'aboveEnergy', 'chance', 'cost', 'tired']) range(m[k], 0, 1, `${at}.mate.${k}`);
   range(m.radiusM, 0, 1000, `${at}.mate.radiusM`);
   range(m.reachM, 0, 100, `${at}.mate.reachM`, true);
+  // The pace of births (BUGS.md #79): each parent rests `restS` after a young, and a group has at
+  // most one young every `groupEveryS` (from when it came near).
+  range(m.restS, 0, 86400, `${at}.mate.restS`, true);
+  range(m.groupEveryS, 0, 86400, `${at}.mate.groupEveryS`, true);
   let hurt = null;
   if (n.hurt !== undefined) {
     const h = object(n.hurt, NEAR_HURT_FIELDS, `${at}.hurt`);
@@ -273,7 +277,7 @@ function nearRust(n) {
     `                graze: ${graze},`,
     `                hunt: ${hunt},`,
     `                flee: ${flee},`,
-    `                mate: NearMate { below_hunger: ${f(m.belowHunger)}, above_energy: ${f(m.aboveEnergy)}, radius_m: ${f(m.radiusM)}, reach_m: ${f(m.reachM)}, chance: ${f(m.chance)}, cost: ${f(m.cost)}, tired: ${f(m.tired)} },`,
+    `                mate: NearMate { below_hunger: ${f(m.belowHunger)}, above_energy: ${f(m.aboveEnergy)}, radius_m: ${f(m.radiusM)}, reach_m: ${f(m.reachM)}, chance: ${f(m.chance)}, cost: ${f(m.cost)}, tired: ${f(m.tired)}, rest_s: ${f(m.restS)}, group_every_s: ${f(m.groupEveryS)} },`,
     `                company_m: ${f(n.companyM)},`,
     `                wander_m: ${f(n.wanderM)},`,
     `                hurt: ${n.hurt ? `Some(NearHurt { react: HurtReact::${n.hurt.react === 'flee' ? 'Flee' : 'Fight'}, seconds: ${f(n.hurt.seconds)}, pace: ${f(n.hurt.pace)}, flee_below_health: ${f(n.hurt.fleeBelowHealth)}, run_m: ${f(n.hurt.runM)} })` : 'None'},`,
