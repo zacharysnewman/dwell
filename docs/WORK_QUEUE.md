@@ -976,6 +976,9 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    17. Underwater — diving in a lake or the sea, the surface from below with the sky through it, light shafts.
    18. Rivers from mountains to the sea — a long follow down a river from the peaks through valleys to its
        mouth (partly time-lapsed).
+   19. Multiplayer (owner 2026-11-12: "Multiplayer we haven't showcased.") — two or three players in one world
+       (a friend world or a local server, each a browser page): building together, one chopping while another
+       carries, a sword duel between players' stances (no damage between players), seen from a third camera.
 
 ## Done
 
