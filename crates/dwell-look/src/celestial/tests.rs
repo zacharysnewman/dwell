@@ -141,8 +141,8 @@ fn the_lit_share_grows_from_new_to_full_and_wanes_after() {
     // gibbous most; the month is not half dark.
     let (crescent, quarter, gibbous) = (lit(0.125), lit(0.25), lit(0.375));
     // (Lambert: the lit share is the light the face sends home, a ball's ~1/π of full at a quarter.)
-    assert!(crescent > 0.0 && crescent < quarter, "{crescent}");
-    assert!(quarter > 0.1 && quarter < 0.6, "{quarter}");
+    assert!(crescent > 0.02 && crescent < quarter, "{crescent}");
+    assert!(quarter > 0.25 && quarter < 0.5, "{quarter}");
     assert!(gibbous > 0.5 && gibbous < 0.97, "{gibbous}");
     assert!(lit(0.8) > 0.0);
     eprintln!("lit share: crescent {crescent:.3}, quarter {quarter:.3}, gibbous {gibbous:.3}");
