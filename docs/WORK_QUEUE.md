@@ -1382,6 +1382,9 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    player coming out on face B keeps face A's up (the camera never takes face B's frame), so face B and the player
    rising out of its hole read upside down, hanging under the disc. Clouds off in every shot (owner: they "might look
    weird", confirmed by the v2 comparison).
+   Owner: **"Also it looked like the player flew out of the hole instead of physics carrying it out of the hole. Like
+   was flying."** — no flight in the portal shot: momentum alone carries the player up out of face B's hole (v2
+   turned flight on at the top of the rise). **"Face b should be night."** — keep face B at night.
    Owner refinement for (4)/(5), 2026-11-12: **"Like a farther out non first person view of the other side."** — after
    the motes, cut to a third-person camera farther out on face B (15–40 m from the portal, looking at the hole) as the
    player flies up out of it, not first person; the jump stays first person on face A.
