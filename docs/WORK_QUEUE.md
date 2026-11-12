@@ -735,6 +735,12 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    dense forests cheap (one quad a tree, instanced). In progress (cloud): the bake (a CPU ray cast of the voxel
    tree into an atlas) and the data; drawing them is local after.
 
+32. **A tall dense forest for performance reference** (owner 2026-11-12: "We should have a tall dense forest
+   biome/climate for performance reference on trees."). A biome preset (tall, closely spaced mature trees — an
+   old-growth temperate rainforest of tall pines and broadleaf, thick undergrowth) placed by climate (cool and very
+   wet), plus a fixed test world and bench spot that stand in the densest forest, so every tree/leaf/impostor change
+   is measured there at High on the M1 Air. In progress (cloud).
+
 ## Done
 
 - **Axe swing directions and animation tools (owner 2026-11-11: "The axe animations are still trash.
