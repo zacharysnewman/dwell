@@ -555,11 +555,11 @@ fn textured_vertices(m: &MeshArrays, kind: Kind) -> Vec<f32> {
     // float's slot, its bits copied as they are (0: no crack, a chunk without cracks has none).
     let cracks: Vec<f32>;
     if kind == Kind::Terrain {
-        cracks = if m.cracks.len() == count {
-            m.cracks.iter().map(|&b| f32::from_bits(b)).collect()
-        } else {
-            vec![0.0; count]
-        };
+        // A stream shorter than the vertices (none, or a mesher's appended vertices past it)
+        // keeps what it has and is 0 past it, so one short layer never hides every crack.
+        cracks = (0..count)
+            .map(|k| f32::from_bits(m.cracks.get(k).copied().unwrap_or(0)))
+            .collect();
         streams.push((&cracks, 1));
     }
     interleave(&streams)
@@ -6267,6 +6267,14 @@ mod tests {
         for (k, &c) in m.cracks.iter().enumerate() {
             assert_ne!(c >> 16 & 0xff, 0, "every face of the cracked cell");
             assert_eq!(v[k * stride + stride - 1].to_bits(), c);
+        }
+        // A stream short of the vertices (BUGS.md #74) keeps the cracks it has.
+        let mut short = m.clone();
+        short.cracks.truncate(4);
+        let v = textured_vertices(&short, Kind::Terrain);
+        for k in 0..m.cracks.len() {
+            let want = if k < 4 { m.cracks[k] } else { 0 };
+            assert_eq!(v[k * stride + stride - 1].to_bits(), want);
         }
         let plain = dwell_mesh::mesh_chunk(&padded, false)
             .expect("meshed")
