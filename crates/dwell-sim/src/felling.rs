@@ -26,6 +26,7 @@ pub struct FellingData {
     pub settle_every_ticks: u32,
     pub max_seconds: f64,
     pub max_settles: u8,
+    pub beach_seconds: f64,
     pub hit_speed: f64,
     pub hit_damage_per_speed: f64,
     pub hold_speed: f64,
@@ -55,6 +56,11 @@ pub struct BodyKind {
     pub split: bool,
     /// At rest it becomes blocks again.
     pub settles: bool,
+    /// It may settle while afloat (a cell in a liquid, the body lighter than it). False: it keeps
+    /// drifting with the current until it has rested out of the water `beach_ticks` (owner,
+    /// 2026-11-12: floating trees "should never settle, it causes them to block up rivers").
+    /// Waterlogging (later) would sink a soaked body instead (docs/WORK_QUEUE.md Future).
+    pub settles_afloat: bool,
     /// Saved with the world.
     pub saved: bool,
     /// Blocks a body of this kind is built on (the build platform): they stay in the world's grid;
@@ -294,6 +300,9 @@ pub struct FellingRules {
     pub max_ticks: u32,
     /// A piece that settles unanchored this many times stays where it is.
     pub max_settles: u8,
+    /// A piece that was afloat (of a kind that doesn't settle afloat) settles only after this
+    /// many ticks out of the water (beached), its still and age counted from then.
+    pub beach_ticks: u32,
     /// The most cells one piece may have (a larger one stands).
     pub max_piece_cells: usize,
     /// The spin (rad/s) a piece cut by a player starts with, tipping it away from them: a trunk
@@ -337,6 +346,7 @@ impl From<FellingData> for FellingRules {
             settle_every_ticks: d.settle_every_ticks,
             max_ticks: ticks(d.max_seconds),
             max_settles: d.max_settles,
+            beach_ticks: ticks(d.beach_seconds),
             max_piece_cells: d.max_piece_cells,
             topple_spin: d.topple_spin,
             topple_tip_speed: d.topple_tip_speed,
@@ -382,6 +392,12 @@ pub struct Falling {
     anchored: bool,
     /// How far its cells reach from its body's origin (m).
     reach: f64,
+    /// Afloat this tick (`float`): a cell of it in a liquid and the body lighter than it
+    /// (docs/BUILT_BODIES.md §6): a kind that doesn't settle afloat (`settles_afloat`) keeps
+    /// drifting with the current instead of settling (owner, 2026-11-12).
+    afloat: bool,
+    /// Ticks since it was last afloat (`beach_ticks` before it may settle on dry ground).
+    dry: u32,
 }
 
 /// A player's body for [`Felling::hits`]: an upright capsule (centre, radius, the half length of
@@ -550,6 +566,18 @@ pub fn cell_in_liquid(world: &mut VoxelWorld, centre: DVec3, rotation: DQuat) ->
     (under / 5.0, density)
 }
 
+/// A body's mean density (kg/m³) by its cells' blocks: lighter than a liquid, it floats.
+fn body_density(cells: &[([i32; 3], StateId)]) -> f64 {
+    if cells.is_empty() {
+        return 0.0;
+    }
+    cells
+        .iter()
+        .map(|&(_, m)| f64::from(info(m).density_kg_m3))
+        .sum::<f64>()
+        / cells.len() as f64
+}
+
 /// A cell's centre in its piece's frame (m) from its offset in the piece's grid.
 pub fn cell_offset_m(o: [i32; 3]) -> DVec3 {
     offset_m(o)
@@ -648,6 +676,8 @@ impl Felling {
                 held: false,
                 pushed: 0,
                 anchored: false,
+                afloat: false,
+                dry: u32::MAX,
                 reach,
             });
             out.push(self.pieces.len() - 1);
@@ -746,6 +776,8 @@ impl Felling {
                 held: false,
                 pushed: 0,
                 anchored: false,
+                afloat: false,
+                dry: u32::MAX,
                 reach,
             };
             self.next_id += 1;
@@ -958,6 +990,8 @@ impl Felling {
             pushed: 0,
             reach,
             anchored: false,
+            afloat: false,
+            dry: u32::MAX,
         });
         self.pieces.len() - 1
     }
@@ -1036,12 +1070,14 @@ impl Felling {
         for p in &mut self.pieces {
             let (position, rotation) = (physics.position(p.body), physics.rotation(p.body));
             let mut under = 0.0;
+            let mut liquid = 0.0f64;
             for &(o, _) in &p.cells {
                 let centre = position + rotation * offset_m(o);
                 let (fraction, density) = cell_in_liquid(world, centre, rotation);
                 if fraction <= 0.0 {
                     continue;
                 }
+                liquid = liquid.max(density);
                 let up = DVec3::Y * FaceFrame::at_height(centre.y).sign_f64();
                 physics.apply_impulse_at(
                     p.body,
@@ -1049,6 +1085,14 @@ impl Felling {
                     centre,
                 );
                 under += fraction;
+            }
+            // Afloat: in a liquid and lighter than it on the whole (a log, a crown; a sand piece
+            // sinks and settles on the bed as before).
+            p.afloat = under > 0.0 && body_density(&p.cells) < liquid;
+            if p.afloat {
+                p.dry = 0;
+            } else {
+                p.dry = p.dry.saturating_add(1);
             }
             if under > 0.0 {
                 let share = under / p.cells.len() as f64;
@@ -1198,12 +1242,24 @@ impl Felling {
                 p.rest = Some((at, turn));
                 p.still = 0;
             }
+            // Afloat (or not long out of the water), a kind that doesn't settle afloat drifts on: its
+            // still and age count from when it beached (owner, 2026-11-12: floating trees "should
+            // never settle, it causes them to block up rivers randomly instead of floating
+            // downstream"). Rapier never sleeps a piece (`can_sleep(false)`), so the current
+            // always moves it.
+            let kind = body_kind(p.kind);
+            let beached = p.dry >= r.beach_ticks;
+            if !kind.settles_afloat && !beached {
+                p.still = 0;
+                p.age = 0;
+                p.rest = None;
+            }
             // Anything past the world's rows is lost; the rest settles at rest or out of time
             // (leaves falling on their own too: they land, owner 2026-10-28).
             let y = physics.position(p.body).y;
             let lost = !in_world_rows(y);
             // A kind that doesn't settle (a built body) stays a body; lost past the rows, it goes.
-            let settles = body_kind(p.kind).settles;
+            let settles = kind.settles && (kind.settles_afloat || beached);
             if lost || (settling && settles && (p.still >= r.sleep_ticks || p.age >= r.max_ticks)) {
                 due.push(i);
             }
@@ -1648,6 +1704,8 @@ mod tests {
             held: false,
             pushed: 0,
             anchored: false,
+            afloat: false,
+            dry: u32::MAX,
             reach: 1.0,
         }
     }
@@ -1999,6 +2057,89 @@ mod tests {
         }
     );
 
+    /// A water channel face-locally at rows 34..40 (3 m deep, its surface at 20 m), x −4..=4 and
+    /// z −4..=60, running along +z at `current` m/s; a felled trunk (four logs along x) let go on it.
+    fn trunk_in_a_river(
+        f: dwell_world::FaceFrame,
+        current: f32,
+    ) -> (VoxelWorld, Physics, Felling, dwell_physics::BodyHandle) {
+        let mut world = VoxelWorld::new(dwell_world::empty_generator(), None);
+        let water = dwell_blocks::require("dwell:water");
+        for x in -4..=4 {
+            for z in -4..=60 {
+                for y in 34..40 {
+                    let [cx, cy, cz] = f.cell([x, y, z]);
+                    world.set_voxel(cx, cy, cz, f.state(water));
+                }
+                let (key, i) = dwell_world::currents::current_key(f, x, z);
+                let mut cells = world
+                    .currents
+                    .get(key)
+                    .cloned()
+                    .unwrap_or_else(|| Box::new([[0.0; 2]; dwell_world::currents::CA]));
+                cells[i] = [0.0, current];
+                world.currents.set(key, Some(cells));
+            }
+        }
+        let mut physics = Physics::new(dwell_physics::PhysicsConfig::default());
+        let mut felling = Felling::default();
+        let cells: Vec<([i32; 3], StateId)> = (0..4)
+            .map(|x| {
+                (
+                    [x, 0, 0],
+                    f.state(with_property(log(), "axis", "x").unwrap()),
+                )
+            })
+            .collect();
+        let at = DVec3::from_array(f.point([-1.5, 40.0 * CELL_H, 0.5]));
+        let i = felling.spawn_body(
+            &mut physics,
+            None,
+            0,
+            0,
+            cells,
+            at,
+            DQuat::IDENTITY,
+            DVec3::ZERO,
+            DVec3::ZERO,
+        );
+        let body = felling.pieces[i].body;
+        (world, physics, felling, body)
+    }
+
+    dwell_world::both_faces!(
+        /// Owner, 2026-11-12: "trees they are floating in water should never settle, it causes
+        /// them to block up rivers randomly instead of floating downstream". A natural trunk
+        /// afloat in a 1 m/s river drifts downstream for 40 s (past `maxSeconds`' 30 s) and is
+        /// never due to settle into blocks. Red before: due at 30 s, ~25 m down.
+        fn a_trunk_afloat_drifts_downstream_and_never_settles(f: dwell_world::FaceFrame) {
+            let (mut world, mut physics, mut felling, body) = trunk_in_a_river(f, 1.0);
+            let start = f.point(physics.position(body).to_array());
+            let dt = 1.0 / f64::from(dwell_protocol::SIM_HZ);
+            for tick in 0..(60 * 40) {
+                felling.float(&mut world, &mut physics);
+                physics.step(dt);
+                let due = felling.step(&mut physics);
+                assert!(
+                    due.is_empty(),
+                    "due to settle afloat at {:.1} s",
+                    f64::from(tick) / 60.0
+                );
+            }
+            let end = f.point(physics.position(body).to_array());
+            let down = end[2] - start[2];
+            assert!(
+                (25.0..41.0).contains(&down),
+                "drifted {down:.1} m downstream in 40 s at 1 m/s"
+            );
+            assert!(
+                (end[1] - 20.0).abs() < 0.5,
+                "afloat at the surface: {:.2}",
+                end[1]
+            );
+        }
+    );
+
     /// A 1 m log falling at `speed` m/s onto a standing player's head (capsule 0.3 m round,
     /// 1.8 m tall, centre 0.9 m up): what it hurts, twice over (a piece hurts each player once).
     type Hits = Vec<(u64, i32)>;
@@ -2036,6 +2177,8 @@ mod tests {
             held: false,
             pushed: 0,
             anchored: false,
+            afloat: false,
+            dry: u32::MAX,
             reach: 1.0,
         });
         let player = PlayerBody {

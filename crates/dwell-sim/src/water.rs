@@ -353,7 +353,7 @@ impl Write {
         match self.flood {
             None => (cells::kind_of(b) != Kind::Solid).then_some(self.state),
             Some(wet) => {
-                cells::holds(b)?;
+                cells::holds(b).or(cells::passes(b))?;
                 dwell_blocks::with_property(now, "flooded", if wet { "true" } else { "false" })
             }
         }
@@ -1029,12 +1029,22 @@ impl Water {
     /// The floor and level of the water run at face `f`'s column (x, z) through local row `r`.
     fn found(world: &Cells, f: FaceFrame, x: i32, r: i32, z: i32) -> Option<(f32, f32)> {
         let liquid = |r: i32| cell_kind(world, cell(f, x, r, z)) == Some(Kind::Liquid);
+        // Under the water, blocks it passes (leaves) are the column's too: its floor is the
+        // solid below them. Its level is the liquid's top, as before leaves let water through,
+        // so the generated water's levels are unchanged.
+        let under = |r: i32| {
+            liquid(r)
+                || world
+                    .get(cell(f, x, r, z))
+                    .and_then(cells::passes)
+                    .is_some()
+        };
         let mut top = r;
         while liquid(top + 1) {
             top += 1;
         }
         let mut bottom = r;
-        while liquid(bottom - 1) {
+        while under(bottom - 1) {
             bottom -= 1;
         }
         if cell_kind(world, cell(f, x, bottom - 1, z))? != Kind::Solid {
@@ -1852,6 +1862,28 @@ impl Water {
                         continue;
                     }
                     let h = level - m_of_row(r) as f32;
+                    // A block water passes (leaves) stays: flooded while the water stands half a
+                    // fill step into it, dry when it goes; the water in it is the column's.
+                    if let Some(wet) = cells::passes(now) {
+                        let want = h >= STEP * 0.5;
+                        if want != wet {
+                            self.cells.set(
+                                w,
+                                if want {
+                                    cells::PASS_WET
+                                } else {
+                                    cells::PASS_DRY
+                                },
+                            );
+                            writes.push(Write {
+                                cell: w,
+                                state: 0,
+                                was: now,
+                                flood: Some(want),
+                            });
+                        }
+                        continue;
+                    }
                     let want = if h >= CELL_H as f32 - STEP * 0.5 {
                         Some(liquid)
                     } else if h >= STEP * 0.5 {
