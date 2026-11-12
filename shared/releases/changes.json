@@ -2,6 +2,12 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.54.216",
+      "changes": [
+        "Behind the scenes: bug notes"
+      ]
+    },
+    {
       "version": "0.54.215",
       "changes": [
         "Under water the world sounds muffled: a low-pass on every world sound, eased in and out as you cross the surface, with a soft underwater hum",
