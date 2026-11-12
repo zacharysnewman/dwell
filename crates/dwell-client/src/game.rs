@@ -768,6 +768,10 @@ pub struct Game<S: Scene> {
     /// The far herds' heads laid out on the ground from the last `ecology` (crate::far_herds),
     /// and whether it is to be laid out again (a new snapshot, or heads whose ground wasn't loaded).
     far_heads: Vec<crate::far_herds::Head>,
+    /// The world's terrain for the far herds' ground past the loaded chunks (WORK_QUEUE item 46:
+    /// herds seen to ~2.5 km); set by the shell once the world maps are installed, never computed
+    /// here. None: such heads wait for the chunks.
+    pub far_terrain: Option<std::sync::Arc<dwell_worldgen::BifacialTerrain>>,
     /// Graphics → Far herds: the far ecology's herds drawn past the near creatures.
     pub far_herds_shown: bool,
     far_stale: bool,
@@ -1204,6 +1208,7 @@ impl<S: Scene> Game<S> {
             creatures_on: false,
             ecology: None,
             far_heads: Vec::new(),
+            far_terrain: None,
             far_herds_shown: true,
             far_stale: false,
             ecology_on: false,
@@ -3542,16 +3547,34 @@ impl<S: Scene> Game<S> {
                     && (f64::from(g.x) - local[0]).hypot(f64::from(g.z) - local[2]) < end + 32.0
             });
             let world = self.streamer.store_mut();
+            let terrain = self.far_terrain.as_deref();
             self.far_heads =
                 crate::far_herds::lay_out(&near, crate::far_herds::FAR_LOOKS, &mut |f, x, z| {
-                    crate::bodies::ground_at(world, f, [x, local[1], z], 48.0)
+                    // The loaded ground, else (past the loaded chunks) the generator's column.
+                    crate::bodies::ground_at(world, f, [x, local[1], z], 48.0).or_else(|| {
+                        let c = terrain?
+                            .local(f.face)
+                            .column_at(x.floor() as i32, z.floor() as i32);
+                        (!c.outside).then_some(f64::from(c.height))
+                    })
                 });
             self.far_stale = false;
         }
         if !self.far_herds_shown {
             return Vec::new();
         }
-        crate::far_herds::puffs(&self.far_heads, eye, false)
+        let vp = self.viewport();
+        let focal = crate::far_herds::focal_px(vp.height_px, self.frame_fov);
+        crate::far_herds::puffs(&self.far_heads, eye, false, focal)
+    }
+
+    /// The finder (WORK_QUEUE item 46; `__dwell.herds()`): the last snapshot's herds and packs on
+    /// the eye's face, of `species` (None: any), nearest first.
+    pub fn find_herds(&self, species: Option<&str>) -> Vec<crate::far_herds::Found> {
+        let Some(snapshot) = self.ecology.as_ref() else {
+            return Vec::new();
+        };
+        crate::far_herds::find(snapshot, self.current.feet(), species)
     }
 
     /// The steam plumes over the world's lava vents, every few seconds: over each vent column's

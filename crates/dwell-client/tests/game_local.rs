@@ -3464,6 +3464,42 @@ fn spawn_herd_puts_a_herd_and_a_pack_by_the_player() {
     );
 }
 
+/// The finder's `goToHerd` (WORK_QUEUE item 46; DEV_TOOLS.md): the local player is stood 40 m short
+/// of the nearest far herd on its face, on the ground, and the herd is the finder's nearest.
+// face-a-only: the generated world's face A spawn; the finder is face-local (far_herds tests run both).
+#[test]
+fn go_to_herd_stands_the_player_by_the_nearest_herd() {
+    let mut rig = Rig::new();
+    assert!(rig.run_until(60 * 30, |r| {
+        r.game
+            .as_ref()
+            .is_some_and(|g| g.debug_state().terrain_ready)
+            && r.core.server().ecology_message().is_some()
+    }));
+    let feet = rig.game.as_ref().unwrap().debug_state().feet;
+    let snapshot = rig.core.server().ecology_message().unwrap();
+    let nearest = dwell_client::far_herds::find(&snapshot, feet, Some("dwell:deer"))
+        .into_iter()
+        .next()
+        .expect("a deer herd on face A at the data's densities");
+    let r = rig.core.lava_dev("goToHerd", &[0.0, 40.0]);
+    assert!(
+        r.starts_with(&format!("{{\"id\":{},", nearest.id)),
+        "the nearest herd: {r} vs {nearest:?}"
+    );
+    rig.run_until(30, |_| false);
+    let server = rig.core.server();
+    let p = server.player_of_session(LOCAL_SESSION).unwrap();
+    let now = server.feet_of(p).unwrap();
+    assert_eq!(
+        dwell_world::FaceFrame::at_height(now[1]),
+        dwell_world::FaceFrame::A,
+        "on its face"
+    );
+    let d = (now[0] - nearest.x).hypot(now[2] - nearest.z);
+    assert!((d - 40.0).abs() < 3.0, "40 m short of the herd: {d}");
+}
+
 /// The duel through the game (WORK_QUEUE item 35): a player holding the sword swings at a villager
 /// that fights back. Its block rises in the player's wind-up, the player's level slash across its
 /// upright blade is blocked (a clash), and in the player's recovery it strikes back.

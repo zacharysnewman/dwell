@@ -520,6 +520,12 @@ impl LocalCore {
                     Err(e) => format!(r#"{{"error":{e:?}}}"#),
                 }
             }
+            ("goToHerd", [kind, back]) => {
+                // The finder (WORK_QUEUE item 46; DEV_TOOLS.md): the local player stood `back` m
+                // short of the nearest far herd (`kind` 0, deer) or pack (1, wolves; -1 either)
+                // on its face, on the generator's ground, so the group comes near.
+                self.go_to_herd(*kind, *back)
+            }
             ("spawnNpcs", [n, radius, variant]) => {
                 // Not lava: the local server's dev ops share this channel. `n` villagers in a
                 // ring `radius` m round the local player's feet (DEV_TOOLS.md).
@@ -544,6 +550,61 @@ impl LocalCore {
                 args.len()
             ),
         }
+    }
+
+    fn go_to_herd(&mut self, kind: f64, back: f64) -> String {
+        let Some(feet) = self
+            .server
+            .player_of_session(LOCAL_SESSION)
+            .and_then(|p| self.server.feet_of(p))
+        else {
+            return r#"{"error":"no local player"}"#.into();
+        };
+        let Some(snapshot) = self.server.ecology_message_from(Some(feet)) else {
+            return r#"{"error":"the ecology is not running"}"#.into();
+        };
+        let species = match kind {
+            k if k < 0.0 => None,
+            k if k >= 1.0 => Some("dwell:wolf"),
+            _ => Some("dwell:deer"),
+        };
+        let Some(h) = crate::far_herds::find(&snapshot, feet, species)
+            .into_iter()
+            .next()
+        else {
+            return "null".into();
+        };
+        let (version, seed) = {
+            let c = self.server.config();
+            (c.generator_version, c.world_seed)
+        };
+        let terrain = self
+            .map
+            .get_or_insert_with(|| dwell_worldgen::BifacialTerrain::for_generator(version, seed));
+        let Some(terrain) = terrain else {
+            return r#"{"error":"this world has no map (not the terrain generator)"}"#.into();
+        };
+        let f = dwell_world::FaceFrame::at_height(feet[1]);
+        let local = f.point(feet);
+        let (x, z) = crate::far_herds::approach((local[0], local[2]), (h.x, h.z), back.max(0.0));
+        let c = terrain
+            .local(f.face)
+            .column_at(x.floor() as i32, z.floor() as i32);
+        // Over the ground (and any water on it), a little up: the teleport stands it there.
+        let water = c.water != dwell_worldgen::terrain::Water::None;
+        let top = f64::from(if water {
+            c.height.max(c.level)
+        } else {
+            c.height
+        }) + 0.5;
+        let at = f.point([x, top, z]);
+        if !self.teleport_local_player(at) {
+            return r#"{"error":"could not move the player"}"#.into();
+        }
+        format!(
+            r#"{{"id":{},"species":{:?},"size":{:.1},"distance":{:.1},"at":[{:.1},{:.1},{:.1}]}}"#,
+            h.id, h.species, h.size, h.distance, at[0], at[1], at[2]
+        )
     }
 
     pub fn teleport_local_player(&mut self, feet: [f64; 3]) -> bool {
