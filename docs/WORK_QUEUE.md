@@ -725,6 +725,16 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    species/stage/variant, switched by view angle, lit by a baked normal), replacing the far tree meshes, and
    instancing for dense forests.
 
+31. **Far trees as multi-angle impostors** (owner 2026-11-12: "billboards (maybe from above billboards too,
+   possibly a few different angles so we can switch between them like old Mario kart did with carts, and some
+   trees too)" and "The farther distant thoughts on billboards are because our low LOD trees look pretty bad and
+   not very much like our closer trees, so it's a rough transition."). Far trees drawn as impostors baked from the
+   real tree models (each species, growth stage and seed variant; views around the tree and from above,
+   albedo + normal + depth so they're lit by the sun and fog like the real ones), switched or blended by view
+   angle, crossfaded with the near trees with no pop; replaces the LOD's blob trees (lod_trees.rs) and makes
+   dense forests cheap (one quad a tree, instanced). In progress (cloud): the bake (a CPU ray cast of the voxel
+   tree into an atlas) and the data; drawing them is local after.
+
 ## Done
 
 - **Axe swing directions and animation tools (owner 2026-11-11: "The axe animations are still trash.
