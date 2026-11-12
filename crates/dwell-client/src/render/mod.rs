@@ -2668,6 +2668,11 @@ impl Renderer {
         self.characters
             .set_model_detail(&self.device, &self.queue, level);
     }
+    /// Your first-person arms from the rigid parts instead of the player model (`?fparms=rigid`, a
+    /// dev switch; docs/CHARACTERS.md §11.10).
+    pub fn set_rigid_arms(&mut self, rigid: bool) {
+        self.characters.rigid_arms = rigid;
+    }
     /// The Light shafts setting (Off, Low, High; ADR 0064).
     pub fn set_shafts(&mut self, quality: ShaftQuality) {
         self.shafts = quality;
@@ -6312,10 +6317,7 @@ mod tests {
         padded[dwell_mesh::padded_index(2, 2, 2)] = stone;
         let view = dwell_protocol::damage::DamageView {
             fraction: 255,
-            marks: vec![dwell_protocol::damage::HitMark {
-                face: 2,
-                point: [128, 255, 128],
-            }],
+            marks: vec![dwell_protocol::damage::HitMark::at(2, [128, 255, 128])],
         };
         let m = dwell_mesh::mesh_chunk_damaged(
             &padded,

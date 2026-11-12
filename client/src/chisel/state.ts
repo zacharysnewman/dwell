@@ -305,7 +305,7 @@ export function validateEdit(e: Edit): string[] {
   if (dup) errors.push(`biome ${dup} is defined twice`);
   try {
     validateBiomeMap(e.biomeMap);
-    if (e.world !== undefined) validateWorldKnobs(e.world);
+    if (e.world !== undefined) validateWorldKnobs(e.world, terrain);
     if (e.geology !== undefined) validateRocks(e.geology, BLOCKS);
     if (e.vegetation !== undefined) {
       const rockNames = new Set((e.geology ?? BUILD_GEOLOGY).rocks.map((r) => r.name));

@@ -154,7 +154,7 @@ impl Server {
 
     /// The face terrains, once both faces' world maps are in the process (never computed on the
     /// tick); none for a world that isn't the terrain generator's.
-    fn grass_terrain(&mut self) -> Option<Arc<BifacialTerrain>> {
+    pub(super) fn grass_terrain(&mut self) -> Option<Arc<BifacialTerrain>> {
         if let Some(t) = self.grass_terrain.get() {
             return t.clone();
         }

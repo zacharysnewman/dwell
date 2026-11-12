@@ -2853,6 +2853,7 @@ impl Server {
                     let state = self.world.get_voxel_if_loaded(outcome.cell);
                     let block = dwell_blocks::block_of(state).name;
                     let held = held_break_item(s, uses_items);
+                    let chunk = dwell_protocol::damage::hit_chunk(held);
                     let need = if self.config.one_hit_breaks {
                         Some(1)
                     } else {
@@ -2877,9 +2878,14 @@ impl Server {
                             continue;
                         }
                         Some(n) if n > 1 => {
+                            // The piece it takes off: the tool's tier `chunk` (metal ×2; owner,
+                            // 2026-11-12: "break double sized bigger chunks off").
                             let mark = dwell_protocol::damage::HitMark {
-                                face: edit.face,
-                                point: edit.point.unwrap_or([128; 3]),
+                                chunk,
+                                ..dwell_protocol::damage::HitMark::at(
+                                    edit.face,
+                                    edit.point.unwrap_or([128; 3]),
+                                )
                             };
                             let k = u32::from(self.damage.hit(
                                 outcome.cell,
@@ -5202,6 +5208,9 @@ impl Server {
             return;
         };
         s.damage_hello = true;
+        let chunks = s
+            .capabilities
+            .has(dwell_protocol::capability_names::DAMAGE_CHUNKS);
         let all: Vec<_> = self
             .damage
             .sorted()
@@ -5212,6 +5221,7 @@ impl Server {
             let m = Message::Damage(dwell_protocol::DamageMessage {
                 cells: part.to_vec(),
                 gone: Vec::new(),
+                chunks,
             });
             self.send_reliable(id, &m, Channel::World);
         }
@@ -5226,25 +5236,38 @@ impl Server {
         if cells.is_empty() && gone.is_empty() {
             return;
         }
-        let to: Vec<SessionId> = self
+        // Each with whether it takes the marks' chunks (`damage.chunks`).
+        let to: Vec<(SessionId, bool)> = self
             .sessions
             .iter()
             .filter(|(_, s)| s.damage_hello)
-            .map(|(&id, _)| id)
+            .map(|(&id, s)| {
+                let chunks = s
+                    .capabilities
+                    .has(dwell_protocol::capability_names::DAMAGE_CHUNKS);
+                (id, chunks)
+            })
             .collect();
         for part in cells.chunks(dwell_protocol::MAX_DAMAGE_PER_MESSAGE.max(1)) {
-            let m = Message::Damage(dwell_protocol::DamageMessage {
-                cells: part.to_vec(),
-                gone: Vec::new(),
-            });
-            for &id in &to {
-                self.send_reliable(id, &m, Channel::World);
+            for chunks in [false, true] {
+                let m = Message::Damage(dwell_protocol::DamageMessage {
+                    cells: part.to_vec(),
+                    gone: Vec::new(),
+                    chunks,
+                });
+                for &(id, c) in &to {
+                    if c == chunks {
+                        self.send_reliable(id, &m, Channel::World);
+                    }
+                }
             }
         }
+        let to: Vec<SessionId> = to.into_iter().map(|(id, _)| id).collect();
         for part in gone.chunks(dwell_protocol::MAX_DAMAGE_PER_MESSAGE) {
             let m = Message::Damage(dwell_protocol::DamageMessage {
                 cells: Vec::new(),
                 gone: part.to_vec(),
+                chunks: false,
             });
             for &id in &to {
                 self.send_reliable(id, &m, Channel::World);

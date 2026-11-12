@@ -3,7 +3,8 @@
 //! rain in mm, read from R3's climate, its rain marched again over the eroded map). For seed fixtures on
 //! both faces: no dry biome on the windward side of the main range or anywhere the rain is a wet coast's;
 //! above the tree line no forest and the tundra in its place; a colder band has more boreal and tundra
-//! and less of the warm biomes on the same ground. The starter keeps its 0..1 tuning
+//! and less of the warm biomes on the same ground; the climates R4 left to the default (§7 q9) take the
+//! cold desert and the tropical rainforest. The starter keeps its 0..1 tuning
 //! (`tests/starter_world.rs`), the default world its goldens (`tests/golden.rs`).
 
 use dwell_world::*;
@@ -19,20 +20,23 @@ const NAME: &str = "test:realistic";
 const SEEDS: [u64; 3] = [1, 7, 42];
 
 /// The dry biomes: none where the rain is a wet coast's.
-const DRY: [&str; 3] = [
+const DRY: [&str; 4] = [
     "preset:sand_desert",
+    "preset:cold_desert",
     "preset:badlands",
     "preset:red_rock_mesa",
 ];
 /// The forests: none above the tree line.
-const FORESTS: [&str; 3] = [
+const FORESTS: [&str; 4] = [
     "preset:boreal",
     "preset:mixed_forest",
     "preset:cold_rainforest",
+    "preset:tropical_rainforest",
 ];
 const COLD: [&str; 3] = ["preset:boreal", "preset:alpine_tundra", "preset:snowfield"];
-const WARM: [&str; 5] = [
+const WARM: [&str; 6] = [
     "preset:sand_desert",
+    "preset:tropical_rainforest",
     "preset:savanna",
     "preset:tropical_beach",
     "preset:badlands",
@@ -345,5 +349,79 @@ dwell_world::both_faces!(
             }
         }
         assert!(wet > 0 && dry > 0, "{wet} wet and {dry} dry cells");
+    }
+);
+
+/// The first world seed whose face draws the `band` (cheap: the climate only, no map).
+fn seed_in_band(f: FaceFrame, band: &str) -> u64 {
+    (1..500)
+        .find(|&w| Climate::for_seed(face_seed(w, f.face)).band().name == band)
+        .unwrap_or_else(|| panic!("{:?}: a seed in the {band} band", f.face))
+}
+
+dwell_world::both_faces!(
+    /// §7 q9 (owner, 2026-11-12: "Yes add those biomes"): the climates no preset covered at R4, where
+    /// the default biome was the fallback, take the new presets: the cold, nearly rainless interior
+    /// the cold desert, the hot, very wet tropics the tropical rainforest. On the same maps with the
+    /// two left out, the default is chosen there; with them, they are; and the default's share of
+    /// the land falls to under a quarter of what it was.
+    fn the_former_fallback_climates_take_the_new_presets(f: FaceFrame) {
+        let e = edit();
+        let without: Vec<Biome> = e
+            .biomes
+            .iter()
+            .filter(|b| b.name != "preset:cold_desert" && b.name != "preset:tropical_rainforest")
+            .copied()
+            .collect();
+        assert_eq!(without.len() + 2, e.biomes.len());
+        let (cold, wet) = (
+            index(&e.biomes, "preset:cold_desert"),
+            index(&e.biomes, "preset:tropical_rainforest"),
+        );
+        // (cells, of them the default chose without the two, the new preset chose with them).
+        let (mut dry, mut hot) = ([0u32; 3], [0u32; 3]);
+        let (mut was, mut is) = (0u32, 0u32);
+        for world in [42, seed_in_band(f, "subtropical")] {
+            let m = map(&e, world, f);
+            let field = BiomeField::with_params(&m, face_seed(world, f.face), e.map);
+            for &(x, z, h) in &land(&m, 3) {
+                let g = field.geography(x, z, h);
+                let rain = g.rain.unwrap();
+                let before = field.mix(&without, x, z, h).chosen;
+                let after = usize::from(field.mix(&e.biomes, x, z, h).chosen);
+                was += u32::from(before == 0);
+                is += u32::from(after == 0);
+                let tally = if (-0.5..=12.5).contains(&g.celsius) && rain < 150.0 {
+                    Some((&mut dry, cold))
+                } else if g.celsius >= 18.0 && rain >= 2500.0 {
+                    Some((&mut hot, wet))
+                } else {
+                    None
+                };
+                if let Some((t, want)) = tally {
+                    t[0] += 1;
+                    t[1] += u32::from(before == 0);
+                    t[2] += u32::from(after == want);
+                }
+            }
+        }
+        for (name, t) in [("cold desert", dry), ("tropical rainforest", hot)] {
+            assert!(t[0] >= 20, "{:?}: {name} climate cells {t:?}", f.face);
+            assert!(
+                f64::from(t[1]) >= 0.8 * f64::from(t[0]),
+                "{:?}: the default was the fallback in the {name}'s climate {t:?}",
+                f.face
+            );
+            assert!(
+                f64::from(t[2]) >= 0.95 * f64::from(t[0]),
+                "{:?}: the {name} takes its climate {t:?}",
+                f.face
+            );
+        }
+        assert!(
+            4 * is < was,
+            "{:?}: the default's land {was} -> {is}",
+            f.face
+        );
     }
 );

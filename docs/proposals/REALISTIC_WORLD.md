@@ -421,7 +421,7 @@ R1–R5 are logic-only and suit cloud sessions (docs/CLOUD_SESSIONS.md); R6's br
 
 ## 7. Questions for the owner
 
-Open: q9 (waiting on the owner), and §8.10's orbit questions. q2 moved to §8 (orbits by seed). Answered: q1 (by default), q3, q4, q5, q6, q7, q8.
+Open: §8.10's orbit questions. q2 moved to §8 (orbits by seed). Answered: q1 (by default), q3, q4, q5, q6, q7, q8, q9 (built 2026-11-12).
 
 1. **Plate count and size for the first region:** 3–5 plates with one or two boundaries crossing the
    island, or more, smaller plates?
@@ -460,9 +460,28 @@ Open: q9 (waiting on the owner), and §8.10's orbit questions. q2 moved to §8 (
 9. **Climates no preset covers (R4):** in the Realistic world the default biome takes the cool, nearly
    rainless interior (a cold desert) and the very wet tropics (a tropical rainforest). Add presets for
    them, or keep the fallback there? **Answered (owner, 2026-11-12): "Yes add those biomes"** (after asking "how
-does the default biome fill them?" (explained:
-   the default is plain temperate grassland with generic trees and rocks, so a cold dry interior and a wet
-   tropical coast would both look like ordinary meadow); waiting on the answer.
+   does the default biome fill them?"; explained: the default is plain temperate grassland with generic trees
+   and rocks, so a cold dry interior and a wet tropical coast would both look like ordinary meadow).
+   **Built (2026-11-12):** two presets by data, in `realistic.json`'s list (the starter lists its own presets
+   and the default world none, so both are unchanged: goldens and the starter's pins pass). `preset:cold_desert`
+   (`where` −1.5…14 °C, blend 1, under 220 mm, blend 60): bare dry dirt over sand (sand where the soil is
+   sandy, `soilBlocks`), sparse dry grass (a new `dry_grass` decoration, tall grass on dirt at 0.12), loose
+   rocks and boulders, no trees, its own snow line at −1 °C. `preset:tropical_rainforest` (`where` ≥ 16 °C,
+   blend 2, ≥ 2200 mm, blend 250): grass over dirt with dirt banks, tall grass and thick sticks (undergrowth
+   1), dark water, and a new `rainforest_groves` placement (a 5 m grid, no spacing, density 0.85, groves
+   covering 0.8) of a new tree species, `dwell:tall_broadleaf` (`shared/trees`: a 10–16 m trunk, its crown high,
+   no sapling, so no new block), with oaks and palms. No new blocks (no gravel or dry dirt block exists: dirt
+   and sand stand in). Shares on the land (chosen biome, every 300 m): the default fell from 21 % to 3 % on seed
+   1 A (subtropical; the rainforest 16 %, the cold desert 3 % on the dry heights) and from 26–47 % to under 3 %
+   on the temperate faces of seeds 1, 3, 5 and 42 (the cold desert 25–45 % of their dry interiors); subarctic
+   seeds 7 and 11 keep their tundra (the cold desert ≤ 4 % on the dry lowlands above −2.5 °C).
+   `tests/realistic_biomes.rs` `the_former_fallback_climates_take_the_new_presets` on both faces (seed 42 and
+   each face's first subtropical seed): where the default was chosen without the two (≥ 80 % of the cells at
+   −0.5…12.5 °C under 150 mm, or ≥ 18 °C over 2500 mm) they now take ≥ 95 %, and the default's land share
+   falls below a quarter of what it was. A fix on the way: a column with no biome (a rock province's palette, or
+   a world of one biome) tried every decoration, so `dry_grass` alone changed the starter's pin (red); such a
+   column now takes only the decorations some biome of the world lists (`terrain.rs`), and the starter's pin and
+   the default's goldens are unchanged again (green). Prototype content.
 
 ## 8. Orbits by seed: the sky sets the climate band
 

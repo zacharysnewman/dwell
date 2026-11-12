@@ -23,6 +23,22 @@ test('a fixture creature is added by data alone', () => {
   assert.equal(v.creatures[0].name, 'test:walker');
 });
 
+test('a fixture NPC is added by data alone', () => {
+  const d = JSON.parse(readFileSync(join(here, 'fixtures/npcs.json'), 'utf8'));
+  const v = validateCreatures(d, blocks, models);
+  assert.equal(v.creatures[0].npc.held, 'dwell:stone_axe');
+  assert.equal(v.rules[0].spacing, 20);
+});
+
+test('the villager is the Peasant, its colours palette ramps (WORK_QUEUE item 38)', () => {
+  const v = validateCreatures(data(), blocks, models).creatures.find((c) => c.name === 'dwell:villager');
+  assert.equal(v.model, 'peasant');
+  assert.deepEqual(
+    v.npc.colours.map((c) => c.part),
+    ['shirt', 'trousers', 'skin', 'hair'],
+  );
+});
+
 test('bad entries fail with a message naming them', () => {
   const bad = (edit, re) => {
     const d = data();
@@ -37,6 +53,16 @@ test('bad entries fail with a message naming them', () => {
   bad((d) => (d.creatures[0].walkSpeed = 0), /walkSpeed/);
   bad((d) => (d.limits.max = 0), /limits\.max/);
   bad((d) => (d.creatures[0].wings = 2), /unknown field wings/);
+  const npc = (d) => d.creatures.find((c) => c.npc).npc;
+  bad((d) => (npc(d).idles[0].pose = 'dance'), /idles\[0\]: pose "dance" is not one of stand, look, sit/);
+  bad((d) => (npc(d).colours[0].to = ['neon']), /colours\[0\]\.to\[0\]: "neon" is not a palette ramp/);
+  bad((d) => (npc(d).colours[1].from = npc(d).colours[0].from), /is another part's/);
+  bad((d) => (npc(d).held = 'dwell:laser'), /held "dwell:laser" is not an item/);
+  bad((d) => (npc(d).disposition = 'grumpy'), /disposition "grumpy"/);
+  bad((d) => (npc(d).combat = 'flee'), /combat "flee"/);
+  bad((d) => (npc(d).lookAtM = -1), /lookAtM/);
+  bad((d) => (d.rules[2].biomes = ['preset:moon']), /rules\[2\]\.biomes\[0\]: "preset:moon" is not a biome/);
+  bad((d) => (d.rules[2].spacingM = -3), /rules\[2\]: spacingM/);
 });
 
 // WORK_QUEUE item 35: a creature's body to a weapon (health, hit radius, drops) is data.

@@ -164,13 +164,11 @@ mod tests {
                 cell,
                 DamageView {
                     fraction,
-                    marks: points
-                        .iter()
-                        .map(|&point| HitMark { face: 3, point })
-                        .collect(),
+                    marks: points.iter().map(|&point| HitMark::at(3, point)).collect(),
                 },
             )],
             gone: Vec::new(),
+            chunks: false,
         }
     }
 
@@ -187,16 +185,7 @@ mod tests {
         );
         // Another player's hit: once, at the newest mark.
         let hits = h.on_damage(&update(c, 102, &[[1, 255, 1], [200, 255, 9]]), 3000.0);
-        assert_eq!(
-            hits,
-            [(
-                c,
-                HitMark {
-                    face: 3,
-                    point: [200, 255, 9]
-                }
-            )]
-        );
+        assert_eq!(hits, [(c, HitMark::at(3, [200, 255, 9]))]);
         // The same view again (a resend) is no hit.
         assert!(
             h.on_damage(&update(c, 102, &[[1, 255, 1], [200, 255, 9]]), 3100.0)
@@ -226,6 +215,7 @@ mod tests {
             &DamageMessage {
                 cells: Vec::new(),
                 gone: vec![d],
+                chunks: false,
             },
             9000.0,
         );

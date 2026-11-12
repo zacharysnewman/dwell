@@ -368,7 +368,8 @@ There are **no official game servers**; players host (ADR 0003, details in §10)
                      Character Lab page, docs/prototypes/character-lab.html, and the Rust tables
                      for dwell-characters), fixtures/ (test-only parts), gen.test.mjs
                      (CHARACTERS.md, ADR 0041).
-/shared/creatures    creatures.json (the animals: model, speeds, wandering, health, hit radius and drops, spawn rules with a group mix, limits; ADR 0073),
+/shared/creatures    creatures.json (the animals and NPCs: model, speeds, wandering, an NPC's idles, look-at, sidestep,
+                     colours, held item; health, hit radius and drops; spawn rules with a group mix, spacing, biomes, limits; ADR 0073),
                      gen.mjs → dwell-sim creatures.gen.rs, a fixture creature
 /shared/ecology      ecology.json (the far ecology: island grid, forage grounds, species' group,
                      breeding, hunger, diet, flee and disperse rules; §5.4) + gen.mjs →
@@ -3263,7 +3264,20 @@ walkable ground (`KNOCK_SPEED_MPS`) and sets its `hurt_from` for the near ecolog
 items; the weapon wears once a creature struck. The client's sweep treats a wood as a bounce for a
 weapon. Not yet: a clash's sound, sparks and recoil on the clients (no message carries the outcome),
 a player's block input and raised pose (players can't be struck yet), slash clips of its own
-(CHARACTERS.md §5), NPC sword fighters (WORK_QUEUE item 38, by the defender API).
+(CHARACTERS.md §5), NPCs raising their blocks and swinging on their own (by the defender API). An NPC whose `npc.held` is a weapon holds it as its guard (its stance, lowered) from its spawn, and a strike on an NPC also calls its `fightBack` hook (`Creatures::attacked`); the villager has health (`health` 40, no drops).
+
+**NPCs [in progress: data, server and client logic built; the colours and held item in the renderer to
+follow]** (WORK_QUEUE item 38, CHARACTERS.md §11.11). Wandering people are creatures with an `npc` block
+in `creatures.json` (the villager: the Peasant model): idles picked by weight from a fixed vocabulary of
+poses (stand, look around, sit) for their `seconds`; turning (`turnDegPerS`) to face the nearest player
+within `lookAtM` while idling; stepping `sidestepM` away from a player or another NPC within `bumpM`;
+a held item, a disposition (`neutral`) and a combat hook (`fightBack`: `Creatures::attacked` stops it and
+turns it on its attacker; the sword stances come with WORK_QUEUE item 35); per part colours (the
+model's palette ramp `from`, the ramps `to`) picked from a seeded `variant` per NPC
+(`creatures::npc_colours`, deterministic). A rule's `spacingM` keeps groups apart and `biomes` limits it
+to columns whose biome (the face terrain's `biome_mix`) is listed. Simulated with the animals
+(`Creatures::step_near`, given the players), near players only; validated by `gen.mjs` (poses, palette
+ramps, items, biome names); a fixture NPC (`fixtures/npcs.json`) proves a kind by data alone.
 
 **Ground items [built, 0.50.68]** (ADR 0071). Sticks under the trees and rocks at the cliffs' feet
 (and rarely on open grass) are scattered over each chunk as it loads, not saved terrain and not a
@@ -4348,7 +4362,9 @@ keeps creatures in `Inventory`'s flags (4 = `CREATURES`; older clients ignore th
 C→S  CreaturesHello  0x5f, control: no body (send me Creatures)
 S→C  Creatures       0x5e, world: u16 n (at most 512), each u32 id, str model (≤ 64), f32×3 feet,
                      f32 yaw (deg), f32 speed (m/s); then u16 n, each u32 id gone. All of them
-                     every 6 ticks, and at a spawn
+                     every 6 ticks, and at a spawn; to a `creatures.npcs` client then u16 n, each
+                     u32 id, str kind (≤ 64), u8 pose (0 stand, 1 look, 2 sit), u32 variant: the
+                     NPCs among the message's creatures
 ```
 
 **Ground items: `InventoryAction` 3 and 4, `GroundGone` (reliable) [built, 0.50.68]** (ADR 0071).
@@ -4464,7 +4480,13 @@ structure's placement as `RegionEdit`'s `Structure` op, below). The second is `g
 the grid's space), and `ChunkData`/`ChunkUnload` end with their grid's byte when not home (a trailing
 0 is malformed). The server lists it; this build's client doesn't say it yet
 (`capabilities::CLIENT_PENDING`: its predictor and renderer don't follow another grid), so a player
-off home is sent its world position, as an older client is.
+off home is sent its world position, as an older client is. The third is `damage.chunks`
+(BLOCK_DAMAGE.md §9): `Damage` ends with `0xC4` and each cell's hit marks' chunks (a byte a mark, the
+piece's size in sixteenths of the block's mark; a metal tool's 32), only to a client that listed it;
+without it every mark is ×1.
+The fourth is `creatures.npcs` (WORK_QUEUE
+item 38): `Creatures` ends with its NPCs' part (above); an older client gets the message without it and
+draws an NPC as its model's plain creature.
 ```
 S→C  WorldSettings field 0x85 (optional): u8 count (≤ 64), each str name (≤ 48 bytes, no repeat)
 C→S  Capabilities 0x69, control: the same form — the client's capabilities, once after Welcome,

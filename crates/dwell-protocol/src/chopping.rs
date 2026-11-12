@@ -517,6 +517,9 @@ pub struct BreakTool {
     pub tier: &'static str,
     /// The tier's break speed, a multiple of the bare hand's.
     pub speed: f64,
+    /// How big a piece each hit takes off (×; the tier's `chunk`, 1 for stone, 2 for metal): the
+    /// hit mark's size and depth in the carve (`HitMark::chunk`).
+    pub chunk: f64,
     /// When its swing's head meets the block (s after the click; `contactS`, 0: at once): a hit
     /// with it lands then (WORK_QUEUE item 25).
     pub contact_s: f64,
@@ -1112,6 +1115,7 @@ mod tests {
             class: "trowel",
             tier: "bronze",
             speed: 2.0,
+            chunk: 1.0,
             contact_s: 0.4,
         }];
         assert_eq!(
@@ -1133,6 +1137,7 @@ mod tests {
             class: "trowel",
             tier: "bronze",
             speed: 2.0,
+            chunk: 1.0,
             contact_s: 0.4,
         }];
         assert_eq!(break_contact_s_in(&tools, Some("test:trowel")), 0.4);

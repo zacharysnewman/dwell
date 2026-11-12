@@ -3,7 +3,7 @@
 use crate::species::{Branches, Crown, Sapling, Species};
 
 /// The tree species (shared/trees), by file name.
-pub static SPECIES: [Species; 5] = [
+pub static SPECIES: [Species; 6] = [
     Species {
         name: "dwell:oak",
         log: "dwell:log",
@@ -108,6 +108,27 @@ pub static SPECIES: [Species; 5] = [
         wild: &[0, 1, 1, 1, 2, 3, 5, 12],
         variants: 16,
         sapling: Some(Sapling { item: "dwell:pine_sapling", plant_on: &["dwell:grass", "dwell:dirt", "dwell:snowy_grass"], drop_chance: 0.05 }),
+    },
+    Species {
+        name: "dwell:tall_broadleaf",
+        log: "dwell:log",
+        leaf: "dwell:leaves",
+        sapling_height: 1.0,
+        mature_height: (10.0, 16.0),
+        height_step: 0.5,
+        width: (0.25, 1.0, 0.25),
+        lean: (0.0, 0.0),
+        branches: Branches::Heavy { count: (3.0, 5.0), from: (0.75, 0.95), reach: (2.6, 3.8), rise: (0.6, 1.2), emerge_at: 0.4 },
+        crown: Crown::Lumpy { centre: 1.0, radius: [3.2, 1.8, 3.2], lump_radius: (1.4, 2.0), lump_height: (0.9, 1.3), roughness: 0.3 },
+        crown_scale: (0.3, 1.0),
+        crown_variety: (0.85, 1.2),
+        lightness: (0.6, 0.95),
+        hue: (-0.04, 0.03),
+        stages: 8,
+        days_per_stage: 3.0,
+        wild: &[0, 1, 1, 1, 2, 3, 5, 12],
+        variants: 16,
+        sapling: None,
     },
 ];
 

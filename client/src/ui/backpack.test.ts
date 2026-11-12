@@ -105,10 +105,12 @@ describe('combine and wear (owner, 2026-11-11)', () => {
     ).toBe('2 Stick');
   });
 
-  it("draws the stone axe's wear bar from its data (32 hits); unworn or unlimited tools have none", () => {
+  it("draws a tool's wear bar from its data (stone axe 32, metal 64); unlimited tools have none", () => {
     expect(wearLeft('dwell:stone_axe', 0)).toBeNull();
     expect(wearLeft('dwell:stone_axe', 8)).toBe(0.75);
     expect(wearLeft('dwell:stone_axe', 31)).toBeCloseTo(1 / 32);
-    expect(wearLeft('dwell:metal_axe', 8)).toBeNull();
+    // Owner, 2026-11-12: metal tools "have double durability".
+    expect(wearLeft('dwell:metal_axe', 8)).toBe(0.875);
+    expect(wearLeft('dwell:rock', 8)).toBeNull();
   });
 });

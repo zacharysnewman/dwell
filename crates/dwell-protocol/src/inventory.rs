@@ -696,7 +696,8 @@ mod tests {
     fn the_stone_axe_wears_by_one_a_hit_and_breaks_after_its_32nd() {
         let hits = |item: &str| crate::chopping::durability(item);
         assert_eq!(hits("dwell:stone_axe"), Some(32));
-        assert_eq!(hits("dwell:metal_axe"), None, "unlimited");
+        // Owner, 2026-11-12: metal tools "have double durability".
+        assert_eq!(hits("dwell:metal_axe"), Some(64), "double the stone axe's");
         let mut inv = Inventory::starting();
         assert_eq!(inv.slots[0].as_ref().unwrap().item, "dwell:stone_axe");
         for n in 1..32 {
@@ -708,13 +709,14 @@ mod tests {
         assert!(before.tool_broke(&inv, hits), "the client's break sound");
         assert_eq!(inv.wear_held(hits), Wear::None, "nothing held");
         // An item that doesn't wear.
-        inv.add("dwell:metal_axe", 1);
+        inv.add("dwell:rock", 1);
         assert_eq!(inv.wear_held(hits), Wear::None);
     }
 
     #[test]
     fn the_stone_pickaxe_and_the_wooden_shovel_wear_like_the_stone_axe() {
-        // Owner, 2026-11-11: "stone pick wears too like axe, same with shovel"; metal tools don't.
+        // Owner, 2026-11-11: "stone pick wears too like axe, same with shovel"; 2026-11-12: metal
+        // tools "have double durability".
         let hits = |item: &str| crate::chopping::durability(item);
         for item in ["dwell:stone_pickaxe", "dwell:wooden_shovel"] {
             assert_eq!(hits(item), Some(32), "{item}");
@@ -728,8 +730,12 @@ mod tests {
             assert_eq!(inv.wear_held(hits), Wear::Broke, "{item}");
             assert!(inv.slots[0].is_none(), "{item}: gone");
         }
-        for item in ["dwell:metal_pickaxe", "dwell:metal_shovel"] {
-            assert_eq!(hits(item), None, "{item}: unlimited");
+        for item in [
+            "dwell:metal_axe",
+            "dwell:metal_pickaxe",
+            "dwell:metal_shovel",
+        ] {
+            assert_eq!(hits(item), Some(64), "{item}: double");
         }
     }
 

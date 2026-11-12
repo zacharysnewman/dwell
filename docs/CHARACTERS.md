@@ -198,9 +198,11 @@ deer's tail hung 7 cm behind the rump.
 
 ## 5. The first-person arms
 
-The arms are a **separate view** of the same character, as first-person games do it:
+The arms are a **separate view** of the same character, as first-person games do it. Since 0.54 the
+arm drawn is the **Peasant's** (the player model others see, §11.10), posed from this view's clips
+and chain; the rigid parts below are drawn only with the dev switch `?fparms=rigid`.
 
-- **The same parts.** The arms view draws the parts on the `firstPerson.bones` chain (and the
+- **The same parts** (the rigid arms). The arms view draws the parts on the `firstPerson.bones` chain (and the
   accessories and held item on them) from the same composed model as the full body, with the same
   materials and shading. Nothing is duplicated, so the arms match the body exactly; parts marked
   `"view": "arms"` add close-up detail (knuckles) the body doesn't need, and `"view": "body"` parts
@@ -665,9 +667,8 @@ characters' ramp from the vertex's palette colour, the same lights and shadow ma
   light rides the same frame. A model with no `hand` (the animals) holds nothing.
 - **Your shadow** (the `cast_only` body) is the Peasant, into the nearest cascade only, with your
   held item in its hand: your shadow is what others see.
-- **Still rigid**: your **first-person arms** and your **own body** seen in first person (§5.1). The
-  Peasant's arms are part of its one body mesh, with no arms mesh or first-person clips; drawing them
-  at the eye needs its own view and clips (later).
+- **Still rigid**: your **own body** seen in first person (§5.1). Your first-person arms are the
+  Peasant's since 0.54 (§11.10).
 
 ### 11.6 The animals in the world (phase 3, ADR 0073)
 
@@ -691,6 +692,8 @@ characters' ramp from the vertex's palette colour, the same lights and shadow ma
   instead of a colour a face: the wolf's grey saddle, fawn flanks, cream belly and legs, pale muzzle
   and dark tail tip, faces still flat-shaded. Colours are palette references mixed in sRGB, so a
   coat holds blends between palette stops.
+
+- **NPCs** (WORK_QUEUE item 38, §11.11): people drawn as the Peasant who wander among the animals.
 
 ### 11.7 What is left (next)
 
@@ -746,6 +749,66 @@ animator play (§6), not the Peasant's own idle and walk.
   the height (arms overhead in the swim: the Peasant's shoulders are lower); in the world, on both
   faces, the skinned hand (where a held item is drawn) is within 0.15 m and 5.2° of the rigid body's
   hand bone.
-- **Not yet**: the first-person arms still play their own view-space clips (`fp_*`), so the arms on
-  screen and the shadow's arms differ by design; the Peasant's proportions differ from the rig's
+- **Not yet**: the first-person arms play their own view-space clips (`fp_*`, now on the Peasant's
+  arm, §11.10), so the arms on screen and the shadow's arms differ by design; the Peasant's proportions differ from the rig's
   (shorter arms, lower shoulders), so a shadow's hand sits up to ~0.15 m from the rigid body's.
+
+### 11.10 Your first-person arms from the Peasant (0.54, WORK_QUEUE item 37)
+
+The owner (2026-11-12): "I thought we were going to swap out the AI generated first person character
+model?" Your arm on screen is the Peasant's own right arm, the same sleeve, cuff and hand others see.
+
+- **Data**: a model's `firstPerson` in `models.json`: `joints` (the arm's skin joints: the Peasant's
+  `upper_arm.R`, `forearm.R`, `hand.R` and its fingers and thumb) and `weight` (0.5). The generator
+  fails on an unknown or repeated joint, a weight outside (0, 1] or a model with no `retarget`.
+- **The mesh** (`dwell_models::first_person::arm_triangles`, at load and on a detail change): the
+  triangles of the one body mesh whose three vertices each have at least `weight` of their skin
+  weight on `joints`, a second index buffer over the body's own vertices (the cut is where the
+  shoulder's weights take over). No new vertices: the arm is the body's.
+- **The pose** (`first_person::pose`, every frame): the first-person clips' pose (`fp_*`, with the
+  held item's turns), its `firstPerson.bones` chain in view space (`arm_transforms`, the anchor, the
+  walk bob) turned onto the arm's joints by the model's `retarget` map (§11.9; only the chain's
+  bones: the rest of the body keeps its rest). The arm's shoulder joint is put on the chain's first
+  bone and the arm scaled so its rest reach (shoulder to hand) is the rig's, so the hand lands where
+  the clips were fitted (`clip_probe` stays the source of truth): over every first-person clip the
+  Peasant's `hand.R` is within 6 cm of the rigid hand bone (`the_skinned_hand_follows_the_rigid_arms_hand_through_the_swings`).
+- **Drawing**: the skinned pipeline in the arms pass (its frame group, the cleared depth), the
+  joints through `arms_frame`; the held item on the Peasant's hand by `models.json` `hand`, as on
+  another player's body (§11.5). `?fparms=rigid` (`setRigidArms`) draws the old rigid arms instead,
+  a dev switch for comparison; the rigid arms' parts stay in `characters.json` for it and for your
+  own body (§5.1).
+
+### 11.11 Wandering NPCs (WORK_QUEUE item 38, 2026-11-12)
+
+The owner (2026-11-12): "wandering NPCs. They'll use the same player character model." Answers: wander,
+idle (look around, sit), turn to look at a nearby player, step aside when bumped — no talking or trading
+yet; a few near players by a data rule (count, spacing, biomes), simulated only nearby, like the
+animals; colour variations of the Peasant per NPC by palette remaps, seeded, as data. Later the same day:
+"Wandering NPCs will get swords" (item 35's swordplay): a held item slot by data, a disposition (neutral
+by default) and a combat hook; the combat AI waits for the sword mechanic.
+
+- **Data**: an NPC is a creature in `shared/creatures/creatures.json` with an `npc` block (the villager,
+  model `peasant`): `idles` (`pose` from the fixed vocabulary `stand`, `look`, `sit`; `weight`;
+  `seconds`), `lookAtM` and `turnDegPerS`, `bumpM` and `sidestepM`, `held` (an item of
+  `shared/items/items.json`, none for the villager until the sword is an item), `disposition`
+  (`neutral`), `combat` (`none` or `fightBack`) and `colours`: per part (`shirt`, `trousers`, `skin`,
+  `hair`) the palette ramp the Peasant's mesh has (`from`: `wool_green`, `flint`, `skin_fair`,
+  `hair_brown`) and the ramps one is picked from (`to`). The spawn rule is a creature rule with
+  `spacingM` (no group within that of another of its kind) and `biomes` (biome names). `gen.mjs`
+  validates the poses, ramps, items and biomes; `fixtures/npcs.json`'s `test:person` is a kind added by
+  data alone. Which ramp of the Peasant's mesh is which part is a first guess from its colours (the
+  ramps by vertex count: `hair_brown` 942, `skin_fair` 908, `wool_green` 564, `skin_brown` 501,
+  `flint` 440): prototype data to tune by eye.
+- **Server** (`dwell_sim::creatures`): idle in a pose picked by weight; while idle, turn toward the
+  nearest player within `lookAtM`, else (looking around) sweep ±60° over 4 s; a player or another NPC
+  within `bumpM` sends it `sidestepM` away (to its side when right on top); `Creatures::attacked` turns
+  a `fightBack` NPC on its attacker for 10 s. Each NPC's `variant` is seeded from the world seed and
+  its spawn cell; `npc_colours(def, variant)` picks one `to` per part, deterministically.
+- **Wire**: `Creatures` as before, plus, for a client with the `creatures.npcs` capability, its NPCs'
+  part (id, kind, pose, variant; ARCHITECTURE.md §8). Older clients draw a plain Peasant.
+- **Client** (`dwell-client` `creatures.rs`): `CreatureView::npc` holds the NPC's colours (from its
+  kind's data and variant) and held item; its role is its speed's while moving, else `look` or `sit`
+  (the Peasant has neither clip yet, so they play its fallback, idle).
+- **Not yet** (follows locally): the renderer applying the colour remap per body and drawing the held
+  item on `hand.R`, sit and look clips, and the combat behaviour with the swords (item 35).
+
