@@ -6,6 +6,15 @@ pins it.
 
 ## Open
 
+### 90. Volumetric clouds look badly dithered and pixelated where they overlap, mostly at cloud level
+
+Owner, 2026-11-12: "The clouds also look really badly dithered when they overlap? I think mostly when you get to their
+level? Looks very pixelated." Suspects: the volume pass runs at ½ or ¼ resolution with a per-frame jitter and temporal
+accumulation; near or inside the layer the reprojection fails (the camera moves through the volume, depths change
+fast), so the history is rejected and the raw jittered low-res result shows, then a plain upsample makes it blocky.
+Fixes to weigh: blue-noise jitter, a depth-aware (bilateral) upsample, neighbourhood clamping instead of history
+rejection, more steps or full resolution when the eye is in or near the layer.
+
 ### 89. Sub-60 fps flying at High on the owner's M1 MacBook Air (measured; partial)
 
 Reported 2026-11-12 (owner): "Im seeing on this m1 Mac that im getting sub-60FPS when flying on High. Im wondering
