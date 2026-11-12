@@ -307,6 +307,9 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    flat `code` varying) is removed; dwell-look's tier bit 11 (`relief_parallax`) and dwell-mesh's
    `relief::pack`/`unpack` are now unread, left for a cleanup. By design the carve fades to 0 at the cell's
    edge (watertight), so it never shows in a block's silhouette. Left: the owner's review.
+   Owner, 2026-11-12: **"Perhaps we also show a 'cracking' texture around the block too as you do more
+   damage."** In progress (cloud): a painterly crack overlay over the damaged block's faces, spreading from the
+   hits and growing with the damage fraction, per material as data; it adds to the carve, not instead of it.
 19. **Lava glow, remaining** (owner 2026-11-11: "Lava should have bloom glow"; "Lava looks dark red instead of
    bright red/orange"; "It should darken as it solidifies though"). Built 0.52.107: colour by heat stops, heat in
    cells. **Bloom built (pending release, `claude/bloom`):** keyed on the scene's self-lit flag (lava, torches,
