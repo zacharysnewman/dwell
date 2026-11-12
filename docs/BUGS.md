@@ -6,6 +6,34 @@ pins it.
 
 ## Open
 
+### 106. Trees look like sticks
+
+Owner, 2026-11-12 (on a release after the blocked stretch, ~60 versions newer than the last they played): "What
+happened to the trees, they just look like sticks?" Suspects, all from today: the far-tree impostors (#797) — the
+near crowns fade out from 48 m and hand over to the impostors, but the trunks don't (they show under them), so if
+the impostors don't draw (atlas bake not finished/failed, the Far trees tier, a CPU adapter, a shader error) or draw
+too faint, every tree past ~48 m is a bare trunk; the faded-plant drop (#773/#784) dropping whole cutout chunks;
+the leaf-card face-B packed-normal change (#799).
+
+### 104. Swimming underwater sounds like swimming at the surface; underwater sound isn't muffled
+
+Owner, 2026-11-12: "swimming underwater sounds like swimming on the water surface, when underwater sounds should be
+muffled, high pass filter maybe?" Underwater, the swim strokes play the surface splash sounds, and the world's sounds
+aren't filtered. Expected: underwater strokes their own soft, deep sounds; everything heard with the head
+underwater through a low-pass filter (muffled: highs cut, ~500–1000 Hz) with a little reverb/volume drop, eased in
+and out at the surface crossing.
+
+### 103. Walking through tall grass is loud, fast and crackly; the first-person legs step too fast
+
+Owner, 2026-11-12: "Walking through tall grass is really loud and obnoxious. Bad sound effect for it I think, it's
+also playing really fast. ... the feet are moving really fast, way faster than normal legs step/walk. And there's an
+occasional crackly sound too, are there 3 SFX playing while walking on grass?" (On 0.54.153: the own-body change
+#791 hadn't shipped — releases failed from ~18:45 until the typecheck fix.) Check: how many sounds play per step on
+grass with tall grass (the footstep on the grass block, a brush sound per tall-grass cell entered, the cross plant's
+own sound — possibly all three, each per cell or per tick rather than per step), their volume and rate; the crackle
+(clipping from stacked sounds, or a sound restarted every tick); the first-person body's walk clip speed against the
+walk speed (stride length 1.6 m a loop vs the controller's speed — too high a playback rate).
+
 ### 100. Volumetric clouds look like "crazy triangles"
 
 Owner, 2026-11-12: "the clouds look ridiculous at least the volumetric ones. Look like crazy triangles. Find a
@@ -508,6 +536,18 @@ The density function is untouched (#100). Tests (`clouds.rs` `rim_tests`, both f
 off: cloud 88.9 km from the axis), `over_the_island_the_clouds_are_as_before`, and
 `the_shader_masks_the_deck_and_the_march_by_the_rim`. The look from the showcase's camera is still to be checked on
 the Mac (cloud sessions have no GPU).
+
+### 105. The "no" sound for clicking at nothing is too loud and jarring (fixed after 0.54.205)
+
+Owner, 2026-11-12: "The 'no' sound effect for clicking when nothing is there is way to loud and jarring and generally
+a bad sound effect for it. Read the names and waveform to find a good one from our package." The `deny` sound (Break
+or Place with nothing targeted) played Universal Sound FX's `UI_Error_Tone_01`: a 0.18 s buzzy error tone peaking at
+−0.5 dBFS, at sample gain 0.4 (~−8.5 dBFS as played). Fix: candidates picked by name (UI clicks and taps, errors,
+denied notifications, toggles, subtle thuds and knocks) and measured (duration, peak, RMS, attack, spectral centroid,
+energy above 2 kHz); the pick is `UI_Click_Tap_Knock_Subtle_Darker`, a dull 30 ms knock (centroid ~260 Hz, no
+energy above 2 kHz, peak −6.1 dBFS) at gain 0.2 with ±1 semitone: ~12 dB under the old tone's peak, ~16 dB under its
+loudness. The procedural fallback's gain went from 0.879 to 0.3. Test: samples.test.ts "keeps the deny sound soft"
+(red on the old data, green on the new).
 
 ### 92. Downhill water shows edge triangles and thin lines at its ½ m level steps (fixed after 0.54.142; the browser check left local)
 

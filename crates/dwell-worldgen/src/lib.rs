@@ -163,6 +163,32 @@ pub fn portal_axes_for_sized(
     (axes, p.rules.motes)
 }
 
+/// The world's portal shafts as the player controller sees them (BIFACIAL_WORLD.md §12.3): each
+/// one's axis, radius and opening (the rim's top, face-local) on both faces, with the exit push
+/// (`midplane.json` `portals.exit`). Empty for a generator without portals. The server and the
+/// client's prediction both set it on their `VoxelWorld` (`portals`), so the push agrees.
+pub fn portal_shafts_for_sized(
+    version: u32,
+    world_seed: u64,
+    size: WorldSize,
+) -> dwell_world::portal_shafts::PortalShafts {
+    let Some(terrain) = BifacialTerrain::for_generator_sized(version, world_seed, size) else {
+        return Default::default();
+    };
+    let p = terrain.portals();
+    let top = |face, s| dwell_world::m_of_row(terrain.local(face).ladder_top(p, s) + 1);
+    let shafts = p
+        .sites
+        .iter()
+        .map(|&s| dwell_world::portal_shafts::Shaft {
+            axis: [f64::from(s.x) + 0.5, f64::from(s.z) + 0.5],
+            radius: f64::from(p.rules.radius),
+            top: [top(dwell_world::Face::A, s), top(dwell_world::Face::B, s)],
+        })
+        .collect();
+    dwell_world::portal_shafts::PortalShafts::new(shafts, p.rules.exit)
+}
+
 /// A dev spawn by a portal (`?spawn=portal`, BIFACIAL_WORLD.md §6): on face `face`'s rim over the
 /// ladder of the portal nearest the disc's centre, the shaft in front. `None` for a generator
 /// without portals.
