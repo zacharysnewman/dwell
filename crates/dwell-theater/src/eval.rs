@@ -31,13 +31,18 @@ pub struct Pose {
     pub position: [f64; 3],
     /// The look (a world unit vector).
     pub direction: [f64; 3],
-    /// The look as `placeCamera` takes it: degrees, face-local to the position's face.
+    /// The look as `placeCamera` takes it: degrees, face-local to [`Pose::frame`] (the held
+    /// `up` face's, else the position's face).
     pub yaw_deg: f64,
     pub pitch_deg: f64,
     /// Vertical field of view (degrees); `None`: the viewer's setting.
     pub fov_deg: Option<f64>,
     /// The time of day to show (0–1); `None`: the world's.
     pub time_of_day: Option<f64>,
+    /// The face whose up the camera holds wherever it is (a keyframe's `up`); `None`: the face
+    /// the position is over (`"auto"`). From the other face's side it is that face's view, the
+    /// world upside down.
+    pub up: Option<FaceFrame>,
 }
 
 impl Pose {
@@ -54,6 +59,24 @@ impl Pose {
             pitch_deg,
             fov_deg: None,
             time_of_day: None,
+            up: None,
+        }
+    }
+    /// The frame the camera's up and its yaw and pitch are in.
+    pub fn frame(&self) -> FaceFrame {
+        self.up
+            .unwrap_or_else(|| FaceFrame::at_height(self.position[1]))
+    }
+    /// The same pose with its up held to `up`'s face (`None`: the position's): the direction is
+    /// kept and the yaw and pitch given in that frame.
+    pub fn with_up(self, up: Option<FaceFrame>) -> Self {
+        let f = up.unwrap_or_else(|| FaceFrame::at_height(self.position[1]));
+        let local = f.vector(self.direction);
+        Self {
+            yaw_deg: local[0].atan2(local[2]).to_degrees(),
+            pitch_deg: local[1].clamp(-1.0, 1.0).asin().to_degrees(),
+            up,
+            ..self
         }
     }
 }
@@ -161,7 +184,9 @@ pub fn pose_at(path: &Path, t: f64, targets: &dyn Targets) -> Pose {
         pose.fov_deg = fov;
     }
     pose.time_of_day = time_of_day(a, b, seg.days, u);
-    pose
+    // The up is the segment's first keyframe's, the next one's from its time (a change of `up`
+    // turns the camera over at that keyframe, as crossing the midplane does under "auto").
+    pose.with_up(if u >= 1.0 { b.up } else { a.up })
 }
 
 /// The time of day between two keyframes: forward from `a`'s to `b`'s (through midnight when `b`'s
@@ -179,9 +204,7 @@ fn aimed(p: [f64; 3], k: &Keyframe, targets: &dyn Targets) -> Pose {
 /// A keyframe's aim from `p` as a world unit vector.
 fn aim_dir(k: &Keyframe, p: [f64; 3], targets: &dyn Targets) -> [f64; 3] {
     match &k.aim {
-        Aim::Look { yaw_deg, pitch_deg } => {
-            FaceFrame::at_height(k.position[1]).look(*yaw_deg, *pitch_deg)
-        }
+        Aim::Look { yaw_deg, pitch_deg } => k.look_frame().look(*yaw_deg, *pitch_deg),
         Aim::At(t) => targets
             .position(t)
             .and_then(|s| normalize(sub(s, p)))

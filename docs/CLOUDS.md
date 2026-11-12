@@ -541,13 +541,16 @@ distortion, wind shear, the light march on the base shape only, blue-noise jitte
 
 ### 9.2 The weather map and the cloud types (data)
 
-- **Weather** (`clouds.json` `weather`, `cloud_weather`, twin `weather`): per column, from the deck's own
-  stretched noise `n` (two octaves, warped: the march's budget) and the global coverage (the uniform a weather
-  system sets): **cover** `smoothstep(1 − coverage, 1 − coverage + form.coverageSoftness, n)` (0 with no
-  coverage: no cloud at all); **type** along the types' axis `type + typeFromCoverage × (n − (1 −
-  coverage)) + typeVariation × (2v − 1)` (`v` a second value noise one deck cell across), so a cloud's core
-  towers over its edges and some clouds over others; **precipitation** (thicker, darker bases: each type's
-  `darkening`). Today type and precipitation are the data's; a weather system will write them (§9.7).
+- **Weather** (`clouds.json` `weather`, `cloud_weather`, twins `weather`, `column_weather`): **regional
+  fields**, not the clouds (BUGS.md #100, §9.9; the papers' weather map at 8–16 km). **Cover**: the global
+  coverage (the uniform a weather system sets) moved by ± `coverVariation` × 4c(1 − c) (so none and overcast stay
+  so) by a one-octave value-noise field with cells `coverScaleM` (8 km) across, then × (1 ± `deckBreakup`) by the
+  deck's own stretched noise `n` (1 km cells, warped: breaks the base texture's 2 km repeat); **type** along the
+  types' axis `type + typeVariation × (2v − 1) + typeFromCoverage × (regional cover − coverage)`, `v` a second
+  field with cells `typeScaleM` (16 km) across (`typeFromCoverage` 0: a cloud's core no longer towers over its
+  edges); **precipitation** (thicker, darker bases: each type's `darkening`). Both scales are whole multiples of
+  the deck's cells dividing its period (the generator checks), so the fields tile with it. Today type and
+  precipitation are the data's; a weather system will write them (§9.7).
 - **Cloud types** (`cloudTypes`, an ordered list; `cloud_type_profile` is generated from it, twin
   `type_profile`): each a place on the type axis (`at`), a height profile as two spans in shares of the layer
   (`base`: the fade-in from its floor, short, so a **flat base**; `top`: the fade-out, long, so the noise's
@@ -558,11 +561,11 @@ distortion, wind shear, the light march on the base shape only, blue-noise jitte
 |---|---|---|---|---|---|
 | stratus | 0 | 0–0.02 | 0.04–0.10 (≤ 315 m thick) | 0 | 0.6 |
 | stratocumulus | 0.3 | 0–0.03 | 0.08–0.20 | 0 | 0.8 |
-| cumulus | 0.6 | 0–0.04 | 0.15–0.42 (≤ 1.3 km) | 0 | 1.0 |
+| cumulus | 0.6 | 0–0.03 | 0.04–0.42 (≤ 1.3 km; the fade from just over the base: flat base, domed top) | 0 | 1.0 |
 | cumulonimbus | 1.0 | 0–0.03 | 0.82–0.97 (≈ 3 km) | 0.8 | 1.4 |
 
-  With the shipped weather (`type` 0.42, `typeFromCoverage` 0.9, `typeVariation` 0.18) most clouds are
-  stratocumulus to cumulus, their cores cumulus, the densest towering toward cumulonimbus. A new type is a list
+  With the shipped weather (`type` 0.42, `typeVariation` 0.3 over 16 km, `typeFromCoverage` 0) the sky is
+  stratocumulus to cumulus by region; a cumulonimbus is a region's (a weather system's), not every core's. A new type is a list
   entry (the generator checks the order, spans and names; a test adds a fixture tower by data alone).
 
 ### 9.3 The shape
@@ -570,25 +573,28 @@ distortion, wind shear, the light march on the base shape only, blue-noise jitte
 - **The noise, baked once** (`dwell_look::cloud_noise`): the **base** texture `form.baseSize`³ (64³) RGBA8 —
   R a Perlin–Worley (three Perlin octaves 4 cells across dilated by the Worley fBm: `remap(perlin, 0, 1,
   worley, 1)`), G, B, A Worley fBm (⅝, ¼, ⅛ of three octaves) 4, 8 and 16 cells across — repeating every
-  `form.baseTileM` (4096 m); the **detail** texture `form.detailSize`³ (32³) — R a Worley fBm 4 cells across,
+  `form.baseTileM` (2048 m: Worley and Perlin cells ~512 m, the single clouds' size); the **detail** texture `form.detailSize`³ (32³) — R a Worley fBm 4 cells across,
   G, B the curl across of a Perlin field (the wisps' distortion, sampled every `curlTileM`, 2048 m), A a 32²
   **blue-noise** tile (void-and-cluster; the march's jitter, §9.6) — repeating every `detailTileM` (512 m).
   Every lattice is periodic over its texture, so both tile in all three axes; each tile divides `shape.wrapM`,
   so the shader's wrapped coordinates have no seam. Sampled trilinearly with a repeating sampler
   (`Noise3::sample` is its CPU twin).
-- **Base shape** (`cloud_base_shape`, twin `base_shape`): `base = remap(R, −(1 − fbm(G, B, A)), 1, 0, 1)`
-  times the column's type's height gradient, then `remap(·, 1 − cover, 1, 0, 1) × cover` with the cover
-  raised toward a cumulonimbus's top by its anvil (`cover^(1 − ½ anvil)` over the top fade's start).
+- **Base shape** (`cloud_base_shape`, twin `base_shape`; Nubis 2023 p.24): `base = remap(R, −(1 − fbm(G, B,
+  A)), 1, 0, 1)`, stretched from `form.baseLow`..`baseHigh` (0.80–0.95: the dilated noise lies in ~0.73–0.94)
+  to 0–1, then `saturate(remap(base, 1 − g × cover, 1, 0, 1))` with `g` the column's type's height gradient
+  and the cover raised toward a cumulonimbus's top by its anvil (`cover^(1 − ½ anvil)` over the top fade's
+  start). So the 3D noise carves the single clouds everywhere (not only their fringe), and the gradient,
+  falling from just over the base to the top, raises the cut with height: flat bases, domed tops.
 - **Detail** (`cloud_detail_fbm`, `cloud_erode`; twins `ShapeNoise::detail_at`, `erode`): the detail's point
   moved by the curl up to `form.curlM` (90 m, most at the floor) and drifting with the wind's evolve offset;
   its fBm `hf` below `form.wispHeight` (12 % of the layer), `1 − hf` above (wispy bases, billowy tops), takes
-  away `remap(d, m × detailErosion, 1, 0, 1)`: only where the base is under 1 — the core stays.
+  away `remap(d, m × detailErosion, 1, 0, 1)` (`detailErosion` 0.25; HZD's 0.2): only where the base is under 1 — the core stays.
 - **Wind and shear:** the layer drifts with the deck's wind (as before); the shape point leans downwind by
   `form.shear` (0.25 m per m up: a tower's top 750 m over), and the detail drifts against the base.
 - **The march** (`cloud_layer_march`): a step with no cover or under the profile takes no texture fetch;
   a cloudy step takes the base (one fetch), the detail (two: curl and fBm), the type's profile (one more
-  value-noise look-up); the light samples take the deck's noise (cover only), one base fetch each and **no
-  detail**; the ambient's cloud above and below comes from the column's profile at no cost
+  value-noise look-up); the light samples reuse the column's cover (regional: it barely changes along the
+  light's path), one base fetch each, **no 2D noise and no detail**; the ambient's cloud above and below comes from the column's profile at no cost
   (`column_cover_m`).
 
 ### 9.4 Bake cost and memory
@@ -614,9 +620,9 @@ bake is slower than native (an estimate of ~2×: ~45 ms a slab on a worker); 64�
 
 | Sample | Before (§8.8) | After |
 |---|---|---|
-| empty step (no cover) | ~180 (warp, weather) | ~180 (the same) |
+| empty step (no cover) | ~180 (warp, weather) | ~270 (+ the two regional fields, one octave each, BUGS.md #100) |
 | cloudy step | ~280 + light | ~400 (+ type look-up, profile, 3 fetches, remaps) + light |
-| one light sample | ~90 | ~145 (weather cover + a base fetch) |
+| one light sample | ~90 | ~55 (a base fetch; the column's cover reused, BUGS.md #100; was ~145) |
 | Medium texel, 10 steps, 4 light (empty – cloudy) | 1.8k – 5.3k | 1.8k – 7.4k |
 | High texel, 16 steps, 6 light | 2.9k – 7.6k | 2.9k – 10.5k |
 | resolve (§9.6), per texel | — | 9 + 9 loads, ~90 |
@@ -663,6 +669,11 @@ generated shader, which validates with naga; both faces; the near tier from the 
 its values and the resolve is stable under the jitter as the eye moves (variance under a quarter of the raw
 march's), clamps stale history and the upsample keeps a silhouette sharp. `clouds.test.mjs`: the new entries'
 checks. `dwell-client`: the codec carries the new job, the shaders' wiring.
+
+`pyramid_tests` (BUGS.md #100, §9.9): over fixture patches on both faces the cloud tops' median slope is
+under 2 m per m (main: 4.1 and 2.6), no cloud is taller than its type allows, footprints are 300–1500 m,
+the columns tile with the wrap, a cloud behind 400 m of cloud is ≤ 15 % visible (9 %), and at noon the
+patch's clouds are fair-weather white (median base 0.77 of the sunlit white; main 0.44).
 
 Left: the in-game look (sun high, low sun, from above, night, flying through the layer) and the GPU cost
 (local bench, §9.5); the weather map's type and precipitation as run-time uniforms for a weather system; the
@@ -721,6 +732,37 @@ entries' ranges.
 Left (local, no GPU in the cloud session): the look at sunrise and sunset against `?clouds=` the deck, and the
 A/B of `?cloudExtinction=0.006` / `0.03` / `0.05` with `gpu.clouds`; tune by `volume.sunsetShade`,
 `light.sunWarmth` and `volume.extinction`.
+
+### 9.9 The pyramids and the gloom (BUGS.md #100, WORK_QUEUE item 13, 2026-11-12)
+
+The owner: the clouds "look like crazy triangles", "3 sided pyramids", and "gloomy and dark like not-quite storm
+clouds". The gap analysis against Schneider 2015 (Horizon Zero Dawn), Nubis³ 2023 and Hillaire 2016 is
+[`reference/cloud-papers.md`](reference/cloud-papers.md). Each cloud was a heightfield of the deck's 2D value
+noise standing upright: the type rose with how far a column was past the coverage's cut (`typeFromCoverage`
+0.9), so each core towered toward cumulonimbus over its edges; the cover was a hard 2D cut, so in the core
+`remap(base · g, 1 − cover, 1) × cover` was `base · g` and the 3D noise carved nothing; the view extinction
+0.03 /m made that surface a hard shell. The same cores, lit as cumulonimbus (denser, three times as deep, the
+sky's light dimmed by ~1.5 km of cloud above), were the gloom. The fix follows the papers in their order:
+
+1. **Type from its own regional field** (16 km cells, smooth; `typeFromCoverage` 0), as the papers' weather
+   map's type channel (HZD s.40–45, Nubis p.16/19): no cloud's core is a tower of its own.
+2. **Coverage regional and the clouds cut by the 3D noise** (Nubis p.24's `saturate(noise − (1 − profile ×
+   coverage))` in remap form; Frostbite p.33: the noise "give[s] a base shape to clouds"): the cover a gentle
+   8 km field (0.2–0.6 at coverage 0.42), the base noise windowed to 0–1, the base tile 2 km (clouds
+   ~300–1000 m across), the profile fading from just over the base (flat bases, domed tops), erosion 0.25.
+3. **View extinction 0.015 /m** (was 0.03; `?cloudExtinction=` still A/Bs it): soft edges, and a cloud behind
+   400 m of cloud is still ~9 % visible in the median over the fixture (the owner's "hide the ones behind").
+4. **Not done:** distance-adaptive steps with HZD's cheap/full switch and step back (s.76–83, Nubis p.40); the
+   even 16 steps on High still slice far clouds (§9.7).
+
+Lighting against the papers (no change needed for the gloom): Beer with a multiple-scattering floor
+`max(e^−τ, 0.5 e^−τ/4)` is Wrenninge's two octaves with a = 0.5, b = 0.25 (Frostbite §5.8 wants a ≤ b for energy
+conservation, so ours errs bright, not dark); the view (0.015) is now 2.3× the light's (0.006 × absorption
+1.1), was 4.5×; the sky's ambient dims by e every `ambientDepthM` 400 m of cloud above (Nubis's
+`pow(1 − profile, 0.5)` dims by the profile instead), which only matters under deep clouds; `darkening` acts
+only with precipitation (0). At noon a cumulus's sunlit top is ≥ 1.0 of the sunlit white and its base 0.57
+(stratocumulus 0.83, cumulonimbus 0.23): the papers' look of bright tops and light-grey bases, only the storm
+cloud dark (`at_noon_fair_weather_clouds_are_white_and_only_storm_clouds_dark`).
 
 ## 10. The deck's lighting, then and now (2026-11-12, WORK_QUEUE item 13)
 

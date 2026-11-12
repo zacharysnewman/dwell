@@ -886,6 +886,7 @@ impl Client {
             yaw_deg: yaw,
             pitch_deg: pitch,
             fov_deg: None,
+            up: None,
         }));
         let o = Object::new();
         set(
@@ -1305,6 +1306,7 @@ impl Client {
             yaw_deg: yaw,
             pitch_deg: pitch,
             fov_deg: None,
+            up: None,
         }));
         true
     }
@@ -1406,6 +1408,13 @@ impl Client {
             .iter()
             .filter_map(|(k, v)| Some((k.clone(), v.as_f64()?)))
             .collect();
+        // `up` ("a", "b" or "auto") is the one parameter that isn't a number.
+        let up = match params.get("up") {
+            None => None,
+            Some(u) => {
+                dwell_theater::path::parse_up(u, "params.up").map_err(|e| JsValue::from_str(&e))?
+            }
+        };
         let subject_v: serde_json::Value = serde_json::from_str(if subject_json.is_empty() {
             "null"
         } else {
@@ -1426,8 +1435,7 @@ impl Client {
         // From the placed view, or the player's eyes.
         let camera = match g.view() {
             Some(v) => {
-                let f = dwell_world::FaceFrame::at_height(v.eye[1]);
-                dwell_theater::Pose::new(v.eye, f.look(v.yaw_deg, v.pitch_deg))
+                dwell_theater::Pose::new(v.eye, v.face().look(v.yaw_deg, v.pitch_deg)).with_up(v.up)
             }
             None => {
                 let eye = g.position();
@@ -1436,7 +1444,14 @@ impl Client {
             }
         };
         let path = preset
-            .expand(&dwell_theater::Context { subject, camera }, &overrides)
+            .expand(
+                &dwell_theater::Context {
+                    subject,
+                    camera,
+                    up,
+                },
+                &overrides,
+            )
             .map_err(|e| JsValue::from_str(&e))?;
         Ok(path.to_json().to_string())
     }
@@ -1459,6 +1474,7 @@ impl Client {
             yaw_deg: look.0,
             pitch_deg: look.1,
             fov_deg: None,
+            up: None,
         });
         let next = crate::game::fly_step(v, forward, right, up, yaw, pitch);
         g.set_view(Some(next));
@@ -1469,6 +1485,29 @@ impl Client {
             next.yaw_deg,
             next.pitch_deg,
         ]
+    }
+    /// Theater mode's held up (docs/THEATER_MODE.md §3.1): the placed view (from the player's
+    /// eyes the first time) keeps `up`'s face's up wherever it flies (`"a"`, `"b"`), or the face
+    /// it is over (`"auto"`); the look is kept. The keyframe editor's Up sets it, so the looks it
+    /// keys are in that frame.
+    #[wasm_bindgen(js_name = theaterUp)]
+    pub fn theater_up(&self, up: &str) -> Result<(), JsValue> {
+        let up = dwell_theater::path::parse_up(&serde_json::json!(up), "up")
+            .map_err(|e| JsValue::from_str(&e))?;
+        let mut s = self.inner.borrow_mut();
+        let look = (s.input.look.yaw, s.input.look.pitch);
+        let Some(g) = &mut s.game else {
+            return Ok(());
+        };
+        let v = g.view().unwrap_or(crate::game::ViewOverride {
+            eye: g.position(),
+            yaw_deg: look.0,
+            pitch_deg: look.1,
+            fov_deg: None,
+            up: None,
+        });
+        g.set_view(Some(v.with_up(up)));
+        Ok(())
     }
     #[wasm_bindgen(js_name = releaseCamera)]
     pub fn release_camera(&self) {

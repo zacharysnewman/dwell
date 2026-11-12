@@ -1433,141 +1433,193 @@ fn fluid_side(
     b.tag_fluid(style.fluid);
 }
 
-/// The slope a fluid cell's surface pours down over its side `face` (WATER_FLOW.md §17, the
-/// owner's sloped edges): where the cell's top shows and that side meets an open cell over the same
-/// water half a block or so lower, its own drawn surface at the shared edge (`high`) and the lower
-/// water's (`low`), in cells from the floor of the row below. None where it isn't such a step.
-fn slope_profile(
-    cells: &Cells<'_>,
-    k: &Kind,
-    [x, y, z]: [i32; 3],
-    face: usize,
-) -> Option<(f64, f64)> {
-    let (axis, sign) = FACES[face];
-    if axis == 1 || !k.liquid {
-        return None;
-    }
-    let above = cells.kind(x, y + 1, z);
-    if above.liquid || above.flooded || face_covered(cube(), 2, cover(&above)) {
-        return None;
-    }
-    let [nx, ny, nz] = neighbour_of(x, y, z, axis, sign);
-    let kn = cells.kind(nx, ny, nz);
-    if kn.shape != Shape::Empty || kn.liquid || kn.flooded || kn.style.look == Look::Cross {
-        return None;
-    }
-    let kb = cells.kind(nx, ny - 1, nz);
-    if !kb.liquid || kb.base != k.base {
-        return None;
-    }
-    let high = 1.0 + k.fill * (1.0 - k.style.surface_drop);
-    let low = kb.fill * (1.0 - kb.style.surface_drop);
-    if high - low < 0.05 || high - low > 1.5 {
-        return None;
-    }
-    Some((high, low))
+/// Whether the padded cell (x, y, z) can be read (the chunk and its one-cell apron).
+fn in_padded(x: i32, y: i32, z: i32) -> bool {
+    let inside = |c: i32| (-1..=N).contains(&c);
+    inside(x) && inside(y) && inside(z)
 }
 
-/// Water pouring over a step (WATER_FLOW.md §17, the owner's sloped edges): where a fluid
-/// cell's top shows and its side `face` meets an open cell over the same water half a block or so
-/// lower ([`slope_profile`]), its surface goes on as a slope across that cell, from its own drawn
-/// surface at the shared edge down to the lower water's at the far edge, in place of a vertical
-/// side (which the caller then skips). The wedge of water under the slope is closed at its ends
-/// where the cell beside it is open and pours no such slope (a river crossing the grid on the
-/// diagonal steps in a staircase; owner, 2026-11-06, BUGS.md #39): else the eye saw in through the
-/// open end to the slope's back, which isn't drawn from outside the water. False where it isn't
-/// such a step.
-fn slope_over(
-    b: &mut Builder,
-    cells: &Cells<'_>,
-    k: &Kind,
-    [x, y, z]: [i32; 3],
-    face: usize,
-) -> bool {
-    let Some((high, low)) = slope_profile(cells, k, [x, y, z], face) else {
-        return false;
-    };
-    let (axis, sign) = FACES[face];
-    let [nx, ny, nz] = neighbour_of(x, y, z, axis, sign);
-    // In cell units from (x, y - 1, z): the slope over the neighbour's footprint.
-    let near = if sign > 0 { 1.0 } else { 0.0 };
-    let far = near + f64::from(sign);
-    let run = if axis == 0 { 2 } else { 0 };
-    let corner = |along: f64, across: f64, h: f64| {
-        let mut p = [0.0; 3];
-        p[axis] = along;
-        p[run] = across;
-        p[1] = h;
-        p
-    };
-    let mut pts = vec![
-        corner(near, 0.0, high),
-        corner(near, 1.0, high),
-        corner(far, 1.0, low),
-        corner(far, 0.0, low),
-    ];
-    if polygon_normal(&pts)[1] < 0.0 {
-        pts.reverse();
+/// A step cell's lower water (WATER_FLOW.md §17, WATER_RENDERING.md §18): the liquid or flooded
+/// cell under an open cell (x, y, z) whose surface shows, as (its water, its drawn surface in
+/// cells above its own floor). None where the cell is not open or nothing such is under it.
+fn step_lower(cells: &Cells<'_>, [x, y, z]: [i32; 3]) -> Option<(Kind, f64)> {
+    if !in_padded(x, y, z) || !in_padded(x, y - 1, z) {
+        return None;
     }
-    let normal = polygon_normal(&pts);
-    let (color, tile) = surface(&k.style, 1, 1);
-    let at = [f64::from(x), f64::from(y - 1), f64::from(z)];
-    let lit = vec![cells.flood.cell([nx, ny, nz]); pts.len()];
-    let light = vec![1.0; pts.len()];
-    b.polygon(
-        &pts,
-        at,
-        normal,
-        face_tint(1, 1),
-        color,
-        &tile,
-        None,
-        Some((&light, &lit)),
-    );
-    // The wedge's ends: a triangle from the lower surface up to the slope, on each side across
-    // the run whose cell is open and doesn't pour the same slope beside this one.
-    for (end, s) in [(0.0, -1), (1.0, 1)] {
-        let side = FACES
+    let k = cells.kind(x, y, z);
+    if k.shape != Shape::Empty
+        || k.liquid
+        || k.flooded
+        || k.ladder_face.is_some()
+        || k.style.look == Look::Cross
+    {
+        return None;
+    }
+    let kb = cells.kind(x, y - 1, z);
+    if kb.liquid {
+        Some((kb, kb.fill * (1.0 - kb.style.surface_drop)))
+    } else if kb.flooded {
+        let water = cells.kinds.flood();
+        let top = flooded_top(cells, &water, x, y - 1, z);
+        (top > 0.0).then_some((water, top))
+    } else {
+        None
+    }
+}
+
+/// The drawn surface (cells above the floor of the row below, so 1 + its own) of the water in
+/// cell (x, y, z) when it is `water`'s and its top shows: a liquid cell of the same water with
+/// nothing hiding its top, or a flooded cell whose water stands in its row. None otherwise.
+fn upper_level(cells: &Cells<'_>, water: &Kind, [x, y, z]: [i32; 3]) -> Option<f64> {
+    if !in_padded(x, y, z) {
+        return None;
+    }
+    let k = cells.kind(x, y, z);
+    if k.liquid && k.base == water.base {
+        if in_padded(x, y + 1, z) {
+            let m = cells.state(x, y, z);
+            let top = fluid_side_top(cells, &k, m, x, y, z);
+            (top < 1.0).then_some(1.0 + top)
+        } else {
+            // Past the apron: taken as showing (the chunk above meshes the cell over it).
+            Some(1.0 + k.fill * (1.0 - k.style.surface_drop))
+        }
+    } else if k.flooded && cells.kinds.flood().base == water.base && in_padded(x, y + 1, z) {
+        let top = flooded_top(cells, water, x, y, z);
+        (top > 0.0 && top < 1.0).then_some(1.0 + top)
+    } else {
+        None
+    }
+}
+
+/// A step cell (BUGS.md #92): an open cell over a pool's water ([`step_lower`]) touching, by a
+/// side or a corner, a column of the same water standing a row higher whose top shows (the next
+/// reach up a river's ½ m steps; [`upper_level`]). Its surface runs from that upper water's level
+/// at its corners that touch it to the lower water's at the rest, so a river stepping down on the
+/// grid or on the diagonal reads as one continuous slope: each corner's height is a function of
+/// the cells round that corner alone, so neighbouring step cells, the upper tops and the lower
+/// tops all meet at the same vertices. Returns (the water, its lower surface, the corners' heights
+/// (x, z) = (0, 0), (1, 0), (1, 1), (0, 1)), in cells above the floor of the row below.
+fn step_cell(cells: &Cells<'_>, [x, y, z]: [i32; 3]) -> Option<(Kind, f64, [f64; 4])> {
+    let (water, low) = step_lower(cells, [x, y, z])?;
+    let level = |dx: i32, dz: i32| {
+        upper_level(cells, &water, [x + dx, y, z + dz])
+            .filter(|h| *h - low > 0.05 && *h - low <= 1.5)
+    };
+    let mut any = false;
+    let corners = [(0, 0), (1, 0), (1, 1), (0, 1)].map(|(cu, cv)| {
+        let (sx, sz) = (2 * cu - 1, 2 * cv - 1);
+        [(sx, 0), (0, sz), (sx, sz)]
             .iter()
-            .position(|&f| f == (run, s))
-            .expect("a side face");
-        let [lx, ly, lz] = neighbour_of(nx, ny, nz, run, s);
-        let kl = cells.kind(lx, ly, lz);
-        if kl.liquid || kl.flooded || face_covered(cube(), side, cover(&kl)) {
-            continue;
+            .filter_map(|&(dx, dz)| level(dx, dz))
+            .fold(None, |m: Option<f64>, h| Some(m.map_or(h, |m| m.max(h))))
+            .inspect(|_| any = true)
+            .unwrap_or(low)
+    });
+    any.then_some((water, low, corners))
+}
+
+/// Whether the cell `over` (over a pool's water `water`) is a step cell of that water, whose
+/// slope stands in for the pool's top under it.
+fn under_step(cells: &Cells<'_>, water: &Kind, over: [i32; 3]) -> bool {
+    let base = if water.liquid {
+        water.base
+    } else {
+        cells.kinds.flood().base
+    };
+    step_cell(cells, over).is_some_and(|(w, _, _)| w.base == base)
+}
+
+/// A step cell's water ([`step_cell`]): its surface as two triangles split across the diagonal
+/// that leaves a lone raised or lowered corner on its own (so a diagonal band's slope is one
+/// plane), and its sides from the lower surface up to the slope where the cell beside it is open
+/// and holds no such water (a real drop against air, e.g. a river's step at its bank).
+fn step_water(b: &mut Builder, cells: &Cells<'_>, [x, y, z]: [i32; 3]) {
+    let Some((water, low, h)) = step_cell(cells, [x, y, z]) else {
+        return;
+    };
+    let at = [f64::from(x), f64::from(y - 1), f64::from(z)];
+    let lit = cells.flood.cell([x, y, z]);
+    let p = |i: usize| {
+        let (cu, cv) = [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)][i];
+        [cu, h[i], cv]
+    };
+    let odd = (0..4).find(|&i| {
+        let others: Vec<f64> = (0..4).filter(|&j| j != i).map(|j| h[j]).collect();
+        (h[i] - others[0]).abs() > 1e-9 && others.iter().all(|o| (o - others[0]).abs() < 1e-9)
+    });
+    let tris: [[usize; 3]; 2] = if matches!(odd, Some(1 | 3)) {
+        [[0, 1, 2], [0, 2, 3]]
+    } else {
+        [[0, 1, 3], [1, 2, 3]]
+    };
+    let (color, tile) = surface(&water.style, 1, 1);
+    for t in tris {
+        let mut pts: Vec<[f64; 3]> = t.iter().map(|&i| p(i)).collect();
+        if polygon_normal(&pts)[1] < 0.0 {
+            pts.reverse();
         }
-        let beside = neighbour_of(x, y, z, run, s);
-        let kk = cells.kind(beside[0], beside[1], beside[2]);
-        let same = slope_profile(cells, &kk, beside, face)
-            .is_some_and(|(h, l)| (h - high).abs() < 1e-9 && (l - low).abs() < 1e-9);
-        if same {
-            continue;
-        }
-        let mut tri = vec![
-            corner(near, end, low),
-            corner(near, end, high),
-            corner(far, end, low),
-        ];
-        if polygon_normal(&tri)[run] * f64::from(s) < 0.0 {
-            tri.reverse();
-        }
-        let normal = polygon_normal(&tri);
-        let (color, tile) = surface(&k.style, run, s);
-        let lit = vec![cells.flood.cell([lx, ly, lz]); tri.len()];
-        let light = vec![1.0; tri.len()];
+        let normal = polygon_normal(&pts);
         b.polygon(
-            &tri,
+            &pts,
             at,
             normal,
-            face_tint(run, s),
+            face_tint(1, 1),
             color,
             &tile,
             None,
-            Some((&light, &lit)),
+            Some((&[1.0; 3], &[lit; 3])),
         );
     }
-    b.tag_fluid(k.style.fluid);
-    true
+    // The sides: on each of the cell's four edges (corners i → j), toward the open cell across.
+    for (face, &(axis, sign)) in FACES.iter().enumerate() {
+        if axis == 1 {
+            continue;
+        }
+        let (i, j) = match (axis, sign) {
+            (0, 1) => (1, 2),
+            (0, _) => (3, 0),
+            (_, 1) => (2, 3),
+            _ => (0, 1),
+        };
+        if h[i] <= low + 1e-9 && h[j] <= low + 1e-9 {
+            continue;
+        }
+        let [nx, ny, nz] = neighbour_of(x, y, z, axis, sign);
+        let kn = cells.kind(nx, ny, nz);
+        if kn.liquid
+            || kn.flooded
+            || face_covered(cube(), face, cover(&kn))
+            || step_lower(cells, [nx, ny, nz]).is_some_and(|(w, _)| w.base == water.base)
+        {
+            continue;
+        }
+        let (pi, pj) = (p(i), p(j));
+        let mut pts = vec![[pi[0], low, pi[2]], [pj[0], low, pj[2]]];
+        if h[j] > low + 1e-9 {
+            pts.push(pj);
+        }
+        if h[i] > low + 1e-9 {
+            pts.push(pi);
+        }
+        if polygon_normal(&pts)[axis] * f64::from(sign) < 0.0 {
+            pts.reverse();
+        }
+        let normal = polygon_normal(&pts);
+        let (color, tile) = surface(&water.style, axis, sign);
+        let n = pts.len();
+        b.polygon(
+            &pts,
+            at,
+            normal,
+            face_tint(axis, sign),
+            color,
+            &tile,
+            None,
+            Some((&vec![1.0; n], &vec![cells.flood.cell([nx, ny, nz]); n])),
+        );
+    }
+    b.tag_fluid(water.style.fluid);
 }
 
 /// A liquid falling onto another (running water onto a pool, WATER_FLOW.md §17): its sides go on
@@ -1672,6 +1724,10 @@ fn flooded_water(b: &mut Builder, cells: &Cells<'_>, x: i32, y: i32, z: i32) {
                 FLOOD_INSET
             };
         if face == 2 {
+            // Under a step cell its top is the step's slope (BUGS.md #92).
+            if under_step(cells, &water, [nx, ny, nz]) {
+                continue;
+            }
             plane = f64::from(y) + top;
         }
         let (color, tile) = surface(&water.style, axis, sign);
@@ -2212,7 +2268,11 @@ fn mesh_cells(
                     if k.liquid && axis != 1 && same_fluid(&k, &kn) {
                         let own = fluid_side_top(&cells, &k, m, cx, cy, cz);
                         let theirs = fluid_side_top(&cells, &kn, m, nx, ny, nz);
-                        if own > theirs + 1e-9 {
+                        // Under the water's slope over a step cell, the strip is inside it.
+                        let inside = theirs < 1.0
+                            && same_fluid(&k, &cells.kind(cx, cy + 1, cz))
+                            && under_step(&cells, &kn, [nx, ny + 1, nz]);
+                        if own > theirs + 1e-9 && !inside {
                             let plane = f64::from(if sign > 0 { d + 1 } else { d });
                             let lit = cells.flood.cell([cx, cy, cz]);
                             fluid_side(
@@ -2237,7 +2297,18 @@ fn mesh_cells(
                     if face == 2 && k.liquid && !flags.water_tops {
                         continue;
                     }
-                    if k.liquid && slope_over(&mut transparent, &cells, &k, cell, face) {
+                    // Under a step cell its top is the step's slope (BUGS.md #92).
+                    if face == 2 && k.liquid && under_step(&cells, &k, [nx, ny, nz]) {
+                        continue;
+                    }
+                    // Toward a step cell of its water, its side is inside the water (BUGS.md #92).
+                    if k.liquid
+                        && axis != 1
+                        && let Some(own) = upper_level(&cells, &k, cell)
+                        && step_cell(&cells, [nx, ny, nz]).is_some_and(|(w, low, _)| {
+                            w.base == k.base && own - low > 0.05 && own - low <= 1.5
+                        })
+                    {
                         continue;
                     }
                     let mut surface_row = 0;
@@ -2454,6 +2525,7 @@ fn mesh_cells(
             for cx in 0..N {
                 let m = padded[padded_index(cx, cy, cz)];
                 if m == 0 {
+                    step_water(&mut transparent, &cells, [cx, cy, cz]);
                     continue;
                 }
                 let k = cells.kind(cx, cy, cz);
