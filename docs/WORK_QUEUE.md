@@ -1333,6 +1333,10 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
 
 ## Smaller items, after the queue
 
+- **Downhill water's steps (BUGS.md #92; owner, 2026-11-12: "I'm seeing some edge triangles and thin lines at slope
+  transitions on downhill water.")** — fixed 2026-11-12 (`claude/water-steps`, WATER_RENDERING.md §18): the open
+  cells at a river's ½ m steps are step cells whose corners are shared with the reaches above and below, so a river
+  stepping on the diagonal is one continuous sloped surface. Next (local): the owner's spot in the browser.
 - **Realistic and forest look (2026-11-12, `claude/realistic-forest-look`), seen in Chrome on the GPU** (Realistic
   seeds 1–3 face A, `test:forest`; stills, a contact sheet and a 9:16 video handed to the owner). What reads: the big
   map (M, widest level) shows the plates' story at a glance — one continent a seed, snow-capped ranges, a green wet

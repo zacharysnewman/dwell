@@ -1618,13 +1618,15 @@ dwell_world::both_faces!(
     }
 );
 
-// face-a-only: a fluid side face of the face-local mesher, which meshes face B's chunks mirrored into the same frame.
+// face-a-only: a fluid surface of the face-local mesher, which meshes face B's chunks mirrored into the same frame.
 #[test]
 fn a_river_step_down_closes_the_strip_between_the_two_surfaces() {
     //! docs/BUGS.md 4 (gaps between water at height steps): an upper reach's column (water over
     //! water) beside a lower reach's last cell (air over it, its surface drawn `surface_drop` below
     //! its top) culled the face between them as fluid beside the same fluid, leaving an open strip
-    //! from the lower surface up to the upper column's next cell.
+    //! from the lower surface up to the upper column's next cell. Since BUGS.md #92 the open cell
+    //! over the lower water is a step cell: its slope runs from the upper surface at the shared
+    //! edge down to the lower one, closing the strip, and no face stands inside it.
     let st = stone();
     let mut cells = Vec::new();
     for x in 4..8 {
@@ -1637,21 +1639,24 @@ fn a_river_step_down_closes_the_strip_between_the_two_surfaces() {
     cells.push((6, 1, 5, water()));
     let m = mesh(&cells, false).transparent;
     let top = 1.0 - dwell_blocks::require_fluid("dwell:water").surface_drop;
-    let mut strip = false;
+    let near = |p: &[f64; 3], x: f64, y: f64| (p[0] - x).abs() < 1e-6 && (p[1] - y).abs() < 1e-5;
+    let mut slope = false;
     for t in m.indices.chunks_exact(3) {
-        let n = m.normals[t[0] as usize * 3];
+        let n = normal_of(&m.positions, t[0], t[1], t[2]);
         let ps = [t[0], t[1], t[2]].map(|i| vertex(&m.positions, i));
-        if n > 0.5 && ps.iter().all(|p| (p[0] - 6.0).abs() < 1e-6) {
-            let lo = ps.iter().map(|p| p[1]).fold(f64::MAX, f64::min);
-            let hi = ps.iter().map(|p| p[1]).fold(f64::MIN, f64::max);
-            if (lo - (1.0 + top)).abs() < 1e-5 && (hi - 2.0).abs() < 1e-5 {
-                strip = true;
-            }
+        if n[1] > 0.0 && n[0] > 0.0 {
+            slope |= ps.iter().any(|p| near(p, 6.0, 2.0 + top))
+                && ps.iter().any(|p| near(p, 7.0, 1.0 + top));
         }
+        let inside = ps
+            .iter()
+            .all(|p| (p[0] - 6.0).abs() < 1e-6 && p[1] > 1.0 + top + 1e-6);
+        assert!(!inside, "a face inside the step's water at x 6: {ps:?}");
     }
     assert!(
-        strip,
-        "no face closes the step between the surfaces at y {} and 2",
+        slope,
+        "no slope closes the step from y {} at x 6 down to y {} at x 7",
+        2.0 + top,
         1.0 + top
     );
 }
@@ -2864,3 +2869,174 @@ fn wood_cracks_read_darker_than_the_barks_own_streaks() {
         }
     }
 }
+
+/// The face-local upward water surface of `m` (transparent, after `local_mesh`): each triangle's
+/// corners whose normal points up (its tops and slopes, not its sides or undersides).
+fn up_triangles(m: &MeshArrays) -> Vec<[[f64; 3]; 3]> {
+    m.indices
+        .chunks_exact(3)
+        .filter_map(|t| {
+            let n = normal_of(&m.positions, t[0], t[1], t[2]);
+            let l = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt();
+            (n[1] / l > 0.05).then(|| [t[0], t[1], t[2]].map(|i| vertex(&m.positions, i)))
+        })
+        .collect()
+}
+
+/// The heights at (x, z) of every triangle of `tris` over it (projected on xz).
+fn heights_at(tris: &[[[f64; 3]; 3]], x: f64, z: f64) -> Vec<f64> {
+    heights_within(tris, x, z, 1e-9)
+}
+
+/// [`heights_at`] counting a triangle only where (x, z) is `margin` (barycentric) inside it:
+/// positive for strictly inside (a point on an edge two triangles share counts for neither),
+/// negative to count a point just outside.
+fn heights_within(tris: &[[[f64; 3]; 3]], x: f64, z: f64, margin: f64) -> Vec<f64> {
+    tris.iter()
+        .filter_map(|[a, b, c]| {
+            let d = (b[0] - a[0]) * (c[2] - a[2]) - (c[0] - a[0]) * (b[2] - a[2]);
+            if d.abs() < 1e-12 {
+                return None;
+            }
+            let u = ((x - a[0]) * (c[2] - a[2]) - (c[0] - a[0]) * (z - a[2])) / d;
+            let v = ((b[0] - a[0]) * (z - a[2]) - (x - a[0]) * (b[2] - a[2])) / d;
+            (u >= -margin && v >= -margin && u + v <= 1.0 + margin)
+                .then(|| a[1] + u * (b[1] - a[1]) + v * (c[1] - a[1]))
+        })
+        .collect()
+}
+
+/// BUGS.md #92's river (owner, 2026-11-12): a held river on sand stepping down ½ m (a cell) at
+/// a time in diagonal bands, its bed stepping with it on flooded sand ramps. Water level row 7
+/// where x + z ≤ 24, row 6 where x + z ≤ 34, row 5 beyond; two cells deep.
+fn diagonal_staircase(f: FaceFrame) -> MeshArrays {
+    let n = CHUNK_SIZE;
+    let c = ChunkCoord::new(0, 2, 0);
+    let o = [c.x * n, c.y * n, c.z * n];
+    let mut source = dwell_world::VoxelWorld::new(dwell_world::empty_generator(), None);
+    let sand = require("dwell:sand[flooded=true]");
+    let ramp = require("dwell:sand_ramp[facing=south,flooded=true,half=bottom,shape=ramp]");
+    let top = |x: i32, z: i32| match x + z {
+        s if s <= 24 => 7,
+        s if s <= 34 => 6,
+        _ => 5,
+    };
+    for z in 0..=31 {
+        for x in 0..=31 {
+            let t = top(x, z);
+            // The bed steps where the next column upstream stands a level higher.
+            let stepped = top(x - 1, z) > t || top(x, z - 1) > t;
+            for y in 1..=t {
+                let m = if y >= t - 1 {
+                    if y == t - 1 && stepped { ramp } else { water() }
+                } else {
+                    sand
+                };
+                source.set_voxel(o[0] + x, o[1] + y, o[2] + z, m);
+            }
+        }
+    }
+    local_mesh(f, mesh_on_face(&mut source, c, f).transparent)
+}
+
+dwell_world::both_faces!(
+    /// BUGS.md #92 (owner, 2026-11-12: "I'm seeing some edge triangles and thin lines at slope
+    /// transitions on downhill water."): a river stepping down ½ m in diagonal bands reads as one
+    /// continuous surface. Over every column inside the river exactly one upward water face (no
+    /// gap, no two slopes crossing in one cell, no top left under a slope), its height continuous
+    /// across every column edge (the steps blend into slopes, no vertical riser between), no
+    /// vertical water face standing above the lowest surface (the wedges where two steps met at a
+    /// corner), and no vertex of one surface inside another's edge across a crease (cracks).
+    fn a_diagonal_staircase_river_is_one_continuous_surface(f: FaceFrame) {
+        let m = diagonal_staircase(f);
+        let up = up_triangles(&m);
+        let full = 1.0 - dwell_blocks::require_fluid("dwell:water").surface_drop;
+        let lowest = 5.0 + full;
+        let inside = |p: &[f64; 3]| (4.0..=28.0).contains(&p[0]) && (4.0..=28.0).contains(&p[2]);
+        // One surface over each column, sampled off the cells' edges and diagonals.
+        let mut bad = Vec::new();
+        for z in 4..28 {
+            for x in 4..28 {
+                for (du, dv) in [(0.13, 0.31), (0.71, 0.18), (0.42, 0.87), (0.83, 0.57)] {
+                    let (px, pz) = (f64::from(x) + du, f64::from(z) + dv);
+                    // No gap (a crack): something over it, counting its edges; no overlap
+                    // (two slopes, or a top under a slope): one at most strictly inside.
+                    let loose = heights_within(&up, px, pz, 1e-6);
+                    let strict = heights_within(&up, px, pz, -1e-6);
+                    if loose.is_empty() || strict.len() > 1 {
+                        bad.push(([px, pz], loose));
+                    }
+                }
+            }
+        }
+        assert!(
+            bad.is_empty(),
+            "{:?}: {} points without exactly one surface over them, e.g. {:?}",
+            f.face,
+            bad.len(),
+            &bad[..bad.len().min(4)]
+        );
+        // Continuous across every column edge, along x and along z.
+        let mut jumps = Vec::new();
+        for z in 4..28 {
+            for x in 5..28 {
+                for t in [0.27, 0.64] {
+                    for (a, b) in [
+                        (
+                            [f64::from(x) - 0.01, f64::from(z) + t],
+                            [f64::from(x) + 0.01, f64::from(z) + t],
+                        ),
+                        (
+                            [f64::from(z) + t, f64::from(x) - 0.01],
+                            [f64::from(z) + t, f64::from(x) + 0.01],
+                        ),
+                    ] {
+                        let (ha, hb) = (heights_at(&up, a[0], a[1]), heights_at(&up, b[0], b[1]));
+                        if let (Some(ha), Some(hb)) = (ha.first(), hb.first())
+                            && (ha - hb).abs() > 0.05
+                        {
+                            jumps.push((a, *ha, *hb));
+                        }
+                    }
+                }
+            }
+        }
+        assert!(
+            jumps.is_empty(),
+            "{:?}: {} steps across a column edge, e.g. {:?}",
+            f.face,
+            jumps.len(),
+            &jumps[..jumps.len().min(4)]
+        );
+        // No vertical water face above the lowest surface inside the river.
+        let walls: Vec<[f64; 3]> = m
+            .indices
+            .chunks_exact(3)
+            .filter_map(|t| {
+                let nrm = normal_of(&m.positions, t[0], t[1], t[2]);
+                let l = (nrm[0] * nrm[0] + nrm[1] * nrm[1] + nrm[2] * nrm[2]).sqrt();
+                let ps = [t[0], t[1], t[2]].map(|i| vertex(&m.positions, i));
+                let mid = std::array::from_fn(|a| (ps[0][a] + ps[1][a] + ps[2][a]) / 3.0);
+                ((nrm[1] / l).abs() < 0.05
+                    && inside(&mid)
+                    && ps.iter().any(|p| p[1] > lowest + 1e-6))
+                .then_some(mid)
+            })
+            .collect();
+        assert!(
+            walls.is_empty(),
+            "{:?}: {} vertical water faces inside the river, e.g. {:?}",
+            f.face,
+            walls.len(),
+            &walls[..walls.len().min(4)]
+        );
+        let ts: Vec<[f64; 3]> = crease_t_junctions(&m).into_iter().filter(inside).collect();
+        assert!(
+            ts.is_empty(),
+            "{:?}: {} T-junctions across the river's creases, e.g. {:?}",
+            f.face,
+            ts.len(),
+            &ts[..ts.len().min(6)]
+        );
+    }
+);

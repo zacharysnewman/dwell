@@ -6,19 +6,6 @@ pins it.
 
 ## Open
 
-### 92. Downhill water shows edge triangles and thin lines at its ½ m level steps
-
-Owner, 2026-11-12 (screenshot + block dump): "I'm seeing some edge triangles and thin lines at slope transitions on
-downhill water." Build 0.54.142 (f68d23af), seed 950418385, generatorVersion 8, feet (1061.8, 79.6, 12359.4), yaw 313°,
-pitch −15.6°. A held, asleep river on sand (`dwell:sand[flooded=true]`, `dwell:sand_ramp[facing=south,flooded=true,
-half=bottom,shape=ramp]`): the surface grid's levels step down ½ m at a time along the flow (81 → 80.5 → 80 → … → 68.5,
-in diagonal bands), every column `held`, none awake. In the screenshot each band edge draws a bright vertical
-triangle where a step meets another step at a corner, and thin light lines along the step edges. Suspects: the water
-mesher's side faces (skirts) at a level step — drawn as full quads/triangles between neighbours whose corner heights
-are averaged differently, so a corner shared by three levels leaves a sliver or wedge; or the surface's per-corner
-smoothing across a step (T-junction cracks showing the sky/specular through). Expected: a downhill river reads as
-one continuous sloped surface (or clean steps), with no wedges or cracks.
-
 ### 91. A 10× world sits for minutes on "Shaping the world map… 0/2" with no sign of progress
 
 Owner, 2026-11-12 (M4 Max MacBook Pro): "I tried to start a 10x world … And it's up to 3 minutes so far on 'Shaping the
@@ -392,8 +379,39 @@ the tick trace on CI (it builds a metre a jump locally at 3 fps).
 shallow ramp, maybe same problem with steep ramps too?" Not investigated yet: targeting a ramp's low
 face, or the placement check against its shape.
 
-
 ## Fixed
+
+### 92. Downhill water shows edge triangles and thin lines at its ½ m level steps (fixed after 0.54.142; the browser check left local)
+
+Owner, 2026-11-12 (screenshot + block dump): "I'm seeing some edge triangles and thin lines at slope transitions on
+downhill water." Build 0.54.142 (f68d23af), seed 950418385, generatorVersion 8, feet (1061.8, 79.6, 12359.4), yaw 313°,
+pitch −15.6°. A held, asleep river on sand (`dwell:sand[flooded=true]`, `dwell:sand_ramp[facing=south,flooded=true,
+half=bottom,shape=ramp]`): the surface grid's levels step down ½ m at a time along the flow (81 → 80.5 → 80 → … → 68.5,
+in diagonal bands), every column `held`, none awake. In the screenshot each band edge draws a bright vertical
+triangle where a step meets another step at a corner, and thin light lines along the step edges. Suspects: the water
+mesher's side faces (skirts) at a level step — drawn as full quads/triangles between neighbours whose corner heights
+are averaged differently, so a corner shared by three levels leaves a sliver or wedge; or the surface's per-corner
+smoothing across a step (T-junction cracks showing the sky/specular through). Expected: a downhill river reads as
+one continuous sloped surface (or clean steps), with no wedges or cracks.
+
+Cause (read in the code and the fixture): a river stepping down on the diagonal crosses the grid in a staircase, and
+each pool's edge was drawn as a pour slope across the open cell beyond it, one per side (`slope_over`). An open cell
+with an upper column on two sides got two slopes crossing inside it; one touching the upper reach only at a corner got
+none, so the slopes beside it ended in vertical wedge triangles (closed against the open cell, the bright vertical
+wedges); and the lower pool's flat top was still drawn under every slope, coplanar with it at the far edge (the thin
+light lines where the two met).
+
+Fixed (WATER_RENDERING.md §18): an open cell over a pool touching, by a side or a corner, the same water one row higher
+is a **step cell** (`mesher.rs` `step_cell`), drawn as one surface whose corner heights each depend only on the cells
+round that corner (the upper water's level where one touches it, the pool's elsewhere), so neighbouring step cells,
+the upper tops and the lower tops share their vertices; split across the diagonal that leaves a lone corner on its
+own, a diagonal band's slope is one plane. The pool's top under a step cell, the upper column's side toward it and
+the strip under it are not drawn (they were inside the water), and its sides stand only against open air (a step at
+a bank). Calm pools and falls (drops of more than a row) are unchanged. Test: dwell-mesh
+`a_diagonal_staircase_river_is_one_continuous_surface` (both faces; three diagonal bands two cells deep on flooded
+sand and sand ramps: one surface over every column, continuous across every column edge, no vertical water face above
+the lowest surface, no crease T-junctions; red on main, 152 sample points under two or three surfaces, then green).
+Left local: the owner's spot in the browser (seed 950418385, feet (1061.8, 79.6, 12359.4)).
 
 ### 88. Volumetric clouds z-fight against tall terrain (fixed after 0.54.135; the browser check left local)
 
@@ -786,7 +804,6 @@ a_renderer_makes_its_pipelines_lazily_and_warms_them_in_batches` (38 made up fro
 green with 2) and `a_tier_switched_off_is_not_warmed_and_is_made_on_first_use`. Left: the device
 request itself (~1.7 s cold, gaps to 815 ms), Chrome's.
 
-
 ### 68. LOD holes and tall walls near a 4400 m summit (fixed after 0.52.92)
 
 **Cause:** the renderer's far pass, not the LOD. Its near plane moved out with the eye's altitude over a
@@ -1016,7 +1033,6 @@ colours moved to `COLOR_0`, and `shared/models/blender_import.py` removes a mesh
 before adding ours. Test: `every_model_is_coloured_not_plain_white` (dwell-models; red on the old
 GLBs: "kitty: one colour only").
 
-
 ### 59. On a slow device the loading screen waited its whole 20 s timeout (fixed in 0.51.8)
 
 Found 2026-11-10 from CI: `e2e/join.spec.ts:55` and `:113` ran into their 30 s test timeout on most main runs
@@ -1062,7 +1078,6 @@ Tests: `a_finger_whose_lift_never_arrived_does_not_block_the_next`, `a_tap_after
 `a_held_build_whose_lift_never_arrived_ends_when_a_new_finger_comes`,
 `a_new_stick_finger_takes_over_a_lost_one` (dwell-game touch; red: the second finger was ignored).
 Check on the device: if it still happens, lifting every finger once should bring touch back.
-
 
 ### 55. Walking animations played while standing still on a moving body (fixed in 0.50.65)
 
