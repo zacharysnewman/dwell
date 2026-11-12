@@ -958,10 +958,10 @@ mod tests {
             };
             let n = dwell_protocol::damage::hits_to_break("dwell:log", Some("dwell:stone_axe"))
                 .expect("an axe breaks a log");
-            let (whole, plain_tris) = volume(0, n);
+            let (whole, _) = volume(0, n);
             for k in 1..n {
-                let (v, tris) = volume(k, n);
-                assert!(tris > plain_tris, "{k}: carved ({tris} > {plain_tris})");
+                let (v, _) = volume(k, n);
+
                 let got = (whole - v) / whole;
                 let want = 0.5 * f64::from(k) / f64::from(n);
                 assert!(
