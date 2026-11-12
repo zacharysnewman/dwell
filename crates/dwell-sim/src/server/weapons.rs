@@ -259,6 +259,39 @@ impl Server {
     }
 
     /// The creatures, mutably (tests: placing one in a swing's way).
+    /// Dev tools (the local world's `spawnNpcs`, docs/DEV_TOOLS.md): `n` NPCs of `kind` in a ring
+    /// `radius` m round `centre` (world feet), each its own palette variant (`variant_base` + i),
+    /// living as spawned ones do. Their ids; fewer at the world's most creatures.
+    pub fn spawn_npcs_dev(
+        &mut self,
+        kind: &str,
+        centre: [f64; 3],
+        n: usize,
+        radius: f64,
+        variant_base: u32,
+    ) -> Vec<u32> {
+        let Some(k) = self.creatures.kind_of(kind) else {
+            return Vec::new();
+        };
+        let f = dwell_world::FaceFrame::at_height(centre[1]);
+        let c = f.point(centre);
+        let mut ids = Vec::new();
+        for i in 0..n {
+            let a = i as f64 / n.max(1) as f64 * std::f64::consts::TAU;
+            let at = f.point([c[0] + radius * a.sin(), c[1], c[2] + radius * a.cos()]);
+            let yaw = (a.to_degrees() + 180.0).rem_euclid(360.0);
+            let Some(id) = self.creatures.add_driven(k, at, yaw, 7 + i as u64) else {
+                break;
+            };
+            if let Some(cr) = self.creatures.get_mut(id) {
+                cr.driven = false;
+                cr.variant = variant_base.wrapping_add(i as u32);
+            }
+            ids.push(id);
+        }
+        ids
+    }
+
     pub fn creatures_mut(&mut self) -> &mut crate::creatures::Creatures {
         &mut self.creatures
     }

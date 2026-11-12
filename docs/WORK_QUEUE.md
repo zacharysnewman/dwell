@@ -938,10 +938,10 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    server's behaviour, the `creatures.npcs` capability's NPC part on `Creatures`, the client's pose roles and
    colours; CHARACTERS.md §11.11. **Drawn (local, 2026-11-12):** each villager in its variant's colours (a per-body palette remap
    in the skinned shader) with its sword on the Peasant's `hand.R`, fist closed (CHARACTERS.md §11.11).
-   Left: sit and look-around clips (the Peasant has only idle and walk: both play idle), NPCs posed from the
-   rig's clips (they play the Peasant's own, so the sword hangs as the idle holds it), combat with the swords.
-   colours; CHARACTERS.md §11.11. Left (local): the colour remap and held item in the renderer, sit/look
-   clips. Combat with the swords built in item 35's round 2 (`npc.fight`: an NPC blocks its foe's wind-up by
+   **Round 2 (local, 2026-11-12):** NPCs posed from the rig's clips by role, as players are (`npc_rig_pose`),
+   the sword in its level hold; `__dwell.spawnNpcs(n, radius, variant)` puts villagers round the player in a
+   local world. Left: sit and look-around clips (the rig has none: both play idle); the NPC's raised guard
+   and swings drawn from the server's fight. Combat with the swords built in item 35's round 2 (`npc.fight`: an NPC blocks its foe's wind-up by
    its stance rule, strikes back on the recovery, gives up after `giveUpS`; it never hurts a player).
 
 39. **Livelier animals** (owner 2026-11-12, after the video had no chase or fleeing — on day one every pack is
@@ -954,9 +954,11 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    bold when hungry), a hunter's far `roam` (hungry packs head for the island's nearest herd) and near
    `hunt.trackM` (a near pack walks to a herd past its sense, then the chase), and `near.idles` (graze, look up,
    ear flick, stand; sit, lie) picked by weight for data seconds, with eating's and sleep's poses; tests on both
-   faces and a fixture species by data alone. Left (local, GPU): drawing the poses — the GLBs have only
-   idle/walk/run clips, so the poses go on the wire (a capability-gated part like the NPCs') and are built from
-   the rig as data in models.json —, then a new video.
+   faces and a fixture species by data alone. **Poses drawn (local, 2026-11-12):** the GLBs have only
+   idle/walk/run clips, so each pose is joint turns on the idle clip as data (models.json `poses`, `poseBlendS`;
+   CHARACTERS.md §11.6), sent as the `creatures.poses` capability's part of `Creatures` (after the NPCs'); the
+   deer's graze, look up and ear flick and the wolf's sit, lie and ear flick are first guesses to tune by eye.
+   Left: a new video.
    Owner on the first video: **"The recording was a really good start. I'd like to record at 9:16 1080/1920."** —
    the next video (after this item lands) is portrait 1080×1920, framed for portrait, with a chase and fleeing.
 

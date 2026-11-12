@@ -301,6 +301,12 @@ interface DwellDebug {
    */
   lava(op?: 'report' | 'rate' | 'vent' | 'ventNear', args?: number[]): Promise<string | null>;
   /**
+   * Dev: `n` villagers (≤ 16) in a ring `radius` m (default 3) round the local player's feet, each
+   * its own palette variant from `variant` (default 0) (CHARACTERS.md §11.11). JSON of their ids;
+   * null outside a local world.
+   */
+  spawnNpcs(n: number, radius?: number, variant?: number): Promise<string | null>;
+  /**
    * The run-time cloud plumes (docs/CLOUDS.md §8.7; JSON back): `list`; `add` [name, x, y, z,
    * radius?, height?, density?, riseMps?] a steam plume based at a world point; `near` [name, dx,
    * dz] one under the eye; `move` [name, x, y, z]; `remove` [name]; `clear`.
@@ -1326,6 +1332,8 @@ async function start(): Promise<App | null> {
     waterReport: (x, y, z, radius) =>
       app.loopback?.waterReport([x, y, z], radius ?? WATER_REPORT_RADIUS) ?? Promise.resolve(null),
     lava: (op, args) => app.loopback?.lavaDev(op ?? 'report', args ?? []) ?? Promise.resolve(null),
+    spawnNpcs: (n, radius, variant) =>
+      app.loopback?.lavaDev('spawnNpcs', [n, radius ?? 3, variant ?? 0]) ?? Promise.resolve(null),
     plume: (op, args) => {
       const [name, ...nums] = args ?? [];
       return client.plumeDev(op ?? 'list', name ?? '', Float64Array.from(nums as number[]));

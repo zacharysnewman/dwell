@@ -27,11 +27,21 @@ pub fn ramp_base(name: &str) -> Option<u32> {
     RAMP_BASES.iter().find(|(n, _)| *n == name).map(|&(_, c)| c)
 }
 
+/// The sRGB curve's inverse (an sRGB channel 0..1 to linear).
+pub fn srgb_to_linear(c: f32) -> f32 {
+    if c <= 0.04045 {
+        c / 12.92
+    } else {
+        ((c + 0.055) / 1.055).powf(2.4)
+    }
+}
+
 /// A body's colour remap as drawn: per pair (the model's ramp, the ramp in its place), the two
-/// base colours as sRGB 0..1, at most [`MAX_REMAP`]; a pair naming no ramp, or swapping a ramp
-/// for itself, is left out (docs/CHARACTERS.md §11.11).
+/// base colours as the GLBs' vertex colours hold them (glTF `COLOR_0` is linear: the sRGB base
+/// through the sRGB curve), at most [`MAX_REMAP`]; a pair naming no ramp, or swapping a ramp for
+/// itself, is left out (docs/CHARACTERS.md §11.11).
 pub fn colour_remap(pairs: &[(&str, &str)]) -> Vec<([f32; 3], [f32; 3])> {
-    let rgb = |c: u32| [16, 8, 0].map(|s| ((c >> s) & 0xff) as f32 / 255.0);
+    let rgb = |c: u32| [16, 8, 0].map(|s| srgb_to_linear(((c >> s) & 0xff) as f32 / 255.0));
     pairs
         .iter()
         .filter(|(from, to)| from != to)
@@ -129,6 +139,13 @@ pub struct Grip {
     pub turns: &'static [(usize, [f32; 3])],
 }
 
+impl ModelData {
+    /// Its idle pose of that name (models.json `poses`), if it has one.
+    pub fn pose(&self, name: &str) -> Option<&'static Grip> {
+        self.poses.iter().find(|p| p.name == name)
+    }
+}
+
 /// One model's data.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ModelData {
@@ -153,6 +170,10 @@ pub struct ModelData {
     /// hand.
     pub grips: &'static [Grip],
     pub grip_items: &'static [(&'static str, &'static str)],
+    /// Idle poses as data (models.json `poses`, WORK_QUEUE item 39): per pose name its joints'
+    /// turns on top of the clips, blended in and out over `pose_blend_s` seconds.
+    pub poses: &'static [Grip],
+    pub pose_blend_s: f32,
 }
 
 impl ModelData {
@@ -376,13 +397,13 @@ mod remap_tests {
             1,
             "a swap for itself and an unknown ramp are left out"
         );
-        assert_eq!(
-            r[0].0,
-            [
-                0x4f as f32 / 255.0,
-                0x8a as f32 / 255.0,
-                0x4a as f32 / 255.0
-            ]
+        // The Peasant's shirt as its GLB holds it (glTF COLOR_0 is linear: #144111), within a
+        // byte: the remap must match what the vertices carry (it matched nothing in sRGB).
+        let shirt = [0x14u8, 0x41, 0x11].map(|b| f32::from(b) / 255.0);
+        assert!(
+            (0..3).all(|k| (r[0].0[k] - shirt[k]).abs() < 1.0 / 255.0),
+            "{:?}",
+            r[0].0
         );
         let many: Vec<_> = (0..9).map(|_| ("wool_green", "linen")).collect();
         assert_eq!(colour_remap(&many).len(), MAX_REMAP);

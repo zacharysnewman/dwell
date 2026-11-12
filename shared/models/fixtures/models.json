@@ -11,6 +11,8 @@
   "player": "two_bone",
   "models": {
     "two_bone": {
+      "poses": { "lie": { "tip": [90, 0, 0] } },
+      "poseBlendS": 1,
       "glb": "two_bone.glb",
       "scale": 1,
       "yaw": 0,

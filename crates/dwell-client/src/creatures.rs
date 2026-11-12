@@ -6,7 +6,7 @@
 
 use std::collections::HashMap;
 
-use dwell_protocol::{CreatureNet, CreaturesMessage, NPC_POSES, NpcNet};
+use dwell_protocol::{CREATURE_POSES, CreatureNet, CreaturesMessage, NPC_POSES, NpcNet};
 use dwell_sim::creatures::{Table, npc_colours};
 use dwell_world::FaceFrame;
 
@@ -71,6 +71,9 @@ pub struct CreatureView {
     pub role: &'static str,
     /// An NPC's looks; None: an animal, or an NPC from a server without the NPC part.
     pub npc: Option<NpcLook>,
+    /// An animal's idle pose while it stands (`graze`, `lie`, ...: `CREATURE_POSES`, WORK_QUEUE
+    /// item 39), from a server that sends the poses' part; None: standing, or moving.
+    pub pose: Option<&'static str>,
 }
 
 #[derive(Clone, Debug)]
@@ -81,6 +84,8 @@ struct Seen {
     yaw: f64,
     /// Its NPC part and looks (computed once a variant).
     npc: Option<(NpcNet, NpcLook)>,
+    /// Its idle pose's index in `CREATURE_POSES` (0 stand).
+    pose: u8,
 }
 
 #[derive(Debug, Default)]
@@ -95,6 +100,10 @@ impl ClientCreatures {
             self.seen.remove(&id);
         }
         let npcs: HashMap<u32, NpcNet> = m.npcs.into_iter().flatten().map(|n| (n.id, n)).collect();
+        // The poses' part lists the creatures not standing; one absent from it stands.
+        let poses: Option<HashMap<u32, u8>> = m
+            .poses
+            .map(|p| p.into_iter().map(|c| (c.id, c.pose)).collect());
         for c in m.creatures {
             let Some(data) = dwell_models::find(dwell_models::MODELS, &c.model) else {
                 continue;
@@ -106,7 +115,11 @@ impl ClientCreatures {
                 shown: at,
                 yaw: f64::from(c.yaw),
                 npc: None,
+                pose: 0,
             });
+            if let Some(p) = &poses {
+                e.pose = p.get(&c.id).copied().unwrap_or(0);
+            }
             if let Some(n) = npcs.get(&c.id) {
                 let same = e
                     .npc
@@ -154,6 +167,9 @@ impl ClientCreatures {
                         None => role_for_speed(s.net.speed),
                     },
                     npc: s.npc.as_ref().map(|(_, l)| l.clone()),
+                    pose: (s.net.speed < 0.3 && s.pose != 0)
+                        .then(|| CREATURE_POSES.get(usize::from(s.pose)).copied())
+                        .flatten(),
                 }
             })
             .collect();
@@ -207,6 +223,7 @@ mod tests {
                 creatures: vec![net(1.3)],
                 gone: vec![],
                 npcs: None,
+                poses: None,
             });
             c.apply(CreaturesMessage {
                 creatures: vec![CreatureNet {
@@ -216,6 +233,7 @@ mod tests {
                 }],
                 gone: vec![],
                 npcs: None,
+                poses: None,
             });
             let v = c.advance(0.016);
             assert_eq!(v.len(), 1, "a model this build lacks is skipped");
@@ -224,12 +242,35 @@ mod tests {
                 creatures: vec![net(0.0)],
                 gone: vec![],
                 npcs: None,
+                poses: None,
             });
             assert_eq!(c.advance(0.016)[0].role, "idle");
+            assert_eq!(c.advance(0.016)[0].pose, None, "no poses' part: standing");
+            // WORK_QUEUE item 39: the poses' part sets an animal's idle pose; absent from it, it
+            // stands; moving, it shows none.
+            let posed = |pose: Option<u8>, speed: f32| CreaturesMessage {
+                creatures: vec![net(speed)],
+                gone: vec![],
+                npcs: Some(vec![]),
+                poses: Some(
+                    pose.map(|p| dwell_protocol::CreaturePoseNet { id: 4, pose: p })
+                        .into_iter()
+                        .collect(),
+                ),
+            };
+            c.apply(posed(Some(5), 0.0));
+            assert_eq!(c.advance(0.016)[0].pose, Some("lie"));
+            c.apply(posed(Some(1), 1.2));
+            assert_eq!(c.advance(0.016)[0].pose, None, "moving");
+            c.apply(posed(Some(1), 0.0));
+            assert_eq!(c.advance(0.016)[0].pose, Some("graze"));
+            c.apply(posed(None, 0.0));
+            assert_eq!(c.advance(0.016)[0].pose, None, "left out: standing");
             c.apply(CreaturesMessage {
                 creatures: vec![],
                 gone: vec![4],
                 npcs: None,
+                poses: None,
             });
             assert!(c.advance(0.016).is_empty());
         }
@@ -260,6 +301,7 @@ mod tests {
                 }],
                 gone: vec![],
                 npcs,
+                poses: None,
             };
             c.apply(msg(0.0, None));
             let v = c.advance(0.016);
