@@ -1300,6 +1300,8 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    showcase with recordings. Ideally recordings are 1 minute or less. Don't include any text or anything in the
    video."). Made with the `record` skill (`.claude/skills/record/`): 9:16 at 1080×1920, h264 30 fps, a minute or
    less, no text of any kind, no music, clouds off unless the shot is about clouds, footage deleted after sending.
+   Video 1, the bifacial world (16), recorded 2026-11-12 (55 s, 7 clips; at the rim of seed 7 the edge is open sea on
+   both faces, so the player flies over the edge rather than walking; BUGS.md #99 fixed for the third-person shots).
    Waiting on the owner to pick which come first. The list (suggested first: 1, 10, 3, 6, 11, 2 — the most striking
    that work today; 14 and 15 after item 39 and the swords/NPC work land; 5 after the moon trip is playable):
    Owner, 2026-11-12: **"Preferably some of each recording should be gameplay, player perspective."** — every

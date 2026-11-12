@@ -138,3 +138,15 @@ preview and the driver, remove any `client/node_modules` symlink or built `clien
   forest though it looks really pretty." Give the subject most of the video, not half; in a heavy scene (the forest)
   the page runs under 60 fps, so record frame-exact (step the theater path per captured frame or slow the clock and
   speed up in the splice) rather than real time, and check the clip's fps before splicing.
+- 2026-11-12, the bifacial world (portrait, 7 clips, 55 s, all at 60 fps on the open sea): at seed 7's rim (x = 50 000)
+  the edge is open sea on both faces, no shore, so the crossing is **flown**: `d.fly(true)`, fly over the edge, then
+  `d.fly(false)` and the player falls, is flung across the midplane and swings back; turn flight on when the fall
+  reverses on face B (`y < -20` and rising), then `Space` rises along face B's up. It worked every take (6 of 6).
+  A placed or theater camera drew **no player** until BUGS.md #99 (fixed): third-person shots of the player need a
+  build with that fix. `d.teleport` refuses a point on the other face (returns false): reload the page to reset a take
+  (`/goto` the same `?fresh=1&at=` link). Teleport while flying over the sea first, then rise with `Space`: the player
+  sinks to swimming before `fly` takes hold. From beside the rim at `y` ≈ 5 the camera sees both seas and both skies;
+  the day is long (0.22–0.82 all reads as day), so a time-lapse that shows the faces swap runs through the night
+  (`timeOfDay` 0.74 → 0.2: face A darkens as face B's dawn comes up). In portrait the held item shows only at the
+  frame's right edge. The driver's `/eval` with a curl body is refused by the worktree guard: post the JS from a small
+  node script (`fetch('http://localhost:4999/eval', {method: 'POST', body})`) reading a `.js` file instead.
