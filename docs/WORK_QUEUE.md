@@ -49,6 +49,7 @@ the two"** — palm fronds as leaf blocks vs frond cards side by side: built in 
 (`docs/prototypes/tree-growth.html`, *Palm fronds* → *Split*, or `?species=palm&fronds=split`; to be republished to its link).
 
 Still open:
+0. **Which showcase recordings first** (item 40's list).
 1. **Pick a haze setting** (item 29), once the ground-level and hilltop shots (clouds off) are taken. Default:
    today's fog.
 2. ~~**The in-game Chisel editor and the textures tab extras**~~ — **approved (owner, 2026-11-12: "these all seem
@@ -919,6 +920,33 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    and lie down). In progress (cloud); a new video after.
    Owner on the first video: **"The recording was a really good start. I'd like to record at 9:16 1080/1920."** —
    the next video (after this item lands) is portrait 1080×1920, framed for portrait, with a chase and fleeing.
+
+40. **Showcase recordings** (owner 2026-11-12: "We have a lot of visual features, list features that we could
+   showcase with recordings. Ideally recordings are 1 minute or less. Don't include any text or anything in the
+   video."). Made with the `record` skill (`.claude/skills/record/`): 9:16 at 1080×1920, h264 30 fps, a minute or
+   less, no text of any kind, no music, clouds off unless the shot is about clouds, footage deleted after sending.
+   Waiting on the owner to pick which come first. The list (suggested first: 1, 10, 3, 6, 11, 2 — the most striking
+   that work today; 14 and 15 after item 39 and the swords/NPC work land; 5 after the moon trip is playable):
+   1. Volcano and lava — the summit lava lake at night with bloom, crust plates and orange seams, steam where lava
+      meets water, a lava river cooling from bright to dark.
+   2. Rainier-style peak — a drone rise up the cone past snow lines, cleavers and the glacier cap, ranges fading
+      into the haze.
+   3. Day to night — a time-lapse from golden sunset to night, the moon rising with its glow, stars appearing.
+   4. The moon up close — spyglass crescent, half and full, crater rims lit along the terminator.
+   5. Flying to space (and the moon) — the sky thinning to black with stars by day; later the flight to the moon
+      and landing at ⅙ g (after M-7c, the client side).
+   6. Biomes tour — low passes over the red mesa canyons and arches, pine forest, palm coast, meadow tall grass,
+      steppe, the old-growth forest.
+   7. Water — rivers to the sea, waves on the coast, the underwater view up through the surface.
+   8. Volumetric clouds — through and above the deck at sunrise (after the cloud lighting rework, item 13).
+   9. A tree growing — sapling to mature oak, pine and palm in time-lapse, the trunk thickening.
+   10. Chopping and felling — axe bites into a notch, chips, the tree tipping, the V gash, the trunk settling.
+   11. Digging and mining — shovel scoops, pickaxe hits shattering stone into shards, cracks spreading.
+   12. Dynamite — a fuse, the blast, blocks flung as pieces, a chain reaction.
+   13. Building — placing blocks and a saved structure from its ghost preview.
+   14. Deer and wolves — a grazing herd, deer bolting from the player, a wolf pack hunting (after item 39).
+   15. Villagers — wandering in their outfits, turning to look at you, a sword duel showing block vs connect
+       (after the NPC look and swords round 2).
 
 ## Done
 
