@@ -1044,7 +1044,13 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    separate meshes or draws so leaf chunks stop at the hand-over; the impostors' own cost (not yet isolated:
    add a `view` switch); the look at the hand-over (bake the near leaves' AO/darkening into the albedo, mips per
    layer, the trunks handed over too); felled trees left out of the tiles; shadows cast (I-5); I-4 (delete
-   `lod_trees.rs`); the phone run (32 px atlas, ~10 MB); BUGS.md #95 (the LOD ground under far trees).
+   `lod_trees.rs`); the phone run (32 px atlas, ~10 MB).
+   **BUGS.md #95 fixed (2026-11-12, cloud, `claude/far-ground-holes`):** the LOD section mesher meshes the
+   ground as if its trees weren't there (`lod_mesher.rs` `mesh_section_above`: tree cells cleared for the ground
+   pass and the surface search, drawn whole over it by `lod_trees` when Far trees are on), so the impostors stand
+   on closed ground; the near chunks unchanged. Test: `far_ground_under_trees` (every column's top covered, trees
+   on or off, with and without surface data; trees off = the treeless ground's mesh exactly), both faces, red →
+   green. Left: the in-game look from high up at night (a local check).
 
 32. **A tall dense forest for performance reference** (owner 2026-11-12: "We should have a tall dense forest
    biome/climate for performance reference on trees."). A biome preset (tall, closely spaced mature trees — an
