@@ -1444,6 +1444,8 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    the rim to the face-A outline, closing the loop on shot 1. Not in it: the landing beside face B's hole — in the
    browser the exit push never acts on face B (BUGS.md #107; natively the same shaft lands 6 m out), so the clip
    ends as the player falls back. Paths in `.claude/skills/record/paths/bifacial-v3/`.
+   **#107 fixed 2026-11-12:** walking in, the player fell into the shaft's wall and the push (then under the opening,
+   in the shaft) went into it; the push now acts in the 2 m over the opening. The browser check is for the next take.
 41. **Theater mode** (owner 2026-11-12: "We should use full camera tools to do the things you were doing and expand
    this tool set as you go, we could call it theater mode. Even make it available ingame as a feature that could be
    toggled on for any world type."). Answers: **both** presets (pick a target and a move: orbit, dolly, track,

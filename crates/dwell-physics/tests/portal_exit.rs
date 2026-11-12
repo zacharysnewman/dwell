@@ -49,7 +49,23 @@ fn drop_in(
     yaw: f64,
     seconds: f32,
 ) -> Option<Landing> {
-    let start = DVec3::new(shaft.axis[0], f.y(shaft.top(f.face) + 1.0), shaft.axis[1]);
+    drop_in_at(w, shaft, [0.0, 0.0], f, yaw, seconds)
+}
+
+/// [`drop_in`] from `offset` (m, x and z) off the axis.
+fn drop_in_at(
+    w: &mut PlayerTestWorld,
+    shaft: Shaft,
+    offset: [f64; 2],
+    f: FaceFrame,
+    yaw: f64,
+    seconds: f32,
+) -> Option<Landing> {
+    let start = DVec3::new(
+        shaft.axis[0] + offset[0],
+        f.y(shaft.top(f.face) + 1.0),
+        shaft.axis[1] + offset[1],
+    );
     let h = w.spawn_at(start, yaw as f32);
     let (mut yaw, mut pitch, mut face, mut crossings) = (yaw, 0.0f64, f, 0);
     for t in 0..ticks(seconds) {
@@ -98,6 +114,27 @@ dwell_world::both_faces!(
             "landed {:.2} m from the axis (the rim ends at {rim} m): {landing:?}",
             landing.from_axis
         );
+        assert!((-1.6..=0.1).contains(&landing.over_opening), "{landing:?}");
+    }
+);
+
+dwell_world::both_faces!(
+    fn a_player_who_falls_against_the_shafts_wall_still_lands_beside_the_far_hole(f: FaceFrame) {
+        // both-faces: dropped in from face `f`, it comes out on the other.
+        // BUGS.md #107: a player who walks into the hole on the diagonal (yaw 45) falls with the
+        // walk's momentum into the wall's corner there (1.29 m out on each axis, in the browser)
+        // and rises against it. A push inside the shaft along its facing went into that wall and
+        // it fell straight back; over the opening it is clear.
+        let portals = shafts();
+        let shaft = portals.shafts[0];
+        let rules = dwell_worldgen::BifacialTerrain::new(SEED).portals().rules;
+        let mut w = world(portals);
+        let landing = drop_in_at(&mut w, shaft, [1.29, 1.29], f, 45.0, 8.0)
+            .expect("still in the air after 8 s: swinging between the faces");
+        assert_eq!(landing.face, f.other(), "{landing:?}");
+        assert_eq!(landing.crossings, 1, "{landing:?}");
+        let rim = f64::from(rules.radius + rules.rim_width);
+        assert!(landing.from_axis > rim, "{landing:?}");
         assert!((-1.6..=0.1).contains(&landing.over_opening), "{landing:?}");
     }
 );

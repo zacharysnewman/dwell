@@ -4089,7 +4089,7 @@ in the code yet.
 | `CORE_ANCHOR_LAYERS` | 8 | Rows (4 m on ½ m cells) either side of the midplane that anchor both faces (Phase 20); within `CORE_LAYERS` (checked at compile time) |
 | `bedrock.thickness` (`shared/worldgen/midplane.json`) | 1 m (2 rows) per face | The indestructible bedrock's rows from the midplane on each face (Phase 48); within `CORE_LAYERS` (validated) |
 | `portals` (`shared/worldgen/midplane.json`) | 4–8, ≥ 3 km apart, within 26 km, ≤ 40 m above sea, radius 2.5 m | The seeded portals through the bedrock: count, spacing, siting, shaft radius, rim (stone, 1 m × ½ m), ladder (south wall), 4 m clear ground (Phase 48, BIFACIAL_WORLD.md §12) |
-| `portals.exit` (`shared/worldgen/midplane.json`) | push 30 m/s², depth 2 m, minRise 10 m/s | The shaft's exit push: a body rising fast through a shaft's top 2 m is pushed along its facing and lands ~6 m from the axis on the ground beside the opening (the controller's `step_portal`, BIFACIAL_WORLD.md §12.3) |
+| `portals.exit` (`shared/worldgen/midplane.json`) | push 30 m/s², depth 2 m, minRise 10 m/s | The shaft's exit push: a body rising fast through the 2 m over a shaft's opening is pushed along its facing and lands ~6 m from the axis on the ground beside the opening (the controller's `step_portal`, BIFACIAL_WORLD.md §12.3) |
 | `WORLD_RADIUS` | 50 000 m | Radius of the world disc; beyond it, the void |
 | `ISLAND_RADIUS` | 25 000 m | The interim island's mean radius, absolute (owner, 2026-10-15; the terrain definition's layout in Phase 17) |
 | `FLAT_TOP_Y` | 64 rows (32 m) | The flat worlds' surface (the flat test world, the structure sandbox); metre twin `FLAT_TOP_M` |

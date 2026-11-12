@@ -1921,8 +1921,9 @@ impl Players {
     }
 
     // Dwell — a portal's exit push (docs/BIFACIAL_WORLD.md §12.3; owner 2026-11-12: "land beside
-    // the hole"): in the top of a portal's shaft (`VoxelWorld::portals`, from `midplane.json`
-    // `portals.exit`), an airborne body rising fast (swung up from the far face, not a jump) is
+    // the hole"): just over a portal's opening (`VoxelWorld::portals`, from `midplane.json`
+    // `portals.exit`; over it, clear of the shaft's wall, BUGS.md #107), an airborne body that rose
+    // out fast (swung up from the far face, not a jump) is
     // pushed along its facing, a steady crosswind over a fixed depth, so it arcs out of the
     // opening and lands on the ground beside it however fast it rose. Momentum, kept in the air like the waterfall's push; climbing, flying
     // and swimming are never pushed.
@@ -1943,6 +1944,7 @@ impl Players {
             c.face.face,
             [position.x, feet, position.z],
             c.vertical.target_y,
+            p.scaled_cfg().body.gravity,
             DT,
         );
         if gain > 0.0 {
