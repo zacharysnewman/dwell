@@ -6,6 +6,24 @@ pins it.
 
 ## Open
 
+### 100. Volumetric clouds look like "crazy triangles"
+
+Owner, 2026-11-12: "the clouds look ridiculous at least the volumetric ones. Look like crazy triangles. Find a
+white paper on clouds." Since the shape model (#775) and the view-opacity change (#790). Suspects: the noise baked
+at 64³ (base) / 32³ (detail) sampled with too large a world scale, so tiling and the noise's lattice show as
+straight-edged facets; the coverage remap cutting value noise into hard polygons (a remap without enough softness
+at the new, higher view extinction 0.03 /m, which turns soft gradients into hard silhouettes); the weather map's
+cells (from the deck's noise) visible as shapes; nearest-texel sampling of the 3D textures instead of trilinear.
+Reference: Schneider, "The Real-time Volumetric Cloudscapes of Horizon Zero Dawn" (SIGGRAPH 2015) and "Nubis
+Cubed" (2023).
+Owner, more precisely: "The more recent volumetric shape change for the clouds make them look like 3 sided
+pyramids." A cut that rises with height through a field with linear (or triangular-lattice / simplex) interpolation
+makes cones whose sides are the interpolation's facets: the cloud-type tower ("cloud cores tower above their edges",
+weather `type` from the deck's noise) with a height cut on a linearly interpolated coverage gives a pyramid per cell;
+3 sides suggests a triangular lattice (simplex-style) or the weather texture sampled as triangles. Fix: smooth
+(cubic/Hermite) interpolation or Perlin-Worley for coverage/type, a rounded height profile (the papers' gradient
+times a remap, not a linear cut), erosion to break the silhouette.
+
 ### 97. Light shafts draw a pixelated dither pattern
 
 Owner, 2026-11-12 (screenshot: low sun behind clouds, a tree in front): "Volumetric lighting also has some weird
