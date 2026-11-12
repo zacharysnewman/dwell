@@ -1485,6 +1485,11 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    ends as the player falls back. Paths in `.claude/skills/record/paths/bifacial-v3/`.
    **#107 fixed 2026-11-12:** walking in, the player fell into the shaft's wall and the push (then under the opening,
    in the shaft) went into it; the push now acts in the 2 m over the opening. The browser check is for the next take.
+   **Video 1 v4 recorded 2026-11-12** (54.3 s, 6 clips, 18.8 MB, clouds off, no flight): v3's shots with the landing.
+   Browser check passed: 5 of 5 drops rose ~12 m out of face B's hole and landed 7.3 m from the axis on the first
+   swing. Shot (5) is a camera 14 m out and 13.5 m up on the landing diagonal (`"up": "a"`): the player rises
+   head-down, arcs out and stands on face B's ground overhead beside the hole; (6) the drone rise starts from that
+   camera. Paths in `.claude/skills/record/paths/bifacial-v4/`.
 41. **Theater mode** (owner 2026-11-12: "We should use full camera tools to do the things you were doing and expand
    this tool set as you go, we could call it theater mode. Even make it available ingame as a feature that could be
    toggled on for any world type."). Answers: **both** presets (pick a target and a move: orbit, dolly, track,
