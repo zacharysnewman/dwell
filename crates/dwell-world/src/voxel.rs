@@ -620,6 +620,19 @@ impl VoxelWorld {
         self.light_pending
     }
 
+    /// Finishes a light part way before chunk `coord` changes, if the light may read it: a chunk
+    /// in its column or the eight beside them (the light reaches 15 cells sideways, under half a
+    /// chunk; an open column's sky lost under a new chunk goes down any distance). Others, the
+    /// chunks arriving all round while it lights, leave it be.
+    fn settle_light_near(&mut self, coord: ChunkCoord) {
+        if let Some(c) = self.light_pending
+            && (c.x - coord.x).abs() <= 1
+            && (c.z - coord.z).abs() <= 1
+        {
+            self.settle_light();
+        }
+    }
+
     /// Finishes a light part way, if any.
     fn settle_light(&mut self) {
         if self.light_pending.is_some() {
@@ -759,8 +772,8 @@ impl VoxelWorld {
 
     /// Generates a missing chunk (streamed worlds: creates an all-air one).
     pub fn get_or_create(&mut self, coord: ChunkCoord) -> &mut Chunk {
-        // A light part way reads the voxels as they were: finished before any changes.
-        self.settle_light();
+        // A light part way reads the voxels as they were: finished before a change it may read.
+        self.settle_light_near(coord);
         if !self.chunks.contains_key(&coord) {
             let mut chunk = None;
             if self.saved_has(coord)
@@ -787,8 +800,8 @@ impl VoxelWorld {
         self.chunks.get(&coord).map(|c| &**c)
     }
     pub fn find_mut(&mut self, coord: ChunkCoord) -> Option<&mut Chunk> {
-        // A light part way reads the voxels as they were: finished before any changes.
-        self.settle_light();
+        // A light part way reads the voxels as they were: finished before a change it may read.
+        self.settle_light_near(coord);
         self.chunks.get_mut(&coord).map(|c| &mut **c)
     }
 
@@ -1009,8 +1022,8 @@ impl VoxelWorld {
 
     /// Inserts or replaces a chunk (streamed chunks; chunks generated off-thread).
     pub fn put(&mut self, coord: ChunkCoord, chunk: Chunk) {
-        // A light part way reads the voxels as they were: finished before any changes.
-        self.settle_light();
+        // A light part way reads the voxels as they were: finished before a change it may read.
+        self.settle_light_near(coord);
         self.store(coord, chunk);
     }
 
@@ -1021,8 +1034,8 @@ impl VoxelWorld {
         self.epoch += 1;
     }
     pub fn remove(&mut self, coord: ChunkCoord) {
-        // A light part way reads the voxels as they were: finished before any changes.
-        self.settle_light();
+        // A light part way reads the voxels as they were: finished before a change it may read.
+        self.settle_light_near(coord);
         if self.chunks.remove(&coord).is_some() {
             self.epoch += 1;
         }

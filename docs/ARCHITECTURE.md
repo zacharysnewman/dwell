@@ -1995,7 +1995,11 @@ Server (native), local mode (WASM), and client (WASM) must produce **bit-identic
   `STREAM_DEADLINE_MS` after the frame's start (the finished jobs taken in and the ticks counted), at
   least `STREAM_MIN_MS`, the light stopping short of the `STREAM_MESH_SHARE` kept for the mesh starts, and
   each stopping before an item its running cost estimate says would pass the deadline; a late frame runs one
-  item past the deadline at most, the light's or a mesh start's, in turn (BUGS.md #72). Finished chunk meshes
+  item past the deadline at most, the light's or a mesh start's, in turn (BUGS.md #72). A chunk's flood light
+  runs a slice at a time across frames (`LightMap::begin_load`/`resume`, `LIGHT_SLICE_CELLS` 1024 cells
+  between looks at the clock; the same steps in the same order as the one-shot load, kept between frames), the
+  chunk unlit for meshing, its own and its neighbours', until done; any other light update, and any change to
+  the world's voxels, first finishes it (`VoxelWorld::settle_light`). Finished chunk meshes
   are uploaded under a per-frame byte budget by tier (`shared/render/streaming.json` `uploadBytesPerFrame`,
   loaded by `dwell-client` `render/streaming.rs`; the queue is `dwell-game` `upload_budget.rs`): oldest first,
   the first of a frame always, the rest the next frame. A mesh over the budget on its own is written a
@@ -3845,6 +3849,7 @@ in the code yet.
 | `STREAM_MIN_MS` / `STREAM_FRAME_SHARE` / `STREAM_MIN_MAX_MS` (client, `stream_budget.rs`) | 2 ms / 0.15 / 50 ms | The least a frame's loading gets however late the frame: 2 ms, or 0.15 of the last frame's interval on a slow page (CI's ~5 fps: 30 ms), at most 50 ms |
 | `SLOW_FRAME_MESHES_MAX` (client, `pool.rs`) | 8× | A slow page keeps more chunk meshes in flight: the usual number × its frame interval / 16.7 ms, at most 8×, queued in the pool and started as workers free between frames (at CI's ~5 fps a few starts a frame left the workers idle and the loading screen waited its 20 s timeout) |
 | `STREAM_MESH_SHARE` (client, `stream_budget.rs`) | 0.4 | The budget's share the light leaves to the mesh starts while chunks wait to be meshed |
+| `LIGHT_SLICE_CELLS` (client, `chunk_stream.rs`) | 1024 | Cells of a chunk's flood light between looks at the clock: ~0.1 ms natively, ~0.5 ms on a phone's CPU; one chunk's light was 15–20 ms of a frame at CPU 6× (BUGS.md #72) |
 | `uploadBytesPerFrame` (client, data: `shared/render/streaming.json`) | desktop 4 MiB, phone 512 KiB | The chunk mesh bytes one frame uploads (the first mesh always goes; the rest wait in order); a mesh larger than it is written over several frames, this much a frame (`render/staged.rs`). On the bench's phone page at CPU 4× an upload costs ~4 ms a MB and moving brought bursts of 1.8–3.7 MB in a frame (BUGS.md #72) |
 | **LOD (§6.6), Phase 4** | | |
 | `LOD_SECTION_CELLS` | 32 | Cells per LOD section edge (level 0 = a chunk) |
