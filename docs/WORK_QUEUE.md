@@ -1438,6 +1438,10 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    v2 review, owner: **"The camera shouldn't flip on the wide shot, show it's upside down."** — the wide shot of the
    player coming out on face B keeps face A's up (the camera never takes face B's frame), so face B and the player
    rising out of its hole read upside down, hanging under the disc. Clouds off in every shot (owner: they "might look
+   v4 review, owner: **"The camera is upside down for the out of the hole shot. I just wanted the not upside down for
+   the initial wide shot so you could tell it was a different side without the disorientation."** — only the
+   initial wide (the crane from face A round under to face B) holds face A's up; the out-of-the-hole shot on face B
+   uses face B's own up (upright, `up: "auto"`).
    weird", confirmed by the v2 comparison).
    **Built 2026-11-12:** a keyframe `up` ("a" | "b" | "auto", default auto) holds a face's up, roll and look frame
    across the midplane (THEATER_MODE.md §3.1; presets and the keyframe editor's Up take it); the next take uses
