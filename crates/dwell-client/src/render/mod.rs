@@ -6312,10 +6312,7 @@ mod tests {
         padded[dwell_mesh::padded_index(2, 2, 2)] = stone;
         let view = dwell_protocol::damage::DamageView {
             fraction: 255,
-            marks: vec![dwell_protocol::damage::HitMark {
-                face: 2,
-                point: [128, 255, 128],
-            }],
+            marks: vec![dwell_protocol::damage::HitMark::at(2, [128, 255, 128])],
         };
         let m = dwell_mesh::mesh_chunk_damaged(
             &padded,

@@ -304,7 +304,9 @@ pub fn encode_job(id: u32, job: &Job) -> Vec<u8> {
             for (c, d) in damage {
                 c.iter().for_each(|v| w.i32(*v));
                 let mut b = Vec::new();
-                d.write(&mut dwell_protocol::bytes::ByteWriter::new(&mut b));
+                let mut bw = dwell_protocol::bytes::ByteWriter::new(&mut b);
+                d.write(&mut bw);
+                d.write_chunks(&mut bw);
                 w.bytes(&b);
             }
         }
@@ -418,7 +420,8 @@ pub fn decode_job(bytes: &[u8]) -> Result<(u32, Job), DecodeError> {
                 let c = [r.i32()?, r.i32()?, r.i32()?];
                 let b = r.bytes()?;
                 let mut br = dwell_protocol::bytes::ByteReader::new(&b);
-                let d = dwell_protocol::damage::DamageView::read(&mut br);
+                let mut d = dwell_protocol::damage::DamageView::read(&mut br);
+                d.read_chunks(&mut br);
                 if !(br.ok() && br.at_end()) {
                     return Err(DecodeError);
                 }
@@ -720,10 +723,7 @@ mod tests {
                 [4, 5, 6],
                 dwell_protocol::damage::DamageView {
                     fraction: 140,
-                    marks: vec![dwell_protocol::damage::HitMark {
-                        face: 2,
-                        point: [10, 255, 0],
-                    }],
+                    marks: vec![dwell_protocol::damage::HitMark::at(2, [10, 255, 0])],
                 },
             )],
             ground: Some((0x1234_5678_9abc, vec![[1, 2, 3], [4, 5, 6]], vec![3, 4])),

@@ -495,3 +495,50 @@ up with the block. We want that timing." And: "Tools should only consume durabil
   sounded on the click) and `hit_feedback` `PendingHits`; `dwell-protocol`
   `a_tools_contact_time_is_its_data_and_a_hand_lands_at_once` and `shared/tools/gen.test.mjs` (a fixture
   tool's `contactS` by data alone; a bad one fails by name).
+
+## 9. Metal tools are twice as good (WORK_QUEUE "Waiting on the owner" answer 7)
+
+Owner, 2026-11-12: **"Metal tools break double sized bigger chunks off and reach 50% broken faster, which is
+when the blocks break. Also have double durability."** What exists: three metal tools, the metal axe,
+pickaxe and shovel (`shared/items/items.json`, `shared/inventory/inventory.json`, `breaking.tools`), each with
+a stone-tier counterpart of its class (the stone axe, the stone pickaxe, the wooden shovel). No content was
+added. Built, as data:
+
+- **A tier is `{ speed, chunk }`** (`shared/tools/tools.json` `breaking.tiers`; a bare number is still a
+  speed, chunk 1): `chunk` (×, [0.25, 4]) is how big a piece each hit of the tier takes off. Stone
+  `{ 1.5, 1 }`, metal `{ 3, 2 }` (was speed 2.5). Validated by `shared/tools/gen.mjs` (a speed above 0, the
+  chunk's range, unknown fields), emitted as `BreakTool::chunk`; `dwell_protocol::damage::hit_chunk(held)`
+  is the held tool's chunk in sixteenths (16: ×1; a hand or a block ×1).
+- **Half the hits:** hits to break are the class's entry over the tier's speed, rounded up: stone and its
+  ramp 5 with the stone pickaxe, **3** with the metal one (7 / 3, rounded up; 2.5 exactly can't be a hit
+  count); soils and sand the same with the shovels. So a metal hit takes the block a third of the way (the
+  stone's a fifth). Per-hit drops follow: a block's half of its pieces spread over the hits before the
+  last is 1 a hit with the stone pickaxe and 2 a hit with the metal one (§5's `hit_share`), the pieces
+  themselves the same items.
+- **A mark twice the size:** each `HitMark` records its `chunk`; the carve (`damage_mesh::carve_of`)
+  scales that mark's width and depth by it (the soils' merged bowl takes its biggest mark's; the depth kept
+  within 45 % of the cell along the face's normal; the cell's edge fade unchanged, so the carve stays
+  watertight). Saved: the `block_damage` record appends a `0xC4` byte and one chunk a mark only when some
+  mark is not ×1 (a world hit only by stone tools and hands writes the old record; an older build on the
+  line opening one with metal marks doesn't read the record, keeping it unwritten-over, as §5 says of a
+  newer record). Sent: the new capability **`damage.chunks`** (`shared/protocol/capabilities.json`): a
+  `Damage` message ends with the marks' chunks only to a client that listed it; an older client gets the
+  old message and draws every mark ×1. No new compatibility line.
+- **The axe** (ADR 0067): the metal axe's `biteM` was already 0.2 to the stone axe's 0.1 (its bite twice
+  the depth); it fells a standing trunk at one aim in 5 swings to the stone axe's 11. The chopping
+  prototype's `chop2.bite` is now 0.09, twice the stone axe's 0.045 (was 0.075). The bite's mouth width
+  (`cut.bite.widthM`) is the wood's, the head's size, the same for both axes.
+- **Double durability:** `durability.items` gives the metal axe, pickaxe and shovel 64 hits each (the stone
+  ones 32; before, metal tools never wore).
+- **Tests:** `dwell-protocol` `damage` `a_metal_tool_is_twice_its_stone_counterpart` (speed, chunk and
+  durability doubled, at most half the hits, rounded up, on every block of its class),
+  `a_fixture_tiers_chunk_by_data_alone`, `a_marks_chunk_is_saved_only_when_not_one_and_an_older_record_reads_as_one`,
+  `a_damage_message_carries_the_chunks_only_when_asked_and_an_older_one_reads_as_one`; `dwell-mesh`
+  `a_metal_tools_mark_is_twice_the_size_of_a_stone_tools` (both faces, dirt's bowl and stone's spall: twice
+  as deep, about twice as wide); `dwell-sim` `damage` `a_metal_tool_breaks_in_about_half_the_hits_with_marks_twice_the_size`
+  (both faces: the metal pickaxe and shovel 3 hits to the stone ones' 5, their marks ×2, a wear a hit),
+  `a_marks_chunk_reaches_only_a_client_that_lists_damage_chunks` (an older client's message as before),
+  `chopping` `a_metal_axe_fells_in_about_half_the_stone_axes_swings_and_wears_half_as_fast` (both faces,
+  5 against 11); `shared/tools/gen.test.mjs` (the doubled tiers, a fixture tier's chunk, bad chunks fail by
+  name, the metal tools' 64).
+- **Not done:** no browser check (cloud session, no GPU): the bigger marks in game are for the owner's look.

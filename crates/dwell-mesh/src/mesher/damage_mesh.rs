@@ -34,6 +34,7 @@ pub(crate) fn face_local(
                 f => f,
             },
             point: [m.point[0], 255 - m.point[1], m.point[2]],
+            chunk: m.chunk,
         })
         .collect();
     (
@@ -75,6 +76,18 @@ pub(crate) fn carve_of(face: usize, marks: &[&HitMark], look: &DamageLook, fract
     let grow = 0.55 + 0.45 * fraction;
     let radius = 0.5 * look.size * grow;
     let depth = look.depth * grow;
+    // Each mark scaled by its chunk (a metal tool's ×2, `HitMark::chunk`; owner, 2026-11-12:
+    // "break double sized bigger chunks off"), its depth kept inside the cell.
+    let deepest = 0.45 * ext(axis);
+    let sized = |m: &HitMark| (radius * m.scale(), (depth * m.scale()).min(deepest));
+    // The soils' merged hollow has one radius: its biggest mark's.
+    let big = marks
+        .iter()
+        .take(4)
+        .map(|m| m.scale())
+        .fold(0.0, f64::max)
+        .max(1.0);
+    let (bowl_r, bowl_d) = (radius * big, (depth * big).min(deepest));
     // A mark's centre on the face (m), kept far enough in for its dent to fit the cell.
     let centre = |m: &HitMark, keep: f64| -> [f64; 2] {
         let at = |a: usize, e: f64| {
@@ -86,11 +99,11 @@ pub(crate) fn carve_of(face: usize, marks: &[&HitMark], look: &DamageLook, fract
     let (lo, hi) = ([0.0, 0.0], [eu, ev]);
     match look.profile {
         CarveProfile::Bowl => Carve::Bowl(Dent {
-            centres: marks.iter().take(4).map(|m| centre(m, radius)).collect(),
+            centres: marks.iter().take(4).map(|m| centre(m, bowl_r)).collect(),
             lo,
             hi,
-            radius,
-            depth,
+            radius: bowl_r,
+            depth: bowl_d,
             // A carve only cuts: the loose rim was the shader relief's.
             rim: 0.0,
         }),
@@ -99,7 +112,10 @@ pub(crate) fn carve_of(face: usize, marks: &[&HitMark], look: &DamageLook, fract
                 .iter()
                 .enumerate()
                 .take(4)
-                .map(|(i, m)| shard(m, i, look.facets.max(3), radius, depth, centre(m, radius)))
+                .map(|(i, m)| {
+                    let (r, d) = sized(m);
+                    shard(m, i, look.facets.max(3), r, d, centre(m, r))
+                })
                 .collect(),
             lo,
             hi,
@@ -110,7 +126,8 @@ pub(crate) fn carve_of(face: usize, marks: &[&HitMark], look: &DamageLook, fract
                 .enumerate()
                 .take(4)
                 .flat_map(|(i, m)| {
-                    flakes(m, i, look.flakes.max(1), radius, depth, centre(m, radius))
+                    let (r, d) = sized(m);
+                    flakes(m, i, look.flakes.max(1), r, d, centre(m, r))
                 })
                 .collect(),
             lo,
@@ -621,6 +638,18 @@ mod tests {
         marks: &[(u8, [u8; 3])],
         fraction: u8,
     ) -> (Vec<[f64; 3]>, Vec<[u32; 3]>) {
+        mesh_sized(f, block, local, marks, fraction, HitMark::ONE)
+    }
+
+    /// [`mesh_one`] with every mark's piece `chunk` (`HitMark::chunk`, sixteenths).
+    fn mesh_sized(
+        f: FaceFrame,
+        block: &str,
+        local: [i32; 3],
+        marks: &[(u8, [u8; 3])],
+        fraction: u8,
+        chunk: u8,
+    ) -> (Vec<[f64; 3]>, Vec<[u32; 3]>) {
         let cell = world_cell(f, local);
         let mut padded = vec![0u16; PADDED_VOLUME];
         padded[padded_index(cell[0], cell[1], cell[2])] = dwell_blocks::require(block);
@@ -629,8 +658,8 @@ mod tests {
             marks: marks
                 .iter()
                 .map(|&(face, point)| HitMark {
-                    face: world_face(f, face),
-                    point,
+                    chunk,
+                    ..HitMark::at(world_face(f, face), point)
                 })
                 .collect(),
         };
@@ -675,7 +704,7 @@ mod tests {
             fraction,
             marks: marks
                 .iter()
-                .map(|&(face, point)| HitMark { face, point })
+                .map(|&(face, point)| HitMark::at(face, point))
                 .collect(),
         }
     }
@@ -736,6 +765,47 @@ mod tests {
                     deepest > 0.8 * look.depth && deepest <= look.depth + 1e-6,
                     "{block}: as deep as its data: {deepest} of {}",
                     look.depth
+                );
+            }
+        }
+    );
+
+    dwell_world::both_faces!(
+        /// A metal tool's hit takes off a piece twice the size (owner, 2026-11-12: metal tools
+        /// "break double sized bigger chunks off"; `HitMark::chunk` 32): the carve into the top is
+        /// twice as wide and twice as deep as a stone tool's, for a soil's bowl and stone's spall,
+        /// face-locally on both faces.
+        fn a_metal_tools_mark_is_twice_the_size_of_a_stone_tools(f: FaceFrame) {
+            let local = [3, 5, 4];
+            let py = |y: u8| if f == FaceFrame::B { 255 - y } else { y };
+            let top = f64::from(local[1] + 1);
+            // The deepest point below the top and the carve's width along x (m).
+            let measure = |block: &str, chunk: u8| -> (f64, f64) {
+                let (pts, _) = mesh_sized(f, block, local, &[(2u8, [128, py(255), 128])], 0, chunk);
+                let cut: Vec<_> = pts
+                    .iter()
+                    .filter(|p| p[1] > top - 0.45 && (top - p[1]) * CELL_H > 1e-4)
+                    .collect();
+                assert!(!cut.is_empty(), "{block}: carved");
+                let deepest = cut
+                    .iter()
+                    .map(|p| (top - p[1]) * CELL_H)
+                    .fold(0.0, f64::max);
+                let (lo, hi) = cut.iter().fold((f64::MAX, f64::MIN), |(lo, hi), p| {
+                    (lo.min(p[0]), hi.max(p[0]))
+                });
+                (deepest, hi - lo)
+            };
+            for block in ["dwell:dirt", "dwell:stone"] {
+                let (d1, w1) = measure(block, HitMark::ONE);
+                let (d2, w2) = measure(block, 2 * HitMark::ONE);
+                assert!(
+                    (d2 / d1 - 2.0).abs() < 0.1,
+                    "{block}: twice as deep: {d2} against {d1}"
+                );
+                assert!(
+                    w2 / w1 > 1.6 && w2 / w1 < 2.4,
+                    "{block}: about twice as wide: {w2} against {w1}"
                 );
             }
         }
@@ -849,10 +919,7 @@ mod tests {
                     let g = grid_for(&look, faces);
                     let mut total = 0;
                     for face in [0usize, 2, 4, 5].into_iter().take(faces) {
-                        let mark = HitMark {
-                            face: face as u8,
-                            point: [100, 140, 120],
-                        };
+                        let mark = HitMark::at(face as u8, [100, 140, 120]);
                         let carve = carve_of(face, &[&mark], &look, 1.0);
                         let sf = StruckFace {
                             cell: [1, 1, 1],
@@ -899,10 +966,7 @@ mod tests {
             triangles: 400,
             cracks: None,
         };
-        let mark = HitMark {
-            face: 2,
-            point: [128, 255, 128],
-        };
+        let mark = HitMark::at(2, [128, 255, 128]);
         let carve = carve_of(2, &[&mark], &look, 1.0);
         let Carve::Facets(fs) = &carve else {
             panic!("facets by its data");
@@ -974,10 +1038,7 @@ mod tests {
             );
         }
         let look = look_of("dwell:stone").unwrap();
-        let mark = HitMark {
-            face: 2,
-            point: [128, 255, 128],
-        };
+        let mark = HitMark::at(2, [128, 255, 128]);
         let carve = carve_of(2, &[&mark], &look, 1.0);
         let sf = StruckFace {
             cell: [0, 0, 0],
@@ -1035,14 +1096,8 @@ mod tests {
             cracks: None,
         };
         let marks = [
-            HitMark {
-                face: 2,
-                point: [128, 255, 128],
-            },
-            HitMark {
-                face: 2,
-                point: [150, 255, 100],
-            },
+            HitMark::at(2, [128, 255, 128]),
+            HitMark::at(2, [150, 255, 100]),
         ];
         let one = carve_of(2, &[&marks[0]], &look, 0.3);
         let Carve::Spall(sp) = &one else {
@@ -1211,10 +1266,7 @@ mod tests {
                         fraction,
                         marks: marks
                             .iter()
-                            .map(|&(face, point)| HitMark {
-                                face: world_face(f, face),
-                                point,
-                            })
+                            .map(|&(face, point)| HitMark::at(world_face(f, face), point))
                             .collect(),
                     },
                 )
@@ -1415,10 +1467,7 @@ mod tests {
                     fraction: (60 + 4 * k) as u8,
                     marks: faces
                         .iter()
-                        .map(|&f| HitMark {
-                            face: f,
-                            point: [(70 + 3 * k) as u8, 140, (200 - 2 * k) as u8],
-                        })
+                        .map(|&f| HitMark::at(f, [(70 + 3 * k) as u8, 140, (200 - 2 * k) as u8]))
                         .collect(),
                 },
             ));

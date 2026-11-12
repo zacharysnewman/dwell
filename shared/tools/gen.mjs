@@ -447,8 +447,15 @@ export function validateBreaking(b, items, blocks) {
   for (const [t, v] of Object.entries(b.tiers)) {
     if (t[0] === '$') continue;
     if (!/^[a-z][a-z0-9_]*$/.test(t)) fail(`breaking.tiers.${t}: tiers are lower_snake_case`);
-    if (!(num(v) && v > 0)) fail(`breaking.tiers.${t} is a speed above 0, not ${JSON.stringify(v)}`);
+    // A tier is its break speed, or `{ speed, chunk }`: `chunk` how big a piece each hit takes off
+    // (×, default 1; owner, 2026-11-12: metal tools "break double sized bigger chunks off").
+    const tv = typeof v === 'object' && v !== null && !Array.isArray(v) ? v : { speed: v };
+    if (tv === v) known(tv, ['speed', 'chunk'], `breaking.tiers.${t}`);
+    if (!(num(tv.speed) && tv.speed > 0)) fail(`breaking.tiers.${t} is a speed above 0, not ${JSON.stringify(tv.speed)}`);
+    const chunk = tv.chunk ?? 1;
+    if (!(num(chunk) && chunk >= 0.25 && chunk <= 4)) fail(`breaking.tiers.${t}.chunk is a size multiple in [0.25, 4], not ${JSON.stringify(chunk)}`);
   }
+  const tierOf = (t) => (typeof b.tiers[t] === 'object' ? { speed: b.tiers[t].speed, chunk: b.tiers[t].chunk ?? 1 } : { speed: b.tiers[t], chunk: 1 });
   known(b.classes, [...Object.keys(b.classes ?? {})], 'breaking.classes');
   const classOf = new Map();
   const classes = [];
@@ -477,7 +484,7 @@ export function validateBreaking(b, items, blocks) {
     // then, on the server and the client. Optional: 0, at once.
     const contactS = t.contactS ?? 0;
     if (typeof contactS !== 'number' || !(contactS >= 0 && contactS <= 2)) fail(`${at}: contactS is seconds in [0, 2]`);
-    return { item: t.item, class: t.class, tier: t.tier, speed: b.tiers[t.tier], contactS };
+    return { item: t.item, class: t.class, tier: t.tier, ...tierOf(t.tier), contactS };
   });
   return { classes, tools };
 }
@@ -573,7 +580,7 @@ export function toolsRust(d) {
   rs.push('');
   rs.push("/// Each tool item's class, tier and that tier's break speed (`breaking.tools`).");
   rs.push('pub static BREAK_TOOLS: &[BreakTool] = &[');
-  for (const t of d.breaking.tools) rs.push(`    BreakTool { item: "${t.item}", class: "${t.class}", tier: "${t.tier}", speed: ${f64(t.speed)}, contact_s: ${f64(t.contactS)} },`);
+  for (const t of d.breaking.tools) rs.push(`    BreakTool { item: "${t.item}", class: "${t.class}", tier: "${t.tier}", speed: ${f64(t.speed)}, chunk: ${f64(t.chunk)}, contact_s: ${f64(t.contactS)} },`);
   rs.push('];');
   rs.push('');
   return rs.join('\n');
