@@ -2,6 +2,20 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.54.88",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.87",
+      "changes": [
+        "New biome: old-growth forest, a cool and very wet temperate rainforest of tall old pines and broadleaf standing close over thick tall grass.",
+        "The Realistic world grows it where the climate fits, and the Starter world on its cool, wet lowland by the rivers and lakes.",
+        "A forest test world (?worldgen=test:forest) and a bench scenario that measure the game's frame rate among dense trees."
+      ]
+    },
+    {
       "version": "0.54.86",
       "changes": [
         "Behind the scenes: work queue notes"
