@@ -82,8 +82,11 @@ fn fnv(h: &mut u64, bytes: &[u8]) {
 /// Re-pinned 2026-11-11 for the steppe's `undergrowth` 1 → 0.75 (`shared/worldgen/worlds/starter.json`,
 /// sparse tall grass in its dry lee): the earlier pin was recorded on code from before that change
 /// (with the steppe back at 1 the old hashes match exactly, so it was stale, not a float difference).
+/// Re-pinned 2026-11-12 for the meadow grass (WORK_QUEUE item 21, the 0.54 line): tall grass over
+/// ½ m grass ramps, wider and denser patches (`decorations.json`), the steppe's `undergrowth`
+/// 0.75 → 0.85.
 const STARTER_PIN: [(Face, &str); 2] =
-    [(Face::A, "b3ec7a4067146f17"), (Face::B, "d35b89d345614054")];
+    [(Face::A, "1d90f0c347edcfc1"), (Face::B, "596e7d20e21c5136")];
 
 #[test]
 fn the_starter_worlds_terrain_is_unchanged() {
