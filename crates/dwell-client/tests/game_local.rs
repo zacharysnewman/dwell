@@ -350,9 +350,8 @@ impl Rig {
             );
             game.set_registry(self.session.mapping().cloned());
             game.set_loading_screen(self.loading_screen);
-            if !size.is_default() {
-                game.set_world(self.generator, self.seed, size);
-            }
+            // As the web app does (`app.rs`: always, the portals' shafts with the size).
+            game.set_world(self.generator, self.seed, size);
             self.game = Some(game);
         }
         let Some(game) = &mut self.game else { return };
@@ -3562,4 +3561,118 @@ fn a_sword_swing_through_the_game_meets_a_villagers_block_and_it_strikes_back() 
     );
     let n = rig.core.server().npc_strikes().to_vec();
     assert!(!n.is_empty(), "it struck back in the recovery");
+}
+
+/// BUGS.md #107: a player who walks into a portal and drops comes out of the far face's opening
+/// and lands beside it, through the browser's path: the local world's server core (`LocalCore`,
+/// as the worker opens it), the client session and the game's prediction, the look continued
+/// across the midplane by the game itself, as the page does. As the showcase take walked it
+/// (`portaltake.js`): from 9 m out on the diagonal (yaw 45), W held until 1.2 m from the axis,
+/// looking down, so it falls with the walk's momentum and slides into the shaft's wall.
+/// Returns the face it ended on, its distance from the axis (m), the crossings and a log.
+fn portal_walk_in(face: dwell_world::Face) -> (dwell_world::FaceFrame, f64, u32, Vec<String>) {
+    use dwell_world::FaceFrame;
+    const SEED: u64 = 7;
+    let shafts = dwell_worldgen::portal_shafts_for_sized(
+        GENERATOR_TERRAIN,
+        SEED,
+        dwell_protocol::world_size::WorldSize::DEFAULT,
+    );
+    // The portal `?spawn=portal` goes to: nearest the disc's centre (1779.5, 20690.5).
+    let shaft = *shafts
+        .shafts
+        .iter()
+        .min_by(|a, b| {
+            a.axis[0]
+                .hypot(a.axis[1])
+                .total_cmp(&b.axis[0].hypot(b.axis[1]))
+        })
+        .unwrap();
+    let f = FaceFrame::of(face);
+    let (cx, cz) = (shaft.axis[0], shaft.axis[1]);
+    // On the ground 9 m out on the diagonal (the take's teleport), dropped from 2 m over it.
+    let at = [cx - 9.0, f.y(shaft.top(face) + 2.0), cz - 9.0];
+    let core = LocalCore::create_tuned(
+        face,
+        false,
+        Some(at),
+        false,
+        false,
+        SEED,
+        GENERATOR_TERRAIN,
+        None::<NoStorage>,
+        Box::new(SeededEntropy(1)),
+        dwell_sim::water::host::Placement::Inline,
+        false,
+        |_| {},
+    )
+    .unwrap();
+    let mut rig = Rig::with_core(GENERATOR_TERRAIN, SEED, core);
+    rig.input.look.yaw = 45.0;
+    rig.input.look.pitch = -4.0;
+    assert!(
+        rig.run_until(60 * 60, |r| r
+            .game
+            .as_ref()
+            .is_some_and(|g| g.debug_state().terrain_ready)),
+        "the terrain round the portal arrives"
+    );
+    rig.run_until(120, |_| false);
+    rig.input.set_key("KeyW", true);
+    let (mut crossings, mut on, mut log) = (0, f, Vec::new());
+    let (mut walking, mut still, mut last) = (true, 0, [0.0; 3]);
+    for t in 0..60 * 25 {
+        rig.frame();
+        let g = rig.game.as_ref().unwrap();
+        let feet = g.debug_state().feet;
+        let from_axis = (feet[0] - cx).hypot(feet[2] - cz);
+        if walking {
+            let p = if from_axis > 7.0 {
+                -4.0
+            } else {
+                -4.0 - (7.0 - from_axis) / 6.0 * 76.0
+            };
+            rig.input.look.pitch = p.max(-80.0);
+            if from_axis < 1.2 {
+                rig.input.set_key("KeyW", false);
+                walking = false;
+            }
+        }
+        let now_on = FaceFrame::at_height(feet[1]);
+        if now_on != on {
+            crossings += 1;
+            on = now_on;
+        }
+        if t % 10 == 0 {
+            log.push(format!(
+                "{t}: feet {:.2},{:.2},{:.2} look {:.1},{:.1}",
+                feet[0] - cx,
+                feet[1],
+                feet[2] - cz,
+                rig.input.look.yaw,
+                rig.input.look.pitch
+            ));
+        }
+        let moved = (0..3)
+            .map(|i| (feet[i] - last[i]).abs())
+            .fold(0.0, f64::max);
+        still = if moved < 1e-3 { still + 1 } else { 0 };
+        last = feet;
+        if !walking && crossings > 0 && still > 30 {
+            break;
+        }
+    }
+    let from_axis = (last[0] - cx).hypot(last[2] - cz);
+    (on, from_axis, crossings, log)
+}
+
+#[test]
+fn bug_107_a_player_who_walks_into_a_portal_lands_beside_the_far_hole() {
+    // face-a-only: seed 7's portal as the take dropped in, from face A (face B's opening is lower:
+    // a drop from there comes out on a later swing, `portal_exit.rs` covers both faces).
+    let (on, from_axis, crossings, log) = portal_walk_in(dwell_world::Face::A);
+    let log = log.join("\n");
+    assert_eq!(on, dwell_world::FaceFrame::B, "{log}");
+    assert_eq!(crossings, 1, "{log}");
+    assert!(from_axis > 4.0, "{from_axis:.2} m from the axis:\n{log}");
 }

@@ -63,6 +63,9 @@ pub(crate) struct MaterialStyle {
     /// Drawn as a canopy (shared/look/leaves.json `blocks`, by name): chamfered where exposed,
     /// its normals leaning out of the crown (`mesher/leaves.rs`). Full cubes only.
     pub leafy: bool,
+    /// Leaves beside it lie flat against it (block data `leafFlush`: the logs; WORK_QUEUE item 48):
+    /// a leaf cell takes the face it shares with it as covered for its chamfers (`mesher/leaves.rs`).
+    pub leaf_flush: bool,
 }
 
 /// The per-vertex fluid id of see-through faces that are not a fluid's ([`crate::NO_FLUID`]), or
@@ -153,6 +156,7 @@ pub(crate) fn style_of(s: &StateInfo, fluids: &[FluidInfo]) -> MaterialStyle {
             && dwell_look::leaves::LEAVES
                 .blocks
                 .contains(&block_id(s.name)),
+        leaf_flush: s.leaf_flush,
     }
 }
 
@@ -208,6 +212,7 @@ fn fallback_style(shape: usize, flooded: bool) -> MaterialStyle {
         axis: 1,
         octagon: false,
         leafy: false,
+        leaf_flush: false,
     }
 }
 

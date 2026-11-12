@@ -6,30 +6,12 @@ pins it.
 
 ## Open
 
-### 108. Worlds bigger than 2× stop drawing terrain past a stepped edge (it's there to walk on)
+### 109. In a big world the client won't place a block past 50 km from the centre
 
-Owner, 2026-11-12 (two screenshots, a >2× world from the air): "worlds bigger than 2x seem to give up loading
-chunks at some point, and just cutoff. The full minimap shows the whole world, and the terrain is playable. It just
-doesn't show up. It even has collision on the chunks that didn't load in." The far ground ends in a jagged edge of
-square steps (LOD section boundaries) with open sea/sky beyond, while the map has land there and walking onto it
-collides. So the server/collision side has the chunks; the client's drawing (LOD sections and/or near meshes) stops.
-Suspects: the LOD tree's root/levels or a section budget sized for 1×–2× (a fixed max section count, a memory cap,
-an f32 coordinate or index overflow in section keys at large radius), the LOD's bounds tied to the 50 km radius, or
-the client's mesh budget (BUGS #76, memory at big sizes) silently refusing new sections.
-
-### 107. In the browser a player dropped into a portal doesn't come out beside face B's hole (the exit push)
-
-Found recording showcase #1 v3 (2026-11-12, 0.54.205's tree). Seed 7's portal (`?fresh=1&seed=7&spawn=portal`,
-axis 1779.5, 20690.5; `top` A 51.0, B 44.5): walked in on the diagonal (yaw 45) and dropped, the player rises ~12 m
-out of face B's hole (feet to y −56.3), gets no sideways push, falls straight back and swings on; on the return the
-push **does** act on face A (lands ~6.7 m from the axis on face A's ground). 5 of 5 browser drops the same, with and
-without the theater camera, with the look held at yaw 45 or let go after the crossing, from yaw 45 or 135. Natively
-the same shaft works: `drop_in` (`crates/dwell-physics/tests/portal_exit.rs`) on seed 7's nearest shaft from face A
-lands on face B 5.96 m from the axis after one crossing. Suspects: something in the browser path on face B only —
-the look the client sends after the crossing (`look_yaw`), the client's prediction against the local server, or
-the input after the face change. Repro to start from: the take script
-`.claude/skills/record/paths/bifacial-v3/portaltake.js` (`{"noCam": true}` logs the drop, the apex and where it
-ends).
+Found 2026-11-12 fixing #108 (not reproduced in game): `dwell-game` `block_interaction.rs` drops a Place outside
+the build volume before sending it, testing `inside_build_volume`, the 1× build's (50 km), not the world's
+(`WorldBounds::volume`). In a 4×–10× world, where the spawn is often past 50 km, placing would do nothing while
+breaking works. Fix: give the block interaction the world's volume (`Game::set_world`), with a 4× test.
 
 ### 100. Volumetric clouds look like "crazy triangles"
 
@@ -533,6 +515,68 @@ after), and leaf texels take `impostors.json` `leafShade` (ambient 0.6, albedo x
 `?impostors=0`). Before / after / `?impostors=0` shots at 50-200 m: the crowns match the full-detail ones in size,
 density and colour, no branch forks. `__dwell.impostorDebug(mode, ambient?, albedo?)` stays as the debug view
 (DEV_TOOLS.md).
+### 107. In the browser a player dropped into a portal doesn't come out beside face B's hole (fixed after 0.55.5)
+
+Found recording showcase #1 v3 (2026-11-12, 0.54.205's tree). Seed 7's portal (`?fresh=1&seed=7&spawn=portal`,
+axis 1779.5, 20690.5; `top` A 51.0, B 44.5): walked in on the diagonal (yaw 45) and dropped, the player rises ~12 m
+out of face B's hole (feet to y −56.3), gets no sideways push, falls straight back and swings on; on the return the
+push **does** act on face A (lands ~6.7 m from the axis on face A's ground). 5 of 5 browser drops the same, with and
+without the theater camera, with the look held at yaw 45 or let go after the crossing, from yaw 45 or 135. Natively
+the same shaft works: `drop_in` (`crates/dwell-physics/tests/portal_exit.rs`) on seed 7's nearest shaft from face A
+lands on face B 5.96 m from the axis after one crossing. Suspects: something in the browser path on face B only —
+the look the client sends after the crossing (`look_yaw`), the client's prediction against the local server, or
+the input after the face change. Repro to start from: the take script
+`.claude/skills/record/paths/bifacial-v3/portaltake.js` (`{"noCam": true}` logs the drop, the apex and where it
+ends).
+
+**Cause:** not the face or the look (the yaw crosses unchanged, the browser's local server and the prediction both
+hold the shafts). The take *walked* in: with the walk's momentum the body fell into the shaft wall's corner on the
+diagonal (1.29 m out on each axis) and rose against it, and the push acted only **under** the opening, inside the
+shaft, along the facing (yaw 45): straight into that wall, which took it all. `drop_in` starts on the axis, so it
+never met the wall. On face A's return the body had drifted where its facing had room. **Fix:** the push acts in the
+`exit.depth` m **over** the opening (clear of every wall), on a body that passed the opening at `minRise` or more
+(`rise² + 2g·(feet − top)`, stateless; a jump from the rim never qualifies). Tests, red before and green after:
+`bug_107_a_player_who_walks_into_a_portal_lands_beside_the_far_hole` (`crates/dwell-client/tests/game_local.rs`: the
+take's walk-in on seed 7 through `LocalCore`, the session and the game's prediction; the rig now calls
+`Game::set_world` for every size, as the web app does) and
+`a_player_who_falls_against_the_shafts_wall_still_lands_beside_the_far_hole` (`portal_exit.rs`, both faces). The
+browser check is left for the next video take.
+
+### 108. Worlds bigger than 2× stop drawing terrain past a stepped edge (it's there to walk on) (fixed after 0.54.215)
+
+Owner, 2026-11-12 (two screenshots, a >2× world from the air): "worlds bigger than 2x seem to give up loading
+chunks at some point, and just cutoff. The full minimap shows the whole world, and the terrain is playable. It just
+doesn't show up. It even has collision on the chunks that didn't load in." The far ground ends in a jagged edge of
+square steps (LOD section boundaries) with open sea/sky beyond, while the map has land there and walking onto it
+collides. So the server/collision side has the chunks; the client's drawing (LOD sections and/or near meshes) stops.
+Suspects: the LOD tree's root/levels or a section budget sized for 1×–2× (a fixed max section count, a memory cap,
+an f32 coordinate or index overflow in section keys at large radius), the LOD's bounds tied to the 50 km radius, or
+the client's mesh budget (BUGS #76, memory at big sizes) silently refusing new sections.
+
+Owner, 2026-11-12, adding: "Sizes 8x and 10x for the map spawn you in the void where there's no terrain only
+collision." So at 8× and 10× even the chunks round the spawn didn't draw.
+
+Cause: one test of "is this section in the world" left at the 1× disc. The LOD's `classify` and the worker's
+generator (`BifacialTerrain::generate_lod`) both judged a section by `lod::kind_from_bounds`, which starts with
+`in_world(c)`, the build's 50 km disc and volume, not the world's. Every section past 50 km from the centre was
+classified Empty at any size, so the far ground stopped at the 50 km circle, drawn in the coarse sections' squares
+(the stepped edge). The streamed chunks are only drawn where the LOD reaches their level-1 section, and an empty
+section is never descended into, so at 8× and 10× (spawns 50 km+ out) the spawn's own chunks never showed, though
+the server sent them and the controller collided with them. Not a budget or a cap: the cache, the levels (the root
+holds 10×, M1) and the section keys were fine. The fix classifies in the world's bounds:
+`lod::kind_from_bounds_of(c, bounds, world)` (`LodSystem::classify` with `set_world`'s bounds, `generate_lod` with
+the terrain's). The dev report also took the 1× volume (`streamingReport`'s near ring read `outsideVolume` there).
+`__dwell.debug().lod` gains `wanted`, `built`, `drawnTotal`, `empty` and `evicted` (dropped by the cache budget).
+
+Tests (red on main, green after; both faces): `dwell-lod` `a_4x_world_s_lod_tiles_the_view_out_to_60_km_with_no_holes`
+and its 10× twin (a camera 300 m up three quarters of the way to the rim: every ground column out to 60 km is drawn
+by exactly one level and none by an empty leaf; the cache and the view's sections within the budget; red: "the
+ground 0 m out … drawn by 0 leaves, 1 empty"), `an_8x_world_draws_the_chunks_round_a_far_out_player` and its 10×
+twin (every ground chunk within the 48 m full-detail distance drawn; red: "not drawn"); `dwell-worldgen`
+`tests/world_size.rs` `an_8x_world_s_spawn_ground_is_drawn_at_every_lod_level` and its 10× twin (the real 8×/10×
+spawn's sections at levels 1–8 classify and generate as content; red at `generate_lod`: Empty). Outstanding: the
+owner's look in the browser (no GPU in the cloud session); BIG_MAP.md M3 (f32 world coordinates in the shaders, ~3 cm
+steps at 500 km) is unchanged.
 
 ### 102. A bright horizontal band in face B's sky seen from beyond the rim (fixed after 0.54.191)
 

@@ -109,6 +109,8 @@ pub mod tag {
     pub const NEAR_FADE: u8 = 0x91;
     /// `f32` (0, 1): how full a liquid's cell is (`StateInfo::fill`), sent only when not full.
     pub const FILL: u8 = 0x92;
+    /// No bytes: leaves beside it lie flat against it (`StateInfo::leaf_flush`), sent only when set.
+    pub const LEAF_FLUSH: u8 = 0x93;
 }
 
 /// Rule flag bits (tag `FLAGS`).
@@ -353,6 +355,9 @@ pub fn state_fields(s: &StateInfo) -> Fields {
     }
     if s.fill < 1.0 {
         out.push(field(tag::FILL, |w| w.f32(s.fill)));
+    }
+    if s.leaf_flush {
+        out.push(field(tag::LEAF_FLUSH, |_| {}));
     }
     if s.axis != Axis::Y {
         out.push(field(tag::AXIS, |w| {
@@ -723,6 +728,7 @@ fn default_row(name: &str) -> StateInfo {
         passable: false,
         axis: Axis::Y,
         near_fade: 0.0,
+        leaf_flush: false,
         fill: 1.0,
         cross_section: None,
     }
@@ -921,6 +927,7 @@ fn apply_look(fields: &Fields, fluids: &[String], row: &mut StateInfo) {
     row.held = None;
     row.axis = Axis::Y;
     row.near_fade = 0.0;
+    row.leaf_flush = false;
     row.fill = 1.0;
     let mut outline = None;
     let mut light = None;
@@ -1033,6 +1040,7 @@ fn apply_look(fields: &Fields, fluids: &[String], row: &mut StateInfo) {
                     row.fill = v.clamp(1.0 / 64.0, 1.0);
                 }
             }
+            tag::LEAF_FLUSH => row.leaf_flush = true,
             tag::AXIS => {
                 row.axis = match r.u8() {
                     1 => Axis::X,
@@ -1494,6 +1502,12 @@ mod tests {
         let mut row = default_row("test:leaves");
         apply_look(&state_fields(&leaves), &[], &mut row);
         assert!(leaves.near_fade > 0.0 && row.near_fade == leaves.near_fade);
+        // The log's leafFlush (WORK_QUEUE item 48, a look) travels; the leaves send none.
+        const { assert!(tag::LEAF_FLUSH & tag::LOOK_BIT != 0) };
+        apply_look(&state_fields(&log), &[], &mut row);
+        assert!(log.leaf_flush && row.leaf_flush);
+        apply_look(&state_fields(&leaves), &[], &mut row);
+        assert!(!leaves.leaf_flush && !row.leaf_flush);
         // Stone sends neither: the defaults (ground, solid to players, upright).
         let stone = state_fields(crate::info(crate::require("dwell:stone")));
         assert!(

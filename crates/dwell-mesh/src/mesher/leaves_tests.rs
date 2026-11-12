@@ -142,3 +142,50 @@ fn cards_stand_off_exposed_faces_by_the_data_and_none_inside() {
         assert!(w >= look.size_m * 0.74 && w <= look.size_m * 1.26, "{w}");
     }
 }
+
+/// WORK_QUEUE item 48 (owner, 2026-11-12: "the inside leave edges make a flat side against the
+/// logs"): a lone leaf with a log on −x draws its −x face flat and whole but for the four edges
+/// along x, whose cuts end square against it; no cut leans toward −x; its other faces are cut as
+/// before.
+#[test]
+fn a_flush_face_is_drawn_flat_and_the_cuts_along_it_end_square() {
+    let mut ex = [true; 6];
+    ex[1] = false;
+    let mut flush = [false; 6];
+    flush[1] = true;
+    let ps = flush_pieces(ex, flush, [false; 6], [[false; 6]; 6], S);
+    let inner: Vec<&Piece> = ps.iter().filter(|p| p.normal == [-1.0, 0.0, 0.0]).collect();
+    assert_eq!(inner.len(), 1, "{ps:?}");
+    // The square less the four edges' (±y, ±z) triangular ends.
+    assert!(
+        (area(&inner[0].pts) - (1.0 - 2.0 * S * S)).abs() < 1e-9,
+        "{inner:?}"
+    );
+    assert!(inner[0].pts.iter().all(|q| (q[0] + 0.5).abs() < 1e-9));
+    for p in &ps {
+        assert!(p.normal[0] > -1e-9 || p.normal == [-1.0, 0.0, 0.0], "{p:?}");
+        assert!(!p.sides.contains(&1) || p.sides == vec![1], "{p:?}");
+    }
+    // The ±y/±z edges' cuts reach the flush face: each has an edge lying on x = −0.5.
+    let ends = ps
+        .iter()
+        .filter(|p| p.sides.len() == 2)
+        .filter(|p| p.pts.iter().filter(|q| (q[0] + 0.5).abs() < 1e-9).count() == 2)
+        .count();
+    assert_eq!(ends, 4, "{ps:?}");
+    // The other faces: +x keeps its 1 − 2s square, 5 edges and 4 corners cut there less.
+    let out = ps.iter().find(|p| p.normal == [1.0, 0.0, 0.0]).expect("+x");
+    assert!((area(&out.pts) - (1.0 - 2.0 * S).powi(2)).abs() < 1e-9);
+    // 6 faces, 12 − 4 edge cuts, 8 − 4 corner cuts.
+    assert_eq!(ps.len(), 6 + 8 + 4);
+}
+
+/// Without a flush face, `flush_pieces` is `pieces`.
+#[test]
+fn flush_pieces_without_a_flush_face_are_the_plain_ones() {
+    let mut ex = [true; 6];
+    ex[3] = false;
+    let a = pieces(ex, [false; 6], [[false; 6]; 6], S);
+    let b = flush_pieces(ex, [false; 6], [false; 6], [[false; 6]; 6], S);
+    assert_eq!(format!("{a:?}"), format!("{b:?}"));
+}

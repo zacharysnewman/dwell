@@ -478,7 +478,9 @@ openings), **crouch height 0.9** (fits 1-tall crawlspaces with skin to spare).
   `VoxelWorld::portals` (`dwell_world::portal_shafts`, filled from the generator and seed by the
   server and by the client's `Game::set_world`, so the prediction pushes as the server does; nothing
   new on the wire) whether the body is in a shaft's footprint with its feet within `exit.depth` m
-  under the opening and rising at least `exit.minRise` m/s; then it adds `exit.push` × dt along the
+  over the opening, rising, and having passed the opening at `exit.minRise` m/s or more
+  (`rise² + 2g·(feet − top)` under the player's gravity; over the opening, clear of the shaft's
+  wall a player who walked in rises against, BUGS.md #107); then it adds `exit.push` × dt along the
   face-local facing to the horizontal `external` (kept in the air as momentum, like a fall's push).
   A jump and a ladder climb are never pushed (`tests/portal_exit.rs`, `tests/portal_crossing.rs`,
   `tests/predictor.rs`).

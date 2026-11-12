@@ -286,6 +286,7 @@ function validateRender(id, def, look, isAir) {
     fail(`${id}: support must be one of ${SUPPORT_ROLES.join(', ')}`);
   }
   if (def.passable !== undefined && typeof def.passable !== 'boolean') fail(`${id}: passable must be true or false`);
+  if (def.leafFlush !== undefined && typeof def.leafFlush !== 'boolean') fail(`${id}: leafFlush must be true or false`);
   if (def.nearFade !== undefined && !(isNum(def.nearFade) && def.nearFade > 0 && def.nearFade <= 4)) {
     fail(`${id}: nearFade must be in (0, 4] metres (how close to the eye its faces dissolve)`);
   }
@@ -825,6 +826,7 @@ if (!fixture) writeFileSync(join(root, 'client/src/world/blocks.gen.ts'), ts.joi
       `passable: ${!!d.passable}`,
       `axis: Axis::${d.axisProperty ? st.values[d.axisProperty].toUpperCase() : 'Y'}`,
       `near_fade: ${rf(d.nearFade ?? 0)}`,
+      `leaf_flush: ${!!d.leafFlush}`,
       `fill: ${rf(st.fill)}`,
       `cross_section: ${d.crossSection ? `Some(CrossSection { chamfer: ${rf(d.crossSection.chamfer)}, joins: ${rstr(d.crossSection.joins)}, ring: ${rf(d.crossSection.ring ?? 0)}, heart: ${d.crossSection.heart ? `Some(${rstr(d.crossSection.heart)})` : 'None'}, width: ${rf(d.crossSection.widths ? d.crossSection.widths.metres[st.values[d.crossSection.widths.property]] : 1)} })` : 'None'}`,
     ];

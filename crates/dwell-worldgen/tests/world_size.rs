@@ -83,3 +83,71 @@ both_faces!(
         assert!(g.solid_at(x, row - 1, z), "on solid ground: {s:?}");
     }
 );
+
+/// BUGS.md #108 (owner: "Sizes 8x and 10x for the map spawn you in the void where there's no
+/// terrain only collision"): the LOD sections holding a big world's spawn ground, from level 1 (its
+/// chunks') up, are generated as content, not as empty space outside a 1× world's 50 km disc.
+fn a_big_world_s_spawn_sections_are_content(f: dwell_world::FaceFrame, name: &str) {
+    use dwell_world::lod::{self, LodKind, LodSurfaces};
+    let size = WorldSize::named(name).expect("a named size");
+    let big = BifacialTerrain::sized(11, size);
+    let s = big.local(f.face).spawn_point();
+    let r = s[0].hypot(s[2]);
+    assert!(
+        r > 50_000.0,
+        "{name}: the spawn {r} m out is past a 1× rim (else this proves nothing)"
+    );
+    // Just under the feet, in the world, on face `f`.
+    let ground = [s[0], f.y(s[1] - 0.25), s[2]];
+    let world = big.world();
+    for level in 1..=8 {
+        let c = lod_section_at(level, ground);
+        let b = big.lod_bounds_at(level, c.i, c.k);
+        assert_eq!(
+            lod::kind_from_bounds_of(c, &b, &world),
+            LodKind::Content,
+            "{name} {:?}: level {level} {c:?} by its bounds",
+            f.face
+        );
+        let mut cells = Vec::new();
+        let (mut a, mut sb) = (LodSurfaces::new(), LodSurfaces::new());
+        let kind = big.generate_lod(c, &mut cells, Some(&mut a), Some(&mut sb));
+        assert_eq!(
+            kind,
+            LodKind::Content,
+            "{name} {:?}: level {level} {c:?}",
+            f.face
+        );
+        assert!(
+            cells.iter().any(|&v| v != dwell_world::M.air),
+            "{name} {:?}: level {level} {c:?} generated all air",
+            f.face
+        );
+    }
+}
+
+/// The section of `level` holding the point `p` (world metres).
+fn lod_section_at(level: i32, p: [f64; 3]) -> dwell_world::lod::LodCoord {
+    use dwell_world::lod::{LodCoord, ORIGIN_X, ORIGIN_Y, ORIGIN_Z, section_size};
+    let s = section_size(level);
+    let row = dwell_world::row_of_m(p[1]) as i64;
+    let of = |v: i64, o: i64| (v - o).div_euclid(s) as i32;
+    LodCoord::new(
+        level,
+        of(p[0].floor() as i64, ORIGIN_X),
+        of(row, ORIGIN_Y),
+        of(p[2].floor() as i64, ORIGIN_Z),
+    )
+}
+
+both_faces!(
+    fn an_8x_world_s_spawn_ground_is_drawn_at_every_lod_level(f: FaceFrame) {
+        a_big_world_s_spawn_sections_are_content(f, "8x");
+    }
+);
+
+both_faces!(
+    fn a_10x_world_s_spawn_ground_is_drawn_at_every_lod_level(f: FaceFrame) {
+        a_big_world_s_spawn_sections_are_content(f, "10x");
+    }
+);

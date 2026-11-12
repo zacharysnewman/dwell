@@ -236,7 +236,7 @@
       }
     },
     {
-      "$comment": "A trunk or branch (docs/FELLING.md): a carrier, holding up the leaves on it while a path of logs reaches the ground, and falling when cut off. Its axis turns its end grain (top, bottom) to face along it, so a felled trunk lies along x or z. breakWith (shared/tools, ADR 0067; owner, 2026-11-08): where blocks are not unlimited (adventure), hands can't break it: an axe chops it.",
+      "$comment": "A trunk or branch (docs/FELLING.md): a carrier, holding up the leaves on it while a path of logs reaches the ground, and falling when cut off. Its axis turns its end grain (top, bottom) to face along it, so a felled trunk lies along x or z. breakWith (shared/tools, ADR 0067; owner, 2026-11-08): where blocks are not unlimited (adventure), hands can't break it: an axe chops it. leafFlush (WORK_QUEUE item 48; owner, 2026-11-12: \"Flat leaf applied when a full Face touching\"): a leaf beside it lies flat against it, no chamfer on that side (docs/TREE_GROWTH.md §10).",
       "name": "log",
       "drops": [{"item": "dwell:wood", "count": 8}],
       "sound": "dwell:wood",
@@ -245,6 +245,7 @@
       "shape": "full",
       "placeable": true,
       "support": "carrier",
+      "leafFlush": true,
       "axisProperty": "axis",
       "properties": {
         "axis": ["y", "x", "z"],

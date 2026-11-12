@@ -70,6 +70,13 @@ The running order across the items below; each line names its item, where the ow
    12.4 GB server natively); now a 10× face is 3.1 s (1×: 1.9 s) and its server 6.2 s at 484 MB; the map stage shows
    each face's steps; a dying server worker says why (BUGS.md #91, BIG_MAP.md §3.1). **Next: the owner tries 10× in
    the browser again.**
+   **Terrain stops drawing past a stepped edge (BUGS.md #108, owner 2026-11-12):** "worlds bigger than 2x seem to
+   give up loading chunks at some point, and just cutoff. The full minimap shows the whole world, and the terrain is
+   playable. It just doesn't show up. It even has collision on the chunks that didn't load in." Then: "Sizes 8x and
+   10x for the map spawn you in the void where there's no terrain only collision." **Fixed (2026-11-12):** the
+   LOD classified sections by the 1× disc, so everything past 50 km read as empty space at every size; it now
+   classifies in the world's own disc (`kind_from_bounds_of`), and `__dwell.debug().lod` counts what the view wants,
+   has built, draws as nothing and the budget dropped. Next: the owner flies a 4× and spawns in an 8×/10× world.
 10. **Realistic R5–R6 (item 15)** — geology by plate history with today's blocks; the World option.
 
 ### Waiting on the owner (each with what it means and the default meanwhile)
@@ -1472,6 +1479,8 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    the rim to the face-A outline, closing the loop on shot 1. Not in it: the landing beside face B's hole — in the
    browser the exit push never acts on face B (BUGS.md #107; natively the same shaft lands 6 m out), so the clip
    ends as the player falls back. Paths in `.claude/skills/record/paths/bifacial-v3/`.
+   **#107 fixed 2026-11-12:** walking in, the player fell into the shaft's wall and the push (then under the opening,
+   in the shaft) went into it; the push now acts in the 2 m over the opening. The browser check is for the next take.
 41. **Theater mode** (owner 2026-11-12: "We should use full camera tools to do the things you were doing and expand
    this tool set as you go, we could call it theater mode. Even make it available ingame as a feature that could be
    toggled on for any world type."). Answers: **both** presets (pick a target and a move: orbit, dolly, track,
@@ -1898,7 +1907,13 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    **"Flat leaf applied when a full Face touching and any new leaf touching leaf cases that need to be adjusted to fit
    together properly."** — a leaf block's side that shares a full face with a log is flat (no chamfer); and wherever
    that change leaves leaf-to-leaf seams that no longer meet (a flat side next to a chamfered neighbour), adjust them
-   so the crown fits together without gaps or overlaps.
+   so the crown fits together without gaps or overlaps. **Built (2026-11-12):** block data `leafFlush: true`
+   (the log; synced as look tag `0x93`) makes a leaf's face against it flush: drawn flat and whole, no chamfer
+   on that side, the edge cuts running into it squared off (`dwell-mesh` `mesher/leaves.rs` `flush_pieces`;
+   the far trees' `lod_trees.rs` alike; bodies mesh through the same path). Leaf-to-leaf seams stay closed by
+   the existing gap fill (a test sums the crown's area vectors to zero). Tests on both faces with `dwell:log`
+   and the fixture's `test:post` by data alone; a tree-dense chunk meshes no slower (≈196 vs ≈211 ms).
+   Docs: TREE_GROWTH.md §10, BLOCK_REGISTRY.md.
 
 ## Future (needs owner answers)
 
