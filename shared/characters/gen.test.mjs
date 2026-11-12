@@ -278,6 +278,11 @@ test('the player has a body clip for every controller state, and the arms the on
   // Gaits play at speed / cycle: the sprint covers more ground a loop than the walk, the crouch-walk less.
   const cyc = (r) => d.clips[p.clips[r]].cycle;
   assert.ok(cyc('sprint') > cyc('walk') && cyc('crouch_walk') < cyc('walk'), 'cycles');
+  // BUGS.md #103: a gait's loop is two footsteps of the sound data's stride for that gait, so the
+  // feet land with the footsteps (shared/sounds/dwell.json `gaits`).
+  const sounds = JSON.parse(readFileSync(new URL('../sounds/dwell.json', import.meta.url), 'utf8'));
+  for (const [role, gait] of [['walk', 'walk'], ['sprint', 'run'], ['crouch_walk', 'crouch']])
+    assert.equal(cyc(role), 2 * sounds.gaits[gait].stride, `${role}'s cycle is two ${gait} footsteps`);
   // Crouched (the 0.9 m crouch capsule): the top stays low through crouch, crouch-walk and the slide.
   const m = compose(d, style, 'player', { accessories: [] });
   for (const r of ['crouch', 'crouch_walk', 'slide']) {

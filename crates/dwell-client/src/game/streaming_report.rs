@@ -57,7 +57,8 @@ impl<S: Scene> Game<S> {
                         continue;
                     }
                     let cc = ChunkCoord::from_array(k);
-                    let in_volume = dwell_world::BUILD_VOLUME.chunk_may_hold(cc);
+                    // The world's own volume (a big world's reaches past the build's 50 km).
+                    let in_volume = self.world_bounds.volume().chunk_may_hold(cc);
                     let s = self.streamer.chunk_status(k);
                     let m = dwell_world::chunk_centre_m(cc);
                     let d = (0..3).map(|i| (m[i] - feet[i]).powi(2)).sum::<f64>().sqrt();
@@ -137,6 +138,9 @@ impl<S: Scene> Game<S> {
                 "inUseBytes": st.in_use_bytes,
                 "errorScale": round(st.error_scale),
                 "waiting": st.waiting,
+                "wanted": st.wanted,
+                "built": st.built,
+                "evicted": st.evicted,
                 "selection": {
                     "drawn": sel.drawn.len(),
                     "empty": sel.empty.len(),

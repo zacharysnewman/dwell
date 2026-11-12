@@ -162,6 +162,12 @@ export type Step =
    */
   | { do: 'lava'; op: 'report' | 'rate' | 'vent' | 'ventNear'; args: number[] }
   /**
+   * The finder (WORK_QUEUE item 46): logs the far herds and packs nearest first (`__dwell.herds`)
+   * and stands the player `back` m (default 40) short of the nearest of `kind` (`deer`, `wolf`;
+   * either when omitted) on the ground (`goToHerd`, a local world); fails when there is none.
+   */
+  | { do: 'herd'; kind?: 'deer' | 'wolf'; back?: number }
+  /**
    * Stands the player on a raft `lift` m (default 1) above its feet and moves the raft at `speed`
    * m/s toward `yaw` (degrees, 0 = +Z, 90 = +X) for `s` seconds at a held height, then waits out
    * the ride (a local world only): "carried by a moving body" bugs (`__dwell.carry`).
@@ -434,6 +440,7 @@ const STEP_FIELDS: Record<Step['do'], readonly string[]> = {
   die: ['maxS'],
   give: ['item', 'count'],
   lava: ['op', 'args'],
+  herd: ['kind', 'back'],
   mark: [],
   record: ['name', 'budget', 'reportOnly'],
   shot: ['name', ...PLACEMENT_FIELDS, 'quietFrames', 'maxS'],
@@ -670,6 +677,16 @@ export function parseStep(where: string, v: unknown): Step {
         throw new ViewError(`${at('args')}: expected a list of numbers`);
       }
       return { do: d, op: o.op, args: args as number[] };
+    }
+    case 'herd': {
+      if (o.kind !== undefined && o.kind !== 'deer' && o.kind !== 'wolf') {
+        throw new ViewError(`${at('kind')}: expected "deer" or "wolf"`);
+      }
+      return {
+        do: d,
+        ...(o.kind === undefined ? {} : { kind: o.kind }),
+        ...(o.back === undefined ? {} : { back: num(at('back'), o.back, 0, 2000) }),
+      };
     }
     case 'give': {
       if (typeof o.item !== 'string' || !/^[a-z][a-z0-9_]*:[a-z][a-z0-9_]*$/.test(o.item)) {

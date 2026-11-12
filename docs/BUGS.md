@@ -6,16 +6,12 @@ pins it.
 
 ## Open
 
-### 108. Worlds bigger than 2× stop drawing terrain past a stepped edge (it's there to walk on)
+### 109. In a big world the client won't place a block past 50 km from the centre
 
-Owner, 2026-11-12 (two screenshots, a >2× world from the air): "worlds bigger than 2x seem to give up loading
-chunks at some point, and just cutoff. The full minimap shows the whole world, and the terrain is playable. It just
-doesn't show up. It even has collision on the chunks that didn't load in." The far ground ends in a jagged edge of
-square steps (LOD section boundaries) with open sea/sky beyond, while the map has land there and walking onto it
-collides. So the server/collision side has the chunks; the client's drawing (LOD sections and/or near meshes) stops.
-Suspects: the LOD tree's root/levels or a section budget sized for 1×–2× (a fixed max section count, a memory cap,
-an f32 coordinate or index overflow in section keys at large radius), the LOD's bounds tied to the 50 km radius, or
-the client's mesh budget (BUGS #76, memory at big sizes) silently refusing new sections.
+Found 2026-11-12 fixing #108 (not reproduced in game): `dwell-game` `block_interaction.rs` drops a Place outside
+the build volume before sending it, testing `inside_build_volume`, the 1× build's (50 km), not the world's
+(`WorldBounds::volume`). In a 4×–10× world, where the spawn is often past 50 km, placing would do nothing while
+breaking works. Fix: give the block interaction the world's volume (`Game::set_world`), with a 4× test.
 
 ### 107. In the browser a player dropped into a portal doesn't come out beside face B's hole (the exit push)
 
@@ -44,17 +40,22 @@ nearest trees are leafy but already dithered; no impostor crowns anywhere. So th
 hand-over (`card_dropped`: leaf faces past `far_trees.x + .y + 2` when `frame.far_trees.w` is set) while the
 impostors draw nothing. The leaves must not fade out unless the impostors for those trees actually draw (atlas
 uploaded, the tile's instances in), and why the impostors draw nothing on the release needs finding.
+Then (local GPU check, test:starter seed 0, High): past ~48 m (at 80 and 150 m) most trees are thin trunks with
+small, faint crowns, so the impostors do draw, but too small/faint; `?impostors=0` brings back the full crowns at
+40–150 m; at 300 m both look alike.
+**Gate (claude/tree-sticks):** the frame's hand-over (`impostors::drawn`) is the tier's only once the impostors are
+ready about the eye (`impostors::ready`: every atlas layer baked, every tile within `fromM + fadeM + 64` m in, at
+least one tree there); until then the near crowns draw to the full-detail distance, chunk cutouts aren't cut and the
+LOD sections keep their trees (`render/mod.rs` `the_near_crowns_and_lod_trees_stay_until_the_impostors_are_ready`,
+red on main → green). `__dwell.impostors()` reads out ready, layers baked, tiles, instances, drawn and the last
+upload error (a layer of the wrong size used to be dropped silently). **Root cause still open:** the bake matches
+the real trees (radius and side area within ~10–30% for every species' wild trees), and a CPU emulation of
+`imp_fs`'s sampling (quad point, per-pixel view dither, texel) covers 1.02× the real crown's side silhouette with
+0.80 overlap (`dwell-worldgen` `crown_match`), so the shrinkage is on the GPU path not emulated: the vertex stage
+(layer spheres from the layer buffer, the instance foot), MSAA sample masks, lighting/fog darkening the crowns, or
+the near trunks with the dropped crowns. Next: a local GPU session reads `__dwell.impostors()` on the release and
+on test:starter, and screenshots `?impostors=1` with the near trees hidden.
 
-### 103. Walking through tall grass is loud, fast and crackly; the first-person legs step too fast
-
-Owner, 2026-11-12: "Walking through tall grass is really loud and obnoxious. Bad sound effect for it I think, it's
-also playing really fast. ... the feet are moving really fast, way faster than normal legs step/walk. And there's an
-occasional crackly sound too, are there 3 SFX playing while walking on grass?" (On 0.54.153: the own-body change
-#791 hadn't shipped — releases failed from ~18:45 until the typecheck fix.) Check: how many sounds play per step on
-grass with tall grass (the footstep on the grass block, a brush sound per tall-grass cell entered, the cross plant's
-own sound — possibly all three, each per cell or per tick rather than per step), their volume and rate; the crackle
-(clipping from stacked sounds, or a sound restarted every tick); the first-person body's walk clip speed against the
-walk speed (stride length 1.6 m a loop vs the controller's speed — too high a playback rate).
 
 ### 100. Volumetric clouds look like "crazy triangles"
 
@@ -515,6 +516,42 @@ face, or the placement check against its shape.
 
 ## Fixed
 
+### 108. Worlds bigger than 2× stop drawing terrain past a stepped edge (it's there to walk on) (fixed after 0.54.215)
+
+Owner, 2026-11-12 (two screenshots, a >2× world from the air): "worlds bigger than 2x seem to give up loading
+chunks at some point, and just cutoff. The full minimap shows the whole world, and the terrain is playable. It just
+doesn't show up. It even has collision on the chunks that didn't load in." The far ground ends in a jagged edge of
+square steps (LOD section boundaries) with open sea/sky beyond, while the map has land there and walking onto it
+collides. So the server/collision side has the chunks; the client's drawing (LOD sections and/or near meshes) stops.
+Suspects: the LOD tree's root/levels or a section budget sized for 1×–2× (a fixed max section count, a memory cap,
+an f32 coordinate or index overflow in section keys at large radius), the LOD's bounds tied to the 50 km radius, or
+the client's mesh budget (BUGS #76, memory at big sizes) silently refusing new sections.
+
+Owner, 2026-11-12, adding: "Sizes 8x and 10x for the map spawn you in the void where there's no terrain only
+collision." So at 8× and 10× even the chunks round the spawn didn't draw.
+
+Cause: one test of "is this section in the world" left at the 1× disc. The LOD's `classify` and the worker's
+generator (`BifacialTerrain::generate_lod`) both judged a section by `lod::kind_from_bounds`, which starts with
+`in_world(c)`, the build's 50 km disc and volume, not the world's. Every section past 50 km from the centre was
+classified Empty at any size, so the far ground stopped at the 50 km circle, drawn in the coarse sections' squares
+(the stepped edge). The streamed chunks are only drawn where the LOD reaches their level-1 section, and an empty
+section is never descended into, so at 8× and 10× (spawns 50 km+ out) the spawn's own chunks never showed, though
+the server sent them and the controller collided with them. Not a budget or a cap: the cache, the levels (the root
+holds 10×, M1) and the section keys were fine. The fix classifies in the world's bounds:
+`lod::kind_from_bounds_of(c, bounds, world)` (`LodSystem::classify` with `set_world`'s bounds, `generate_lod` with
+the terrain's). The dev report also took the 1× volume (`streamingReport`'s near ring read `outsideVolume` there).
+`__dwell.debug().lod` gains `wanted`, `built`, `drawnTotal`, `empty` and `evicted` (dropped by the cache budget).
+
+Tests (red on main, green after; both faces): `dwell-lod` `a_4x_world_s_lod_tiles_the_view_out_to_60_km_with_no_holes`
+and its 10× twin (a camera 300 m up three quarters of the way to the rim: every ground column out to 60 km is drawn
+by exactly one level and none by an empty leaf; the cache and the view's sections within the budget; red: "the
+ground 0 m out … drawn by 0 leaves, 1 empty"), `an_8x_world_draws_the_chunks_round_a_far_out_player` and its 10×
+twin (every ground chunk within the 48 m full-detail distance drawn; red: "not drawn"); `dwell-worldgen`
+`tests/world_size.rs` `an_8x_world_s_spawn_ground_is_drawn_at_every_lod_level` and its 10× twin (the real 8×/10×
+spawn's sections at levels 1–8 classify and generate as content; red at `generate_lod`: Empty). Outstanding: the
+owner's look in the browser (no GPU in the cloud session); BIG_MAP.md M3 (f32 world coordinates in the shaders, ~3 cm
+steps at 500 km) is unchanged.
+
 ### 102. A bright horizontal band in face B's sky seen from beyond the rim (fixed after 0.54.191)
 
 Found 2026-11-12 with #101's camera, clouds off: a soft white-grey band a few degrees wide crosses the whole frame
@@ -598,6 +635,34 @@ the UI or music) go through a low-pass at 800 Hz and drop to 0.6, gliding over 0
 `another_swimmers_depth_is_read_at_its_head_line` and `the_listener_hears_underwater_only_with_the_eye_under_the_surface`
 (both faces), `client/src/audio/underwater.test.ts` (the filter's targets and glide, the UI and music buses dry, the
 strokes' bounded gains, red before: 0.7 × 0.6 = 0.42 over the 0.2 bound). The listening check is the owner's.
+
+### 103. Walking through tall grass is loud, fast and crackly; the first-person legs step too fast (fixed after 0.54.201; the listening check is the owner's)
+
+Owner, 2026-11-12: "Walking through tall grass is really loud and obnoxious. Bad sound effect for it I think, it's
+also playing really fast. ... the feet are moving really fast, way faster than normal legs step/walk. And there's an
+occasional crackly sound too, are there 3 SFX playing while walking on grass?" (On 0.54.153: the own-body change
+#791 hadn't shipped — releases failed from ~18:45 until the typecheck fix.) Check: how many sounds play per step on
+grass with tall grass (the footstep on the grass block, a brush sound per tall-grass cell entered, the cross plant's
+own sound — possibly all three, each per cell or per tick rather than per step), their volume and rate; the crackle
+(clipping from stacked sounds, or a sound restarted every tick); the first-person body's walk clip speed against the
+walk speed (stride length 1.6 m a loop vs the controller's speed — too high a playback rate).
+**Fixed (branch `claude/grass-steps`):** what played per step on grass with tall grass, walking at 5 m/s: the
+footstep (`step` on the grass block → `dwell:grass_step`, a sample at 0.5 × the walk's 0.55, one per 2.0 m: 2.5 a
+second) and the rustle (`brush` on the tall grass → `dwell:leaf_brush`, procedural, gain 0.35 with five to nine
+2 ms white-noise grains, one per 0.8 m but ≥ 0.18 s apart: ~5.3 a second, each ~0.35 s long, so two or three
+overlapping over every step, and one at once on entering each patch). No third sound on open grass (a stick's snap
+only under trees); the "three" was the stacked rustles, and the crackle their grains. No one-shot was restarted while
+playing (each play is a new voice; nothing per-sound limited them). The legs: `biped_walk` looped every 1.6 m, so
+6.25 steps a second at the walk (the sprint 5.3 at 8 m/s), on your own body, other players and the shadow alike.
+Now: on its feet a body rustles only with a footstep, at most one a step (`Stride`, `brush` `minS` 0.3 s; off its
+feet every `everyM` 2.5 m); `leaf_brush` is a soft pink-noise swish (gain 0.16, no grains, one voice, `minGapS`
+0.25); every sound has a voice limit (`voices`, default 4, over it a play is dropped, never restarted); grass steps
+at 0.4; the strides are walk 2.5 m, run 2.8 m (2.0 and 2.9 steps a second) and the gait clips loop every two of
+them (walk 5 m, sprint 5.6 m, crouch-walk 2.2 m). Tests, red on main → green:
+`walking_through_tall_grass_is_one_footstep_a_step_and_at_most_one_rustle_on_it` (main: 15 steps, 32 rustles over
+30 m), `rustles_on_feet_are_never_closer_than_the_min_interval`, `voices.test.ts` (main: the step + rustle stack
+0.635, no voice limit, crackle grains), `the_gaits_step_at_a_natural_cadence_at_the_controllers_speeds` (main: 6.25
+steps a second), `gen.test.mjs` (a gait's cycle = two footstep strides).
 
 ### 92. Downhill water shows edge triangles and thin lines at its ½ m level steps (fixed after 0.54.142; the browser check left local)
 

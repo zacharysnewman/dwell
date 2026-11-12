@@ -74,7 +74,7 @@ pub static CLIPS: &[Clip] = &[
         duration: 1.0,
         looping: true,
         ease: Ease::Spline,
-        cycle: 1.6,
+        cycle: 5.0,
         grounded: true,
         blend: 0.2,
         channels: &[
@@ -193,7 +193,7 @@ pub static CLIPS: &[Clip] = &[
         duration: 0.66,
         looping: true,
         ease: Ease::Spline,
-        cycle: 3.0,
+        cycle: 5.6,
         grounded: true,
         blend: 0.25,
         channels: &[
@@ -249,7 +249,7 @@ pub static CLIPS: &[Clip] = &[
         duration: 1.0,
         looping: true,
         ease: Ease::Spline,
-        cycle: 0.9,
+        cycle: 2.2,
         grounded: true,
         blend: 0.15,
         channels: &[

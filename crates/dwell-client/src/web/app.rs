@@ -2191,6 +2191,32 @@ impl Client {
         set(&o, "groups", groups);
         o.into()
     }
+    /// The finder (WORK_QUEUE item 46; DEV_TOOLS.md `herds`): the far herds and packs on the
+    /// player's face from the last `ecology`, of `species` (empty: any), nearest first: `[{ id,
+    /// species, x, z, size, distance, bearing }]` (face-local metres; bearing the yaw facing it).
+    #[wasm_bindgen(js_name = herds)]
+    pub fn herds(&self, species: String) -> JsValue {
+        let s = self.inner.borrow();
+        let Some(g) = s.game.as_ref() else {
+            return Array::new().into();
+        };
+        let want = (!species.is_empty()).then_some(species.as_str());
+        g.find_herds(want)
+            .into_iter()
+            .map(|h| {
+                let o = Object::new();
+                set(&o, "id", h.id);
+                set(&o, "species", h.species.as_str());
+                set(&o, "x", h.x);
+                set(&o, "z", h.z);
+                set(&o, "size", h.size);
+                set(&o, "distance", h.distance);
+                set(&o, "bearing", h.bearing_deg);
+                JsValue::from(o)
+            })
+            .collect::<Array>()
+            .into()
+    }
     #[wasm_bindgen(js_name = blasts)]
     pub fn blasts(&self) -> Vec<f64> {
         let s = self.inner.borrow();
@@ -2840,6 +2866,13 @@ impl Client {
                 set(&r, "waitingInView", l.waiting[0] as u32);
                 set(&r, "waitingOffView", l.waiting[1] as u32);
                 set(&r, "waitingNearOffView", l.waiting[2] as u32);
+                // BUGS.md #108: what the view wants, holds meshed, draws as nothing, and what the
+                // budget dropped (with `drawn` per level and `errorScale`, raised over the budget).
+                set(&r, "wanted", l.wanted as u32);
+                set(&r, "built", l.built as u32);
+                set(&r, "drawnTotal", l.drawn.iter().sum::<usize>() as u32);
+                set(&r, "empty", l.empty as u32);
+                set(&r, "evicted", l.evicted as f64);
                 r.into()
             }),
         );
@@ -2867,6 +2900,26 @@ impl Client {
         set(&o, "arms", c.arms);
         set(&o, "characterMeshBytes", c.mesh_bytes as f64);
         set(&o, "characterUploadBytes", c.upload_bytes as f64);
+        o.into()
+    }
+
+    /// The far trees' impostors now (`__dwell.impostors()`, BUGS.md #106): `{ made, tierOn, ready,
+    /// baked, layers, requested, tiles, instances, drawn, lastError }`. `ready` false: the frame
+    /// draws the near crowns to the full-detail distance and the LOD sections keep their trees.
+    #[wasm_bindgen(js_name = impostorStatus)]
+    pub fn impostor_status(&self) -> JsValue {
+        let st = self.inner.borrow().renderer.borrow().impostor_status();
+        let o = Object::new();
+        set(&o, "made", st.made);
+        set(&o, "tierOn", st.tier_on);
+        set(&o, "ready", st.ready);
+        set(&o, "baked", st.baked);
+        set(&o, "layers", st.layers);
+        set(&o, "requested", st.requested);
+        set(&o, "tiles", st.tiles);
+        set(&o, "instances", st.instances);
+        set(&o, "drawn", st.drawn);
+        set(&o, "lastError", st.last_error.as_str());
         o.into()
     }
 
@@ -3449,6 +3502,16 @@ impl Inner {
         game.debug_visible = self.debug_visible;
         game.set_capabilities(region_edits, brushes);
         game.set_world(generator_version, world_seed, world_size);
+        // The far herds' ground past the loaded chunks (WORK_QUEUE item 46), only once this
+        // instance holds the world's maps (never computed on the page's thread).
+        if !maps.is_empty() {
+            game.far_terrain = dwell_worldgen::BifacialTerrain::for_generator_sized(
+                generator_version,
+                world_seed,
+                world_size,
+            )
+            .map(std::sync::Arc::new);
+        }
         self.renderer
             .borrow_mut()
             .set_world_radius(world_size.world_radius_m() as f64);

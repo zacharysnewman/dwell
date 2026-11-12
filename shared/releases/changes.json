@@ -2,6 +2,41 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.55.5",
+      "changes": [
+        "Distant trees keep their leaves again"
+      ]
+    },
+    {
+      "version": "0.55.4",
+      "changes": [
+        "Walking through tall grass is quieter: one soft rustle with each footstep instead of a fast, crackly stream",
+        "Your legs (and other players’) step at a natural pace: about two steps a second walking",
+        "Footsteps are a little slower to match the legs"
+      ]
+    },
+    {
+      "version": "0.55.3",
+      "changes": [
+        "Worlds bigger than 2× now draw their terrain all the way out, instead of stopping at a stepped edge 50 km from the centre.",
+        "In 8× and 10× worlds the ground round the spawn now shows up, instead of leaving you standing on invisible terrain."
+      ]
+    },
+    {
+      "version": "0.55.2",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.55.1",
+      "changes": [
+        "New worlds have far more animals, at real-world densities: hundreds of deer herds and a handful of wolf packs on each face.",
+        "Herds are visible from much farther away (about 2.5 km) and stay visible as small shapes from high up.",
+        "Developer tools can list the nearest herds and jump to one."
+      ]
+    },
+    {
       "version": "0.55.0",
       "changes": [
         "Trees on slopes stand on a level patch of ground the width of their trunk instead of hanging over the edge",
