@@ -399,6 +399,20 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    is the view's, `volume.lightExtinction` (0.006) the light's, plumes keep theirs; a dev knob
    `?cloudExtinction=` / `__dwell.cloudExtinction(x)` for the A/B. Next (local): the look at sunrise/sunset
    against `?clouds=` the deck, the A/B of 0.006 / 0.03 / 0.05 and `gpu.clouds`; tune by the data.
+   Owner, 2026-11-12: **"the clouds look ridiculous at least the volumetric ones. Look like crazy triangles"**,
+   **"The more recent volumetric shape change for the clouds make them look like 3 sided pyramids"** (BUGS.md
+   #100), and **"In terms of color too, the clouds seem gloomy and dark like not-quite storm clouds."** (asked:
+   fair-weather stratocumulus/cumulus bright white on their sunlit tops and light grey underneath at noon, only
+   cumulonimbus/precipitation darker, checked against the papers).
+   **Fixed in code (2026-11-12, branch `claude/cloud-pyramids`, CLOUDS.md §9.9):** the papers' model
+   (`docs/reference/cloud-papers.md`): the cloud type and the cover as regional fields (16 km, 8 km;
+   `typeFromCoverage` 0), the single clouds cut by the 3D Perlin–Worley (Nubis's remap, base tile 2 km), the
+   profile fading from just over the base, erosion 0.25, view extinction 0.015 (a cloud behind 400 m of cloud
+   9 % visible); the light samples reuse the column's cover (cheaper). The gloom was the same cause: every
+   core lit as a cumulonimbus. CPU-twin tests red on main → green: cloud-top median slope 4.1/2.6 → 0.7–1.0,
+   the patch's median noon base 0.44 → 0.77 of the sunlit white, cumulus top ≥ 1.0 / base 0.57, cumulonimbus
+   base 0.23. Not done: distance-adaptive steps with HZD's cheap/full switch. Next (local): the in-game look at
+   noon, low sun, from above and through the layer, `?cloudExtinction=` 0.01–0.03, and `gpu.clouds`.
 14. **Tall grass grows and spreads** (owner 2026-11-11: "I want tall grass to steadily grow and spread. It
    should probably have a max depending on climate/biome."). **Built** (ADR 0075 T3c, docs/ECOLOGY.md §10):
    `shared/worldgen/grass.json` (the rule as data: the block, the ground, the decoration whose climate
@@ -1382,6 +1396,9 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    player coming out on face B keeps face A's up (the camera never takes face B's frame), so face B and the player
    rising out of its hole read upside down, hanging under the disc. Clouds off in every shot (owner: they "might look
    weird", confirmed by the v2 comparison).
+   **Built 2026-11-12:** a keyframe `up` ("a" | "b" | "auto", default auto) holds a face's up, roll and look frame
+   across the midplane (THEATER_MODE.md §3.1; presets and the keyframe editor's Up take it); the next take uses
+   `"up": "a"` for the face-B wide.
    Owner: **"Also it looked like the player flew out of the hole instead of physics carrying it out of the hole. Like
    was flying."** — no flight in the portal shot: momentum alone carries the player up out of face B's hole (v2
    turned flight on at the top of the rise). **"Face b should be night."** — keep face B at night.
@@ -1754,7 +1771,30 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    page's core against `parts.mjs` (the Peasant's export byte for byte). Left: the owner repaints the Peasant's face
    and hair with it.
 
+44. **Trees on slopes hang over the edge** (owner 2026-11-12: **"I notice a lot of trees on slopes are hanging out over
+   the edge. Perhaps trees should always have flats under them? Don't limit trees to flats, since they might not
+   spawn on wide sections of terrain? Check implications of this and possible fixes."**). Finding: placements
+   (`placements.rs`) anchor a tree at its anchor column's top + 1 and test the slope only by the height field's
+   gradient over ±2 m (`maxSlopeDeg` up to 44°); the other trunk columns (thick old-growth trunks) and ½ m ramps under
+   the trunk are not levelled, so a trunk's downhill side stands over a ramp or a drop. Options, analysis and the
+   owner's pick follow. Options shown (https://claude.ai/artifact/ChMv9xuaABdEGfzRPVLDM9): today floating, A trunk
+   reaches down, B level a pad, C flare + small fill. Owner: **"For now let's just do level pad, can just be the the
+   tree width, 1m."** — fill the cells under the trunk's footprint only (no ring) up to the trunk's base; a change
+   to the terrain a seed generates, so a new compatibility line (0.55, the owner raises it).
+
+45. **Floating trees drift, leaves let water through** (owner 2026-11-12: **"Also, trees they are floating in water should
+   never settle, it causes them to block up rivers randomly instead of floating downstream. And leaves also should
+   let water flow through freely."**). A body floating in water (a felled trunk, a crown) never settles back into
+   blocks while it floats; it keeps drifting with the current until it beaches on dry ground (then settles as
+   today). Leaf blocks are open to the water grid (water flows through their cells as through air, the leaves
+   kept), in place and on bodies.
+
 ## Future (needs owner answers)
+
+- **Waterlogging** (owner 2026-11-12: "Eventually we'll want to make it so some blocks if they don't move for a little
+  while or 'move enough' they'll get waterlogged, sink to the bottom and then settle."): floating bodies of
+  certain blocks soak up water after resting still for a while or travelling far enough, sink, and settle on the
+  bed — per-block data (soak time, distance).
 
 - **Tall grass hides you** (owner 2026-11-12: "I like the hide mechanic idea, save this for later."): tall grass
   hides a crouched player from animals and NPCs (and deer bed down in it).

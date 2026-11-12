@@ -44,6 +44,9 @@ pub struct Preset {
     pub mv: String,
     pub easing: Easing,
     pub params: Vec<Param>,
+    /// The face whose up the camera holds (the preset's `up`: `"a"`, `"b"` or `"auto"`, the
+    /// default); `None`: the face the camera is over.
+    pub up: Option<FaceFrame>,
 }
 
 /// What a preset is expanded around.
@@ -53,6 +56,8 @@ pub struct Context {
     pub subject: Option<(TargetRef, [f64; 3])>,
     /// Where the camera is: an orbit, dolly, track or rise starts on its side of the subject.
     pub camera: Pose,
+    /// The face whose up the shot holds, over the preset's own `up` (`None`: the preset's).
+    pub up: Option<FaceFrame>,
 }
 
 /// Reads a presets file, failing with a message that names the bad entry.
@@ -78,7 +83,7 @@ pub fn parse_presets(text: &str) -> Result<Vec<Preset>, String> {
             .as_object()
             .ok_or_else(|| format!("{at} must be an object"))?;
         for k in p.keys() {
-            if !["name", "label", "move", "easing", "params"].contains(&k.as_str())
+            if !["name", "label", "move", "easing", "params", "up"].contains(&k.as_str())
                 && !k.starts_with('$')
             {
                 return Err(format!("{at}: unknown field {k}"));
@@ -114,6 +119,10 @@ pub fn parse_presets(text: &str) -> Result<Vec<Preset>, String> {
                 .as_str()
                 .and_then(Easing::by_name)
                 .ok_or_else(|| format!("{at}.easing must be one of {}", Easing::names()))?,
+        };
+        let up = match p.get("up") {
+            None => None,
+            Some(u) => crate::path::parse_up(u, &format!("{at}.up"))?,
         };
         let mut params = Vec::new();
         if let Some(ps) = p.get("params") {
@@ -159,6 +168,7 @@ pub fn parse_presets(text: &str) -> Result<Vec<Preset>, String> {
             mv: mv.to_owned(),
             easing,
             params,
+            up,
         });
     }
     Ok(out)
@@ -195,7 +205,9 @@ impl Preset {
         }
         let v = |n: &str, d: f64| self.value(n, overrides).unwrap_or(d);
         let seconds = v("seconds", 10.0).max(0.1);
-        let cam = ctx.camera;
+        let up = ctx.up.or(self.up);
+        // The camera's look in the shot's frame (a pan's turn starts from it).
+        let cam = ctx.camera.with_up(up);
         let subject = || {
             ctx.subject
                 .clone()
@@ -284,6 +296,9 @@ impl Preset {
         };
         let (mut k0, mut k1) = (k0, k1);
         k0["t"] = json!(0.0);
+        if up.is_some() {
+            k0["up"] = json!(crate::path::up_name(up));
+        }
         k1["t"] = json!(seconds);
         if let Some(f) = self.value("fov", overrides) {
             k0["fov"] = json!(f);
