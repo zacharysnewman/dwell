@@ -518,6 +518,9 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    contact through the follow-through (the probe: shoulder at NDC +0.53,−0.93 at 0.45 s). The arms view now draws
    the arm from the elbow down (the upper arm's parts `"view": "body"`; the elbow stays below the screen in every
    swing); `clip_probe` test `no_sleeve_shows_at_the_bottom_of_the_screen_through_a_swing`, red → green.
+   Owner, 2026-11-12: **"I wanted you to be able to hold the key down for tools like the axe."** Holding the use
+   button keeps swinging a tool (axe, pick, shovel, sword) at its swing rate until released, each swing hitting
+   what is targeted then; data per tool (`repeatOnHold`). Also bug #93: vertical swings play twice.
 18. **Digging marks that look carved** (owner 2026-11-11: "the 'chunks' of dirt aren't at all what we
    discussed. It should be like a normal map change (do we support normal/bump maps)? It's completely flat
    should look like mesh deformation (preferably without actually doing it for performance)"; "That part was
@@ -919,6 +922,12 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    (`dwell_worldgen::impostor`, data `shared/trees/impostors/impostors.json`, preview sheet
    `docs/proposals/tree-impostors-bake.png`). Next: I-2 tree lists per section (cloud-able), then I-3 drawing
    (local, GPU, measured on the M1 at High). Waiting on the owner: the proposal's questions.
+   **I-3's CPU half built (2026-11-12, local):** the hand-over per Far trees tier as data (`impostors.json`
+   `far.tiers`: `on` an impostor from 96 m over a 24 m fade, `off` none), the crossfade's shares, the dithered
+   view pick, the baked stage/variant per tree and the view direction through `FaceFrame` (tests on both faces).
+   **Not built:** the GPU half (atlas upload, instance buffer, the billboard shader with the baked normals and
+   depth offset) and I-2's tree lists; the far trees are still `lod_trees.rs`'s. Next (local): I-2, then the
+   draw, measured with `forest-perf`.
 
 32. **A tall dense forest for performance reference** (owner 2026-11-12: "We should have a tall dense forest
    biome/climate for performance reference on trees."). A biome preset (tall, closely spaced mature trees — an
@@ -934,6 +943,22 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    reference"). Next (local): run `forest-perf` on the M1 Air for the first numbers, look at the stand, and
    tune the spots if a view misses the densest trees.
 
+   Owner, 2026-11-12, on the Realistic/forest video: **"The realistic forest video didn't show the forest for half of
+   it. And it was slow frame rate in the forest though it looks really pretty."** Next: the forest's frame rate at its
+   edge and inside (24.7 ms at the edge on the M1 at High; the near pass's cutout leaves and tall grass, sun
+   shadows), then the impostors (item 31); re-record the forest video after, with most of it in the forest, recorded
+   frame-exact (the screencast, not real time) so a slow page doesn't show as a slow video.
+
+   **The forest's frame, measured (2026-11-12, M1 Air, `forest-perf` at High, `--unthrottled`, `gpu.frame`
+   p50 / p95 ms):** before inside 17.0 / 18.8, edge 25.2 / 26.4, above 14.6 / 15.8. The edge's ablation
+   (`forest-edge-ablate`): the cutout meshes (leaf cards + tall grass) off 24.6 → 9.8 (−14.8 ms, `gpu.near`
+   21.9 → 7.7), sun shadows off −3.3, full detail 192 → 96 m −1.8. **Cut:** tall grass past its fade (88 m) was
+   drawn out to the full-detail distance and discarded per fragment; any plant past its fade is now dropped
+   whole in the vertex stage, as leaf cards were. After: inside **14.7 / 15.4** (under 16.7), edge 24.3 / 25.7
+   (unchanged: its cutout cost is the cards and grass within their fades, seen from just over the crowns),
+   above 14.5 / 15.8. **Outstanding:** the edge, ~9 ms over. Next: split the edge's 14.8 ms between the leaf
+   cards and the near grass (`?cards=0` against the default) and cut it inside the High look (the cards'
+   fade 24–40 m, cards seen edge-on from above, grass under a closed canopy).
 33. **Licensed music replaces the generated music** (owner 2026-11-12: "I downloaded a big music set as a Unity
    asset, I'd like the casual game music setup in a prototype and make it play randomly in the game. Probably
    needs compression. It'll replace the current music which is AI generated."). The pack: *Andrew Sitkov Music*
@@ -1338,6 +1363,31 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
   hits; creative doesn't wear, metal tools are unlimited).
 
 ## Smaller items, after the queue
+
+- **Realistic and forest look (2026-11-12, `claude/realistic-forest-look`), seen in Chrome on the GPU** (Realistic
+  seeds 1–3 face A, `test:forest`; stills, a contact sheet and a 9:16 video handed to the owner). What reads: the big
+  map (M, widest level) shows the plates' story at a glance — one continent a seed, snow-capped ranges, a green wet
+  coast on one side of each range and a red-brown dry interior on the other (the rain shadow), hotspot chains; in
+  world, a range behind a coastal plain, red badlands with mesas under a jagged range on the dry side, the
+  tall-broadleaf rainforest at seed 1's spawn; the old growth at ground level (tall pines and oaks to a beach edge) is
+  the best-looking forest yet. Issues, for later:
+  - **Land is one continent in an empty ocean** (~15–20 % of the disc each seed) and the island arcs are
+    **uniform-width green ribbons** with no relief or breaks — they read as ropes, not arcs of islands.
+  - **Range cores are flat plateaus** on the F4 height overlay and in the LOD (broad slabs, few ridges or valleys);
+    steep far LOD faces show **moiré stripes** (seed 3, the cone across the strait).
+  - **Dry interiors dominate** (more brown than green on all three seeds), and lowland grass reads as one flat lawn
+    at LOD, with no forest patches beyond the near range.
+  - **The rainforest is open, not closed:** tall-broadleaf "lollipops" spaced on lawn read as savanna from above
+    (seed 1 spawn); it wants a closed canopy and undergrowth like the old growth's.
+  - **Far old-growth trees lose their crowns at LOD** (`lod_trees.rs`'s coarse cells): beyond the full-detail range
+    the forest becomes lawn dotted with brown trunk stubs — a hard edge from 150 m up (`forest:above`) and across the
+    canopy (`forest:edge`). Item 31's impostors (I-2/I-3) are the fix.
+  - **`forest-perf` at High on the owner's Mac** (first GPU run): GPU frame p50 14.7 ms inside, **24.7 ms at the
+    edge** (≈ 40 fps), 14.4 ms above; CPU ~2 ms everywhere. The edge view (the whole canopy at once) is over budget.
+  - The F4 overlay (height only) and the big map (M, materials) are drawn in different orientations; the big map has
+    no climate or plate overlays yet (q8).
+  - A `?at=` y at the forest stand's ground (40.5, −39.5) put the player inside the ground or a crown twice; the
+    bench's `above` spots land right, so use `--spot` or the world's own spawn for the forest.
 
 - **Chisel's world knobs take every key gen.mjs takes (owner 2026-11-12: "fix a failing test on main": `state.test.ts`
   "opens the starter world as a valid edit" failed with "tectonics.lavaVents is not a world knob"; "make Chisel

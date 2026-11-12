@@ -2,6 +2,61 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.54.152",
+      "changes": [
+        "Forests run much faster: tall grass past its fade-out distance is no longer drawn at all",
+        "Behind the scenes: the far-tree impostors' hand-over distances and view picking (not drawn yet)"
+      ]
+    },
+    {
+      "version": "0.54.151",
+      "changes": [
+        "Behind the scenes: bug notes"
+      ]
+    },
+    {
+      "version": "0.54.150",
+      "changes": [
+        "Behind the scenes: bug notes"
+      ]
+    },
+    {
+      "version": "0.54.149",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.148",
+      "changes": [
+        "Behind the scenes: bug notes"
+      ]
+    },
+    {
+      "version": "0.54.147",
+      "changes": [
+        "Behind the scenes: bug notes"
+      ]
+    },
+    {
+      "version": "0.54.146",
+      "changes": [
+        "Behind the scenes: a look at the Realistic world and the old-growth forest, with what to improve next"
+      ]
+    },
+    {
+      "version": "0.54.145",
+      "changes": [
+        "Behind the scenes: bug notes"
+      ]
+    },
+    {
+      "version": "0.54.144",
+      "changes": [
+        "Behind the scenes: bug notes"
+      ]
+    },
+    {
       "version": "0.54.143",
       "changes": [
         "Realistic test world: rocks now follow the plates, with volcanic rock on the arc volcanoes and hotspot islands, granite and schist in the collision ranges, a limestone shelf by the trenches, and sandstone in the rifts and quiet basins",

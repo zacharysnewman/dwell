@@ -6,6 +6,27 @@ pins it.
 
 ## Open
 
+### 93. Vertical swings (axe, sword, …) play twice for one swing
+
+Owner, 2026-11-12: "For vertical swings on axe, sword, etc, it sort of double swings." One vertical swing shows two
+down-strokes (or a stroke, a snap back and a second stroke). Suspects: the vertical clip's keyframes loop or include a
+second stroke; the swing restarted by a second trigger (the click and the hit event, or the server's echo of the
+swing re-starting the local one); the level/vertical choice flipping mid-swing. Check with `clip_probe` and the
+swing's trace, both faces.
+
+### 92. Downhill water shows edge triangles and thin lines at its ½ m level steps
+
+Owner, 2026-11-12 (screenshot + block dump): "I'm seeing some edge triangles and thin lines at slope transitions on
+downhill water." Build 0.54.142 (f68d23af), seed 950418385, generatorVersion 8, feet (1061.8, 79.6, 12359.4), yaw 313°,
+pitch −15.6°. A held, asleep river on sand (`dwell:sand[flooded=true]`, `dwell:sand_ramp[facing=south,flooded=true,
+half=bottom,shape=ramp]`): the surface grid's levels step down ½ m at a time along the flow (81 → 80.5 → 80 → … → 68.5,
+in diagonal bands), every column `held`, none awake. In the screenshot each band edge draws a bright vertical
+triangle where a step meets another step at a corner, and thin light lines along the step edges. Suspects: the water
+mesher's side faces (skirts) at a level step — drawn as full quads/triangles between neighbours whose corner heights
+are averaged differently, so a corner shared by three levels leaves a sliver or wedge; or the surface's per-corner
+smoothing across a step (T-junction cracks showing the sky/specular through). Expected: a downhill river reads as
+one continuous sloped surface (or clean steps), with no wedges or cracks.
+
 ### 91. A 10× world sits for minutes on "Shaping the world map… 0/2" with no sign of progress (fixed natively after 0.54.143; the owner's browser check outstanding)
 
 Owner, 2026-11-12 (M4 Max MacBook Pro): "I tried to start a 10x world … And it's up to 3 minutes so far on 'Shaping the
@@ -14,23 +35,25 @@ a face, today's count), so it should take seconds, not minutes; something scales
 ×100 counts. And the stage reports only whole faces (0/2), so minutes pass with no visible progress. Expected: a
 10× map in seconds (or a measured, honest estimate), and progress inside each face's build (its steps: base field,
 tectonics, hydrology, erosion, rivers, biome field).
-
-Owner, later the same day: "Looks like it started the server 200+ seconds in and now it's at almost 1 minute
-looking for a place to stand. And still 0/2 280+ seconds in on shaping the world map." Then: "Loaded in 300s in,
-but I can only see the skies of both faces, no world." / "Can't move." So also: the 10× spawn search takes about a
-minute; the map stage's count never advances; and once loaded no terrain draws and the player can't move. Target
-(owner's brief): a 10× world playable in well under 30 s on a fast Mac.
-Then: the empty-sky world shows "Could not connect to 10x…" (`client/src/main.ts`), so the join failed rather than
-the terrain missing: the in-browser server worker died (memory, #76) or did not answer within the connect timeouts
-(`transport.rs` `CONNECT_TIMEOUT_MS` 8 s, `peer.ts` 20 s) while still busy. Wanted: the client waits for the local
-server's ready signal, not a fixed timeout, and a dead worker reports its error clearly.
+Owner, later: "Looks like it started the server 200+ seconds in and now it's at almost 1 minute looking for a place to
+stand. And still 0/2 280+ seconds in on shaping the world map." So the map takes ~200 s, the spawn search ~1 minute
+more, and the map stage's counter stays at 0/2 even after the server has started (it never advances or completes).
+Then: "Loaded in 300s in, but I can only see the skies of both faces, no world." / "Can't move." The world finished
+loading after ~300 s but no terrain drew (only the sky of both faces, as if the player is in the gap between them or
+no chunks arrived) and the player can't move (no ground chunks, so the controller waits; or the spawn point is
+invalid at 10×, e.g. outside the generated area or NaN). Likely related to #76 (memory at big sizes) or the spawn
+search's result at 10×.
+Then: "Oh I see, 'Could not connect to 10x...'" — the empty sky is the join failing (`client/src/main.ts`'s
+"Could not connect to …" status), not missing terrain: the in-browser server either died (memory, #76) or didn't
+answer within the client's connect timeouts (`transport.rs` CONNECT_TIMEOUT_MS 8 s, `peer.ts` 20 s) while still busy.
 
 **Cause and fix (2026-11-12, measured natively, BIG_MAP.md §3.1).** Two steps of a face's map grew with the
 radius, not the cell count: the uplift measured every land cell against every segment of every range (300 ranges at
 10×: 17 s), and the channels' index listed each ~1 km river segment in thousands of 64 m squares (21 s and a **12.4 GB**
 index). One 10× face took 43.7 s natively (1×: 1.9 s) and a native 10× server 114 s at a 12.4 GB peak. In the browser
 that is past the 4 GB of WebAssembly memory: the map workers never finished (so the stage stayed at 0/2: no face's
-event was lost, none arrived), the local server built its own maps and its worker died, and the page said "Could not
+event was lost, none arrived), the local server built its own maps inside its "Finding a place to stand" stage (the spawn search itself is
+at most 1.2 s natively at every size) and its worker died, and the page said "Could not
 connect" over an empty sky. The local world has no connect timeout (the loopback waits for the worker's `ready`), so
 no timeout was to blame. Now: the spines are indexed by where they reach and the channels' square follows the cell
 (both exact: the 1× goldens are unchanged); a 10× face is 3.1 s and a 10× server starts in 6.2 s at 484 MB.
