@@ -7,7 +7,8 @@ Realistic test world (`shared/worldgen/worlds/realistic.json`, `?worldgen=test:r
 world form); the default and the starter are unchanged. R3 built (2026-11-12): the climate from latitude, wind
 and terrain (`shared/worldgen/climate.json`, `dwell-worldgen` `climate.rs`) in the Realistic world, its rain
 feeding the rivers' discharge. R4 built (2026-11-12): biomes chosen by climate alone, the presets' `where` in
-°C and annual rain (mm), the Realistic world listing every preset unchanged.
+°C and annual rain (mm), the Realistic world listing every preset unchanged. §8 (2026-11-12, design only):
+orbits by seed set the latitude band, the sky and later seasons, in place of R3's picked band.
 
 ## 1. The owner's direction
 
@@ -420,7 +421,7 @@ R1–R5 are logic-only and suit cloud sessions (docs/CLOUD_SESSIONS.md); R6's br
 
 ## 7. Questions for the owner
 
-Open: q2's bands (the seed picks one: answered), q6, q8, q9. Answered: q1 (by default), q3, q4, q5, q7.
+Open: q9 (waiting on the owner), and §8.10's orbit questions. q2 moved to §8 (orbits by seed). Answered: q1 (by default), q3, q4, q5, q6, q7, q8.
 
 1. **Plate count and size for the first region:** 3–5 plates with one or two boundaries crossing the
    island, or more, smaller plates?
@@ -430,6 +431,8 @@ Open: q2's bands (the seed picks one: answered), q6, q8, q9. Answered: q1 (by de
    seed pick any band, or should a world creator pick one (seed decides the rest)?
    **Half answered (owner, 2026-11-11):** the seed picks the band. Which bands to offer is open; R3 offers
    subtropical, temperate and subarctic (`climate.json` `bands`, temperate twice as likely), changed by data.
+   **Owner, 2026-11-12:** "I think latitude bands are based on orbits right? Orbits should be seed
+   determined." The band becomes the result of a seed-rolled orbit: §8, with its own questions (§8.10).
 3. **The disc's coast:** should plates decide where land and sea are (oceanic plate = sea), keeping only
    a sea margin at the disc's edge, or keep today's central island and let plates shape it?
    **Answered (owner, 2026-11-11):** plates decide land and sea (oceanic plate = sea, continental = land);
@@ -445,12 +448,225 @@ Open: q2's bands (the seed picks one: answered), q6, q8, q9. Answered: q1 (by de
    naming its rock by block name in data, so andesite, schist or limestone can replace them later by data
    alone.
 6. **Volcanoes in Realistic:** dormant cones only at first, or lava vents by rule (VOLCANOES.md)?
+   **Answered (owner, 2026-11-12):** "dormant volcanoes only for now."
 7. **Determinism of tuning:** while Realistic is a test world, may its seeds' terrain change between
    releases (hashes updated with a note), as the starter's does?
    **Answered (owner, 2026-11-11):** yes: while Realistic is a test world its seeds' terrain may change
    between releases, with a note (and its hashes updated). The seed picks the latitude band (q2's second
    half); which bands to offer is still open.
 8. **Debug view home:** Chisel's overlays (proposed), or also the in-game big map?
+   **Answered (owner, 2026-11-12):** "also on the big map" — the plates, wind and climate overlays in Chisel and
+   on the in-game big map.
 9. **Climates no preset covers (R4):** in the Realistic world the default biome takes the cool, nearly
    rainless interior (a cold desert) and the very wet tropics (a tropical rainforest). Add presets for
-   them, or keep the fallback there?
+   them, or keep the fallback there? Owner asked (2026-11-12): "how does the default biome fill them?" (explained:
+   the default is plain temperate grassland with generic trees and rocks, so a cold dry interior and a wet
+   tropical coast would both look like ordinary meadow); waiting on the answer.
+
+## 8. Orbits by seed: the sky sets the climate band
+
+**Status:** design only (2026-11-12), nothing built; questions for the owner in §8.10. Owner, 2026-11-12, on
+§7 q2: **"I think latitude bands are based on orbits right? Orbits should be seed determined."** So the band
+stops being a list the seed picks from. The seed rolls the world's **orbit** (its distance from the sun, the
+sun path's inclination, the axial tilt, the day and the year, and the moon's orbit), the sky draws that orbit,
+and R3's climate reads it: the latitude band becomes a **result** of the sky. One celestial model
+([MOON_WORLD.md](./MOON_WORLD.md) §6, `dwell-look` `celestial.rs`) for the sky and the climate.
+
+### 8.1 What "latitude" means on a flat bifacial disc
+
+Today's sky (DAY_NIGHT.md §3): the disc is at rest; the sun moves on a **great circle** through its rising
+yaw (`sunPath.riseYawDeg` 31°), culminating `noonElevationDeg` (60°) above face A's horizon; the circle
+passes under the disc, so face B's day is A's night (B's solar angle is A's + 180°). The sky (and its stars)
+turns about that circle's **axis**. The uneven solar angle (`k sin 2πu`) stretches A's daylight to 800 s of
+a 1200 s day, B's to 400 s.
+
+- **Sunlight on a flat face is the same everywhere:** the sun is far, its rays parallel, so every column of
+  face A sees the sun at the same height at the same moment. A flat disc has **no latitude gradient** from
+  the sky; it has one latitude per face.
+- **That latitude is the pole's height.** On a globe your latitude equals the height of the celestial pole
+  over your horizon (Polaris at 40° in a 40° N city), and the noon sun at the equinox stands at 90° − φ.
+  The disc's sky turns about its path's axis, which stands 90° − 60° = **30° over face A's horizon**: face A
+  sits at **φ = 30° N**, in permanent equinox geometry (δ = 0). Face B sees the axis's other end 30° over
+  its own horizon: **30° S**. Today's 60° noon on both faces is exactly that.
+- **"North"** on face A is toward the point under the pole (away from the noon sun, the sun culminating
+  toward riseYaw + 90°); on face B, through `FaceFrame`, its own pole's side. Both follow from the sky; R3
+  draws its north axis from the seed instead.
+- **Day length is a game warp, not geometry.** On a δ = 0 path a globe has 12/12 hours everywhere; A's 2/3
+  daylight is the clock's warp (the owner's 800/400 split), and it stays the playability layer (§8.4).
+- **Today's mismatch:** R3 draws a band (subtropical, temperate, subarctic) and spans it across the disc
+  along a seed axis, while every world's sky is the same 30° N sky. A subarctic world has a 60° noon sun. The
+  orbits make the sky and the climate the same fact.
+
+The gradient across the disc that R3 has (a band spans 14° of latitude from the south edge to the north
+edge) has no cause in parallel sunlight. Keep it as a **game-scale stretch**, like the 20-minute day: the
+climate's latitude at a column is the face's φ ± `spanDeg`/2 along its north axis (data; 14° as R3's bands
+today). The alternative, a near sun whose rays fan across the disc (a 14° spread needs it ~400 km away,
+nearer than the moon, and different sun directions per viewer for the shadows), costs the renderer and reads
+wrong in the sky; not proposed (§8.10 q5).
+
+### 8.2 What the seed's orbit sets
+
+| Orbit part | Sets | Model | Today's value (the default sky) |
+|---|---|---|---|
+| **Pole height** φ (the sun path's inclination to the disc) | the face's latitude: face A at φ N, face B at φ S; the noon sun 90° − φ (± δ) | the sky's axis tilted φ over face A's horizon (`sunPath.noonElevationDeg` = 90° − φ) | φ = 30° (noon 60°) |
+| **Pole yaw** | north on each face (R3's seed axis becomes the sky's) | the axis's yaw (`sunPath.riseYawDeg` = its rising point, a quarter turn off) | 31° |
+| **Distance** r (relative, 1 = today) | an overall temperature offset; the sun's angular size × 1/r | ΔT = 288 K × (r^−½ − 1) (radiative balance), clamped to `offsetC` | 1 (0 °C) |
+| **Axial tilt** ε | seasons (§8.5): the sun's declination swings ±ε over a year; 0 = no seasons | δ(t) = ε sin 2π(day / Y + yearPhase) | 0° |
+| **Day length** | the world clock (the existing `WorldSettings` `CLOCK`, ADR 0054) | `dayS` + `nightS` and the split, within ranges | 800 + 400 s |
+| **Year length** Y | the seasons' period, in world days | — | none (ε 0) |
+| **Moon's orbit** | the month (period), its inclination, node and phase (M-4) | M-4's `moonOrbit` and `moon.cycleDays`, `MOON_PHASE` | 8 days, 5°, node 90°, turn 96 days |
+| **Moon's distance** | kept: it holds the 12.5 km moon at 1.2° (owner, MOON_WORLD.md §12 Q8: "should match previous size for now") | derived from `grids.json` and `radiusDeg`, not rolled | 596 800 m |
+
+Today's sky is the orbit **φ 30°, yaw 31°, r 1, ε 0** with today's clock and moon: the default worlds keep
+exactly it (§8.7).
+
+### 8.3 How R3's climate reads the orbit (the band becomes the result)
+
+- **Latitude at a column:** φ_face (A: +φ, B: −φ, its magnitude for the curves) ± `spanDeg`/2 along the sky's
+  north (face-local, through `FaceFrame`). `climate::latitude` keeps its signature; only where its centre and
+  axis come from changes.
+- **Sea-level temperature:** R3's `seaLevel` curve by latitude, unchanged, + the distance's ΔT. `lapseRate`
+  unchanged. With seasons off, nothing else.
+- **Wind:** R3's cells by latitude (trade winds, westerlies, polar easterlies), read at the face's latitude;
+  the jitter stays the seed's. On face B the cells are the southern hemisphere's (the bearings mirrored by
+  `FaceFrame`, as the terrain is).
+- **The bands become names:** `climate.json` `bands` lose their `weight` (nothing picks them); each stays a
+  named latitude range, and the band a face falls in names it (for Chisel, the debug overlay, tests) and
+  gives its `rainMm` (interpolated between the bands' middles, so a φ between two bands is between them).
+- **The faces:** today each face draws its own band (seed 1: A subtropical, B temperate). One sky gives both
+  faces the same |φ|, so they get the same band, mirrored south, unless their daylight differs: A's 2/3 day
+  against B's 1/3. Proposed: a face's sea level gains `dayShareC` °C per 0.1 of daylight share over ½ (data;
+  e.g. 1 °C, so today's A is ~1.7 °C over the face's curve and B ~1.7 °C under it, ~3 °C apart). Their terrain still differs (each face's own plates, §7
+  q4). §8.10 q4 asks whether the faces should differ more.
+- **Generation never reads the season:** terrain, biomes, rain and rivers use the **annual mean** (δ = 0
+  and the mean day share), so a chunk generates the same in winter and summer and the worldgen stays a
+  function of the seed and the stored orbit.
+
+### 8.4 What stays fixed for playability
+
+- **Both faces get days and nights**, every day of the year: each face's daylight share stays within
+  `dayShare` [min, max] (data, e.g. [0.2, 0.8]) at every season; the warp's turn-back check (DAY_NIGHT.md §3)
+  runs over the year's whole range of splits in the generator.
+- **Day length within a range** (data, e.g. 1080–1440 s): the clock already belongs to the world, and tree
+  growth, water and the ecology count its days, so a seed's day stays near the owner's 20 minutes. A range of
+  one value pins it.
+- **The noon sun high enough to play in:** φ + ε ≤ `maxPoleDeg` (e.g. 62°: the noon sun ≥ 28° at the
+  winter solstice), so no world is a polar night or a sun skimming the horizon all day. The roll draws φ
+  first, then ε within [0, min(`tiltDeg` max, `maxPoleDeg` − φ)], so a high-latitude world has mild seasons.
+- **The keyframes** stay keyed by the solar angle (DAY_NIGHT.md §4), so a lower sun keeps noon's colours; a
+  later tuning may weigh them by the sun's elevation.
+- **The moon** keeps its size in the sky, its glow and its light (owner, M-2); the month within a range.
+
+### 8.5 Seasons: a new consequence (optional, later)
+
+With ε > 0 the sun's daily path becomes a circle of declination δ(t) about the same axis (no longer a great
+circle): face A's noon is 90° − φ + δ, face B's 90° − φ − δ, so **the faces have opposite seasons** (A's
+summer is B's winter), as a globe's hemispheres do.
+
+| What | Changes with the season | When |
+|---|---|---|
+| Sun path | noon elevation ±ε; the day share swings with δ (the small circle's longer arc over the summer face), clamped by `dayShare` | with the seasons' first phase |
+| Temperature | the climate's `temperature_c(x, z, h, day)`: the curve read at latitude φ − `damping` × δ(day − `lagDays`) (the sea's inertia: ~½ the swing, ~1/12 of a year late) | model first, read by gameplay later |
+| Snow line | the snow altitude follows the season's temperature: first as a **look** (the shader whitens ground above it, as the LOD colours do), real snow blocks later | later |
+| Vegetation, forage | grass regrowth's and the far ecology's forage climate cap (WORK_QUEUE items 14 and 11) by the season's temperature | later |
+| Not changed | the generated terrain, biomes and rivers (the annual mean, §8.3); water freezing (not designed) | — |
+
+A year is `yearDays` world days (data, e.g. 16–32: 5–11 hours of play at 20 minutes a day). The world's
+calendar (`days` from the clock, DAY_NIGHT.md §2) gives the day of the year; `yearPhase` sets where a new
+world starts (spring, so its first days are mild).
+
+### 8.6 Data shape
+
+A new data file, `shared/look/orbits.json` (validated by `orbits.mjs`, emitted with the rest of
+`shared/look/gen.mjs`, CI failing on stale output), holding **ranges** the seed rolls in and today's orbit:
+
+```json
+{
+  "today": { "poleDeg": 30, "poleYawDeg": 31, "distance": 1, "tiltDeg": 0 },
+  "roll": {
+    "poleDeg": [15, 55], "poleYawDeg": [0, 360], "distance": [0.97, 1.03],
+    "tiltDeg": [0, 23], "yearDays": [16, 32], "yearPhase": 0.0,
+    "dayLengthS": [1200, 1200], "dayShare": [0.6, 0.7],
+    "moon": { "cycleDays": [7, 10], "inclinationDeg": [0, 8], "nodeDeg": [0, 360], "phase": [0, 1] }
+  },
+  "limits": { "maxPoleDeg": 62, "dayShare": [0.2, 0.8], "offsetC": [-6, 6], "dayShareC": 1 },
+  "seasons": { "damping": 0.5, "lagDays": 0.083 }
+}
+```
+
+- **One roll function** (`dwell-look` `orbits.rs`: `Orbit::roll(world_seed, &ranges)`, pure) gives a
+  `celestial` record: φ, pole yaw, r, ε, Y, the year's phase, the clock, the moon's period, inclination, node
+  and phase. Rolled **once, at world creation**, by the server.
+- **Stored as world settings** (ADR 0054), so a world keeps its sky when a later build changes the ranges: the
+  clock in the existing `CLOCK`; the moon's phase in M-4's `MOON_PHASE`; the rest in a new tag `CELESTIAL`
+  (φ, yaw, r, ε, Y, year phase, the moon's period, inclination, node; `f32`s behind a version byte), saved in
+  the world file's `world_settings`. `Celestial::for_world` builds the sky from it, `Climate::for_face` takes
+  it as an input beside the face seed.
+- **Required for a world whose terrain reads it.** Its tag is optional (top bit) for the sky alone (an older
+  build draws today's sky: a look), but a Realistic world's terrain depends on it, so there it is sent as a
+  required field, and an older build refuses the world ("needs a newer version"), as for `WORLDGEN`, rather
+  than generate other terrain.
+- **References by name:** the bands by name, the world's settings by tag; no orbit constants in code beyond
+  `today` (in data).
+
+### 8.7 Compatibility
+
+- **The default and starter worlds keep today's sky exactly:** they roll nothing and write no `CELESTIAL`;
+  `Celestial::for_world` without it is today's orbit (a golden test: the sun direction and the moon over a
+  month byte-identical), and their joins are byte-identical. No golden moves.
+- **Only Realistic (and later, new worlds the owner opts in) roll orbits.** Realistic's terrain changes (its
+  climate's band and north now come from the orbit), allowed while it is a test world (§7 q7), its hashes
+  updated with a note.
+- **A new world on the default generator rolling orbits** would change its sky (a look, not breaking) but not
+  its terrain (the default reads no climate); its day length and seasons are game rules, so turning that on
+  for every new world is the owner's call (§8.10 q2), not part of these phases.
+
+### 8.8 Phases (each ≤ 45 minutes)
+
+- **O1 Data and the roll.** `orbits.json` + `orbits.mjs` (+ gen), `orbits.rs` `Orbit::roll` and
+  `Orbit::today()`. *Exit:* same seed same orbit, different seeds differ; every value within its range; the
+  limits hold over 10 000 seeds (φ + ε ≤ `maxPoleDeg`, the day share in bounds at both solstices on both
+  faces); a bad entry fails naming it; a range added by data alone is rolled. No game change.
+- **O2 The sky reads the orbit.** `Celestial` from an `Orbit` (φ, yaw → the path; the clock; the moon's
+  orbit); the `CELESTIAL` world setting (protocol + world file), absent by default. *Exit:* `Orbit::today()`
+  gives today's sun and moon (golden); a rolled orbit's noon elevation is 90° − φ on both faces; a default
+  world's join byte-identical; the tag round-trips.
+- **O3 The climate reads the orbit (Realistic).** `Climate::for_face(seed, face, &orbit)`: latitude from φ
+  and the sky's north, `spanDeg`, the distance's ΔT, `dayShareC`; bands as names and `rainMm`; Realistic
+  rolls at creation. *Exit:* a world's band is the one φ falls in; a farther orbit colder at sea level; face B
+  the southern mirror (winds mirrored) on both faces; R3/R4's Realistic tests pass re-baselined (the windward
+  ratio, no dry biome on wet sides); default and starter goldens unchanged.
+- **O4 Seasons in the model.** δ(t), opposite seasons on the faces, the day share's swing clamped,
+  `temperature_c(…, day)` with damping and lag; generation still the annual mean. *Exit:* ε 0 equals O2's sky
+  and O3's climate exactly; A's summer is B's winter; the mean over a year is the annual mean; nothing in
+  generation reads the day (a test generates a chunk on two days of the year, identical).
+- **O5 Seasons drawn.** The sky's sun on its declination circle, the season's day share; a dev control to
+  scrub the year (DAY_NIGHT.md §6); the Chisel latitude overlay with the band's name. *Exit:* a screenshot at
+  each solstice on both faces; CPU-adapter tier unchanged.
+- **Later (not phased):** the snow line as a seasonal look, then snow; grass and forage by season; new worlds
+  on the default generator rolling orbits (§8.10 q2).
+
+O1–O4 are logic-only and suit cloud sessions; O5's screenshots are local.
+
+### 8.9 Why this fits the extendable-system rule
+
+The vocabulary in code is small and fixed (pole height, yaw, distance, tilt, year, a declination circle, the
+radiative offset, the damping); the ranges, limits and today's orbit are data a tool could edit (a Chisel or
+Sky Lab slider page later); the world keeps its own rolled values as settings; the climate reads named bands.
+A fixture orbit added by data alone is drawn and read (O1–O3's tests).
+
+### 8.10 Questions for the owner
+
+1. **Seasons now or later?** Proposed: the orbit (φ, distance, the moon) first (O1–O3), seasons' model O4 and
+   drawn O5 after, the seasonal snow and forage later.
+2. **How varied may orbits be?** Proposed ranges: pole 15–55° (subtropical to subarctic, as R3's bands),
+   distance ±3 % (±4 °C), tilt 0–23°, year 16–32 days, the day fixed at 20 minutes (800/400 ± a little).
+   Should the day length vary by seed at all? Should new worlds on the default generator roll orbits too (their
+   sky and seasons only; their terrain unchanged)?
+3. **The moon's orbit by seed too?** Proposed: its month 7–10 days, inclination 0–8°, node and phase rolled; its
+   distance kept so its size in the sky stays (your answer to MOON_WORLD.md §12 Q8). Or keep today's moon in every world?
+4. **The two faces' climates:** one sky gives both faces the same latitude (A north, B south, opposite
+   seasons); their daylight (A 2/3, B 1/3) makes B ~3 °C colder by `dayShareC`. Is that enough difference, or
+   should face B differ more (R3 today draws it its own band)?
+5. **The gradient across the disc:** keep R3's 14° game-scale span across the map (proposed), or no gradient
+   (one climate per face, only height and rain vary), or a near sun whose rays fan out (not recommended)?

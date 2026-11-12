@@ -657,6 +657,8 @@ pub mod capability_names {
     pub const MAX_NAME_BYTES: usize = 48;
     /// A saved structure's placement goes as its own region-edit op (RegionEditOp::Structure, the Paste body), which the server refuses where the world's mode lacks the `structures` ability (shared/modes/modes.json; STRUCTURES.md §9). Without it a client sends plain pastes.
     pub const STRUCTURES_PLACE: &str = "structures.place";
+    /// The player's grid travels on the wire (docs/proposals/MOON_WORLD.md §7.2): a snapshot ends with the local player's grid (its index in shared/worldgen/grids.json, 0 the home grid) and, off home, the grid's frame (origin, rotation); the other grids' chunks arrive as ChunkData and ChunkUnload ending with their grid byte. Without it the server sends neither, and a player off home is seen at their world position.
+    pub const GRID_FRAMES: &str = "grid.frames";
     /// Every capability this build knows, in the table's order.
-    pub const ALL: &[&str] = &[STRUCTURES_PLACE];
+    pub const ALL: &[&str] = &[STRUCTURES_PLACE, GRID_FRAMES];
 }

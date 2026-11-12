@@ -107,7 +107,9 @@ fn full_when_opposite_the_sun_new_when_between() {
         assert!(dot(sun, moon) <= -(i.cos()) + 1e-9, "opposite at full");
         let v = c.view(full, [0.0, 72.0, 0.0]);
         assert!(
-            v.lit >= i.cos() - 1e-6 && (v.phase - 0.5).abs() < 0.02,
+            // (the orbit's tilt leaves full a few degrees off opposite: the regolith's law,
+            // `moon.lunarLambert`, loses under 1% of its light there)
+            v.lit >= i.cos() - 0.01 && (v.phase - 0.5).abs() < 0.02,
             "{v:?}"
         );
         let new = at_phase(&c, 0.0, n);
@@ -333,14 +335,67 @@ fn the_disc_lit_share_spans_flat_to_ball() {
     use super::disc_lit;
     for c in [-1.0, -0.5, 0.0, 0.3, 0.7, 1.0] {
         assert!(
-            (disc_lit(c, 0.0) - f64::max(c, 0.0)).abs() < 1e-9,
+            (disc_lit(c, 0.0, 0.0) - f64::max(c, 0.0)).abs() < 1e-9,
             "flat at {c}"
         );
     }
     // A ball's light: growing with the phase angle's cosine, a third of full at a quarter.
-    let ball = [-0.9, -0.5, 0.0, 0.5, 1.0].map(|c| disc_lit(c, 1.0));
+    let ball = [-0.9, -0.5, 0.0, 0.5, 1.0].map(|c| disc_lit(c, 1.0, 0.0));
     assert!(ball.windows(2).all(|w| w[0] < w[1]), "{ball:?}");
     assert!(ball[2] > 0.2 && ball[2] < 0.5, "{ball:?}");
-    assert_eq!(disc_lit(-1.0, 0.6), 0.0);
-    assert!((disc_lit(1.0, 0.6) - 1.0).abs() < 1e-9);
+    assert_eq!(disc_lit(-1.0, 0.6, 0.0), 0.0);
+    assert!((disc_lit(1.0, 0.6, 1.0) - 1.0).abs() < 1e-9);
+}
+
+/// The radius (of the disc's) where a full moon's light along a radius first falls below half its
+/// centre's: the bright disc's size as the sky draws it (`moon_shade` is `dwell_moon`'s).
+fn bright_radius(dome: f64, lunar: f64) -> f64 {
+    use super::{moon_shade, moon_shape};
+    let full = [0.0, 0.0, 1.0];
+    let centre = moon_shade(
+        moon_shape(0.0, 0.0, dome),
+        moon_shape(0.0, 0.0, dome),
+        full,
+        lunar,
+    );
+    (0..=1000)
+        .map(|k| f64::from(k) / 1000.0)
+        .find(|&r| {
+            let s = moon_shape(r, 0.0, dome);
+            moon_shade(s, s, full, lunar) < 0.5 * centre
+        })
+        .unwrap_or(1.0)
+}
+
+// Owner, 2026-11-12: "The moon looks smaller I think compared to the old moon?" The old moon was a
+// flat disc lit evenly to its edge; the domed Lambert ball's bright part ended at 0.87 of it.
+#[test]
+fn the_full_moon_is_bright_to_its_edge_as_the_old_flat_disc() {
+    let old = bright_radius(0.0, 0.0);
+    assert_eq!(old, 1.0, "the old flat disc");
+    let m = crate::daynight::DAY_NIGHT.moon;
+    let now = bright_radius(m.dome_bias, m.lunar_lambert);
+    assert!(
+        now >= 0.97 * old,
+        "the full moon's bright disc: {now} of the old's {old}"
+    );
+    // And a crescent still reads: at a quarter the half toward the sun lit, the far half dark.
+    use super::{moon_shade, moon_shape};
+    let sun = [1.0, 0.0, 0.0];
+    let at = |x: f64| {
+        let s = moon_shape(x, 0.0, m.dome_bias);
+        moon_shade(s, s, sun, m.lunar_lambert)
+    };
+    assert!(at(0.6) > 0.5 && at(-0.3) == 0.0, "{} {}", at(0.6), at(-0.3));
+}
+
+#[test]
+fn the_regolith_law_keeps_the_phases_ordered() {
+    use super::disc_lit;
+    let m = crate::daynight::DAY_NIGHT.moon;
+    let lit = [-1.0, -0.5, 0.0, 0.5, 1.0].map(|c| disc_lit(c, m.dome_bias, m.lunar_lambert));
+    assert!(lit.windows(2).all(|w| w[0] <= w[1]), "{lit:?}");
+    assert_eq!(lit[0], 0.0);
+    assert!((lit[4] - 1.0).abs() < 1e-9);
+    assert!(lit[2] > 0.2 && lit[2] < 0.5, "a quarter: {lit:?}");
 }
