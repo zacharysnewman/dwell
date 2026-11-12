@@ -2226,7 +2226,6 @@ mod volume_tests {
 mod depth_tests {
     //! BUGS.md #88: the clouds pass against a mountain inside the layer, as the shader does it.
     use super::*;
-    use dwell_world::FaceFrame;
 
     const V: VolumeTunables = CLOUDS.volume;
     /// A ray from a valley 100 m above sea level rising 0.4 (face-local up) into the layer.
