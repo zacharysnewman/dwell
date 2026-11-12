@@ -22,9 +22,9 @@
 //! - **Between the grids** home gravity holds until captured (§12 Q6's default): only fliers are
 //!   captured, and far from every grid a player only flies.
 //!
-//! Not yet (M-7's follow-up): the server's session loop holding these spaces, the moon's chunks on
-//! the wire per grid, the player's grid in snapshots (the `grid.frames` capability), and the
-//! client's view turning to the new down (its look continues across by [`look_across`]).
+//! The server (M-7b, `server/grids.rs`) holds the other grids' spaces beside its home world and
+//! moves its players between them with [`carry`]; the client's view turning to the new down (its
+//! look continues across by [`look_across`]) is the client's follow-up.
 
 use std::sync::Arc;
 
