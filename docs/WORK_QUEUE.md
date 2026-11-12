@@ -291,6 +291,9 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    self-shadowing toward the sun (a short light march), sky-coloured ambient on the shaded side, a brighter
    sun-facing rim — matched against the old 2D deck's look side by side; and bench shots taken with clouds off
    unless the shot is about clouds.
+   Owner, 2026-11-12, again: **"Also the volumetric clouds still look bad no proper lighting or shading?"** In progress
+   (cloud): a light march toward the sun for self-shadowing, darker bases, sky-coloured ambient, silver lining —
+   matched against the old 2D deck; then the in-game look and cost (local).
 14. **Tall grass grows and spreads** (owner 2026-11-11: "I want tall grass to steadily grow and spread. It
    should probably have a max depending on climate/biome."). **Built** (ADR 0075 T3c, docs/ECOLOGY.md §10):
    `shared/worldgen/grass.json` (the rule as data: the block, the ground, the decoration whose climate
@@ -814,6 +817,10 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    went 256 → 192 m (Ultra keeps 352): 13.88 ms there. Next: a Tall grass setting (a mesher flag; the renderer's cutout switch also hides
    leaves and ladders), a dense-forest spot that reproduces the owner's 31 ms, then (3) impostors.
 
+   Owner, 2026-11-12, on this M1 Air: **"Im seeing on this m1 Mac that im getting sub-60FPS when flying on High. Im
+   wondering if the new trees and volumetric clouds are at fault!"** Next (local, after theater mode's UI): measure
+   flying at High (sky and cloud pass cost at altitude, tree meshing/uploads while streaming, the clouds' volume
+   pass vs the deck), cut what's large.
 31. **Far trees as multi-angle impostors** (owner 2026-11-12: "billboards (maybe from above billboards too,
    possibly a few different angles so we can switch between them like old Mario kart did with carts, and some
    trees too)" and "The farther distant thoughts on billboards are because our low LOD trees look pretty bad and
