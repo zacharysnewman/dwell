@@ -1373,6 +1373,20 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    to showing the other side as the player flies up out of the hole."**) — past the portal's motes the view flips
    and the player rises out on face B; (5) out on face B, a drone rise back to the edge-on outline. Defaults while
    unanswered: face A golden hour, face B night; clouds on for the far shots, off for the portal.
+   Owner refinement for (4)/(5), 2026-11-12: **"Like a farther out non first person view of the other side."** — after
+   the motes, cut to a third-person camera farther out on face B (15–40 m from the portal, looking at the hole) as the
+   player flies up out of it, not first person; the jump stays first person on face A.
+   Owner, 2026-11-12: **"Evaluate the far shots, they might look weird with the clouds on. Also the clouds look
+   ridiculous, at least the volumetric ones. Look like crazy triangles."** — clouds off for every shot unless on
+   clearly reads better. Checked: from beyond the rim both tiers draw a cloud layer in the void under the camera
+   (BUGS.md #101), so v2 is clouds off throughout.
+   **Video 1 v2 recorded 2026-11-12** (48.7 s, 6 clips, 17.8 MB): (1) the disc's outline from 160 → 118 km out,
+   9–13 km up, a slow push; (2) an orbit-crane from over face A through the midplane to under face B at night; (3)
+   first person walking between the monument's pillars to the hole and dropping in (no ladder); (4) the fall past the
+   motes at 0.35× speed; (5) a hard cut to a camera 38 m out over face B looking down at the hole as the player flies
+   up out of it, hovers, flies out and lands; (6) a drone rise from the player on face B past the monument and the
+   coast to the whole disc from beneath. Paths kept with the plan (the record skill's lessons). Seed 7's portal
+   at (1780.5, 20690.5) (`?spawn=portal`).
 41. **Theater mode** (owner 2026-11-12: "We should use full camera tools to do the things you were doing and expand
    this tool set as you go, we could call it theater mode. Even make it available ingame as a feature that could be
    toggled on for any world type."). Answers: **both** presets (pick a target and a move: orbit, dolly, track,
