@@ -688,8 +688,19 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    height 1800 m, fading far terrain to the horizon's (pale, warm) colour. Proposed: aerial perspective — far
    land fades toward a bluer air colour (the sky a little above the horizon, warmer toward the sun, bluer away),
    loses contrast and saturation before it disappears, the haze half-distance shorter (~10 km) and the scale
-   height lower (~1200 m) so valleys haze and peaks stand clearer. Next (local): side-by-side variants for the
-   owner to pick.
+   height lower (~1200 m) so valleys haze and peaks stand clearer. **Built as data, defaults unchanged
+   (2026-11-11, branch `claude/haze`):** fog.json gained `air` (`elevationDeg`: fade toward the sky that far
+   above the horizon; `sunTint` with `warm`/`cool`) and `veil` (`saturation`, `contrast`, `halfM`: far land
+   greys and its darks fill with the air before the haze hides it), all 0 today (golden test pins today's
+   output), and `presets` B `thicker` (10 km, 1200 m), C `aerial` (B + air 4° up + veil 0.45/0.35), D
+   `aerial-sun` (C + sunTint 1), drawn with `?haze=<name>` (DAY_NIGHT.md §4). A 4×4 contact sheet (cone at
+   8 km from 3000 m at noon, a valley with hills at noon, the cone at 16:48 toward and away from the sun)
+   showed the differences are **modest at these values**: C greys and blues the far ridges in the valley
+   most convincingly; the lower scale height makes the cone seen from 3000 m slightly *clearer*, not
+   thicker (the eye is above most of the haze); D's tint is barely visible and warms noon hills toward
+   dust. The white below the cone in those shots is the cloud deck, not the haze. **Waiting on the owner:**
+   pick a preset (or ask for a stronger C: e.g. elevationDeg 8, saturation 0.6) and its values move to the
+   top level of fog.json.
 
 30. **Desktop frame rate on the M1 and hidden graphics settings (P0)** (owner 2026-11-12: "It seems like we're
    hiding some performance settings. I don't see 'tree' options in our settings for graphics. I think cards are

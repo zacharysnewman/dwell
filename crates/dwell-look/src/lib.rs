@@ -229,7 +229,7 @@ pub fn behind_haze(e: f64, height: f64, density: f64) -> f64 {
     let h = height.max(0.0);
     let fog = fog::FogSettings {
         density,
-        ..fog::FOG
+        ..*fog::active()
     };
     let mid = FaceFrame::A.y(dwell_world::MIDPLANE_M);
     let path = fog::haze_amount(&fog, mid + h, mid, h / (-e).max(1e-6));
@@ -290,8 +290,8 @@ pub fn sky_wgsl_with(moon_ground: &str) -> String {
         ("BEHIND_FROM", d.sky.behind_from),
         ("BEHIND_TO", d.sky.behind_to.max(d.sky.behind_from + 1e-3)),
         ("BEHIND_HEIGHT", d.sky.behind_height_m.max(1e-3)),
-        ("SKY_FOG_SIGMA", fog::fog_sigma(fog::FOG.distance_m)),
-        ("SKY_FOG_HEIGHT", fog::FOG.height_m),
+        ("SKY_FOG_SIGMA", fog::fog_sigma(fog::active().distance_m)),
+        ("SKY_FOG_HEIGHT", fog::active().height_m),
         ("SKY_SEA_LEVEL", dwell_world::SEA_LEVEL_M),
         ("SKY_MAX_EXPONENT", fog::MAX_EXPONENT),
         ("SUN_RADIUS", d.sun.radius_deg.to_radians()),
@@ -335,6 +335,21 @@ pub fn sky_wgsl_with(moon_ground: &str) -> String {
         "const SPACE_COLOR: vec3f = {};",
         vec3(a.space_color)
     ));
+    // Aerial perspective (fog.rs `air_direction`, `air_tint`, `veiled`; the composite's
+    // `haze_air`, `haze_veiled`): HAZE_AERIAL false draws the plain fade to the horizon's colour.
+    let h = fog::active();
+    s.push(format!("const HAZE_AERIAL: bool = {};", h.aerial()));
+    for (name, v) in [
+        ("HAZE_LIFT", h.air_elevation_deg.to_radians().sin()),
+        ("HAZE_SUN_TINT", h.sun_tint),
+        ("HAZE_VEIL_HALF", h.veil_half_m),
+        ("HAZE_VEIL_SATURATION", h.veil_saturation),
+        ("HAZE_VEIL_CONTRAST", h.veil_contrast),
+    ] {
+        s.push(format!("const {name}: f32 = {};", f(v)));
+    }
+    s.push(format!("const HAZE_WARM: vec3f = {};", vec3(h.warm)));
+    s.push(format!("const HAZE_COOL: vec3f = {};", vec3(h.cool)));
     s.push(format!("const MOON_COLOR: vec3f = {};", vec3(d.moon.color)));
     s.push(format!(
         "const MOON_GLOW_COLOR: vec3f = {};",

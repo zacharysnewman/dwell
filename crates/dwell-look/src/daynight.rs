@@ -634,7 +634,7 @@ impl DayState {
 
 /// A face's fog density this moment: the fog data's, times its time of day's (at most 1).
 pub fn fog_density(s: &Sample) -> f64 {
-    (crate::fog::FOG.density * s.fog_density).min(1.0)
+    (crate::fog::active().density * s.fog_density).min(1.0)
 }
 
 /// The eye's adaptation to the face it is on (docs/DAY_NIGHT.md §13): how far toward face A's

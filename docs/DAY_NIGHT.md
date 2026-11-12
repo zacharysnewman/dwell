@@ -116,6 +116,25 @@ horizon's colour in that azimuth. So distant terrain melts into the sky at every
 the warm band toward a setting sun, into the dark blue horizon at night. There is no separate fog
 colour to keep in step. The keyframes vary only the fog's density.
 
+**Aerial perspective (data, off by default; WORK_QUEUE item 29).** `shared/look/fog.json` also holds
+how far land fades, all of it still read from the sky so it stays in step with the time of day:
+
+- `air.elevationDeg`: the colour far land fades toward is the sky's at least that many degrees above
+  the horizon in the ray's azimuth (bluer than the pale horizon by day); 0 is the horizon's, as above.
+- `air.sunTint` with `warm` and `cool` (per-channel multipliers): that colour warmer facing the sun's
+  azimuth, cooler away; 0 none.
+- `veil.saturation`, `veil.contrast`, `veil.halfM`: before the haze hides it, far land greys and its
+  darks fill with the air colour (shadows haze first), half of each by `halfM`; 0s none.
+
+dwell-look `fog.rs` (`air_direction`, `air_tint`, `veiled`) is the reference; the composite's
+`haze_air` and `haze_veiled` (`shaders.rs`) apply it in `fogged`, behind a WGSL constant
+`HAZE_AERIAL`, so with today's zeros the composite is the plain fade, unchanged (the golden test
+`fog::tests::todays_fog_output_is_pinned`). It costs one more `dwell_sky` and a few multiplies per
+fogged pixel when on, the same on the CPU adapter's tier. `presets` in the file name variants over
+these values (`thicker`, `aerial`, `aerial-sun`: item 29's B, C and D); `?haze=<name>` draws one
+(`setHaze`, set before the shaders are built) to compare. The values at the top level are what every
+client draws; picking a preset is moving its values there.
+
 ## 5. Drawing
 
 `dwell-look` evaluates the cycle on the CPU each frame (`DayNight::state`: the time of day, the
