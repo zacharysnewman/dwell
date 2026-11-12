@@ -181,6 +181,9 @@ pub const MAX_PIECE_ROWS: u8 = 2;
 /// C→S: one edit of a box of cells (§6.5) — `size` cells from the `min` corner, each side
 /// 1..=`region_edit::MAX_SIDE`. Fill and Hollow set `material` (Hollow: the box's shell, air
 /// inside); Replace turns cells holding `from` into `material`; Paste sets the box to `cells`.
+/// Structure is a Paste that places a saved structure (STRUCTURES.md §9): the same body, refused by
+/// the server where the world's mode lacks the `structures` ability; sent only to a server that
+/// announced the `structures.place` capability (others get a plain Paste).
 /// Sent only to a server that announced `welcome_flags::REGION_EDITS`.
 #[derive(Clone, Debug, PartialEq)]
 pub struct RegionEdit {
@@ -191,7 +194,7 @@ pub struct RegionEdit {
     pub material: u16,
     /// Replace.
     pub from: u16,
-    /// Paste: `volume()` states in layer order, x fastest, then z, then y
+    /// Paste, Structure: `volume()` states in layer order, x fastest, then z, then y
     /// (`x + size.x · (z + size.z · y)`).
     pub cells: Vec<u16>,
 }
@@ -613,6 +616,11 @@ pub enum Message {
     /// whose water lava just boiled away (the clients' puffs and hiss). u16 count (at most
     /// `MAX_STEAM_PER_MESSAGE`), each cell three i32.
     Steam(Vec<[i32; 3]>),
+    /// C→S reliable, control channel, only to a server whose `WorldSettings` had
+    /// `world_settings::tag::CAPABILITIES` (`crate::capabilities`, ARCHITECTURE.md §8.3), once
+    /// after `Welcome`: the capabilities this client has. A feature is used only when both sides
+    /// listed it.
+    Capabilities(crate::capabilities::Capabilities),
 }
 
 /// The most groups one `Ecology` carries (more are left out).
@@ -864,6 +872,7 @@ impl Message {
             M::WorldgenConfig(_) => MessageType::WorldgenConfig,
             M::CausesHello(_) => MessageType::CausesHello,
             M::SteamHello => MessageType::SteamHello,
+            M::Capabilities(_) => MessageType::Capabilities,
             M::SwingHello => MessageType::SwingHello,
             M::Steam(_) => MessageType::Steam,
             M::Damage(_) => MessageType::Damage,
@@ -1554,6 +1563,7 @@ fn write_body(w: &mut ByteWriter, m: &Message) {
         },
         M::VitalsHello => {}
         M::CausesHello(n) => w.u8(*n),
+        M::Capabilities(c) => c.write(w),
         M::CreaturesHello
         | M::DamageHello
         | M::WorldgenRequest
@@ -1709,7 +1719,7 @@ fn write_body(w: &mut ByteWriter, m: &Message) {
                     w.u16(m.from);
                     w.u16(m.material);
                 }
-                RegionEditOp::Paste => {
+                RegionEditOp::Paste | RegionEditOp::Structure => {
                     write_cells(w, m.volume(), |i| m.cells.get(i).copied().unwrap_or(0));
                 }
             }
@@ -2092,6 +2102,7 @@ fn read_body(r: &mut ByteReader, t: MessageType) -> Option<Message> {
         T::VitalsHello => M::VitalsHello,
         T::CausesHello => M::CausesHello(r.u8()),
         T::SteamHello => M::SteamHello,
+        T::Capabilities => M::Capabilities(crate::capabilities::Capabilities::read(r)?),
         T::SwingHello => M::SwingHello,
         T::Steam => {
             let n = usize::from(r.u16());
@@ -2331,7 +2342,7 @@ fn read_body(r: &mut ByteReader, t: MessageType) -> Option<Message> {
                     m.from = r.u16();
                     m.material = r.u16();
                 }
-                RegionEditOp::Paste => {
+                RegionEditOp::Paste | RegionEditOp::Structure => {
                     let volume = m.volume();
                     let mut cells = vec![0u16; volume];
                     read_cells(r, volume, |i, v| cells[i] = v);

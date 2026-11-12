@@ -119,6 +119,7 @@ fn the_palette_is_the_registrys_placeable_states() {
             "dwell:oak_sapling",
             "dwell:pine_sapling",
             "dwell:palm_sapling",
+            "dwell:moon_dust[flooded=false]",
         ]
     );
     assert!(!placeable(dwell_blocks::STATES.len() as StateId));

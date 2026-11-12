@@ -46,6 +46,11 @@ pub mod tag {
     /// before it) takes the build's `daynight.json` `moon.startPhase`, and a world that sets none
     /// writes none, so its fields and join are byte-identical to before.
     pub const MOON_PHASE: u8 = 0x84;
+    /// The server's capabilities (`crate::capabilities`, ARCHITECTURE.md §8.3): its optional
+    /// features by name. Optional: a build before it skips it (and never sends `Capabilities`);
+    /// a client that sees it answers with its own after `Welcome`. The join's, never saved in
+    /// the world file (the server adds it to what it sends; [`SettingsFields::with`] drops it).
+    pub const CAPABILITIES: u8 = 0x85;
 }
 
 /// The most fields, and the longest field.
@@ -238,6 +243,26 @@ impl SettingsFields {
         Self(out)
     }
 
+    /// The server's capabilities (`tag::CAPABILITIES`), when it announced them (well formed).
+    pub fn capabilities(&self) -> Option<crate::capabilities::Capabilities> {
+        crate::capabilities::Capabilities::from_bytes(self.get(tag::CAPABILITIES)?)
+    }
+
+    /// These fields with `tag::CAPABILITIES` set to `caps` (the join's), or without it.
+    pub fn with_capabilities(&self, caps: Option<&crate::capabilities::Capabilities>) -> Self {
+        let mut out: Vec<(u8, Vec<u8>)> = self
+            .0
+            .iter()
+            .filter(|(t, _)| *t != tag::CAPABILITIES)
+            .cloned()
+            .collect();
+        if let Some(c) = caps {
+            out.push((tag::CAPABILITIES, c.to_bytes()));
+            out.sort_by_key(|(t, _)| *t);
+        }
+        Self(out)
+    }
+
     /// These fields with the known ones set to `s` (fields this build doesn't know kept).
     pub fn with(&self, s: WorldSettings) -> Self {
         let mut out: Vec<(u8, Vec<u8>)> = self
@@ -251,6 +276,7 @@ impl SettingsFields {
                     tag::WORLDGEN,
                     tag::WORLD_SIZE,
                     tag::MOON_PHASE,
+                    tag::CAPABILITIES,
                 ]
                 .contains(t)
             })
@@ -300,6 +326,27 @@ mod tests {
         size: crate::world_size::WorldSize::DEFAULT,
         moon_phase: None,
     };
+
+    #[test]
+    fn capabilities_are_an_optional_join_field_never_saved() {
+        use crate::capabilities::Capabilities;
+        let saved = SettingsFields::default().with(D);
+        let join = saved.with_capabilities(Some(&Capabilities::this_build()));
+        assert_eq!(join.capabilities(), Some(Capabilities::this_build()));
+        // Optional: a build that doesn't know the tag reads the same settings.
+        assert_eq!(tag::CAPABILITIES & tag::OPTIONAL, tag::OPTIONAL);
+        assert_eq!(join.settings(D), saved.settings(D));
+        // The join's: rebuilding the fields to save them drops it, and without it nothing changes.
+        assert_eq!(join.with(D), saved);
+        assert_eq!(saved.with_capabilities(None), saved);
+        assert_eq!(join.with_capabilities(None), saved);
+        assert_eq!(saved.capabilities(), None);
+        let back = SettingsFields::from_bytes(&join.to_bytes()).expect("the tagged form");
+        assert!(
+            back.capabilities()
+                .is_some_and(|c| c.has(crate::capability_names::STRUCTURES_PLACE))
+        );
+    }
 
     #[test]
     fn settings_round_trip_through_their_fields() {

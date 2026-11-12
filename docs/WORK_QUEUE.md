@@ -205,12 +205,18 @@ Last updated: 2026-11-11 (0.52.108).
    `shared/structures/library.json`'s limits (128 × 64 × 128); the creative inventory's Structures tab
    places one with the paste ghost (R turns 90°, right click places) as `Paste` region edits of at most
    32³, which the server validates as any paste; a `structures` mode ability (creative only). Sharing:
-   FUTURE.md. Open: the server can't refuse a structure placement as such outside creative (both
-   capability flag bytes are full; a paste there is paid in items), the anchor, a ghost of the blocks.
+   FUTURE.md. Open then: the server couldn't refuse a structure placement as such outside creative (both
+   capability flag bytes full; a paste there was paid in items; done since, below), the anchor, a ghost of the blocks.
    Owner, 2026-11-12, on the server not refusing placements outside creative because `welcome_flags` and
-   `inventory_flags` are full: **"Sounds like we need a new flags field for server protocol."** In progress
-   (cloud): an extendable capability field, then the server refuses a structure placement where the mode lacks
-   the `structures` ability.
+   `inventory_flags` are full: **"Sounds like we need a new flags field for server protocol."** **Built**
+   (2026-11-12, cloud, ARCHITECTURE.md §8.3 "Capabilities"): capabilities named by string in
+   `shared/protocol/capabilities.json` (generated to Rust and TS); the server lists its own in an optional
+   `WorldSettings` field (older clients skip it), a client that sees it answers with a `Capabilities` message
+   (never sent to an older server), a feature is on when both listed it. The rule: new optional features add a
+   capability, not a flag bit; nothing existing migrated. First use: `structures.place`, a library
+   structure's tiles go as `RegionEditOp::Structure`, which the server refuses where the mode lacks
+   `structures` (a 0.54 server still gets plain pastes). Not breaking: every new byte is skipped by or never
+   sent to an older peer. Still open: the anchor, a ghost of the blocks.
 13. **Volumetric clouds** (owner 2026-11-11: "volumetric clouds in the sky. These clouds will likely be
    useful for weather sim, and volcano smoke. So they need to be performant."). **Built (branch
    `claude/volumetric-clouds`, CLOUDS.md §8):** a ray-marched layer in its own reduced-resolution pass
@@ -556,6 +562,12 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    crescents and light through more of the month (this replaces the earlier "keep it physical"). On the whole-day
    8-day month (full moon always at face A's midnight; face B sees it ~92% lit): **"Not sure"** — kept at 8 days
    for now, open; a fractional month (e.g. 8.25 days) is the recommended alternative, one number in data.
+   **M-3 built 2026-11-12** (branch `claude/moon-m3-gridframe-kg7kpg`): `dwell_world::GridFrame` (world ↔ grid ↔
+   face-local: points, vectors, looks, up and gravity per face, cells, capture/release; `HOME` the identity, bit for
+   bit), `dwell-physics` `frame::grid_of_pose` (bodies' poses, same bits as glam); the bodies' ray, felling's hits
+   and snap, home targeting (`raycast_block_in`) and the controller's spawn face go through it; the both-faces
+   check's rule 3 (no hand `inverse * (p − origin)`). Renderer model matrices per grid left for M-5; grid ids for
+   M-7 (MOON_WORLD.md §2.1).
 
 ## Done
 

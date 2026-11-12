@@ -5,6 +5,7 @@
 
 use dwell_blocks::{Axis, StateId, info, state_property, with_property};
 use dwell_physics::Collide;
+use dwell_physics::frame::{GridMaps, grid_of_pose};
 use dwell_physics::predictor::WaterDrag;
 use dwell_physics::{BodyHandle, DQuat, DVec3, Physics, PieceCell};
 use dwell_world::support::{SupportRules, detached_pieces};
@@ -1123,10 +1124,10 @@ impl Felling {
                 continue;
             }
             let origin = physics.position(p.body);
-            let rotation = physics.rotation(p.body);
+            // The piece's grid frame (MOON_WORLD.md §2, M-3): its cells' space at its pose.
+            let grid = grid_of_pose(origin, physics.rotation(p.body));
             let v = physics.velocity(p.body);
             let w = physics.angular_velocity(p.body);
-            let inverse = rotation.inverse();
             for b in players {
                 if p.hurt.contains(&b.key) {
                     continue;
@@ -1136,11 +1137,11 @@ impl Felling {
                     let centre = offset_m(o);
                     let half = DVec3::new(0.5, 0.5 * CELL_H, 0.5);
                     // The capsule's axis point nearest the cell, and the cell's point nearest it.
-                    let world_centre = origin + rotation * centre;
+                    let world_centre = grid.to_world_v(centre);
                     let t = (world_centre.y - b.center.y).clamp(-b.half_cylinder, b.half_cylinder);
                     let axis = b.center + DVec3::Y * t;
-                    let local = inverse * (axis - origin) - centre;
-                    let near = origin + rotation * (centre + local.clamp(-half, half));
+                    let local = grid.to_grid_v(axis) - centre;
+                    let near = grid.to_world_v(centre + local.clamp(-half, half));
                     let gap = (axis - near).length() - b.radius;
                     let at = near - origin;
                     // The piece's speed toward the player, less the player's away from it (a
@@ -1343,9 +1344,9 @@ fn follow_pose(
     rotation: DQuat,
     real: DQuat,
 ) -> Vec<([i32; 3], StateId)> {
-    let inverse = rotation.inverse();
+    let snapped = grid_of_pose(aligned, rotation);
     let rise = |c: [i32; 3]| {
-        let l = inverse * (cell_centre(c) - aligned);
+        let l = snapped.to_grid_v(cell_centre(c));
         (real * l - rotation * l).y
     };
     let mut sums: std::collections::HashMap<[i32; 2], (f64, u32)> = Default::default();
@@ -1375,7 +1376,6 @@ pub fn resample(
     rotation: DQuat,
 ) -> (DVec3, Vec<([i32; 3], StateId)>) {
     let index: std::collections::HashMap<[i32; 3], StateId> = cells.iter().copied().collect();
-    let inverse = rotation.inverse();
     let bounds = |origin: DVec3| {
         let (mut lo, mut hi) = (DVec3::splat(f64::INFINITY), DVec3::splat(f64::NEG_INFINITY));
         for &(o, _) in cells {
@@ -1400,6 +1400,8 @@ pub fn resample(
             lo.z.round() - lo.z,
         );
     let (lo, hi) = bounds(origin);
+    // The piece's grid frame at its moved origin (MOON_WORLD.md §2, M-3).
+    let body = grid_of_pose(origin, rotation);
     let rows = |m: f64| (m / CELL_H).floor() as i32;
     // Each grid cell's candidates: the piece cells whose box holds its centre, both of them where
     // it lies on their shared face (a ½ m cell tipped onto its side half fills two rows of one
@@ -1408,7 +1410,7 @@ pub fn resample(
     for z in lo.z.floor() as i32..=hi.z.floor() as i32 {
         for y in rows(lo.y)..=rows(hi.y) {
             for x in lo.x.floor() as i32..=hi.x.floor() as i32 {
-                let l = inverse * (cell_centre([x, y, z]) - origin);
+                let l = body.to_grid_v(cell_centre([x, y, z]));
                 let along = [l.x + 0.5, l.y / CELL_H + 0.5, l.z + 0.5];
                 let options = along.map(|v| {
                     let o = (v + 1e-9).floor() as i32;

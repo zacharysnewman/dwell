@@ -322,9 +322,12 @@ save as an array of that size."* Sharing between players is in [`FUTURE.md`](./F
   `structures` ability (`shared/modes/modes.json`: creative, for now). The server validates and
   applies each tile as any paste: reach, the build volume, players, unbreakable cells, and the mode
   (without `unlimitedBlocks` every placed cell is paid in items, ADR 0066), so a modified client
-  outside creative gets nothing for free. *Deviation:* the server doesn't refuse a structure
-  placement as such outside creative: that needs the server to announce a new region-edit op, and
-  both capability bytes (`welcome_flags`, `inventory_flags`) are full; a new flags field (an optional
-  Welcome tail is not one: older clients refuse trailing bytes) is a protocol change for the owner.
+  outside creative gets nothing for free. And the server refuses a structure placement as such
+  outside creative (2026-11-12, WORK_QUEUE item 12): to a server that announced the
+  `structures.place` capability (ARCHITECTURE.md §8.3, the extendable field the full flag bytes
+  called for) a library structure's tiles go as `RegionEditOp::Structure` (the Paste body), which
+  the server refuses (`RegionCheck::NotInMode`, nothing paid) where the mode lacks `structures`. A
+  server before it (0.54 and older) gets plain `Paste`s, as before, validated as any paste. A copy
+  (Ctrl+C) still pastes as `Paste` in every mode.
 - **Not yet:** the anchor (a placement stands on its bottom centre, as a paste does), a ghost of the
   blocks themselves (the ghost is the box), sharing.

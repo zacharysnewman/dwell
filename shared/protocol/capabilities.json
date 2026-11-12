@@ -1,0 +1,11 @@
+{
+  "formatVersion": 1,
+  "maxNames": 64,
+  "maxNameBytes": 48,
+  "capabilities": [
+    {
+      "name": "structures.place",
+      "description": "A saved structure's placement goes as its own region-edit op (RegionEditOp::Structure, the Paste body), which the server refuses where the world's mode lacks the `structures` ability (shared/modes/modes.json; STRUCTURES.md §9). Without it a client sends plain pastes."
+    }
+  ]
+}

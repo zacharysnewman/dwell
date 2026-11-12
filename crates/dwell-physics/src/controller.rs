@@ -613,7 +613,8 @@ impl Players {
             .unwrap_or(self.players.len()) as PlayerHandle;
         let mut c = PlayerController::default();
         c.input.look_yaw = yaw;
-        c.face = FaceFrame::at_height(feet.y);
+        // The home grid's frame (MOON_WORLD.md §2): the face of the side of its midplane.
+        c.face = dwell_world::GridFrame::HOME.face_at(feet.to_array());
         let center = feet
             + DVec3::new(
                 0.0,

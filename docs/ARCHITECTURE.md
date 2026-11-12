@@ -1552,6 +1552,25 @@ player on face B stands upside down in the world.
   mirroring outside the frame and on plain tests that name a face without running on both. The dev link `?spawn=b`
   (and a bench scenario's `"face": "b"`) starts a local world on face B's spawn
   (`spawn_point_b`, its own world file `…-faceb`); real worlds spawn on face A.
+- **Grid frames [built, M-3, 2026-11-12] ([`proposals/MOON_WORLD.md`](./proposals/MOON_WORLD.md) §2).**
+  A voxel grid with its own transform (the home world, a built body; the moon later) crosses world ↔
+  grid ↔ face-local through **`dwell_world::GridFrame`** (`grid.rs`): its origin (f64), orientation
+  (a unit quaternion), velocity, spin and gravity scale; points, vectors and looks each way, the face
+  of a world point (the side of the grid's midplane), each face's up and gravity, the cell of a world
+  point and a cell's world corner and centre, and capture/release of a point and velocity into a
+  moving grid. Code placing something in a grid takes `(GridFrame, FaceFrame)`. `GridFrame::HOME`
+  is the identity and returns its input bit for bit; its rotation is glam's `DQuat * DVec3` term for
+  term, so `dwell-physics` `frame::grid_of_pose` (a body's pose as a grid frame, with the `GridMaps`
+  trait in the physics' types) gives the same bits as the bodies' old hand transforms. Through it
+  today: the bodies' crosshair ray (`dwell-client` `pieces.rs` `raycast`), a felled piece's hits on
+  players and its snap to the grid (`dwell-sim` `felling.rs` `hits`, `follow_pose`, `resample`), the
+  home world's targeting (`dwell-world` `edit::raycast_block_in`, called by `dwell-game`'s
+  `target_hit` with `HOME`), and the controller's face at spawn and the predictor's stand-in frames
+  (`HOME`). Not yet: the renderer still draws a body by its (offset, quaternion) pair and the home
+  chunks unrotated (a model matrix per grid comes with M-5's LOD per grid), and chunk storage,
+  streaming, colliders and the protocol carry no grid id (M-7). The both-faces check's rule 3 fails
+  on a world point turned into a grid's space by hand (`inverse * (p − origin)`) outside `grid.rs`
+  unless marked `// grid-boundary: <reason>`.
 - **Generation.** `dwell_worldgen::BifacialTerrain` (`bifacial.rs`) holds two `TerrainGenerator`s working
   in face-local coordinates: face A's is seeded by the world seed as ever, face B's by
   `face_seed(seed, B)`, a hash through streams no stage uses — its own island and hills. A chunk of
@@ -1678,9 +1697,11 @@ most 32 a side** (`RegionTools::paste_tiles`), queued and sent as the rate allow
 validates and applies each as any paste, under the world's rules (reach, the build volume, players,
 and the mode: without `unlimitedBlocks` every cell is paid in items, ADR 0066). The placed blocks are
 ordinary blocks. `RegionTools::load_clipboard` refuses without the ability and over
-`MAX_CLIPBOARD_CELLS` (a memory guard above the data's limit, a test checks). *Not yet:* a
-server-side refusal of structure placement as such outside creative — it would need a capability
-bit, and `welcome_flags` and `inventory_flags` are both full (STRUCTURES.md §9).
+`MAX_CLIPBOARD_CELLS` (a memory guard above the data's limit, a test checks). To a server that
+announced the `structures.place` capability (§8.3) every tile goes as `RegionEditOp::Structure`
+(`RegionTools::structure_ops`), which the server refuses as such where the world's mode lacks the
+`structures` ability (`RegionCheck::NotInMode`, nothing paid); an older server gets plain `Paste`s,
+validated as any paste.
 
 **Tree growth [planned, Phase 30]** ([ADR 0033](./adr/0033-tree-growth.md),
 [`TREE_GROWTH.md`](./TREE_GROWTH.md)). A tree is a structure whose model is the mature tree: its
@@ -4050,7 +4071,7 @@ protocol v5); `LodIndex` 0x13, `LodIndexUpdate` 0x14, `LodData` 0x15, `LodReques
 state and flags, and the wider `pos64` range for creative flight (Phase 4; protocol v7); `ChunkRequest`
 0x4D for full detail beyond the view (Phase 4; protocol v8); the flight speed level in `PlayerInput`'s
 `buttons` (Phase 4; protocol v9); `HostStatus` 0x4E and the `ServerClosing` reject reason
-(Phase 5c; protocol v10); the block registry hash in `Welcome` (Phase 8; protocol v11); the row `j` in `LodIndex` entries and the `faceB` bits of `controllerFlags` and `playerFlags` (Phase 13; protocol v12); `RegionEdit` 0x4F and the `regionEdits` Welcome flag (structure sandbox S3; still protocol v12, an addition within the 0.10 line negotiated by the flag, §10.5); the `KEEP` paste cell and the `brushes` Welcome flag (Phase 34; still protocol v12, negotiated by the flag); `BlockRegistry` 0x50 and the definitions hash in `Welcome` (registry sync, ADR 0038; protocol v14); `slideFlags` and the slide cooldown in the local player's controller state (the sprint slide, Phase 37; protocol v15); `EditAck` 0x51 (edit prediction, Phase 34 B4; protocol v16); `HeldItem` 0x52 and each remote player's `held` and `swing` in `PhysicsSnapshot` (characters, Phase 40 C1; protocol v17); ½ m cells (Phase 41, ADR 0042; protocol v18: no layout change, but positions, chunk rows and the registry's shapes mean ½ m cells, and the registry's `adaptive` rule flag is gone); the piece byte (`rows`, `down`) on every `BlockEditRequest` and the registry's `onSlopes` flag, `moldable` field and `behind` support (items and placement rules, 0.29.0, [`ITEMS.md`](./ITEMS.md); protocol v19); `EntitySpawn` 0x16, `EntityDespawn` 0x17 and the pieces in `PhysicsSnapshot` (falling pieces, 0.37.0, [`FELLING.md`](./FELLING.md); protocol v20); the body kind in `EntitySpawn`, `BodyEditRequest` 0x53 and `BodyEdit` 0x18 (editing moving bodies, 0.41.0, [`BUILT_BODIES.md`](./BUILT_BODIES.md); protocol v21); `WaterCurrents` 0x83, an optional datagram (water currents, Phase 53 G3a, §6.7; still protocol v22: a client that doesn't know it drops it as any unknown datagram) — layouts pinned by `shared/protocol/vectors.txt` (made by the independent Python
+(Phase 5c; protocol v10); the block registry hash in `Welcome` (Phase 8; protocol v11); the row `j` in `LodIndex` entries and the `faceB` bits of `controllerFlags` and `playerFlags` (Phase 13; protocol v12); `RegionEdit` 0x4F and the `regionEdits` Welcome flag (structure sandbox S3; still protocol v12, an addition within the 0.10 line negotiated by the flag, §10.5); the `KEEP` paste cell and the `brushes` Welcome flag (Phase 34; still protocol v12, negotiated by the flag); `BlockRegistry` 0x50 and the definitions hash in `Welcome` (registry sync, ADR 0038; protocol v14); `slideFlags` and the slide cooldown in the local player's controller state (the sprint slide, Phase 37; protocol v15); `EditAck` 0x51 (edit prediction, Phase 34 B4; protocol v16); `HeldItem` 0x52 and each remote player's `held` and `swing` in `PhysicsSnapshot` (characters, Phase 40 C1; protocol v17); ½ m cells (Phase 41, ADR 0042; protocol v18: no layout change, but positions, chunk rows and the registry's shapes mean ½ m cells, and the registry's `adaptive` rule flag is gone); the piece byte (`rows`, `down`) on every `BlockEditRequest` and the registry's `onSlopes` flag, `moldable` field and `behind` support (items and placement rules, 0.29.0, [`ITEMS.md`](./ITEMS.md); protocol v19); `EntitySpawn` 0x16, `EntityDespawn` 0x17 and the pieces in `PhysicsSnapshot` (falling pieces, 0.37.0, [`FELLING.md`](./FELLING.md); protocol v20); the body kind in `EntitySpawn`, `BodyEditRequest` 0x53 and `BodyEdit` 0x18 (editing moving bodies, 0.41.0, [`BUILT_BODIES.md`](./BUILT_BODIES.md); protocol v21); `WaterCurrents` 0x83, an optional datagram (water currents, Phase 53 G3a, §6.7; still protocol v22: a client that doesn't know it drops it as any unknown datagram); `Capabilities` 0x69, the `CAPABILITIES` settings field and `RegionEdit`'s `Structure` op (capabilities, below; still protocol v22, negotiated by them) — layouts pinned by `shared/protocol/vectors.txt` (made by the independent Python
 reference encoder, including half floats; the Rust codec, `dwell-protocol`, round-trips every
 vector byte for byte and rejects every malformed one). The Rust port kept protocol v12's layouts. **Protocol v13** (Phase 18) changed no layout: client and server derived the same adaptive shapes from the same table, so a build that shaped differently could not connect (the adaptive blocks were removed in Phase 41, protocol v18). The remaining formats below are drafts, finalized in the
 phase that builds them. Enumerations and bit sets (`inputButtons`, `playerStates`, `playerFlags`,
@@ -4192,7 +4213,8 @@ S→C  WorldSettings 0x54 (protocol v22): u8 count, each u8 tag, u16 length, byt
                    world's settings (`dwell_protocol::world_settings`): tag 1 the clock
                    (f32 day s, f32 night s, f32 start hour), 0x81 the water speed (f32),
                    0x82 the game mode's name (UTF-8, ADR 0065; a build before modes skips
-                   it, an unknown name reads as creative);
+                   it, an unknown name reads as creative), 0x85 the server's
+                   capabilities (the join's, never saved; below);
                    a tag with the top bit set is optional (skipped by a build that doesn't
                    know it), any other must be understood ("This world needs a newer
                    version of Dwell."); before Welcome. The client uses the world's clock
@@ -4327,6 +4349,36 @@ C→S  SteamHello 0x67, control: (empty)
 S→C  Steam 0x68, world: u16 count, then count × (i32 x, i32 y, i32 z) world cells
 ```
 
+**Capabilities: the `CAPABILITIES` settings field, `Capabilities` (reliable) [built]** (WORK_QUEUE
+item 12). **New optional features add a capability, not a flag bit.** Both `Welcome`'s flags and
+`Inventory`'s flags are full, an extra `Welcome` byte breaks older clients (they refuse trailing
+bytes), and an unknown control message ends the session on either side; capabilities are the
+extendable way to negotiate what's left. They are named by string in a data table,
+`shared/protocol/capabilities.json` (name, description; validated by `shared/protocol/capabilities.mjs`:
+lowercase `[a-z0-9_.:-]`, a mod prefixes its own, `mymod:thing`; every name must fit one settings
+field), generated by `gen.mjs` into `dwell_protocol::capability_names` (`STRUCTURES_PLACE`, `ALL`)
+and the TS constants. A feature adds an entry and checks it by name. The exchange
+(`dwell_protocol::capabilities`):
+
+1. The server lists the capabilities it has in an **optional** `WorldSettings` field (tag 0x85,
+   before `Welcome`): a build that doesn't know the tag skips it, as any optional field. It is the
+   join's, added to what the server sends (`Server::join_settings`), never saved with the world
+   (`SettingsFields::with` drops it).
+2. A client that saw the field answers once after `Welcome` with `Capabilities`: the ones it has.
+   It never sends one to a server whose settings had no field (an older server), and an older
+   client never sends one (the server keeps an empty set for it).
+3. A feature is used on a session only when **both** sides listed its name (`Session::capability`
+   on the client: the server named it and this build has it; `Server::client_capabilities` on the
+   server). A name a build doesn't know (a newer build's, a mod's) is kept and matches nothing.
+
+Existing flags and hellos stay as they are. The first capability is `structures.place` (a saved
+structure's placement as `RegionEdit`'s `Structure` op, below).
+```
+S→C  WorldSettings field 0x85 (optional): u8 count (≤ 64), each str name (≤ 48 bytes, no repeat)
+C→S  Capabilities 0x69, control: the same form — the client's capabilities, once after Welcome,
+                  only to a server whose settings had field 0x85
+```
+
 **Client → Server: `BlockEditRequest` (reliable, `control`) [built, Phase 3d]** (§6.5)
 ```
 u8   type = 0x4A
@@ -4340,7 +4392,7 @@ Place only: u16 material        // the block placed against the face
 sent only to a server whose `Welcome` has the `regionEdits` flag
 ```
 u8   type = 0x4F
-u8   op                         // Fill 1 | Replace 2 | Hollow 3 | Paste 4
+u8   op                         // Fill 1 | Replace 2 | Hollow 3 | Paste 4 | Structure 5
 i32×3 min                       // the box's min corner (world voxel)
 u8×3 size                       // cells along x, y, z: each 1..REGION_EDIT_MAX_SIDE (32)
 Fill, Hollow: u16 material      // Hollow: the box's shell; air inside
@@ -4349,6 +4401,10 @@ Paste:        palette + RLE (as ChunkData Explicit) of size.x·size.y·size.z st
               x fastest, then z, then y; a state 0xFFFF (KEEP) leaves its cell as it is —
               sent only to a server whose Welcome has the brushes flag (older ones reject it
               as an unknown state)
+Structure:    as Paste: a saved structure's placement (STRUCTURES.md §9), which the server
+              refuses (`RegionCheck::NotInMode`) where the world's mode lacks the `structures`
+              ability; sent only to a server that announced the `structures.place` capability
+              (an older one would end the session on the unknown op: it gets plain Pastes)
 ```
 
 **Client → Server: `ChunkResync` (reliable, `control`) [built, Phase 3d]** — a revision gap (§6.3)

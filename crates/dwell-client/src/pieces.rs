@@ -11,6 +11,7 @@ use std::collections::VecDeque;
 use dwell_blocks::{StateId, info};
 use dwell_game::sound::{SoundEvent, SoundKind, speed_intensity};
 use dwell_mesh::{ChunkMeshes, PADDED_VOLUME, mesh_chunk, padded_index};
+use dwell_physics::frame::{GridMaps, grid_of_pose};
 use dwell_physics::{DQuat, DVec3, PieceCell};
 use dwell_protocol::{CHUNK_SIZE, EntitySpawn, PieceState, players};
 use dwell_world::hash::HashMap;
@@ -267,9 +268,10 @@ impl Pieces {
         let at = self.draw_ms(now_ms);
         for (&id, p) in &self.map {
             let (position, rotation) = p.drawn(at);
-            let inverse = rotation.inverse();
-            let local_origin = inverse * (origin - position);
-            let local_dir = inverse * dir;
+            // The ray in the body's grid frame (MOON_WORLD.md §2, M-3).
+            let grid = grid_of_pose(position, rotation);
+            let local_origin = grid.to_grid_v(origin);
+            let local_dir = grid.vector_to_grid_v(dir);
             let limit = best.map_or(max, |b| b.distance);
             if let Some((cell, face, distance)) =
                 ray_cells(local_origin, local_dir, &p.blocks, limit)
