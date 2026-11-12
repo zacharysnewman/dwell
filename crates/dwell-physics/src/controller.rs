@@ -1006,7 +1006,7 @@ impl Players {
         self.pushes.clear();
         // Pass-major, like the PPC's Quantum system group.
         type Pass = fn(&mut Players, usize, &mut VoxelWorld, &mut Physics);
-        const PASSES: [Pass; 16] = [
+        const PASSES: [Pass; 17] = [
             Players::step_input,
             Players::step_probe,
             Players::step_platform,
@@ -1018,6 +1018,7 @@ impl Players {
             Players::step_horizontal,
             Players::step_vertical,
             Players::step_fall,
+            Players::step_portal,
             Players::step_impact,
             Players::step_aggregate,
             Players::step_push,
@@ -1916,6 +1917,38 @@ impl Players {
         if !c.ground.grounded {
             c.vertical.accumulated_y = n.y;
             c.vertical.target_y = n.y;
+        }
+    }
+
+    // Dwell — a portal's exit push (docs/BIFACIAL_WORLD.md §12.3; owner 2026-11-12: "land beside
+    // the hole"): in the top of a portal's shaft (`VoxelWorld::portals`, from `midplane.json`
+    // `portals.exit`), an airborne body rising fast (swung up from the far face, not a jump) is
+    // pushed along its facing, a steady crosswind over a fixed depth, so it arcs out of the
+    // opening and lands on the ground beside it however fast it rose. Momentum, kept in the air like the waterfall's push; climbing, flying
+    // and swimming are never pushed.
+    fn step_portal(&mut self, i: usize, world: &mut VoxelWorld, physics: &mut Physics) {
+        let p = self.players[i].as_mut().expect("live");
+        let c = &p.c;
+        if c.climb.climbing || c.fly.flying || c.swim.swimming || c.ground.grounded {
+            return;
+        }
+        if world.portals.shafts.is_empty() {
+            return;
+        }
+        let position = Self::pos(physics, p);
+        let feet = position.y - f64::from(p.cfg.half_height(c.crouching));
+        let yaw = c.input.look_yaw * DEG_TO_RAD;
+        let dir = Vec3::new(libm::sinf(yaw), 0.0, libm::cosf(yaw));
+        let gain = world.portals.exit_push(
+            c.face.face,
+            [position.x, feet, position.z],
+            c.vertical.target_y,
+            DT,
+        );
+        if gain > 0.0 {
+            let c = &mut p.c;
+            c.horizontal.external += dir * gain;
+            c.horizontal.contribution += dir * gain;
         }
     }
 

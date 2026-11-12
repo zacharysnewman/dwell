@@ -16,6 +16,16 @@ Last updated: 2026-11-11 (0.52.108).
 
 ## Queued next, in order (2026-11-12)
 
+**Current order (2026-11-12, evening; owner asked "What is the current priority of upcoming items"):**
+Releases were blocked ~18:45–21:40 (a test type error); unblocked, so everything merged since ships in the next
+releases (incl. the first-person body #791). Local (the Mac, one at a time): (1) bifacial video v3 (portal exit
+merged #824, upside-down camera #821); (2) the in-game check of the cloud rework (#822 shapes/colour, #790 sunsets,
+#801 dither, #798 deck, #823 rim) + the extinction A/B; (3) forest edge to 60 fps at High (~7 ms over); (4) next
+showcase videos, each with a shot plan first; (5) Realistic world R6 in New world. Cloud now: tall grass sounds
+and leg speed (#103), underwater/surface swim audio (#104), floating trees + leaves (item 45), tree pads (item 44,
+needs the owner's 0.55 line), tall grass height (item 14), far-sky rim/band (#823, conflicts). Then: the moon's
+client side (item 27), orbits O4–O5, big worlds memory (#76/#77).
+
 Owner, 2026-11-12: **"How are realistic worlds going? And forests? Those are the two I'm most interested in
 seeing."** → next on the Mac after the flying frame rate: a look at both (screenshots/video of a Realistic world —
 plates, ranges, rain shadow, biomes by climate — and the old-growth forest), then R6 (the Realistic world in New
@@ -399,6 +409,20 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    is the view's, `volume.lightExtinction` (0.006) the light's, plumes keep theirs; a dev knob
    `?cloudExtinction=` / `__dwell.cloudExtinction(x)` for the A/B. Next (local): the look at sunrise/sunset
    against `?clouds=` the deck, the A/B of 0.006 / 0.03 / 0.05 and `gpu.clouds`; tune by the data.
+   Owner, 2026-11-12: **"the clouds look ridiculous at least the volumetric ones. Look like crazy triangles"**,
+   **"The more recent volumetric shape change for the clouds make them look like 3 sided pyramids"** (BUGS.md
+   #100), and **"In terms of color too, the clouds seem gloomy and dark like not-quite storm clouds."** (asked:
+   fair-weather stratocumulus/cumulus bright white on their sunlit tops and light grey underneath at noon, only
+   cumulonimbus/precipitation darker, checked against the papers).
+   **Fixed in code (2026-11-12, branch `claude/cloud-pyramids`, CLOUDS.md §9.9):** the papers' model
+   (`docs/reference/cloud-papers.md`): the cloud type and the cover as regional fields (16 km, 8 km;
+   `typeFromCoverage` 0), the single clouds cut by the 3D Perlin–Worley (Nubis's remap, base tile 2 km), the
+   profile fading from just over the base, erosion 0.25, view extinction 0.015 (a cloud behind 400 m of cloud
+   9 % visible); the light samples reuse the column's cover (cheaper). The gloom was the same cause: every
+   core lit as a cumulonimbus. CPU-twin tests red on main → green: cloud-top median slope 4.1/2.6 → 0.7–1.0,
+   the patch's median noon base 0.44 → 0.77 of the sunlit white, cumulus top ≥ 1.0 / base 0.57, cumulonimbus
+   base 0.23. Not done: distance-adaptive steps with HZD's cheap/full switch. Next (local): the in-game look at
+   noon, low sun, from above and through the layer, `?cloudExtinction=` 0.01–0.03, and `gpu.clouds`.
 14. **Tall grass grows and spreads** (owner 2026-11-11: "I want tall grass to steadily grow and spread. It
    should probably have a max depending on climate/biome."). **Built** (ADR 0075 T3c, docs/ECOLOGY.md §10):
    `shared/worldgen/grass.json` (the rule as data: the block, the ground, the decoration whose climate
@@ -1403,6 +1427,13 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    Portal exit (owner's answer, 2026-11-12): **land beside the hole** — today a player rises ~12 m out of the far
    face's hole, falls back and bounces between the faces forever; the portal gives a small sideways push (or slows
    the fall-back) so the player arcs out and lands on the far face's ground beside the hole.
+   **Built 2026-11-12** (BIFACIAL_WORLD.md §12.3): the shaft's **exit push**, a steady crosswind across its top
+   2 m (`midplane.json` `portals.exit`: 30 m/s², `minRise` 10 m/s so a jump and the ladder never take it), along the
+   player's facing; however fast the rise, the player lands ~6 m from the axis (2–4 m past the rim). Momentum in the
+   shared controller (`step_portal`, from `VoxelWorld::portals` on the server and in the prediction: no replays).
+   A far opening the swing can't reach, or a rise into the monument's arches, falls back and comes out on a later
+   swing (seed 0: 12 of 16 drops out on the first, all within 3 crossings). For the portal shot: face between the
+   pillars (a diagonal) when jumping in.
    Owner refinement for (4)/(5), 2026-11-12: **"Like a farther out non first person view of the other side."** — after
    the motes, cut to a third-person camera farther out on face B (15–40 m from the portal, looking at the hole) as the
    player flies up out of it, not first person; the jump stays first person on face A.
@@ -1590,6 +1621,10 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
 
 ## Smaller items, after the queue
 
+- **Downhill water's steps (BUGS.md #92; owner, 2026-11-12: "I'm seeing some edge triangles and thin lines at slope
+  transitions on downhill water.")** — fixed 2026-11-12 (`claude/water-steps`, WATER_RENDERING.md §18): the open
+  cells at a river's ½ m steps are step cells whose corners are shared with the reaches above and below, so a river
+  stepping on the diagonal is one continuous sloped surface. Next (local): the owner's spot in the browser.
 - **Leaves rubber-band (BUGS.md #94, 2026-11-12, `claude/leaves-rubberband-dy5tni`), done.** Owner: "seems to be a mismatch
   between server and client for leaves collision. Jumping into the leaves of a tree makes you rubberband falling to
   the ground endlessly until you back out of the leaves." The server's buried-player lift took leaves (solid but
@@ -1778,7 +1813,29 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    let water flow through freely."**). A body floating in water (a felled trunk, a crown) never settles back into
    blocks while it floats; it keeps drifting with the current until it beaches on dry ground (then settles as
    today). Leaf blocks are open to the water grid (water flows through their cells as through air, the leaves
-   kept), in place and on bodies.
+   kept), in place and on bodies. **Built (2026-11-12):** a body afloat (a cell in a liquid, lighter than it on the whole) of a
+   kind whose `settlesAfloat` (bodies.json, default false) is false never settles; it settles only `beachSeconds`
+   (2 s, felling.json) out of the water, then by the usual sleep or timeout (BUILT_BODIES.md §6a; waterlogging
+   later hooks in where `afloat` is decided). Leaves (any `passable` block with a `flooded` state) are open to
+   the water grid's flow, drawn flooded under the water, never replaced (WATER_SURFACE_GRID.md §2d); bodies'
+   cells were never in the grid. Generated water levels unchanged (no new compatibility line). Tests red → green:
+   a trunk in a 1 m/s river drifts 40 s without settling (both faces), a trunk moved onto the bank settles, a
+   natural raft afloat is predicted without snaps, water beyond a wall of leaves stands as with none (both
+   faces).
+
+46. **Animals easier to find, and more of them** (owner 2026-11-12: **"Im having a hard time finding animals, are they
+   visible from high up?"**). Today each face's island starts with 8 deer herds (6 head) and 2 wolf packs (4), caps 40
+   and 8; far herds are dots fading out by 700 m (wolves 550 m). Answers: **see herds from farther**, **more
+   animals**, **a way to find them for testing**, and **"Even more animals. What's a reasonable amount for a real
+   world this size?"** Real densities: deer ~5–20 per km² in good range, grey wolves ~1 per 50–100 km² (packs of
+   4–8). A face's island (~20–30 km radius, ~1,000–2,000 km² of land) would hold ~5,000–20,000 deer and 20–40 wolves
+   (4–8 packs). Plan: deer at the low end of real (~2–4/km² of grazing land, herds of 4–12: a few hundred herds,
+   capped by the grazing's carrying capacity), wolves at real (~1 per 60 km²: 4–8 packs), as data; far herds
+   visible to ~2.5 km and growing with distance; a test/dev command to list herds and go to the nearest.
+
+47. **Wind only when flying** (owner 2026-11-12: "let's disable the wind for now it doesn't seem right like should just be
+   for flying or high altitude only." / "Wind SFX"). Built: the wind bed reads the eye's height above the ground
+   (silent below 12 m, full at 60 m) instead of altitude above the sea.
 
 ## Future (needs owner answers)
 

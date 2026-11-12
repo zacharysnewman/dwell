@@ -18,14 +18,19 @@ pub const OPEN: u8 = 1;
 pub const LIQUID: u8 = 2;
 /// A full liquid cell.
 pub const FULL: u8 = LIQUID + 7;
-/// A block whose open part holds water (a ramp: a shaped block with a `flooded` property; leaves),
+/// A block whose open part holds water (a ramp: a shaped block with a `flooded` property),
 /// dry or flooded: solid to the grid's flow, its `flooded` state drawn by the water beside it (BUGS.md #36).
 pub const HOLDS_DRY: u8 = 10;
 pub const HOLDS_WET: u8 = 11;
+/// A block water passes through, kept (leaves: a `passable` block with a `flooded` state; owner,
+/// 2026-11-12: "leaves also should let water flow through freely"), dry or flooded: open to the
+/// grid's flow, the water in it drawn as the block flooded, never as water blocks in its place.
+pub const PASS_DRY: u8 = 12;
+pub const PASS_WET: u8 = 13;
 
 /// Whether state `m` holds water in its open part: a block with a `flooded` state that has an
-/// open part, shaped (a ramp) or a see-through full block (leaves, drawn cutout: the water stands in their
-/// gaps). An alias (ADR 0063) as its base.
+/// open part, shaped (a ramp) or a see-through full block (drawn cutout: the water stands in its
+/// gaps) that water doesn't pass (`passes_water`). An alias (ADR 0063) as its base.
 fn holds_water(m: StateId) -> bool {
     static HOLDS: std::sync::LazyLock<Vec<bool>> = std::sync::LazyLock::new(|| {
         (0..dwell_blocks::STATES.len())
@@ -42,6 +47,14 @@ fn holds_water(m: StateId) -> bool {
         .get(usize::from(dwell_blocks::base_state(m)))
         .copied()
         .unwrap_or(false)
+}
+
+/// Whether water passes through state `m`, the block kept: a block players and pieces pass
+/// (`passable`, its data: leaves) with a `flooded` state to draw the water in it by. An alias as
+/// its base.
+fn passes_water(m: StateId) -> bool {
+    let base = dwell_blocks::base_state(m);
+    info(base).passable && dwell_blocks::with_property(base, "flooded", "true").is_some()
 }
 
 /// What a cell is to water.
@@ -63,6 +76,8 @@ pub fn byte_of(m: StateId) -> u8 {
         LIQUID + ((fill * 8.0).round().clamp(1.0, 8.0) as u8) - 1
     } else if s.replaceable && !s.solid {
         OPEN
+    } else if passes_water(m) {
+        if s.flooded { PASS_WET } else { PASS_DRY }
     } else if holds_water(m) {
         if s.flooded { HOLDS_WET } else { HOLDS_DRY }
     } else {
@@ -79,6 +94,15 @@ pub fn holds(b: u8) -> Option<bool> {
     }
 }
 
+/// A byte's `flooded`, if it is a block water passes through.
+pub fn passes(b: u8) -> Option<bool> {
+    match b {
+        PASS_DRY => Some(false),
+        PASS_WET => Some(true),
+        _ => None,
+    }
+}
+
 fn is_liquid(b: u8) -> bool {
     (LIQUID..=FULL).contains(&b)
 }
@@ -86,7 +110,7 @@ fn is_liquid(b: u8) -> bool {
 /// A byte's kind.
 pub fn kind_of(b: u8) -> Kind {
     match b {
-        OPEN => Kind::Open,
+        OPEN | PASS_DRY | PASS_WET => Kind::Open,
         _ if is_liquid(b) => Kind::Liquid,
         _ => Kind::Solid,
     }
@@ -396,6 +420,15 @@ mod tests {
         assert_eq!(holds(byte_of(wet)), Some(true));
         // a full block with a `flooded` property doesn't
         assert_eq!(byte_of(stone), SOLID);
+        // leaves let water through (passable, floodable): open to the flow, their `flooded` carried
+        let leaves = require("dwell:leaves");
+        let wet = dwell_blocks::with_property(leaves, "flooded", "true").expect("floodable");
+        assert_eq!((byte_of(leaves), byte_of(wet)), (PASS_DRY, PASS_WET));
+        assert_eq!(kind_of(PASS_DRY), Kind::Open);
+        assert_eq!(kind_of(PASS_WET), Kind::Open);
+        assert_eq!(fill_of(PASS_WET), 0.0);
+        assert_eq!(passes(byte_of(wet)), Some(true));
+        assert_eq!(holds(byte_of(wet)), None);
     }
 
     #[test]

@@ -645,10 +645,9 @@ export const SOUND_DATA: SoundData = {
         "gain": 0.3,
         "when": [
           {
-            "input": "altitude",
-            "from": 0,
-            "full": 60,
-            "floor": 0.2
+            "input": "height",
+            "from": 12,
+            "full": 60
           },
           {
             "input": "open",
@@ -4313,12 +4312,12 @@ export const SOUND_DATA: SoundData = {
     "dwell:deny": {
       "samples": {
         "files": [
-          "deny-1-afb663fa.m4a"
+          "deny-knock-1-c2a8677d.m4a"
         ],
-        "gain": 0.4,
-        "pitch": 0
+        "gain": 0.2,
+        "pitch": 1
       },
-      "gain": 0.879,
+      "gain": 0.3,
       "reverb": 0.028,
       "variation": "none",
       "layers": [
@@ -7715,8 +7714,8 @@ export const SOUND_DATA: SoundData = {
       "source": "jump-3.m4a"
     },
     {
-      "file": "deny-1-afb663fa.m4a",
-      "source": "deny-1.m4a"
+      "file": "deny-knock-1-c2a8677d.m4a",
+      "source": "deny-knock-1.m4a"
     },
     {
       "file": "chop-bark-1-88f2d509.m4a",
@@ -7919,7 +7918,7 @@ export const SOUND_DATA: SoundData = {
       "source": "dynamite-boom-3.m4a"
     }
   ],
-  "sampleBytes": 1529337,
+  "sampleBytes": 1528111,
   "gaitOrder": [
     "walk",
     "run",

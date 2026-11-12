@@ -43,10 +43,17 @@ describe('ambience beds (AUDIO.md §2c)', () => {
     expect(s?.fireM).toBe(9);
   });
 
+  it('is silent on the ground and blows only well above it (flying, high up)', () => {
+    // Owner, 2026-11-12: wind "should just be for flying or high altitude only".
+    expect(at({ altitude: 80, height: 2, open: 1 })['dwell:wind'] ?? 0).toBe(0);
+    expect(at({ altitude: 300, height: 8, open: 1 })['dwell:wind'] ?? 0).toBe(0);
+    expect(at({ altitude: 120, height: 60, open: 1 })['dwell:wind'] ?? 0).toBeGreaterThan(0.05);
+  });
+
   it('blows harder up high and in the open', () => {
-    const low = at({ altitude: 2 })['dwell:wind'] ?? 0;
-    const high = at({ altitude: 80 })['dwell:wind'] ?? 0;
-    const sheltered = at({ altitude: 80, open: 0.3 })['dwell:wind'] ?? 0;
+    const low = at({ altitude: 30, height: 20 })['dwell:wind'] ?? 0;
+    const high = at({ altitude: 80, height: 70 })['dwell:wind'] ?? 0;
+    const sheltered = at({ altitude: 80, height: 70, open: 0.3 })['dwell:wind'] ?? 0;
     expect(high).toBeGreaterThan(low * 2);
     expect(sheltered).toBeLessThan(high);
   });
@@ -125,10 +132,10 @@ describe('the ambience player', () => {
   it('starts a bed when it is heard, glides it, and stops it when it is not', () => {
     const out = recorder();
     const p = new AmbiencePlayer(A, out);
-    p.update({ ...base, altitude: 80 });
+    p.update({ ...base, altitude: 80, height: 70 });
     expect(p.beds).toEqual(['dwell:wind']);
     const loud = out.levels.get('dwell:wind') ?? 0;
-    p.update({ ...base, altitude: 2 });
+    p.update({ ...base, altitude: 40, height: 30 });
     expect(out.log).toEqual(['start dwell:wind']);
     expect(out.levels.get('dwell:wind')).toBeLessThan(loud);
     // Into a forest by the coast: the wind fades as the others come in (a crossfade).
@@ -143,8 +150,8 @@ describe('the ambience player', () => {
   it('tries again while a bed cannot start yet (no context, not decoded)', () => {
     const out = recorder(false);
     const p = new AmbiencePlayer(A, out);
-    p.update({ ...base, altitude: 80 });
-    p.update({ ...base, altitude: 80 });
+    p.update({ ...base, altitude: 80, height: 70 });
+    p.update({ ...base, altitude: 80, height: 70 });
     expect(out.log).toEqual(['start dwell:wind', 'start dwell:wind']);
     expect(p.beds).toEqual([]);
     expect(SILENT).toBeLessThan(0.01);

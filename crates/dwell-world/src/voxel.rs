@@ -543,6 +543,10 @@ pub struct VoxelWorld {
     /// The water's currents (docs/WATER_SURFACE_GRID.md §2c): the server's water grid writes them,
     /// a client keeps the server's; swimmers and floating bodies read them.
     pub currents: crate::currents::Currents,
+    /// The portals' shafts and their exit push (docs/BIFACIAL_WORLD.md §12.3): the holder sets them
+    /// from the generator (`dwell_worldgen::portal_shafts_for_sized`), the server and the client's
+    /// prediction alike; the player controller reads them. None by default.
+    pub portals: crate::portal_shafts::PortalShafts,
 }
 
 /// Whether a state is a placed light source: it gives off a light (`light`) and block light (the
@@ -572,6 +576,7 @@ impl VoxelWorld {
             sources: HashMap::default(),
             light_pending: None,
             currents: Default::default(),
+            portals: Default::default(),
         }
     }
 
