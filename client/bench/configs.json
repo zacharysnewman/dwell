@@ -25,6 +25,13 @@
       }
     },
     {
+      "name": "grass-off",
+      "notes": "No tall grass or small plants (`?tallgrass=0`, the Tall grass setting at 0 %; WORK_QUEUE item 32): their cost against the default; with `cards-off` it splits the forest's cutout cost.",
+      "params": {
+        "tallgrass": "0"
+      }
+    },
+    {
       "name": "raster",
       "notes": "The mesher at full resolution."
     },

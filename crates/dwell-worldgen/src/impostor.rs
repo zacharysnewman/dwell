@@ -725,6 +725,59 @@ fn march(
     }
 }
 
+/// A species tree in a far tree list (proposal I-2): what an impostor instance is built from. Its
+/// anchor is face-local (the voxel above the ground it stands on); `species` indexes
+/// [`crate::species::SPECIES`]; `seed` and `stage` are the placement's (ADR 0079), so the near
+/// tree and its impostor are the same tree.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct FarTree {
+    pub anchor: [i32; 3],
+    pub species: u16,
+    pub seed: u32,
+    pub stage: u32,
+}
+
+/// One impostor to draw (proposal §6, 16 bytes on the GPU): the face-local foot of the tree
+/// (the anchor's column centre at the anchor's floor), the baked tree's array layer, and its turn
+/// in quarter turns from its seed (so 4 variants × 4 turns read as 16 trees).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Instance {
+    pub foot: [f32; 3],
+    pub layer: u32,
+    pub quarter_turns: u32,
+}
+
+impl Config {
+    /// How many baked trees a species holds (its array layers): stages × variants.
+    pub fn layers_per_species(&self) -> u32 {
+        self.stages.len() as u32 * self.variants
+    }
+
+    /// The array layer of a tree of `species` (index), `seed` and growth `stage`: the species'
+    /// block of layers, then the nearest baked stage, then the seed's variant
+    /// ([`Config::baked_for`]).
+    pub fn layer(&self, species: u16, seed: u32, stage: u32) -> u32 {
+        let (slot, variant) = self.baked_for(seed, stage);
+        u32::from(species) * self.layers_per_species() + slot as u32 * self.variants + variant
+    }
+
+    /// The instances of `trees` (a section's list), in the list's order.
+    pub fn instances(&self, trees: &[FarTree]) -> Vec<Instance> {
+        trees
+            .iter()
+            .map(|t| Instance {
+                foot: [
+                    t.anchor[0] as f32 + 0.5,
+                    t.anchor[1] as f32 * dwell_world::CELL_H as f32,
+                    t.anchor[2] as f32 + 0.5,
+                ],
+                layer: self.layer(t.species, t.seed, t.stage),
+                quarter_turns: (t.seed >> 7).wrapping_mul(0x2545_F491) >> 30,
+            })
+            .collect()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     // face-a-only: the bake is face-local (+y up, no world position); the drawer crosses faces.
