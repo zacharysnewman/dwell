@@ -45,6 +45,23 @@ export function sanitizeShafts(
   return SHAFT_QUALITIES.find((q) => q === value) ?? fallback;
 }
 
+/**
+ * Bloom, the glow round self-lit surfaces (dwell-look's bloom.rs, WORK_QUEUE item 19): Low draws its
+ * chain at half of High's resolution; Off draws none. A phone and a CPU adapter never draw it,
+ * whatever this says (render/bloom.rs `bloom_for`).
+ */
+export const BLOOM_QUALITIES = ['off', 'low', 'high'] as const;
+export type BloomQuality = (typeof BLOOM_QUALITIES)[number];
+export const DEFAULT_BLOOM: BloomQuality = 'high';
+
+/** A stored Bloom setting; anything else (missing, unknown) takes the fallback (High). */
+export function sanitizeBloom(
+  value: unknown,
+  fallback: BloomQuality = DEFAULT_BLOOM,
+): BloomQuality {
+  return BLOOM_QUALITIES.find((q) => q === value) ?? fallback;
+}
+
 /** The Field of view setting: vertical degrees (dwell-lod's `base_fov` narrows it on wide screens). */
 export const DEFAULT_FOV = 75;
 export const FOV_LIMITS = { min: 60, max: 100 } as const;

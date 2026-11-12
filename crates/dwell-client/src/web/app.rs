@@ -1750,6 +1750,16 @@ impl Client {
             .borrow_mut()
             .set_shafts(ShaftQuality::from_name(quality).unwrap_or(ShaftQuality::High));
     }
+    /// The Bloom setting: `off`, `low` or `high` (anything else: high; WORK_QUEUE item 19).
+    #[wasm_bindgen(js_name = setBloom)]
+    pub fn set_bloom(&self, quality: &str) {
+        use dwell_look::bloom::BloomQuality;
+        self.inner
+            .borrow()
+            .renderer
+            .borrow_mut()
+            .set_bloom(BloomQuality::from_name(quality).unwrap_or(BloomQuality::High));
+    }
     /// The clouds' coverage, 0 (clear) to 1 (overcast): for a weather system, or by hand.
     #[wasm_bindgen(js_name = setCloudCoverage)]
     pub fn set_cloud_coverage(&self, coverage: f64) {

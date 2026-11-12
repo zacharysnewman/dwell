@@ -1,0 +1,6 @@
+{
+  "changes": [
+    "Lava, torches and flames glow with bloom (Settings: Bloom; High and Ultra full, Medium lighter, off on Low and phones)",
+    "The starter world now uses as little memory on phones as the default world"
+  ]
+}
