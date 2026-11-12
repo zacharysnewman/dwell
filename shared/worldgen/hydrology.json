@@ -1,6 +1,13 @@
 {
   "$comment": "The world-scale hydrology prototype (docs/proposals/TERRAIN_HYDROLOGY_AND_VOLUMES.md): a coarse per-seed, per-face map of the eroded land, lakes, flow and rivers, computed from the height field (terrain.json). Not wired into chunk generation: changing it changes no worldgen output. Each profile is a full set of tunables, picked by name (`dwell_worldgen::hydrology::profile`); `default` names the one tools use when none is given. Units: metres, years, m³/s; the erodibility is Braun & Willett's K (yr⁻¹ m^(1−2m)) for a drainage area in m² weighted by relative rain. An optional `uplift` group adds the uplift layer (mountain ranges, foothill aprons, highlands, plates, a varying shelf: the initial ground and the uplift rate; then `erosion.uplift` and `upliftReference` are unused), `rockBands` hard-rock bands, and `rain.model` `orographic` wet windward slopes and a dry lee. `rivers.mouths.rule` measures a mouth's slope: `riverSlope` (the river's last `reach` m) or `coastRelief` (the highest land within `reach` m). Run `node shared/worldgen/gen.mjs` after editing; CI fails on stale output.",
   "default": "uplift",
+  "bigWorlds": {
+    "$comment": "How a bigger world's map (constants.json worldSizes: its cell × the radius scale k, so a 10× map's cell is 1 km) keeps today's island, bigger (BUGS.md #77, docs/proposals/BIG_MAP.md §5). Each exponent e multiplies a profile's length by k^e (whole numbers; at 1× nothing changes): rangeCoastExponent the ranges' minCoast and maxCoast, so ranges rise across the whole bigger island, not in a ring by its coast (their width, length and the apron stay in metres, their count is × the area); lakeAreaExponent and lakeDepthExponent the least lake (lakes.minArea, minDepth), so the smallest lake kept is today's shape in cells and the coarse map's one-cell pits fill rather than speckle the island (the smaller lakes wait for the regional maps). The erosion's ridges are as steep as at the profile's own cell (a ridge cell drains a profile-cell's area, not a whole coarse cell's). lipsLinearTo (m³/s): a river's lips (its channel's width for the water's inflow) follow its discharge one cell per lip's flow up to this, by its square root beyond (hydraulic geometry: width ∝ √Q), so a big world's great rivers are hundreds of metres wide, not kilometres; today's rivers stay under it (≤ 20 m³/s).",
+    "rangeCoastExponent": 1,
+    "lakeAreaExponent": 2,
+    "lakeDepthExponent": 1,
+    "lipsLinearTo": 100
+  },
   "profiles": [
     {
       "name": "gentle",

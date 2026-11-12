@@ -216,11 +216,13 @@ fn step_flows(rivers: &[super::MapRiver], courses: &mut [Vec<Point>]) {
             }
         }
         let mut run = head;
+        // Past `lipsLinearTo` the lips grow as √Q (BUGS.md #77): a bigger world's great rivers.
+        let big = crate::hydrology::BIG_WORLDS;
         along.push(
             add.iter()
                 .map(|&a| {
                     run += a;
-                    f64::from(run) * per_cell
+                    f64::from(big.lips(run, per_cell)) * per_cell
                 })
                 .collect(),
         );

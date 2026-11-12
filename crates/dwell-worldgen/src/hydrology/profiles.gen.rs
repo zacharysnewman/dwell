@@ -14,6 +14,7 @@ pub static PROFILES: [HydrologyParams; 6] = [
     HydrologyParams {
         name: "gentle",
         cell: 100,
+        ridge_cell: 100.0,
         iterations: 10,
         time_step: 25000.0,
         erodibility: 0.000004,
@@ -47,6 +48,7 @@ pub static PROFILES: [HydrologyParams; 6] = [
     HydrologyParams {
         name: "medium",
         cell: 100,
+        ridge_cell: 100.0,
         iterations: 25,
         time_step: 25000.0,
         erodibility: 0.000004,
@@ -80,6 +82,7 @@ pub static PROFILES: [HydrologyParams; 6] = [
     HydrologyParams {
         name: "strong",
         cell: 100,
+        ridge_cell: 100.0,
         iterations: 50,
         time_step: 25000.0,
         erodibility: 0.000004,
@@ -113,6 +116,7 @@ pub static PROFILES: [HydrologyParams; 6] = [
     HydrologyParams {
         name: "uplift",
         cell: 100,
+        ridge_cell: 100.0,
         iterations: 25,
         time_step: 50000.0,
         erodibility: 0.000004,
@@ -182,6 +186,7 @@ pub static PROFILES: [HydrologyParams; 6] = [
     HydrologyParams {
         name: "uplift_plates",
         cell: 100,
+        ridge_cell: 100.0,
         iterations: 25,
         time_step: 50000.0,
         erodibility: 0.000004,
@@ -251,6 +256,7 @@ pub static PROFILES: [HydrologyParams; 6] = [
     HydrologyParams {
         name: "uplift_rock_rain",
         cell: 100,
+        ridge_cell: 100.0,
         iterations: 25,
         time_step: 50000.0,
         erodibility: 0.000004,

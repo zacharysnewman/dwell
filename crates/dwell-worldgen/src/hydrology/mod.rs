@@ -166,6 +166,10 @@ pub struct HydrologyParams {
     pub name: &'static str,
     /// Grid cell size (m).
     pub cell: i32,
+    /// The cell (m) whose own area a ridge cell drains in the erosion: the profile's own cell, so a
+    /// bigger world's coarser grid (`sized`) keeps its ridges' steepness (BUGS.md #77). At the
+    /// profile's cell, `cell`.
+    pub ridge_cell: f64,
     pub iterations: u32,
     /// Years per iteration.
     pub time_step: f64,
@@ -204,10 +208,41 @@ pub struct HydrologyParams {
     pub delta_max_slope: f64,
 }
 
+/// How a bigger world's map scales with its radius (hydrology.json `bigWorlds`): exponents of the
+/// radius scale for the ranges' coast distances and the least lake, and the flow up to which a
+/// river's lips follow its discharge one for one (`channels.rs`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct BigWorlds {
+    pub range_coast_exponent: u32,
+    pub lake_area_exponent: u32,
+    pub lake_depth_exponent: u32,
+    pub lips_linear_to: f64,
+}
+
+impl BigWorlds {
+    /// `k`^`e`, exact for whole k (repeated products): 1 at scale 1.
+    pub fn power(k: u32, e: u32) -> f64 {
+        (0..e).fold(1.0, |v, _| v * f64::from(k))
+    }
+
+    /// A river's lips (whole cells, each passing `per_cell` m³/s) for `cells` cells' worth of
+    /// discharge: one for one up to `lips_linear_to`, then by the square root of the excess
+    /// ratio, so a channel grows as √Q past it. Below it, `cells` exactly.
+    pub fn lips(&self, cells: u32, per_cell: f64) -> u32 {
+        let linear = self.lips_linear_to / per_cell;
+        let c = f64::from(cells);
+        if c <= linear {
+            cells
+        } else {
+            ((linear * (c / linear).sqrt()).round() as u32).max(1)
+        }
+    }
+}
+
 mod table {
     include!("profiles.gen.rs");
 }
-pub use table::{DEFAULT, PROFILES};
+pub use table::{BIG_WORLDS, DEFAULT, PROFILES};
 
 impl HydrologyParams {
     /// This profile for a world of `size` (BIG_MAP.md M0): the grid's cell × the scale, so the
@@ -215,12 +250,25 @@ impl HydrologyParams {
     /// wait for the regional maps, R1–R4), and the uplift layer's range and plate counts × the
     /// area, so the land keeps today's density of them. At today's size, `self` exactly. (The
     /// plates' own generator, REALISTIC_WORLD.md R1, is not touched: only its count is.)
+    ///
+    /// So the bigger island is today's, bigger, with its mountains (BUGS.md #77, `BIG_WORLDS`):
+    /// the ranges' coast distances × the scale (they rise across the island, not in a ring by its
+    /// coast; their widths and lengths stay in metres), the erosion's ridges as steep as at the
+    /// profile's own cell (`ridge_cell`), and the least lake today's shape in cells.
     pub fn sized(&self, size: dwell_protocol::world_size::WorldSize) -> Self {
+        let b = BIG_WORLDS;
+        let k = size.radius_scale;
         let mut p = *self;
         p.cell = size.hydrology_cell_m(self.cell);
+        p.ridge_cell = self.ridge_cell;
+        p.lake_min_area *= BigWorlds::power(k, b.lake_area_exponent);
+        p.lake_min_depth *= BigWorlds::power(k, b.lake_depth_exponent);
         if let Some(t) = &mut p.tectonics {
             t.ranges.count = size.uplift_count(t.ranges.count);
             t.plates.count = size.uplift_count(t.plates.count);
+            let c = BigWorlds::power(k, b.range_coast_exponent);
+            t.ranges.min_coast *= c;
+            t.ranges.max_coast *= c;
         }
         p
     }

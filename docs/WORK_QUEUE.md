@@ -1970,7 +1970,27 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    (`take.test.mjs`, in CI): the manifest validates, shot selection and the cache, and the generated plan equals v4's
    hand-written one. Not yet run against the real browser (the first use is the v5 re-record, on the Mac).
 
-51. **Big worlds keep their mountains and rivers** (owner 2026-11-12: "any idea why 10x worlds are super flat with
+51. **Big worlds keep their mountains and rivers** — **WIP status (2026-11-12, cloud session stopped by the owner
+   mid-work; branch `claude/notes-batch-2`, not compiled since the last edit, no PR):** *Measured* natively (seed 0,
+   face A, `cargo run --release -p dwell-worldgen --example big_terrain`, new): before — 1× max 2 613 m, 6.4 % of
+   the land above 1 500 m, 0.96 ranges/1 000 km², widest channel 67 m, lakes 0.11 % (3); 4× 1 961 m, 0.3 %,
+   0.42, 469 m, 4.2 % (1 355 lakes); 10× 1 427 m, 0.0 %, 0.09, 6 477 m, 10.5 % (5 888 lakes). Causes found: range
+   centres drawn 3–9 km from the coast (absolute: a ring on a 250 km island), the erosion's ridge cells draining a
+   whole coarse cell's area (ridges lose ~ln(scale)·U/K of height), the least lake 0.3 km² (< one 1 km cell), and
+   channel width linear in discharge (lip cells). *Fix written* (`hydrology.json` `bigWorlds`, generated
+   `BIG_WORLDS`; `HydrologyParams::sized`, `ridge_cell`, erosion, `channels.rs` `step_flows` via
+   `BigWorlds::lips`): ranges' coast distances × the scale, ridge cells drain a profile cell's area, least lake
+   area × scale² and depth × scale, lips linear to 100 m³/s then √Q (1× max discharge is ≤ 20 m³/s over 6
+   seeds and the fixtures, so 1× is unchanged by construction). Measured with env-var prototypes of the same
+   rules: 4× 2 641 m, 5.6 % > 1 500 m, 1.1 % lakes (13); 10× 2 692 m, 8.1 %, 0.03 % (1); channels 611 m / 2 745 m
+   before the lip rule (not yet re-measured with it). *Left:* compile and run the example; `node --test
+   shared/worldgen/gen.test.mjs` (the new `bigWorlds` group may need a test fixture update); `check:worldgen`
+   (1× goldens and the hydrology digest must be unchanged); the range count metric (`worldmap/relief.rs` counts
+   connected land > 1 000 m, which merges ranges at 10×: 0.25/1 000 km² vs 1×'s 0.96 — count higher ground or
+   spines); tests at 4× and 10× (both faces) red on main → green; the per-column analytic uplift (not started);
+   BIG_MAP.md's table, BUGS #77, release note `shared/releases/pending/big-terrain.json`; the PR (0.56 line,
+   owner raises it). Original item:
+   **Big worlds keep their mountains and rivers** (owner 2026-11-12: "any idea why 10x worlds are super flat with
    massive rivers and lakes? And no mountains? Are they just stretching out the noise or something like that?" →
    explained: the whole-map grids keep ~1 M cells, so a 10× cell is 1 km; ranges narrower than a few cells vanish,
    rivers are carved a cell wide, the lake fill is per cell, the island tunables don't scale; BUGS #77. Owner:

@@ -1262,9 +1262,17 @@ export function validateHydrology(data) {
   };
   if (typeof data !== "object" || data === null) fail("must be an object");
   const top = Object.keys(data).filter(
-    (k) => !["$comment", "default", "profiles"].includes(k),
+    (k) => !["$comment", "default", "profiles", "bigWorlds"].includes(k),
   );
   if (top.length) fail(`unknown ${top.join(", ")}`);
+  // How a bigger world's map scales with its radius (BUGS.md #77): whole exponents of the scale,
+  // and the flow up to which a river's lips follow its discharge one for one.
+  checkGroup("bigWorlds", data.bigWorlds, {
+    rangeCoastExponent: [0, 3, true],
+    lakeAreaExponent: [0, 3, true],
+    lakeDepthExponent: [0, 3, true],
+    lipsLinearTo: [{ above: 0 }, 1e6],
+  });
   if (!(Array.isArray(data.profiles) && data.profiles.length))
     fail("profiles must be a non-empty list");
   const names = new Set();
@@ -1475,6 +1483,7 @@ export function hydrologyRust(data) {
     rs.push("    HydrologyParams {");
     rs.push(`        name: ${JSON.stringify(p.name)},`);
     rs.push(`        cell: ${p.grid.cell},`);
+    rs.push(`        ridge_cell: ${rf(p.grid.cell)},`);
     rs.push(`        iterations: ${e.iterations},`);
     rs.push(`        time_step: ${rf(e.timeStep)},`);
     rs.push(`        erodibility: ${rf(e.erodibility)},`);
