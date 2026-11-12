@@ -31,6 +31,8 @@ pub mod worldmap;
 
 use std::sync::Arc;
 
+use dwell_protocol::world_size::WorldSize;
+
 use dwell_world::lod::{self, LodBoundsFn, LodGenerator};
 use dwell_world::{
     AirChunkTest, ChunkGenerator, FlatLayers, GENERATOR_SANDBOX, flat_generator, flat_generator_of,
@@ -52,7 +54,12 @@ pub fn sandbox_layers() -> FlatLayers {
 /// The chunk generator for a generator version; unknown versions fall back to the flat world. The
 /// sandbox has the flat world's shape (its air test, spawn and LOD bounds) in its floor block.
 pub fn generator_for(version: u32, world_seed: u64) -> ChunkGenerator {
-    if let Some(terrain) = BifacialTerrain::for_generator(version, world_seed) {
+    generator_for_sized(version, world_seed, WorldSize::DEFAULT)
+}
+
+/// [`generator_for`] in a world of `size` (BIG_MAP.md M2).
+pub fn generator_for_sized(version: u32, world_seed: u64, size: WorldSize) -> ChunkGenerator {
+    if let Some(terrain) = BifacialTerrain::for_generator_sized(version, world_seed, size) {
         let terrain = Arc::new(terrain);
         return Arc::new(move |coord, chunk| terrain.generate(coord, chunk));
     }
@@ -70,21 +77,34 @@ pub type GroundDensityFn =
 /// either face's worldgen has a `ground` (the default world: nothing is built, and the scatter is
 /// as before). The terrain is built only when one does.
 pub fn ground_density_for(version: u32, world_seed: u64) -> Option<GroundDensityFn> {
+    ground_density_for_sized(version, world_seed, WorldSize::DEFAULT)
+}
+
+/// [`ground_density_for`] in a world of `size` (BIG_MAP.md M2).
+pub fn ground_density_for_sized(
+    version: u32,
+    world_seed: u64,
+    size: WorldSize,
+) -> Option<GroundDensityFn> {
     if version != dwell_world::GENERATOR_TERRAIN {
         return None;
     }
     let any = [dwell_world::Face::A, dwell_world::Face::B]
         .into_iter()
-        .any(
-            |f| match &worldmap::cache::for_seed(bifacial::face_seed(world_seed, f)).worldgen {
+        .any(|f| {
+            match &worldmap::cache::for_seed_sized(bifacial::face_seed(world_seed, f), size)
+                .worldgen
+            {
                 Some(w) => w.edit.biomes.iter().any(|b| b.ground.is_some()),
                 None => terrain::BIOMES.iter().any(|b| b.ground.is_some()),
-            },
-        );
+            }
+        });
     if !any {
         return None;
     }
-    let t = Arc::new(BifacialTerrain::for_generator(version, world_seed)?);
+    let t = Arc::new(BifacialTerrain::for_generator_sized(
+        version, world_seed, size,
+    )?);
     t.ground_varies()
         .then(|| Arc::new(move |c| t.ground_density(c)) as GroundDensityFn)
 }
@@ -92,23 +112,42 @@ pub fn ground_density_for(version: u32, world_seed: u64) -> Option<GroundDensity
 /// The generator's all-air test. The terrain's caches its sky floors per chunk column and face
 /// (bounded: cleared when large); `AirColumns` gives the server its costly part apart.
 pub fn air_test_for(version: u32, world_seed: u64) -> AirChunkTest {
-    AirColumns::for_generator(version, world_seed).test()
+    air_test_for_sized(version, world_seed, WorldSize::DEFAULT)
+}
+
+/// [`air_test_for`] in a world of `size` (BIG_MAP.md M2).
+pub fn air_test_for_sized(version: u32, world_seed: u64, size: WorldSize) -> AirChunkTest {
+    AirColumns::for_generator_sized(version, world_seed, size).test()
 }
 
 /// Face B's spawn point for the terrain generator (`BifacialTerrain::spawn_point_b`); the face-A
 /// one for the others (they have no face B).
 pub fn spawn_point_b_for(version: u32, world_seed: u64) -> [f64; 3] {
-    if let Some(terrain) = BifacialTerrain::for_generator(version, world_seed) {
+    spawn_point_b_for_sized(version, world_seed, WorldSize::DEFAULT)
+}
+
+/// [`spawn_point_b_for`] in a world of `size` (BIG_MAP.md M2).
+pub fn spawn_point_b_for_sized(version: u32, world_seed: u64, size: WorldSize) -> [f64; 3] {
+    if let Some(terrain) = BifacialTerrain::for_generator_sized(version, world_seed, size) {
         return terrain.spawn_point_b();
     }
-    spawn_point_for(version, world_seed)
+    spawn_point_for_sized(version, world_seed, size)
 }
 
 /// The portals' axes (world x, z through each shaft's axis column's centre) and the look their
 /// motes take (`midplane.json` `portals.motes`): none for a generator without portals. The client
 /// draws the motes from these (BIFACIAL_WORLD.md §12.1).
 pub fn portal_axes_for(version: u32, world_seed: u64) -> (Vec<[f64; 2]>, &'static str) {
-    let Some(terrain) = BifacialTerrain::for_generator(version, world_seed) else {
+    portal_axes_for_sized(version, world_seed, WorldSize::DEFAULT)
+}
+
+/// [`portal_axes_for`] in a world of `size` (BIG_MAP.md M2).
+pub fn portal_axes_for_sized(
+    version: u32,
+    world_seed: u64,
+    size: WorldSize,
+) -> (Vec<[f64; 2]>, &'static str) {
+    let Some(terrain) = BifacialTerrain::for_generator_sized(version, world_seed, size) else {
         return (Vec::new(), "");
     };
     let p = terrain.portals();
@@ -146,14 +185,19 @@ pub fn portal_spawn_for(
 
 /// Feet position players spawn at: near the origin, on open level ground.
 pub fn spawn_point_for(version: u32, world_seed: u64) -> [f64; 3] {
-    if let Some(terrain) = BifacialTerrain::for_generator(version, world_seed) {
+    spawn_point_for_sized(version, world_seed, WorldSize::DEFAULT)
+}
+
+/// [`spawn_point_for`] in a world of `size` (BIG_MAP.md M2).
+pub fn spawn_point_for_sized(version: u32, world_seed: u64, size: WorldSize) -> [f64; 3] {
+    if let Some(terrain) = BifacialTerrain::for_generator_sized(version, world_seed, size) {
         return terrain.spawn_point();
     }
     // The flat world's (or the sandbox's) surface: the top of its top layer (row FLAT_TOP_Y − 1),
     // as its shape gives it, so the spawn is on the ground, not inside it.
     let mut flat = dwell_world::VoxelWorld::new(
-        generator_for(version, world_seed),
-        Some(air_test_for(version, world_seed)),
+        generator_for_sized(version, world_seed, size),
+        Some(air_test_for_sized(version, world_seed, size)),
     );
     let top_y = dwell_world::FLAT_TOP_Y - 1;
     let top = flat.shape_at(0, top_y, 0);
@@ -168,14 +212,26 @@ pub fn spawn_point_for(version: u32, world_seed: u64) -> [f64; 3] {
 pub type Runoff = Arc<dyn Fn(dwell_world::Face, i32, i32) -> f64 + Send + Sync>;
 
 pub fn runoff_for(version: u32, world_seed: u64) -> Option<Runoff> {
-    let terrain = Arc::new(BifacialTerrain::for_generator(version, world_seed)?);
+    runoff_for_sized(version, world_seed, WorldSize::DEFAULT)
+}
+
+/// [`runoff_for`] in a world of `size` (BIG_MAP.md M2).
+pub fn runoff_for_sized(version: u32, world_seed: u64, size: WorldSize) -> Option<Runoff> {
+    let terrain = Arc::new(BifacialTerrain::for_generator_sized(
+        version, world_seed, size,
+    )?);
     Some(Arc::new(move |face, x, z| {
         terrain.local(face).discharge_at(x, z)
     }))
 }
 
 pub fn lod_generator_for(version: u32, world_seed: u64) -> LodGenerator {
-    if let Some(terrain) = BifacialTerrain::for_generator(version, world_seed) {
+    lod_generator_for_sized(version, world_seed, WorldSize::DEFAULT)
+}
+
+/// [`lod_generator_for`] in a world of `size` (BIG_MAP.md M2).
+pub fn lod_generator_for_sized(version: u32, world_seed: u64, size: WorldSize) -> LodGenerator {
+    if let Some(terrain) = BifacialTerrain::for_generator_sized(version, world_seed, size) {
         let terrain = Arc::new(terrain);
         return Arc::new(move |c, cells| terrain.generate_lod(c, cells, None, None));
     }
@@ -187,7 +243,12 @@ pub fn lod_generator_for(version: u32, world_seed: u64) -> LodGenerator {
 }
 
 pub fn lod_bounds_for(version: u32, world_seed: u64) -> LodBoundsFn {
-    if let Some(terrain) = BifacialTerrain::for_generator(version, world_seed) {
+    lod_bounds_for_sized(version, world_seed, WorldSize::DEFAULT)
+}
+
+/// [`lod_bounds_for`] in a world of `size` (BIG_MAP.md M2).
+pub fn lod_bounds_for_sized(version: u32, world_seed: u64, size: WorldSize) -> LodBoundsFn {
+    if let Some(terrain) = BifacialTerrain::for_generator_sized(version, world_seed, size) {
         let terrain = Arc::new(terrain);
         return Arc::new(move |level, i, k| terrain.lod_bounds_at(level, i, k));
     }

@@ -3,7 +3,9 @@
 **Status:** written 2026-11-11; the owner answered §7 the same day (10× radius, a world setting of
 named sizes, desktop first). **M0 built** (the size as one per-world value, every derived value at
 1× unchanged); **M1 built** (the LOD root holds every named size; protocol v23, a compatibility
-question for the owner); M2 onward not started. The owner (2026-11-11): "we
+question for the owner); **M2's native part built** (the generators, disc, build volume, LOD and
+server read the world's size; a 2× world creates natively in 4.6 s at 176 MB); M2's browser part
+(the client's workers, the dev link and the New world choice) and M3 onward not started. The owner (2026-11-11): "we
 will test out a 10x size map soon (could start whenever)". This study adds two things to
 [`WORLD_SCALE.md`](./WORLD_SCALE.md) (2026-11-10, which measured a disc 10× *across*): the case of 10×
 the *area*, measured, and the whole-map grids built since then (the biome field, the geology's
@@ -183,7 +185,37 @@ rivers, ranges and climate stay. The sizes are data: `constants.json` `worldSize
   same hash (levels 1–11; 12–15 are new sections). `every_named_size_fits_the_lod_root` is on.
   **Left for M2:** the build volume (`bounds.radius`) and `in_world`'s disc are still the 1× disc's,
   so a bigger world's far sections aren't generated until the generators read the world's size.
-- **M2 — a big dev world at a coarse map cell.** The generators built from the world's size (the
+- **M2a — the generators read the world's size, natively. [built]** `dwell_world::WorldBounds`
+  (the world's disc, `radius_scale` × the build's, and its build volume, `BuildVolume::sized`: as wide
+  as the disc and as tall as today's, a spheroid in exact integers, so every size's chunk rows and LOD
+  rows are the same); `lod::in_world_of`. The world map knows its size (`WorldMap::size`, derived from
+  its grid, so its bytes are unchanged) and the map cache keys on (seed, size) (`for_seed_sized`;
+  the disk key gains `-x<scale>` only above 1×); `WorldMap::compute_sized` runs the profile `sized`
+  over `BaseField::sized` (the size's island and disc); `TerrainGenerator::sized` and
+  `BifacialTerrain::sized` take the map's size for their disc, build volume and base field; the
+  biome field's climate gradient spans the map's disc; the spawn search reads the map, so it follows.
+  `dwell_worldgen::*_for_sized` (generator, air test, LOD generator and bounds, spawn, runoff,
+  ground density) and `JobRunner::for_world_sized`; the server takes a saved world's size from its
+  settings before building its generators (`saved_world_size`: a world without the tag, or with a
+  size past this build's LOD root, is 1×), and its streaming, edits' chunk checks and LOD
+  propagation use `Server::bounds`; `dwell-server --size 2x` makes a new world at a named size (a saved
+world keeps its own; `tests/host.rs`). The LOD system's near-rim check and its in-world test read
+  `LodSystem::set_world`. Every 1× path is the old one (the free functions are `WorldBounds::DEFAULT`'s),
+  so the goldens are unchanged. Tests: `dwell-worldgen/tests/world_size.rs` (both faces: a 2× world's
+  map at 200 m over the 100 km disc with today's cell count, chunks past today's rim generating sea,
+  the spawn on its own disc), `bounds.rs`/`world_bounds.rs` (the 2× disc and volume, 1× the build's),
+  the LOD's `the_rim_is_the_world_s_own`, and `persistence.rs` (a saved 2× world reopens at 2× with
+  2× bounds; one without the tag at 1×). Measured natively in this cloud container (4 cores,
+  `cargo run --release -p dwell-worldgen --example world_size -- 2x`, a cold map cache): both faces'
+  maps, the terrain and the spawn search — **1×: 3.7 s, 164 MB peak; 2×: 4.6 s, 176 MB peak** (the
+  map stays 1002² cells: its cell doubles). **Left for M2b:** the browser — the client's workers
+  build their generators and maps from (version, seed) (`dwell-client` `jobs`, the map builder
+  worker and its IndexedDB key), so they need the join's `WorldSettings.size` passed in, and
+  `LodSystem::set_world` called from it; the dev link (`?size=2x`) and the New world form's "World
+  size" (desktop only); Chisel's map texel (Chisel tunes a 1× world); the flat and sandbox worlds
+  stay 1×; Realistic worlds' plate layout and climate (`climate.rs`, R2/R3) still read the 1× radius; `portal_spawn_for` (`?spawn=portal`) is 1×'s. The fog has no rim of its own at run time
+  (`fog.mjs`'s `2 × worldRadius` is the data's distance cap). Then 4×, 8× and 10× in the browser.
+- **M2b — a big dev world in the browser.** The generators built from the world's size (the
   sized constructors called from its settings, the world map and the biome and drainage fields on
   the scaled grid). Start at 2× (100 km, a 200 m map cell) and step up through 4× and 8× to the
   owner's 10× (500 km at a 1 km map cell, 1 M cells, today's cost); measure world creation, memory

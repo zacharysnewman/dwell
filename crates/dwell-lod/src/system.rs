@@ -25,11 +25,10 @@ use dwell_protocol::{
 };
 use dwell_world::lod::{
     INDEX_LEVEL, LodBounds, LodCoord, LodKind, MAX_LEVEL, SECTION_CELLS, cell_index, cell_size,
-    child, chunk_of_lod, in_world, kind_from_bounds, lod_of_chunk, parent, row_face, section_size,
+    child, chunk_of_lod, in_world_of, kind_from_bounds, lod_of_chunk, parent, row_face,
+    section_size,
 };
-use dwell_world::{
-    CHUNK_EXTENT_M, ChunkCoord, Face, FaceFrame, WORLD_RADIUS, chunk_of_pos, chunk_origin_m,
-};
+use dwell_world::{CHUNK_EXTENT_M, ChunkCoord, Face, FaceFrame, chunk_of_pos, chunk_origin_m};
 
 use crate::fade::{Fade, FadeStats, Item, ItemKind, SwapFade};
 use crate::frustum::{Frustum, LodCamera, box_distance};
@@ -527,6 +526,8 @@ pub struct LodSystem {
     /// The face the camera is on (1: A, −1: B), and whether it is near the rim (see culled).
     view_face: i32,
     near_rim: bool,
+    /// The world's disc and volume (its size's, BIG_MAP.md M2; `set_world`).
+    world: dwell_world::WorldBounds,
     position: Vec3,
     camera_chunk: ChunkCoord,
     /// Chunks asked of the server (and when), and the pacing of those requests.
@@ -569,6 +570,12 @@ pub struct LodSystem {
 }
 
 impl LodSystem {
+    /// The world's disc and build volume (its size's, BIG_MAP.md M2, from the join's settings):
+    /// which sections are in the world, and where its rim is (`near_rim`).
+    pub fn set_world(&mut self, world: dwell_world::WorldBounds) {
+        self.world = world;
+    }
+
     pub fn new(options: LodOptions) -> Self {
         let mut s = Self {
             nodes: HashMap::default(),
@@ -600,6 +607,7 @@ impl LodSystem {
             detail_m: None,
             view_face: 1,
             near_rim: false,
+            world: dwell_world::WorldBounds::DEFAULT,
             position: [0.0; 3],
             camera_chunk: ChunkCoord::default(),
             chunk_asked: HashMap::default(),
@@ -850,7 +858,7 @@ impl LodSystem {
             self.face_changed();
         }
         self.view_face = view_face;
-        self.near_rim = p[0].hypot(p[2]) > f64::from(WORLD_RADIUS) - RIM_VIEW_M;
+        self.near_rim = p[0].hypot(p[2]) > self.world.radius() as f64 - RIM_VIEW_M;
         self.position = p;
         let frustum = Frustum::new(*camera);
         self.camera_chunk = chunk_of_pos(p);
@@ -1161,9 +1169,10 @@ impl LodSystem {
             return Kids::of(k);
         }
         let (coord, modified) = (self.n(id).coord, self.n(id).modified);
+        let world = self.world;
         let kids: Vec<LodId> = (0..8)
             .map(|o| child(coord, o))
-            .filter(|&c| in_world(c))
+            .filter(|&c| in_world_of(c, &world))
             .map(|c| self.node(c, modified))
             .collect();
         let out = Kids::of(&kids);
@@ -1420,7 +1429,7 @@ impl LodSystem {
             for k in at.k - r..=at.k + r {
                 for i in at.i - r..=at.i + r {
                     let c = LodCoord::new(1, i, j, k);
-                    if !in_world(c) || !all_drawable(c, host) {
+                    if !in_world_of(c, &self.world) || !all_drawable(c, host) {
                         continue;
                     }
                     let id = id_of(c);

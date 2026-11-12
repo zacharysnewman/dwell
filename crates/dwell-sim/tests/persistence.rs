@@ -132,10 +132,20 @@ fn a_worlds_size_is_saved_with_it_and_an_older_world_is_todays_size() {
             ..flat()
         });
         f.join(1, &Client::new(1)); // checks the settings sent are the world's
-        f.server.world_settings().size
+        // BIG_MAP.md M2: and the server's disc and build volume (its generators') are its size's.
+        let size = f.server.world_settings().size;
+        assert_eq!(f.server.bounds(), dwell_world::WorldBounds::of(size));
+        size
     };
     let big = saved("big", ten);
     assert_eq!(reopen(&big, WorldSize::DEFAULT), ten, "the world's own");
+    let two = WorldSize::named("2x").expect("a named size");
+    let doubled = saved("two", two);
+    assert_eq!(
+        reopen(&doubled, WorldSize::DEFAULT),
+        two,
+        "a 2× world reopens at 2×"
+    );
     let today = saved("today", WorldSize::DEFAULT);
     assert_eq!(
         reopen(&today, ten),

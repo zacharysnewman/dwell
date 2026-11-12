@@ -27,7 +27,7 @@ use crate::hydrology::{self, End, HydrologyMap, MouthKind, NEIGHBOURS_D8, NONE};
 /// lowest dry ground round it, so the coarse map's bicubic between its cells doesn't dip under it.
 const BANK_MARGIN: f64 = 0.5;
 
-pub use cache::{build_bytes, for_seed, install, set_cache_dir};
+pub use cache::{build_bytes, for_seed, for_seed_sized, install, set_cache_dir};
 pub use channels::{Channels, Hit};
 pub use shores::Shores;
 
@@ -113,6 +113,9 @@ pub struct WorldMap {
     pub lake: Vec<u16>,
     pub lakes: Vec<MapLake>,
     pub rivers: Vec<MapRiver>,
+    /// The world's size it covers (BIG_MAP.md M2): derived from its grid (a grid over the disc of
+    /// `WorldSize::world_radius_m`, `hydrology::grid_for_radius`), so its bytes are as before.
+    pub size: dwell_protocol::world_size::WorldSize,
     /// Derived on load.
     pub channels: Channels,
     pub shores: Shores,
@@ -128,8 +131,14 @@ pub struct WorldMap {
 impl WorldMap {
     /// The map of face seed `seed` by the default profile (`hydrology.json`), computed now.
     pub fn compute(seed: u64) -> Self {
+        Self::compute_sized(seed, dwell_protocol::world_size::WorldSize::DEFAULT)
+    }
+
+    /// [`WorldMap::compute`] for a world of `size` (BIG_MAP.md M2): the profile `sized` (its cell ×
+    /// the scale) over the size's disc and island.
+    pub fn compute_sized(seed: u64, size: dwell_protocol::world_size::WorldSize) -> Self {
         let p = hydrology::default_profile();
-        Self::from_hydrology(seed, &hydrology::generate_seed(seed, p))
+        Self::from_hydrology(seed, &hydrology::generate_seed_sized(seed, p, size))
     }
 
     /// [`WorldMap::compute`] over a base height field of other parameters (a fixture world such
@@ -292,6 +301,11 @@ impl WorldMap {
         )
     }
 
+    /// The world's disc radius (m) this map covers.
+    pub fn world_radius(&self) -> i64 {
+        self.size.world_radius_m()
+    }
+
     /// A map from its stored parts, with what is derived from them.
     #[allow(clippy::too_many_arguments)]
     pub fn assemble(
@@ -310,6 +324,7 @@ impl WorldMap {
             n,
             cell,
             x0,
+            size: size_of_grid(n, cell),
             height,
             flags,
             lake,
@@ -430,4 +445,20 @@ fn cubic_slope(f: f64) -> [f64; 4] {
         0.5 * (-9.0 * f2 + 8.0 * f + 1.0),
         0.5 * (3.0 * f2 - 2.0 * f),
     ]
+}
+
+/// The world size whose disc a grid of `n` cells of `cell` m covers (`hydrology::grid_for_radius`
+/// gives `n` = ⌈2r / cell⌉ + 2): the scale whose radius it rounds to; today's for any other grid
+/// (a fixture's).
+fn size_of_grid(n: usize, cell: f64) -> dwell_protocol::world_size::WorldSize {
+    use dwell_protocol::world_size::WorldSize;
+    let across = (n as f64 - 2.0) * cell;
+    let scale = (across / (2.0 * dwell_protocol::world::WORLD_RADIUS as f64)).round() as u32;
+    WorldSize::scaled(scale)
+        .ok()
+        .filter(|s| {
+            let (g, _) = hydrology::grid_for_radius(cell as i32, s.world_radius_m());
+            g.n == n
+        })
+        .unwrap_or(WorldSize::DEFAULT)
 }
