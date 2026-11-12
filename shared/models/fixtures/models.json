@@ -32,6 +32,11 @@
           "arm_r": { "joint": "tip", "rest": [0, 0, 180] }
         }
       },
+      "firstPerson": {
+        "joints": ["tip"],
+        "weight": 0.5,
+        "body": { "hide": [], "weight": 0.5 }
+      },
       "roles": {
         "idle": { "clip": "rest" },
         "walk": { "clip": "bend" },

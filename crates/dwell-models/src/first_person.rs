@@ -33,6 +33,67 @@ pub fn arm_triangles(model: &Model, level: usize, fp: &FirstPerson) -> Vec<u32> 
         .collect()
 }
 
+/// Your own body in first person (models.json `firstPerson.body`, docs/CHARACTERS.md §5.1, §11.12):
+/// level `level`'s triangles less every one with a vertex that has at least `body.weight` of its
+/// skin weight on `body.hide` or on the arm's `fp.joints` (the arms view draws it). Empty when the
+/// model draws no body.
+pub fn body_triangles(model: &Model, level: usize, fp: &FirstPerson) -> Vec<u32> {
+    let Some(body) = fp.body else {
+        return Vec::new();
+    };
+    let m = model.level(level);
+    let hidden = |v: u32| {
+        let v = v as usize;
+        let w: f32 = (0..4)
+            .filter(|&k| {
+                let j = usize::from(m.joints[v][k]);
+                body.hide.contains(&j) || fp.joints.contains(&j)
+            })
+            .map(|k| m.weights[v][k])
+            .sum();
+        w >= body.weight
+    };
+    m.indices
+        .chunks_exact(3)
+        .filter(|t| !t.iter().any(|&v| hidden(v)))
+        .flatten()
+        .copied()
+        .collect()
+}
+
+/// The vertices `tris` use, each once, in order.
+pub fn vertices_of(tris: &[u32]) -> Vec<u32> {
+    let mut v = tris.to_vec();
+    v.sort_unstable();
+    v.dedup();
+    v
+}
+
+/// Level `level`'s vertices `verts` skinned by `joints` (each skin joint's matrix: its global
+/// times its inverse bind, in whatever space the caller wants them).
+pub fn skin_points(model: &Model, level: usize, joints: &[Mat4], verts: &[u32]) -> Vec<[f32; 3]> {
+    let m = model.level(level);
+    verts
+        .iter()
+        .map(|&v| {
+            let v = v as usize;
+            let mut p = [0.0f32; 3];
+            for k in 0..4 {
+                let w = m.weights[v][k];
+                if w > 0.0
+                    && let Some(j) = joints.get(usize::from(m.joints[v][k]))
+                {
+                    let q = mm::point(j, m.positions[v]);
+                    for c in 0..3 {
+                        p[c] += q[c] * w;
+                    }
+                }
+            }
+            p
+        })
+        .collect()
+}
+
 fn dist(a: &Mat4, b: &Mat4) -> f32 {
     (0..3)
         .map(|k| (a[3][k] - b[3][k]).powi(2))
@@ -154,6 +215,126 @@ mod tests {
                 p[0] * rest[shoulder][3][0] > 0.0,
                 "vertex {v} at {p:?} is on the other side"
             );
+        }
+    }
+
+    /// The share of vertex `v`'s skin weight on `joints`.
+    fn share(m: &crate::glb::View<'_>, v: u32, joints: &[usize]) -> f32 {
+        let v = v as usize;
+        (0..4)
+            .filter(|&k| joints.contains(&usize::from(m.joints[v][k])))
+            .map(|k| m.weights[v][k])
+            .sum()
+    }
+
+    #[test]
+    fn your_body_is_the_peasant_less_its_head_and_arms_by_skin_weight() {
+        let (data, model) = crate::player();
+        let fp = data.first_person.expect("the Peasant draws your arms");
+        let body = fp.body.expect("and your own body");
+        let joint = |name: &str| {
+            let b = data.retarget.unwrap().bones.iter().find(|b| b.bone == name);
+            b.unwrap().joint
+        };
+        let (head, arm_l) = (joint("head"), joint("arm_l"));
+        assert!(body.hide.contains(&head) && body.hide.contains(&arm_l));
+        for level in 0..model.level_count() {
+            let m = model.level(level);
+            let tris = body_triangles(model, level, &fp);
+            // A third of the mesh: the head and hat are 40 % of it.
+            assert!(
+                tris.len().is_multiple_of(3) && tris.len() * 4 > m.indices.len(),
+                "level {level}: {} of {}",
+                tris.len(),
+                m.indices.len()
+            );
+            // No vertex of it is the head's, the left arm's or the first-person arm's.
+            for &v in &tris {
+                for (what, joints) in [
+                    ("head", &[head][..]),
+                    ("left arm", &[arm_l]),
+                    ("arm", fp.joints),
+                ] {
+                    assert!(
+                        share(&m, v, joints) < body.weight,
+                        "level {level}: a {what} vertex {v}"
+                    );
+                }
+            }
+            // The arms view's arm and the body share no triangle: never two arms.
+            let arm = arm_triangles(model, level, &fp);
+            let set: std::collections::HashSet<[u32; 3]> =
+                tris.chunks_exact(3).map(|t| [t[0], t[1], t[2]]).collect();
+            assert!(
+                arm.chunks_exact(3)
+                    .all(|t| !set.contains(&[t[0], t[1], t[2]]))
+            );
+            // The legs and feet are all in it.
+            let feet = [
+                joint("foot_l"),
+                joint("foot_r"),
+                joint("shin_l"),
+                joint("shin_r"),
+            ];
+            let leg_tris = m
+                .indices
+                .chunks_exact(3)
+                .filter(|t| t.iter().all(|&v| share(&m, v, &feet) > 0.99))
+                .count();
+            let kept = tris
+                .chunks_exact(3)
+                .filter(|t| t.iter().all(|&v| share(&m, v, &feet) > 0.99))
+                .count();
+            assert!(
+                leg_tris > 0 && kept == leg_tris,
+                "level {level}: {kept} of {leg_tris} leg triangles"
+            );
+        }
+        // Rest pose: nothing kept is above the shoulders (the head and its hat are out).
+        let m = model.level(0);
+        let rest = anim::globals(model, &anim::rest(model));
+        let neck = rest[model.skin[joint("head")]][3][1];
+        for &v in &body_triangles(model, 0, &fp) {
+            assert!(
+                m.positions[v as usize][1] < neck,
+                "vertex {v} above the neck"
+            );
+        }
+    }
+
+    /// The fixture's two-joint model draws a body by data alone: everything off its arm joint.
+    #[test]
+    fn a_fixture_models_body_is_cut_by_data_alone() {
+        let data = crate::fixture::MODELS
+            .iter()
+            .find(|m| m.name == "two_bone")
+            .unwrap();
+        let model = crate::glb::parse(crate::fixture::PLAYER_GLB).unwrap();
+        let fp = data
+            .first_person
+            .expect("the fixture names a first-person arm and body");
+        assert!(fp.body.is_some_and(|b| b.hide.is_empty()));
+        let m = model.level(0);
+        let tris = body_triangles(&model, 0, &fp);
+        assert!(!tris.is_empty() && tris.len() < m.indices.len());
+        let arm = fp.joints;
+        for t in m.indices.chunks_exact(3) {
+            let off = t.iter().all(|&v| share(&m, v, arm) < 0.5);
+            let kept = tris.chunks_exact(3).any(|k| k == t);
+            assert_eq!(off, kept, "triangle {t:?}");
+        }
+        // Skinned at rest, the kept vertices are where the mesh has them.
+        let rest = anim::globals(&model, &anim::rest(&model));
+        let joints: Vec<Mat4> = model
+            .skin
+            .iter()
+            .zip(&model.inverse_bind)
+            .map(|(&j, ib)| mm::mul(&rest[j], ib))
+            .collect();
+        let verts = vertices_of(&tris);
+        for (p, &v) in skin_points(&model, 0, &joints, &verts).iter().zip(&verts) {
+            let q = m.positions[v as usize];
+            assert!((0..3).all(|k| (p[k] - q[k]).abs() < 1e-4), "{p:?} vs {q:?}");
         }
     }
 
