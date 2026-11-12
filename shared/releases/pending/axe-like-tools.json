@@ -1,7 +1,0 @@
-{
-  "changes": [
-    "The axe works like the pickaxe and shovel: a log takes hits to break (10 with the stone axe, 5 with the metal one), each hit biting into the wood where it struck.",
-    "Breaking a trunk's log fells the tree above it, toward the side you chopped; a lying log breaks the same way and drops its wood.",
-    "Trees half-chopped in older worlds keep their cuts, and the next hit carries the progress on."
-  ]
-}
