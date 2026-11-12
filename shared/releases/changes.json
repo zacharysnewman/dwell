@@ -12,6 +12,12 @@
       ]
     },
     {
+      "version": "0.54.216",
+      "changes": [
+        "Behind the scenes: bug notes"
+      ]
+    },
+    {
       "version": "0.54.215",
       "changes": [
         "Under water the world sounds muffled: a low-pass on every world sound, eased in and out as you cross the surface, with a soft underwater hum",
