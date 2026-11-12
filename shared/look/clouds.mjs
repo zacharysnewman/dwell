@@ -52,6 +52,8 @@ const SCHEMA = {
     nightShade: "color",
     absorption: [0, 20],
     shadowStepM: [0, 1e5],
+    shadowOctaves: ["count", 0, MAX_OCTAVES],
+    lowShadowOctaves: ["count", 0, MAX_OCTAVES],
     silverLining: [0, 4],
     silverPower: [1, 512],
     sunWarmth: [0, 1],
@@ -315,6 +317,10 @@ export function validateClouds(data, atmosphere = loadAtmosphere()) {
     fail("deck.fadeEndM must be greater than deck.fadeStartM");
   if (shape.lowOctaves > shape.octaves)
     fail("shape.lowOctaves must not exceed shape.octaves");
+  if (data.light.shadowOctaves > shape.octaves)
+    fail("light.shadowOctaves must not exceed shape.octaves");
+  if (data.light.lowShadowOctaves > shape.lowOctaves)
+    fail("light.lowShadowOctaves must not exceed shape.lowOctaves");
   // The noise repeats every wrapM: a whole number of its largest cells, so it tiles without a seam.
   const cells = shape.wrapM / shape.scaleM;
   if (!Number.isInteger(cells))

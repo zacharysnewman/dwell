@@ -1,0 +1,8 @@
+{
+  "changes": [
+    "Villagers' faces are their skin colour again, not jet black",
+    "A villager's hair, skin and hat each take their own colour: no more yellow fringes or clothes-coloured heads",
+    "Characters and animals draw in their true palette colours (they were drawn too dark)",
+    "Behind the scenes: models have part maps (which part each vertex is), with a tool that renders them"
+  ]
+}

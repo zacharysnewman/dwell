@@ -700,7 +700,7 @@ fn on_skinned_hand(h: &HeldOnSkin, hand_bone: Option<usize>, hand: &Affine) -> [
 }
 
 /// A creature's skinned draw and what its hand shows (docs/CHARACTERS.md §11.11): an NPC in its
-/// colours (its kind's ramps for its variant, [`dwell_models::colour_remap`]), its fist closed
+/// colours (its kind's ramps for its variant by part, [`dwell_models::part_remap`]), its fist closed
 /// round its held item (its kind's `held`, in the item's tool's level hold); an animal as modelled,
 /// holding nothing.
 pub fn creature_draw(
@@ -741,7 +741,8 @@ pub fn creature_draw(
         rig_pose,
         grip: item_shown(character, held),
         remap: npc.map_or(super::skinned::NO_REMAP, |n| {
-            super::skinned::remap_floats(&dwell_models::colour_remap(&n.colours))
+            let parts = dwell_models::find(dwell_models::MODELS, c.model).and_then(|m| m.parts);
+            super::skinned::remap_floats(&dwell_models::part_remap(parts.as_ref(), &n.colours))
         }),
         idle_pose: c.pose,
     };
@@ -1989,7 +1990,8 @@ mod tests {
             assert_eq!(creature_draw(ch, &view(Some(npc(99))), [1.0, 0.0], 0.0).0.remap, a.remap);
             assert_ne!(a.remap, NO_REMAP, "variant 99 changes a colour");
             // The rows are the kind's colours for that variant: each pair the ramps' bases.
-            let pairs = dwell_models::colour_remap(&npc(99).colours);
+            let parts = dwell_models::find(dwell_models::MODELS, "peasant").unwrap().parts;
+            let pairs = dwell_models::part_remap(parts.as_ref(), &npc(99).colours);
             assert_eq!(a.remap, crate::render::skinned::remap_floats(&pairs));
             // Some other variant draws differently (the seed picks per part).
             assert!((0..32).any(|v| creature_draw(ch, &view(Some(npc(v))), [1.0, 0.0], 0.0).0.remap != a.remap));

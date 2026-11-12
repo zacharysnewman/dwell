@@ -15,16 +15,26 @@ Suspects: the light-shaft pass marches at reduced resolution with a per-pixel di
 Bayer pattern) and is composited without a blur, temporal accumulation or a depth-aware upsample, so the dither
 pattern itself shows; or its accumulation's history is rejected every frame. Fix like #90's clouds: blue-noise
 jitter, temporal accumulation with a clamped history, a depth-aware (bilateral) blur/upsample.
-
-### 96. Villagers' faces are jet black, not their skin colour
-
-Owner, 2026-11-12: "Why do all the villagers look like their faces are jet black? Not even matching the rest of
-their skin color?" Every villager's face draws black regardless of its skin variant. Suspects: the face's colours in
-the Peasant GLB snap to a palette stop the villager's `skin` colour part doesn't map (its `from` is `skin_fair`, the
-face a different stop or a shade the recolour misses, or a utility/never-snap colour that the NPC pass reads as 0);
-the hat repaint (`repaint` hair_brown → wool_yellow with minY/beyond/above) catching the face; the NPC draw's colour
-table missing an entry (index out of range → black); or the face's normals inverted at the default model detail.
-Check whether your own body/other players (the same model, no recolour) show it too.
+Owner, 2026-11-12 (later): "Oh that dithering is definitely cloud related." So the volumetric clouds' composite over
+the scene is the first suspect (the pattern covers trees and ground in front of the clouds), the shafts second.
+**Fixed in code (2026-11-12, branch `claude/shaft-dither`), the in-game look left for a local check:**
+- **Clouds (the cause the owner saw):** the composite's depth-aware upsample (`upsampled_clouds`) normalised its weights,
+  so where none of a pixel's four ½- or ¼-resolution texels matched its scene, the fallback's tiny weights became the
+  whole cloud of their marches. Among leaves every texel holds a gap of sky, so its march runs past the leaves to the
+  sky's reach and none matches a leaf pixel: the cloud *behind* the tree drew *over* it, in the texel grid's and the
+  gaps' pattern, jittered frame to frame. Now a fallback texel whose first cloud is past the pixel's scene lends its
+  weight with no cloud (`dwell_cloud_upsample_split`, twin `upsample_cover`; CLOUDS.md §9.6).
+  Test `a_canopy_with_sky_in_every_texel_draws_no_cloud_from_behind_it` (dwell-look `clouds`): failed on main ("a leaf
+  pixel drew 1 of the cloud behind it"), passes now.
+- **Shafts:** their per-texel jitter was a static interleaved gradient (a diagonal pattern) composited with one
+  bilinear tap. Now a 3 × 3 tile of the step's nine strata (`shaft_jitter`, `SHAFT_TILE`) and a 3 × 3 box of bilinear
+  taps in the composite (`shaft_blur`, `SHAFT_BLUR`): nine times the steps where the scene is smooth, no history (the
+  shafts are a screen-space blur toward the light, the same in front of a silhouette as beside it, so no depth test).
+  Cost: 8 more bilinear taps a pixel in the composite, only while shafts draw; the pass is unchanged. Test
+  `the_composited_shafts_behind_a_tree_show_no_dither_pattern` (dwell-look `shafts`): the dither seen (the composite
+  less the same composite of the converged glow) behind a fixture tree failed at the raw pass's on main and is now
+  under a quarter of it; dwell-client pins the shader to the twins.
+Move to Fixed once the owner's look at a low sun behind clouds and a tree confirms it.
 
 ### 92. Downhill water shows edge triangles and thin lines at its ½ m level steps
 
@@ -472,6 +482,46 @@ draws them, over the ground); the near chunks are unchanged. Test `lod_mesher_te
 off: every column's top covered at the ground's height, and trees off meshes exactly as the treeless ground, so no
 seam a neighbour section's LOD meets changes), on both faces: red (holes at every trunk) → green. Not checked:
 the in-game look from high up at night (local, a GPU).
+
+### 98. `dwell-mesh`'s face-parity test fails on face B at a leaf card's packed normal (fixed after 0.54.173)
+
+Owner's brief, 2026-11-12: "`cargo test -p dwell-mesh` a_chunk_meshes_the_same_face_local_on_either_face::b fails on
+main (\"cutout plants\"), reported by two sessions." Suspected: 6578783's Tall grass density (a per-cell hash not
+face-local) or the faded-plant drop. Cause: neither; the test fails the same at e9b27e2, before 6578783. The
+differing value is a leaf card's `plants.y`, its plane normal octahedral-packed (#78's far-side cull, `card_speed`).
+Two parts: the test's `local_mesh` turned positions and normals face-local but not the packed normal; and the
+packing's 2047-step grid is odd, so the octahedral fold falls between grid points and face B's mirror (unpack, flip
+y, re-pack in `flip_arrays_y`) drifted a step from face A's (-786733 vs -786734). Fixed: the grid is 2048 steps
+(`leaves::CARD_GRID`, radix 2049, the WGSL `card_normal` with it), the square's folded edges and corners packed one
+way, and `local_mesh` un-flips the packed normal. Tests: the parity test (red → green), and
+`a_leaf_cards_packed_normal_flips_exactly` (red on the old grid: a flip and back changed the bits).
+
+### 96. Villagers' faces are jet black, not their skin colour (fixed after 0.54.171)
+
+Owner, 2026-11-12: "Why do all the villagers look like their faces are jet black? Not even matching the rest of
+their skin color?" Then: "Oh maybe not all of them, but their hair and faces are really crazy looking." and "I think
+some of the clothes and hat vertices are being assigned incorrectly (like they should be face and hair)." And: "You
+should have tooling for debugging this and setting up a model so it can be retextured" (WORK_QUEUE item 43).
+- **Cause:** two. (1) The GLBs' vertex colours are linear (glTF `COLOR_0`) and the skinned shader read them as sRGB
+  bytes, decoding them a second time: every skinned model drew darker than its palette and the dark ramps near
+  black — a skin_deep villager's face at a sixteenth of its brightness, skin_brown at a third. Your own body and the
+  other players drew darker too, but in skin_fair it reads as skin. (2) The villager's colour parts recoloured by
+  colour, not by part: the hat's repaint by height (hair_brown → wool_yellow above 1.4 m and out past 16 cm) had
+  caught the hair's fringe, so the fringe took the hat's colour; the neck (skin_tan) and the hair's shading
+  (skin_brown, soil) kept the model's colours whatever the variant.
+- **Fix:** the vertices carry sRGB bytes (`skinned::vertex_bytes` through `dwell_models::linear_to_srgb`), and a
+  **part map** per model (`shared/models/parts/peasant.json`, `shared/models/parts.mjs`: a part a vertex, seeded
+  from the mesh: the hat and the hair are islands of their own, the skin, shirt and trousers by colour on the body)
+  is what an NPC's colours recolour (each vertex's part in its colour's alpha byte; the part's new ramp at the
+  vertex's shade). The repaint is by part now, and gives the fringe its hair_brown back. `parts.mjs --render` draws
+  a part map to PNGs, `--stats` counts it.
+- **Tests:** `every_villager_variant_draws_its_face_in_its_skin_and_its_hair_in_its_hair` (dwell-client,
+  render/skinned.rs): at every detail level and 64 variants, by position, the face draws the variant's skin as
+  bright as its ramp, the back of the head its hair, no head vertex is clothes, the hat is only its brim and crown.
+  The same check run on main's pipeline (colour-matched remap, linear bytes) failed: a skin_deep face drew at
+  luminance 0.0044 against the ramp's 0.071, and 5 fringe vertices carried the hat's wool_yellow at detail 1. Also
+  gen.test.mjs (the part map's checks, the fixture's part map by data alone, the repaint by part, the Peasant's
+  islands) and dwell-models' `a_part_map_is_added_by_data_alone`.
 
 ### 94. Jumping into a tree's leaves rubber-bands you toward the ground until you back out (fixed after 0.54.14x)
 

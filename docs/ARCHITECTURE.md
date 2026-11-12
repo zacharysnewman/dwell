@@ -387,6 +387,8 @@ There are **no official game servers**; players host (ADR 0003, details in §10)
                      headless, run by hand from the unpacked packs) + gen.mjs (validates against
                      the GLBs and the palette, → Rust for dwell-models), fixtures/ (the two-joint
                      test model and its maker), gen.test.mjs (CHARACTERS.md §11, ADR 0070);
+                     parts/ + parts.mjs (each model's part map: a part a vertex, what an NPC's
+                     colours recolour; seeded from the mesh, rendered to PNGs; CHARACTERS.md §11.11);
                      props.json + glb/props/ (the static props: tools, weapons, containers, … by
                      category, sizes validated; import.mjs --props with blender_props.py; ADR 0070 §8).
 /shared/brushes      brushes.json (brush presets and the game modes' brush policy) + gen.mjs
@@ -3675,7 +3677,9 @@ in 0.48.2.
   `rgba16float` buffer (rgb the placed and held lights' glow in its colours, a the sun's, moon's or fluid's) at the tier's share of the drawing buffer (Settings → Graphics → Light shafts:
   High ½ per axis and 24 samples, Low ¼ and 12, Off none; stored in `dwell.shafts`, High on every
   device; the CPU adapter draws none, `shafts_for`; `?shafts=` overrides it for the bench), reading the
-  scene's colour and view depth through `frame::scene_read_layout`; the composite samples it filtered
+  scene's colour and view depth through `frame::scene_read_layout`; the composite samples it filtered,
+  a 3 × 3 box of bilinear taps a texel apart that averages the pass's 3 × 3 tile of sample strata
+  (`shaft_jitter`, `shaft_blur`: nine times the steps, no history; BUGS.md #97)
   (scene group bindings 2 and 3, `with_shafts` inside `composite_pixel`) and screens it over the
   picture. In the air a radial blur toward the sun's (by night faintly the moon's) screen point over
   the open sky, faded by the light's height and off screen (`dwell_look::shafts::air_weight`); under a

@@ -344,6 +344,12 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    wind shear; the light march on the base shape only. CPU twin and tests (flat base, rounded top, anvil,
    coverage 0, edge-only erosion, tiling, a fixture type by data, both faces, naga). Cost read from the shader:
    Medium ≤ 7.4k ALU a texel (was 5.3k), High ≤ 10.5k (was 7.6k).
+   Owner, 2026-11-12 (BUGS.md #97): **"Volumetric lighting also has some weird dithering where the light shafts look
+   pixelated. Not sure if this is a bug, a blending problem, or something else."** Then: **"Oh that dithering is
+   definitely cloud related."** Built (branch `claude/shaft-dither`): the clouds' composite no longer hands a near
+   pixel (leaves among sky gaps) the cloud behind it (CLOUDS.md §9.6), and the shafts' jitter is a 3 × 3 tile of
+   strata averaged by the composite's 3 × 3 box (was a static interleaved gradient). Next (local): the look at a
+   low sun behind clouds and a tree.
    Owner, 2026-11-12 (BUGS.md #90): **"The clouds also look really badly dithered when they overlap? I think
    mostly when you get to their level? Looks very pixelated."** Asked for in the same work: blue-noise jitter, a
    depth-aware bilateral upsample, neighbourhood clamping instead of history rejection near the layer, more
@@ -370,6 +376,15 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    almost looked 3D"** — compare the deck as it was before the volumetric work (before 93fd6c26, e.g. at
    122b0f0e) with today's deck term by term (fake relief/normals from the noise, self-shadowing toward the sun,
    rim/silver light, the dark undersides, the sunset ramp) and restore what was lost.
+   **Built (2026-11-12, cloud, branch `claude/deck-lighting-lp3c01`, CLOUDS.md §10):** the shading code was never changed;
+   what changed is which deck shows. Before the volume, desktops drew the deck at `high` (5 octaves and a
+   self-shadow sample toward the sun); since, the sky's deck is only Low (phones, `?clouds=low`, and while the
+   volume's noise bakes), which never took the sample, so its light was a function of density alone: no sun side,
+   grey-white cores. The sample is now data on every tier (`light.lowShadowOctaves` 2 on Low,
+   `light.shadowOctaves` 5 for Medium/High's deck in reflections); Low 7 → 9 noise evaluations a pixel (old
+   desktop 14). CPU reference renders (`examples/deck_lighting.rs`) and tests on both faces: Low's sun side vs far
+   side +0.010 → +0.209 at 5°, cores 0.521 → 0.264 lit at 70° (old desktop +0.155, 0.286). Next (local): the look
+   in game at `?clouds=low` and `gpu.composite` on Low before/after.
    **Built (2026-11-12, cloud, branch `claude/cloud-golden-hour-zjl391`, CLOUDS.md §9.8):** the tint was lost in
    the ambient: the deck warms its whole colour at a low sun, the volume only the sun's light, and a volume
    sample's light is mostly the cool sky's. Now the shade (sky light and ground bounce) takes the deck's warm
@@ -1396,6 +1411,13 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
 
 ## Done
 
+- **dwell-mesh's face-B parity test green (owner's brief 2026-11-12: "a_chunk_meshes_the_same_face_local_on_either_face::b
+  fails on main (\"cutout plants\"), reported by two sessions … fix the cause at the source so face B's plants are face
+  A's mirror … keep the density setting's behaviour"):** BUGS.md #98. Not the Tall grass density (6578783: cleared,
+  the test failed before it, and `plant_kept` hashes world cells only for a 0–100 % thinning); a leaf card's packed
+  normal drifted a grid step on face B's mirror. The packing's grid is now even, so face B's cards are face A's
+  mirror to the bit.
+
 - **Main's tests green again (owner 2026-11-12: "make main's tests green again (tests/fixes only)"):**
   four stale expectations, no code bugs. `checks.ts`'s areas lacked `shared/look/bloom.mjs` (render) and
   `src/theater/` (ui); the textures test's known palette deviations gained obsidian's near-black shadow
@@ -1657,6 +1679,13 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    distinct colours (front/side/back, rotate), paints vertices into parts, previews the creature's colour variants
    (creatures.json `colours`), and exports the part map file the game reads (the recolour by part, not by colour).
    Order: bug #96's fix lands the part map format and the game reading it; then the page.
+   **First half built with bug #96's fix (after 0.54.171):** the part map format (`shared/models/parts/<model>.json`,
+   models.json `parts`), `shared/models/parts.mjs` (`--seed` from rules: mesh island near a point, colour ramp, joint
+   weight, height; `--render` front/side/back PNGs; `--stats`), gen.mjs's checks (vertex count, known parts, every
+   NPC colour part a part of its model) and the game recolouring by part (CHARACTERS.md §11.11). Bug #96's owner
+   follow-ups, 2026-11-12: "Oh maybe not all of them, but their hair and faces are really crazy looking." / "I think
+   some of the clothes and hat vertices are being assigned incorrectly (like they should be face and hair)."
+   Left: the painter page.
 
 ## Future (needs owner answers)
 
