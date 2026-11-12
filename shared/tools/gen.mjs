@@ -257,6 +257,8 @@ export function validateDurability(d, items, soundEvents) {
  * (null: it can't be broken so), and per tool class (`breaking.classes`' keys) or item its hits, an
  * item's over its class's. A block without `damage` breaks in one hit, as before. */
 const LOOKS = ['shards', 'scoops', 'chips'];
+/** A carved mark's height field (BLOCK_DAMAGE.md §6.2): a smooth bowl, or angular facets. */
+const PROFILES = ['bowl', 'facets'];
 
 export function validateDamage(blocks, items, breaking) {
   const classes = new Set(Object.keys(breaking?.classes ?? {}).filter((k) => k[0] !== '$'));
@@ -280,11 +282,17 @@ export function validateDamage(blocks, items, breaking) {
     // computed per pixel (BLOCK_DAMAGE.md §6.1): `rim` (optional, m; default 0.012) the loose soil
     // raised round it, `parallax` (optional, steps 0–8; default 6) the texture's march into the dent
     // (0: lit only; the Low tier marches none), `darken` (optional, 0–1; default 0.35) the damp floor.
+    // The carved mesh (BLOCK_DAMAGE.md §6.2, WORK_QUEUE item 18: the struck face meshed with the mark
+    // cut in): `profile` (optional; `bowl` | `facets`, default bowl for scoops, facets otherwise) the
+    // height field, `facets` (optional, 3–8; default 5) a shard's facets round its apex, `grid`
+    // (optional, 2–16; default 8) the dent's grid per side, `triangles` (optional, 128–2048; default
+    // 256) the cell's triangle budget (its struck faces share it; the grid is coarsened to fit; 128
+    // fits four struck faces at the coarsest grid).
     let look = null;
     if (d.look !== undefined) {
       const lat = `${at}.look`;
       if (d.look === null || typeof d.look !== 'object' || Array.isArray(d.look)) fail(`${lat} must be an object`);
-      known(d.look, ['kind', 'size', 'color', 'crack', 'depth', 'rim', 'parallax', 'darken'], lat);
+      known(d.look, ['kind', 'size', 'color', 'crack', 'depth', 'rim', 'parallax', 'darken', 'profile', 'facets', 'grid', 'triangles'], lat);
       if (!LOOKS.includes(d.look.kind)) fail(`${lat}.kind must be one of ${LOOKS.join(', ')}`);
       if (!(num(d.look.size) && d.look.size >= 0.05 && d.look.size <= 0.9)) fail(`${lat}.size must be a number in [0.05, 0.9]`);
       for (const c of ['color', 'crack']) if (!/^#[0-9a-f]{6}$/i.test(d.look[c] ?? '')) fail(`${lat}.${c} must be a #rrggbb colour`);
@@ -292,7 +300,24 @@ export function validateDamage(blocks, items, breaking) {
       if (d.look.rim !== undefined && !(num(d.look.rim) && d.look.rim >= 0 && d.look.rim <= 0.03)) fail(`${lat}.rim must be a number in [0, 0.03] (m)`);
       if (d.look.parallax !== undefined && !(Number.isInteger(d.look.parallax) && d.look.parallax >= 0 && d.look.parallax <= 8)) fail(`${lat}.parallax must be a whole number of steps from 0 to 8`);
       if (d.look.darken !== undefined && !(num(d.look.darken) && d.look.darken >= 0 && d.look.darken <= 1)) fail(`${lat}.darken must be a number in [0, 1]`);
-      look = { ...d.look, depth: d.look.depth ?? 0.1, rim: d.look.rim ?? 0.012, parallax: d.look.parallax ?? 6, darken: d.look.darken ?? 0.35 };
+      if (d.look.profile !== undefined && !PROFILES.includes(d.look.profile)) fail(`${lat}.profile must be one of ${PROFILES.join(', ')}`);
+      const whole = (k, lo, hi) => {
+        if (d.look[k] !== undefined && !(Number.isInteger(d.look[k]) && d.look[k] >= lo && d.look[k] <= hi)) fail(`${lat}.${k} must be a whole number from ${lo} to ${hi}`);
+      };
+      whole('facets', 3, 8);
+      whole('grid', 2, 16);
+      whole('triangles', 128, 2048);
+      look = {
+        ...d.look,
+        depth: d.look.depth ?? 0.1,
+        rim: d.look.rim ?? 0.012,
+        parallax: d.look.parallax ?? 6,
+        darken: d.look.darken ?? 0.35,
+        profile: d.look.profile ?? (d.look.kind === 'scoops' ? 'bowl' : 'facets'),
+        facets: d.look.facets ?? 5,
+        grid: d.look.grid ?? 8,
+        triangles: d.look.triangles ?? 256,
+      };
     }
     // The chips a hit knocks out of it (the client's particles, sounds round 2b): stone grey
     // chips, soil clods; none: no particles.
@@ -385,7 +410,7 @@ const swingRust = (s) =>
   `SwingDef { windup_s: ${f64(s.windupS)}, active_s: ${f64(s.activeS)}, hit_stop_s: ${f64(s.hitStopS)}, recover_hit_s: ${f64(s.recoverHitS)}, recover_miss_s: ${f64(s.recoverMissS)}, reach_m: ${f64(s.reachM)}, arc_deg: ${f64(s.arcDeg)}, samples: ${s.samples}, kick_deg: ${f64(s.kickDeg)}, stamina_cost: ${f64(s.staminaCost)}, swish: ${optStr(s.swish)}, bounce: ${optStr(s.bounce)}, rustle: ${optStr(s.rustle)}, rustle_leaves: ${s.rustleLeaves} }`;
 
 export function toolsRust(d) {
-  const rs = [`// ${header}`, '', 'use crate::chopping::{BlockDamageDef, BreakTool, DamageLook, DamageLookKind, Chips, CutLook, Leaves, Sway, SwingDef, ToolDef, ToolKind, WoodDef, Chop2Wood};', 'use crate::inventory::{DropChoice, DropRule};', ''];
+  const rs = [`// ${header}`, '', 'use crate::chopping::{BlockDamageDef, BreakTool, CarveProfile, DamageLook, DamageLookKind, Chips, CutLook, Leaves, Sway, SwingDef, ToolDef, ToolKind, WoodDef, Chop2Wood};', 'use crate::inventory::{DropChoice, DropRule};', ''];
   rs.push('/// Whether the chopping prototype (`chop2`, WORK_QUEUE item 7) is on by default.');
   rs.push(`pub const CHOP2_DEFAULT: bool = ${d.chop2.enabled};`);
   rs.push('');
@@ -423,7 +448,7 @@ export function toolsRust(d) {
   rs.push('');
   rs.push("/// Each block's hits to destroy (its `damage`): by bare hands, and by tool class or item.");
   rs.push('pub static BLOCK_DAMAGE: &[BlockDamageDef] = &[');
-  for (const b of d.damage) rs.push(`    BlockDamageDef { block: "${b.block}", default: ${b.default === null ? 'None' : `Some(${b.default})`}, tools: &[${b.tools.map((t) => `("${t.tool}", ${t.hits})`).join(', ')}], look: ${b.look === null ? 'None' : `Some(DamageLook { kind: DamageLookKind::${b.look.kind[0].toUpperCase() + b.look.kind.slice(1)}, size: ${f64(b.look.size)}, color: [${rgb(b.look.color).join(', ')}], crack: [${rgb(b.look.crack).join(', ')}], depth: ${f64(b.look.depth)}, rim: ${f64(b.look.rim)}, parallax: ${b.look.parallax}, darken: ${f64(b.look.darken)} })`}, chips: ${b.chips === null ? 'None' : `Some(Chips { count: ${b.chips.count}, color: [${rgb(b.chips.color).join(', ')}], speed: ${f64(b.chips.speed)}, size: ${f64(b.chips.size)} })`} },`);
+  for (const b of d.damage) rs.push(`    BlockDamageDef { block: "${b.block}", default: ${b.default === null ? 'None' : `Some(${b.default})`}, tools: &[${b.tools.map((t) => `("${t.tool}", ${t.hits})`).join(', ')}], look: ${b.look === null ? 'None' : `Some(DamageLook { kind: DamageLookKind::${b.look.kind[0].toUpperCase() + b.look.kind.slice(1)}, size: ${f64(b.look.size)}, color: [${rgb(b.look.color).join(', ')}], crack: [${rgb(b.look.crack).join(', ')}], depth: ${f64(b.look.depth)}, rim: ${f64(b.look.rim)}, parallax: ${b.look.parallax}, darken: ${f64(b.look.darken)}, profile: CarveProfile::${b.look.profile[0].toUpperCase() + b.look.profile.slice(1)}, facets: ${b.look.facets}, grid: ${b.look.grid}, triangles: ${b.look.triangles} })`}, chips: ${b.chips === null ? 'None' : `Some(Chips { count: ${b.chips.count}, color: [${rgb(b.chips.color).join(', ')}], speed: ${f64(b.chips.speed)}, size: ${f64(b.chips.size)} })`} },`);
   rs.push('];');
   rs.push('');
   rs.push('/// Tools that wear (`durability.items`): (item, hits it survives).');

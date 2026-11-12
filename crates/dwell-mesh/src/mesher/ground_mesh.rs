@@ -345,6 +345,28 @@ fn polygons(shape: GroundShape, [sx, sy, sz]: [f64; 3], base: bool) -> Vec<Vec<[
             }
             out
         }
+        GroundShape::Shard => {
+            // An uneven five-sided base and an off-centre tip: five angular facets, a flake.
+            const RADII: [f64; 5] = [1.0, 0.72, 0.94, 0.66, 0.88];
+            let base_ring: Vec<[f64; 3]> = (0..5)
+                .map(|i| {
+                    let a = f64::from(i as u8) * std::f64::consts::TAU / 5.0 + 0.3;
+                    [
+                        a.cos() * sx / 2.0 * RADII[i],
+                        0.0,
+                        a.sin() * sz / 2.0 * RADII[i],
+                    ]
+                })
+                .collect();
+            let tip = [0.18 * sx, sy, -0.12 * sz];
+            let mut out: Vec<Vec<[f64; 3]>> = (0..5)
+                .map(|i| vec![base_ring[i], tip, base_ring[(i + 1) % 5]])
+                .collect();
+            if base {
+                out.push(base_ring);
+            }
+            out
+        }
         GroundShape::Lump => {
             // Three rings of a squat hexagon: a lump wider at its middle, rounded at the top.
             let ring = |y: f64, r: f64| -> Vec<[f64; 3]> {
@@ -517,7 +539,7 @@ mod tests {
     #[test]
     fn every_face_of_both_shapes_faces_outward() {
         // both-faces: item-local geometry, mirrored with the chunk's mesh.
-        for shape in [GroundShape::Rod, GroundShape::Lump] {
+        for shape in [GroundShape::Rod, GroundShape::Lump, GroundShape::Shard] {
             // (The cluster is lumps; a lump's faces are checked here.)
             let size = [0.4, 0.1, 0.2];
             let faces = polygons(shape, size, true);

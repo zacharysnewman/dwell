@@ -33,6 +33,15 @@ pub enum DamageLookKind {
     Chips,
 }
 
+/// A carved mark's height field (`damage.look.profile`, BLOCK_DAMAGE.md §6.2).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CarveProfile {
+    /// A smooth bowl (soils' scoops), lit by smooth normals.
+    Bowl,
+    /// Angular facets round an off-centre apex (stone's shards), each lit flat.
+    Facets,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct DamageLook {
     pub kind: DamageLookKind,
@@ -53,6 +62,15 @@ pub struct DamageLook {
     pub parallax: u32,
     /// How much darker its damp floor is (0–1; data `darken`, default 0.35).
     pub darken: f64,
+    /// The carved mesh's height field (data `profile`; default bowl for scoops, facets otherwise).
+    pub profile: CarveProfile,
+    /// A facet profile's facets round its apex (data `facets`, 3–8; default 5).
+    pub facets: u32,
+    /// The dent's grid per side at most (data `grid`, 2–16; default 8).
+    pub grid: u32,
+    /// The cell's triangle budget for its carved faces (data `triangles`, 128–2048; default 256): the grid is
+    /// coarsened until every struck face fits.
+    pub triangles: u32,
 }
 
 /// The damage look of a block, by name.

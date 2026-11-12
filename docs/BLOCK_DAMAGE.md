@@ -1,6 +1,7 @@
 # Block damage: pickaxe shards, shovel scoops
 
 **Status:** adopted ([ADR 0078](adr/0078-block-damage.md), 2026-11-10); D1 and D2 built (0.52.28, §5–6),
+the marks carved into the mesh and the pieces shaped as them (§6.2),
 D3 (tuning) to come. The owner's direction and answers are §1; §2 was the proposal's sketch,
 §5 is what D1 built.
 
@@ -188,6 +189,64 @@ scoop is a hollow computed per pixel, with no new geometry, pass or texture:
 - **Cracks** are no longer drawn on dug soil (shards and chips keep them).
 - **Not done:** the merge is limited to the four marks a cell keeps; the face's baked corner light is not
   carried into the quad (it is lit as an open face); the owner's look review.
+
+### 6.2 Carved marks and real pieces (WORK_QUEUE item 18, "both")
+
+Owner, 2026-11-11: "Remember with the digging, mining, chopping it should be a real 3D chunk, not a 2D
+decal"; asked whether the block's mesh should be carved or a real piece knocked off, the owner chose
+**both**. Built:
+
+- **(a) The mesh carved** (`mesher/damage_mesh.rs`, `mesher/relief.rs` `Carve`): a damaged opaque cube's
+  struck faces (those with a mark, visible, of a block with a `damage.look`) leave the greedy merge in
+  `mesh_cells`, keeping the corner light the greedy quad would have had. Each is meshed as a tensor grid:
+  the face's edges plus `grid` divisions over the marks' reach (flat strips round it), its vertices pushed
+  in along the face's inward normal by the height field:
+  - `profile: "bowl"` (soils' default): §6.1's merged bowls (`Dent`, smooth minimum of the marks'
+    distances) without the rim (a carve only cuts), smooth normals from the field's gradient, the
+    vertices shared;
+  - `profile: "facets"` (stone's default): per mark a shard of `facets` uneven corners round an
+    off-centre apex `depth` in (`Shard`, linear across each facet), the deepest where they overlap, each
+    triangle lit flat (its own vertices).
+  Width and depth grow with the damage (55 % → 100 %) as before. The uvs are the face's own (the
+  material runs on into the dent); the colour is the face's under the normal's tint, darker by
+  `darken` × the depth share; the light is the face's corners' interpolated, less 40 % at the floor.
+  The field is faded to 0 over 5 cm at the cell's edge, so **no boundary vertex moves**: the carved
+  face's outline is the face's, which the cell's other faces and the neighbours' greedy quads meet
+  (watertight; the grid's edge vertices are T-junctions on a straight edge, as greedy meshing makes
+  everywhere). No side walls are needed. Collision stays the full block. Face-local: a face-B chunk's
+  damaged cells are turned over (`face_local`) and meshed as face A's.
+- **Budget** (data): a cell's struck faces share `triangles` (default 256, 128–2048; 128 fits four faces
+  at the coarsest grid); `grid` (default 8, 2–16) is the most divisions, coarsened to fit
+  (`grid_for`: a face's grid is at most (g + 2)² quads). Validated by `shared/tools/gen.mjs`.
+- **Tiers:** the carve is drawn on every tier; the decals (§6) and the per-pixel relief quads (§6.1) are
+  no longer emitted. Decision: a carved cell is ~200 triangles in the chunk's own opaque mesh, cheaper on
+  Low and the CPU adapter than a per-pixel march, and real from every angle; the far LOD draws no damage.
+  The shader's relief code (`dent_*`) is unreached and kept until the owner's look review, then removed.
+- **Cracks** are not drawn on carved faces (they were decals over a now curved surface).
+- **Chopping:** the axe's notches and kerfs on logs were already real carved geometry (`carve.rs`, ADR
+  0067 §11): unchanged. No block uses the `chips` look today; one would carve facets by default.
+- **(b) The pieces:** each hit's drops (§5, §7: a stone pickaxe's hits drop one rock shard each, dirt's
+  a dirt clump) were already loose items drawn as 3D models from their item look (`look_mesh`), falling,
+  spinning and auto-picked up (ITEMS.md). Their shapes now match the chunk taken out: a new look shape
+  `shard` (`LookShape::Shard`, an uneven five-sided pyramid with an off-centre tip: five angular facets,
+  as the carved shard) for `dwell:rock_shard` (`[0.11, 0.05, 0.08]` m, inside the mark at full damage);
+  `dwell:dirt_clump` keeps the rounded `lump` (a clod); wood chunks come from felling and keep theirs.
+  Held, a shard is drawn as a lump is.
+- **Measured** (native, release, `damage_mesh::tests::fifty_damaged_cells_cost`): a chunk with 50
+  damaged stone and dirt cells, one to four struck faces each: 12,328 opaque triangles against 1,674
+  undamaged (+213 a cell), meshed in 7.8 ms against 4.3 ms (+3.4 ms, ~70 µs a cell). A hit remeshes one
+  chunk.
+- **Tests:** `dwell-mesh` `damage_mesh`: `a_carved_face_lies_inside_the_cell_below_the_face_by_its_height_field`
+  (both faces, dirt and stone: more than the cube's triangles, every vertex inside the cell, the top's
+  vertices below the face by exactly the field, as deep as the data), `a_carved_face_is_watertight_and_keeps_its_outline`
+  (both faces, top and sides, one hit, two merged, a mark at the edge: inner edges paired, open edges
+  exactly the face's outline on its plane), `a_cells_struck_faces_keep_to_its_triangle_budget`,
+  `a_fixture_material_by_data_alone_gets_its_facets` (seven flat-lit facets from a fixture's data);
+  `ground_mesh` the shard's faces face outward; `dwell-sim` `damage` a hit's piece is the `shard` look,
+  inside its mark; `shared/tools/gen.test.mjs` the new fields by a fixture and their bad values.
+- **Not done:** no browser check (cloud session, no GPU): the look of the carve and the shard in game is
+  for the owner's review (bench `dirt-relief` shows the same digs); the T-junction seams are not measured
+  on screen.
 
 ## 7. Pieces (0.52.46)
 

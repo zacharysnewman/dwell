@@ -108,7 +108,9 @@ pub fn held_item(item: &'static str, hold: Option<&'static str>) -> Held {
 pub fn look_item(shape: dwell_protocol::inventory::LookShape) -> Option<&'static str> {
     match shape {
         dwell_protocol::inventory::LookShape::Rod => Some("rod"),
-        dwell_protocol::inventory::LookShape::Lump => Some("lump"),
+        // A shard is held as a lump is: in the fist, its own tile and tint.
+        dwell_protocol::inventory::LookShape::Lump
+        | dwell_protocol::inventory::LookShape::Shard => Some("lump"),
         dwell_protocol::inventory::LookShape::Cluster => Some("cluster"),
         dwell_protocol::inventory::LookShape::Model => None,
     }

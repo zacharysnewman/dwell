@@ -78,7 +78,7 @@
     },
     {
       "name": "stone",
-      "damage": { "default": null, "pickaxe": 7, "look": { "kind": "shards", "size": 0.34, "color": "#e4ddcf", "crack": "#7a7266", "depth": 0.1 }, "chips": { "count": 7, "color": "#9a948c", "speed": 2.6, "size": 0.045 } },
+      "damage": { "default": null, "pickaxe": 7, "look": { "kind": "shards", "size": 0.34, "color": "#e4ddcf", "crack": "#7a7266", "depth": 0.1, "darken": 0.12 }, "chips": { "count": 7, "color": "#9a948c", "speed": 2.6, "size": 0.045 } },
       "drops": [{"item": "dwell:rock_shard", "count": 8}],
       "sound": "dwell:stone",
       "density": 2400,
@@ -345,7 +345,7 @@
     {
       "$comment": "The stored ramps (rampFamilies) at their own slots, as generated before the torch was added: blocks added after them keep every earlier state id (the worldgen goldens hash ids). Stone's are placeable: the hotbar's stone slopes (shared/items, owner 2026-10-30).",
       "name": "stone_ramp",
-      "damage": { "default": null, "pickaxe": 7, "look": { "kind": "shards", "size": 0.34, "color": "#e4ddcf", "crack": "#7a7266", "depth": 0.1 }, "chips": { "count": 7, "color": "#9a948c", "speed": 2.6, "size": 0.045 } },
+      "damage": { "default": null, "pickaxe": 7, "look": { "kind": "shards", "size": 0.34, "color": "#e4ddcf", "crack": "#7a7266", "depth": 0.1, "darken": 0.12 }, "chips": { "count": 7, "color": "#9a948c", "speed": 2.6, "size": 0.045 } },
       "family": "ramp",
       "of": "stone",
       "palette": "all"

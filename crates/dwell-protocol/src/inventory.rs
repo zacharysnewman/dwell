@@ -48,6 +48,9 @@ pub enum LookShape {
     /// A small heap of tiny lumps (several, in the look's footprint, the middle one on top):
     /// seeds.
     Cluster,
+    /// An angular flake (an uneven pyramid on a five-sided base, its tip off-centre): a rock shard
+    /// knocked off by a pickaxe's hit (BLOCK_DAMAGE.md §6.2), the piece the carved facet left.
+    Shard,
     /// A prop's own mesh (`look: { model }`, a prop of shared/models/props.json; ADR 0070 §8):
     /// its triangles and palette colours, untextured.
     Model,
