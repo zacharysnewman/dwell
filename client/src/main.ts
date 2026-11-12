@@ -1,3 +1,4 @@
+import { mapProgress } from './ui/mapProgress';
 import { buildInfo, channelOf, formatBuildInfo, recordedVersion } from './buildInfo';
 import { worldChoice } from './ui/worldChoices';
 import { skyOptions } from './ui/sky';
@@ -861,11 +862,20 @@ function mapDeps(): MapDeps {
       worldMapKeys(seed, worldgen || undefined, radiusScale === 1 ? undefined : radiusScale),
     build: workerBuilder(makeJobWorker),
     store: typeof indexedDB === 'undefined' ? null : new IndexedDbMapStore(),
-    onProgress: (ready, needed) => {
+    onProgress: (ready, needed, faces) => {
       const stages = bootLoading?.stages;
       const now = performance.now();
-      stages?.progress('worldMap', ready, needed, now);
+      // Inside each face's build too (BUGS.md #91): its step, and the bar moving with it.
+      const p = mapProgress(faces);
+      stages?.progress('worldMap', Math.max(ready, p.done), needed, now, p.detail);
       if (ready >= needed) stages?.end('worldMap', now);
+    },
+    onFailed: (message) => {
+      const stages = bootLoading?.stages;
+      const now = performance.now();
+      console.warn(`Dwell: a world map could not be shaped (${message})`);
+      stages?.progress('worldMap', 0, null, now, `failed (${message})`);
+      stages?.end('worldMap', now);
     },
   };
   return maps;

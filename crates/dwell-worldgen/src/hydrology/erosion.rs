@@ -36,7 +36,11 @@ pub fn erode(
     let dt = p.time_step;
     let shore = shore(grid, sea);
     let land: Vec<u32> = (0..len as u32).filter(|&i| !sea[i as usize]).collect();
-    for _ in 0..p.iterations {
+    for it in 0..p.iterations {
+        crate::progress::report(
+            crate::progress::MapStep::Erosion,
+            f64::from(it) / f64::from(p.iterations.max(1)),
+        );
         let f = flood(grid, h, sea, &shore);
         // Drainage area (m², rain-weighted), donors before receivers.
         for &c in &f.order {
@@ -76,6 +80,7 @@ pub fn erode(
         }
         talus(grid, cell, h, sea, &land, p);
     }
+    crate::progress::report(crate::progress::MapStep::Erosion, 1.0);
 }
 
 fn is_diagonal(grid: Grid, a: usize, b: usize) -> bool {

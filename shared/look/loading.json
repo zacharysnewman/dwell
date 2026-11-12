@@ -65,5 +65,16 @@
       { "id": "join", "label": "Joining the world" },
       { "id": "terrain", "label": "Loading the terrain", "progress": "count" }
     ]
+  },
+  "mapSteps": {
+    "$comment": "The steps of one face's world map build (BUGS.md #91: \"Doesn't indicate well what it's doing\"), reported by the builder by id as it runs (dwell-worldgen progress.rs MapStep, in this order: a Rust test fails when the two disagree) and shown on the worldMap stage's line as \"Shaping the world map — rivers (5/6), face 1 of 2\", the bar moving with each step's fraction. label: what the player reads, lower case, at most 16 characters.",
+    "list": [
+      { "id": "base", "label": "the land" },
+      { "id": "uplift", "label": "mountains" },
+      { "id": "erosion", "label": "erosion" },
+      { "id": "lakes", "label": "lakes" },
+      { "id": "rivers", "label": "rivers" },
+      { "id": "shores", "label": "shores" }
+    ]
   }
 }

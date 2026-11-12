@@ -508,6 +508,9 @@ fn sample_field(g: &BaseField, cell: i32) -> (Grid, f64, Vec<f64>) {
     let half = (n as i64 - 1) * cell / 2;
     let mut h = Vec::with_capacity(grid.len());
     for row in 0..n {
+        if row % 64 == 0 {
+            crate::progress::report(crate::progress::MapStep::Base, row as f64 / n as f64);
+        }
         for col in 0..n {
             let x = col as i64 * cell - half;
             let z = row as i64 * cell - half;
@@ -517,6 +520,7 @@ fn sample_field(g: &BaseField, cell: i32) -> (Grid, f64, Vec<f64>) {
             });
         }
     }
+    crate::progress::report(crate::progress::MapStep::Base, 1.0);
     (grid, x0, h)
 }
 
@@ -577,6 +581,7 @@ pub fn from_heights_with(
             }
         })
         .collect();
+    crate::progress::report(crate::progress::MapStep::Uplift, 0.0);
     let (uplift, spines, plates) = match &p.tectonics {
         None => (
             h.iter()
@@ -662,6 +667,7 @@ pub fn from_heights_with(
         (None, Rain::Uniform) => vec![1.0; len],
         (None, Rain::Orographic(o)) => rain::orographic(grid, cell, &h, &sea, seed, o),
     };
+    crate::progress::report(crate::progress::MapStep::Uplift, 1.0);
     erosion::erode(grid, cell, &mut h, &uplift, &erodibility, &rain, &sea, p);
     if let (Some(s), Some(u)) = (shield, &uneroded) {
         for i in 0..len {
@@ -670,8 +676,11 @@ pub fn from_heights_with(
             }
         }
     }
+    crate::progress::report(crate::progress::MapStep::Lakes, 0.0);
     lakes::remove_small_pits(grid, cell, &mut h, &sea, p);
     let d = lakes::drainage(grid, cell, &h, &sea);
+    crate::progress::report(crate::progress::MapStep::Lakes, 1.0);
+    crate::progress::report(crate::progress::MapStep::Rivers, 0.0);
     // Discharge (m³/s): rain over the drainage area, donors before receivers.
     let order = lakes::stack(grid, &d.receiver, &sea);
     debug_assert_eq!(order.len(), sea.iter().filter(|s| !**s).count());
@@ -701,6 +710,7 @@ pub fn from_heights_with(
         },
         p,
     );
+    crate::progress::report(crate::progress::MapStep::Rivers, 1.0);
     HydrologyMap {
         grid,
         cell,

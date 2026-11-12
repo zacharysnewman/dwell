@@ -193,8 +193,17 @@ pub fn generate(
         strength: t.apron_strength,
         width: t.apron_width,
     };
+    let index = SpineIndex::new(&spines, &apron);
+    let mut near: Vec<u32> = Vec::new();
+    let mut tests = 0u64;
     let mut strength = vec![0.0f64; len];
-    for &i in &land {
+    for (k, &i) in land.iter().enumerate() {
+        if k % 65_536 == 0 {
+            crate::progress::report(
+                crate::progress::MapStep::Uplift,
+                0.9 * k as f64 / land.len().max(1) as f64,
+            );
+        }
         let (x, z) = centre(grid, cell, x0, i);
         let mut s = t.plains;
         if !spines.is_empty() {
@@ -207,7 +216,17 @@ pub fn generate(
             } else {
                 (0.0, 0.0)
             };
-            s = s.max(range_strength(&spines, &apron, x + wx, z + wz));
+            index.near(x + wx, z + wz, &mut near);
+            tests += near
+                .iter()
+                .map(|&k| spines[k as usize].points.len() as u64 - 1)
+                .sum::<u64>();
+            s = s.max(range_strength(
+                near.iter().map(|&k| &spines[k as usize]),
+                &apron,
+                x + wx,
+                z + wz,
+            ));
         }
         let h = &t.highlands;
         if h.strength > 0.0 {
@@ -232,6 +251,7 @@ pub fn generate(
         let shelf = t.shelf_min + (t.shelf_max - t.shelf_min) * v;
         strength[i] = s * smooth01(coast[i] / shelf);
     }
+    SEGMENT_TESTS.with(|c| c.set(c.get() + tests));
     UpliftMap {
         strength,
         spines,
@@ -347,9 +367,110 @@ fn spines(r: &Ranges, seed: u64, reach: f64, coast_at: &dyn Fn(f64, f64) -> f64)
     out
 }
 
+thread_local! {
+    static SEGMENT_TESTS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// How many range-spine segments this thread's uplift layers have measured a cell against so far
+/// (the layer's cost, for a test's per-cell budget: BUGS.md #91).
+pub fn segment_tests() -> u64 {
+    SEGMENT_TESTS.with(std::cell::Cell::get)
+}
+
+/// The spines by where they reach (BUGS.md #91): a bigger world has ×100 the ranges, and every
+/// cell measured its distance to every segment of every one (a 10× face's uplift took 17 s
+/// natively). A spine reaches at most `max(width, apron.width)` m from its points (beyond it its
+/// bump and apron are exactly 0), so a cell needs only the spines whose box, grown by that, holds
+/// it: listed per square of `BUCKET` m, in their own order, the same strength exactly.
+struct SpineIndex {
+    x0: f64,
+    z0: f64,
+    nx: i64,
+    nz: i64,
+    lists: Vec<Vec<u32>>,
+}
+
+impl SpineIndex {
+    const BUCKET: f64 = 8000.0;
+
+    fn new(spines: &[Spine], apron: &Apron) -> Self {
+        let boxes: Vec<(f64, f64, f64, f64)> = spines
+            .iter()
+            .map(|sp| {
+                let reach = sp.width.max(apron.width);
+                let (mut a, mut b, mut c, mut d) = (
+                    f64::INFINITY,
+                    f64::INFINITY,
+                    f64::NEG_INFINITY,
+                    f64::NEG_INFINITY,
+                );
+                for &(x, z) in &sp.points {
+                    (a, b, c, d) = (a.min(x), b.min(z), c.max(x), d.max(z));
+                }
+                (a - reach, b - reach, c + reach, d + reach)
+            })
+            .collect();
+        if boxes.is_empty() {
+            return Self {
+                x0: 0.0,
+                z0: 0.0,
+                nx: 0,
+                nz: 0,
+                lists: Vec::new(),
+            };
+        }
+        let x0 = boxes.iter().map(|b| b.0).fold(f64::INFINITY, f64::min);
+        let z0 = boxes.iter().map(|b| b.1).fold(f64::INFINITY, f64::min);
+        let x1 = boxes.iter().map(|b| b.2).fold(f64::NEG_INFINITY, f64::max);
+        let z1 = boxes.iter().map(|b| b.3).fold(f64::NEG_INFINITY, f64::max);
+        let nx = ((x1 - x0) / Self::BUCKET).floor() as i64 + 1;
+        let nz = ((z1 - z0) / Self::BUCKET).floor() as i64 + 1;
+        let mut lists = vec![Vec::new(); (nx * nz) as usize];
+        for (k, b) in boxes.iter().enumerate() {
+            let (i0, j0) = (
+                ((b.0 - x0) / Self::BUCKET).floor() as i64,
+                ((b.1 - z0) / Self::BUCKET).floor() as i64,
+            );
+            let (i1, j1) = (
+                (((b.2 - x0) / Self::BUCKET).floor() as i64).min(nx - 1),
+                (((b.3 - z0) / Self::BUCKET).floor() as i64).min(nz - 1),
+            );
+            for j in j0..=j1 {
+                for i in i0..=i1 {
+                    lists[(j * nx + i) as usize].push(k as u32);
+                }
+            }
+        }
+        Self {
+            x0,
+            z0,
+            nx,
+            nz,
+            lists,
+        }
+    }
+
+    /// The spines that may reach (x, z), into `out` (in their order).
+    fn near(&self, x: f64, z: f64, out: &mut Vec<u32>) {
+        out.clear();
+        let (i, j) = (
+            ((x - self.x0) / Self::BUCKET).floor(),
+            ((z - self.z0) / Self::BUCKET).floor(),
+        );
+        if i >= 0.0 && j >= 0.0 && (i as i64) < self.nx && (j as i64) < self.nz {
+            out.extend_from_slice(&self.lists[(j as i64 * self.nx + i as i64) as usize]);
+        }
+    }
+}
+
 /// The strongest range at a point: a bump across its spine, tapered over the last quarter of its
 /// length at each end.
-fn range_strength(spines: &[Spine], apron: &Apron, x: f64, z: f64) -> f64 {
+fn range_strength<'a>(
+    spines: impl IntoIterator<Item = &'a Spine>,
+    apron: &Apron,
+    x: f64,
+    z: f64,
+) -> f64 {
     let mut best = 0.0f64;
     for sp in spines {
         let mut d2 = f64::INFINITY;

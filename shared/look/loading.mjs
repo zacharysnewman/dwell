@@ -28,7 +28,7 @@ const fail = (m) => {
 /** Checks the tunables; returns them. Throws naming the entry. */
 export function validateLoading(data, viewRadius = VIEW_RADIUS_CHUNKS) {
   if (typeof data !== 'object' || data === null || Array.isArray(data)) fail('(root) must be an object');
-  const keys = ['radiusChunks', 'timeoutS', 'respawnPreload', 'fade', 'estimate', 'stages'];
+  const keys = ['radiusChunks', 'timeoutS', 'respawnPreload', 'fade', 'estimate', 'stages', 'mapSteps'];
   for (const k of Object.keys(data)) if (k !== '$comment' && !keys.includes(k)) fail(`unknown entry ${k}`);
   for (const k of keys) if (!(k in data)) fail(`missing entry ${k}`);
   const r = data.radiusChunks;
@@ -45,7 +45,33 @@ export function validateLoading(data, viewRadius = VIEW_RADIUS_CHUNKS) {
   validateFade(data.fade);
   validateStages(data.stages);
   validateEstimate(data.estimate, data.stages);
+  validateMapSteps(data.mapSteps);
   return data;
+}
+
+/** The longest map step label (characters): it sits inside the worldMap stage's line. */
+export const MAP_STEP_LABEL_MAX = 16;
+
+/**
+ * Checks the world map build's steps (`mapSteps`, BUGS.md #91). Throws naming the entry. Their ids
+ * and order are the builder's (dwell-worldgen progress.rs, whose test checks them).
+ */
+function validateMapSteps(m) {
+  if (!isObject(m)) fail('mapSteps must be an object');
+  for (const k of Object.keys(m)) if (k !== '$comment' && k !== 'list') fail(`unknown entry mapSteps.${k}`);
+  if (!Array.isArray(m.list) || m.list.length === 0) fail('mapSteps.list must be a non-empty array');
+  const ids = new Set();
+  m.list.forEach((e, i) => {
+    const at = `mapSteps.list[${i}]`;
+    if (!isObject(e)) fail(`${at} must be an object`);
+    for (const k of Object.keys(e)) if (k !== 'id' && k !== 'label') fail(`unknown entry ${at}.${k}`);
+    if (typeof e.id !== 'string' || !/^[a-z][a-zA-Z0-9]*$/.test(e.id)) fail(`${at}.id must be lowerCamel`);
+    if (ids.has(e.id)) fail(`${at}: duplicate id ${e.id}`);
+    ids.add(e.id);
+    if (typeof e.label !== 'string' || e.label.trim() === '' || e.label.length > MAP_STEP_LABEL_MAX) {
+      fail(`mapSteps.list ${e.id}: label must be 1–${MAP_STEP_LABEL_MAX} characters, got ${JSON.stringify(e.label)}`);
+    }
+  });
 }
 
 /** Checks the respawn preload's entry (`respawnPreload`). Throws naming the entry. */
@@ -329,6 +355,11 @@ export function loadingTs(data) {
     '',
     '/** A stage running longer than this (s) is marked slow. */',
     `export const LOADING_STAGE_SLOW_S = ${data.stages.slowS};`,
+    '',
+    "/** A face's world map build's steps, in the builder's order (shared/look/loading.json `mapSteps`). */",
+    'export const MAP_STEPS: readonly { id: string; label: string }[] = [',
+    ...data.mapSteps.list.map((e) => `  { id: '${e.id}', label: ${JSON.stringify(e.label)} },`),
+    '];',
     '',
     ...estimateTs(data),
   ].join('\n');
