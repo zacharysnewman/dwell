@@ -202,18 +202,34 @@ pub(crate) struct Piece {
 
 /// The polygons of a leaf cell exposed on `ex`, with `leafy[i]` whether the neighbour on face `i`
 /// is a leaf and `nb_ex[i]` that neighbour's exposure, cut back by `s` (see the module docs).
+#[cfg(test)]
 pub(crate) fn pieces(ex: [bool; 6], leafy: [bool; 6], nb_ex: [[bool; 6]; 6], s: f64) -> Vec<Piece> {
-    pieces_of(ex, leafy, nb_ex, s, false)
+    pieces_of(ex, [false; 6], leafy, nb_ex, s, false)
+}
+
+/// [`pieces`], with `flush[i]` the faces lying flat against a block beside them (block data
+/// `leafFlush`, a log; WORK_QUEUE item 48): drawn whole, as `ex`'s are, but cut on no edge or
+/// corner, so the cuts of the edges along them end square against them. A flush face is not in
+/// `ex` (nor in a neighbour's `nb_ex`).
+pub(crate) fn flush_pieces(
+    ex: [bool; 6],
+    flush: [bool; 6],
+    leafy: [bool; 6],
+    nb_ex: [[bool; 6]; 6],
+    s: f64,
+) -> Vec<Piece> {
+    pieces_of(ex, flush, leafy, nb_ex, s, false)
 }
 
 /// The polygons of an octagonal column (a log cell at LOD) exposed on `ex`: its vertical edges cut
 /// by `s` where both sides are open, its open faces drawn.
 pub(crate) fn column_pieces(ex: [bool; 6], s: f64) -> Vec<Piece> {
-    pieces_of(ex, [false; 6], [[false; 6]; 6], s, true)
+    pieces_of(ex, [false; 6], [false; 6], [[false; 6]; 6], s, true)
 }
 
 fn pieces_of(
     ex: [bool; 6],
+    flush: [bool; 6],
     leafy: [bool; 6],
     nb_ex: [[bool; 6]; 6],
     s: f64,
@@ -226,7 +242,7 @@ fn pieces_of(
         for p in &mine {
             face = clip(&face, p.n, p.d);
         }
-        if ex[i] {
+        if ex[i] || flush[i] {
             if area(&face) > EPS {
                 out.push(Piece {
                     pts: face,
@@ -409,19 +425,30 @@ pub(super) fn leaf_voxel(
     };
     let inside = |c: [i32; 3]| c.iter().all(|&v| (-1..=N).contains(&v));
     let leafy_at = |c: [i32; 3]| inside(c) && cells.kind(c[0], c[1], c[2]).style.leafy;
-    let exposed_at = |c: [i32; 3]| -> [bool; 6] {
+    // What lies on each face of `c`: 0 open (cut there), 1 closed (a leaf, a covering cube, or
+    // unknown), 2 flush (a `leafFlush` block that doesn't cover it, a log: drawn, not cut).
+    let side_at = |c: [i32; 3]| -> [u8; 6] {
         std::array::from_fn(|i| {
             let o = nb(i, c);
             if !inside(o) {
                 // Past the padding: unknown, taken as leaf so no cut is guessed.
-                return false;
+                return 1;
             }
             let kn = cells.kind(o[0], o[1], o[2]);
             let covers = kn.occludes && kn.shape == super::Shape::Full && !kn.style.octagon;
-            !kn.style.leafy && !covers
+            if kn.style.leafy || covers {
+                1
+            } else if kn.style.leaf_flush && kn.shape == super::Shape::Full {
+                2
+            } else {
+                0
+            }
         })
     };
-    let ex = exposed_at(cell);
+    let exposed_at = |c: [i32; 3]| side_at(c).map(|k| k == 0);
+    let here = side_at(cell);
+    let ex = here.map(|k| k == 0);
+    let flush = here.map(|k| k == 2);
     let leafy: [bool; 6] = std::array::from_fn(|i| leafy_at(nb(i, cell)));
     let nb_ex: [[bool; 6]; 6] = std::array::from_fn(|i| {
         if leafy[i] {
@@ -430,7 +457,7 @@ pub(super) fn leaf_voxel(
             [false; 6]
         }
     });
-    let list = pieces(ex, leafy, nb_ex, LEAVES.chamfer);
+    let list = flush_pieces(ex, flush, leafy, nb_ex, LEAVES.chamfer);
     // The tree owning the cell tints it (ADR 0079); a placed leaf keeps its colour.
     let tint = cells.tint(cell);
     let first = b.vertex_count() as usize;

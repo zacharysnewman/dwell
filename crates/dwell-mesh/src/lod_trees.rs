@@ -13,7 +13,7 @@ use dwell_look::normal_tint;
 use dwell_world::tree_tint::Tint;
 use dwell_world::{CELL_H, normal_to_m};
 
-use crate::mesher::leaves::{Crowns, Piece, canopy_normal, column_pieces, pieces};
+use crate::mesher::leaves::{Crowns, Piece, canopy_normal, column_pieces, flush_pieces};
 use crate::style::material_style;
 
 const N: i32 = dwell_world::lod::SECTION_CELLS;
@@ -85,9 +85,23 @@ pub(crate) fn tree_cells(
             }
             let n = at(o[0], o[1], o[2]);
             let k = tree_kind(n);
-            // Open beside air, a liquid, or a log (whose corners are open); a leaf, or any other
-            // solid (a full cube at LOD), closes it.
-            n == 0 || k == 2 || (k != 1 && crate::lod_mesher::is_liquid(n))
+            // Open beside air, a liquid, or a log (whose corners are open) that leaves don't lie
+            // flush against; a leaf, or any other solid (a full cube at LOD), closes it.
+            n == 0
+                || (k == 2 && !material_style(n).leaf_flush)
+                || (k != 1 && crate::lod_mesher::is_liquid(n))
+        })
+    };
+    // A leaf's faces lying flat against a log (block data `leafFlush`, WORK_QUEUE item 48): drawn
+    // whole, cut on no edge, as the chunk mesher's leaves.
+    let flush_at = |c: [i32; 3]| -> [bool; 6] {
+        std::array::from_fn(|i| {
+            let o = nb(i, c);
+            if !inside(o) {
+                return false;
+            }
+            let n = at(o[0], o[1], o[2]);
+            tree_kind(n) == 2 && material_style(n).leaf_flush
         })
     };
     for y in 0..N {
@@ -112,7 +126,7 @@ pub(crate) fn tree_cells(
                             [false; 6]
                         }
                     });
-                    pieces(ex, leafy, nb_ex, LEAVES.chamfer)
+                    flush_pieces(ex, flush_at(c), leafy, nb_ex, LEAVES.chamfer)
                 } else {
                     // A log's ends are closed by the log above and below; it is open on its sides
                     // where nothing solid stands, and drawn square where a log joins it.
