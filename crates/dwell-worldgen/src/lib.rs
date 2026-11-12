@@ -17,6 +17,7 @@ pub mod grids;
 pub mod growth;
 pub mod home_far;
 pub mod hydrology;
+pub mod impostor;
 pub mod island;
 pub mod noise;
 pub mod placements;
