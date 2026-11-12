@@ -22,6 +22,26 @@
       ]
     },
     {
+      "name": "forest-edge-ablate",
+      "notes": "What the forest edge's GPU frame is made of (WORK_QUEUE items 31/32): forest:edge at ?preset=high, 4 s records of the frame with each suspect off in turn and back on between: the cutout meshes (leaf cards and tall grass, `grass` false hides them), sun shadows, the full-detail distance 192 → 96 m.",
+      "query": { "worldgen": "test:forest", "seed": "0", "fresh": "1", "preset": "high" },
+      "steps": [
+        { "do": "settle", "maxS": 120 },
+        { "do": "spot", "spot": "forest:edge", "name": "edge" },
+        { "do": "mark" }, { "do": "wait", "s": 4 }, { "do": "record", "name": "base" },
+        { "do": "view", "grass": false },
+        { "do": "wait", "s": 1 }, { "do": "mark" }, { "do": "wait", "s": 4 }, { "do": "record", "name": "cutout-off" },
+        { "do": "view", "grass": true },
+        { "do": "shadows", "quality": "off" },
+        { "do": "wait", "s": 1 }, { "do": "mark" }, { "do": "wait", "s": 4 }, { "do": "record", "name": "shadows-off" },
+        { "do": "shadows", "quality": "high" },
+        { "do": "view", "distanceM": 96 },
+        { "do": "wait", "s": 6 }, { "do": "mark" }, { "do": "wait", "s": 4 }, { "do": "record", "name": "distance-96" },
+        { "do": "view", "distanceM": 192 },
+        { "do": "wait", "s": 6 }, { "do": "mark" }, { "do": "wait", "s": 4 }, { "do": "record", "name": "base-2" }
+      ]
+    },
+    {
       "name": "lava-burn",
       "notes": "Burning (VOLCANOES.md §6.3): an adventure-mode player on the starter's summit, the lake filled fast, the player put into the lava (`goto` the nearest dwell:lava): the red-orange screen edge and the sizzle.",
       "query": { "worldgen": "test:starter", "seed": "0", "fresh": "1", "mode": "adventure", "at": "30008.5,240,-8000.5" },
