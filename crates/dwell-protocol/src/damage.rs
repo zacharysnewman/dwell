@@ -147,6 +147,13 @@ pub fn hits_to_break(block: &str, held: Option<&str>) -> Option<u32> {
     hits_to_break_in(BLOCK_DAMAGE, BREAK_TOOLS, block, held)
 }
 
+/// Whether `block` takes hits to break (it has a `damage` entry in the block data). A wood with one
+/// (the log; WORK_QUEUE item 51, owner 2026-11-12: "Like the others, felling on top") is hit by the
+/// axe through block damage, not cut ([`crate::chopping::Cut`]).
+pub fn takes_damage(block: &str) -> bool {
+    BLOCK_DAMAGE.iter().any(|d| d.block == block)
+}
+
 /// A cell's volume (m³): 1 × ½ × 1 m (`dwell_world::CELL_H`; a dwell-mesh test pins the two).
 pub const CELL_M3: f64 = 0.5;
 /// The share of a block's volume carved away and flown off when it breaks (owner, 2026-11-12: "the

@@ -3771,7 +3771,11 @@ impl<S: Scene> Game<S> {
             if let Some(axe) = axe {
                 let at = point.map(f64::from);
                 let n = crate::chips::struck_normal(dwell_world::cell_of_pos(at), at);
-                let bite = dwell_protocol::chopping::chop_bite_m3(axe, w);
+                // A wood hit through block damage (the log, WORK_QUEUE item 51): its bite rule.
+                let bite = dwell_protocol::damage::takes_damage(name)
+                    .then(|| dwell_protocol::damage::bite_m3_of(name, Some(axe.name)))
+                    .flatten()
+                    .unwrap_or_else(|| dwell_protocol::chopping::chop_bite_m3(axe, w));
                 let ids = self.hit_shards.burst(name, n, at, now_ms / 1000.0);
                 if !ids.is_empty() {
                     let f = dwell_world::FaceFrame::at_height(at[1]);

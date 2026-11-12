@@ -1961,6 +1961,21 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    (`take.test.mjs`, in CI): the manifest validates, shot selection and the cache, and the generated plan equals v4's
    hand-written one. Not yet run against the real browser (the first use is the v5 re-record, on the Mac).
 
+51. **The axe behaves like the other tools** (owner 2026-11-12: **"Also the axe doesn't behave like the other tools. I
+   think it should. What about how it's designed is different currently?"**). Explained: today the axe on a log uses a
+   separate chopping system (ADR 0067: no hits-to-break; a notch cut across the trunk in bands; after ~11 swings, 5
+   metal, the tree above falls as a body; the log block never breaks), while every other tool uses block damage
+   (BLOCK_DAMAGE.md: hits to break per tool, each hit carves a bite of ½ the block ÷ hits, chips fly, cracks spread,
+   at 50 % the block breaks and drops). Owner's answer: **"Like the others, felling on top"** — logs take block
+   damage like stone or dirt (hits to break by tool, bites, chips, cracks; the block breaks and drops a log), and
+   breaking a trunk's base log fells the tree above as a body, as today. **Built 2026-11-12** (cloud, branch
+   `claude/axe-like-tools`), waiting on the owner's look in game: the log's `damage` data (stone axe 10 hits,
+   metal 5), each axe hit a block-damage hit (a mark, a wear, its share of the 8 wood), the last breaking the log
+   and felling the trunk above as one body toward the side struck; a lying log the same hits (bucking); the log
+   drawn with the axe's head-sized bites at its marks grown by the bite rule, the wood cracks by the fraction. No
+   new cuts (no notch, kerfs or gash wedges); older saves' cuts still load and draw, the next hit carrying their
+   progress into damage. Additive: no new compatibility line (docs/BLOCK_DAMAGE.md §12, ADR 0067 note).
+
 ## Future (needs owner answers)
 
 - **Waterlogging** (owner 2026-11-12: "Eventually we'll want to make it so some blocks if they don't move for a little
