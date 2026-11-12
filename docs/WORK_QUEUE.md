@@ -1007,6 +1007,9 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    remap now takes six pairs (`MAX_REMAP` 6). Seen in a group shot of eight villagers: each hat's colour
    is now its own, separate from the hair. The hat's band keeps the pack's orange triangle pattern.
 
+   Owner, 2026-11-12: **"Villagers should be able to hurt players."** A villager's sword strike that connects on a
+   player damages them (through the damage rules: a new cause, knockback, the player's raised guard blocks it by the
+   same angle rule); modes without player damage (creative) are unaffected. In progress (cloud).
 39. **Livelier animals** (owner 2026-11-12, after the video had no chase or fleeing — on day one every pack is
    kilometres from any herd and players can't scare deer): chose **deer flee from players** (they notice a player
    within a distance by data, closer when crouching, and run off; wolves keep their distance unless hungry),
