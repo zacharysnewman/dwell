@@ -289,6 +289,15 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    for now; R5 uses today's blocks (stone, basalt, sandstone, red sandstone, sand, dirt) named in data, so
    new ones can replace them later.
 
+   Owner, 2026-11-12, on q2 (which latitude bands): **"I think latitude bands are based on orbits right? Orbits
+   should be seed determined."** So the climate band is not a list to pick from: the seed sets the world's orbit
+   (its distance from the sun → overall warmth, its axial tilt → seasons and how climate changes across the disc,
+   its day and year length within playable bounds) and the moon's orbit, and the latitude band and seasons follow
+   from them; one celestial model (MOON_WORLD.md §6) shared by the sky and the Realistic climate (R3). Design
+   update in progress (cloud).
+   Owner, 2026-11-12: q6 "dormant volcanoes only for now."; q8 "also on the big map" (overlays in Chisel and the
+   in-game big map); q9 asked "how does the default biome fill them?" (answer pending). Big map q5: "No, no
+   hitches" — region maps built ahead of the player.
 16. **Phone frame rate (P0)** (owner 2026-11-11, iPhone 17, Safari, setting Low: "I'm only getting ~23 fps on
    mobile, seeing lots of z-fighting on tree trunks with the leaf cards. What might be dropping frames since the
    last while. Used to get 60 fps"). Suspect: leaf cards are on in every tier but CPU, Low included; cards lying
@@ -366,7 +375,11 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    hello's schedule, wire vectors. Left: a look in game with two clients (no GPU in the cloud).
    Owner, 2026-11-12: **"Level chop with off screen is fine. We can save loosening the stiff body for later."**
    The level wind-up stays off the right edge; the body's hip twist moves to Future. Left: the blue sleeve blob at
-   the bottom of the screen mid-swing.
+   the bottom of the screen mid-swing. **Fixed (`claude/chop-check`):** the blob was the swing arm's own tunic sleeve (not the off
+   arm, which first person doesn't draw): the level chop's root lifts the shoulder 0.2 m in front of the eye from
+   contact through the follow-through (the probe: shoulder at NDC +0.53,−0.93 at 0.45 s). The arms view now draws
+   the arm from the elbow down (the upper arm's parts `"view": "body"`; the elbow stays below the screen in every
+   swing); `clip_probe` test `no_sleeve_shows_at_the_bottom_of_the_screen_through_a_swing`, red → green.
 18. **Digging marks that look carved** (owner 2026-11-11: "the 'chunks' of dirt aren't at all what we
    discussed. It should be like a normal map change (do we support normal/bump maps)? It's completely flat
    should look like mesh deformation (preferably without actually doing it for performance)"; "That part was
@@ -501,6 +514,12 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    bitten spot landing beside it so the bites join into the notch; the wood's `cut.cracks` (`wood` set) round them;
    felling unchanged (11 swings at one aim, both faces); bites sent after a `BitesHello` and saved, an older cut
    drawn as before (docs/BLOCK_DAMAGE.md §6.4, ADR 0067 note).
+   In-game check (0.54.x): the first bite is head-sized, but more swings grow it down into a tall narrow slot
+   instead of across into a notch, and no wood cracks showed. A swing after the fall cleared the stump's slanted
+   top (the gash), because the axe clears `dwell:log_ramp` like leaves. Owner, 2026-11-12, on that: **"I think
+   let's do your recommendation."** — the stump keeps its gash: the axe chops a fell wedge (a hit, a bite) instead
+   of clearing it; the stump comes down only when chopped deliberately like a log. In progress (cloud), with the
+   bites spreading across and the cracks showing.
 27. **A felled trunk landing on its chopper flings them (BUGS.md #52)** (the owner's brief, 2026-11-12: fix the
    cause, "we shouldn't be capping player kick like that" (2026-11-08): no cap on the kick; a trunk hitting a
    player at speed must still knock them as physics says). **Built 2026-11-12** (branch `claude/pinch-fling`):
@@ -610,6 +629,15 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    eats into the bright area, so the bright part reads smaller than the old evenly lit disc. Next (local): a
    side-by-side with the old moon at the same zoom and time; keep the full moon lit to its edge (limb darkening
    only on the dark side of the terminator, rim albedo evened) so the bright disc matches the old size.
+   Owner's answers, 2026-11-12: a fractional month ("Sounds good": 8.25 days); "keep darker seas (add a dark moon
+   aria dirt block)"; "Yes for now, let's just do earth gravity out to moon. We likely need an atmosphere
+   transition now between sky thinning to space. Clouds shouldn't extend past the earth atmosphere either."; the
+   moon "should match previous size for now. We'll play by ear a bit when we travel there."
+
+28. **An atmosphere: the sky thinning to space** (owner 2026-11-12: "We likely need an atmosphere transition now
+   between sky thinning to space. Clouds shouldn't extend past the earth atmosphere either."). With flight to the
+   moon, climbing should fade the sky's scattering to black space with stars by day, the horizon glow becoming a
+   thin limb; clouds and plumes stay below the atmosphere's top (data); the moon has none. In progress (cloud).
 
 ## Done
 
@@ -707,6 +735,23 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
 
 ## Smaller items, after the queue
 
+- **Chop check (2026-11-12, `claude/chop-check`), items 24–26 seen in Chrome on the GPU** (`fell-tree` and scratch
+  scenarios on `?world=flat`):
+  - **One swing after the fall wipes the gash (item 24).** At the 11th swing the stump is an upright ramp low at the
+    notch and the trunk's foot an upside-down ramp, as built; a 12th swing at the same aim (likely: players keep
+    clicking until they see it fall) hits the stump's `dwell:log_ramp`, which the axe `clears`, and leaves a flat
+    stump. `fell-tree` swung 14 times, which is why its stump shots looked flat; it now stops at 11 and adds a
+    `fell-gash-profile` shot. Decide: should the axe still clear a stump's fell wedge (or only a lying one / only
+    with a deliberate aim, or after a delay)?
+  - **The gash isn't a V while the trunk lies there.** The trunk falls toward the notch and lands flat, so its
+    foot's slope faces sideways or down; the two ramps read as a V only in the instant of the fall. If the owner
+    wants the V to read afterwards, it is on the stump alone (a ramp), not a pair.
+  - **Bites grow down the cell, not across the log (item 26).** The first bite is head-sized (~0.14 m wide, about half
+    the ½ m cell's height); by the 3rd and 6th it is a slot the cell's full height, still ~0.14 m wide, with a V
+    deepening in profile. It reads as one tall narrow slot rather than bites joining across into a notch;
+    on a ½ m log one aim never widens it sideways.
+  - **No grain cracks seen round the bites** in any close shot (1, 3, 6 swings) on the dark bark; check the wood
+    `cracks` set's stages against the bites' fraction, or their contrast on bark.
 - **Visual pass 2 (2026-11-12), today's merges seen in Chrome on the GPU** (bench scenarios in a scratch
   file, `?world=flat` and `starter:meadow-grass`; shots named below):
   - **Damage cracks don't show in game (item 18, BLOCK_DAMAGE.md §6.3).** Stone struck 2 and 4 times

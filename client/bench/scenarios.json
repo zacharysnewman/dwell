@@ -7968,7 +7968,7 @@
     },
     {
       "name": "fell-tree",
-      "notes": "a one-cell log column on the flat world chopped at one aim, standing, level swings (BUGS.md #75): it falls in about 12 (the stone axe); shots of the notch, the fall and the stump from the notch side (item 24's gash)",
+      "notes": "a one-cell log column on the flat world chopped at one aim, standing, level swings (BUGS.md #75): it falls on the 11th (the stone axe), and the scenario stops there: a 12th swing clears the stump's ramp and leaves it flat; shots of the notch, the fall and the stump from the notch side (item 24's gash)",
       "world": "flat",
       "steps": [
         {
@@ -8151,30 +8151,6 @@
           "s": 1.1
         },
         {
-          "do": "edit",
-          "action": "break"
-        },
-        {
-          "do": "wait",
-          "s": 1.1
-        },
-        {
-          "do": "edit",
-          "action": "break"
-        },
-        {
-          "do": "wait",
-          "s": 1.1
-        },
-        {
-          "do": "edit",
-          "action": "break"
-        },
-        {
-          "do": "wait",
-          "s": 1.1
-        },
-        {
           "do": "wait",
           "s": 3
         },
@@ -8251,6 +8227,29 @@
         {
           "do": "shot",
           "name": "fell-stump-close"
+        },
+        {
+          "do": "releaseCamera"
+        },
+        {
+          "do": "wait",
+          "s": 0.4
+        },
+        {
+          "do": "camera",
+          "position": [-1.1, 0.9, 2.5],
+          "yaw": 90,
+          "pitch": -12,
+          "aroundPlayer": true,
+          "aboveFeet": true
+        },
+        {
+          "do": "wait",
+          "s": 0.6
+        },
+        {
+          "do": "shot",
+          "name": "fell-gash-profile"
         },
         {
           "do": "releaseCamera"
