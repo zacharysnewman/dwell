@@ -59,7 +59,7 @@ pub const UNDERWATER_LOOKS: &[UnderwaterLook] = &[
         band_mirror: 0.45,
         band_mirror_warp_px: 10.0,
         underside_texture: 0.45,
-        underside_breakup: 0.4,
+        underside_breakup: 0.6,
         underside_sun_patch: 5.0,
         underside_sun_power: 8.0,
         underside_cell_scale: 2.0,

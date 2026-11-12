@@ -55,11 +55,11 @@ pub struct UnderwaterLook {
     pub window_bodies: f64,
     /// A blown-out glow round the sun's image in the window (× the sun's light; 0: none), its
     /// tightness (a power of the cosine), and a soft glow round the window's rim spilling into
-    /// the mirror (× the sky's light straight up; 0: none). WATER_RENDERING.md §18.
+    /// the mirror (× the sky's light straight up; 0: none). WATER_RENDERING.md §19.
     pub window_sun_glow: f64,
     pub window_sun_power: f64,
     pub window_rim_glow: f64,
-    /// The underwater colour grade (WATER_RENDERING.md §18): the colour (sRGB `0xRRGGBB`) the
+    /// The underwater colour grade (WATER_RENDERING.md §19): the colour (sRGB `0xRRGGBB`) the
     /// fog's in-scatter is pulled toward and by how much (0: the fluid's own), the in-scatter's
     /// brightness (×), the mirror outside the window brighter by (×), and the share of the
     /// fluid's absorption the light reaching the floor takes (1: all of it).

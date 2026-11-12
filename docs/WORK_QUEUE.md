@@ -26,6 +26,15 @@ and leg speed (#103), underwater/surface swim audio (#104), floating trees + lea
 needs the owner's 0.55 line), tall grass height (item 14), far-sky rim/band (#823, conflicts). Then: the moon's
 client side (item 27), orbits O4–O5, big worlds memory (#76/#77).
 
+Owner, 2026-11-12 (before showcase video 2), with a screenshot from ABZÛ: **"Underwater reference photo from the
+game abzu for pretty underwater with transparent surface, light rays etc."**, then **"This is more what I want from
+the underwater surface."** → an underwater look pass: the surface from below first (bright and see-through, the sky
+in Snell's window, the sun a blown-out disc with light radiating from it, the ripples catching the light, a soft
+glow round the window, the mirror outside it turquoise rather than dark), then the shafts and a turquoise fog with
+a longer clear view and a colourful floor. **Built (`claude/underwater-look`):** the look's `window.sunGlow`,
+`sunPower`, `rimGlow` and a `tone` grade (fog colour, brightness, mirror, floor light) as data
+(WATER_RENDERING.md §19), shafts longer. Next: the owner's look.
+
 Owner, 2026-11-12 (BUGS.md #110): **"I think the sound 'source' direction might be the issue with some of our sound
 effects. They sound like they're coming from right behind your head. Are we using 2D sound?"**, then **"Like
 footsteps sound like they're in your ears."** → own footsteps grounded (below and slightly ahead, at the feet, a touch

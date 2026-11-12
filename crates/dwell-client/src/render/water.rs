@@ -297,7 +297,7 @@ pub fn pack_fluids(fluids: &[FluidInfo]) -> Vec<f32> {
             u.window_sun_glow as f32,
             u.window_sun_power as f32,
         ]);
-        // The underwater colour grade (WATER_RENDERING.md §18): the fog's colour (linear) and its
+        // The underwater colour grade (WATER_RENDERING.md §19): the fog's colour (linear) and its
         // share; the in-scatter's brightness, the mirror's, the floor light's absorption share and
         // the window rim's glow.
         let fog = linear_rgb(u.tone_fog_color);
@@ -1131,7 +1131,7 @@ mod tests {
                 v[66..68],
                 [u.window_sun_glow as f32, u.window_sun_power as f32]
             );
-            // The colour grade (WATER_RENDERING.md §18).
+            // The colour grade (WATER_RENDERING.md §19).
             let fog = linear_rgb(u.tone_fog_color);
             assert_eq!(v[68..72], [fog[0], fog[1], fog[2], u.tone_fog_share as f32]);
             let lift = [
