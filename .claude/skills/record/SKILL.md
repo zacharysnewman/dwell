@@ -1,12 +1,13 @@
 ---
 name: record
-description: Record a showcase video of Dwell in Chrome on the GPU — cinematic camera moves (dolly, orbit, track, drone rise), a clean frame (no HUD, clouds off, golden hour), clips spliced with cross-fades and a title card into one mp4 in the owner's format (9:16, 1080×1920). Use when the owner asks for a video, clips or a recording of something in game; update this skill with what you learn each time.
+description: Record a showcase video of Dwell in Chrome on the GPU — cinematic camera moves (dolly, orbit, track, drone rise), a clean frame (no HUD, no text, clouds off, golden hour), clips spliced with cross-fades into one mp4 in the owner's format (9:16, 1080×1920, a minute or less). Use when the owner asks for a video, clips or a recording of something in game; update this skill with what you learn each time.
 ---
 
 # Record a showcase video
 
-Owner's format (2026-11-12): **portrait 9:16, 1080×1920, h264, 30 fps**, under 2 minutes unless asked, no
-music, a 2–3 s title card. Send it with SendUserFile: the upload limit is **30 MB**, so re-encode
+Owner's format (2026-11-12): **portrait 9:16, 1080×1920, h264, 30 fps**, **1 minute or less**, no music,
+and **no text of any kind in the video** (no title card, captions or labels — owner: "Don't include any text
+or anything in the video"). Send it with SendUserFile: the upload limit is **30 MB**, so re-encode
 (`crf 28`) if it's larger. Never commit video files to the repo.
 
 ## 1. Run the game
@@ -64,20 +65,20 @@ it every frame from the page with `requestAnimationFrame` so the move is smooth 
 
 ## 4. Splice
 
-`scripts/splice.py` cuts each clip (start, end), scales and crops to the format, cross-fades 0.8 s, adds a
-title card over the first clip (darkened) and a fade out, and writes one mp4 plus a still per clip:
+`scripts/splice.py` cuts each clip (start, end), scales and crops to the format, cross-fades 0.8 s, fades out,
+and writes one mp4 plus a still per clip (leave `title` out of the plan: no text in the video):
 
 ```sh
 python3 .claude/skills/record/scripts/splice.py plan.json
 ```
 
-`plan.json`: `{"out": "…/video.mp4", "size": [1080, 1920], "fps": 30, "title": "Dwell — deer and wolves",
-"subtitle": "…", "clips": [{"src": "OUT_DIR/c1_dolly", "from": 0, "to": 15}, …]}` — `src` is a frame
+`plan.json`: `{"out": "…/video.mp4", "size": [1080, 1920], "fps": 30, "clips": [{"src": "OUT_DIR/c1_dolly", "from": 0, "to": 15}, …]}` — `src` is a frame
 folder from the driver (or an mp4). Then check the size; re-encode with `crf 28` if over 30 MB.
 
 ## 5. Judge and report
 
-Look at a still from every clip before sending. Report honestly what shows well and what didn't happen or
+Look at a still from every clip before sending. Delete the raw footage and segments once the owner has the
+video (owner: "Delete that footage so it doesn't take up hard drive space"). Report honestly what shows well and what didn't happen or
 looks broken, and log bugs in `docs/BUGS.md` (the first video found four: #79–#82). Clean up: stop the
 preview and the driver, remove any `client/node_modules` symlink or built `client/src/pkg` in a worktree.
 
