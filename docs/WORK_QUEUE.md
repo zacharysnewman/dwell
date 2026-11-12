@@ -998,6 +998,13 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    time-lapse apply to their view only); **anyone, any world** (a Settings toggle or a key; the host can disable it
    for guests). The `record` skill drives the same tools (a bench `camera` step plays a path and records it), and
    the tool set grows with each video. In progress: design + logic (cloud), then the UI and recording (local).
+   Owner, 2026-11-12: **"For players to use it would be cool if it had an MCP server so they could use an LLM agent to
+   handle the recording complexities, not sure if that would help us at all but it's a to have."** A nice-to-have,
+   after the in-game tools: an MCP server exposing theater mode's operations (find subjects, set time of day,
+   place/preview/play a path or preset, start/stop recording, list saved paths) so a player's LLM agent can direct
+   shots. It would help us too: our own agents could record through the same tools instead of bench scripts.
+   Likely shape: a small local MCP server (stdio) that talks to the open game page over a local WebSocket the page
+   opens only when the player turns it on; nothing reachable from outside the machine.
 
 ## Done
 
