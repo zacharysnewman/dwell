@@ -47,7 +47,7 @@ Sessions never pick a version themselves: parallel PRs would all claim the same 
 
 ## Limits
 
-- Up to **3 cloud sessions at once**, alongside **one local heavy job** (owner, 2026-11-11). The
+- Up to **6 cloud sessions at once** (owner, 2026-11-12: "Feel free to run up to 6 cloud sessions"; 3 from 2026-11-11), alongside **one local heavy job**. The
   cloud's CPU does not count against the local one-heavy-job rule.
 - Pick items that touch different areas, so the PRs don't conflict.
 
