@@ -797,6 +797,13 @@ pub struct Game<S: Scene> {
     remote_sounds: dwell_world::hash::HashMap<u16, MoverSounds>,
     /// The tools others hold, by player id (`HeldTools`, ADR 0067): its item name and hold.
     remote_tools: dwell_world::hash::HashMap<u16, (&'static str, bool)>,
+    /// Swordplay (WORK_QUEUE item 35, round 2): the server has `weapons.clash`; this player's block
+    /// input; the others' guards (players' and NPCs': stance, raised) for the renderer; and when
+    /// this player's last strike was blocked (its view's recoil: the time, the weapon, its plane).
+    swordplay: bool,
+    pub guard_input: crate::swordplay::GuardInput,
+    pub remote_guards: dwell_world::hash::HashMap<dwell_protocol::Fighter, (bool, bool)>,
+    recoil: Option<(f64, &'static dwell_protocol::chopping::ToolDef, bool)>,
     /// The ground densities the chunk meshes were scattered with (ADR 0074 B5), by chunk, where
     /// the biomes vary them: the crosshair's rolls are the mesh's.
     ground_density: dwell_world::hash::HashMap<[i32; 3], dwell_world::ground::GroundDensity>,
@@ -976,6 +983,10 @@ impl<S: Scene> Game<S> {
             mover_sounds: MoverSounds::new(),
             remote_sounds: Default::default(),
             remote_tools: Default::default(),
+            swordplay: false,
+            guard_input: Default::default(),
+            remote_guards: Default::default(),
+            recoil: None,
             ground_density: Default::default(),
             held_tool_sent: None,
             lean_at: None,
@@ -1669,6 +1680,14 @@ impl<S: Scene> Game<S> {
                 }
                 for (cell, view) in &d.cells {
                     self.streamer.set_damage(*cell, Some(view.clone()));
+                }
+            }
+            Message::Swordplay(dwell_protocol::SwordplayMessage::Clash(c)) => {
+                self.on_clash(&c, now_ms);
+            }
+            Message::Swordplay(dwell_protocol::SwordplayMessage::Guards(list)) => {
+                for g in list {
+                    self.remote_guards.insert(g.who, (g.vertical, g.raised));
                 }
             }
             Message::HeldTools(list) => {
@@ -2443,6 +2462,88 @@ impl<S: Scene> Game<S> {
     /// `holder` let go of Place: its drag stroke ends.
     pub fn release_place(&mut self, holder: dwell_game::build_drag::Holder) {
         self.drag.release(holder);
+        // The weapon's block (swordplay): a tap turns the stance, else the block drops.
+        if self.guard_input.pressed()
+            && let Some(w) = self.held_tool().and_then(|t| t.weapon)
+            && self.guard_input.release(&w.guard, self.frame_start_ms)
+                == crate::swordplay::Release::Tap
+        {
+            self.chop.toggle();
+        }
+    }
+
+    /// The server has swordplay (`weapons.clash`): Place held with a weapon raises its block, and
+    /// clashes and others' guards arrive.
+    pub fn set_swordplay(&mut self, on: bool) {
+        self.swordplay = on;
+    }
+
+    /// The block's frame: Place held past the weapon's `raiseAfterS` raises it; a weapon put away
+    /// drops it; a change goes to the server (`ChopAction::Guard`).
+    fn update_guard(&mut self, now_ms: f64) {
+        match self
+            .held_tool()
+            .and_then(|t| t.weapon)
+            .filter(|_| !self.dead)
+        {
+            Some(w) => self.guard_input.frame(&w.guard, now_ms),
+            None => self.guard_input.clear(),
+        }
+        if let Some(raised) = self.guard_input.take_change()
+            && self.swordplay
+        {
+            self.outbox.borrow_mut().push(Send::Control(Message::Chop(
+                dwell_protocol::ChopAction::Guard { raised },
+            )));
+        }
+    }
+
+    /// The first-person pose the arms show for the block now (the stance's `raisedPose`), if it is
+    /// raised and not mid-swing: the renderer's to draw (a local follow-up).
+    pub fn guard_pose(&self) -> Option<&'static str> {
+        let w = self.held_tool()?.weapon?;
+        self.guard_input
+            .pose(&w.guard, self.chop.vertical, self.chop.run.is_some())
+    }
+
+    /// A clash the server sent (`Swordplay`): its sound and sparks at its point by the weapon's
+    /// data, and this player's recoil when its strike was blocked.
+    fn on_clash(&mut self, c: &dwell_protocol::ClashNet, now_ms: f64) {
+        let show = crate::swordplay::show(c, self.player_id);
+        let at = c.point.map(f64::from);
+        if let Some((name, volume)) = show.sound
+            && let Some(k) = SoundKind::ALL.into_iter().find(|k| k.name() == name)
+        {
+            self.sounds.push(SoundEvent::new(k, 0, volume, Some(at)));
+        }
+        if show.sparks > 0
+            && let Some(look) = crate::chips::spark_chips_of(&c.weapon)
+        {
+            // Out toward the eye, from where the blades met.
+            let eye = self.target_eye.unwrap_or(at);
+            let d: [f64; 3] = std::array::from_fn(|i| eye[i] - at[i]);
+            let len = d.iter().map(|v| v * v).sum::<f64>().sqrt().max(1e-6);
+            let n = d.map(|v| v / len);
+            self.chips
+                .burst_n(look, show.sparks as usize, n, at, now_ms / 1000.0);
+        }
+        if show.recoil
+            && let Some(t) = dwell_protocol::chopping::tool(&c.weapon)
+        {
+            self.recoil = Some((now_ms, t, c.striker_vertical));
+        }
+    }
+
+    /// The view's recoil from a blocked strike now (zero when none).
+    fn recoil_camera(&mut self, now_ms: f64) -> CameraOffset {
+        let Some((at, t, vertical)) = self.recoil else {
+            return CameraOffset::ZERO;
+        };
+        let o = crate::swordplay::recoil_camera(t, vertical, (now_ms - at) / 1000.0);
+        if o == CameraOffset::ZERO && now_ms > at {
+            self.recoil = None;
+        }
+        o
     }
 
     /// The next build mode (the key, the controller's button, the touch Build button): its label,
@@ -2936,6 +3037,12 @@ impl<S: Scene> Game<S> {
     /// The swing under way this frame (crate::chop `SwingRun`): the arms held through the
     /// hit-stop and pulled back, the impact's effects at its moment, and the view's sway.
     fn update_swing(&mut self, now_ms: f64) -> CameraOffset {
+        self.update_guard(now_ms);
+        let recoil = self.recoil_camera(now_ms);
+        self.update_swing_run(now_ms).plus(recoil)
+    }
+
+    fn update_swing_run(&mut self, now_ms: f64) -> CameraOffset {
         self.land_hits(now_ms);
         // The axe put away mid-swing: the swing stops, landing nothing (the server's too).
         if self
@@ -4656,6 +4763,11 @@ impl<S: Scene> Game<S> {
         now_ms: f64,
     ) -> bool {
         if action == EditAction::Place {
+            // A weapon with swordplay: held, Place raises the block; a tap turns the stance.
+            if tool.is_weapon() && self.swordplay {
+                self.guard_input.press(now_ms);
+                return true;
+            }
             self.chop.toggle();
             return true;
         }

@@ -813,10 +813,23 @@ by default) and a combat hook; the combat AI waits for the sword mechanic.
 - **Server** (`dwell_sim::creatures`): idle in a pose picked by weight; while idle, turn toward the
   nearest player within `lookAtM`, else (looking around) sweep ±60° over 4 s; a player or another NPC
   within `bumpM` sends it `sidestepM` away (to its side when right on top); `Creatures::attacked` turns
-  a `fightBack` NPC on its attacker for 10 s. Each NPC's `variant` is seeded from the world seed and
+  a `fightBack` NPC on its attacker for its `fight.giveUpS` (each strike starts it again). **Fighting
+  with a sword** (round 2 of WORK_QUEUE item 35; `npc.fight`, `Creatures::step_fights`): while the
+  player it fights winds up a weapon swing it raises its block in a stance by its `stance` rule
+  (`counter`: the one that blocks that swing, `GuardDef::counter`; `random`), lowered otherwise; while
+  the player recovers, within `strikeWithinM` and its `cooldownS` over, it swings back in its stance
+  (attacking drops its block) and the server resolves the blow against the player's raised block
+  (blocked recoils the NPC); **an NPC's blow never hurts a player** (open question for the owner). The
+  villager is 4 rows (2 m) tall since round 2: at 2 rows a level slash at eye height passed over it. Each NPC's `variant` is seeded from the world seed and
   its spawn cell; `npc_colours(def, variant)` picks one `to` per part, deterministically.
 - **Wire**: `Creatures` as before, plus, for a client with the `creatures.npcs` capability, its NPCs'
   part (id, kind, pose, variant; ARCHITECTURE.md §8). Older clients draw a plain Peasant.
+- **Swordplay** (the `weapons.clash` capability, ARCHITECTURE.md "Weapons"): the player's block, raised by
+  holding Place with a weapon (past the weapon's `guard.raiseAfterS`; a tap still turns the stance), shows
+  the stance's first-person pose clip named by `guard.stances.*.raisedPose` (`fp_guard_level`,
+  `fp_guard_vertical`: data now, the clips and their drawing a local follow-up; `Game::guard_pose`);
+  others' and NPCs' raised guards arrive as `Swordplay` guards (`Game::remote_guards`) for the renderer
+  to draw (local).
 - **Client** (`dwell-client` `creatures.rs`): `CreatureView::npc` holds the NPC's colours (from its
   kind's data and variant) and held item; its role is its speed's while moving, else `look` or `sit`
   (the Peasant has neither clip yet, so they play its fallback, idle).

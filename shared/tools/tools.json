@@ -249,12 +249,22 @@
         "maxTargets": 2,
         "durability": 120,
         "guard": {
-          "stances": { "level": { "rollDeg": 0 }, "vertical": { "rollDeg": 90 } },
+          "stances": {
+            "level": { "rollDeg": 0, "raisedPose": "fp_guard_level" },
+            "vertical": { "rollDeg": 90, "raisedPose": "fp_guard_vertical" }
+          },
           "blockWithinDeg": 35,
           "connectWithinDeg": 35,
           "glanceDamage": 0.5,
           "recoilS": 0.35,
-          "frontDeg": 160
+          "frontDeg": 160,
+          "raiseAfterS": 0.15,
+          "clash": {
+            "sound": "axe_clank",
+            "hearM": 32,
+            "sparks": { "count": 12, "color": "#ffd27a", "speed": 4, "size": 0.025 },
+            "glanceShare": 0.5
+          }
         }
       }
     }

@@ -1,5 +1,5 @@
 {
-  "$comment": "A fixture ecology (tests only): a species added by data alone, a hare that grazes and a fox that hunts it. Generated to crates/dwell-ecology/src/ecology_fixture.gen.rs by shared/ecology/gen.mjs.",
+  "$comment": "A fixture ecology (tests only): a species added by data alone, a hare that grazes and a fox that hunts it (roaming toward hares when hungry), whose individuals near players (WORK_QUEUE item 39) flee a player as a group, closer when the player crouches, and idle sitting or looking up, all by data alone. Generated to crates/dwell-ecology/src/ecology_fixture.gen.rs by shared/ecology/gen.mjs.",
   "formatVersion": 1,
   "island": { "cellM": 100, "stepDays": 2 },
   "grazing": {
@@ -33,7 +33,24 @@
       "starvePerDay": 0.01,
       "speedMPerDay": 3000,
       "senseRadiusM": 1500,
-      "diet": { "prey": { "species": ["test:hare"], "killsPerHeadPerDay": 0.5, "halfSaturationHead": 4, "needPerHeadPerDay": 0.3, "preyPerHead": 15, "reachM": 150 } }
+      "diet": { "prey": { "species": ["test:hare"], "killsPerHeadPerDay": 0.5, "halfSaturationHead": 4, "needPerHeadPerDay": 0.3, "preyPerHead": 15, "reachM": 150 } },
+      "roam": { "towardPreyAboveHunger": 0.2 },
+      "near": {
+        "creature": "dwell:wolf",
+        "hungerPerS": 0,
+        "energyPerS": 0,
+        "sleep": { "belowEnergy": 0, "nightChancePerS": 0, "nightBelowHunger": 0, "gainPerS": 0.1, "wakeAboveEnergy": 0.5, "wakeAboveHunger": 0.5, "minS": 1 },
+        "hunt": { "aboveHunger": 0.9, "senseM": 10, "sprint": 2, "reachM": 1, "feedsPackM": 10, "feedsPack": 0.5 },
+        "mate": { "belowHunger": 0, "aboveEnergy": 1, "radiusM": 1, "reachM": 1, "chance": 0, "cost": 0, "tired": 0, "restS": 60, "groupEveryS": 60 },
+        "companyM": 30,
+        "wanderM": 4,
+        "players": { "react": "flee", "noticeM": 15, "crouchM": 3, "runM": 10, "pace": 2, "calmS": 3 },
+        "idles": [
+          { "pose": "sit", "weight": 3, "seconds": [1, 2] },
+          { "pose": "lookUp", "weight": 1, "seconds": [1, 2] }
+        ],
+        "walkChance": 0
+      }
     }
   ]
 }

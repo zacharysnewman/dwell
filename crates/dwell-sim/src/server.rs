@@ -38,6 +38,7 @@ use dwell_world::{
 
 use dwell_protocol::auth::verify_ed25519;
 
+mod buried;
 mod chopping;
 mod creatures;
 mod ecology;
@@ -55,7 +56,7 @@ mod items;
 mod lava;
 mod vitals;
 mod weapons;
-pub use weapons::StrikeLog;
+pub use weapons::{NpcStrikeLog, StrikeLog, WeaponSwing};
 
 use crate::app_version::APP_VERSION;
 use crate::entropy::Entropy;
@@ -702,6 +703,11 @@ struct Session {
     /// The tool it holds (item name, the hold's plane), from `ChopAction::Held`; having sent one,
     /// it understands `HeldTools` (ADR 0067).
     held_tool: Option<(String, bool)>,
+    /// Its weapon's block held raised (`ChopAction::Guard`, the `weapons.clash` capability;
+    /// WORK_QUEUE item 35): it guards while it holds a weapon and isn't mid-swing.
+    guard_raised: bool,
+    /// Its weapon swing under way, for the NPCs that read it (`weapons::WeaponSwing`).
+    weapon_swing: Option<weapons::WeaponSwing>,
 
     stats: SessionStats,
     // Terrain streaming.
@@ -770,6 +776,8 @@ impl Session {
             away: None,
             grid_streamed: HashSet::default(),
             held_tool: None,
+            guard_raised: false,
+            weapon_swing: None,
             primed: false,
             low_water: usize::MAX,
             window_ticks: 0,
@@ -1025,6 +1033,8 @@ pub struct Server {
     creatures: crate::creatures::Creatures,
     /// The last strikes of players' weapons on creatures (WORK_QUEUE item 35).
     strike_log: Vec<StrikeLog>,
+    /// The last NPCs' strikes on players (`weapons::NpcStrikeLog`; tests, dev tools).
+    npc_strike_log: Vec<weapons::NpcStrikeLog>,
     /// The wood cells cut by axes (ADR 0067).
     cuts: dwell_protocol::chopping::Cuts,
     cuts_unread: bool,
@@ -1215,6 +1225,7 @@ impl Server {
             loose_moved: HashSet::default(),
             creatures: Default::default(),
             strike_log: Vec::new(),
+            npc_strike_log: Vec::new(),
             cuts: Default::default(),
             cuts_unread: false,
             damage: Default::default(),
@@ -1752,7 +1763,10 @@ impl Server {
             Message::DamageHello => self.damage_hello(id),
             Message::EcologyHello => self.ecology_hello(id),
             Message::SteamHello => s.steam_hello = true,
-            Message::Capabilities(c) => s.capabilities = c,
+            Message::Capabilities(c) => {
+                s.capabilities = c;
+                self.swordplay_hello(id);
+            }
             Message::WorldgenRequest => {
                 let m = Message::WorldgenConfig(self.worldgen_text.clone());
                 self.send_reliable(id, &m, Channel::Control);
@@ -1993,6 +2007,10 @@ impl Server {
             }
         }
 
+        // A player inside solid ground (a spawn link's y, a teleport) stands on the ground above
+        // it (BUGS.md #82), before it can fall through.
+        self.lift_buried_players();
+
         // 3. Controller pipeline (PLAYER_CONTROLLER.md §4), then its server-side consequences. The
         // falling pieces' terrain collision loads with the players' (docs/FELLING.md §3).
         let boxes = self.felling.terrain_boxes(&self.physics);
@@ -2065,6 +2083,7 @@ impl Server {
         self.step_items();
         // Creatures spawn near players, wander and despawn far away (ADR 0073).
         self.step_creatures();
+        self.step_npc_fights();
 
         // 5. Respawns, then snapshots at SNAPSHOT_HZ.
         for &id in &ids {

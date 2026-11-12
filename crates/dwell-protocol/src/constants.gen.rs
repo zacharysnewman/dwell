@@ -203,6 +203,7 @@ pub enum MessageType {
     SteamHello = 103,
     Steam = 104,
     Capabilities = 105,
+    Swordplay = 106,
 }
 
 impl MessageType {
@@ -269,6 +270,7 @@ impl MessageType {
             103 => Some(Self::SteamHello),
             104 => Some(Self::Steam),
             105 => Some(Self::Capabilities),
+            106 => Some(Self::Swordplay),
             _ => None,
         }
     }
@@ -663,6 +665,8 @@ pub mod capability_names {
     pub const DAMAGE_CHUNKS: &str = "damage.chunks";
     /// A Creatures message ends with its NPCs' part (WORK_QUEUE item 38, CHARACTERS.md §11.11): per NPC its id, kind name, idle pose (stand, look, sit) and palette variant seed, from which the client picks the NPC's colours by shared/creatures/creatures.json. Without it the server leaves the part out, and an NPC is drawn as its model's plain creature.
     pub const CREATURES_NPCS: &str = "creatures.npcs";
+    /// Swordplay on the wire (WORK_QUEUE item 35, round 2): the server sends `Swordplay` (each strike's outcome, blocked / glanced / connected, where, and both stances, to clients within the weapon's `clash.hearM`; and who holds a raised guard in which stance, players and NPCs), and the client says its raised block with `ChopAction::Guard`. Without it neither is sent: an older client sees no clash and no raised swords, and an older server is never sent a guard.
+    pub const WEAPONS_CLASH: &str = "weapons.clash";
     /// Every capability this build knows, in the table's order.
-    pub const ALL: &[&str] = &[STRUCTURES_PLACE, GRID_FRAMES, DAMAGE_CHUNKS, CREATURES_NPCS];
+    pub const ALL: &[&str] = &[STRUCTURES_PLACE, GRID_FRAMES, DAMAGE_CHUNKS, CREATURES_NPCS, WEAPONS_CLASH];
 }

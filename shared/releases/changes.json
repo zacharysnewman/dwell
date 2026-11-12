@@ -2,6 +2,123 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.54.114",
+      "changes": [
+        "Deer notice you and run off as a herd: sneak (crouch) or stand still to get closer, sprint and they spot you from farther away",
+        "Wolves keep their distance from you unless their pack is hungry",
+        "Hungry wolf packs travel toward the nearest deer herd, so you can come across a hunt",
+        "Deer and wolves pick idle behaviours by species (grazing, looking up, ear flicks, sitting, lying down); the poses aren't drawn yet"
+      ]
+    },
+    {
+      "version": "0.54.113",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.112",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.111",
+      "changes": [
+        "Herds near you no longer grow by several animals in seconds: deer and wolves have young at a natural pace.",
+        "Deer and wolves keep a little space between them instead of standing inside each other.",
+        "Animals no longer walk partly into cliff walls.",
+        "A spawn link or teleport to a point inside the ground now puts you on the ground above instead of dropping you through the world."
+      ]
+    },
+    {
+      "version": "0.54.110",
+      "changes": [
+        "Behind the scenes: recording notes"
+      ]
+    },
+    {
+      "version": "0.54.109",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.108",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.107",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.106",
+      "changes": [
+        "Behind the scenes: work queue and recording skill notes"
+      ]
+    },
+    {
+      "version": "0.54.105",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.104",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.103",
+      "changes": [
+        "Behind the scenes: work queue and recording skill notes"
+      ]
+    },
+    {
+      "version": "0.54.102",
+      "changes": [
+        "Hold Place with a sword to raise your block in its stance; a quick tap still turns the stance",
+        "Blades clash: a blocked strike rings out, throws sparks and knocks your swing back",
+        "Villagers with swords fight back: they block your wind-up and swing back while you recover (they can't hurt you)",
+        "Villagers are now full height, so a level slash no longer passes over them"
+      ]
+    },
+    {
+      "version": "0.54.101",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.100",
+      "changes": [
+        "Behind the scenes: recording skill update"
+      ]
+    },
+    {
+      "version": "0.54.99",
+      "changes": [
+        "Behind the scenes: a recording skill for showcase videos"
+      ]
+    },
+    {
+      "version": "0.54.98",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.97",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
       "version": "0.54.96",
       "changes": [
         "Behind the scenes: bug notes"

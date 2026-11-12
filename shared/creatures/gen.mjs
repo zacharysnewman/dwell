@@ -14,12 +14,20 @@ const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, '..', '..');
 
 const TOP_FIELDS = ['formatVersion', 'limits', 'creatures', 'rules'];
-const LIMIT_FIELDS = ['spawnChunks', 'despawnM', 'max'];
-const CREATURE_FIELDS = ['name', 'model', 'walkSpeed', 'wanderM', 'idleSeconds', 'rows', 'climbRows', 'dropRows', 'npc', 'health', 'hitRadiusM', 'drops'];
+const LIMIT_FIELDS = ['spawnChunks', 'despawnM', 'max', 'gapM', 'pushMps'];
+const CREATURE_FIELDS = ['name', 'model', 'walkSpeed', 'wanderM', 'idleSeconds', 'rows', 'climbRows', 'dropRows', 'npc', 'health', 'hitRadiusM', 'bodyRadiusM', 'drops'];
 /** A death's drop (WORK_QUEUE item 35): an item and how many, [min, max] or n. */
 const DROP_FIELDS = ['item', 'count'];
 const RULE_FIELDS = ['creature', 'on', 'chance', 'group', 'mix', 'spacingM', 'biomes'];
-const NPC_FIELDS = ['lookAtM', 'turnDegPerS', 'bumpM', 'sidestepM', 'idles', 'colours', 'held', 'disposition', 'combat'];
+const NPC_FIELDS = ['lookAtM', 'turnDegPerS', 'bumpM', 'sidestepM', 'idles', 'colours', 'held', 'disposition', 'combat', 'fight'];
+/** How an NPC whose `fightBack` triggered fights with a held weapon (WORK_QUEUE items 35 and 38,
+ * round 2): the stance it picks (`counter`: the one that blocks its foe's swing; `random`: either,
+ * picked anew each wind-up), whether it raises its block while its foe winds up, whether it strikes
+ * back while its foe recovers, within how far (m), the wait between its own swings (s), and how long
+ * without being struck it gives up (s). */
+const FIGHT_FIELDS = ['stance', 'raiseOnWindup', 'strikeBack', 'strikeWithinM', 'cooldownS', 'giveUpS'];
+export const FIGHT_STANCES = ['counter', 'random'];
+export const FIGHT_DEFAULTS = { stance: 'counter', raiseOnWindup: true, strikeBack: true, strikeWithinM: 2.2, cooldownS: 1, giveUpS: 10 };
 /** Dispositions (owner 2026-11-12, item 35: "neutral by default"): who an NPC treats as a foe. */
 export const DISPOSITIONS = ['neutral'];
 /** Combat hooks: what an NPC does when attacked (`fightBack`: it turns on its attacker; the
@@ -68,6 +76,20 @@ function validateNpc(n, at, ramps, items) {
   if (n.held !== undefined && !items.has(n.held)) fail(`${at}: held ${JSON.stringify(n.held)} is not an item (shared/items/items.json)`);
   if (n.disposition !== undefined && !DISPOSITIONS.includes(n.disposition)) fail(`${at}: disposition ${JSON.stringify(n.disposition)} is not one of ${DISPOSITIONS.join(', ')}`);
   if (n.combat !== undefined && !COMBATS.includes(n.combat)) fail(`${at}: combat ${JSON.stringify(n.combat)} is not one of ${COMBATS.join(', ')}`);
+  if (n.fight !== undefined) {
+    const fat = `${at}.fight`;
+    if (!isObject(n.fight)) fail(`${fat} must be an object`);
+    unknown(n.fight, FIGHT_FIELDS, fat);
+    const g = { ...FIGHT_DEFAULTS, ...n.fight };
+    if (!FIGHT_STANCES.includes(g.stance)) fail(`${fat}: stance ${JSON.stringify(g.stance)} is not one of ${FIGHT_STANCES.join(', ')}`);
+    for (const k of ['raiseOnWindup', 'strikeBack']) if (typeof g[k] !== 'boolean') fail(`${fat}: ${k} must be true or false`);
+    const r = (k, lo, hi) => {
+      if (!num(g[k]) || g[k] <= lo || g[k] > hi) fail(`${fat}: ${k} must be in (${lo}, ${hi}]`);
+    };
+    r('strikeWithinM', 0, 8);
+    r('cooldownS', 0, 30);
+    r('giveUpS', 0, 600);
+  }
   if (!Array.isArray(n.colours)) fail(`${at}: colours must be a list`);
   const parts = new Set();
   const froms = new Set();
@@ -102,6 +124,12 @@ export function validateCreatures(data, namespaces, models, ramps = loadRamps(),
   if (!int(l.spawnChunks, 0, 8)) fail('limits.spawnChunks must be a whole number in [0, 8]');
   if (!num(l.despawnM) || l.despawnM < 16 || l.despawnM > 1024) fail('limits.despawnM must be in [16, 1024]');
   if (!int(l.max, 1, 4096)) fail('limits.max must be a whole number in [1, 4096]');
+  // Spacing (BUGS.md #80): creatures' bodies never overlap, and they steer apart at `pushMps` to
+  // keep `gapM` between them.
+  l.gapM ??= 0.2;
+  l.pushMps ??= 1;
+  if (!num(l.gapM) || l.gapM < 0 || l.gapM > 8) fail('limits.gapM must be in [0, 8] m');
+  if (!num(l.pushMps) || l.pushMps < 0 || l.pushMps > 20) fail('limits.pushMps must be in [0, 20] m/s');
   if (!Array.isArray(data.creatures) || data.creatures.length === 0) fail('creatures must be a non-empty list');
   const creatures = new Map();
   data.creatures.forEach((c, i) => {
@@ -124,6 +152,9 @@ export function validateCreatures(data, namespaces, models, ramps = loadRamps(),
     if (!num(health) || health < 0 || health > 10000) fail(`${at}: health must be in [0, 10000] (0 or none: it can't be hurt)`);
     const hitRadiusM = c.hitRadiusM ?? 0.4;
     if (!num(hitRadiusM) || hitRadiusM <= 0 || hitRadiusM > 4) fail(`${at}: hitRadiusM must be in (0, 4] m`);
+    // Its body's radius on the ground (BUGS.md #80, #81): kept out of walls and other bodies.
+    const bodyRadiusM = c.bodyRadiusM ?? 0.3;
+    if (!num(bodyRadiusM) || bodyRadiusM <= 0 || bodyRadiusM > 2) fail(`${at}: bodyRadiusM must be in (0, 2] m`);
     if (c.drops !== undefined && !Array.isArray(c.drops)) fail(`${at}: drops must be a list`);
     const drops = (c.drops ?? []).map((d, j) => {
       const dat = `${at}.drops[${j}]`;
@@ -137,7 +168,7 @@ export function validateCreatures(data, namespaces, models, ramps = loadRamps(),
     });
     if (drops.length > 0 && health === 0) fail(`${at}: drops need health (a creature that can't be hurt never dies)`);
     if (c.npc !== undefined) validateNpc(c.npc, `${at}.npc`, ramps, items);
-    creatures.set(c.name, { ...c, health, hitRadiusM, drops, index: i });
+    creatures.set(c.name, { ...c, health, hitRadiusM, bodyRadiusM, drops, index: i });
   });
   if (!Array.isArray(data.rules) || data.rules.length === 0) fail('rules must be a non-empty list');
   const rules = data.rules.map((r, i) => {
@@ -212,21 +243,25 @@ const strs = (a) => `&[${a.map((s) => JSON.stringify(s)).join(', ')}]`;
 
 const pose = (p) => p[0].toUpperCase() + p.slice(1);
 
+function fightRust(g) {
+  return `FightDef { stance: FightStance::${pose(g.stance)}, raise_on_windup: ${g.raiseOnWindup}, strike_back: ${g.strikeBack}, strike_within_m: ${f(g.strikeWithinM)}, cooldown_s: ${f(g.cooldownS)}, give_up_s: ${f(g.giveUpS)} }`;
+}
+
 function npcRust(n) {
   if (!n) return 'None';
   const idles = n.idles.map((d) => `Idle { pose: Pose::${pose(d.pose)}, weight: ${f(d.weight)}, seconds: [${d.seconds.map(f).join(', ')}] }`).join(', ');
   const colours = n.colours.map((c) => `ColourSlot { part: ${JSON.stringify(c.part)}, from: ${JSON.stringify(c.from)}, to: ${strs(c.to)} }`).join(', ');
-  return `Some(NpcDef { look_at_m: ${f(n.lookAtM)}, turn_deg_per_s: ${f(n.turnDegPerS)}, bump_m: ${f(n.bumpM)}, sidestep_m: ${f(n.sidestepM)}, held: ${n.held ? `Some(${JSON.stringify(n.held)})` : 'None'}, disposition: Disposition::${pose(n.disposition ?? 'neutral')}, combat: Combat::${pose(n.combat ?? 'none')}, idles: &[${idles}], colours: &[${colours}] })`;
+  return `Some(NpcDef { look_at_m: ${f(n.lookAtM)}, turn_deg_per_s: ${f(n.turnDegPerS)}, bump_m: ${f(n.bumpM)}, sidestep_m: ${f(n.sidestepM)}, held: ${n.held ? `Some(${JSON.stringify(n.held)})` : 'None'}, disposition: Disposition::${pose(n.disposition ?? 'neutral')}, combat: Combat::${pose(n.combat ?? 'none')}, fight: ${fightRust({ ...FIGHT_DEFAULTS, ...(n.fight ?? {}) })}, idles: &[${idles}], colours: &[${colours}] })`;
 }
 
 export function creaturesRust(d, source) {
-  const rs = [`// Generated by shared/creatures/gen.mjs from ${source}. Do not edit.`, '', '#[allow(unused_imports)]', 'use crate::creatures::{ColourSlot, Combat, CreatureDef, Disposition, Idle, Limits, MixPart, NpcDef, Pose, SpawnRule};', ''];
+  const rs = [`// Generated by shared/creatures/gen.mjs from ${source}. Do not edit.`, '', '#[allow(unused_imports)]', 'use crate::creatures::{ColourSlot, Combat, CreatureDef, Disposition, FightDef, FightStance, Idle, Limits, MixPart, NpcDef, Pose, SpawnRule};', ''];
   const l = d.limits;
-  rs.push(`pub const LIMITS: Limits = Limits { spawn_chunks: ${l.spawnChunks}, despawn_m: ${f(l.despawnM)}, max: ${l.max} };`, '');
+  rs.push(`pub const LIMITS: Limits = Limits { spawn_chunks: ${l.spawnChunks}, despawn_m: ${f(l.despawnM)}, max: ${l.max}, gap_m: ${f(l.gapM)}, push_mps: ${f(l.pushMps)} };`, '');
   rs.push(`pub const CREATURES: [CreatureDef; ${d.creatures.length}] = [`);
   for (const c of d.creatures) {
     rs.push(
-      `    CreatureDef { name: ${JSON.stringify(c.name)}, model: ${JSON.stringify(c.model)}, walk_speed: ${f(c.walkSpeed)}, wander_m: ${f(c.wanderM)}, idle_seconds: [${c.idleSeconds.map(f).join(', ')}], rows: ${c.rows}, climb_rows: ${c.climbRows}, drop_rows: ${c.dropRows}, npc: ${npcRust(c.npc)}, health: ${f(c.health)}, hit_radius_m: ${f(c.hitRadiusM)}, drops: &[${c.drops.map((d) => `(${JSON.stringify(d.item)}, ${d.min}, ${d.max})`).join(', ')}] },`,
+      `    CreatureDef { name: ${JSON.stringify(c.name)}, model: ${JSON.stringify(c.model)}, walk_speed: ${f(c.walkSpeed)}, wander_m: ${f(c.wanderM)}, idle_seconds: [${c.idleSeconds.map(f).join(', ')}], rows: ${c.rows}, climb_rows: ${c.climbRows}, drop_rows: ${c.dropRows}, npc: ${npcRust(c.npc)}, health: ${f(c.health)}, hit_radius_m: ${f(c.hitRadiusM)}, body_radius_m: ${f(c.bodyRadiusM)}, drops: &[${c.drops.map((d) => `(${JSON.stringify(d.item)}, ${d.min}, ${d.max})`).join(', ')}] },`,
     );
   }
   rs.push('];', '');

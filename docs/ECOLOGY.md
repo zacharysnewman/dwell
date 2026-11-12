@@ -248,8 +248,13 @@ without one stays a record — the fixture's hare and fox).
   `feedsPackM` lose `feedsPack` of their hunger. (5) **Mating**: under `mate.belowHunger` and over
   `aboveEnergy` with a groupmate like it within `radiusM` (walking to it), within `reachM` a young
   with `chance` a try (the deer 0.5, the wolf 0.02, the mockup's), each parent's hunger + `cost`, a
-  failed try `tired` energy; never past the group's `cap`. (6) **Looking for Company**: back toward
+  failed try `tired` energy; never past the group's `cap`. Births are paced (BUGS.md #79): each parent, and the
+  young, rest `restS` before mating again (deer 600 s, wolves 1800 s), and a group has at most one young every
+  `groupEveryS` (deer 240 s, wolves 900 s), counted from when it came near. (6) **Looking for Company**: back toward
   the nearest groupmate farther than `companyM`, else **Wandering** (up to `wanderM`).
+- **Bodies** (BUGS.md #80, #81): the creatures keep their bodies (shared/creatures `bodyRadiusM`) apart, steering to
+  `limits.gapM` between them and never overlapping, and out of walls (no solid cell higher than they can climb within
+  their radius of their centre), sliding along a wall they walk into slanting.
 - **Death near players** is by kills only: hunger stops at 1 and never kills here (starving is the
   far step's, over days; owner: "slow to starve").
 - **Deterministic**: each member's own hash chain from (world seed, record id, member); the near
@@ -266,7 +271,7 @@ without one stays a record — the fixture's hare and fox).
   near side reads the loss back before its next decision, a death (the last member, its creature
   removed) for each whole head, keeping the fraction. Not saved (a save writes near groups as they
   would fold back).
-- **Not yet**: players can't interact; no far rendering (the read-out for it is §9).
+- **Players** are noticed (deer flee, wolves keep away; §8.2); far rendering is §11.
 
 Tests: `cargo test -p dwell-sim --lib herds` (both faces): a herd near a player becomes its deer
 (on the floor, the record out of the far step, its hunger) and folds back keeping its head (+ births
@@ -280,6 +285,11 @@ near a joined player becomes driven deer on the floor with no rule-spawned anima
 folds back when the player leaves; a save while near keeps the herd; an opted-out world makes no
 individuals; night is each face's own. `node --test shared/ecology/gen.test.mjs`: the `near` data
 validates, emits its creature and block, a species without it stays a record, bad entries fail.
+
+Paced births and bodies (`cargo test -p dwell-sim --lib`, both faces): a fed herd near a player has at most one
+young a minute and comes near once (`a_fed_herd_near_a_player_has_at_most_one_young_a_minute`), the pace follows the
+data (`births_follow_the_data_s_pace`), members never overlap (`herd_members_never_stand_inside_each_other`), and a
+creature's body keeps out of a wall it walks into (`a_creature_s_body_keeps_out_of_a_wall_it_walks_into`).
 
 Slice 3b tests (`cargo test -p dwell-sim --lib herds`, both faces): a herd comes near as the rule's
 mix (some herds a stag, never two; a fixture mix of two stags by data alone); individuals spawn only
@@ -301,6 +311,55 @@ their health, when they flee. A creature killed is removed and drops its `drops`
 death at its next decision (`Near::refresh`: a member whose creature is gone), and folds back without
 it. Tests: `herds.rs` `a_hurt_deer_flees_and_a_hurt_wolf_fights_unless_badly_hurt`,
 `a_member_killed_leaves_its_group_as_a_death` (both faces).
+
+NPCs (the villager) are struck by the same rule but react by their `npc.combat` and `npc.fight`
+(CHARACTERS.md §11.11): a `fightBack` NPC holding a sword blocks its foe's wind-up, strikes back in its
+recovery and gives up `giveUpS` after the last hit; its blows never hurt players (owner's open question).
+
+### 8.2 Players, roaming packs and idles (WORK_QUEUE item 39)
+
+Owner, 2026-11-12, after the showcase video had no chase or flight: "deer flee from players", "packs
+roam toward herds", "a grazing pose and more idle behaviour". All of it is data in each species'
+`near` (and a hunter's `roam`), on a small fixed vocabulary:
+
+- **Noticing players** (`near.players`): a player is noticed within `noticeM` walking, `crouchM`
+  crouching (sneaking: the smaller), `stillM` standing still (horizontal speed under
+  `stillBelowMps`), `sprintM` running (over `sprintAboveMps`); hungrier than `boldAboveHunger`, only
+  within `boldM`. The server passes each living player's stance (`herds::Stance`: the controller's
+  `crouching`, its horizontal speed) beside its feet. `react` is one of two: **`flee`** — any member
+  noticing a player alarms its whole group (a pass before the decisions), which runs `runM` from that
+  player each decision at `pace` × its walk, calming `calmS` after the last notice (the deer: 22 m
+  walking, 8 m crouching, 12 m still, 34 m running; 4.5× their walk, 5.9 m/s, over a walking
+  player's 5); **`avoid`** — it walks off at `pace` to keep the notice distance (the wolves: 24 m,
+  14 crouching, 18 still; bold over hunger 0.6, within 8 m only; creatures can't hurt players, so a
+  bold pack simply stops keeping away). Priority: after a hurt reaction and fleeing predators, before
+  sleep, food and the rest; an alarm wakes a sleeper. No line of sight yet.
+- **Packs to herds, far** (a hunter's `roam`): above `towardPreyAboveHunger` (wolves 0.3) a group
+  that senses no prey heads for the island's nearest prey group at any distance (records and the
+  near summaries alike), `Roaming`, instead of a random heading; starving past `disperse.aboveHunger`
+  it still disperses to the biggest. **Near** (`hunt.trackM`, past `senseM`): a hungry hunter with no
+  prey in sense walks toward the nearest prey within `trackM` (160 m), a near individual or a herd's
+  far record, so a pack near players closes on a herd and the existing chase (`senseM` 28 m) starts.
+- **Idles** (`near.idles`): when a decision has nothing to do (wandering), it walks at `walkChance`,
+  else picks an idle by `weight` and holds its pose for `seconds` [min, max]. The poses are a fixed
+  vocabulary (`dwell_ecology::IdlePose`): `stand`, `graze`, `lookUp`, `earFlick`, `sit`, `lie`;
+  eating takes `graze.pose` (default `graze`), sleeping `sleep.pose` (default `lie`), moving `stand`.
+  The deer graze, look up, flick an ear or stand; the wolves sit, lie, stand or flick an ear. The pose
+  is each `Member::pose` on the server. **Not yet drawn**: the deer, doe and wolf GLBs have only
+  `idle`, `walk` and `run` clips (no grazing, sit or lie), and the pose isn't on the wire; the next
+  step (local, with a GPU) is the pose as a capability-gated part of `Creatures` (like the NPCs'
+  `NpcNet::pose`) and the poses built from the rig as data in `shared/models/models.json` (the neck
+  and `scull` down for graze, the hind legs folded for sit, all four for lie).
+
+Tests (both faces unless noted): `herds.rs` `a_herd_flees_a_player_within_its_notice_distance_and_calms`,
+`a_crouching_player_gets_closer_before_the_deer_notice`, `wolves_keep_their_distance_from_players_unless_hungry`,
+`a_hungry_pack_tracks_a_herd_out_of_sense_and_the_hunt_starts` (red with `trackM` 0),
+`idle_picks_follow_the_data_weights` (one face: a pure pick), `deer_graze_head_down_and_wolves_sit_and_lie_by_their_idles`,
+`a_fixture_species_flees_players_and_idles_by_data_alone` (the fixture's fox); `dwell-ecology` tests
+`a_hungry_pack_roams_toward_the_nearest_herd_and_the_hunt_starts` (red without `roam`) and
+`a_fed_pack_and_one_without_roam_dont_head_for_the_herd` (the fixture's fox roams by data alone);
+`gen.test.mjs` the new fields validate, emit and fail with a message. The older near scenes run with
+players unnoticed (`unnoticing`): they are about the animals among themselves.
 
 ## 9. The clients' read-out (slice 3b)
 

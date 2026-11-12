@@ -101,3 +101,25 @@ test("a species' far look (how clients draw a far herd) is data, validated, and 
   bad({ color: '#102030', sizeM: 1, fadeStartM: 5, fadeEndM: 2 }, /far\.fadeEndM must be past fadeStartM/);
   bad({ color: '#102030', sizeM: 1, fadeStartM: 5, fadeEndM: 9, glow: 1 }, /glow/);
 });
+
+test('players, idles, tracking and roaming validate and emit (WORK_QUEUE item 39)', () => {
+  const d = JSON.parse(readFileSync(join(here, 'ecology.json'), 'utf8'));
+  const rs = ecologyRust(validateEcology(d), 'x');
+  assert.match(rs, /players: Some\(NearPlayers \{ react: PlayerReact::Flee, notice_m: 22\.0, crouch_m: 8\.0/);
+  assert.match(rs, /react: PlayerReact::Avoid/);
+  assert.match(rs, /NearIdle \{ pose: IdlePose::Graze, weight: 5\.0/);
+  assert.match(rs, /IdlePose::Lie/);
+  assert.match(rs, /track_m: 160\.0/);
+  assert.match(rs, /roam: Some\(Roam \{ toward_prey_above_hunger: 0\.3 \}\)/);
+  const bad = (edit, msg) => {
+    const e = JSON.parse(JSON.stringify(d));
+    edit(e);
+    assert.throws(() => validateEcology(e), msg);
+  };
+  bad((e) => (e.species[0].near.players.react = 'charge'), /players\.react must be one of flee, avoid/);
+  bad((e) => (e.species[0].near.idles[0].pose = 'dance'), /idles\[0\]\.pose must be one of/);
+  bad((e) => (e.species[0].near.idles[0].weight = 0), /idles\[0\]\.weight/);
+  bad((e) => (e.species[0].near.idles[0].seconds = [5, 1]), /idles\[0\]\.seconds\[1\]/);
+  bad((e) => (e.species[1].near.hunt.trackM = 10), /trackM must be past senseM/);
+  bad((e) => (e.species[0].roam = { towardPreyAboveHunger: 0.3 }), /only a hunter roams/);
+});

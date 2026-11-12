@@ -62,6 +62,57 @@ pub enum Combat {
     FightBack,
 }
 
+/// The stance an NPC fighting with a weapon picks (`fight.stance`): the one that blocks its foe's
+/// swing, or either at random (picked anew each wind-up).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FightStance {
+    Counter,
+    Random,
+}
+
+/// How an NPC whose `fightBack` triggered fights with the weapon it holds (shared/creatures
+/// `npc.fight`; WORK_QUEUE items 35 and 38, round 2): its stance rule, whether it raises its block
+/// while its foe winds up, whether it strikes back while its foe recovers (within
+/// `strike_within_m`), the wait between its own swings (s), and how long without being struck it
+/// gives up (s).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct FightDef {
+    pub stance: FightStance,
+    pub raise_on_windup: bool,
+    pub strike_back: bool,
+    pub strike_within_m: f64,
+    pub cooldown_s: f64,
+    pub give_up_s: f64,
+}
+
+/// Where a foe's weapon swing is, as an NPC reads it ([`Creatures::step_fights`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SwingPhase {
+    /// Winding up or on its arc, before its contact: the blade is coming.
+    Coming,
+    /// After its contact, recovering: an opening.
+    Recovering,
+}
+
+/// What an NPC reads of the player it fights: where it stands (world feet), its weapon swing (the
+/// phase, its plane, its weapon), if one is under way.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct FoeView {
+    pub position: [f64; 3],
+    pub swing: Option<(SwingPhase, bool, &'static str)>,
+}
+
+/// An NPC's own swing landing this tick ([`Creatures::step_fights`]): the NPC, the player it
+/// swings at, its weapon and plane, and its eye (world) the strike comes from.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct NpcSwing {
+    pub npc: u32,
+    pub player: u16,
+    pub weapon: &'static str,
+    pub vertical: bool,
+    pub eye: [f64; 3],
+}
+
 /// One of an NPC's idles: the pose, its weight among them, how long (s, [min, max]).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Idle {
@@ -89,6 +140,7 @@ pub struct NpcDef {
     pub held: Option<&'static str>,
     pub disposition: Disposition,
     pub combat: Combat,
+    pub fight: FightDef,
     pub idles: &'static [Idle],
     pub colours: &'static [ColourSlot],
 }
@@ -116,6 +168,9 @@ pub struct Limits {
     pub spawn_chunks: i32,
     pub despawn_m: f64,
     pub max: usize,
+    /// The space creatures steer to keep between their bodies (BUGS.md #80), at up to `push_mps`.
+    pub gap_m: f64,
+    pub push_mps: f64,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -132,6 +187,8 @@ pub struct CreatureDef {
     pub health: f64,
     /// The radius round its body a swing's arc must come within to hit it (m).
     pub hit_radius_m: f64,
+    /// Its body's radius on the ground (m; BUGS.md #80, #81): kept out of walls and other bodies.
+    pub body_radius_m: f64,
     /// What it drops when killed: (item, min, max).
     pub drops: &'static [(&'static str, u32, u32)],
     /// An NPC's behaviour and looks; None: an animal.
@@ -256,6 +313,11 @@ pub struct Creature {
     /// An NPC turned on its attacker (`Combat::FightBack`): where it is and ticks left.
     pub foe: Option<[f64; 3]>,
     foe_ticks: u32,
+    /// The player it fights (its fight rules read that player's swing), if a player struck it.
+    pub foe_player: Option<u16>,
+    /// Ticks until it may start its own swing, and its own swing's ticks to its contact.
+    fight_wait: u32,
+    own_swing: Option<u32>,
     rng: u64,
 }
 
@@ -365,6 +427,69 @@ pub fn feet_row(
     None
 }
 
+fn solid(m: StateId) -> bool {
+    try_info(m).is_some_and(|i| i.solid)
+}
+
+/// Whether a body of `def`'s radius with its feet in face-local row `y` at face-local `(x, z)`
+/// keeps out of the solid cells round its column (BUGS.md #81): each other column its disc
+/// reaches has nothing solid from `climb_rows` over its feet up to its height (a step it could
+/// climb is no wall; a cell not loaded is one). Cheap: the few columns its disc reaches, a row or
+/// two each.
+fn body_clear(get: Get, f: FaceFrame, def: &CreatureDef, [x, z]: [f64; 2], y: i32) -> bool {
+    let r = def.body_radius_m;
+    let (cx, cz) = (x.floor() as i32, z.floor() as i32);
+    let rows = def.climb_rows..def.rows.max(def.climb_rows + 1);
+    for gx in (x - r).floor() as i32..=(x + r).floor() as i32 {
+        for gz in (z - r).floor() as i32..=(z + r).floor() as i32 {
+            if (gx, gz) == (cx, cz) {
+                continue;
+            }
+            // The disc reaches the column only if its nearest point is within the radius.
+            let nx = x.clamp(f64::from(gx), f64::from(gx + 1));
+            let nz = z.clamp(f64::from(gz), f64::from(gz + 1));
+            if (nx - x).hypot(nz - z) >= r - 1e-9 {
+                continue;
+            }
+            for k in rows.clone() {
+                if get(f.cell([gx, y + k, gz])).is_none_or(solid) {
+                    return false;
+                }
+            }
+        }
+    }
+    true
+}
+
+/// Where a creature at face-local `local` (its feet in row `row`) may go toward face-local `next`
+/// this tick: there, if it can stand there with its body clear; else sliding along one axis (a
+/// wall walked into slanting); None: blocked. A body already not clear (spawned or pushed against
+/// a wall) moves by its centre alone, so it can walk out.
+fn step_to(
+    get: Get,
+    f: FaceFrame,
+    def: &CreatureDef,
+    local: [f64; 3],
+    next: [f64; 2],
+) -> Option<[f64; 3]> {
+    let row = cell_of_pos(local)[1];
+    let stand = |p: [f64; 2]| {
+        let col = [p[0].floor() as i32, p[1].floor() as i32];
+        let y = feet_row(get, f, col, row, def.climb_rows, def.drop_rows, def.rows)?;
+        Some((y, [p[0], feet_y(f, [col[0], y, col[1]]), p[1]]))
+    };
+    if !body_clear(get, f, def, [local[0], local[2]], row) {
+        return stand(next).map(|(_, p)| p);
+    }
+    [next, [next[0], local[2]], [local[0], next[1]]]
+        .into_iter()
+        .filter(|p| (p[0] - local[0]).abs() + (p[1] - local[2]).abs() > 1e-12)
+        .find_map(|p| {
+            let (y, at) = stand(p)?;
+            body_clear(get, f, def, p, y).then_some(at)
+        })
+}
+
 /// The face-local height of the bottom of face-local row `y` (the top of the cell under it).
 pub(crate) fn feet_y(f: FaceFrame, [x, y, z]: [i32; 3]) -> f64 {
     let c = f.cell([x, y - 1, z]);
@@ -433,8 +558,10 @@ impl Creature {
 /// How far (degrees) an NPC looking around turns either way, and the sweep's period (s).
 const LOOK_SWEEP_DEG: f64 = 60.0;
 const LOOK_PERIOD_S: f64 = 4.0;
-/// How long an NPC that fights back stays turned on its attacker (s).
-const FOE_SECONDS: f64 = 10.0;
+/// An NPC's eye above its feet, as a share of its height (`rows`): where its strikes come from.
+const NPC_EYE_SHARE: f64 = 0.9;
+/// Passes of [`Creatures::separate`] a tick: a crowd's overlaps settle in a few.
+const SEPARATE_PASSES: usize = 4;
 
 /// The world's creatures.
 #[derive(Debug)]
@@ -515,6 +642,9 @@ impl Creatures {
             idle_len: 0,
             foe: None,
             foe_ticks: 0,
+            foe_player: None,
+            fight_wait: 0,
+            own_swing: None,
             rng,
         });
         Some(self.next_id)
@@ -669,6 +799,9 @@ impl Creatures {
                     idle_len: 0,
                     foe: None,
                     foe_ticks: 0,
+                    foe_player: None,
+                    fight_wait: 0,
+                    own_swing: None,
                     rng: mix(seed, [x + dx, yy, z + dz], 99),
                 };
                 c.look_base = c.yaw;
@@ -690,7 +823,8 @@ impl Creatures {
     }
 
     /// An NPC of `id` is attacked by something at `from` (world): with `Combat::FightBack` it
-    /// stops and turns on it for `FOE_SECONDS`. True when it fights back.
+    /// stops and turns on it for its `fight.giveUpS` (each new strike starts it again). True when
+    /// it fights back.
     pub fn attacked(&mut self, id: u32, from: [f64; 3]) -> bool {
         let table = self.table;
         let Some(c) = self.get_mut(id) else {
@@ -698,12 +832,138 @@ impl Creatures {
         };
         match table.creatures[c.kind].npc.map(|n| n.combat) {
             Some(Combat::FightBack) => {
+                let give_up = table.creatures[c.kind]
+                    .npc
+                    .map_or(0.0, |n| n.fight.give_up_s);
                 c.foe = Some(from);
-                c.foe_ticks = (FOE_SECONDS * f64::from(SIM_HZ)) as u32;
+                c.foe_ticks = ((give_up * f64::from(SIM_HZ)) as u32).max(1);
                 true
             }
             _ => false,
         }
+    }
+
+    /// The player who struck NPC `id` (after [`Self::strike`]): the one its fight rules watch.
+    pub fn set_foe_player(&mut self, id: u32, player: u16) {
+        if let Some(c) = self.get_mut(id)
+            && c.foe_ticks > 0
+        {
+            c.foe_player = Some(player);
+        }
+    }
+
+    /// The NPCs' fights, a tick (after [`Self::step_near`]; WORK_QUEUE items 35 and 38, round 2):
+    /// each NPC turned on a player (`foe_player`) and holding a weapon reads that player
+    /// (`foes`: None, gone) by its `fight` rules: while the player's blade is coming it raises its
+    /// block in its stance (`counter`: the one that blocks that swing; `random`), lowering it
+    /// otherwise; while the player recovers, within `strike_within_m`, its wait over, it swings
+    /// back (attacking drops its block); and it gives up `giveUpS` after it was last struck. Its
+    /// own swings landing this tick are returned for the server to resolve (an NPC's strike never
+    /// hurts a player). Face-local through `FaceFrame`.
+    pub fn step_fights(&mut self, foes: &dyn Fn(u16) -> Option<FoeView>) -> Vec<NpcSwing> {
+        let table = self.table;
+        let mut out = Vec::new();
+        for c in &mut self.list {
+            let Some(n) = table.creatures[c.kind].npc else {
+                continue;
+            };
+            let fight = n.fight;
+            c.fight_wait = c.fight_wait.saturating_sub(1);
+            let Some(mut g) = c.guard else {
+                continue;
+            };
+            let Some(t) = dwell_protocol::chopping::tool(g.weapon) else {
+                continue;
+            };
+            let Some(w) = t.weapon else {
+                continue;
+            };
+            let view = c.foe_player.filter(|_| c.foe_ticks > 0).and_then(foes);
+            let Some(view) = view else {
+                // Given up (or its foe gone): its block lowered, its swing dropped.
+                c.foe_player = None;
+                c.own_swing = None;
+                if g.raised {
+                    g.raised = false;
+                    c.guard = Some(g);
+                }
+                continue;
+            };
+            c.foe = Some(view.position);
+            let f = FaceFrame::at_height(c.position[1]);
+            let (me, them) = (f.point(c.position), f.point(view.position));
+            let dist = (them[0] - me[0]).hypot(them[2] - me[2]);
+            // Its own swing on its way to its contact.
+            if let Some(left) = c.own_swing {
+                if left <= 1 {
+                    c.own_swing = None;
+                    let up = f64::from(table.creatures[c.kind].rows) * dwell_world::CELL_H;
+                    let eye = f.point([me[0], me[1] + up * NPC_EYE_SHARE, me[2]]);
+                    out.push(NpcSwing {
+                        npc: c.id,
+                        player: c.foe_player.expect("a foe"),
+                        weapon: g.weapon,
+                        vertical: g.vertical,
+                        eye,
+                    });
+                } else {
+                    c.own_swing = Some(left - 1);
+                }
+                c.guard = Some(g);
+                continue;
+            }
+            match view.swing {
+                Some((SwingPhase::Coming, strike_vertical, weapon)) if fight.raise_on_windup => {
+                    if !g.raised {
+                        g.vertical = match fight.stance {
+                            FightStance::Counter => {
+                                let theirs = dwell_protocol::chopping::tool(weapon)
+                                    .and_then(|t| t.weapon)
+                                    .map_or(w.guard, |x| x.guard);
+                                w.guard.counter(strike_vertical, &theirs)
+                            }
+                            FightStance::Random => {
+                                c.rng = mix(c.rng, [0; 3], 7);
+                                unit(c.rng) < 0.5
+                            }
+                        };
+                        g.raised = true;
+                    }
+                }
+                Some((SwingPhase::Recovering, ..))
+                    if fight.strike_back && c.fight_wait == 0 && dist <= fight.strike_within_m =>
+                {
+                    // An opening: it swings back, its block dropped for the swing.
+                    let hz = f64::from(SIM_HZ);
+                    let contact = ((t.swing.centre_s() * hz).ceil() as u32).max(1);
+                    g.raised = false;
+                    g.attack((t.swing_seconds * hz).ceil() as u32);
+                    c.own_swing = Some(contact);
+                    c.fight_wait = ((fight.cooldown_s.max(t.swing_seconds)) * hz).ceil() as u32;
+                }
+                Some((SwingPhase::Coming, ..)) => {}
+                _ => g.raised = false,
+            }
+            c.guard = Some(g);
+        }
+        out
+    }
+
+    /// An NPC's swing was blocked: it may swing again only after `recoil_s`.
+    pub fn recoil(&mut self, id: u32, recoil_s: f64) {
+        if let Some(c) = self.get_mut(id) {
+            let ticks = (recoil_s * f64::from(SIM_HZ)).ceil() as u32;
+            c.fight_wait = c.fight_wait.max(ticks);
+        }
+    }
+
+    /// The fighters' guards as others see them: each creature holding a weapon, its stance and
+    /// whether its block is raised.
+    pub fn guards(&self) -> Vec<(u32, bool, bool)> {
+        self.list
+            .iter()
+            .filter_map(|c| c.guard.map(|g| (c.id, g.vertical, g.blocking())))
+            .collect()
     }
 
     /// One tick: each creature idles or walks a step; a step onto ground it can't stand on (water,
@@ -739,12 +999,9 @@ impl Creatures {
                     local[0] + c.knock[0] / left * step,
                     local[2] + c.knock[1] / left * step,
                 ];
-                let row = cell_of_pos(local)[1];
-                let col = [next[0].floor() as i32, next[1].floor() as i32];
-                match feet_row(get, f, col, row, def.climb_rows, def.drop_rows, def.rows) {
-                    Some(y) => {
-                        let ny = feet_y(f, [col[0], y, col[1]]);
-                        c.position = f.point([next[0], ny, next[1]]);
+                match step_to(get, f, &def, local, next) {
+                    Some(at) => {
+                        c.position = f.point(at);
                         let k = (left - step) / left;
                         c.knock = [c.knock[0] * k, c.knock[1] * k];
                     }
@@ -847,12 +1104,9 @@ impl Creatures {
                 continue;
             }
             let next = [local[0] + dx / dist * step, local[2] + dz / dist * step];
-            let row = cell_of_pos(local)[1];
-            let col = [next[0].floor() as i32, next[1].floor() as i32];
-            match feet_row(get, f, col, row, def.climb_rows, def.drop_rows, def.rows) {
-                Some(y) => {
-                    let ny = feet_y(f, [col[0], y, col[1]]);
-                    c.position = f.point([next[0], ny, next[1]]);
+            match step_to(get, f, &def, local, next) {
+                Some(at) => {
+                    c.position = f.point(at);
                     c.yaw = dx.atan2(dz).to_degrees();
                     c.speed = speed;
                 }
@@ -862,6 +1116,76 @@ impl Creatures {
                         c.start_idle(&def);
                     }
                     c.speed = 0.0;
+                }
+            }
+        }
+        self.separate(get);
+    }
+
+    /// Keeps creatures' bodies apart (BUGS.md #80): two closer than their radii plus the data's
+    /// `gap_m` steer apart at up to `push_mps`, and two overlapping are pushed straight out (a few
+    /// passes, so a crowd settles), each move kept to ground it can stand on with its body clear.
+    fn separate(&mut self, get: Get) {
+        let table = self.table;
+        let push = table.limits.push_mps / f64::from(SIM_HZ);
+        let gap = table.limits.gap_m;
+        for pass in 0..SEPARATE_PASSES {
+            let n = self.list.len();
+            let mut moved = vec![[0.0f64; 2]; n];
+            let mut any = false;
+            for i in 0..n {
+                for j in i + 1..n {
+                    let (a, b) = (&self.list[i], &self.list[j]);
+                    let f = FaceFrame::at_height(a.position[1]);
+                    if FaceFrame::at_height(b.position[1]) != f {
+                        continue;
+                    }
+                    let (da, db) = (&table.creatures[a.kind], &table.creatures[b.kind]);
+                    let (p, q) = (f.point(a.position), f.point(b.position));
+                    // One on a ledge over the other: no contact.
+                    if (p[1] - q[1]).abs() >= f64::from(da.rows.max(db.rows)) * dwell_world::CELL_H
+                    {
+                        continue;
+                    }
+                    let touch = da.body_radius_m + db.body_radius_m;
+                    let (dx, dz) = (q[0] - p[0], q[2] - p[2]);
+                    let d = dx.hypot(dz);
+                    let hard = (touch - d) / 2.0;
+                    let each = if pass == 0 {
+                        hard.max(((touch + gap - d) / 2.0).min(push))
+                    } else {
+                        hard
+                    };
+                    if each <= 1e-9 {
+                        continue;
+                    }
+                    // Right on top of each other: apart along a heading their ids give.
+                    let (ux, uz) = if d > 1e-9 {
+                        (dx / d, dz / d)
+                    } else {
+                        let a = unit(mix(u64::from(a.id), [b.id as i32, 0, 0], 0x5e9a))
+                            * std::f64::consts::TAU;
+                        (a.sin(), a.cos())
+                    };
+                    // A hair past touching, so the next pass finds them apart.
+                    let each = each + if hard > 0.0 { 1e-6 } else { 0.0 };
+                    moved[i] = [moved[i][0] - ux * each, moved[i][1] - uz * each];
+                    moved[j] = [moved[j][0] + ux * each, moved[j][1] + uz * each];
+                    any = true;
+                }
+            }
+            if !any {
+                return;
+            }
+            for (c, m) in self.list.iter_mut().zip(&moved) {
+                if m[0] == 0.0 && m[1] == 0.0 {
+                    continue;
+                }
+                let def = table.creatures[c.kind];
+                let f = FaceFrame::at_height(c.position[1]);
+                let local = f.point(c.position);
+                if let Some(at) = step_to(get, f, &def, local, [local[0] + m[0], local[2] + m[1]]) {
+                    c.position = f.point(at);
                 }
             }
         }
@@ -1227,6 +1551,33 @@ mod tests {
                 }
             }
             assert!(walked > 20.0, "they wander ({walked} m)");
+        }
+    );
+
+    both_faces!(
+        fn a_creature_s_body_keeps_out_of_a_wall_it_walks_into(f: FaceFrame) {
+            // BUGS.md #81: a wolf walked partly inside a cliff wall: only the cell under its
+            // centre was checked, so its body went up to its radius into the stone. The wall's
+            // face is at x = -5 (cells x <= -6, rows up to 15).
+            let g = world(f);
+            let mut cs = Creatures::new(Table::SHIPPED);
+            let wolf = put(&mut cs, f, "dwell:wolf", -2.0, 0.5, 270.0);
+            let doe = put(&mut cs, f, "dwell:doe", -2.0, 6.5, 270.0);
+            // Straight at the wall, and slanting into it (a slide along it is fine).
+            cs.get_mut(wolf).unwrap().target = Some([-12.0, 0.5]);
+            cs.get_mut(doe).unwrap().target = Some([-12.0, 2.5]);
+            let mut least = f64::MAX;
+            for _ in 0..60 * 8 {
+                cs.step(&g);
+                for c in &cs.list {
+                    let r = cs.table.creatures[c.kind].body_radius_m;
+                    least = least.min(f.point(c.position)[0] - r + 5.0);
+                }
+            }
+            assert!(least >= -1e-9, "a body {:.3} m inside the wall", -least);
+            // It still walks right up to it.
+            let x = f.point(cs.get(wolf).unwrap().position)[0];
+            assert!(x < -4.0, "it walked up to the wall: x {x}");
         }
     );
 

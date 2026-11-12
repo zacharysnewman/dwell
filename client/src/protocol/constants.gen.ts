@@ -152,6 +152,7 @@ export const MessageType = {
   SteamHello: 103,
   Steam: 104,
   Capabilities: 105,
+  Swordplay: 106,
 } as const;
 export type MessageType = (typeof MessageType)[keyof typeof MessageType];
 
@@ -335,5 +336,5 @@ export const WorldSizes = {
 export const Capabilities = {
   maxNames: 64,
   maxNameBytes: 48,
-  names: ['structures.place', 'grid.frames', 'damage.chunks', 'creatures.npcs'],
+  names: ['structures.place', 'grid.frames', 'damage.chunks', 'creatures.npcs', 'weapons.clash'],
 } as const;

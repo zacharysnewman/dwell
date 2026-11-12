@@ -14,22 +14,30 @@ const root = join(here, '..', '..');
 
 const TOP_FIELDS = ['formatVersion', 'island', 'grazing', 'near', 'species'];
 const NEAR_FIELDS = ['spawnM', 'foldM', 'thinkS', 'maxSlopeDeg', 'searchM'];
-const NEAR_SPECIES_FIELDS = ['creature', 'hungerPerS', 'energyPerS', 'sleep', 'graze', 'hunt', 'flee', 'mate', 'companyM', 'wanderM', 'hurt'];
+const NEAR_SPECIES_FIELDS = ['creature', 'hungerPerS', 'energyPerS', 'sleep', 'graze', 'hunt', 'flee', 'mate', 'companyM', 'wanderM', 'hurt', 'players', 'idles', 'walkChance'];
+/** Noticing players (WORK_QUEUE item 39): the distance by the player's stance, the reaction
+ * (`flee` as a group, `avoid` keeping the distance), the flight and boldness when hungry. */
+const NEAR_PLAYERS_FIELDS = ['react', 'noticeM', 'crouchM', 'stillM', 'sprintM', 'stillBelowMps', 'sprintAboveMps', 'runM', 'pace', 'calmS', 'boldAboveHunger', 'boldM'];
+export const PLAYER_REACTS = ['flee', 'avoid'];
+/** The idle poses (a fixed vocabulary: dwell-ecology `IdlePose`, drawn by the clients). */
+export const IDLE_POSES = ['stand', 'graze', 'lookUp', 'earFlick', 'sit', 'lie'];
+const IDLE_FIELDS = ['pose', 'weight', 'seconds'];
+const ROAM_FIELDS = ['towardPreyAboveHunger'];
 /** A hurt individual's reaction (WORK_QUEUE item 35): `react` flee or fight (turn on the striker),
  * for `seconds`, at `pace` × its walk; a fighter under `fleeBelowHealth` of its health flees. */
 const NEAR_HURT_FIELDS = ['react', 'seconds', 'pace', 'fleeBelowHealth', 'runM'];
 export const HURT_REACTS = ['flee', 'fight'];
-const NEAR_SLEEP_FIELDS = ['belowEnergy', 'nightChancePerS', 'nightBelowHunger', 'gainPerS', 'wakeAboveEnergy', 'wakeAboveHunger', 'minS'];
-const NEAR_GRAZE_FIELDS = ['aboveHunger', 'fullBelow', 'eatPerS', 'foragePerS', 'block', 'blockChancePerS'];
-const NEAR_HUNT_FIELDS = ['aboveHunger', 'senseM', 'sprint', 'reachM', 'feedsPackM', 'feedsPack'];
+const NEAR_SLEEP_FIELDS = ['belowEnergy', 'nightChancePerS', 'nightBelowHunger', 'gainPerS', 'wakeAboveEnergy', 'wakeAboveHunger', 'minS', 'pose'];
+const NEAR_GRAZE_FIELDS = ['aboveHunger', 'fullBelow', 'eatPerS', 'foragePerS', 'block', 'blockChancePerS', 'pose'];
+const NEAR_HUNT_FIELDS = ['aboveHunger', 'senseM', 'sprint', 'reachM', 'feedsPackM', 'feedsPack', 'trackM'];
 const NEAR_FLEE_FIELDS = ['radiusM', 'pace'];
-const NEAR_MATE_FIELDS = ['belowHunger', 'aboveEnergy', 'radiusM', 'reachM', 'chance', 'cost', 'tired'];
+const NEAR_MATE_FIELDS = ['belowHunger', 'aboveEnergy', 'radiusM', 'reachM', 'chance', 'cost', 'tired', 'restS', 'groupEveryS'];
 const ISLAND_FIELDS = ['cellM', 'stepDays'];
 const GRAZING_FIELDS = ['regrowPerDay', 'grounds'];
 const GROUND_FIELDS = ['name', 'maxHeightM', 'maxSlopeDeg', 'max', 'refuge'];
 const SPECIES_FIELDS = [
   'name', 'group', 'start', 'breedPerDay', 'breedBelowHunger', 'hungerDays', 'starveAboveHunger',
-  'starvePerDay', 'speedMPerDay', 'senseRadiusM', 'diet', 'flee', 'disperse', 'near', 'far',
+  'starvePerDay', 'speedMPerDay', 'senseRadiusM', 'diet', 'flee', 'disperse', 'roam', 'near', 'far',
 ];
 // How a far group is drawn by the clients (docs/ECOLOGY.md §11): a few simple shapes in its
 // colour, `sizeM` tall, fading out from `fadeStartM` to `fadeEndM` from the eye.
@@ -172,6 +180,12 @@ export function validateEcology(data) {
         leavePerDay: range(d.leavePerDay, 0, 0.2, `${at}.disperse.leavePerDay`),
       };
     }
+    let roam = null;
+    if (s.roam !== undefined) {
+      const d = object(s.roam, ROAM_FIELDS, `${at}.roam`);
+      if (!diet.prey) fail(`${at}.roam: only a hunter roams toward prey`);
+      roam = { towardPreyAboveHunger: range(d.towardPreyAboveHunger, 0, 1, `${at}.roam.towardPreyAboveHunger`) };
+    }
     const near = s.near === undefined ? null : nearOf(s, `${at}.near`, diet, flee);
     let far = null;
     if (s.far !== undefined) {
@@ -185,7 +199,7 @@ export function validateEcology(data) {
       };
       if (far.fadeEndM <= far.fadeStartM) fail(`${at}.far.fadeEndM must be past fadeStartM`);
     }
-    return { ...s, diet, flee, disperse, near, far };
+    return { ...s, diet, flee, disperse, roam, near, far };
   });
   return { island: is, grazing: g, near: nr, species };
 }
@@ -203,6 +217,12 @@ function nearOf(s, at, diet, flee) {
   range(sl.nightChancePerS, 0, 10, `${at}.sleep.nightChancePerS`);
   range(sl.gainPerS, 0, 10, `${at}.sleep.gainPerS`, true);
   range(sl.minS, 0, 3600, `${at}.sleep.minS`);
+  const pose = (v, def, where) => {
+    if (v === undefined) return def;
+    if (!IDLE_POSES.includes(v)) fail(`${where} must be one of ${IDLE_POSES.join(', ')}`);
+    return v;
+  };
+  sl.pose = pose(sl.pose, 'lie', `${at}.sleep.pose`);
   let graze = null;
   let hunt = null;
   if (diet.graze) {
@@ -214,7 +234,7 @@ function nearOf(s, at, diet, flee) {
     range(g.foragePerS, 0, 100, `${at}.graze.foragePerS`);
     if (g.block !== undefined && (typeof g.block !== 'string' || !NAMESPACED.test(g.block))) fail(`${at}.graze.block must name a block (namespace:name)`);
     range(g.blockChancePerS ?? 0, 0, 10, `${at}.graze.blockChancePerS`);
-    graze = { ...g, block: g.block ?? null, blockChancePerS: g.blockChancePerS ?? 0 };
+    graze = { ...g, block: g.block ?? null, blockChancePerS: g.blockChancePerS ?? 0, pose: pose(g.pose, 'graze', `${at}.graze.pose`) };
   } else {
     if (n.graze !== undefined) fail(`${at}.graze: a hunter doesn't graze`);
     const h = object(n.hunt, NEAR_HUNT_FIELDS, `${at}.hunt`);
@@ -224,7 +244,9 @@ function nearOf(s, at, diet, flee) {
     range(h.reachM, 0, 100, `${at}.hunt.reachM`, true);
     range(h.feedsPackM, 0, 1000, `${at}.hunt.feedsPackM`);
     range(h.feedsPack, 0, 1, `${at}.hunt.feedsPack`);
-    hunt = h;
+    hunt = { ...h, trackM: h.trackM ?? 0 };
+    range(hunt.trackM, 0, 1000, `${at}.hunt.trackM`);
+    if (hunt.trackM > 0 && hunt.trackM < h.senseM) fail(`${at}.hunt.trackM must be past senseM (or 0)`);
   }
   let nflee = null;
   if (n.flee !== undefined) {
@@ -238,6 +260,10 @@ function nearOf(s, at, diet, flee) {
   for (const k of ['belowHunger', 'aboveEnergy', 'chance', 'cost', 'tired']) range(m[k], 0, 1, `${at}.mate.${k}`);
   range(m.radiusM, 0, 1000, `${at}.mate.radiusM`);
   range(m.reachM, 0, 100, `${at}.mate.reachM`, true);
+  // The pace of births (BUGS.md #79): each parent rests `restS` after a young, and a group has at
+  // most one young every `groupEveryS` (from when it came near).
+  range(m.restS, 0, 86400, `${at}.mate.restS`, true);
+  range(m.groupEveryS, 0, 86400, `${at}.mate.groupEveryS`, true);
   let hurt = null;
   if (n.hurt !== undefined) {
     const h = object(n.hurt, NEAR_HURT_FIELDS, `${at}.hurt`);
@@ -248,7 +274,49 @@ function nearOf(s, at, diet, flee) {
     range(hurt.fleeBelowHealth, 0, 1, `${at}.hurt.fleeBelowHealth`);
     range(hurt.runM, 0, 200, `${at}.hurt.runM`, true);
   }
-  return { ...n, sleep: sl, graze, hunt, flee: nflee, mate: m, hurt };
+  let players = null;
+  if (n.players !== undefined) {
+    const p = object(n.players, NEAR_PLAYERS_FIELDS, `${at}.players`);
+    if (!PLAYER_REACTS.includes(p.react)) fail(`${at}.players.react must be one of ${PLAYER_REACTS.join(', ')}`);
+    range(p.noticeM, 0, 500, `${at}.players.noticeM`);
+    players = {
+      react: p.react,
+      noticeM: p.noticeM,
+      crouchM: p.crouchM ?? p.noticeM,
+      stillM: p.stillM ?? p.noticeM,
+      sprintM: p.sprintM ?? p.noticeM,
+      stillBelowMps: p.stillBelowMps ?? 0.3,
+      sprintAboveMps: p.sprintAboveMps ?? 5,
+      runM: p.runM ?? 16,
+      pace: p.pace ?? 1,
+      calmS: p.calmS ?? 0,
+      boldAboveHunger: p.boldAboveHunger ?? 1,
+      boldM: p.boldM ?? p.noticeM,
+    };
+    for (const k of ['crouchM', 'stillM', 'sprintM', 'boldM']) range(players[k], 0, 500, `${at}.players.${k}`);
+    range(players.stillBelowMps, 0, 100, `${at}.players.stillBelowMps`);
+    range(players.sprintAboveMps, players.stillBelowMps, 100, `${at}.players.sprintAboveMps`);
+    range(players.runM, 0, 200, `${at}.players.runM`);
+    range(players.pace, 0.1, 10, `${at}.players.pace`);
+    range(players.calmS, 0, 600, `${at}.players.calmS`);
+    range(players.boldAboveHunger, 0, 1, `${at}.players.boldAboveHunger`);
+  }
+  let idles = [];
+  if (n.idles !== undefined) {
+    if (!Array.isArray(n.idles)) fail(`${at}.idles must be a list`);
+    idles = n.idles.map((i, j) => {
+      const w = `${at}.idles[${j}]`;
+      object(i, IDLE_FIELDS, w);
+      if (!IDLE_POSES.includes(i.pose)) fail(`${w}.pose must be one of ${IDLE_POSES.join(', ')}`);
+      range(i.weight, 0, 1000, `${w}.weight`, true);
+      if (!Array.isArray(i.seconds) || i.seconds.length !== 2) fail(`${w}.seconds must be [min, max]`);
+      range(i.seconds[0], 0, 600, `${w}.seconds[0]`);
+      range(i.seconds[1], i.seconds[0], 600, `${w}.seconds[1]`);
+      return i;
+    });
+  }
+  const walkChance = range(n.walkChance ?? 0.3, 0, 1, `${at}.walkChance`);
+  return { ...n, sleep: sl, graze, hunt, flee: nflee, mate: m, hurt, players, idles, walkChance };
 }
 
 function nearRust(n) {
@@ -258,10 +326,10 @@ function nearRust(n) {
   const h = n.hunt;
   const m = n.mate;
   const graze = g
-    ? `Some(NearGraze { above_hunger: ${f(g.aboveHunger)}, full_below: ${f(g.fullBelow)}, eat_per_s: ${f(g.eatPerS)}, forage_per_s: ${f(g.foragePerS)}, block: ${g.block ? `Some(${JSON.stringify(g.block)})` : 'None'}, block_chance_per_s: ${f(g.blockChancePerS)} })`
+    ? `Some(NearGraze { above_hunger: ${f(g.aboveHunger)}, full_below: ${f(g.fullBelow)}, eat_per_s: ${f(g.eatPerS)}, forage_per_s: ${f(g.foragePerS)}, block: ${g.block ? `Some(${JSON.stringify(g.block)})` : 'None'}, block_chance_per_s: ${f(g.blockChancePerS)}, pose: ${poseRust(g.pose)} })`
     : 'None';
   const hunt = h
-    ? `Some(NearHunt { above_hunger: ${f(h.aboveHunger)}, sense_m: ${f(h.senseM)}, sprint: ${f(h.sprint)}, reach_m: ${f(h.reachM)}, feeds_pack_m: ${f(h.feedsPackM)}, feeds_pack: ${f(h.feedsPack)} })`
+    ? `Some(NearHunt { above_hunger: ${f(h.aboveHunger)}, sense_m: ${f(h.senseM)}, sprint: ${f(h.sprint)}, reach_m: ${f(h.reachM)}, feeds_pack_m: ${f(h.feedsPackM)}, feeds_pack: ${f(h.feedsPack)}, track_m: ${f(h.trackM)} })`
     : 'None';
   const flee = n.flee ? `Some(NearFlee { radius_m: ${f(n.flee.radiusM)}, pace: ${f(n.flee.pace)} })` : 'None';
   return [
@@ -269,19 +337,27 @@ function nearRust(n) {
     `                creature: ${JSON.stringify(n.creature)},`,
     `                hunger_per_s: ${f(n.hungerPerS)},`,
     `                energy_per_s: ${f(n.energyPerS)},`,
-    `                sleep: NearSleep { below_energy: ${f(sl.belowEnergy)}, night_chance_per_s: ${f(sl.nightChancePerS)}, night_below_hunger: ${f(sl.nightBelowHunger)}, gain_per_s: ${f(sl.gainPerS)}, wake_above_energy: ${f(sl.wakeAboveEnergy)}, wake_above_hunger: ${f(sl.wakeAboveHunger)}, min_s: ${f(sl.minS)} },`,
+    `                sleep: NearSleep { below_energy: ${f(sl.belowEnergy)}, night_chance_per_s: ${f(sl.nightChancePerS)}, night_below_hunger: ${f(sl.nightBelowHunger)}, gain_per_s: ${f(sl.gainPerS)}, wake_above_energy: ${f(sl.wakeAboveEnergy)}, wake_above_hunger: ${f(sl.wakeAboveHunger)}, min_s: ${f(sl.minS)}, pose: ${poseRust(sl.pose)} },`,
     `                graze: ${graze},`,
     `                hunt: ${hunt},`,
     `                flee: ${flee},`,
-    `                mate: NearMate { below_hunger: ${f(m.belowHunger)}, above_energy: ${f(m.aboveEnergy)}, radius_m: ${f(m.radiusM)}, reach_m: ${f(m.reachM)}, chance: ${f(m.chance)}, cost: ${f(m.cost)}, tired: ${f(m.tired)} },`,
+    `                mate: NearMate { below_hunger: ${f(m.belowHunger)}, above_energy: ${f(m.aboveEnergy)}, radius_m: ${f(m.radiusM)}, reach_m: ${f(m.reachM)}, chance: ${f(m.chance)}, cost: ${f(m.cost)}, tired: ${f(m.tired)}, rest_s: ${f(m.restS)}, group_every_s: ${f(m.groupEveryS)} },`,
     `                company_m: ${f(n.companyM)},`,
     `                wander_m: ${f(n.wanderM)},`,
     `                hurt: ${n.hurt ? `Some(NearHurt { react: HurtReact::${n.hurt.react === 'flee' ? 'Flee' : 'Fight'}, seconds: ${f(n.hurt.seconds)}, pace: ${f(n.hurt.pace)}, flee_below_health: ${f(n.hurt.fleeBelowHealth)}, run_m: ${f(n.hurt.runM)} })` : 'None'},`,
+    `                players: ${playersRust(n.players)},`,
+    `                idles: &[${n.idles.map((i) => `NearIdle { pose: ${poseRust(i.pose)}, weight: ${f(i.weight)}, seconds: [${f(i.seconds[0])}, ${f(i.seconds[1])}] }`).join(', ')}],`,
+    `                walk_chance: ${f(n.walkChance)},`,
     '            })',
   ].join('\n');
 }
 
 const f = (v) => (Number.isInteger(v) ? `${v}.0` : `${v}`);
+const poseRust = (p) => `IdlePose::${p[0].toUpperCase()}${p.slice(1)}`;
+function playersRust(p) {
+  if (!p) return 'None';
+  return `Some(NearPlayers { react: PlayerReact::${p.react === 'flee' ? 'Flee' : 'Avoid'}, notice_m: ${f(p.noticeM)}, crouch_m: ${f(p.crouchM)}, still_m: ${f(p.stillM)}, sprint_m: ${f(p.sprintM)}, still_below_mps: ${f(p.stillBelowMps)}, sprint_above_mps: ${f(p.sprintAboveMps)}, run_m: ${f(p.runM)}, pace: ${f(p.pace)}, calm_s: ${f(p.calmS)}, bold_above_hunger: ${f(p.boldAboveHunger)}, bold_m: ${f(p.boldM)} })`;
+}
 const idx = (a) => `&[${a.join(', ')}]`;
 
 export function ecologyRust(d, source) {
@@ -289,7 +365,7 @@ export function ecologyRust(d, source) {
     `// Generated by shared/ecology/gen.mjs from ${source}. Do not edit.`,
     '',
     '#[allow(unused_imports)]',
-    'use crate::data::{Data, Diet, Disperse, Flee, GroundDef, GroupRules, HurtReact, IslandParams, NearDef, NearFlee, NearHurt, NearGraze, NearHunt, NearMate, NearParams, NearSleep, SpeciesDef};',
+    'use crate::data::{Data, Diet, Disperse, Flee, GroundDef, GroupRules, HurtReact, IdlePose, IslandParams, NearDef, NearFlee, NearHurt, NearGraze, NearHunt, NearIdle, NearMate, NearParams, NearPlayers, NearSleep, PlayerReact, Roam, SpeciesDef};',
     '',
     'pub const DATA: Data = Data {',
     `    island: IslandParams { cell_m: ${f(d.island.cellM)}, step_days: ${f(d.island.stepDays)} },`,
@@ -326,6 +402,7 @@ export function ecologyRust(d, source) {
       `            diet: ${diet},`,
       `            flee: ${flee},`,
       `            disperse: ${disperse},`,
+      `            roam: ${s.roam ? `Some(Roam { toward_prey_above_hunger: ${f(s.roam.towardPreyAboveHunger)} })` : 'None'},`,
       `            near: ${nearRust(s.near)},`,
       '        },',
     );
