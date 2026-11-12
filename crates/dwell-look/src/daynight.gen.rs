@@ -24,7 +24,7 @@ pub const DAY_NIGHT: DayNight = DayNight {
     },
     moon: MoonLook {
         radius_deg: 1.2,
-        cycle_days: 8.0,
+        cycle_days: 8.25,
         start_phase: 0.5,
         color: [0.839216, 0.858824, 0.901961],
         maria: 0.45,

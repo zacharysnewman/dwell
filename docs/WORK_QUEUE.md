@@ -661,6 +661,15 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    aria dirt block)"; "Yes for now, let's just do earth gravity out to moon. We likely need an atmosphere
    transition now between sky thinning to space. Clouds shouldn't extend past the earth atmosphere either."; the
    moon "should match previous size for now. We'll play by ear a bit when we travel there."
+   **Built 2026-11-12** (branch `claude/moon-month-maria-wgxts3`): the month is 8.25 days
+   (`shared/look/daynight.json` `moon.cycleDays`), so each full moon comes a quarter day later on the clock and over
+   four months both faces get one near their midnight (`dwell-look` celestial test); the maria's ground is a new
+   darker block `dwell:moon_mare_dust` (prototype content: the `mare_regolith` palette ramp, a painterly tile like
+   the moon dust's; appended, no state id moves), named by `grids.json` `maria.block`, and the far bake's colour is
+   now each ground block's `color` (no separate maria albedo), so the bake is darker over the maria by the same
+   data. Owner's note on the PR: the baked maria were too faint after #682's shading, so the mare block's `color`
+   (`#555459`) is 0.55 × the moon dust's luma, the old sky moon's seas (`1 − moon.maria`); a test pins the bake's
+   maria/highland contrast at 0.55. Tests on both faces (`--test grids`, 26).
 
 28. **An atmosphere: the sky thinning to space** (owner 2026-11-12: "We likely need an atmosphere transition now
    between sky thinning to space. Clouds shouldn't extend past the earth atmosphere either."). With flight to the

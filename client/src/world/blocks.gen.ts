@@ -75,7 +75,7 @@ export interface ShapeDef {
 }
 
 /** FNV-1a 64 over the canonical state strings (each followed by "\n") in id order. */
-export const REGISTRY_HASH = 0x237d4b55d8ef732cn;
+export const REGISTRY_HASH = 0x47b3300c394bead3n;
 
 export const BLOCK_DEFS: readonly BlockDef[] = [
   { id: 'dwell:air', first: 0, count: 1, properties: [] },
@@ -123,6 +123,7 @@ export const BLOCK_DEFS: readonly BlockDef[] = [
   { id: 'dwell:pine_sapling', first: 505, count: 1, properties: [], sound: 'dwell:grass' },
   { id: 'dwell:palm_sapling', first: 506, count: 1, properties: [], sound: 'dwell:grass' },
   { id: 'dwell:moon_dust', first: 507, count: 2, properties: [{ name: 'flooded', values: ['false', 'true'] }], sound: 'dwell:sand' },
+  { id: 'dwell:moon_mare_dust', first: 509, count: 2, properties: [{ name: 'flooded', values: ['false', 'true'] }], sound: 'dwell:sand' },
 ];
 
 /** The shapes block states use. */
@@ -674,6 +675,8 @@ const STATES_3: readonly StateDef[] = [
   { id: 506, state: 'dwell:palm_sapling', block: 43, values: {  }, look: 'cross', render: 'cutout', color: 0x8fbf4a, opacity: 1, textures: { top: 'leaves', side: 'leaves', bottom: 'leaves' }, selection: [0.2, 0, 0.2, 0.8, 0.7, 0.8], shape: 0, flooded: false, placeable: true },
   { id: 507, state: 'dwell:moon_dust[flooded=false]', block: 44, values: { flooded: 'false' }, look: 'cube', render: 'opaque', color: 0x9a9898, opacity: 1, textures: { top: 'moonDust', side: 'moonDust', bottom: 'moonDust' }, shape: 1, flooded: false, placeable: true },
   { id: 508, state: 'dwell:moon_dust[flooded=true]', block: 44, values: { flooded: 'true' }, look: 'cube', render: 'opaque', color: 0x9a9898, opacity: 1, textures: { top: 'moonDust', side: 'moonDust', bottom: 'moonDust' }, shape: 1, flooded: true, placeable: false },
+  { id: 509, state: 'dwell:moon_mare_dust[flooded=false]', block: 45, values: { flooded: 'false' }, look: 'cube', render: 'opaque', color: 0x555459, opacity: 1, textures: { top: 'moonMareDust', side: 'moonMareDust', bottom: 'moonMareDust' }, shape: 1, flooded: false, placeable: true },
+  { id: 510, state: 'dwell:moon_mare_dust[flooded=true]', block: 45, values: { flooded: 'true' }, look: 'cube', render: 'opaque', color: 0x555459, opacity: 1, textures: { top: 'moonMareDust', side: 'moonMareDust', bottom: 'moonMareDust' }, shape: 1, flooded: true, placeable: false },
 ];
 
 export const STATE_DEFS: readonly StateDef[] = [

@@ -246,8 +246,8 @@ dwell_world::both_faces!(
             }
         }
         assert!(up > 100 && down > 100, "{up} {down}");
-        // The brightest moonlight near a full moon: today's, or nearly (an 8-day month brings
-        // the full moon at face A's midnight, so face B's night sees it a half day off, at 92%).
+        // The brightest moonlight near a full moon: today's, or nearly (in month 3 of the 8.25-day
+        // month the full moon comes a quarter day off a face's midnight, at dusk or dawn).
         let month = c.day.moon.cycle_days * day_s();
         let best = (-100..=100)
             .map(|k| at_phase(&c, 0.5, 3.0) + f64::from(k) * 0.0008 * month)
@@ -398,4 +398,58 @@ fn the_regolith_law_keeps_the_phases_ordered() {
     assert_eq!(lit[0], 0.0);
     assert!((lit[4] - 1.0).abs() < 1e-9);
     assert!(lit[2] > 0.2 && lit[2] < 0.5, "a quarter: {lit:?}");
+}
+
+#[test]
+fn the_full_moon_comes_round_the_clock_and_both_faces_get_one_at_midnight() {
+    // both-faces: the month's full moons compared between face A's and face B's midnights.
+    // Owner, 2026-11-12: "Sounds good" to a fractional month (8.25 days), so the full moon falls
+    // at a different clock time each month and each face's nights get full moons in turn.
+    let c = C();
+    let month = c.day.moon.cycle_days * day_s();
+    // Each month's full moon: the brightest disc (geometry) near the count's full.
+    let full = |n: f64| {
+        let t0 = at_phase(&c, 0.5, n);
+        (-200..=200)
+            .map(|k| t0 + f64::from(k) * 0.0002 * month)
+            .max_by(|a, b| {
+                let lit = |t: f64| c.view(t, [0.0; 3]).lit;
+                lit(*a).total_cmp(&lit(*b))
+            })
+            .unwrap()
+    };
+    let hours: Vec<f64> = (0..4)
+        .map(|n| c.day.time_of_day(full(f64::from(n))) * 24.0)
+        .collect();
+    let apart = |a: f64, b: f64| {
+        let d = (a - b).rem_euclid(24.0);
+        d.min(24.0 - d)
+    };
+    for i in 0..4 {
+        for j in 0..i {
+            assert!(
+                apart(hours[i], hours[j]) > 3.0,
+                "months {j} and {i} at the same hour: {hours:?}"
+            );
+        }
+    }
+    // Face A's midnight is time of day 0, face B's 0.5 (its solar angle is A's + 180°).
+    for (f, midnight) in [(FaceFrame::A, 0.0), (FaceFrame::B, 12.0)] {
+        let n = (0..4)
+            .min_by(|a, b| apart(hours[*a], midnight).total_cmp(&apart(hours[*b], midnight)))
+            .unwrap();
+        assert!(
+            apart(hours[n], midnight) < 2.0,
+            "{f:?}: no full moon near its midnight: {hours:?}"
+        );
+        let t = full(n as f64);
+        let v = f.vector([0.0, 72.0, 0.0]);
+        let view = c.view(t, v);
+        assert!(view.lit > 0.97, "{f:?} month {n}: {view:?}");
+        assert!(
+            dot(view.direction, f.up()) > 0.5,
+            "{f:?}: high in its night sky"
+        );
+        assert!(c.moonlight(t, v, f) > 0.95, "{f:?}: a full night's light");
+    }
 }

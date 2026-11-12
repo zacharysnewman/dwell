@@ -137,13 +137,16 @@ Both faces of every grid: face A from the grid seed, face B from `bifacial::face
 - **Ridges:** ridged noise (`1 − |fbm|`)^`sharpness`, 12 m over 2.4 km; × `inMaria` (0.35) in maria.
 - **Maria:** basins on a jittered grid (`cellM` 7 km, `chance`, radius 1.6–3.4 km) with a soft
   `edgeM`; inside, the floor sits `depthM` lower, the plains are `flatten`ed, only `craterDensity`
-  of the craters are kept (a younger floor), and the albedo is × `albedo` (darker).
+  of the craters are kept (a younger floor), and the ground is `maria.block`, `dwell:moon_mare_dust`
+  (a darker dust; owner, §12 Q1): a column at least half in a mare takes it.
 - **Crater field:** size classes, each `perKm2` craters a km² with radii in `radiusM` (u² toward the
   small end): a jittered grid of cell √(10⁶ / perKm2), one crater a cell, so density is the data
   exactly. A crater of radius R: a flat floor `depthRatio`·R deep (≤ `maxDepthM`) over
   `floorFraction` of R, a parabolic bowl to a rim `rimRatio`·R high (≤ `maxRimM`), ejecta falling as
   the cube of the distance out to `reach`·R. Craters add; the ground never goes under `minM` (16 m).
-- **Block:** `dwell:moon_dust` (gray, digs like sand; prototype content, ARCHITECTURE.md §6.1).
+- **Blocks:** `dwell:moon_dust` on the highlands and `dwell:moon_mare_dust` in the maria (gray and
+  darker gray, both dig like sand; palette ramps `regolith` and `mare_regolith`, painterly tiles
+  `moonDust` and `moonMareDust`; prototype content, ARCHITECTURE.md §6.1).
 - **Chunks:** `CrateredTerrain::generate(coord, chunk)` fills a grid chunk through `FaceFrame` (face
   B's flipped), so travel streams the same terrain the sky shows (§7).
 
@@ -161,7 +164,10 @@ texels over the disc's square, face-local:
 - `normal_height` RGBA: the normal (R = x, G = z, B = up), A the height over `height_range`; outside
   the disc straight up with A 0. Heights at texel centres with only the craters at least a texel
   wide (smaller ones would only alias), normals by central differences.
-- `albedo` RGBA: the block's colour × the mare albedo; A 255 inside the disc.
+- `albedo` RGBA: the ground blocks' own colours (blocks.json `color`): the highland block's, the
+  maria's darker block's, blended across a mare's soft edge by its weight; no separate albedo
+  constant. The mare block's colour is 0.55 × the moon dust's luma, the old sky moon's seas (its
+  shader's `1 − moon.maria`). A 255 inside the disc.
 
 Deterministic per (world seed, grid, face); different seeds and faces differ; on a crater's inner
 wall the normal leans toward its centre (tests). 256² per face (the data's `bake.size`): **95–160 ms
@@ -269,8 +275,8 @@ Proposed: positions as data (`shared/look/sky_bodies.json`, or an `orbit` block 
 | Moon | at `D · o(t)` on a circle of radius D, inclined `i` to the sun's path plane, period P sidereal days; orientation tidally locked (§12 Q2) | its angular radius 1.2° → **D = 12.5 km / tan 1.2° ≈ 597 km**; its glow and bloom |
 
 - **Phases fall out of geometry**: the far-body renderer lights the baked normals by the real sun
-  direction in the moon's frame. The synodic month S follows from P: 1/S = 1 − 1/P, so today's
-  8-day cycle is P = 8/7 days; the moon rises ~2.5 minutes of a 20-minute day later each day, is up
+  direction in the moon's frame. The synodic month S follows from P: 1/S = 1 − 1/P, so the
+  8.25-day month (§12 Q5) is P = 8.25/7.25 days; the moon rises ~2.5 minutes of a 20-minute day later each day, is up
   by day near first and last quarter, and new moons are moonless nights.
 - **A flat disc has no terminator**: a sunlit face brightens and dims as a whole (n·s), so a crescent
   is a dim face whose crater walls catch the light, not a lit sliver. For the familiar crescent the
@@ -425,7 +431,7 @@ starts in the moon's frame with its gravity, and the home world streams in only 
 
 | Phase | What | Exit criteria |
 |---|---|---|
-| **M-1** [built] | Grids data (`grids.json`), the `cratered` generator on both faces, `moon_dust`, the generic far-body bake, the moon spawn search | `cargo test -p dwell-worldgen --test grids` (19 tests, both faces): crater floors under raised rims, density by data, flatter maria, bake deterministic/differing, normals out of crater walls, spawn flat |
+| **M-1** [built] | Grids data (`grids.json`), the `cratered` generator on both faces, `moon_dust` (and since 2026-11-12 `moon_mare_dust` in the maria), the generic far-body bake, the moon spawn search | `cargo test -p dwell-worldgen --test grids` (26 tests, both faces): crater floors under raised rims, density by data, flatter maria, maria the dark block and highlands moon dust, the bake darker over maria by the blocks' colours (0.55 × the highlands' luma, the old sky moon's contrast), bake deterministic/differing, normals out of crater walls, spawn flat |
 | **M-2** [built] | The sky draws the moon from its bake at M-4's position: today's size, glow and brightness (owner: "the moon should look bright"); the baked normals lit by the sun direction; the face from the orbit; moonlight from M-4's `moonlight` | the client bakes in a worker and caches per world; a screenshot per phase angle on both faces; the lit part as bright as today's moon and its halo today's × the lit share (a full moon side by side with today's); CPU-adapter tier |
 | **M-3** [built] | `GridFrame`: the frame abstraction (world ↔ grid ↔ face) for rendering, collision, targeting and gravity; the home grid the identity | the identity frame changes no result (parity tests across physics, targeting, meshing); a moving test grid's points round-trip |
 | **M-4** [built] | The celestial model (§6): the moon's orbit as data, phases from geometry, moonlight by lit share with a night floor; the orbit's phase an optional world setting | `cargo test -p dwell-look --lib celestial` (13 tests, both faces): full when opposite the sun, new when between, lit share monotonic; face A toward home at every phase; both faces' phases equal; the floor kept; the clock and the sun unchanged (golden); `MOON_PHASE` round-trips and is absent by default (`dwell-protocol`) |
@@ -444,7 +450,8 @@ seas (add a dark moon aria dirt block)"**: a darker regolith block for the maria
 earth gravity out to moon. We likely need an atmosphere transition now between sky thinning to space. Clouds
 shouldn't extend past the earth atmosphere either."** Q8: **"should match previous size for now. We'll play by
 ear a bit when we travel there."** No questions left open
-(the proposal's defaults until answered: darker maria by albedo, an 8-day month at 5°, home gravity until
+(the proposal's defaults until answered: darker maria by albedo, an 8-day month at 5°; both now built:
+the 8.25-day month and the maria's `dwell:moon_mare_dust`, home gravity until
 captured, 12.5 km at ~597 km).
 
 
