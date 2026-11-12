@@ -507,6 +507,9 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    contact through the follow-through (the probe: shoulder at NDC +0.53,−0.93 at 0.45 s). The arms view now draws
    the arm from the elbow down (the upper arm's parts `"view": "body"`; the elbow stays below the screen in every
    swing); `clip_probe` test `no_sleeve_shows_at_the_bottom_of_the_screen_through_a_swing`, red → green.
+   Owner, 2026-11-12: **"I wanted you to be able to hold the key down for tools like the axe."** Holding the use
+   button keeps swinging a tool (axe, pick, shovel, sword) at its swing rate until released, each swing hitting
+   what is targeted then; data per tool (`repeatOnHold`). Also bug #93: vertical swings play twice.
 18. **Digging marks that look carved** (owner 2026-11-11: "the 'chunks' of dirt aren't at all what we
    discussed. It should be like a normal map change (do we support normal/bump maps)? It's completely flat
    should look like mesh deformation (preferably without actually doing it for performance)"; "That part was
