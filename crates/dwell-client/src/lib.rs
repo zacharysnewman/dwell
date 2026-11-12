@@ -17,6 +17,7 @@ pub mod find;
 pub mod flecks;
 pub mod game;
 pub mod hit_feedback;
+pub mod hit_shards;
 pub mod jobs;
 pub mod local;
 pub mod lod_map;
