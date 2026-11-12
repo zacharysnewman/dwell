@@ -1118,7 +1118,12 @@ mod tests {
         let on = c.far("on").expect("the `on` tier");
         assert!(on.impostor && on.from > 0.0 && on.fade > 0.0, "{on:?}");
         assert!(!c.far("off").expect("the `off` tier").impostor);
-        let bad = IMPOSTORS_JSON.replace("\"fadeM\": 24", "\"fadeM\": -1");
+        let fade = format!("\"fadeM\": {}", on.fade);
+        assert!(
+            IMPOSTORS_JSON.contains(&fade),
+            "the `on` tier's fade as written"
+        );
+        let bad = IMPOSTORS_JSON.replace(&fade, "\"fadeM\": -1");
         let e = Config::parse(&bad).unwrap_err();
         assert!(e.contains("far.tiers.on.fadeM"), "{e}");
         let bad = IMPOSTORS_JSON.replace("\"draw\": \"none\"", "\"draw\": \"blob\"");

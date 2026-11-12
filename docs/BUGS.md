@@ -37,6 +37,14 @@ leaves a hole (or an unfilled cell) under each far tree's trunk/column (the tree
 not filled), or T-junction cracks where the far tree's mesh meets the LOD ground; at that distance the gap is a
 pixel or two and the sky behind the disc shows through.
 
+Looked at 2026-11-12 (impostors session, not fixed): with the impostors on (`claude/impostors-gpu`) the LOD sections
+mesh **no** tree cells (`mesh_section_trees(…, false)`). The section's surface pass draws a column's top cell only
+(`lod_mesher.rs` ~l. 499 skips tree cells above the surface, `special.y`); where a column's top is a tree cell (a
+trunk, a crown) the ground cell under it is not the column's top and gets no top face, so without the tree cells
+there is a hole in the ground the size of the trunk's column — the likely cause, and with impostors the holes show
+between the far trees from above. Fix: the generator's "ground without trees" for the section's surface (proposal
+I-4), with a watertightness test (every column of a forest section has a top face at its ground).
+
 ### 92. Downhill water shows edge triangles and thin lines at its ½ m level steps
 
 Owner, 2026-11-12 (screenshot + block dump): "I'm seeing some edge triangles and thin lines at slope transitions on

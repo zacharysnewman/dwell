@@ -1010,6 +1010,26 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    crossfade, then the LOD sections stop drawing tree cells. The forest edge says it is also the frame-rate
    lever (item 32): the near pass there is bound by the leaves' triangles, and `lod_trees.rs` draws the same
    chamfered cells past 96 m.
+   **I-3's GPU draw built (2026-11-12, local, `claude/impostors-gpu`):** the far trees are impostors
+   (client `render/impostors.rs`, ARCHITECTURE.md §6.6): the atlas baked by the job workers and uploaded per
+   layer, instances per 64 m tile from `far_trees` to 1024 m, `imp_fs` (dithered view, baked normals, the scene's
+   sun/ambient/fog, received shadows), the near leaves' complementary dither (`TREE_LEAF_FADE`), and chunks wholly
+   past the hand-over and the plants' fades (90 m) submit no cutout draw; the Far trees setting picks the tier,
+   `?impostors=0` (bench config `impostors-off`) the old `lod_trees.rs` path. **Hand-over: 48 m over 16 m** (data),
+   the nearest measured; 96 m saved nothing at the edge (leaves dropped in the vertex stage still cost their
+   vertices, so the cut is by chunk). `forest-perf` on the M1 Air at High, `gpu.frame` p95 ms, before
+   (`impostors-off`) → after: **inside 15.5 → 15.5, edge 25.8 → 23.4, above 15.6 → 12.3** (`gpu.near` p95: 13.0 →
+   11.0, 22.5 → 18.6, 13.1 → 8.5). A `frag_depth` depth offset to the baked depth was built first: with it (tiles
+   unsorted) the edge's `gpu.near` was 32.4 ms p95, without it and tiles drawn nearest first 24.9 (both at the
+   96 m hand-over; it turns off early depth on ~70 k overlapping quads), so it was dropped. Look (shots in the PR): forests reach the horizon with their crowns instead of bare trunks on flat
+   green; at 48 m the impostors read paler and noisier than the near crowns (no ambient occlusion baked, nearest
+   texel sampling, no mips) and near trunks (logs drawn to full detail) show under them.
+   **Left (the next session):** the edge is still **23.4 ms p95, ~7 ms over 16.7**: the cutout chunks within 90 m
+   (the tall grass's fade keeps them submitted; leaves alone could stop at 64 m) — split grass and leaves into
+   separate meshes or draws so leaf chunks stop at the hand-over; the impostors' own cost (not yet isolated:
+   add a `view` switch); the look at the hand-over (bake the near leaves' AO/darkening into the albedo, mips per
+   layer, the trunks handed over too); felled trees left out of the tiles; shadows cast (I-5); I-4 (delete
+   `lod_trees.rs`); the phone run (32 px atlas, ~10 MB); BUGS.md #95 (the LOD ground under far trees).
 
 32. **A tall dense forest for performance reference** (owner 2026-11-12: "We should have a tall dense forest
    biome/climate for performance reference on trees."). A biome preset (tall, closely spaced mature trees — an

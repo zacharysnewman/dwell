@@ -6902,9 +6902,8 @@ mod tests {
         // The impostors draw the far trees (render/impostors.rs): the sections mesh their ground.
         assert_eq!((r.plant_percent(), r.draws_far_trees()), (100, false));
         r.set_impostors_override(Some(false));
-        assert_eq!(
+        assert!(
             r.draws_far_trees(),
-            true,
             "?impostors=0: the sections' tree cells"
         );
         r.set_impostors_override(None);
