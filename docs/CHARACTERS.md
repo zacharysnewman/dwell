@@ -833,6 +833,18 @@ by default) and a combat hook; the combat AI waits for the sword mechanic.
 - **Client** (`dwell-client` `creatures.rs`): `CreatureView::npc` holds the NPC's colours (from its
   kind's data and variant) and held item; its role is its speed's while moving, else `look` or `sit`
   (the Peasant has neither clip yet, so they play its fallback, idle).
-- **Not yet** (follows locally): the renderer applying the colour remap per body and drawing the held
-  item on `hand.R`, sit and look clips, and the combat behaviour with the swords (item 35).
+- **Drawn** (2026-11-12): `render::characters::creature_draw` turns a creature into its skinned draw
+  and what its hand shows. An NPC's colours become a **remap** (`dwell_models::colour_remap`: per
+  part the model ramp's base and the picked ramp's base, by name from `RAMP_BASES`, which
+  `shared/models/gen.mjs` writes from `shared/textures/palette.json`; at most `MAX_REMAP` 4), sent per
+  body in the skinned instance block after the light (`remap` rows); the vertex shader swaps a face
+  whose colour is a pair's base (within 1.5/255) for the other. Its `held` item is drawn as a player's
+  is, on the Peasant's `hand.R` (§11.5), in the item's tool's level hold (`sword`), the fist closed
+  on it (`grips`). Animals, and NPCs from servers without the NPC part, draw as modelled.
+  `an_npc_is_drawn_in_its_variants_colours_with_its_sword_in_its_fist` pins it (both faces).
+  `__dwell.creatures()` marks NPCs (`npc`).
+- **Not yet**: the Peasant has no sit or look-around clip (the pack has only `idle` and `walk`), so
+  both play idle; NPCs play the Peasant's own clips (no rig pose), so the sword sits in the hand as
+  the idle clip holds it, not in the players' raised hold; the combat behaviour with the swords
+  (item 35).
 

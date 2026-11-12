@@ -121,7 +121,7 @@ durability"), and nothing wears in creative (`creativeWear` false).
 ### 1a′. Weapons: the sword (WORK_QUEUE item 35)
 
 Owner, 2026-11-12: "we'll want to bring in the swords from the model pack we got the tools from as
-weapons." The sword (`dwell:sword`, shared/inventory, a model look `katanas_swords` from the same
+weapons." The sword (`dwell:sword`, shared/inventory, a model look `sword` from the same
 *3D Low Poly Tools Weapons Containers* pack) is a tool of kind **`weapon`** in `shared/tools/tools.json`
 and an item of the creative inventory's **Weapons** group (`items.json` `category: weapons`); in
 adventure it will come by recipe later. Held, it swings as the axe does (Use toggles level and vertical,
@@ -131,10 +131,14 @@ a swing hits and its durability are its `weapon` data, its swordplay (blocking b
 `weapon.guard` (ARCHITECTURE.md "Weapons"). It cuts no wood: a log stops the blade as stone does.
 A weapon wears once a creature struck (the sword 120, by `weapon.durability`; not in creative).
 
-**Outstanding (local):** the `katanas_swords` GLB is the pack's swords joined; picking one sword
-(`objects`) and measuring its `grip` and `handle` (§1a) needs the FBX, on the owner's machine
-(`node shared/models/import.mjs --props --from <unpacked pack>`). Until then the hand holds the
-joined model at its centre.
+**The model** (2026-11-12): the pack's `katanas-swords` FBX is one katana blade
+(`KatanaBlade.001`) and five colour variants of one handle stacked on each other (`KatanaHandle.001`
+to `.005`, the same vertices); there is no straight sword in the pack. The `sword` prop
+(props.json) is the blade on the first handle (`objects`), 1 m long (`length`), its `handle` the
+bare grip's span (−0.47 to −0.25 m, the pommel end first) and its `grip` at −0.36 m, on the
+measured axis (a 6° lean: the katana's curve). The generator fails a grip outside its handle
+(`grip … is outside its handle`); the fist closes on it (models.json `grips`: `sword` and
+`sword_vertical` are `fist`). `katanas_swords` stays listed as the pack's whole file, not built in.
 
 ### 1b. Saplings (ADR 0079 S4)
 

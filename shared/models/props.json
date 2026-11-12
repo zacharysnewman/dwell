@@ -302,6 +302,16 @@
       "glb": "glb/props/katanas_swords.glb",
       "fbx": "Assets/Tools, Weapons And Props/AssetsPack-01-NAS-katanas-swords.fbx"
     },
+    "sword": {
+      "category": "weapons",
+      "glb": "glb/props/sword.glb",
+      "fbx": "Assets/Tools, Weapons And Props/AssetsPack-01-NAS-katanas-swords.fbx",
+      "objects": ["KatanaBlade.001", "KatanaHandle.001"],
+      "length": 1.0,
+      "grip": [0, -0.36, 0],
+      "handle": [-0.47, -0.25],
+      "hold": { "scale": 1, "roll": 0 }
+    },
     "metal_bat": {
       "category": "weapons",
       "glb": "glb/props/metal_bat.glb",

@@ -462,6 +462,12 @@ export function validateProps(data, dir, read = (p) => readFileSync(p)) {
       fail(`${at}: grip is [x, y, z] metres`);
     const handle =
       p.handle === undefined ? null : measureHandle(read(path), p.handle, at);
+    // A grip with a handle sits on it: the fist holds the bare handle, not the head or blade.
+    if (handle && p.grip !== undefined) {
+      const [lo, hi] = [Math.min(...p.handle), Math.max(...p.handle)];
+      if (!(p.grip[1] >= lo && p.grip[1] <= hi))
+        fail(`${at}: grip ${p.grip[1]} m is outside its handle ${lo}..${hi} m`);
+    }
     const hold = validateHold(p.hold, at);
     if (
       p.objects !== undefined &&
@@ -747,10 +753,27 @@ export function generate() {
       rust(data, models, glbRoot).replace(
         "use crate::{DetailLevel, FirstPerson, Grip, Hand, ModelData, Retarget, RetargetBone, RoleClip};",
         "use crate::{DetailLevel, FirstPerson, Grip, Hand, HandGrip, ModelData, PropData, PropHold, Retarget, RetargetBone, RoleClip};",
-      ) + rustProps(props, glbRoot, built, validateHand(propsData.hand)),
+      ) +
+        rustProps(props, glbRoot, built, validateHand(propsData.hand)) +
+        rustRampBases(palette),
     ]);
   }
   return outputs;
+}
+
+/**
+ * Every palette ramp's base colour by name (sRGB 0xRRGGBB): a model's faces carry ramp bases
+ * (§11.2), so a body's colour remap (an NPC's `colours`, docs/CHARACTERS.md §11.11) swaps one
+ * ramp's base for another's by name.
+ */
+export function rustRampBases(palette) {
+  const entries = Object.entries(palette.ramps)
+    .filter(([, stops]) => typeof stops.base === "string")
+    .map(
+      ([ramp, stops]) =>
+        `(${JSON.stringify(ramp)}, 0x${stops.base.slice(1).toLowerCase()})`,
+    );
+  return `pub static RAMP_BASES: &[(&str, u32)] = &[${entries.join(", ")}];\n`;
 }
 
 if (

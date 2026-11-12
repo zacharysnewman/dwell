@@ -698,6 +698,36 @@ fn on_skinned_hand(h: &HeldOnSkin, hand_bone: Option<usize>, hand: &Affine) -> [
     bones
 }
 
+/// A creature's skinned draw and what its hand shows (docs/CHARACTERS.md §11.11): an NPC in its
+/// colours (its kind's ramps for its variant, [`dwell_models::colour_remap`]), its fist closed
+/// round its held item (its kind's `held`, in the item's tool's level hold); an animal as modelled,
+/// holding nothing.
+pub fn creature_draw(
+    character: &Character,
+    c: &crate::creatures::CreatureView,
+    light: [f32; 2],
+) -> (super::skinned::SkinnedDraw, Held) {
+    let npc = c.npc.as_ref();
+    let held = crate::bodies::with_tool(Held::Empty, npc.and_then(|n| n.held).map(|h| (h, false)));
+    let draw = super::skinned::SkinnedDraw {
+        model: c.model,
+        seed: c.id,
+        feet: c.feet,
+        yaw: c.yaw,
+        face: c.face,
+        dead: false,
+        role: c.role,
+        light,
+        cast_only: false,
+        rig_pose: None,
+        grip: item_shown(character, held),
+        remap: npc.map_or(super::skinned::NO_REMAP, |n| {
+            super::skinned::remap_floats(&dwell_models::colour_remap(&n.colours))
+        }),
+    };
+    (draw, held)
+}
+
 /// [`body_frame`] from its parts (the skinned bodies' too, render/skinned.rs).
 pub fn place_frame(feet: V3, yaw: f64, face: FaceFrame, dead: bool, eye: V3) -> Affine {
     let (s, c) = (yaw.to_radians().sin() as f32, yaw.to_radians().cos() as f32);
@@ -1203,6 +1233,7 @@ impl CharacterRenderer {
                     // The same pose the rigid body and the arms play, its held item's turns on.
                     rig_pose: Some(with_item(&d.pose, held_item)),
                     grip: item_name(d.held),
+                    remap: super::skinned::NO_REMAP,
                 });
                 held_items.push(HeldOnSkin {
                     held: d.held,
@@ -1255,21 +1286,37 @@ impl CharacterRenderer {
             });
         }
         // The creatures (ADR 0073): skinned bodies of their own models, after the players (whose
-        // held items take the first hands).
+        // held items take the first hands). An NPC is drawn in its colours, its held item on its
+        // hand after (docs/CHARACTERS.md §11.11).
+        let mut held_at: Vec<usize> = (0..held_items.len()).collect();
         for (c, light) in &self.creatures {
-            skinned.push(super::skinned::SkinnedDraw {
-                model: c.model,
-                seed: c.id,
-                feet: c.feet,
-                yaw: c.yaw,
-                face: c.face,
-                dead: false,
-                role: c.role,
-                light: *light,
-                cast_only: false,
-                rig_pose: None,
-                grip: None,
-            });
+            let (draw, held) = creature_draw(self.character, c, *light);
+            if held != Held::Empty {
+                let dist = (0..3)
+                    .map(|k| (c.feet[k] - eye[k]).powi(2))
+                    .sum::<f64>()
+                    .sqrt();
+                let mut mask = 0u8;
+                for (i, (near, far)) in passes.iter().enumerate() {
+                    if dist + 3.0 >= *near && dist - 3.0 <= *far {
+                        mask |= 1 << i;
+                    }
+                }
+                let held_item = item_name(held).and_then(|n| self.character.item(n));
+                held_at.push(skinned.len());
+                held_items.push(HeldOnSkin {
+                    held,
+                    posed: bone_transforms(self.character, &with_item(&Pose::default(), held_item)),
+                    frame: place_frame(c.feet, c.yaw, c.face, false, eye),
+                    seed: c.id,
+                    light: *light,
+                    far: dist > OUTLINE_M,
+                    passes: mask,
+                    casts: dist - 3.0 <= cast_m,
+                    cast_only: false,
+                });
+            }
+            skinned.push(draw);
         }
         // Your arms from the player model (§11.10): the first-person clips' pose retargeted onto its
         // arm, the held item on its hand after.
@@ -1301,8 +1348,10 @@ impl CharacterRenderer {
             .skinned
             .hand()
             .and_then(|h| self.character.bone(h.bone));
-        for (h, hand) in held_items.iter().zip(hands) {
-            let Some(hand) = hand else { continue };
+        for (h, &at) in held_items.iter().zip(&held_at) {
+            let Some(hand) = hands.get(at).copied().flatten() else {
+                continue;
+            };
             let bones = on_skinned_hand(h, hand_bone, &hand);
             if h.cast_only {
                 own_light = own_light.or_else(|| light_at(h.held, &bones, h.seed));
@@ -1787,6 +1836,7 @@ mod tests {
                         cast_only: false,
                         rig_pose: Some(posed),
                         grip: Some(name),
+                        remap: crate::render::skinned::NO_REMAP,
                     };
                     let place = body_matrix(&d, data, [0.0; 3]);
                     let p = dwell_models::anim::Player::new(data, model, "idle");
@@ -1818,6 +1868,58 @@ mod tests {
                     assert!(turn < 12.0, "{name} in {clip}: the item is {turn:.1}° off the rig's hand");
                 }
             }
+        }
+    }
+
+    dwell_world::both_faces! {
+        fn an_npc_is_drawn_in_its_variants_colours_with_its_sword_in_its_fist(face: FaceFrame) {
+            // WORK_QUEUE items 35 and 38: a villager's colours are its kind's ramps for its
+            // variant seed (the same seed, the same remap rows), its held sword is the `sword`
+            // prop in the sword's level hold, the fist closed on it, on the Peasant's hand.R.
+            use crate::creatures::{CreatureView, NpcLook};
+            use crate::render::skinned::{NO_REMAP, body_matrix, hand_frame, model_pose};
+            let ch = dwell_characters::player();
+            let npc = |variant: u32| NpcLook::of(&dwell_protocol::NpcNet {
+                id: 7,
+                kind: "dwell:villager".into(),
+                pose: 0,
+                variant,
+            });
+            let view = |npc: Option<NpcLook>| CreatureView {
+                id: 7,
+                model: "peasant",
+                feet: face.point([3.0, 6.0, 1.0]),
+                yaw: 30.0,
+                face,
+                role: "idle",
+                npc,
+            };
+            let (a, held) = creature_draw(ch, &view(Some(npc(99))), [1.0, 0.0]);
+            assert_eq!(held, Held::Model { hold: "sword", model: "sword" });
+            assert_eq!(a.grip, Some("sword"));
+            assert_eq!(ch.item("sword").map(|i| i.name), Some("sword"));
+            // Deterministic: the same variant draws the same rows, every time.
+            assert_eq!(creature_draw(ch, &view(Some(npc(99))), [1.0, 0.0]).0.remap, a.remap);
+            assert_ne!(a.remap, NO_REMAP, "variant 99 changes a colour");
+            // The rows are the kind's colours for that variant: each pair the ramps' bases.
+            let pairs = dwell_models::colour_remap(&npc(99).colours);
+            assert_eq!(a.remap, crate::render::skinned::remap_floats(&pairs));
+            // Some other variant draws differently (the seed picks per part).
+            assert!((0..32).any(|v| creature_draw(ch, &view(Some(npc(v))), [1.0, 0.0]).0.remap != a.remap));
+            // An animal (or an NPC from an older server): as modelled, empty-handed.
+            let (plain, none) = creature_draw(ch, &view(None), [1.0, 0.0]);
+            assert_eq!((plain.remap, none, plain.grip), (NO_REMAP, Held::Empty, None));
+            // The sword sits on the Peasant's hand: its hand frame is at the body's side, at
+            // hand height, where the held item is drawn.
+            let (data, model) = dwell_models::model("peasant").unwrap();
+            let place = body_matrix(&a, data, [0.0; 3]);
+            let p = dwell_models::anim::Player::new(data, model, "idle");
+            let g = dwell_models::anim::globals(model, &model_pose(data, model, &p, None, a.grip));
+            let hand = hand_frame(data, model, &g, &place).expect("the villager's hand");
+            let rel: [f64; 3] = std::array::from_fn(|k| f64::from(hand.t[k]) - a.feet[k]);
+            let up = face.y(rel[1]) - face.y(0.0);
+            assert!((0.5..1.3).contains(&up.abs()), "the hand is {up:.2} m up the body");
+            assert!(rel[0].hypot(rel[2]) < 0.6, "the hand is by the body: {rel:?}");
         }
     }
 
