@@ -298,6 +298,13 @@ at clearly different heights, young ones among them; a branch's tip can poke out
 The palms lean and step as on the prototype's grid, but their leaf-cell fronds read as clumps, not
 blades. Pines stand in the mixed forest; the boreal spot has none (its climate, as before).
 
+**Trunk pads (0.55, WORK_QUEUE item 44):** a generated tree's trunk stands on a levelled pad its own
+width: the placement's `pad` ("trunk" by default for species) fills the ground under the trunk's
+columns (its lowest log cells, from the species and stage) up to its base and makes a ramp there
+full, at chunk generation, so the tree layer composed on that chunk and the far list (`far_trees`,
+the impostors, same anchors) stand on it. Trees grown from saplings and growth records' later stages
+change no ground.
+
 **Thin trunks (0.52.59):** saplings stand on narrow logs (`dwell:log[width]`, ¼ m steps; ADR 0079),
 the trunk thickening by stage to the species' `trunk.width.mature`.
 

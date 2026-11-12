@@ -509,16 +509,37 @@ dwell_world::both_faces!(
             );
             if let Some(m) = told.get(&1).filter(|m| !m.is_empty()) {
                 mine.extend(m.iter().cloned());
+                let feet = fx
+                    .server
+                    .player_of_session(1)
+                    .and_then(|p| fx.server.feet_of(p));
                 at_send.push((
-                    fx.server.ecology_message().unwrap(),
+                    fx.server.ecology_message_from(feet).unwrap(),
                     fx.server.ecology_snapshot(),
+                    feet.expect("client 1 plays"),
                 ));
             }
         }
         assert_eq!(mine.len(), 2, "every {ECOLOGY_SEND_EVERY} ticks");
         let m = mine.last().unwrap();
-        let (now, snap) = at_send.last().unwrap();
+        let (now, snap, feet) = at_send.last().unwrap();
         assert_eq!(m, now);
+        // Its own nearest first (WORK_QUEUE item 46): its face's groups by distance, then the other's.
+        let mine_face = u8::from(FaceFrame::at_height(feet[1]).is_b());
+        let local = FaceFrame::at_height(feet[1]).point(*feet);
+        let key = |g: &dwell_protocol::EcologyGroupNet| {
+            (
+                g.face != mine_face,
+                (f64::from(g.x) - local[0]).hypot(f64::from(g.z) - local[2]),
+            )
+        };
+        assert!(
+            m.groups.windows(2).all(|w| {
+                let (a, b) = (key(&w[0]), key(&w[1]));
+                (!a.0 && b.0) || (a.0 == b.0 && a.1 <= b.1)
+            }),
+            "nearest first"
+        );
         // What it holds: the server's far groups, each on its face, face-local.
         assert_eq!(m.groups.len(), snap.groups.len());
         assert_eq!(m.day, snap.day as f32);
@@ -527,7 +548,8 @@ dwell_world::both_faces!(
         let want: Vec<_> = snap.groups.iter().filter(|g| g.face == f.face).collect();
         assert_eq!(on.len(), want.len());
         assert!(!on.is_empty(), "this face has herds and packs");
-        for (g, w) in on.iter().zip(&want) {
+        for g in &on {
+            let w = want.iter().find(|w| w.id == g.id).expect("a server group");
             assert_eq!((g.id, g.species.as_str()), (w.id, w.species));
             assert_eq!((g.x, g.z, g.size), (w.x as f32, w.z as f32, w.size as f32));
         }

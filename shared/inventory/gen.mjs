@@ -37,7 +37,7 @@ export const LOOK_SHAPES = ['rod', 'lump', 'cluster', 'shard'];
 /** A model look's shape (`look: { model }`): not written in the data, implied by `model`. */
 /** A look shape's Rust variant (`rod` → `Rod`). */
 export const lookVariant = (s) => s[0].toUpperCase() + s.slice(1);
-const DROP_FIELDS = ['item', 'count', 'chance', 'pick'];
+const DROP_FIELDS = ['item', 'count', 'chance', 'pick', 'when'];
 const PICK_FIELDS = ['item', 'count', 'weight'];
 const WALLET_FIELDS = ['name', 'label', 'capacity'];
 /** A namespaced name, as blocks have (`dwell:rock`); sent on the wire and saved, so kept short. */
@@ -153,6 +153,19 @@ export function validateInventory(data, namespaces) {
       for (const k of Object.keys(d)) if (!DROP_FIELDS.includes(k)) fail(`${at}: unknown field ${k} (${DROP_FIELDS.join(', ')})`);
       const chance = d.chance ?? 1;
       if (!num(chance) || chance <= 0 || chance > 1) fail(`${at}: chance must be in (0, 1]`);
+      // `when` (docs/ECOLOGY.md §10): the rule holds only for states whose properties take one of
+      // the listed values (`{ "stage": ["2", "3"] }`); without it, every state.
+      const when = Object.entries(d.when ?? {}).map(([prop, values]) => {
+        const known = b.def.properties?.[prop];
+        if (!known) fail(`${at}: when.${prop} is not a property of ${b.id}`);
+        if (!Array.isArray(values) || values.length === 0 || values.some((v) => !known.includes(v))) {
+          fail(`${at}: when.${prop} must list values of the property (${known.join(', ')})`);
+        }
+        return { prop, values };
+      });
+      if (d.when !== undefined && (typeof d.when !== 'object' || d.when === null || when.length === 0)) {
+        fail(`${at}: when must map a property to its values`);
+      }
       // One item (`item`, `count`), or a weighted pick of several (`pick`: [{ item, count, weight }]).
       const choice = (c, where, weighted) => {
         if (typeof c.item !== 'string' || !known(c.item)) fail(`${where}: item ${c.item} is neither a block nor an item of shared/inventory`);
@@ -166,7 +179,7 @@ export function validateInventory(data, namespaces) {
       };
       if ((d.item === undefined) === (d.pick === undefined)) fail(`${at}: give item or pick (not both)`);
       if (d.pick === undefined) {
-        return { chance, choices: [choice(d, at, false)] };
+        return { chance, when, choices: [choice(d, at, false)] };
       }
       if (d.count !== undefined) fail(`${at}: count goes in each pick`);
       if (!Array.isArray(d.pick) || d.pick.length === 0) fail(`${at}: pick must be a non-empty list of { item, count, weight }`);
@@ -176,7 +189,7 @@ export function validateInventory(data, namespaces) {
         for (const k of Object.keys(c)) if (!PICK_FIELDS.includes(k)) fail(`${where}: unknown field ${k} (${PICK_FIELDS.join(', ')})`);
         return choice(c, where, true);
       });
-      return { chance, choices };
+      return { chance, when, choices };
     });
   };
   const resolve = (b, depth = 0) => {
@@ -188,7 +201,7 @@ export function validateInventory(data, namespaces) {
       if (!base || depth > 2) fail(`${b.id}: of names no block`);
       return resolve(base, depth + 1);
     }
-    return [{ chance: 1, choices: [{ item: b.id, min: 1, max: 1, weight: 1 }] }];
+    return [{ chance: 1, when: [], choices: [{ item: b.id, min: 1, max: 1, weight: 1 }] }];
   };
   // What placing a block uses up: a ramp its base's item, everything else itself.
   const cost = (b) => (b.def.of !== undefined ? `${b.ns}:${b.def.of}` : b.id);
@@ -303,7 +316,8 @@ export function inventoryRust(d) {
   for (const b of d.drops) {
     const rules = b.drops.map((r) => {
       const cs = r.choices.map((c) => `DropChoice { item: "${c.item}", min: ${c.min}, max: ${c.max}, weight: ${f64(c.weight)} }`);
-      return `DropRule { chance: ${f64(r.chance)}, choices: &[${cs.join(', ')}] }`;
+      const when = r.when.map((w) => `("${w.prop}", &[${w.values.map((v) => `"${v}"`).join(', ')}])`);
+      return `DropRule { chance: ${f64(r.chance)}, when: &[${when.join(', ')}], choices: &[${cs.join(', ')}] }`;
     });
     rs.push(`    BlockDrops { block: "${b.block}", cost: "${b.cost}", drops: &[${rules.join(', ')}] },`);
   }

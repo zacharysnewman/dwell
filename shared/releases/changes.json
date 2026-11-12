@@ -2,6 +2,56 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.55.2",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.55.1",
+      "changes": [
+        "New worlds have far more animals, at real-world densities: hundreds of deer herds and a handful of wolf packs on each face.",
+        "Herds are visible from much farther away (about 2.5 km) and stay visible as small shapes from high up.",
+        "Developer tools can list the nearest herds and jump to one."
+      ]
+    },
+    {
+      "version": "0.55.0",
+      "changes": [
+        "Trees on slopes stand on a level patch of ground the width of their trunk instead of hanging over the edge",
+        "Tall grass now grows taller over time: new tufts start as sprouts and reach full height in about a week and a half of game days",
+        "Dry or cold ground grows shorter grass; lush meadows grow it full; grass deer eat goes back to a sprout",
+        "Taller grass drops more fiber and seeds",
+        "A new compatibility line: the terrain changed, so worlds from 0.54 open in their own version"
+      ]
+    },
+    {
+      "version": "0.54.216",
+      "changes": [
+        "Behind the scenes: bug notes"
+      ]
+    },
+    {
+      "version": "0.54.215",
+      "changes": [
+        "Under water the world sounds muffled: a low-pass on every world sound, eased in and out as you cross the surface, with a soft underwater hum",
+        "Swimming with your head under plays soft, deep strokes; at the surface the strokes are calmer, quieter and slower, not a splash"
+      ]
+    },
+    {
+      "version": "0.54.214",
+      "changes": [
+        "Behind the scenes: showcase recording notes and a portal bug report"
+      ]
+    },
+    {
+      "version": "0.54.213",
+      "changes": [
+        "Clouds stay over the world: seen from far out past the rim, no cloud layer floats in the empty space",
+        "No more bright band under the world in the sky seen from far beyond the rim"
+      ]
+    },
+    {
       "version": "0.54.212",
       "changes": [
         "Behind the scenes: bug notes"

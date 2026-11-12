@@ -101,6 +101,7 @@ fn chunks_hold_by_name_against_an_older_registry() {
         if let Some(o) = old
             .get(name)
             .or_else(|| old.get(&name.replace(",width=4", "")))
+            .or_else(|| old.get(&name.replace("[stage=3]", "")))
         {
             to_old[*id as usize] = *o;
         }

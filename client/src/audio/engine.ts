@@ -8,6 +8,7 @@ import { SOUND_DATA } from './sounds.gen';
 import { makeNoise, playSound, startLoop, type LoopVoice, type NoiseBank } from './synth';
 import { SampleBank } from './samples';
 import { mulberry32, Variation } from './variation';
+import { VoiceLimits } from './voices';
 import type { MusicElement } from './music';
 import type { SamplePlay } from './samples';
 import type { SoundData, SoundDef } from './types';
@@ -37,6 +38,8 @@ export class AudioEngine {
   private readonly variation = new Variation((Date.now() & 0xffff) + 1);
   private volumes: Volumes = DEFAULT_VOLUMES;
   private readonly ends: number[] = [];
+  /** Each sound's own voice limit and retrigger gap (`voices`, `minGapS`). */
+  private readonly perSound = new VoiceLimits();
   /** Loop voices by mover (a slide's scrape). */
   private readonly loops = new Map<string, { voice: LoopVoice; panner: PannerNode | undefined }>();
   private listener: Vec3 = [0, 0, 0];
@@ -168,6 +171,12 @@ export class AudioEngine {
     fn(this.volumes);
   }
 
+  /** The eye under a fluid's surface or not (§3a): the world's buses muffle or open. */
+  setUnderwater(under: boolean): void {
+    const { ctx, mixer } = this;
+    if (ctx && mixer) mixer.setUnderwater(under, ctx.currentTime);
+  }
+
   /** The camera: position, forward and up (unit vectors). */
   setListener(position: Vec3, forward: Vec3, up: Vec3): void {
     this.listener = position;
@@ -205,6 +214,7 @@ export class AudioEngine {
     const now = ctx.currentTime;
     while (this.ends.length && (this.ends[0] ?? 0) <= now) this.ends.shift();
     if (this.ends.length >= MAX_VOICES) return false;
+    if (!this.perSound.admit(id, sound, now)) return false;
     let panner: PannerNode | undefined;
     if (at) {
       panner = this.panner(ctx);
@@ -230,6 +240,7 @@ export class AudioEngine {
       });
     }
     this.ends.push(end);
+    this.perSound.started(id, now, end);
     this.recent.push(id);
     if (this.recent.length > 64) this.recent.shift();
     this.ends.sort((a, b) => a - b);
@@ -386,7 +397,14 @@ function playSample(
   src.playbackRate.value = sample.rate;
   const level = ctx.createGain();
   level.gain.value = gain;
-  src.connect(level);
+  if (sample.lowpassHz !== undefined) {
+    // The data's low-pass on the recording (a calm stroke: its highs cut).
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = sample.lowpassHz;
+    src.connect(lp);
+    lp.connect(level);
+  } else src.connect(level);
   if (pan !== undefined && typeof ctx.createStereoPanner === 'function') {
     const p = ctx.createStereoPanner();
     p.pan.value = pan;

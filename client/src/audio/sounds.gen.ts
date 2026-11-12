@@ -5,11 +5,11 @@ export const SOUND_DATA: SoundData = {
   "fallback": "dwell:stone",
   "gaits": {
     "walk": {
-      "stride": 2,
+      "stride": 2.5,
       "gain": 0.55
     },
     "run": {
-      "stride": 2.7,
+      "stride": 2.8,
       "gain": 0.85
     },
     "crouch": {
@@ -21,8 +21,8 @@ export const SOUND_DATA: SoundData = {
       "gain": 0.6
     },
     "swim": {
-      "stride": 2.4,
-      "gain": 0.7
+      "stride": 3,
+      "gain": 0.45
     }
   },
   "events": [
@@ -287,6 +287,11 @@ export const SOUND_DATA: SoundData = {
     {
       "name": "sizzle",
       "sound": "dwell:sizzle"
+    },
+    {
+      "name": "swim_under",
+      "set": "swim_under",
+      "fallback": false
     }
   ],
   "sets": {
@@ -387,6 +392,7 @@ export const SOUND_DATA: SoundData = {
       "enter": "dwell:water_enter",
       "exit": "dwell:water_exit",
       "swim": "dwell:water_swim",
+      "swim_under": "dwell:water_swim_under",
       "impact": "dwell:water_enter"
     }
   },
@@ -760,8 +766,32 @@ export const SOUND_DATA: SoundData = {
             "full": 1.5
           }
         ]
+      },
+      "dwell:underwater": {
+        "files": [
+          "sea-loop-1-e54ebb50.m4a"
+        ],
+        "gain": 0.2,
+        "when": [
+          {
+            "input": "underwater",
+            "from": 0,
+            "full": 1
+          }
+        ]
       }
     }
+  },
+  "underwater": {
+    "buses": [
+      "effects",
+      "ambience"
+    ],
+    "lowpassHz": 800,
+    "q": 0.7,
+    "gain": 0.6,
+    "easeS": 0.25,
+    "openHz": 20000
   },
   "creatures": {
     "radiusM": 32,
@@ -787,6 +817,10 @@ export const SOUND_DATA: SoundData = {
         "startle": "dwell:deer_snort"
       }
     }
+  },
+  "brush": {
+    "everyM": 2.5,
+    "minS": 0.3
   },
   "sounds": {
     "dwell:stone_step": {
@@ -1882,9 +1916,10 @@ export const SOUND_DATA: SoundData = {
           "grass-step-5-14c021c5.m4a",
           "grass-step-6-9e0addf8.m4a"
         ],
-        "gain": 0.5,
+        "gain": 0.4,
         "pitch": 1
       },
+      "voices": 2,
       "gain": 1.902,
       "reverb": 0.055,
       "variation": {
@@ -3122,10 +3157,12 @@ export const SOUND_DATA: SoundData = {
           "water-swim-3-de4830e5.m4a",
           "water-swim-4-7c526fff.m4a"
         ],
-        "gain": 0.6,
-        "pitch": 1
+        "gain": 0.32,
+        "pitch": 1.5,
+        "shift": -2,
+        "lowpassHz": 2500
       },
-      "gain": 1.16,
+      "gain": 0.7,
       "reverb": 0.099,
       "variation": {
         "pitch": 2,
@@ -3166,29 +3203,62 @@ export const SOUND_DATA: SoundData = {
             "attack": 0.05,
             "decay": 0.25
           }
+        }
+      ]
+    },
+    "dwell:water_swim_under": {
+      "samples": {
+        "files": [
+          "water-swim-1-334e94c3.m4a",
+          "water-swim-2-f40c6768.m4a",
+          "water-swim-3-de4830e5.m4a",
+          "water-swim-4-7c526fff.m4a"
+        ],
+        "gain": 0.4,
+        "pitch": 1.5,
+        "shift": -12,
+        "lowpassHz": 600
+      },
+      "gain": 0.6,
+      "reverb": 0.15,
+      "variation": {
+        "pitch": 2,
+        "gain": 1.5,
+        "cutoff": 0.2,
+        "time": 0.15
+      },
+      "layers": [
+        {
+          "source": "noise",
+          "color": "brown",
+          "gain": 0.5,
+          "filters": [
+            {
+              "type": "lowpass",
+              "freq": 300
+            }
+          ],
+          "env": {
+            "attack": 0.12,
+            "hold": 0.1,
+            "decay": 0.45
+          }
         },
         {
-          "source": "osc",
-          "wave": "sine",
-          "freq": 420,
-          "to": 1000,
-          "gain": 0.1,
-          "at": 0.08,
+          "source": "noise",
+          "color": "pink",
+          "gain": 0.2,
+          "filters": [
+            {
+              "type": "bandpass",
+              "freq": 180,
+              "q": 1,
+              "to": 360
+            }
+          ],
           "env": {
-            "attack": 0.002,
-            "decay": 0.04
-          },
-          "grains": {
-            "count": [
-              3,
-              6
-            ],
-            "spread": 0.3,
-            "gain": [
-              0.3,
-              1
-            ],
-            "pitch": 7
+            "attack": 0.1,
+            "decay": 0.4
           }
         }
       ]
@@ -5752,72 +5822,51 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:leaf_brush": {
-      "gain": 0.35,
-      "reverb": 0.04,
+      "$comment": "A soft swish layered on a footstep through tall grass or leaves (BUGS.md #103): pink noise only, a slow attack, no grains (the old white-noise grains crackled at five rustles a second); one voice, never restarted.",
+      "gain": 0.16,
+      "reverb": 0.03,
+      "voices": 1,
+      "minGapS": 0.25,
       "variation": {
         "pitch": 2,
         "gain": 1.5,
-        "cutoff": 0.2,
-        "time": 0.2
+        "cutoff": 0.15,
+        "time": 0.15
       },
       "intensity": {
         "gain": [
-          0.3,
+          0.4,
           1
         ],
         "cutoff": [
-          0.7,
+          0.8,
           1
         ],
         "time": [
-          1.2,
-          0.8
+          1.1,
+          0.9
         ]
       },
       "layers": [
         {
           "source": "noise",
           "color": "pink",
-          "gain": 0.45,
+          "gain": 0.4,
           "filters": [
             {
               "type": "bandpass",
-              "freq": 2400,
-              "q": 0.7
-            }
-          ],
-          "env": {
-            "attack": 0.03,
-            "hold": 0.08,
-            "decay": 0.25
-          }
-        },
-        {
-          "source": "noise",
-          "color": "white",
-          "gain": 0.15,
-          "filters": [
-            {
-              "type": "highpass",
-              "freq": 3500,
+              "freq": 1800,
               "q": 0.6
+            },
+            {
+              "type": "lowpass",
+              "freq": 4500
             }
           ],
           "env": {
-            "attack": 0.002,
-            "decay": 0.03
-          },
-          "grains": {
-            "count": [
-              5,
-              9
-            ],
-            "spread": 0.3,
-            "gain": [
-              0.3,
-              1
-            ],
-            "pitch": 4
+            "attack": 0.05,
+            "hold": 0.05,
+            "decay": 0.22
           }
         }
       ]

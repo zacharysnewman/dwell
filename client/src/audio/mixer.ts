@@ -1,10 +1,13 @@
 // The mixer (docs/AUDIO.md §3): the effects, UI and music buses into the master gain, a small room
 // reverb on the effects, and a soft limiter before the output: a waveshaper, linear to 0.7, then
 // a tanh knee that never passes full scale (a DynamicsCompressorNode adds its own make-up gain).
+// The buses the data's `underwater` lists reach the master through a low-pass and a level that
+// close and drop while the eye is under water (§3a, BUGS.md #104); the others go straight in.
 // Built the same on an AudioContext (the game, the menus) and an OfflineAudioContext (renders and
 // their checks).
 import { SOUND_DATA } from './sounds.gen';
 import { mulberry32 } from './variation';
+import type { Bus, UnderwaterDef } from './types';
 
 export interface Volumes {
   master: number;
@@ -27,6 +30,83 @@ export interface Mixer {
   reverb: GainNode;
   master: GainNode;
   setVolumes(v: Volumes): void;
+  /** Muffles the data's buses (the eye under water) or opens them, gliding from `now`. */
+  setUnderwater(under: boolean, now: number): void;
+}
+
+/** What the underwater muffle aims at: the filter's cutoff and the muffled buses' level. */
+export interface UnderwaterTarget {
+  cutoffHz: number;
+  gain: number;
+}
+
+/** The muffle's target with the eye under water or in air (§3a). */
+export function underwaterTarget(def: UnderwaterDef, under: boolean): UnderwaterTarget {
+  return under ? { cutoffHz: def.lowpassHz, gain: def.gain } : { cutoffHz: def.openHz, gain: 1 };
+}
+
+/** Whether a bus goes through the underwater muffle (the data's `buses`; never the UI or music
+ * unless listed). */
+export function muffles(def: UnderwaterDef, bus: Bus): boolean {
+  return def.buses.includes(bus);
+}
+
+/** The part of an AudioParam a glide uses (tests fake it). */
+export interface Glidable {
+  value: number;
+  cancelScheduledValues(t: number): unknown;
+  setValueAtTime(v: number, t: number): unknown;
+  linearRampToValueAtTime(v: number, t: number): unknown;
+  exponentialRampToValueAtTime(v: number, t: number): unknown;
+}
+
+/**
+ * Glides `param` from where it is to `to` over `seconds` from `now`: exponential for a frequency
+ * (even steps in pitch), linear for a level.
+ */
+export function glide(
+  param: Glidable,
+  to: number,
+  now: number,
+  seconds: number,
+  exponential: boolean,
+): void {
+  const from = param.value;
+  param.cancelScheduledValues(now);
+  param.setValueAtTime(from, now);
+  if (exponential && from > 0 && to > 0) param.exponentialRampToValueAtTime(to, now + seconds);
+  else param.linearRampToValueAtTime(to, now + seconds);
+}
+
+/**
+ * The underwater muffle on its buses: one low-pass and one level, both gliding over the data's
+ * `easeS` when the eye crosses the surface (only then: a frame that changes nothing schedules
+ * nothing).
+ */
+export class Muffle {
+  private under = false;
+
+  constructor(
+    private readonly def: UnderwaterDef,
+    private readonly cutoff: Glidable,
+    private readonly level: Glidable,
+  ) {
+    const t = underwaterTarget(def, false);
+    cutoff.value = t.cutoffHz;
+    level.value = t.gain;
+  }
+
+  get underwater(): boolean {
+    return this.under;
+  }
+
+  set(under: boolean, now: number): void {
+    if (under === this.under) return;
+    this.under = under;
+    const t = underwaterTarget(this.def, under);
+    glide(this.cutoff, t.cutoffHz, now, this.def.easeS, true);
+    glide(this.level, t.gain, now, this.def.easeS, false);
+  }
 }
 
 /** Seconds of the room's tail. */
@@ -97,7 +177,11 @@ export const DEFAULT_VOLUMES: Volumes = {
 };
 
 /** Builds the mixer into `ctx.destination`. */
-export function buildMixer(ctx: BaseAudioContext, volumes: Volumes = DEFAULT_VOLUMES): Mixer {
+export function buildMixer(
+  ctx: BaseAudioContext,
+  volumes: Volumes = DEFAULT_VOLUMES,
+  underwater: UnderwaterDef = SOUND_DATA.underwater,
+): Mixer {
   const master = ctx.createGain();
   const into = ctx.createGain();
   into.gain.value = 1 / LIMIT_RANGE;
@@ -108,14 +192,23 @@ export function buildMixer(ctx: BaseAudioContext, volumes: Volumes = DEFAULT_VOL
   master.connect(into);
   into.connect(limiter);
   limiter.connect(ctx.destination);
-  const effects = ctx.createGain();
-  const ui = ctx.createGain();
-  const music = ctx.createGain();
-  effects.connect(master);
-  ui.connect(master);
-  music.connect(master);
-  const ambience = ctx.createGain();
-  ambience.connect(master);
+  // The underwater muffle: one low-pass and one level shared by the buses it lists.
+  const lowpass = ctx.createBiquadFilter();
+  lowpass.type = 'lowpass';
+  lowpass.Q.value = underwater.q;
+  const muffled = ctx.createGain();
+  lowpass.connect(muffled);
+  muffled.connect(master);
+  const muffle = new Muffle(underwater, lowpass.frequency, muffled.gain);
+  const bus = (name: Bus): GainNode => {
+    const g = ctx.createGain();
+    g.connect(muffles(underwater, name) ? lowpass : master);
+    return g;
+  };
+  const effects = bus('effects');
+  const ui = bus('ui');
+  const music = bus('music');
+  const ambience = bus('ambience');
   const reverb = ctx.createGain();
   const room = ctx.createConvolver();
   room.normalize = false;
@@ -133,7 +226,10 @@ export function buildMixer(ctx: BaseAudioContext, volumes: Volumes = DEFAULT_VOL
     ambience.gain.value = v.ambience;
   };
   setVolumes(volumes);
-  return { effects, ui, music, ambience, reverb, master, setVolumes };
+  const setUnderwater = (under: boolean, now: number): void => {
+    muffle.set(under, now);
+  };
+  return { effects, ui, music, ambience, reverb, master, setVolumes, setUnderwater };
 }
 
 /** The node a play goes into: the bus, with a send to the room for its `reverb` share. */

@@ -89,13 +89,38 @@ vocabulary. The species' tuning is per build; per world are the ecology's on/off
 
 | | deer | wolf |
 |---|---|---|
-| dies below / cap / max groups | ½ / 12 / 40 | ½ / 7 / 8 |
-| start | 8 herds of 6 | 2 packs of 4 |
+| dies below / cap / max groups | ½ / 12 / 600 | ½ / 8 / 8 |
+| start (WORK_QUEUE item 46) | 3 a km² of grazing land, herds of 10, at least 2 | 1 per 60 km² of land, packs of 5, at least 1 |
 | breeding (well fed) | 3 % a day (doubling ~23 days) | 0.8 % a day |
 | starving | at most 1 % a day (half a herd lost in ~2 months unfed; gone in under 3 years) | at most 0.5 % a day |
 | speed, sense | 3 km a day, 800 m | 8 km a day, 3 km |
 | diet | 1 forage a head a day | kills ≤ 0.12 × N²/(N²+15²), needs 0.08 deer a head a day; 20 deer a wolf |
 | flee / disperse | wolves within 500 m | above hunger 0.6: 2× speed, 1 %/day leave |
+
+**Densities (WORK_QUEUE item 46**, owner 2026-11-12: "Even more animals. What's a reasonable amount for a
+real world this size?"): a species' `start` is a density (`perKm2`, head a km² of its range: a grazer's
+the island's grazing land, a hunter's its land) in groups of `size`, at least `minGroups`, at most
+`maxGroups` (`SpeciesDef::start_groups_on`; a fixed `groups` count still works, the fixture's). Real deer
+are ~5–20 a km² of good range, grey wolves ~1 per 50–100 km²; the deer start at the low end (3) and
+the wolves at real. Measured natively on a seed-1 world (`a_seed_1_face_at_real_densities_stays_balanced_and_cheap`,
+both faces, release build): face A has 1,959 km² of land, all of it grazing (B 2,080): **588 herds,
+5,880 deer and 7 packs, 35 wolves** (B 600 and 7). Over two simulated years the deer settle at
+~6,850–6,900 (3.5 a km²; the herds at `maxGroups`, each at its cap of 12, the binding bound: the
+grazing's carrying capacity is ~36,000) and the wolves at 50–65 in 8 packs (~1 per 33 km²); no
+collapse, no runaway. The bound by `maxGroups` is also the cost bound: **a 5-day step ~2.5 ms a face**
+(the worst single day 4–10 ms, the first), so the server takes **one step a tick**
+(`MAX_STEPS_PER_TICK` 1, was 4: a 1000-day catch-up is ~200 ticks, ~3 s). The step was made to fit: a
+grazer looks only at the groups of the species it flees (the packs), not at every group; the merge
+pairs a big group only with the small ones; the split counts the groups once (each was O(n²) at
+600 herds; the populations are unchanged by it, the same seed giving the same run). The saved record
+after two years is **~137 KB a face** (the grazed cells' forage; the tests bound it at 200 KB), written
+only when it changed (once a world day). Small herds merge within `mergeRadiusM` 300 m (was 400) only
+while one is under `mergeBelow` (4) and the two fit the cap, so the herds don't collapse into a few.
+
+**Existing worlds** keep their records (a saved ecology loads as saved); the new start numbers apply to
+new worlds and to worlds saved before the ecology (no table), which start fresh. An existing world's
+herds may grow into the higher `maxGroups` as they breed. Not a compatibility change: the ecology is
+not part of what a seed's terrain is, the record format is unchanged.
 
 Forage: meadow (≤ 120 m, ≤ 18°) 40, upland (≤ 400 m, ≤ 30°) 16, crag 2 deer-days a cell, regrowing
 5 % of the gap a day; the crag is a refuge (0.8 of a herd there safe from packs). On the test island (3.6 km across, ~250 land cells) the deer's capacity is
@@ -139,9 +164,9 @@ ecology, and tests hand the server islands (`ServerConfig::ecology_islands`).
   whether anyone is online, so a save → load → continue runs the very steps an uninterrupted run
   does: online and under 10 days behind, one day at a time; nobody online, nothing until 10 days
   behind, then big steps (`stepDays`, 5); 10 or more behind (a load of an older world, an idle
-  stretch), big steps. Whole days only, at most **4 steps a tick** (`MAX_STEPS_PER_TICK`): a
-  1000-day catch-up takes ~50 ticks, each well under a millisecond's share of the 16 ms tick in a
-  release build (the test bounds it at 8 ms in a debug one).
+  stretch), big steps. Whole days only, at most **1 step a tick** (`MAX_STEPS_PER_TICK`; 4 before the real densities, §3): a
+  1000-day catch-up takes ~200 ticks, each step of both faces ~5 ms in a release build at ~600 herds
+  a face.
 - **Saved** in the world's optional `ecology` table (ARCHITECTURE.md §6.4): the world's `enabled`
   switch and `speed`, then each face's `Ecosystem::to_bytes` (version 2: seed, day, the land cells'
   forage as runs — a count of cells at their most, not written, then a count of cells that aren't
@@ -375,8 +400,10 @@ For the far rendering to come (§7), the server sends the far groups to the clie
 - **`Ecology`**: the ecology's day (f32) and up to `MAX_ECOLOGY_GROUPS` (1024) far groups, each its
   record id (u32), face (u8: 0 A, 1 B), species by name (≤ 64 bytes), face-local x and z and head
   (f32). The groups near players aren't in it (they are creatures). Sent at the hello, then every
-  `ECOLOGY_SEND_EVERY` (2 s) while the ecology runs; none from a world without one. ~2 KB for the
-  shipped data's ~100 groups.
+  `ECOLOGY_SEND_EVERY` (2 s) while the ecology runs; none from a world without one. **Each client's
+  nearest first** (`Server::ecology_message_from`, WORK_QUEUE item 46): its face's groups by distance
+  from its player, then the other face's, so the 1024 sent are the ones it could see or find (~1,200
+  groups on both faces at real densities); ~30 KB at 1024.
 - **`__dwell.ecology()`**: the last one, `{ day, groups: [{ id, face: "a" | "b", species, x, z,
   size }] }`, or null before the first (docs/DEV_TOOLS.md), in local worlds (the host's own client and
   friends joining) as on native servers. Until this change the client's session dropped `Ecology` (it
@@ -398,26 +425,42 @@ test-generator world has none (`a_test_generator_local_world_has_no_ecology`).
 ## 11. Far herds drawn simply (scoops-and-herds)
 
 - **Data:** a species' `far` (shared/ecology/ecology.json): `color` (#rrggbb), `sizeM` (a head's height),
-  `fadeStartM`/`fadeEndM` (whole until the start, gone at the end). Deer: tan, 1.3 m, 450–700 m; wolves:
-  grey, 0.9 m, 350–550 m. `shared/ecology/gen.mjs` validates it (an unknown field, a bad colour, an end
+  `fadeStartM`/`fadeEndM` (whole until the start, gone at the end), `minPx` (optional: the least a head
+  stands on screen, CSS px; WORK_QUEUE item 46, owner: "are they visible from high up?"). Deer: tan,
+  1.3 m, 1,800–2,500 m, 3 px; wolves: grey, 0.9 m, 1,500–2,200 m, 3 px (were 450–700 and 350–550 m). `shared/ecology/gen.mjs` validates it (an unknown field, a bad colour, an end
   not past its start fail naming the field) and emits `FAR_LOOKS` into `dwell-client` `far_herds.gen.rs`
   (checked stale like the others). A species without `far` is not drawn far.
 - **Lay-out** (`dwell_client::far_herds::lay_out`, on each new `Ecology`, §9): each group of the eye's
   face within its fade's end draws round(size) heads (1..24), scattered in a disc of 2 + 1.6·√n m round
   its place, hashed by the group id and head (stable between snapshots), each stood on the loaded
-  terrain's ground (`bodies::ground_at`, 48 m round the eye's height; a head past the loaded chunks waits
-  for the next snapshot).
+  terrain's ground (`bodies::ground_at`, 48 m round the eye's height), else, past the loaded chunks, on
+  the generator's column height (`Game::far_terrain`, the world's terrain, set by the page once the world
+  maps are installed in its instance; never computed on the page's thread: without it such heads wait).
 - **Drawn** (`far_herds::puffs`, each frame): one lit billboard per head through the blasts' billboard
   pass (kind 12, `PuffKind::Herd`): a body's oval over two leg strokes in the species' colour (sRGB in
-  the seed), darker underneath, lit facing up as the chips are; faded by distance; **none on a CPU
-  adapter**. Groups near players are not in the snapshot (they are creatures), so the two never draw at
+  the seed), darker underneath, lit facing up as the chips are; faded by distance; each **at least `minPx` tall**
+  (`far_herds::head_size`: past where `sizeM` is smaller on screen the billboard grows with the
+  distance, `minPx · d / focal`, focal the viewport's CSS height over 2·tan(fov/2), the spyglass's zoom
+  included), so a herd reads as dots from the air; **none on a CPU adapter**. The cost: at the shipped
+  densities ~3 deer a km², the 2.5 km disc holds ~60 heads (a handful of herds), each one quad. Groups near players are not in the snapshot (they are creatures), so the two never draw at
   once; the hand-over is the group leaving the snapshot as its creatures spawn (`near.spawnM` 64 m,
   where a head is a few pixels, so the swap is small).
-- **Not yet:** heads past the loaded chunks (the LOD's heights are not on the main thread); a fade-in at
+- **The finder** (WORK_QUEUE item 46: "a way to find them for testing"): `far_herds::find` lists the
+  snapshot's groups of the eye's face nearest first with their distance and bearing (`__dwell.herds()`,
+  DEV_TOOLS.md), and `goToHerd` (a local world's dev op, `LocalCore`) stands the player `back` m short
+  of the nearest on its face's generator ground (`far_herds::approach`), so its group comes near.
+- **Not yet:** a fade-in at
   the near hand-over; in-game screenshots and the frame cost from the bench (not measured in this
   change's time box; at ≤ 24 heads × ~100 groups it is at most a few thousand billboard vertices).
 
-Tests: `cargo test -p dwell-client --lib far_herds` (both faces): round(size) heads capped, on the
+Tests: `cargo test -p dwell-client --lib far_herds` (both faces): a head grows with the distance to
+its least screen size and the shipped deer read to 2.5 km (`a_far_head_grows_with_distance_to_its_least_screen_size`);
+the finder lists the eye's face's groups nearest first with bearing, and `approach` stands short of
+one (`the_finder_lists_the_nearest_herds_of_the_eyes_face`); `cargo test -p dwell-client --test
+game_local go_to_herd` (face A): the player stood 40 m short of the finder's nearest herd on its face;
+`cargo test -p dwell-ecology a_start_is_the_ranges_area_times_its_density`: a fixture island's start is
+its range's area × density (grazers on grazing land, hunters on land), a fixture density and a fixed
+count by data alone, a tiny island's `minGroups`. Earlier: round(size) heads capped, on the
 ground round the group's place, stable, a species without a look none, faded past its end and partly
 between, none from the other face and none on the CPU tier; the shipped species have looks. `node --test
 shared/ecology/gen.test.mjs`: the look reaches the client table, a fixture species' by data alone, bad
@@ -457,6 +500,30 @@ depending on climate/biome." Data: `shared/worldgen/grass.json` (`gen.mjs` `vali
   grass over `maxDensity`. Applied to the islands made from world maps while the world grows grass (a
   world without grass growth keeps its forage as before; the default world's single biome has share 1
   everywhere, so its forage is unchanged).
+- **Growing in height** (owner 2026-11-12: "I thought it would get taller over time?"): tall grass has
+  a `stage` property (`0` a sprout … `3` full height; the default `3`, so tall grass placed by hand,
+  generated in a world of one biome, or saved before stages is full height as before, ADR 0063), each
+  stage's height block data (`cross.heights`: 0.25, 0.45, 0.65, 0.85 of a ½ m cell; the mesher draws
+  the state's, the selection box scales with it). grass.json's `stages` (`property`, `order` a sprout to
+  full, `days`, `share`; `gen.mjs` `validateGrassStages`: at least 4 stages, the last the property's
+  default, the mean days adding up to a week or more) drive it: each world day a tuft below its
+  column's **top stage** grows one stage with chance 1/`days[i]` (3, 3, 4 days: about 10 days a sprout
+  to full; memoryless, so a few race and most take a week or more), by a roll hashed on (seed, day,
+  face-local cell) apart from the spread's, in the same step and catch-up (≤ `catchUpDays`) as the
+  spread. The top stage is the last whose `share` the column's climate share reaches (`0, 0.2, 0.4,
+  0.6`): dry or cold ground stays short, a lush meadow grows full; a tuft past its top (placed full) is
+  never cut back. Grown and regrown tufts start as a sprout. **Eaten**: a grazer's bite leaves a
+  sprout over the rule's ground in a world that grows grass (`Server::eaten_to`, `Rule::eaten`: the
+  roots stay and it regrows stage by stage), air as before otherwise. **Broken by hand** it is
+  removed, as before (a player clears grass to build), and regrows from the roots as a sprout where
+  generated grass stood. **Drops by stage**: the drop rules' `when` (ADR 0066 amended): fiber 25 %,
+  50 %, 75 %, 100 % and seed 0, 10 %, 25 %, 50 % from a sprout to full; the gem chance only at full
+  height (full drops exactly as before). **Generation** places each tuft at its column's top stage
+  (`grass::generated_tuft`, the decoration's undergrowth factor as the share): the default world (one
+  biome, share 1) is unchanged; a world of several biomes gets shorter grass where it is dry (the starter: a
+  change to the terrain its seed generates, re-pinned, for the owner's next line). Full
+  height is still one ½ m cell's 0.85; a ~1 m stand needs a two-cell top for the tallest climates
+  (later).
 - **The world's switch**: saved in the optional `grass_growth` table (a version byte, the switch, each
   grown chunk's last day; another version's is kept unread and the growth stays off). `ServerConfig::grass`
   (on) is a **new** world's; a world saved before this (meta, no table) has none, so existing worlds'
@@ -475,4 +542,13 @@ over the ground's is the near cap over `maxDensity`, and a dry cell's forage sta
 test -p dwell-sim --test grass` (both faces): the server grows a loaded chunk's missed days and a
 player's block stands; the switch and the days survive a save; an opted-out world keeps its choice;
 the saved form round-trips and another version is unread. `node --test shared/worldgen/gen.test.mjs`:
-grass.json validates, bad entries fail naming the field.
+grass.json validates, bad entries fail naming the field (the stages too). Growing in height:
+`cargo test -p dwell-worldgen --test grass` (both faces) `sprouts_grow_a_stage_at_a_time_…`,
+`the_climate_caps_the_top_stage`, `new_and_regrown_tufts_start_as_a_sprout` (eaten → sprout → full),
+`stages_by_data_alone`, `the_default_stage_is_full_height`,
+`generation_places_tall_grass_at_its_climates_top_stage`; `cargo test -p dwell-sim --test grass`
+`the_server_grows_sprouts_taller_and_an_eaten_tuft_goes_back_to_a_sprout` (both faces); `dwell-sim`
+`a_broken_tufts_drops_follow_its_growth_stage`, `dwell-protocol`
+`taller_tall_grass_drops_more_fiber_and_seeds`; `dwell-mesh`
+`tall_grass_draws_each_growth_stage_at_its_height` (both faces); `client/src/world/blocksGen.test.ts`
+and `shared/inventory/gen.test.mjs` the `cross.heights` and `when` data.

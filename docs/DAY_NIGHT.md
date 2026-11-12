@@ -788,7 +788,10 @@ the earth atmosphere either." With far flight to the moon (~597 km) a player cli
   viewer's horizon — plus the sun's tight white bloom (`sunBloom`, the sun's bloom width). The broad
   glow, the band and the moon's glow go with the air. The limb follows the time of day (a night limb
   is the night horizon's colour). In the other face's frame (rays that leave by its air) the limb's
-  rise flips (`Air::other`, `dwell_other_day`).
+  rise flips (`Air::other`, `dwell_other_day`). The limb is the rim seen from over the disc: for a
+  viewer past the rim it fades out over `limbFadeM` (10 km beyond the world's radius from the axis;
+  `Atmosphere::limb_weight`, `Air::limb_weight`, `DaySky.space.z`), since out in the void no world
+  makes one (BUGS.md #102: it drew a bright band under the disc in every far shot).
 - **Stars by day** (`starsInSpace`): the packed visibility is at least the thinning × it, both faces'
   (`Air::stars`); in space the stars' horizon fade is off, so they reach down to the limb.
 - **The sun** (`dwell_sun_disc`): in space no air swells it at the horizon, and its colour goes

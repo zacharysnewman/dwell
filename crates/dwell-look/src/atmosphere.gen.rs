@@ -12,6 +12,7 @@ pub const ATMOSPHERE: Atmosphere = Atmosphere {
     limb_brightness: 1.0,
     limb_width_deg: 1.6,
     limb_distance_m: 50000.0,
+    limb_fade_m: 10000.0,
     sun_whiteness: 0.85,
     sun_bloom: 0.3,
 };
