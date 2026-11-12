@@ -928,7 +928,8 @@ fn card_normal(packed: f32) -> vec3f {
     let v = vq / 2047.0 * 2.0 - 1.0;
     var n = vec3f(u, 1.0 - abs(u) - abs(v), v);
     if (n.y < 0.0) {
-        n = vec3f((1.0 - abs(v)) * select(-1.0, 1.0, u >= 0.0), n.y, (1.0 - abs(u)) * select(-1.0, 1.0, v >= 0.0));
+        // Octahedral decoding's quadrant sign (not a face sign): +1 where the coordinate is >= 0.
+        n = vec3f((1.0 - abs(v)) * (step(0.0, u) * 2.0 - 1.0), n.y, (1.0 - abs(u)) * (step(0.0, v) * 2.0 - 1.0));
     }
     return normalize(n);
 }
