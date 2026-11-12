@@ -294,6 +294,42 @@ answers (question tool):
   half FOV; they come in from about 15° down. Showing them level would need a slide camera (lower,
   or pitched) or a slide clip with the lead leg raised, a question for the owner (§10).
 
+### 5.2 The camera's sway with the swing **[built]**
+
+The owner (2026-11-12): "The camera could have some sway with the chop." The view leans and kicks a
+little with each swing of the axe; the aim never does.
+
+- **Data.** Each tool's `swing.camera` in `shared/tools/tools.json`, per swing kind (`level`,
+  `vertical`): `keys` over the swing's **phase time** `t` (0 its start, 1 the wind-up's end, 2 the
+  arc's end, 3 a miss's recovery's end, so the keys follow the timings when `windupS`/`activeS`/
+  `recoverMissS` change), each `yaw` (degrees toward the screen's right), `pitch` (up), `roll` (the
+  view leaning right) and `bob` ([right, up, back] metres along the view's own axes), eased between
+  keys; and a `kick` at contact (the same offsets, dying away over `decayS`). The generator checks
+  the keys start and end at rest (t 0 and 3, every offset 0), run in order, and stay within ±10° and
+  ±0.1 m; a tool with no `camera` has no sway (`shared/tools/gen.test.mjs` adds one by data alone).
+  It replaces the swing's old `kickDeg` and its hardcoded wind-up/jolt curve.
+- **The stone and metal axes.** Level: a lean back and right into the wind-up (yaw +1.8°, roll
+  +1.4°, the eye 1.5 cm back and 1.2 cm right), a turn left through the strike (to −2° at the arc's
+  end, the way the head goes on screen), settling over the recovery; the kick a small dip and recoil.
+  Vertical: a pitch up of 2.2° on the wind-up, down through the strike, and a 1.4° dip at contact.
+- **Hit and miss** (`chop::swing_camera`). Up to the contact the sway follows the keys on a miss's
+  timeline. A miss runs on through them, kicking at `kick.miss` (0.35) as the head passes the arc's
+  middle. A hit holds the contact's offset through the hit-stop, eases it home over the pull-out,
+  and kicks at full size into a wood, at `kick.bounce` (1.6×) off anything else. Zero before the
+  swing, at its end and after it.
+- **The view only** (`chop::swayed_view`). The game passes the unswayed eye, yaw and pitch to the
+  targeting, the outline, the listener, the swing sent to the server and the facing; the swayed pose
+  goes only to the renderer's `set_camera`, with a blast's shake. Face-local: the yaw toward the
+  screen's right goes through `FaceFrame::handed`, the roll and bob along the view's own axes.
+- **Setting.** Settings → Motion → **Camera sway** (`motion.cameraSway` in the append-only
+  `dwell.motion` record; on, off when the browser asks for reduced motion), `Client.setCameraSway`.
+- **Tests.** `chop::sway_tests`: zero at rest and back to zero after every kind of swing, the level
+  strike's yaw turning left after a lean right, the vertical chop's pitch up and dip, a hit kicking
+  harder than a miss and a bounce harder than wood, the setting off leaving the view the aim, the
+  same way on screen on both faces, and the block the aim picks unchanged through every swing with
+  the sway on or off (`both_faces!`) while the swayed view would have picked another. The clip
+  probe prints the offset per sample (DEV_TOOLS.md "Clip probe").
+
 
 ## 6. Poses and animation
 

@@ -1,0 +1,6 @@
+{
+  "changes": [
+    "The view now leans and kicks a little with each swing of the axe: back and right into the wind-up, left through a level chop, a dip at the bottom of a vertical one, a harder kick on a hit",
+    "Settings → Motion → Camera sway turns it off (your aim never sways)"
+  ]
+}
