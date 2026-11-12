@@ -16,6 +16,16 @@ Last updated: 2026-11-11 (0.52.108).
 
 ## Queued next, in order (2026-11-12)
 
+**Current order (2026-11-12, evening; owner asked "What is the current priority of upcoming items"):**
+Releases were blocked ~18:45–21:40 (a test type error); unblocked, so everything merged since ships in the next
+releases (incl. the first-person body #791). Local (the Mac, one at a time): (1) bifacial video v3 (portal exit
+merged #824, upside-down camera #821); (2) the in-game check of the cloud rework (#822 shapes/colour, #790 sunsets,
+#801 dither, #798 deck, #823 rim) + the extinction A/B; (3) forest edge to 60 fps at High (~7 ms over); (4) next
+showcase videos, each with a shot plan first; (5) Realistic world R6 in New world. Cloud now: tall grass sounds
+and leg speed (#103), underwater/surface swim audio (#104), floating trees + leaves (item 45), tree pads (item 44,
+needs the owner's 0.55 line), tall grass height (item 14), far-sky rim/band (#823, conflicts). Then: the moon's
+client side (item 27), orbits O4–O5, big worlds memory (#76/#77).
+
 Owner, 2026-11-12: **"How are realistic worlds going? And forests? Those are the two I'm most interested in
 seeing."** → next on the Mac after the flying frame rate: a look at both (screenshots/video of a Realistic world —
 plates, ranges, rain shadow, biomes by climate — and the old-growth forest), then R6 (the Realistic world in New
@@ -1405,6 +1415,13 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    Portal exit (owner's answer, 2026-11-12): **land beside the hole** — today a player rises ~12 m out of the far
    face's hole, falls back and bounces between the faces forever; the portal gives a small sideways push (or slows
    the fall-back) so the player arcs out and lands on the far face's ground beside the hole.
+   **Built 2026-11-12** (BIFACIAL_WORLD.md §12.3): the shaft's **exit push**, a steady crosswind across its top
+   2 m (`midplane.json` `portals.exit`: 30 m/s², `minRise` 10 m/s so a jump and the ladder never take it), along the
+   player's facing; however fast the rise, the player lands ~6 m from the axis (2–4 m past the rim). Momentum in the
+   shared controller (`step_portal`, from `VoxelWorld::portals` on the server and in the prediction: no replays).
+   A far opening the swing can't reach, or a rise into the monument's arches, falls back and comes out on a later
+   swing (seed 0: 12 of 16 drops out on the first, all within 3 crossings). For the portal shot: face between the
+   pillars (a diagonal) when jumping in.
    Owner refinement for (4)/(5), 2026-11-12: **"Like a farther out non first person view of the other side."** — after
    the motes, cut to a third-person camera farther out on face B (15–40 m from the portal, looking at the hole) as the
    player flies up out of it, not first person; the jump stays first person on face A.
@@ -1792,7 +1809,29 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    let water flow through freely."**). A body floating in water (a felled trunk, a crown) never settles back into
    blocks while it floats; it keeps drifting with the current until it beaches on dry ground (then settles as
    today). Leaf blocks are open to the water grid (water flows through their cells as through air, the leaves
-   kept), in place and on bodies.
+   kept), in place and on bodies. **Built (2026-11-12):** a body afloat (a cell in a liquid, lighter than it on the whole) of a
+   kind whose `settlesAfloat` (bodies.json, default false) is false never settles; it settles only `beachSeconds`
+   (2 s, felling.json) out of the water, then by the usual sleep or timeout (BUILT_BODIES.md §6a; waterlogging
+   later hooks in where `afloat` is decided). Leaves (any `passable` block with a `flooded` state) are open to
+   the water grid's flow, drawn flooded under the water, never replaced (WATER_SURFACE_GRID.md §2d); bodies'
+   cells were never in the grid. Generated water levels unchanged (no new compatibility line). Tests red → green:
+   a trunk in a 1 m/s river drifts 40 s without settling (both faces), a trunk moved onto the bank settles, a
+   natural raft afloat is predicted without snaps, water beyond a wall of leaves stands as with none (both
+   faces).
+
+46. **Animals easier to find, and more of them** (owner 2026-11-12: **"Im having a hard time finding animals, are they
+   visible from high up?"**). Today each face's island starts with 8 deer herds (6 head) and 2 wolf packs (4), caps 40
+   and 8; far herds are dots fading out by 700 m (wolves 550 m). Answers: **see herds from farther**, **more
+   animals**, **a way to find them for testing**, and **"Even more animals. What's a reasonable amount for a real
+   world this size?"** Real densities: deer ~5–20 per km² in good range, grey wolves ~1 per 50–100 km² (packs of
+   4–8). A face's island (~20–30 km radius, ~1,000–2,000 km² of land) would hold ~5,000–20,000 deer and 20–40 wolves
+   (4–8 packs). Plan: deer at the low end of real (~2–4/km² of grazing land, herds of 4–12: a few hundred herds,
+   capped by the grazing's carrying capacity), wolves at real (~1 per 60 km²: 4–8 packs), as data; far herds
+   visible to ~2.5 km and growing with distance; a test/dev command to list herds and go to the nearest.
+
+47. **Wind only when flying** (owner 2026-11-12: "let's disable the wind for now it doesn't seem right like should just be
+   for flying or high altitude only." / "Wind SFX"). Built: the wind bed reads the eye's height above the ground
+   (silent below 12 m, full at 60 m) instead of altitude above the sea.
 
 ## Future (needs owner answers)
 

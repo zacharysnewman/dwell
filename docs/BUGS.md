@@ -6,6 +6,14 @@ pins it.
 
 ## Open
 
+### 104. Swimming underwater sounds like swimming at the surface; underwater sound isn't muffled
+
+Owner, 2026-11-12: "swimming underwater sounds like swimming on the water surface, when underwater sounds should be
+muffled, high pass filter maybe?" Underwater, the swim strokes play the surface splash sounds, and the world's sounds
+aren't filtered. Expected: underwater strokes their own soft, deep sounds; everything heard with the head
+underwater through a low-pass filter (muffled: highs cut, ~500–1000 Hz) with a little reverb/volume drop, eased in
+and out at the surface crossing.
+
 ### 101. Clouds draw in the void beyond the world's rim, under a far camera
 
 Found 2026-11-12 recording the bifacial showcase (seed 7, a theater camera 140 km from the centre, 11 km up,

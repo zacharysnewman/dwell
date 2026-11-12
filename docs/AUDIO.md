@@ -210,12 +210,15 @@ Owner (2026-11-10): wind stronger up high and in open ground, the sea near the c
 streams near moving water, birds in daytime forests and quieter at night, leaves near trees —
 *"Ongoing/ambient/looping sounds should be quieter so they're not really disruptive, more flavor
 than function."* ([ADR 0077](./adr/0077-ambience-beds.md).)
+Owner (2026-11-12): **"let's disable the wind for now it doesn't seem right like should just be for flying or high
+altitude only."** So the wind bed reads the eye's `height` above the ground (silent below 12 m, full at 60 m), not its
+altitude above the sea: nothing on the ground, even on a mountain; it comes in flying.
 
 ```json
 "ambience": { "volume": 0.35, "fadeS": 2.5, "cap": 0.4,
   "probe": {"radiusM": 16, "trees": ["dwell:leaves", "dwell:snowy_leaves", "dwell:log"]},
   "beds": { "wind": {"files": ["wind-loop-1.m4a"], "gain": 0.3, "when": [
-    {"input": "altitude", "from": 0, "full": 60, "floor": 0.2}, {"input": "open", "from": 0.2, "full": 1}]} } }
+    {"input": "height", "from": 12, "full": 60}, {"input": "open", "from": 0.2, "full": 1}]} } }
 ```
 
 - `volume`: the **Ambience** volume's default (Settings → Sound; the beds' own bus, per browser in
