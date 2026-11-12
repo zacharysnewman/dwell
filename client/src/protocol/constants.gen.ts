@@ -95,6 +95,7 @@ export type Channel = (typeof Channel)[keyof typeof Channel];
 export const MessageType = {
   PlayerInput: 1,
   DatagramPing: 2,
+  SwingHello: 3,
   DatagramPong: 130,
   WaterCurrents: 131,
   StatusRequest: 64,
@@ -252,6 +253,13 @@ export const HostState = {
   Resumed: 2,
 } as const;
 export type HostState = (typeof HostState)[keyof typeof HostState];
+
+export const SwingKind = {
+  Plain: 0,
+  ChopLevel: 1,
+  ChopVertical: 2,
+} as const;
+export type SwingKind = (typeof SwingKind)[keyof typeof SwingKind];
 
 export const InputButtons = {
   jump: 1,

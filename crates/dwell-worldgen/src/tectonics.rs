@@ -16,6 +16,9 @@
 //!   the sea floor, each older one `hotspotDecay` of the last's height and `hotspotWiden` broader
 //!   (eroded down the chain, Hawaii-style); shields without a crater.
 //!
+//! A Realistic world (`plates` 1, R2) takes many boundaries, arcs and chains from its face seed's
+//! plate layout instead (`plate_tectonics.rs`); this hand-placed one still adds on top if set.
+//!
 //! Neutral by default (`kind` 0, no arc, no hotspots): `enabled` is false and the base field skips it,
 //! so the terrain a seed generates is unchanged. Face-local, so both faces.
 
@@ -31,6 +34,9 @@ pub const TRANSFORM: u32 = 3;
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Tectonics {
     pub kind: u32,
+    /// 1: the face seed's plate layout shapes the world (R2, `plate_tectonics.rs`): its coast,
+    /// its boundaries' landforms, its arcs and hotspot chains; 0 off.
+    pub plates: u32,
     pub angle: f64,
     pub offset: f64,
     pub width: f64,
@@ -202,7 +208,12 @@ fn bump(t: f64) -> f64 {
 impl Tectonics {
     /// Whether the layer adds anything.
     pub fn enabled(&self) -> bool {
-        self.kind != NONE || self.hotspot_count > 0
+        self.kind != NONE || self.hotspot_count > 0 || self.from_plates()
+    }
+
+    /// Whether the face seed's plate layout shapes the world (`plates` 1, R2).
+    pub fn from_plates(&self) -> bool {
+        self.plates != 0
     }
 
     /// The boundary's frame at (x, z): (along the line, across it: + the overriding plate).

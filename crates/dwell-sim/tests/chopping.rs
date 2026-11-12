@@ -347,7 +347,7 @@ fn player_at(fx: &mut Fixture, f: FaceFrame) -> [f64; 3] {
     f.point(players.position(physics, h).to_array())
 }
 
-// both-faces: run on each face by the two ignored tests below (the macro can't ignore its tests).
+// both-faces: run on each face by the two tests below (BUGS.md #52; they were ignored until fixed).
 fn a_felled_trunk_falling_on_the_chopper_does_not_fling_them(f: FaceFrame) {
     // 0.50.36's screenshots: the trunk tips toward the notch, where the chopper stands, and
     // its fall threw them ~20 m. A falling piece may knock a player down or aside, not
@@ -386,13 +386,11 @@ fn a_felled_trunk_falling_on_the_chopper_does_not_fling_them(f: FaceFrame) {
 }
 
 #[test]
-#[ignore = "BUGS.md #52: the kick cap is removed (owner, 2026-11-08); the fling's root fix is later"]
 fn a_felled_trunk_falling_on_the_chopper_does_not_fling_them_a() {
     a_felled_trunk_falling_on_the_chopper_does_not_fling_them(FaceFrame::A);
 }
 
 #[test]
-#[ignore = "BUGS.md #52: the kick cap is removed (owner, 2026-11-08); the fling's root fix is later"]
 fn a_felled_trunk_falling_on_the_chopper_does_not_fling_them_b() {
     a_felled_trunk_falling_on_the_chopper_does_not_fling_them(FaceFrame::B);
 }
@@ -1080,5 +1078,93 @@ dwell_world::both_faces!(
             stump,
             "the stump keeps its wedge"
         );
+    }
+);
+
+/// The last snapshot each session was sent since the outbox was drained.
+fn last_snapshots(fx: &mut Fixture) -> std::collections::BTreeMap<SessionId, PhysicsSnapshot> {
+    let mut out = std::collections::BTreeMap::new();
+    for o in fx.server.take_outbox() {
+        if matches!(o.kind, dwell_sim::server::OutKind::Datagram)
+            && let Some(Message::PhysicsSnapshot(s)) = Message::decode(&o.bytes)
+        {
+            out.insert(o.session, s);
+        }
+    }
+    out
+}
+
+dwell_world::both_faces!(
+    /// WORK_QUEUE item 17: others saw a chop as a `break` (the swing byte says break or place). A
+    /// chop steps the swinger's swing count as a break, so an older client still plays that, and a
+    /// client that said `SwingHello` gets its kind too: a level chop, then a vertical one. One
+    /// that didn't is never sent the kinds (an older client refuses the trailing bytes). Red
+    /// before: a chop didn't step the count at all, and no snapshot carried a kind.
+    fn a_chop_reaches_a_swing_hello_client_by_its_direction_and_others_as_a_break(f: FaceFrame) {
+        let mut fx = scene(f, "creative", true);
+        let (kinds, plain) = (fx.join(2, &Client::new(2)), fx.join(3, &Client::new(3)));
+        fx.server.on_datagram(2, &Message::SwingHello.encode());
+        for _ in 0..3 {
+            fx.server.step();
+        }
+        let before = last_snapshots(&mut fx);
+        // Player 1: the one that is neither of the watchers.
+        let swinger = |s: &PhysicsSnapshot, me: u16, other: u16| {
+            *s.remotes
+                .iter()
+                .find(|r| r.player_id != me && r.player_id != other)
+                .expect("the swinger in view")
+        };
+        let count = |r: RemotePlayerState| r.swing & swing_flags::COUNT_MASK;
+        let start = count(swinger(&before[&2], kinds.player_id, plain.player_id));
+        assert!(before[&2].swing_kinds && !before[&3].swing_kinds);
+        for (i, (vertical, want)) in [
+            (false, SwingKind::ChopLevel),
+            (true, SwingKind::ChopVertical),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            at_trunk(&mut fx, f, 0, vertical);
+            let snaps = last_snapshots(&mut fx);
+            let (k, p) = (
+                swinger(&snaps[&2], kinds.player_id, plain.player_id),
+                swinger(&snaps[&3], plain.player_id, kinds.player_id),
+            );
+            let stepped = (start + i as u8 + 1) & swing_flags::COUNT_MASK;
+            assert_eq!(
+                (count(k), count(p)),
+                (stepped, stepped),
+                "the swing counted"
+            );
+            assert!(k.swing & swing_flags::BREAK != 0 && p.swing & swing_flags::BREAK != 0);
+            assert_eq!(
+                k.swing_kind, want as u8,
+                "the hello's client: the chop's kind"
+            );
+            assert!(!snaps[&3].swing_kinds, "the other: no kinds, a plain break");
+            assert_eq!(p.swing_kind, SwingKind::Plain as u8);
+        }
+        // A break edit after the chops is plain again.
+        let [x, y, z] = f.cell([5, BASE - 1, 0]);
+        fx.send(
+            1,
+            Message::BlockEditRequest(BlockEditRequest {
+                action: BlockEditAction::Break,
+                cell: [x, y, z],
+                face: 2,
+                material: 0,
+                rows: 1,
+                down: false,
+                point: None,
+            }),
+        );
+        for _ in 0..4 {
+            fx.server.step();
+        }
+        let snaps = last_snapshots(&mut fx);
+        let k = swinger(&snaps[&2], kinds.player_id, plain.player_id);
+        assert_eq!(count(k), (start + 3) & swing_flags::COUNT_MASK);
+        assert_eq!(k.swing_kind, SwingKind::Plain as u8);
     }
 );

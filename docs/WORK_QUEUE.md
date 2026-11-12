@@ -238,8 +238,12 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    plate count unanswered (the proposal's 3–5, as data). **Status:** R1 built: the plate layout
    (`shared/worldgen/plates.json`, `plates.gen.rs`, `dwell-worldgen` `plates.rs`: plates by kind, motion and
    age, boundaries classified by relative motion with the subducting side, hotspots, a land/sea mask), tested
-   on both faces, not wired into any world (goldens unchanged). The Chisel plates overlay moved to R2. Next:
-   R2 (uplift from boundaries); q2's bands, q6 and q8 still open. q5 (2026-11-11): no new rock blocks
+   on both faces. R2 built (2026-11-12): uplift from the boundaries (`plate_tectonics.rs`, `plates.json`
+   `uplift`: ranges on the overriding side and trenches, collision ranges, rifts, low transform ridges,
+   scaled by each boundary's rate; arc cones on the overriding side; hotspot chains older along the plate's
+   motion) and the plates' coast, in the Realistic test world (`worlds/realistic.json`, `test:realistic`, not
+   in the New world form); default and starter goldens unchanged; the map builds faster than the default's.
+   The Chisel plates overlay moved again, to R3. Next: R3 (climate); q2's bands, q6 and q8 still open. q5 (2026-11-11): no new rock blocks
    for now; R5 uses today's blocks (stone, basalt, sandstone, red sandstone, sand, dirt) named in data, so
    new ones can replace them later.
 
@@ -302,6 +306,18 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    on both faces); Settings → Motion → Camera sway (the explosions' Screen shake names blasts only, so a new
    toggle; off with reduced motion); `clip_probe` prints the offset per sample. Left: the owner's feel review
    in game (no GPU in the cloud).
+   Brief, 2026-11-12: **other players see the actual chop** ("Remote players still see a `break`. The wire's
+   swing byte (`swing_flags`) carries only break or place, so it can't say which chop or which direction"),
+   gated so it isn't breaking for 0.54 peers.
+   **Status (remote-chop):** built (ARCHITECTURE.md §8.3 "Swing kinds"): a chop now steps the swinger's swing
+   count (before, it didn't: others saw nothing, or an edit's swing), as a break, and the server keeps its
+   kind (`SwingKind` in `shared/protocol/constants.json`: plain, chop level, chop vertical); a client asks with
+   a `SwingHello` datagram (no Welcome or Inventory flag is free; an older server drops an unknown datagram),
+   repeated each second until a snapshot answers, ten tries at most, and its snapshots then end with each
+   remote's kind; the remote body plays `biped_chop_level` / `biped_chop_vertical` as the count steps (both
+   faces). An older client never asks and plays `break`; an older server never sends kinds. Tests: the
+   server's (hello → the kind, no hello → plain break, red → green), the body's clip (red → green), the
+   hello's schedule, wire vectors. Left: a look in game with two clients (no GPU in the cloud).
 18. **Digging marks that look carved** (owner 2026-11-11: "the 'chunks' of dirt aren't at all what we
    discussed. It should be like a normal map change (do we support normal/bump maps)? It's completely flat
    should look like mesh deformation (preferably without actually doing it for performance)"; "That part was
@@ -413,6 +429,12 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    hit carves a bite the size of the axe head where it struck (a wedge into the wood, like the dirt bowl and stone
    facets), the bites growing together into the notch as the chop goes on; cracks/splits along the grain from
    the cracks work. Next after item 24 (same code).
+27. **A felled trunk landing on its chopper flings them (BUGS.md #52)** (the owner's brief, 2026-11-12: fix the
+   cause, "we shouldn't be capping player kick like that" (2026-11-08): no cap on the kick; a trunk hitting a
+   player at speed must still knock them as physics says). **Built 2026-11-12** (branch `claude/pinch-fling`):
+   a piece's contact pressing a player down takes the piece's friction (`physics::PinchGrip`, a Rapier contact
+   hook; PLAYER_CONTROLLER.md §6.6), so the frictionless capsule is pinned, not squeezed out; side hits stay
+   frictionless and uncapped. The repro is un-ignored (0.4–0.5 m, was 155–160 m; both faces).
 
 ## Done
 

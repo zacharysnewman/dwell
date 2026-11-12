@@ -146,6 +146,7 @@ impl Channel {
 pub enum MessageType {
     PlayerInput = 1,
     DatagramPing = 2,
+    SwingHello = 3,
     DatagramPong = 130,
     WaterCurrents = 131,
     StatusRequest = 64,
@@ -209,6 +210,7 @@ impl MessageType {
         match v {
             1 => Some(Self::PlayerInput),
             2 => Some(Self::DatagramPing),
+            3 => Some(Self::SwingHello),
             130 => Some(Self::DatagramPong),
             131 => Some(Self::WaterCurrents),
             64 => Some(Self::StatusRequest),
@@ -547,6 +549,27 @@ impl HostState {
         match v {
             1 => Some(Self::Paused),
             2 => Some(Self::Resumed),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[repr(u8)]
+pub enum SwingKind {
+    Plain = 0,
+    ChopLevel = 1,
+    ChopVertical = 2,
+}
+
+impl SwingKind {
+    pub const MAX: u8 = 2;
+
+    pub const fn from_u8(v: u8) -> Option<Self> {
+        match v {
+            0 => Some(Self::Plain),
+            1 => Some(Self::ChopLevel),
+            2 => Some(Self::ChopVertical),
             _ => None,
         }
     }
