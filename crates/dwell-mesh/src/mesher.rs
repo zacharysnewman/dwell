@@ -1017,7 +1017,28 @@ const CUT_SHADE: f64 = 0.55;
 /// bark left on each side and the end grain are drawn as the cube's faces would be (and not where a
 /// neighbour covers them); the faces cut into it take the wood's cut tile (its `cut.tile`, else the
 /// end grain), lit by the sky the side they are cut into sees and darker the deeper they lie.
-fn carved_voxel(b: &mut Builder, cells: &Cells<'_>, k: &Kind, cell: [i32; 3], cut: &Cut) {
+/// A wood cell's extent across its sides (0..1 of the cell): a standing log's octagon `width` of
+/// its cell, centred (ADR 0079; a thinner trunk), else the whole cell (the server's `log_span`).
+fn wood_span(m: StateId, grain: usize) -> [f64; 2] {
+    match dwell_blocks::octagon::section_of(m) {
+        Some((section, _)) if grain == 1 && section.width < 1.0 => {
+            let w = f64::from(section.width).clamp(0.05, 1.0);
+            [0.5 - 0.5 * w, 0.5 + 0.5 * w]
+        }
+        _ => [0.0, 1.0],
+    }
+}
+
+/// `damage`: a damaged wood's fraction to breaking (WORK_QUEUE item 50), its cut made of its marks
+/// ([`dwell_protocol::chopping::cut_of_marks`]): the carve's progress and the cracks' stage.
+fn carved_voxel(
+    b: &mut Builder,
+    cells: &Cells<'_>,
+    k: &Kind,
+    cell: [i32; 3],
+    cut: &Cut,
+    damage: Option<f64>,
+) {
     let grain = k.style.axis;
     let wood = dwell_protocol::chopping::wood(k.style.block);
     let look = wood.map_or(
@@ -1044,12 +1065,13 @@ fn carved_voxel(b: &mut Builder, cells: &Cells<'_>, k: &Kind, cell: [i32; 3], cu
     // or save's) as before: the notch across the side, the kerfs as slits.
     let faces = if cut.has_bites() {
         // Grown by the bite rule (WORK_QUEUE item 18): its share of the swings to fell.
-        let progress = wood.map_or(cut.cross(grain), |w| cut.progress(w, grain));
+        let progress =
+            damage.unwrap_or_else(|| wood.map_or(cut.cross(grain), |w| cut.progress(w, grain)));
         carve::carve_bites(grain, cut, &look, outline.as_deref(), progress)
     } else {
         carve::carve_in(grain, cut, &look, outline.as_deref())
     };
-    let crack = wood.and_then(|w| cut_cracks(w, &look, grain, cut, cell));
+    let crack = wood.and_then(|w| cut_cracks(w, &look, grain, cut, cell, damage));
     for f in faces {
         // The side (axis, sign) the face looks out of: a cut face's light comes from there.
         let (axis, sign, shade_axis) = match f.part {
@@ -1132,6 +1154,7 @@ fn cut_cracks(
     grain: usize,
     cut: &Cut,
     cell: [i32; 3],
+    damage: Option<f64>,
 ) -> Option<damage_mesh::CrackLayer> {
     use dwell_protocol::chopping::side_axis;
     let cracks = look.cracks.as_ref()?;
@@ -1140,7 +1163,7 @@ fn cut_cracks(
     } else {
         wood.buck_fraction
     };
-    let fraction = (cut.cross(grain) / through.max(1e-6)).min(1.0);
+    let fraction = damage.unwrap_or_else(|| (cut.cross(grain) / through.max(1e-6)).min(1.0));
     let mut layer = damage_mesh::CrackLayer::of_cracks(cracks, fraction, cell)?;
     let side = cut.deepest(grain)?;
     let bite = cut.bites[side].all().last()?;
@@ -2185,6 +2208,31 @@ fn mesh_cells(
         }
     }
     let mut struck_faces: Vec<(damage_mesh::StruckFace, usize)> = Vec::new();
+    // A damaged wood (the log hit by the axe through block damage, WORK_QUEUE item 50) is drawn
+    // with the axe's bites at its marks, grown by its damage fraction (the bite rule): the
+    // octagon's carve. A cell with an older save's cut keeps the cut's.
+    let mut progress: HashMap<[i32; 3], f64> = HashMap::new();
+    let mut carved = carved.clone();
+    for (c, state, view) in damaged {
+        let k = kinds.of(*state);
+        if padded[padded_index(c[0], c[1], c[2])] != *state || carved.contains_key(c) {
+            continue;
+        }
+        let Some(wood) = dwell_protocol::chopping::wood(k.style.block) else {
+            continue;
+        };
+        let grain = k.style.axis;
+        let cut = dwell_protocol::chopping::cut_of_marks(
+            grain,
+            &view.marks,
+            &wood.cut.bite,
+            wood_span(*state, grain),
+        );
+        if cut.has_bites() {
+            carved.insert(*c, cut);
+            progress.insert(*c, f64::from(view.fraction) / 255.0);
+        }
+    }
     // A cut cell is carved only if it is drawn as an opaque cube.
     let carved: HashMap<[i32; 3], Cut> = carved
         .iter()
@@ -2537,7 +2585,8 @@ fn mesh_cells(
                     .then(|| carved.get(&[cx, cy, cz]))
                     .flatten()
                 {
-                    carved_voxel(&mut opaque, &cells, &k, [cx, cy, cz], cut);
+                    let damage = progress.get(&[cx, cy, cz]).copied();
+                    carved_voxel(&mut opaque, &cells, &k, [cx, cy, cz], cut, damage);
                 } else if k.style.octagon {
                     octagon_voxel(&mut opaque, &cells, &k, m, [cx, cy, cz]);
                 }

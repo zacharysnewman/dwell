@@ -241,6 +241,7 @@
       "drops": [{"item": "dwell:wood", "count": 8}],
       "sound": "dwell:wood",
       "breakWith": "axe",
+      "damage": { "default": 24, "axe": 15, "chips": { "count": 7, "shards": 3, "piece": "dwell:wood", "color": "#d9b37a", "speed": 2.6, "size": 0.05 } },
       "density": 700,
       "shape": "full",
       "placeable": true,
@@ -619,6 +620,7 @@
       "of": "log",
       "support": "carrier",
       "breakWith": "axe",
+      "damage": { "default": 12, "axe": 8, "chips": { "count": 7, "shards": 3, "piece": "dwell:wood", "color": "#d9b37a", "speed": 2.6, "size": 0.05 } },
       "crossSection": "of"
     },
     {

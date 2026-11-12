@@ -922,6 +922,56 @@ mod tests {
         }
     );
 
+    dwell_world::both_faces!(
+        /// A log hit by the axe through block damage (WORK_QUEUE item 50) is carved with the axe's
+        /// bites at its marks, grown by the bite rule: after k of its n hits the closed mesh has
+        /// lost k × ½ ÷ n of the log's own volume (the octagon's), within 10 %; undamaged, it is
+        /// the plain log; on both faces.
+        fn a_damaged_log_is_carved_by_its_marks_k_bites_after_k_hits(f: FaceFrame) {
+            let local = [3, 5, 4];
+            let py = |y: u8| if f == FaceFrame::B { 255 - y } else { y };
+            // On −x (face 1), the lower and upper bands, across z.
+            let spots = [[0, 64, 128], [0, 190, 90], [0, 64, 170], [0, 190, 140]];
+            let volume = |k: u32, n: u32| -> (f64, usize) {
+                let marks: Vec<_> = spots
+                    .iter()
+                    .cycle()
+                    .take(k.min(4) as usize)
+                    .map(|p| (1u8, [p[0], py(p[1]), p[2]]))
+                    .collect();
+                let frac = (255.0 * f64::from(k) / f64::from(n)).round() as u8;
+                let (pts, tris) = mesh_one(f, "dwell:log", local, &marks, frac);
+                let v: f64 = tris
+                    .iter()
+                    .map(|t| {
+                        let [a, b, c] = t.map(|i| pts[i as usize]);
+                        let bc = [
+                            b[1] * c[2] - b[2] * c[1],
+                            b[2] * c[0] - b[0] * c[2],
+                            b[0] * c[1] - b[1] * c[0],
+                        ];
+                        (a[0] * bc[0] + a[1] * bc[1] + a[2] * bc[2]) / 6.0
+                    })
+                    .sum::<f64>()
+                    .abs();
+                (v, tris.len())
+            };
+            let n = dwell_protocol::damage::hits_to_break("dwell:log", Some("dwell:stone_axe"))
+                .expect("an axe breaks a log");
+            let (whole, plain_tris) = volume(0, n);
+            for k in 1..n {
+                let (v, tris) = volume(k, n);
+                assert!(tris > plain_tris, "{k}: carved ({tris} > {plain_tris})");
+                let got = (whole - v) / whole;
+                let want = 0.5 * f64::from(k) / f64::from(n);
+                assert!(
+                    (got - want).abs() < 0.1 * want,
+                    "{k} of {n} hits carved {got:.4} of the log, the rule {want:.4}"
+                );
+            }
+        }
+    );
+
     /// The edges of a triangle list keyed by their end points (quantized, either order).
     fn edges(pts: &[[f64; 3]], tris: &[[u32; 3]]) -> HashMap<([i64; 3], [i64; 3]), usize> {
         let q = |p: [f64; 3]| p.map(|x| (x * 1e6).round() as i64);

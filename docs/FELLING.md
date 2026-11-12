@@ -219,6 +219,10 @@ Tier 2 debris (Phase 21).
 
 ## 8. Felled by an axe (ADR 0067)
 
+**Since WORK_QUEUE item 50 (2026-11-12):** a log takes block damage (docs/BLOCK_DAMAGE.md §11) and the axe's
+last hit breaks it; a standing trunk above falls as one body, tipped toward the side struck (the uncut side
+the hinge), with no fell wedges. What follows describes the older cut model, still read from old saves.
+
 A standing trunk cut past its wood's `fellFraction` (docs/adr/0067-stone-axe-and-chopping.md) loses
 its cut cell, and the integrity pass takes what that cell held as one piece as §3 describes, tipped
 **toward the notch** (owner, 2026-11-08: real felling): the uncut side is the hinge, so the piece
