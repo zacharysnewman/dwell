@@ -2,6 +2,14 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.54.22",
+      "changes": [
+        "Realistic test world: each seed now picks a climate band (subtropical, temperate or subarctic) with its prevailing wind",
+        "Realistic test world: rain falls on the windward side of the seed's mountains and their lee is dry, so rivers run bigger on the wet side",
+        "Realistic test world terrain changes with this release (it is still a test world)"
+      ]
+    },
+    {
       "version": "0.54.21",
       "changes": [
         "Fewer hitches on phones while running and flying: the collision for new terrain is built in smaller pieces each step"
