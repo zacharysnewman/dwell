@@ -8877,6 +8877,70 @@
           "name": "open-high-again"
         }
       ]
+    },
+    {
+      "name": "high-mixed",
+      "notes": "high-forest at the starter mixed forest (denser trees): High, cards, the cutout meshes and the distance.",
+      "window": {
+        "width": 1280,
+        "height": 800,
+        "pixelRatio": 2
+      },
+      "query": {
+        "worldgen": "test:starter",
+        "seed": "0",
+        "fresh": "1",
+        "preset": "high"
+      },
+      "steps": [
+        {
+          "do": "settle",
+          "maxS": 60
+        },
+        {
+          "do": "spot",
+          "spot": "starter:mixed-forest",
+          "name": "mixed"
+        },
+        {
+          "do": "settle",
+          "maxS": 30
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "record",
+          "name": "mixed-high"
+        },
+        {
+          "do": "view",
+          "grass": false
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "record",
+          "name": "mixed-grass-off"
+        }
+      ]
     }
   ]
 }

@@ -819,6 +819,34 @@ texture, which its compositor then draws), and the native loop spinning a core (
 on a chip whose CPU and GPU share power and memory bandwidth. Whatever native gains, it is not GPU
 time, so the GPU budget is the one to spend work on.
 
+## High on the M1 (BUGS.md #78)
+
+WORK_QUEUE item 30's measurement, 2026-11-12, on this repo's M1 (8-core GPU) on the real GPU: `npm run bench --
+--warm --unthrottled high-forest high-open` (`?preset=high`, a 1280×800 window at pixel ratio 2, so a 2560×1600
+buffer drawn at High's 50 %). Each scenario settles at its spot (the starter's broadleaf forest from 8 m up; its
+beach), then switches one feature off at a time mid-run (`view`, `shadows`, `water` steps), 1.5 s to settle and 4 s
+recorded each. The leaf cards follow their switch only in chunks meshed after it, so their row is a fresh page per
+configuration (`--compare --configs raster,cards-off`). `gpu.frame` mean (ms):
+
+| Record (feature off) | Forest before | Δ | Forest after | Δ | Open ground (before) | Δ |
+| --- | --- | --- | --- | --- | --- | --- |
+| High | 15.63 / 15.73 | | 15.47 | | 9.24 | |
+| Leaf cards off (`?cards=0`, a fresh page) | 15.11 | −0.62 | 15.18 | −0.29 | — | |
+| Shadows Low | 15.43 | −0.20 | 15.23 | −0.24 | 8.91 | −0.33 |
+| Shadows Off | 13.96 | −1.67 | 14.03 | −1.44 | 8.27 | −0.97 |
+| Torch shadows Off | 15.58 | −0.05 | 15.45 | −0.02 | 9.13 | −0.12 |
+| Light shafts Off | 15.78 | +0.15 | 15.50 | +0.03 | 9.13 | −0.12 |
+| Bloom Off | 15.19 | −0.44 | 14.88 | −0.60 | 8.71 | −0.53 |
+| Clouds Off (from Medium) | 15.65 | +0.02 | 15.23 | −0.24 | 8.80 | −0.45 |
+| Water Low | 14.81 | −0.82 | 14.58 | −0.89 | 8.39 | −0.86 |
+| Every cutout mesh off (leaf cubes' cutout, tall grass, flowers, ladders, cards) | 10.90 | −4.73 | 11.00 | −4.47 | 7.68 | −1.56 |
+| Full detail 128 m (from 256) | 12.98 | −2.65 | 13.06 | −2.41 | 7.64 | −1.61 |
+| Render scale 100 % (from 50 %) | 29.93 | +14.30 | 29.58 | +14.11 | 19.92 | +10.67 |
+
+The spot's view holds few trees and much grass (its screenshot), so the cutout row is mostly tall grass. Run-to-run
+spread is ~0.3–0.5 ms. Everything at High fits 16.7 ms here; the largest levers left are the cutout meshes, the
+full-detail distance and sun shadows.
+
 ## Cost profile (M1 Air)
 
 The owner's "can you truly benchmark the game to determine our most costly pieces … each feature by CPU and
