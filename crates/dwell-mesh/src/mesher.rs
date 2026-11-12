@@ -1043,7 +1043,9 @@ fn carved_voxel(b: &mut Builder, cells: &Cells<'_>, k: &Kind, cell: [i32; 3], cu
     // Each hit's bite where it struck (WORK_QUEUE item 26); a cut without bites (an older server's
     // or save's) as before: the notch across the side, the kerfs as slits.
     let faces = if cut.has_bites() {
-        carve::carve_bites(grain, cut, &look, outline.as_deref())
+        // Grown by the bite rule (WORK_QUEUE item 18): its share of the swings to fell.
+        let progress = wood.map_or(cut.cross(grain), |w| cut.progress(w, grain));
+        carve::carve_bites(grain, cut, &look, outline.as_deref(), progress)
     } else {
         carve::carve_in(grain, cut, &look, outline.as_deref())
     };

@@ -154,7 +154,7 @@ test('breaking: a fixture tool class and tier by data alone, and bad entries fai
 
 test("a wood's cut look (its carved faces, ADR 0067 §11) is validated and reaches the Rust table", () => {
   const rs = toolsRust(validateTools(...fresh()));
-  assert.match(rs, /block: "dwell:log", .*cut: CutLook \{ tile: Some\("logCut"\), tint: \[255, 226, 184\], open: 2\.5, kerf_width_m: 0\.035, bite: BiteLook \{ width_m: 0\.14, ends_m: 0\.03, step: 0\.6 \}, cracks: Some\(Cracks \{ tiles: &\["crackWood1", "crackWood2", "crackWood3", "crackWood4"\], stages: &\[0\.15, 0\.4, 0\.65, 0\.85\], strength: 0\.85, span: 1\.5 \}\) \}/);
+  assert.match(rs, /block: "dwell:log", .*cut: CutLook \{ tile: Some\("logCut"\), tint: \[255, 226, 184\], open: 2\.5, kerf_width_m: 0\.035, bite: BiteLook \{ width_m: 0\.14, ends_m: 0\.03, step: 0\.6, band_m: 0\.25, depth_per_mouth: 2\.0, width_per_depth: 1\.0 \}, cracks: Some\(Cracks \{ tiles: &\["crackWood1", "crackWood2", "crackWood3", "crackWood4"\], stages: &\[0\.15, 0\.4, 0\.65, 0\.85\], strength: 0\.85, span: 1\.5 \}\) \}/);
   const bad = (edit, re) => {
     const [data, items, blocks] = fresh();
     edit(data);
@@ -167,7 +167,7 @@ test("a wood's cut look (its carved faces, ADR 0067 §11) is validated and reach
   // Without a cut look: the defaults (the end-grain tile, untinted).
   const [data, items, blocks] = fresh();
   delete data.woods[0].cut;
-  assert.match(toolsRust(validateTools(data, items, blocks)), /cut: CutLook \{ tile: None, tint: \[255, 255, 255\], open: 2\.5, kerf_width_m: 0\.03, bite: BiteLook \{ width_m: 0\.14, ends_m: 0\.03, step: 0\.6 \}, cracks: None \}/);
+  assert.match(toolsRust(validateTools(data, items, blocks)), /cut: CutLook \{ tile: None, tint: \[255, 255, 255\], open: 2\.5, kerf_width_m: 0\.03, bite: BiteLook \{ width_m: 0\.14, ends_m: 0\.03, step: 0\.6, band_m: 0\.25, depth_per_mouth: 2\.0, width_per_depth: 1\.0 \}, cracks: None \}/);
 });
 
 test("a wood's bites and their cracks (WORK_QUEUE item 26) are data: validated, a fixture wood's by data alone", () => {
@@ -178,11 +178,11 @@ test("a wood's bites and their cracks (WORK_QUEUE item 26) are data: validated, 
     block: 'test:post',
     fellWedge: 'test:post_ramp',
     leaves: { block: null },
-    cut: { open: 3, bite: { widthM: 0.2, endsM: 0.05, step: 0.5 }, cracks: { set: 'stone', stages: [0.1, 0.3, 0.5, 0.7], strength: 0.4 } },
+    cut: { open: 3, bite: { widthM: 0.2, endsM: 0.05, step: 0.5, bandM: 0.3, depthPerMouth: 3 }, cracks: { set: 'stone', stages: [0.1, 0.3, 0.5, 0.7], strength: 0.4 } },
   });
   assert.match(
     toolsRust(validateTools(data, items, blocks)),
-    /block: "test:post", .*bite: BiteLook \{ width_m: 0\.2, ends_m: 0\.05, step: 0\.5 \}, cracks: Some\(Cracks \{ tiles: &\["crackStone1", "crackStone2", "crackStone3", "crackStone4"\], stages: &\[0\.1, 0\.3, 0\.5, 0\.7\], strength: 0\.4, span: 1\.5 \}\) \}/,
+    /block: "test:post", .*bite: BiteLook \{ width_m: 0\.2, ends_m: 0\.05, step: 0\.5, band_m: 0\.3, depth_per_mouth: 3\.0, width_per_depth: 1\.0 \}, cracks: Some\(Cracks \{ tiles: &\["crackStone1", "crackStone2", "crackStone3", "crackStone4"\], stages: &\[0\.1, 0\.3, 0\.5, 0\.7\], strength: 0\.4, span: 1\.5 \}\) \}/,
   );
   const bad = (edit, re) => {
     const data = loadTools();
@@ -192,6 +192,8 @@ test("a wood's bites and their cracks (WORK_QUEUE item 26) are data: validated, 
   bad((c) => (c.bite.widthM = 2), /woods\.dwell:log\.cut\.bite\.widthM must be a number in \[0\.02, 1\]/);
   bad((c) => (c.bite.endsM = 0.1), /woods\.dwell:log\.cut\.bite\.endsM must be a number in \[0, 0\.07\]/);
   bad((c) => (c.bite.step = 0), /woods\.dwell:log\.cut\.bite\.step must be a number in \[0\.1, 1\]/);
+  bad((c) => (c.bite.depthPerMouth = 0.1), /woods\.dwell:log\.cut\.bite\.depthPerMouth must be a number in \[0\.5, 8\]/);
+  bad((c) => (c.bite.bandM = 0), /woods\.dwell:log\.cut\.bite\.bandM must be a number in \[0\.02, 1\]/);
   bad((c) => (c.bite.depth = 1), /cut\.bite: unknown field depth/);
   bad((c) => (c.bite = 3), /woods\.dwell:log\.cut\.bite must be an object/);
   bad((c) => (c.cracks.set = 'bark'), /woods\.dwell:log\.cut\.cracks\.set must be a crack set/);

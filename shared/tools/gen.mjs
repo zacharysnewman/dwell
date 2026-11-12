@@ -69,7 +69,7 @@ const SWAY_MAX_DEG = 10;
 const SWAY_MAX_BOB_M = 0.1;
 const WOOD_FIELDS = ['block', 'fellFraction', 'buckFraction', 'buckDrops', 'chips', 'leaves', 'sway', 'sounds', 'cut', 'fellWedge', 'fellWedgeTrunk', 'fellTip', 'chop2'];
 const CUT_FIELDS = ['tile', 'tint', 'open', 'kerfWidthM', 'bite', 'cracks'];
-const BITE_FIELDS = ['widthM', 'endsM', 'step'];
+const BITE_FIELDS = ['widthM', 'endsM', 'step', 'bandM', 'depthPerMouth', 'widthPerDepth'];
 const LEAF_FIELDS = ['block', 'count', 'color', 'radiusM', 'heightM'];
 const SWAY_FIELDS = ['fromFraction', 'maxDeg'];
 const CHIP_FIELDS = ['count', 'shards', 'piece', 'color', 'speed', 'size'];
@@ -348,10 +348,23 @@ export function validateTools(data, items, blocks, heldItems = loadHeldItems(), 
     const bk = k.bite ?? {};
     if (bk === null || typeof bk !== 'object' || Array.isArray(bk)) fail(`${at}.cut.bite must be an object`);
     known(bk, BITE_FIELDS, `${at}.cut.bite`);
-    cut.bite = { widthM: bk.widthM ?? 0.14, endsM: bk.endsM ?? 0.03, step: bk.step ?? 0.6 };
+    // The notch the bites join into grows by the bite rule (WORK_QUEUE item 18): a V `x` m deep,
+    // its mouth along the grain `bandM` at least and `x / depthPerMouth` past it, each bite
+    // `x * widthPerDepth` across the side (the head's width at least).
+    cut.bite = {
+      widthM: bk.widthM ?? 0.14,
+      endsM: bk.endsM ?? 0.03,
+      step: bk.step ?? 0.6,
+      bandM: bk.bandM ?? 0.25,
+      depthPerMouth: bk.depthPerMouth ?? 2,
+      widthPerDepth: bk.widthPerDepth ?? 1,
+    };
     inRange(cut.bite, 'widthM', 0.02, 1, `${at}.cut.bite`);
     inRange(cut.bite, 'endsM', 0, cut.bite.widthM / 2, `${at}.cut.bite`);
     inRange(cut.bite, 'step', 0.1, 1, `${at}.cut.bite`);
+    inRange(cut.bite, 'bandM', 0.02, 1, `${at}.cut.bite`);
+    inRange(cut.bite, 'depthPerMouth', 0.5, 8, `${at}.cut.bite`);
+    inRange(cut.bite, 'widthPerDepth', 0.1, 4, `${at}.cut.bite`);
     // The cracks round the bites (BLOCK_DAMAGE.md §6.3's overlay; `wood` splits along the grain),
     // their stages by the share of the fell (or buck) fraction cut.
     cut.cracks = k.cracks === undefined ? null : validateCracksLook(k.cracks, `${at}.cut.cracks`, crackSets);
@@ -686,7 +699,7 @@ export function toolsRust(d) {
       (x) => `DropRule { chance: ${f64(x.chance)}, choices: &[DropChoice { item: "${x.item}", min: ${x.min}, max: ${x.max}, weight: 1.0 }] }`,
     );
     rs.push(
-      `    WoodDef { block: "${w.block}", fell_fraction: ${f64(w.fellFraction)}, buck_fraction: ${f64(w.buckFraction)}, buck_drops: &[${drops.join(', ')}], chips: Chips { count: ${w.chips.count}, shards: ${w.chips.shards}, piece: "${w.chips.piece}", color: [${rgb(w.chips.color).join(', ')}], speed: ${f64(w.chips.speed)}, size: ${f64(w.chips.size)} }, leaves: Leaves { block: ${optStr(w.leaves.block)}, count: ${w.leaves.count}, color: [${rgb(w.leaves.color).join(', ')}], radius_m: ${f64(w.leaves.radiusM)}, height_m: ${f64(w.leaves.heightM)} }, sway: Sway { from_fraction: ${f64(w.sway.fromFraction)}, max_deg: ${f64(w.sway.maxDeg)} }, sounds: &[${w.sounds.map((x) => `(${f64(x.from)}, "${x.event}")`).join(', ')}], cut: CutLook { tile: ${optStr(w.cut.tile)}, tint: [${rgb(w.cut.tint).join(', ')}], open: ${f64(w.cut.open)}, kerf_width_m: ${f64(w.cut.kerfWidthM)}, bite: BiteLook { width_m: ${f64(w.cut.bite.widthM)}, ends_m: ${f64(w.cut.bite.endsM)}, step: ${f64(w.cut.bite.step)} }, cracks: ${crackRust(w.cut.cracks)} }, fell_wedge: ${optStr(w.fellWedge)}, fell_wedge_matching: ${w.fellWedgeTrunk === 'matching'}, fell_tip: ${f64(w.fellTip)}, chop2: Chop2Wood { fell_fraction: ${f64(w.chop2.fellFraction)}, along: ${f64(w.chop2.along)}, wedge_matching: ${w.chop2.fellWedgeTrunk === 'matching'} } },`,
+      `    WoodDef { block: "${w.block}", fell_fraction: ${f64(w.fellFraction)}, buck_fraction: ${f64(w.buckFraction)}, buck_drops: &[${drops.join(', ')}], chips: Chips { count: ${w.chips.count}, shards: ${w.chips.shards}, piece: "${w.chips.piece}", color: [${rgb(w.chips.color).join(', ')}], speed: ${f64(w.chips.speed)}, size: ${f64(w.chips.size)} }, leaves: Leaves { block: ${optStr(w.leaves.block)}, count: ${w.leaves.count}, color: [${rgb(w.leaves.color).join(', ')}], radius_m: ${f64(w.leaves.radiusM)}, height_m: ${f64(w.leaves.heightM)} }, sway: Sway { from_fraction: ${f64(w.sway.fromFraction)}, max_deg: ${f64(w.sway.maxDeg)} }, sounds: &[${w.sounds.map((x) => `(${f64(x.from)}, "${x.event}")`).join(', ')}], cut: CutLook { tile: ${optStr(w.cut.tile)}, tint: [${rgb(w.cut.tint).join(', ')}], open: ${f64(w.cut.open)}, kerf_width_m: ${f64(w.cut.kerfWidthM)}, bite: BiteLook { width_m: ${f64(w.cut.bite.widthM)}, ends_m: ${f64(w.cut.bite.endsM)}, step: ${f64(w.cut.bite.step)}, band_m: ${f64(w.cut.bite.bandM)}, depth_per_mouth: ${f64(w.cut.bite.depthPerMouth)}, width_per_depth: ${f64(w.cut.bite.widthPerDepth)} }, cracks: ${crackRust(w.cut.cracks)} }, fell_wedge: ${optStr(w.fellWedge)}, fell_wedge_matching: ${w.fellWedgeTrunk === 'matching'}, fell_tip: ${f64(w.fellTip)}, chop2: Chop2Wood { fell_fraction: ${f64(w.chop2.fellFraction)}, along: ${f64(w.chop2.along)}, wedge_matching: ${w.chop2.fellWedgeTrunk === 'matching'} } },`,
     );
   }
   rs.push('];');

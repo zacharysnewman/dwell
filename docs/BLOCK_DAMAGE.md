@@ -367,6 +367,25 @@ bites; a swing after the fall cleared the stump's slanted top. Fixed:
   red: the 12th swing's arc cleared it). **Not done:** the stump's bites aren't drawn yet (the mesher
   carves full logs; a ramp is drawn as its shape), only recorded, worn and counted toward its fall.
 
+**Round 3 (2026-11-12, the bite rule; WORK_QUEUE item 18).** Owner: **"Yes the notch should grow to follow
+the 50% rule."** Round 2's V within the ¼ m band carved about a fifth of the rule by the fell. Now each bitten
+side's notch is **one V along the grain** centred on the row's middle, grown to its share of the rule's volume
+(§10; the sides share it as their cuts do): `x` m deep, its mouth `cut.bite.bandM` (0.25) at least and
+`x ÷ depthPerMouth` (2) past it, the cell's length at most, under the mask of the side's bites, each widened to
+`x × widthPerDepth` (1) across (the head's width at least). `x` is found by bisection on the side's carved
+wood summed over the very triangles its grid draws (`for_grid_tris`), so the mesh matches the rule exactly.
+The first swing is a V about 0.45 m deep, as wide, its mouth the ¼ m band, centred where it struck; more
+swings deepen and widen it, then open its mouth past the band; by the fell it is the gash's V: the mouth
+the row's height, the apex at the row's middle near the far side, its lower face rising away from the
+notch (facing up and out, the stump ramp's short side at the cut) and its upper face falling to it (the
+trunk ramp's). The per-band kerf V's are gone (the grown V holds them). The fell, its swings and the gash
+are unchanged. Data: `cut.bite.bandM`, `depthPerMouth`, `widthPerDepth` (validated by `shared/tools/gen.mjs`).
+Tests: `carve::bites` `the_notch_carves_half_the_log_over_its_swings_k_bites_after_k` (red on main: 0.0013
+of the rule's 0.0455 at the first swing), `one_hit_bites_a_v_centred_where_it_struck_…`, `chopping_one_spot_…`
+(the mouth spans the row by the fell); `mesher_tests` `a_bitten_log_is_carved_where_it_was_struck_…` (both
+faces: centred on the hit, in the band, the V's faces turned up and down out of the notch); `dwell-protocol`
+`a_cuts_progress_is_its_swings_over_the_swings_to_fell_for_any_axe`.
+
 ### 6.4 Stone shatters, it doesn't dent (WORK_QUEUE item 18)
 
 Owner, 2026-11-12: **"The stone hits should be elongated low poly shards stone doesn't dent, it
@@ -577,9 +596,19 @@ the block's volume / number of swings required to break it."** One rule in one p
   metal pickaxe (3) one hit → 0.083. A stone pickaxe hit's 4 shards are 0.0125 m³ each (about a 23 cm
   chunk; before, half-size rock shards of under a litre together). The carve reaches 0.45 m (dirt's bowl)
   and up to the cell's 0.9 (stone's spall) by the break.
-- **Not done:** the axe's notch geometry (§6.4) still carves its V bites by its own sizes (a ¼ m band; half
-  the cell can't fit in it), so the log's carved volume is not yet the rule's: its chips are. Ramps' bite is
-  half a cell's for the pieces; ramps aren't carved (drawn as their shape). No browser check (cloud session).
+- **The axe's notch** (owner, 2026-11-12: "Yes the notch should grow to follow the 50% rule"; §6.4 round 3):
+  a cut log cell's carve after k of its swings to fell has carved k × ½ × the log's volume ÷ those swings.
+  The swings are read from the cut alone (`Cut::progress`: its hits, the bites recorded, over the swings at
+  one aim at the bite they cut on average, `chopping::swings_to_cut`), so any axe's cut is sized right
+  (stone 11, metal 5). Measured on the carved mesh (`carve::bites`
+  `the_notch_carves_half_the_log_over_its_swings_k_bites_after_k`): within 0.1 % at every swing on a square
+  cell and in the octagon, the square cell 0.47 of its 0.5 at the fell (the waist kept); in the octagon the
+  fell's half (0.41 of the cell) is more than a V inside it holds (0.36: the chamfers take the mouth's
+  corners), but that carve is never drawn: the cell splits into the gash, half the cell.
+- **Not done:** the chips of a chop are `chop_bite_m3`, half the *cell* over the swings, while the octagon's
+  carve is half its *wood* (0.83 of the cell): the chips run ~20 % over the carve on an octagonal log. Ramps'
+  bite is half a cell's for the pieces; ramps aren't carved (drawn as their shape). No browser check (cloud
+  session): the look in game is for the owner's local check.
 - **Tests:** `dwell-protocol` `a_bite_is_half_the_blocks_volume_over_its_hits` (dirt, stone wood/metal,
   sand, the ramp's half), `a_tool_taking_half_the_hits_bites_twice_as_much_and_a_fixture_block_by_data_alone`,
   `chopping` `a_chop_bites_half_the_cell_over_the_swings_to_fell`; `dwell-mesh`
