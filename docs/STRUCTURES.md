@@ -249,8 +249,8 @@ game; bulk edits stressing streaming and save size.
 *Per biome (0.52.39, ADR 0074 B5): a biome lists the placement rules that stand where it has weight,
 with densities; `boulders` places the store's `dwell:proto_rock` and `broadleaf_groves` its
 `dwell:proto_tree`, so a structure in `shared/structures` reaches worldgen by a rule in
-`placements.json` and a biome naming it. The sandbox's saved structures (players') are not placement
-sources yet.*
+`placements.json` and a biome naming it. Players' saved structures are placement sources in the
+game since item 12 (§9), not in worldgen.*
 
 The owner asked for the two hand-built pines (`dwell:pine_tree`, `dwell:tall_pine_tree`) in the
 generated world; the answers and the measurements are in
@@ -277,3 +277,54 @@ generated world; the answers and the measurements are in
 - The structures' own `variants` are not used by placement; turns come from the placement's
   `rotate` (the pines declare none), and `choices`, if a placed structure has them, are drawn from
   the tree's priority hash.
+
+## 9. The player's structure library (WORK_QUEUE item 12), built 2026-11-12
+
+The owner's answers (2026-11-11): *"Structures are per player, eventually shareable (add to roadmap).
+Yes can be edited, not protected. Yes we can keep 32^3 for now, though we may change this later. Or
+save as an array of that size."* Sharing between players is in [`FUTURE.md`](./FUTURE.md).
+
+- **Per player, per device.** The library is §4's structures store (OPFS `dwell/structures/`), the
+  browser's shared append-only store: one per player on a device, outside every world, so a
+  structure saved in one world places in any world the player opens there. Not synced between
+  devices; export/import moves one.
+- **Limits are data**: `shared/structures/library.json` — `tileSize` (32: at most one region edit's
+  side), `maxTiles` ([4, 2, 4] tiles along x, y, z: 128 × 64 × 128), `maxNameLength`.
+  `client/src/local/structureLibrary.ts` checks it (named errors; a fixture limit by data alone in
+  `structureLibrary.test.ts`), and a Rust test checks it fits the region tools' memory guard
+  (`MAX_CLIPBOARD_CELLS`). Changing 32³ later (the owner may) is an edit of this file.
+- **A selection that fits one file** (32 across, 64 tall, §3) is saved as one `voxels` structure, as
+  before: older builds read it, and it still exports into `shared/structures/`.
+- **A larger selection is saved as a grid of tiles** (the owner's "array of that size"), one file:
+
+  ```json
+  { "format": 1, "name": "dwell:hall", "kind": "tiles", "size": [70, 40, 33], "anchor": [35, 0, 16],
+    "palette": { ".": null, "s": "dwell:stone" }, "tileSize": 32,
+    "tiles": [{ "at": [0, 0, 0], "layers": [["sss…", "…"], "…"]}, "…"] }
+  ```
+
+  `at` is a tile's corner (multiples of `tileSize` from the box's lowest corner); a tile's size is
+  `tileSize` clipped to the box; each tile is checked as a voxels body of its size with the shared
+  palette by `format.mjs`'s own `validate`, so the format's rules stay in one place. A tile of kept
+  cells only is left out (kept). The file loads as one structure of its whole size. A build without
+  tiles lists the file as kept (unknown kind) and never rewrites or deletes it; `gen.mjs` (the
+  repository's structures) does not take tiles yet — a tiled structure is a player's.
+- **Saving** (the Structures page, §4) reads the box a tile at a time (`readTiled`: `Client.voxels`
+  caps one read) and refuses over the limit.
+- **Placing** (creative): the creative inventory's **Structures** tab lists the library's readable
+  structures with their sizes (the search filters them); a click loads one into paste mode — the
+  ghost box at the crosshair, **R** turns it 90°, M mirrors it, a **right click** places it. Placed
+  copies are ordinary blocks: editable, not protected. A structure over one edit's side goes as one
+  undo step of `Paste` region edits of at most 32 a side (`RegionTools::paste_tiles`), sent as the
+  rate allows; kept cells take what the world holds when it is sent. Placement is face-local through
+  `FaceFrame` (a both-faces test pastes a 40-wide structure upright, turned, on either face).
+- **World rules.** The tab and `loadStructure` work only where the world's mode has the
+  `structures` ability (`shared/modes/modes.json`: creative, for now). The server validates and
+  applies each tile as any paste: reach, the build volume, players, unbreakable cells, and the mode
+  (without `unlimitedBlocks` every placed cell is paid in items, ADR 0066), so a modified client
+  outside creative gets nothing for free. *Deviation:* the server doesn't refuse a structure
+  placement as such outside creative: that needs the server to announce a new region-edit op, and
+  both capability bytes (`welcome_flags`, `inventory_flags`) are full; a new flags field (an optional
+  Welcome tail is not one: older clients refuse trailing bytes) is a protocol change for the owner.
+- **Not yet:** the anchor (a placement stands on its bottom centre, as a paste does), a ghost of the
+  blocks themselves (the ghost is the box), sharing.

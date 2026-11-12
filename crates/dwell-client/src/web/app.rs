@@ -616,6 +616,7 @@ impl Client {
                 game.set_capabilities(region_edits, brushes);
                 game.set_vitals_rules(session.vitals_rules());
                 game.set_instant_breaks(session.instant_breaks());
+                game.set_structures(session.structures());
                 if let Some(v) = s.input.flight.set_allowed(may_fly) {
                     s.shell_events.push(shell_event("flightAllowed", v));
                 }
@@ -1651,6 +1652,16 @@ impl Client {
     /// follows the crosshair, R and M turn it, a right click pastes it as region edits (§6.5).
     /// `cells` in layer order; `keep[i]` non-zero where the structure keeps what is there. An
     /// error message, or empty when loaded.
+    /// Whether the world's mode places saved structures (`structures`, creative only for now):
+    /// the creative inventory's Structures tab shows only then (STRUCTURES.md §9).
+    #[wasm_bindgen(js_name = structuresAllowed)]
+    pub fn structures_allowed(&self) -> bool {
+        self.inner
+            .borrow()
+            .session
+            .as_ref()
+            .is_some_and(|s| s.structures())
+    }
     #[wasm_bindgen(js_name = loadStructure)]
     pub fn load_structure(
         &self,
@@ -3098,6 +3109,7 @@ impl Inner {
         if let Some(s) = self.session.as_ref() {
             game.set_vitals_rules(s.vitals_rules());
             game.set_instant_breaks(s.instant_breaks());
+            game.set_structures(s.structures());
         }
         game.set_loading_screen(self.options.loading_screen);
         game.set_crossing_roll(self.crossing_roll);

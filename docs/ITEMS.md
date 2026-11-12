@@ -284,6 +284,10 @@ Since 0.52.23 the hotbar has **6 slots** in both modes (`shared/inventory/invent
 
 ## 6a. The inventory view **[built, 0.52.23]**
 
+*Structures tab (WORK_QUEUE item 12, STRUCTURES.md §9):* in a mode with the `structures` ability
+(creative), the view ends with the player's saved structures; a click places one with the paste ghost
+(R turns it 90°, right click places). It is not a hotbar item: a structure is not in `items.json`.
+
 Owner, 2026-11-10: "Cap the hotbar at 6 slots. We need inventory view. For both adventure and
 creative." `E`, the touch **Bag** button (top left) or the controller's `inventory` button (D-pad
 left, `shared/input/gamepad.json`) opens it; `E`, Escape, the Bag or B closes it. While it is open the
