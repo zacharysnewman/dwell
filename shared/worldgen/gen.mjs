@@ -341,8 +341,9 @@ export function validatePlacements(
     }
     if (!(isNum(p.maxSlopeDeg) && p.maxSlopeDeg > 0 && p.maxSlopeDeg < 90))
       fail(`${at}: maxSlopeDeg must be in (0, 90) degrees`);
-    if (!(Number.isInteger(p.spacing) && p.spacing >= 0 && p.spacing <= 16)) {
-      fail(`${at}: spacing must be a whole number of blocks in [0, 16]`);
+    // Negative: two crowns may interleave by that many blocks (a dense stand, WORK_QUEUE item 32).
+    if (!(Number.isInteger(p.spacing) && p.spacing >= -4 && p.spacing <= 16)) {
+      fail(`${at}: spacing must be a whole number of blocks in [-4, 16]`);
     }
     const r = p.rotate;
     if (!(

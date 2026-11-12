@@ -171,9 +171,11 @@ export type Step =
   /**
    * Saves the telemetry, the controller ticks and the game's state under `name`. With a `budget`
    * (`{"<series>.<stat>": max}`, e.g. `{"frame.cpu.p95": 14}`), a value over its maximum fails the
-   * scenario (`overBudget`; BUGS.md #72's phone budget while moving).
+   * scenario (`overBudget`; BUGS.md #72's phone budget while moving). With `reportOnly` true the
+   * values over it are printed (`OVER BUDGET (report only)`) and the scenario goes on: a target not
+   * yet met (`forest-perf`'s 16.7 ms frame, WORK_QUEUE items 30 and 32).
    */
-  | { do: 'record'; name: string; budget?: Record<string, number> }
+  | { do: 'record'; name: string; budget?: Record<string, number>; reportOnly?: true }
   /**
    * Saves a screenshot `<name>.png`. With a placement (`at` [x, y, z], the eye, or `above`
    * [x, z, height], the eye `height` m over the ground there along `face`'s up; `yaw`, `pitch`),
@@ -406,7 +408,7 @@ const STEP_FIELDS: Record<Step['do'], readonly string[]> = {
   give: ['item', 'count'],
   lava: ['op', 'args'],
   mark: [],
-  record: ['name', 'budget'],
+  record: ['name', 'budget', 'reportOnly'],
   shot: ['name', ...PLACEMENT_FIELDS, 'quietFrames', 'maxS'],
   spot: ['spot', 'name'],
   traceStart: [],
@@ -653,6 +655,12 @@ export function parseStep(where: string, v: unknown): Step {
     }
     case 'record': {
       const n = name(at('name'), o.name);
+      if (o.reportOnly !== undefined && o.reportOnly !== true) {
+        throw new ViewError(`${at('reportOnly')}: expected true (or leave it out)`);
+      }
+      if (o.reportOnly === true && o.budget === undefined) {
+        throw new ViewError(`${at('reportOnly')}: a record reports only against a budget`);
+      }
       if (o.budget === undefined) return { do: d, name: n };
       if (typeof o.budget !== 'object' || o.budget === null || Array.isArray(o.budget)) {
         throw new ViewError(`${at('budget')}: expected {"<series>.<stat>": max}`);
@@ -667,7 +675,9 @@ export function parseStep(where: string, v: unknown): Step {
         }
         budget[k] = num(`${at('budget')}.${k}`, v, 0, 1e9);
       }
-      return { do: d, name: n, budget };
+      return o.reportOnly
+        ? { do: d, name: n, budget, reportOnly: true }
+        : { do: d, name: n, budget };
     }
     case 'traceStop':
       return { do: d, name: name(at('name'), o.name) };

@@ -323,6 +323,18 @@ sapling at the data's chance (adventure); creative lists the saplings under Plan
 Not built: per-tree leaf tints (`variety.lightness`, `hue`), frond blades (a `dwell:palm_frond`
 block), a pine needle block, a sapling's own model.
 
+**Old-growth species (WORK_QUEUE item 32, 2026-11-12):** `shared/trees/old_pine.json` and `old_oak.json`
+are the pine's and oak's shapes grown old: a seed draws the full height from 18–26 m (pine; the pine's
+7–14 m) and 9–14 m (broadleaf; the oak's 3.5–7 m), a long bare trunk and slimmer crowns so a stand packs
+close, and `growth.wild` weighted to the last stage (`[0, 0, 1, 1, 1, 2, 3, 10]`: an old stand, few
+young trees). Their own species, not a tuning of a placement, so the planter's trees and the growth
+records agree. They have no sapling of their own yet (wild only: not planted, their leaves drop none;
+26 m is kept under the 32 m a broken leaf's tree is looked for, `growth.rs` `LEAF_RISE`). The
+`old_growth` placement (`placements.json`) stands them, 65 : 35, a candidate in every 5 m cell
+everywhere, its `spacing` −2 (a negative spacing, new: two crowns may interleave by that many blocks),
+~220 trees a hectare; only the `preset:old_growth` biome lists it (ADR 0074, the old-growth forest),
+and `test:forest` is that forest everywhere, the tree performance reference (docs/DEV_TOOLS.md).
+
 ## Sources
 
 - Runions, Lane & Prusinkiewicz 2007, space colonization: https://algorithmicbotany.org/papers/colonization.egwnp2007.html

@@ -204,6 +204,23 @@
 
 **The starter world (0.52.54).** The starter world (0.52.54): `shared/worldgen/worlds/starter.json` (`test:starter`) is a candidate default assembled by data alone: a fixture world may now carry its own `biomes` (by name, the default first, then presets, each a name or `{ "biome": name, ...keys }` replacing those keys; a renamed copy with `name`), `biomeMap` keys over terrain.json's and `geology` groups over rocks.json's; gen.mjs checks each biome and emits the Chisel edit it stands for (`FIXTURE_WORLD_EDITS`), which `config::world_config` uses for that name. The starter: a convergent boundary with a 600 m range and an arc of two Rainier-shaped 4800 m cones (tall_peak's keys; the arc's cones share one height today, so per-cone heights need an engine key), the snow and ice lines, a hotspot chain of four islands offshore east, the rain shadow on (`rainShare` 0.6), rock shaping on (`strength` 1; 0.25 from 0.52.55), and eleven biomes by climate (a broadleaf forest, the mixed forest, boreal, meadow, steppe, the warm coast, sand desert, red-rock mesa with erosion and some gullies, badlands, alpine tundra, wetland) with vegetation, ground and trees opted in, over the default at weight 0.25 as the fallback. Palms are not in the game: the warm coast keeps the beach preset's broadleaf groves. `tests/starter_world.rs`: it parses and generates on both faces, every listed biome wins ≥ 2 % of the land (seed 0: boreal ~20 %, steppe 13–17 %, alpine 11 %, desert 10 %, badlands 9–11 %, mesa 5–6 %, meadow 4–5 %, broadleaf 3–4 %, mixed 4 %, wetland 4 %, coast 3 %, default 9 %), the main cone stands ~4770 m; `STARTER_PNG=<dir>` writes the overview, and the ignored `tour` test prints `at=` spots. The default world is unchanged (goldens byte-identical). The tour (0.52.55, in game on the bench): with the rocks' shaping at full strength every hillside was bare stepped stone, the forests and the boreal hills alike, so the starter's `geology.shaping.strength` is 0.25: the broadleaf forest, the coast and the deserts read as themselves; the boreal spot's terraced hills still have no pines, and the range and the cones read best from far off.
 
+**The old-growth forest (2026-11-12, WORK_QUEUE item 32; owner: "We should have a tall dense forest
+biome/climate for performance reference on trees.").** `preset:old_growth`, a temperate rainforest: its
+`where` cool and very wet in R4's terms (6–13 °C, 2200 mm of rain and more; the cold rainforest is 4–12 °C
+from 1800 mm), gentle lowland detail, the `old_growth` placement only (the old-growth species,
+docs/TREE_GROWTH.md §11, at `trees` density 1: ~220 a hectare up to 26 m tall), thick undergrowth (the
+meadow grass and the `old_growth_undergrowth` decoration, tall grass nearly everywhere), more fallen
+sticks. The tree density, the species' weights and their stages are data (the placement's `grid`,
+`density`, `spacing`, `structures`; the species' `growth.wild`; the biome's `trees`), so a tool can thin
+or thicken the stand. The Realistic world lists it (by climate alone); the starter lists it in its own
+0..1 terms on the cool, wet lowland (temperature 0.34–0.5, wetness 0.6 and up, below 450 m), so the
+starter's terrain changed there; the default world is unchanged (goldens byte-identical). The fixture
+world `test:forest` (`worlds/forest.json`) is gentle land that is this forest everywhere: the tree
+performance reference (docs/DEV_TOOLS.md, the bench's `forest-perf` and `forest:*` spots;
+`tests/forest_world.rs`: every column old-growth, the stand's trees a hectare in range on both faces,
+deterministic, its density changed by data alone). A placement's `spacing` may now be negative (to −4):
+two kept boxes may overlap by that many blocks, crowns interleaving.
+
 ## Consequences
 
 - A biome can be added by data alone (a test does, with a fixture biome that changes the generated
