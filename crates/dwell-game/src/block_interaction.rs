@@ -6,7 +6,7 @@
 
 use dwell_blocks::{Facing, STATES, StateId, info};
 use dwell_protocol::{BlockEditAction, BlockEditRequest, Message, players};
-use dwell_world::edit::{FACE_DIRS, placeable, raycast_block};
+use dwell_world::edit::{FACE_DIRS, placeable, raycast_block_in};
 use dwell_world::{FaceFrame, VoxelWorld, inside_build_volume};
 
 pub use crate::input::EditAction;
@@ -47,7 +47,15 @@ pub fn target_hit(
     dir: [f32; 3],
     max_distance: f32,
 ) -> Option<(BlockTarget, f32)> {
-    raycast_block(world, origin, dir, max_distance).map(|h| {
+    // The home grid's frame (MOON_WORLD.md §2, M-3): the identity, so the walk is the world's.
+    raycast_block_in(
+        world,
+        &dwell_world::GridFrame::HOME,
+        origin,
+        dir,
+        max_distance,
+    )
+    .map(|h| {
         let y = origin[1] + f64::from(dir[1]) * f64::from(h.distance);
         let rows = y / dwell_world::CELL_H - f64::from(h.cell[1]);
         let up = if FaceFrame::at_row(h.cell[1]).is_b() {

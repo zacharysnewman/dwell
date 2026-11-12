@@ -320,9 +320,10 @@ impl Predictor {
             if let Some(water) = self.water_drag {
                 p.water = water(world, &self.physics, p.body, &mut falls);
             }
-            let frame = crate::frame::Frame {
-                face: FaceFrame::at_height(self.physics.position(p.body).y),
-            };
+            let frame = crate::frame::GridMaps::frame_at(
+                &dwell_world::GridFrame::HOME,
+                self.physics.position(p.body),
+            );
             p.friction = crate::controller::ground_friction(world, &self.physics, frame, p.body)
                 * self.physics.gravity();
             self.physics

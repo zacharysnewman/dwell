@@ -558,6 +558,12 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    crescents and light through more of the month (this replaces the earlier "keep it physical"). On the whole-day
    8-day month (full moon always at face A's midnight; face B sees it ~92% lit): **"Not sure"** — kept at 8 days
    for now, open; a fractional month (e.g. 8.25 days) is the recommended alternative, one number in data.
+   **M-3 built 2026-11-12** (branch `claude/moon-m3-gridframe-kg7kpg`): `dwell_world::GridFrame` (world ↔ grid ↔
+   face-local: points, vectors, looks, up and gravity per face, cells, capture/release; `HOME` the identity, bit for
+   bit), `dwell-physics` `frame::grid_of_pose` (bodies' poses, same bits as glam); the bodies' ray, felling's hits
+   and snap, home targeting (`raycast_block_in`) and the controller's spawn face go through it; the both-faces
+   check's rule 3 (no hand `inverse * (p − origin)`). Renderer model matrices per grid left for M-5; grid ids for
+   M-7 (MOON_WORLD.md §2.1).
 
 ## Done
 

@@ -386,6 +386,11 @@ scanning the sources keeps both out: `dwell-world` `tests/both_faces.rs`, run by
    when the check arrived are listed with their reasons in the check (`KNOWN`); the list only
    shrinks. `dwell-physics/tests` is exempt: CI runs that whole suite again on face B.
 
+3. **a point is turned into a grid's space by hand** (MOON_WORLD.md §2, M-3): `inverse * (p − origin)`
+   (a body's or a grid's rotation applied by hand) outside `dwell-world` `grid.rs`; such code goes
+   through `dwell_world::GridFrame` (in the physics, `frame::grid_of_pose`), or is marked
+   `// grid-boundary: <reason>` on it or next to it.
+
 The check is a heuristic, not a proof: a test that builds only face-A fixtures without naming any
 face is invisible to it. That is why face-dependent systems also get a parity test over the mirror
 world (§11), and why new face-dependent code is written face-local through `FaceFrame`, which the
