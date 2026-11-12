@@ -759,6 +759,8 @@ impl VoxelWorld {
 
     /// Generates a missing chunk (streamed worlds: creates an all-air one).
     pub fn get_or_create(&mut self, coord: ChunkCoord) -> &mut Chunk {
+        // A light part way reads the voxels as they were: finished before any changes.
+        self.settle_light();
         if !self.chunks.contains_key(&coord) {
             let mut chunk = None;
             if self.saved_has(coord)
@@ -785,6 +787,8 @@ impl VoxelWorld {
         self.chunks.get(&coord).map(|c| &**c)
     }
     pub fn find_mut(&mut self, coord: ChunkCoord) -> Option<&mut Chunk> {
+        // A light part way reads the voxels as they were: finished before any changes.
+        self.settle_light();
         self.chunks.get_mut(&coord).map(|c| &mut **c)
     }
 
@@ -1005,6 +1009,8 @@ impl VoxelWorld {
 
     /// Inserts or replaces a chunk (streamed chunks; chunks generated off-thread).
     pub fn put(&mut self, coord: ChunkCoord, chunk: Chunk) {
+        // A light part way reads the voxels as they were: finished before any changes.
+        self.settle_light();
         self.store(coord, chunk);
     }
 
@@ -1015,6 +1021,8 @@ impl VoxelWorld {
         self.epoch += 1;
     }
     pub fn remove(&mut self, coord: ChunkCoord) {
+        // A light part way reads the voxels as they were: finished before any changes.
+        self.settle_light();
         if self.chunks.remove(&coord).is_some() {
             self.epoch += 1;
         }
@@ -1025,6 +1033,8 @@ impl VoxelWorld {
     }
     /// Drops the chunks `evict` selects.
     pub fn evict(&mut self, evict: impl Fn(ChunkCoord, &Chunk) -> bool) -> usize {
+        // A light part way reads the voxels as they were: finished before any changes.
+        self.settle_light();
         let before = self.chunks.len();
         self.chunks.retain(|&c, chunk| !evict(c, chunk));
         let n = before - self.chunks.len();
