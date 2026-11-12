@@ -988,6 +988,17 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
        pulling back to the whole range and the island's scale. The text exception is the measuring effect's
        numbers only — no titles or descriptions. Owner: "Measure in meters" (e.g. 1000 m, 2000 m … ticking up).
 
+41. **Theater mode** (owner 2026-11-12: "We should use full camera tools to do the things you were doing and expand
+   this tool set as you go, we could call it theater mode. Even make it available ingame as a feature that could be
+   toggled on for any world type."). Answers: **both** presets (pick a target and a move: orbit, dolly, track,
+   rise, pan, with sliders) and keyframes (free-fly the camera, drop keyframes with position, look, time of day and
+   speed, choose the move between them, preview and play; paths saved as data to replay and share); **record to a
+   file** in the browser (the canvas without the HUD, 9:16 or 16:9, chosen frame rate, downloadable); in
+   multiplayer **their camera only** (the world keeps running, their character stays put, time of day and
+   time-lapse apply to their view only); **anyone, any world** (a Settings toggle or a key; the host can disable it
+   for guests). The `record` skill drives the same tools (a bench `camera` step plays a path and records it), and
+   the tool set grows with each video. In progress: design + logic (cloud), then the UI and recording (local).
+
 ## Done
 
 - **Axe swing directions and animation tools (owner 2026-11-11: "The axe animations are still trash.
