@@ -6,6 +6,17 @@ pins it.
 
 ## Open
 
+### 103. Walking through tall grass is loud, fast and crackly; the first-person legs step too fast
+
+Owner, 2026-11-12: "Walking through tall grass is really loud and obnoxious. Bad sound effect for it I think, it's
+also playing really fast. ... the feet are moving really fast, way faster than normal legs step/walk. And there's an
+occasional crackly sound too, are there 3 SFX playing while walking on grass?" (On 0.54.153: the own-body change
+#791 hadn't shipped — releases failed from ~18:45 until the typecheck fix.) Check: how many sounds play per step on
+grass with tall grass (the footstep on the grass block, a brush sound per tall-grass cell entered, the cross plant's
+own sound — possibly all three, each per cell or per tick rather than per step), their volume and rate; the crackle
+(clipping from stacked sounds, or a sound restarted every tick); the first-person body's walk clip speed against the
+walk speed (stride length 1.6 m a loop vs the controller's speed — too high a playback rate).
+
 ### 101. Clouds draw in the void beyond the world's rim, under a far camera
 
 Found 2026-11-12 recording the bifacial showcase (seed 7, a theater camera 140 km from the centre, 11 km up,
