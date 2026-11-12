@@ -2358,7 +2358,9 @@ const CLIMATE_TOP = [
   "rain",
   "maxGridBytes",
   "discharge",
+  "biomes",
 ];
+const CLIMATE_BIOMES = ["maxRainMm", "wetMm", "moistureShare"];
 const CLIMATE_RAIN = [
   "cell",
   "maxCells",
@@ -2405,8 +2407,9 @@ export function validateClimate(data) {
   obj("the file", data, CLIMATE_TOP.filter((k) => k !== "$comment"));
   if (!(Array.isArray(data.bands) && data.bands.length > 0)) fail("bands must be a non-empty list");
   for (const [i, b] of data.bands.entries()) {
-    obj(`bands[${i}]`, b, ["name", "weight", "latitude"]);
+    obj(`bands[${i}]`, b, ["name", "weight", "latitude", "rainMm"]);
     num(`bands[${i}].weight`, b.weight, 0, 1000);
+    num(`bands[${i}].rainMm`, b.rainMm, 0, 20_000);
     lat(`bands[${i}].latitude`, b.latitude);
   }
   names("bands", data.bands);
@@ -2451,6 +2454,10 @@ export function validateClimate(data) {
   num("discharge.max", data.discharge.max, 0, 100);
   if (!(data.discharge.min <= 1 && 1 <= data.discharge.max))
     fail("discharge must be [min ≤ 1, max ≥ 1]");
+  obj("biomes", data.biomes, CLIMATE_BIOMES);
+  num("biomes.maxRainMm", data.biomes.maxRainMm, 1, 50_000);
+  num("biomes.wetMm", data.biomes.wetMm, 1, 50_000);
+  num("biomes.moistureShare", data.biomes.moistureShare, 0, 1);
   return data;
 }
 
@@ -2460,14 +2467,14 @@ export function climateRust(data) {
   const rs = [
     `// ${climateHeader}`,
     "",
-    "use crate::climate::{Band, ClimateRules, RainRules, WindCell};",
+    "use crate::climate::{Band, BiomeRain, ClimateRules, RainRules, WindCell};",
     "",
     "/// The climate's rules (shared/worldgen/climate.json).",
     "pub const CLIMATE: ClimateRules = ClimateRules {",
     "    bands: &[",
     ...data.bands.map(
       (b) =>
-        `        Band { name: "${b.name}", weight: ${rf(b.weight)}, latitude: [${rf(b.latitude[0])}, ${rf(b.latitude[1])}] },`,
+        `        Band { name: "${b.name}", weight: ${rf(b.weight)}, latitude: [${rf(b.latitude[0])}, ${rf(b.latitude[1])}], rain_mm: ${rf(b.rainMm)} },`,
     ),
     "    ],",
     "    sea_level: &[",
@@ -2492,6 +2499,11 @@ export function climateRust(data) {
     "    },",
     `    max_grid_bytes: ${data.maxGridBytes},`,
     `    discharge: [${rf(data.discharge.min)}, ${rf(data.discharge.max)}],`,
+    "    biomes: BiomeRain {",
+    `        max_rain_mm: ${rf(data.biomes.maxRainMm)},`,
+    `        wet_mm: ${rf(data.biomes.wetMm)},`,
+    `        moisture_share: ${rf(data.biomes.moistureShare)},`,
+    "    },",
     "};",
     "",
   ];

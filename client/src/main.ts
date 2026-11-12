@@ -44,7 +44,15 @@ import type { SessionReport } from './net/sessionState';
 import { rememberTrust, showRegistryPrompt, trustedHash } from './ui/registryPrompt';
 import { showUpgradePrompt } from './ui/upgradePrompt';
 import { compatibilityLine, sameLine } from './version/semver';
-import { GENERATORS, isSpawn, parseLocalWorld, spawnOptions, type LocalWorld } from './local/world';
+import {
+  GENERATORS,
+  isSpawn,
+  parseLocalWorld,
+  sizeOptions,
+  sizeScale,
+  spawnOptions,
+  type LocalWorld,
+} from './local/world';
 import { cleanName, creatableType, parseSeed, testWorldId, WorldIndex } from './local/worldIndex';
 import { worldAccess } from './local/worldAccess';
 import {
@@ -58,7 +66,7 @@ import { rememberServer } from './ui/recentServers';
 import { prefersTouch, TouchControls } from './ui/touchControls';
 import { Hotbar, type HotbarSlot, type InventoryHud } from './ui/hotbar';
 import { Backpack, backpackKey } from './ui/backpack';
-import { CreativeInventory, loadPicks, savePicks } from './ui/creativeInventory';
+import { CreativeInventory, loadPicks, savePicks, structureEntries } from './ui/creativeInventory';
 import type { BrushPanelState } from './ui/brushPanel';
 import { prefersReducedMotion } from './ui/motionSettings';
 import type { SpyglassHud } from './ui/spyglass';
@@ -751,7 +759,8 @@ let worldgenConfig = '';
 /** How this page gets a terrain world's maps (ADR 0049; `world/worldMaps.ts`). */
 function mapDeps(): MapDeps {
   maps ??= {
-    keys: (seed, worldgen) => worldMapKeys(seed, worldgen || undefined),
+    keys: (seed, worldgen, radiusScale) =>
+      worldMapKeys(seed, worldgen || undefined, radiusScale === 1 ? undefined : radiusScale),
     build: workerBuilder(makeJobWorker),
     store: typeof indexedDB === 'undefined' ? null : new IndexedDbMapStore(),
     onProgress: (ready, needed) => {
@@ -795,8 +804,9 @@ async function start(): Promise<App | null> {
           makeWorker: makeJobWorker,
           // A terrain world's maps (ADR 0049): cached, or built in workers, never on this thread;
           // under the worldgen config the world's server sent (ADR 0074 B7: a guest of a test world).
-          prepareWorld: (seed: bigint, version: number, worldgen?: string) =>
-            worldMaps(seed, version, mapDeps(), worldgen ?? worldgenConfig) ??
+          // At the world's size (BIG_MAP.md M2b: the join's `WorldSettings`, 1 today's).
+          prepareWorld: (seed: bigint, version: number, worldgen?: string, radiusScale?: number) =>
+            worldMaps(seed, version, mapDeps(), worldgen ?? worldgenConfig, radiusScale ?? 1) ??
             Promise.resolve(null),
           // Per pool (generation, meshing); ?workers=N overrides it (docs/DEV_TOOLS.md).
           workers: workerCount(location.search, navigator.hardwareConcurrency, mobile),
@@ -1426,6 +1436,7 @@ function play(app: App, joined: Extract<SessionReport, { phase: 'joined' }>): vo
   });
   // The creative hotbar's picks (docs/ITEMS.md §6a), saved per world in this browser.
   const items = app.client.paletteItems();
+  const library = new StructureStore(opfsStructureDir());
   const worldKey = `${String(joined.generatorVersion)}:${String(joined.worldSeed)}`;
   const store = (() => {
     try {
@@ -1451,6 +1462,20 @@ function play(app: App, joined: Extract<SessionReport, { phase: 'joined' }>): vo
     },
     (slot) => {
       app.client.select(slot);
+    },
+    // The Structures tab (STRUCTURES.md §9): the player's library, placed with a ghost to aim.
+    {
+      allowed: () => app.client.structuresAllowed(),
+      list: async () => structureEntries(await library.list()),
+      place: async (file) => {
+        const entry = await library.get(file);
+        if (entry?.status !== 'ok') return `${file} can't be placed by this version.`;
+        const s = entry.structure;
+        const { cells, keep } = clipboardOf(s);
+        const err = app.client.loadStructure(s.size[0], s.size[1], s.size[2], cells, keep, s.name);
+        if (!err) setInventoryOpen(app, false);
+        return err;
+      },
     },
   );
   app.touch?.setOnBag(() => {
@@ -1706,6 +1731,8 @@ async function makeWorld(
         seed: parseSeed(launch.seed),
         ...(launch.spawn !== '' && isSpawn(launch.spawn) ? { spawn: launch.spawn } : {}),
         ...(isGameMode(launch.mode) ? { mode: launch.mode } : {}),
+        // New world → More options' World size (BIG_MAP.md M2b): a bigger terrain world.
+        ...(type === 'terrain' ? sizeOptions(sizeScale(launch.size)) : {}),
       },
       Date.now(),
     );
@@ -1863,6 +1890,8 @@ async function connect(app: App): Promise<void> {
       ...(isSpawn(playing.spawn) ? spawnOptions(playing.spawn) : {}),
       ...(!access.ok && access.upgrade ? { upgrade: true } : {}),
       ...(playing.mode && isGameMode(playing.mode) ? { mode: playing.mode } : {}),
+      // A bigger world (BIG_MAP.md M2b): created at its size, its maps built at it.
+      ...sizeOptions(playing.radiusScale),
     };
     worldName = playing.name;
     thumbId = playing.id;
@@ -1930,7 +1959,8 @@ async function connect(app: App): Promise<void> {
     clientVersion: recordedVersion(),
     transport: preference,
     ...(localWorld ? { localWorld } : {}),
-    worldMaps: (seed, version) => worldMaps(seed, version, mapDeps(), worldgenConfig),
+    worldMaps: (seed, version, radiusScale) =>
+      worldMaps(seed, version, mapDeps(), worldgenConfig, radiusScale ?? 1),
     // The local world's worker's stages (the world file, its server, the spawn), on this clock.
     onStage: (id, phase, atMs) => {
       // By id from the worker: an unknown one is ignored (the tracker checks it against the data).

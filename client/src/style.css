@@ -3602,6 +3602,24 @@ body.loading-wait #brush-panel {
   gap: 4px;
 }
 
+/* The Structures tab (docs/STRUCTURES.md §9): the player's saved structures, a button each. */
+.inventory-structures {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  max-width: 380px;
+}
+
+.inventory-structure {
+  min-height: 44px;
+}
+
+.inventory-note {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #ffd2c4;
+}
+
 .inventory-hotbar {
   padding-top: 8px;
   border-top: 1px solid var(--glass-line);

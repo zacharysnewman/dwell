@@ -226,10 +226,11 @@ struct Options {
     loading_screen: bool,
     /// The scene's samples per pixel asked for (the Anti-aliasing setting; `samples_for`).
     samples: u32,
-    /// `prepareWorld(worldSeed: bigint, generatorVersion, worldgen: string) → Promise<Uint8Array[] |
-    /// null>`: the world's maps (ADR 0049), from the shell's cache or built in workers; none: each
-    /// instance computes its own. `worldgen` is the world's config as its server sent it (ADR 0074
-    /// B7; `""`: the build's ground, or the shell's own for its local world).
+    /// `prepareWorld(worldSeed: bigint, generatorVersion, worldgen: string, radiusScale: number) →
+    /// Promise<Uint8Array[] | null>`: the world's maps (ADR 0049), from the shell's cache or built in
+    /// workers; none: each instance computes its own. `worldgen` is the world's config as its server
+    /// sent it (ADR 0074 B7; `""`: the build's ground, or the shell's own for its local world);
+    /// `radiusScale` its size's (BIG_MAP.md M2b, 1 today's).
     prepare_world: Option<Function>,
 }
 
@@ -616,6 +617,7 @@ impl Client {
                 game.set_capabilities(region_edits, brushes);
                 game.set_vitals_rules(session.vitals_rules());
                 game.set_instant_breaks(session.instant_breaks());
+                game.set_structures(session.structures());
                 if let Some(v) = s.input.flight.set_allowed(may_fly) {
                     s.shell_events.push(shell_event("flightAllowed", v));
                 }
@@ -1651,6 +1653,16 @@ impl Client {
     /// follows the crosshair, R and M turn it, a right click pastes it as region edits (§6.5).
     /// `cells` in layer order; `keep[i]` non-zero where the structure keeps what is there. An
     /// error message, or empty when loaded.
+    /// Whether the world's mode places saved structures (`structures`, creative only for now):
+    /// the creative inventory's Structures tab shows only then (STRUCTURES.md §9).
+    #[wasm_bindgen(js_name = structuresAllowed)]
+    pub fn structures_allowed(&self) -> bool {
+        self.inner
+            .borrow()
+            .session
+            .as_ref()
+            .is_some_and(|s| s.structures())
+    }
     #[wasm_bindgen(js_name = loadStructure)]
     pub fn load_structure(
         &self,
@@ -2764,12 +2776,39 @@ impl Client {
     /// generated. Another cell size is ignored.
     #[wasm_bindgen(js_name = requestReveal)]
     pub fn request_reveal(&self, face: u8, ti: i32, tk: i32, cell_m: i32) {
-        if !crate::map_reveal::is_level(cell_m, &dwell_game::minimap::MAP) {
-            return;
-        }
         if let Some(g) = &mut self.inner.borrow_mut().game {
-            g.request_reveal(face, ti, tk, cell_m);
+            // The world's own levels (BIG_MAP.md M2b: a bigger world's coarser cells).
+            let size = g.world_bounds().size;
+            if crate::map_reveal::is_level_sized(cell_m, &dwell_game::minimap::MAP, size) {
+                g.request_reveal(face, ti, tk, cell_m);
+            }
         }
+    }
+    /// The joined world's size (BIG_MAP.md M2b): its radius scale, 1 for today's (and before the
+    /// join's settings arrive), for the big map's levels and disc.
+    #[wasm_bindgen(js_name = worldRadiusScale)]
+    pub fn world_radius_scale(&self) -> u32 {
+        self.inner
+            .borrow()
+            .session
+            .as_ref()
+            .map_or(1, |s| s.world_size().radius_scale)
+    }
+    /// The big map's zoom levels for the joined world's size, closest first, as
+    /// [cellM, spanM, cellM, spanM, …] (`MapTunables::big_map_levels_sized`; at 1× map.json's).
+    #[wasm_bindgen(js_name = bigMapLevels)]
+    pub fn big_map_levels(&self) -> Vec<f64> {
+        let size = self
+            .inner
+            .borrow()
+            .session
+            .as_ref()
+            .map_or(Default::default(), |s| s.world_size());
+        dwell_game::minimap::MAP
+            .big_map_levels_sized(size)
+            .into_iter()
+            .flat_map(|(c, s)| [c, s])
+            .collect()
     }
     /// Tile (`ti`, `tk`) of the big map's level of `cell_m` cells on `face` read now from the
     /// loaded terrain (`crate::map_reveal::live_tile`: the closest levels' real blocks, ADR 0068),
@@ -3070,12 +3109,16 @@ impl Inner {
         let Some(maps) = self.world_maps(world_seed, generator_version) else {
             return;
         };
+        let world_size = self
+            .session
+            .as_ref()
+            .map_or(Default::default(), |s| s.world_size());
         let workers = self.options.workers;
         let jobs = match WebJobs::new(
             &self.options.make_worker,
             workers,
             workers,
-            (generator_version, world_seed),
+            (generator_version, world_seed, world_size),
             &maps,
             self.options.lod_map,
         ) {
@@ -3100,7 +3143,7 @@ impl Inner {
         game.viewport_css = (f64::from(size.0) / ratio, f64::from(size.1) / ratio);
         game.debug_visible = self.debug_visible;
         game.set_capabilities(region_edits, brushes);
-        game.set_world(generator_version, world_seed);
+        game.set_world(generator_version, world_seed, world_size);
         game.vent_plumes = crate::vent_plumes::VentPlumes::from_worldgen(
             self.session.as_ref().map_or("", |s| s.worldgen_config()),
         );
@@ -3111,6 +3154,7 @@ impl Inner {
         if let Some(s) = self.session.as_ref() {
             game.set_vitals_rules(s.vitals_rules());
             game.set_instant_breaks(s.instant_breaks());
+            game.set_structures(s.structures());
         }
         game.set_loading_screen(self.options.loading_screen);
         game.set_crossing_roll(self.crossing_roll);
@@ -3215,11 +3259,19 @@ impl Inner {
             .as_ref()
             .map_or("", |s| s.worldgen_config())
             .to_owned();
-        let promise = prepare.call3(
+        // And its size (BIG_MAP.md M2b): a bigger world's maps are its own.
+        let scale = self
+            .session
+            .as_ref()
+            .map_or(1, |s| s.world_size().radius_scale);
+        let promise = prepare.apply(
             &JsValue::NULL,
-            &js_sys::BigInt::from(world_seed).into(),
-            &generator_version.into(),
-            &worldgen.into(),
+            &Array::of4(
+                &js_sys::BigInt::from(world_seed).into(),
+                &generator_version.into(),
+                &worldgen.into(),
+                &scale.into(),
+            ),
         );
         let into = slot.clone();
         spawn_local(async move {

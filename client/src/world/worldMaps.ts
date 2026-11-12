@@ -21,11 +21,15 @@ export interface MapStore {
 export interface MapDeps {
   /**
    * The cache keys of the world's faces A and B (`worldMapKeys`); a test world's worldgen config
-   * (`worldgen`, docs/DEV_TOOLS.md "Play a test world") keys its maps apart.
+   * (`worldgen`, docs/DEV_TOOLS.md "Play a test world") and a bigger world's size (`radiusScale`,
+   * BIG_MAP.md M2b; 1 today's) key its maps apart.
    */
-  keys(seed: bigint, worldgen: string): string[];
-  /** Computes face `face`'s map (under `worldgen`) off the page's thread; resolves with its bytes. */
-  build(seed: bigint, face: number, worldgen: string): Promise<Uint8Array>;
+  keys(seed: bigint, worldgen: string, radiusScale: number): string[];
+  /**
+   * Computes face `face`'s map (under `worldgen`, at `radiusScale`) off the page's thread;
+   * resolves with its bytes.
+   */
+  build(seed: bigint, face: number, worldgen: string, radiusScale: number): Promise<Uint8Array>;
   store: MapStore | null;
   /** Each face's map as it becomes ready (the loading screen's progress). */
   onProgress?: (ready: number, needed: number) => void;
@@ -36,18 +40,21 @@ const pending = new Map<string, Promise<Uint8Array[]>>();
 /**
  * The maps of world `seed` (faces A and B), or null for a world without terrain. The same promise
  * for every caller of a seed on this page (the local world's start and the client's join share it).
+ * `radiusScale`: the world's size (BIG_MAP.md M2b; 1 today's): a seed's maps at two sizes are two.
  */
 export function worldMaps(
   seed: bigint,
   generatorVersion: number,
   deps: MapDeps,
   worldgen = '',
+  radiusScale = 1,
 ): Promise<Uint8Array[]> | null {
   if (generatorVersion !== GENERATOR_TERRAIN) return null;
-  const id = `${seed.toString()}|${worldgen}`;
+  const scale = playableScale(radiusScale);
+  const id = `${seed.toString()}|${worldgen}|${String(scale)}`;
   let p = pending.get(id);
   if (!p) {
-    p = fetchMaps(seed, deps, worldgen);
+    p = fetchMaps(seed, deps, worldgen, scale);
     pending.set(id, p);
     // A failure is not kept: the next join tries again.
     p.catch(() => pending.delete(id));
@@ -60,8 +67,20 @@ export function forgetWorldMaps(): void {
   pending.clear();
 }
 
-async function fetchMaps(seed: bigint, deps: MapDeps, worldgen: string): Promise<Uint8Array[]> {
-  const keys = deps.keys(seed, worldgen);
+/** A whole radius scale of 1 or more, else today's (1). */
+export function playableScale(radiusScale: number | undefined): number {
+  return radiusScale !== undefined && Number.isInteger(radiusScale) && radiusScale >= 1
+    ? radiusScale
+    : 1;
+}
+
+async function fetchMaps(
+  seed: bigint,
+  deps: MapDeps,
+  worldgen: string,
+  radiusScale: number,
+): Promise<Uint8Array[]> {
+  const keys = deps.keys(seed, worldgen, radiusScale);
   let ready = 0;
   deps.onProgress?.(0, keys.length);
   return Promise.all(
@@ -73,7 +92,7 @@ async function fetchMaps(seed: bigint, deps: MapDeps, worldgen: string): Promise
         bytes = null; // storage blocked or damaged: build it
       }
       if (!bytes) {
-        bytes = await deps.build(seed, face, worldgen);
+        bytes = await deps.build(seed, face, worldgen, radiusScale);
         try {
           await deps.store?.put(key, bytes);
         } catch {
@@ -167,7 +186,7 @@ function request<T>(req: IDBRequest): Promise<T> {
 
 /** A builder that computes a map in a fresh worker (the job worker script), then ends it. */
 export function workerBuilder(makeWorker: () => Worker): MapDeps['build'] {
-  return (seed, face, worldgen) =>
+  return (seed, face, worldgen, radiusScale) =>
     new Promise((resolve, reject) => {
       const worker = makeWorker();
       worker.onmessage = (e: MessageEvent<{ map?: Uint8Array; error?: string }>) => {
@@ -179,6 +198,13 @@ export function workerBuilder(makeWorker: () => Worker): MapDeps['build'] {
         worker.terminate();
         reject(new Error(e.message || 'the world map worker failed'));
       };
-      worker.postMessage({ t: 'buildMap', seed, face, worldgen });
+      // Today's size's message is as before; a bigger world's carries its scale.
+      worker.postMessage({
+        t: 'buildMap',
+        seed,
+        face,
+        worldgen,
+        ...(radiusScale !== 1 ? { radiusScale } : {}),
+      });
     });
 }

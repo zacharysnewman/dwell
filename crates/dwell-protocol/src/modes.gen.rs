@@ -10,7 +10,7 @@ pub static MODES: &[GameMode] = &[
         name: "creative",
         label: "Creative",
         experimental: false,
-        abilities: Ability::Flight.bit() | Ability::Brushes.bit() | Ability::UnlimitedBlocks.bit() | Ability::Map.bit() | Ability::MapRevealed.bit() | Ability::InstantBreaks.bit(),
+        abilities: Ability::Flight.bit() | Ability::Brushes.bit() | Ability::UnlimitedBlocks.bit() | Ability::Map.bit() | Ability::MapRevealed.bit() | Ability::InstantBreaks.bit() | Ability::Structures.bit(),
     },
     GameMode {
         name: "adventure",

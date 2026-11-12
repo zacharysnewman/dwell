@@ -34,6 +34,8 @@ dwell_world::both_faces!(
 dwell_world::both_faces!(
     /// A world of several presets: each appears, and where each wins, the geography is its own:
     /// the desert warmer and drier than the world's land on average, the tundra higher and colder.
+    /// Sampled every 128 m: on this 0..1 map (no climate) the presets' °C envelopes (R4) read through
+    /// `vegetation.json` `climate`, and the beach's warm coast (≥ 18 °C) is a narrow strip.
     fn several_presets_are_placed_by_geography(f: FaceFrame) {
         let names = [
             "preset:sand_desert",
@@ -49,8 +51,8 @@ dwell_world::both_faces!(
         let r = i64::from(WORLD_RADIUS) * 9 / 10;
         let mut all = (0.0, 0.0, 0.0, 0u32);
         let mut won = vec![(0.0, 0.0, 0.0, 0u32); list.len()];
-        for x in (-r..=r).step_by(256) {
-            for z in (-r..=r).step_by(256) {
+        for x in (-r..=r).step_by(128) {
+            for z in (-r..=r).step_by(128) {
                 if x * x + z * z > r * r {
                     continue;
                 }

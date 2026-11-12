@@ -375,10 +375,10 @@ fn saved_world_size(
     settings
         .and_then(SettingsFields::from_bytes)
         .and_then(|f| f.settings(before).ok())
-        .map(|s| s.size)
         // A size this build's LOD root can't hold (a newer build's) opens as today's.
-        .filter(|s| s.fits_lod_root())
-        .unwrap_or(WorldSize::DEFAULT)
+        .map_or(WorldSize::DEFAULT, |s| {
+            WorldSize::playable(Some(s.size.radius_scale))
+        })
 }
 
 /// A new world's settings under `config`: [`default_settings`] with its water speed and mode.

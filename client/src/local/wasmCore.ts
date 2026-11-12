@@ -82,6 +82,7 @@ export class LocalCore {
     mode?: string,
     growth?: number,
     chop2 = false,
+    radiusScale?: number,
   ): Promise<LocalCore> {
     const exports = (await loadWasm()) as { memory?: WebAssembly.Memory };
     const core = new LocalCore(
@@ -99,6 +100,7 @@ export class LocalCore {
         mode,
         growth,
         chop2,
+        radiusScale,
       ),
     );
     core.memory = exports.memory ?? null;
@@ -184,6 +186,10 @@ export class LocalCore {
   }
   get worldSeed(): bigint {
     return this.world.worldSeed;
+  }
+  /** The world's size's radius scale (a saved world's own; 1 today's), for the server-jobs worker. */
+  get radiusScale(): number {
+    return this.world.radiusScale;
   }
   /** The next job for the server-jobs worker (a chunk to generate, a LOD section). */
   takeJob(): Uint8Array | undefined {

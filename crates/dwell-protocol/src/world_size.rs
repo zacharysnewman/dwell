@@ -91,6 +91,15 @@ impl WorldSize {
     pub fn is_default(self) -> bool {
         self == Self::DEFAULT
     }
+    /// The size a radius scale names for this build to play (BIG_MAP.md M2b: the browser's
+    /// workers are handed the scale as a number): today's for none, an unusable scale, or one
+    /// this build's LOD root can't hold, as a saved world's size is read.
+    pub fn playable(radius_scale: Option<u32>) -> Self {
+        radius_scale
+            .and_then(|s| Self::scaled(s).ok())
+            .filter(|s| s.fits_lod_root())
+            .unwrap_or(Self::DEFAULT)
+    }
 
     /// The disc's radius (m).
     pub const fn world_radius_m(self) -> i64 {
@@ -180,6 +189,19 @@ mod tests {
         assert_eq!(d.island_length(5_000.0).to_bits(), 5_000.0f32.to_bits());
         assert_eq!(d.island_wavelength(20_000), 20_000);
         assert_eq!((d.uplift_count(3), d.uplift_count(6)), (3, 6));
+    }
+
+    #[test]
+    fn a_playable_size_is_a_named_scale_or_today_s() {
+        assert_eq!(WorldSize::playable(None), WorldSize::DEFAULT);
+        assert_eq!(WorldSize::playable(Some(0)), WorldSize::DEFAULT);
+        assert_eq!(WorldSize::playable(Some(1)), WorldSize::DEFAULT);
+        assert_eq!(
+            WorldSize::playable(Some(2)),
+            WorldSize::named("2x").unwrap()
+        );
+        assert_eq!(WorldSize::playable(Some(10)), WorldSize::LARGEST);
+        assert_eq!(WorldSize::playable(Some(u32::MAX)), WorldSize::DEFAULT);
     }
 
     #[test]

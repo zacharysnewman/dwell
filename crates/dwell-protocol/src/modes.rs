@@ -39,10 +39,15 @@ pub enum Ability {
     /// one hit, whatever the block's `damage` says; a tool held keeps its hits
     /// (`dwell_protocol::damage::hits_to_break_for`; owner, 2026-11-11). Server and client.
     InstantBreaks,
+    /// Placing a saved structure from the player's library (STRUCTURES.md §9); creative only for
+    /// now (owner, 2026-11-11). Client: the creative inventory's Structures tab and the tiled paste.
+    /// The server takes the placement as ordinary `Paste` region edits under the mode's own rules
+    /// (a mode without `unlimitedBlocks` pays items for every cell, ADR 0066).
+    Structures,
 }
 
 impl Ability {
-    pub const ALL: [Ability; 9] = [
+    pub const ALL: [Ability; 10] = [
         Ability::Damage,
         Ability::Flight,
         Ability::Brushes,
@@ -52,6 +57,7 @@ impl Ability {
         Ability::Stamina,
         Ability::Oxygen,
         Ability::InstantBreaks,
+        Ability::Structures,
     ];
     /// The data's name (`shared/modes/gen.mjs` `ABILITIES`).
     pub const fn name(self) -> &'static str {
@@ -65,6 +71,7 @@ impl Ability {
             Ability::Stamina => "stamina",
             Ability::Oxygen => "oxygen",
             Ability::InstantBreaks => "instantBreaks",
+            Ability::Structures => "structures",
         }
     }
     pub const fn bit(self) -> u32 {
@@ -130,6 +137,8 @@ mod tests {
         // The big map is revealed in creative, explored in adventure (owner, 2026-11-08).
         assert!(c.allows(Ability::MapRevealed) && !a.allows(Ability::MapRevealed));
         assert!(c.allows(Ability::Map) && a.allows(Ability::Map));
+        // Saved structures are placed in creative only, for now (owner, 2026-11-11).
+        assert!(c.allows(Ability::Structures) && !a.allows(Ability::Structures));
     }
 
     #[test]

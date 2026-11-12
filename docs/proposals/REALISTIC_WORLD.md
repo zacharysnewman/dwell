@@ -6,7 +6,8 @@ built (2026-11-12): uplift from the boundaries (`plate_tectonics.rs`, `plates.js
 Realistic test world (`shared/worldgen/worlds/realistic.json`, `?worldgen=test:realistic`, not in the New
 world form); the default and the starter are unchanged. R3 built (2026-11-12): the climate from latitude, wind
 and terrain (`shared/worldgen/climate.json`, `dwell-worldgen` `climate.rs`) in the Realistic world, its rain
-feeding the rivers' discharge.
+feeding the rivers' discharge. R4 built (2026-11-12): biomes chosen by climate alone, the presets' `where` in
+°C and annual rain (mm), the Realistic world listing every preset unchanged.
 
 ## 1. The owner's direction
 
@@ -367,6 +368,43 @@ debug views go (an overlay and sliders), since it already runs the generator's W
   unchanged. *Exit:* for a few seeds, biome shares follow the climate (no desert in a wet band's windward
   side; tundra above the tree line); no per-world biome tuning in `realistic.json`; the starter still
   passes `tests/starter_world.rs`.
+  **Built (2026-11-12):** a biome's `where` gains two ranges, `celsius` (°C) and `rain` (annual mm; checked
+  by `biomes.mjs` `WHERE_FIELDS`, read by `config.rs`, emitted by `gen.mjs`), and every preset's climate
+  envelope moves to them, Whittaker-style (the presets keep no 0..1 `temperature`; `wetness` stays only as
+  "away from rivers" on the dry ones and "by water" on the wetland; `elevation` and `coast` only for
+  landforms: the beach, cliffs, wetland, mesa and badlands): snowfield ≤ −6 °C, alpine tundra −7 to −1.5
+  °C (the tree line), boreal −1.5 to 6 °C with ≥ 250 mm, cold rainforest 4–12 °C with ≥ 1800 mm, mixed forest
+  5–16 °C with ≥ 750 mm, temperate meadow 4–18 °C with 450–1000 mm, steppe 0–15 °C with 200–500 mm, sand
+  desert ≥ 14 °C with ≤ 250 mm, badlands ≥ 10 °C ≤ 400 mm, red-rock mesa ≥ 12 °C ≤ 450 mm, savanna ≥ 19 °C
+  with 500–2500 mm, tropical beach ≥ 18 °C, coastal cliffs ≤ 15 °C (each with its blend). In a world with a
+  climate (`tectonics.climate` 1) `biomemap::BiomeField` reads both from it: the °C from latitude and height,
+  the rain from the band's wind marched again over the **eroded** map on the coarse grid (§3.3's second pass;
+  `climate.json` `bands[].rainMm` is a band's annual rain where the march rains its flat rate, more windward
+  and less in the lee by the march's ratio, capped at `biomes.maxRainMm` 4500), and the 0..1 temperature and
+  wetness the vegetation and snow lines read follow from them (`biomes.wetMm`, `moistureShare`); elsewhere
+  `celsius` is the 0..1 temperature by `vegetation.json` `climate` and `rain` is not read.
+  `worlds/realistic.json` lists `dwell:default` (the fallback) and all 14 presets as bare names. The
+  starter keeps its 0..1 tuning: the three presets it took unchanged (tropical beach, sand desert, alpine
+  tundra) now carry their pre-R4 `where` in `starter.json`, so its generated edit is byte-identical;
+  default goldens unchanged. Tests (`tests/realistic_biomes.rs`, both faces, seeds 1, 7, 42): the world lists
+  the default and every preset unchanged; its geography is its face seed's climate; no dry biome (desert,
+  badlands, mesa) anywhere the rain is the band's wet-coast rain or more, and on the main range's windward
+  side (≥ 2× its lee's rain) none at such points; above the tree line no forest and the tundra has weight,
+  and the tundra is chosen only below it; on the same ground a colder band has more boreal/tundra/snowfield
+  and fewer warm biomes (subarctic > 30 % cold); a fixture biome with only a rain envelope is placed by it.
+  `gen.test.mjs`: bad `celsius`/`rain` ranges and climate `biomes`/`rainMm` entries fail naming them.
+  Shares on the land (chosen biome, every 300 m, ≥ 1 %): seed 1 A (subtropical) savanna 22 %, red-rock mesa
+  21 %, default 21 %, beach 12 %, desert 8 %, mixed forest 5 %, meadow 3 %; seed 1 B (temperate) default 38 %,
+  mixed forest 28 %, steppe 15 %, meadow 9 %, badlands 5 %, cold rainforest 4 %; seed 7 (subarctic) tundra
+  83–88 %, snowfield 10–12 %, boreal 1 % (only the band's warm southern lowlands are above −1.5 °C; the
+  plates' land stands a few hundred metres up); seed 42 (temperate) mixed forest 28–32 %, default 26–34 %,
+  meadow 5–20 %, steppe 5–14 %, cold rainforest 5–6 %, tundra, boreal and snowfield on the heights. *Deviations:* the
+  `climateSet` key (§3.5) is not needed: the world lists the presets by name. The default fallback takes
+  two climates no preset covers: the cool, nearly rainless interior (4–12 °C under 250 mm: a cold desert)
+  and the very wet tropics (> 2500 mm, a rainforest); new presets for those are content for the owner
+  (§7 q9). Chisel's `where` sliders gained `celsius` and `rain`; in Chisel's default world (no climate) a
+  preset's `rain` is not read. **Not done:** the Chisel plates, latitude, wind and biome overlays (a WASM
+  export of the layout and climate and a Chisel view); moved to R5.
 - **R5 Geology and materials.** `rocks.json` `plateProvinces` with today's blocks (§7 q5: stone cores,
   basalt volcanics, sandstone/red sandstone basins, sand/dirt soils; rocks by block name so new ones can
   replace them by data later), soils by rock × climate. Chisel: the rock overlay by setting. *Exit:* cones sit on
@@ -382,7 +420,7 @@ R1–R5 are logic-only and suit cloud sessions (docs/CLOUD_SESSIONS.md); R6's br
 
 ## 7. Questions for the owner
 
-Open: q2's bands (the seed picks one: answered), q6, q8. Answered: q1 (by default), q3, q4, q5, q7.
+Open: q2's bands (the seed picks one: answered), q6, q8, q9. Answered: q1 (by default), q3, q4, q5, q7.
 
 1. **Plate count and size for the first region:** 3–5 plates with one or two boundaries crossing the
    island, or more, smaller plates?
@@ -413,3 +451,6 @@ Open: q2's bands (the seed picks one: answered), q6, q8. Answered: q1 (by defaul
    between releases, with a note (and its hashes updated). The seed picks the latitude band (q2's second
    half); which bands to offer is still open.
 8. **Debug view home:** Chisel's overlays (proposed), or also the in-game big map?
+9. **Climates no preset covers (R4):** in the Realistic world the default biome takes the cool, nearly
+   rainless interior (a cold desert) and the very wet tropics (a tropical rainforest). Add presets for
+   them, or keep the fallback there?

@@ -5,8 +5,8 @@
     {
       "name": "creative",
       "label": "Creative",
-      "description": "No damage, flight, brush tools, unlimited blocks, any block broken in one hit without a tool, the whole map revealed.",
-      "abilities": ["flight", "brushes", "unlimitedBlocks", "map", "mapRevealed", "instantBreaks"]
+      "description": "No damage, flight, brush tools, unlimited blocks, any block broken in one hit without a tool, the whole map revealed, saved structures placed.",
+      "abilities": ["flight", "brushes", "unlimitedBlocks", "map", "mapRevealed", "instantBreaks", "structures"]
     },
     {
       "name": "adventure",

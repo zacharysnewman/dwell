@@ -130,6 +130,8 @@ pub struct Runner {
     terrain: Option<std::sync::Arc<BifacialTerrain>>,
     lod: Option<LodGenerator>,
     bounds: Option<lod::LodBoundsFn>,
+    /// The world's disc and build volume (BIG_MAP.md M2b: its size), for the LOD's in-world test.
+    world: dwell_world::WorldBounds,
 }
 
 impl Runner {
@@ -140,6 +142,7 @@ impl Runner {
             terrain: None,
             lod: None,
             bounds: None,
+            world: dwell_world::WorldBounds::DEFAULT,
         }
     }
 
@@ -151,26 +154,49 @@ impl Runner {
     /// [`Runner::world`] with the LOD colour map's river valleys (`?lodmap=on`: their margin under
     /// the river's level, m; ARCHITECTURE.md §6.6 "Colour map") in its LOD sections and bounds.
     pub fn world_with(generator_version: u32, world_seed: u64, valleys: Option<f64>) -> Self {
-        let terrain = BifacialTerrain::for_generator(generator_version, world_seed).map(|mut t| {
-            t.set_lod_valleys(valleys);
-            std::sync::Arc::new(t)
-        });
+        Self::world_sized(
+            generator_version,
+            world_seed,
+            dwell_protocol::world_size::WorldSize::DEFAULT,
+            valleys,
+        )
+    }
+
+    /// [`Runner::world_with`] in a world of `size` (BIG_MAP.md M2b: the join's `WorldSettings`
+    /// size): its generators, LOD and bounds over its own map, disc and build volume.
+    pub fn world_sized(
+        generator_version: u32,
+        world_seed: u64,
+        size: dwell_protocol::world_size::WorldSize,
+        valleys: Option<f64>,
+    ) -> Self {
+        let terrain = BifacialTerrain::for_generator_sized(generator_version, world_seed, size)
+            .map(|mut t| {
+                t.set_lod_valleys(valleys);
+                std::sync::Arc::new(t)
+            });
         let bounds: lod::LodBoundsFn = match (&terrain, valleys) {
             // The bounds see the same lowered columns the sections are generated from.
             (Some(t), Some(_)) => {
                 let t = t.clone();
                 std::sync::Arc::new(move |level, i, k| t.lod_bounds_at(level, i, k))
             }
-            _ => dwell_worldgen::lod_bounds_for(generator_version, world_seed),
+            _ => dwell_worldgen::lod_bounds_for_sized(generator_version, world_seed, size),
         };
         Self {
-            chunks: Some(dwell_worldgen::generator_for(generator_version, world_seed)),
-            terrain,
-            lod: Some(dwell_worldgen::lod_generator_for(
+            chunks: Some(dwell_worldgen::generator_for_sized(
                 generator_version,
                 world_seed,
+                size,
+            )),
+            terrain,
+            lod: Some(dwell_worldgen::lod_generator_for_sized(
+                generator_version,
+                world_seed,
+                size,
             )),
             bounds: Some(bounds),
+            world: dwell_world::WorldBounds::of(size),
         }
     }
 
@@ -352,7 +378,7 @@ impl Runner {
             t.generate_lod(c, &mut cells, Some(&mut a), Some(&mut b));
             // Which faces' passes ran: face A's rows start at `first`, face B's end below it.
             let first = lod::first_face_a_row(c);
-            let in_world = lod::in_world(c);
+            let in_world = lod::in_world_of(c, &self.world);
             let pack = |s: &LodSurfaces, ran: bool| {
                 (ran && in_world && !s.is_empty()).then(|| surface_floats(s))
             };

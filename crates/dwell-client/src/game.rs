@@ -639,6 +639,9 @@ pub struct Game<S: Scene> {
     remote_contacts: dwell_game::sound::RemoteContacts,
     /// The world seed (Welcome), the ground items' scatter's (ADR 0071).
     world_seed: u64,
+    /// The world's disc and build volume (BIG_MAP.md M2b: its `WorldSettings` size): the LOD's
+    /// rim, the streamer's volume and the big map's levels follow it.
+    world_bounds: dwell_world::WorldBounds,
     /// The server keeps ground items and was told this client draws them (`GroundHello`).
     ground_on: bool,
     /// The ground item under the crosshair (ADR 0071): E or X picks it up.
@@ -1018,6 +1021,7 @@ impl<S: Scene> Game<S> {
             contact_sounds: Default::default(),
             remote_contacts: Default::default(),
             world_seed: 0,
+            world_bounds: dwell_world::WorldBounds::DEFAULT,
             ground_on: false,
             ground_target: None,
             chop: Default::default(),
@@ -1225,6 +1229,7 @@ impl<S: Scene> Game<S> {
         let mut lod = LodSystem::new(options);
         lod.set_full_mode(s.full_mode || hash == 0);
         lod.set_detail_distance(s.detail_distance_m);
+        lod.set_world(self.world_bounds);
         self.lod = Some(lod);
         self.pending_lod = None;
     }
@@ -2507,9 +2512,31 @@ impl<S: Scene> Game<S> {
 
     /// The world's portals (BIFACIAL_WORLD.md §12): their axes and mote look, from the generator
     /// and seed the server announced, for the motes drawn in their shafts.
-    pub fn set_world(&mut self, generator_version: u32, world_seed: u64) {
-        self.portals = dwell_worldgen::portal_axes_for(generator_version, world_seed);
+    /// `size`: the world's (BIG_MAP.md M2b, its `WorldSettings`), its disc, build volume and maps.
+    pub fn set_world(
+        &mut self,
+        generator_version: u32,
+        world_seed: u64,
+        size: dwell_protocol::world_size::WorldSize,
+    ) {
+        self.portals = dwell_worldgen::portal_axes_for_sized(generator_version, world_seed, size);
         self.world_seed = world_seed;
+        self.world_bounds = dwell_world::WorldBounds::of(size);
+        self.streamer.set_volume(*self.world_bounds.volume());
+        if let Some(lod) = &mut self.lod {
+            lod.set_world(self.world_bounds);
+        }
+    }
+
+    /// The world's disc and build volume (from its size, `set_world`).
+    pub fn world_bounds(&self) -> dwell_world::WorldBounds {
+        self.world_bounds
+    }
+
+    /// The big map's zoom levels for this world's size (`MapTunables::big_map_levels_sized`):
+    /// (cell side, span) in m, closest first; at 1× `shared/ui/map.json`'s.
+    pub fn big_map_levels(&self) -> Vec<(f64, f64)> {
+        dwell_game::minimap::MAP.big_map_levels_sized(self.world_bounds.size)
     }
 
     /// What the server announced it takes (Welcome flags, and the world's game mode when the host
@@ -2525,6 +2552,12 @@ impl<S: Scene> Game<S> {
     /// creative; owner 2026-11-11), so the break prediction matches the server's.
     pub fn set_instant_breaks(&mut self, on: bool) {
         self.instant_breaks = on;
+    }
+
+    /// Whether the world's mode places saved structures (`structures`, creative only for now):
+    /// the region tools load one from the library only then (STRUCTURES.md §9).
+    pub fn set_structures(&mut self, on: bool) {
+        self.region.structures = on;
     }
 
     /// The hits the server will take to break `block` with what is held now.

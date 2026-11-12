@@ -32,6 +32,10 @@ pub struct Geography {
     pub elevation: f64,
     /// Metres to the sea (map cells' distance; 0 at sea).
     pub coast: f64,
+    /// °C: the climate's where the world has one, else `temperature` by `vegetation.json`'s scale.
+    pub celsius: f64,
+    /// Annual rain (mm), only where the world has a climate.
+    pub rain: Option<f64>,
 }
 
 /// A column's biome weights: up to `MAX_BLEND` (biome index, weight), summing to 1, and the
@@ -95,6 +99,8 @@ pub fn raw_weight(b: &Biome, g: &Geography) -> f64 {
         * fit(&p.wetness, g.wetness)
         * fit(&p.elevation, g.elevation)
         * fit(&p.coast, g.coast)
+        * fit(&p.celsius, g.celsius)
+        * g.rain.map_or(1.0, |r| fit(&p.rain, r))
 }
 
 /// Every biome's weight at `g` (ADR 0074 B3): a biome other than the default (`biomes[0]`) takes
@@ -135,6 +141,19 @@ pub struct BiomeField {
     /// Per map cell: the rain shadow's rainfall (0..1, [`rainfall`]; the sea's flat rate over the
     /// sea, stored by its exceptions).
     rain: SparseGrid<f32>,
+    /// The world's climate and its rain marched over the eroded map (coarse), if it has one (R4).
+    climate: Option<(crate::climate::Climate, crate::climate::RainGrid)>,
+}
+
+/// The 0..1 temperature's °C (`vegetation.json` `climate`), and back.
+fn celsius_of(t: f64) -> f64 {
+    let v = crate::vegetation::VEGETATION;
+    v.zero_c + v.per_unit_c * t
+}
+
+fn unit_of(c: f64) -> f64 {
+    let v = crate::vegetation::VEGETATION;
+    (c - v.zero_c) / v.per_unit_c
 }
 
 /// The rain shadow on a map's grid ([`rainfall`]): per cell, the rain that falls (0..1) and the
@@ -280,7 +299,29 @@ impl BiomeField {
     /// [`BiomeField::new`] with the biome map's geography `params` in place of the build's
     /// (`terrain.json` `biomeMap`; Chisel's edits).
     pub fn with_params(map: &WorldMap, world_seed: u64, params: BiomeMap) -> Self {
+        let climate = map
+            .tectonics
+            .from_climate()
+            .then(|| crate::climate::Climate::for_seed(map.seed));
+        Self::with_climate(map, world_seed, params, climate)
+    }
+
+    /// [`BiomeField::with_params`] with `climate` in place of the world's (none: the biome map's
+    /// 0..1 geography), its rain marched over `map`'s eroded ground.
+    pub fn with_climate(
+        map: &WorldMap,
+        world_seed: u64,
+        params: BiomeMap,
+        climate: Option<crate::climate::Climate>,
+    ) -> Self {
         let (n, cell, x0) = (map.n, map.cell, map.x0);
+        let climate = climate.map(|c| {
+            let h: Vec<f64> = map.height.iter().map(|&v| f64::from(v)).collect();
+            let sea: Vec<bool> = (0..n * n).map(|i| map.is_sea(i)).collect();
+            let g = crate::climate::CoarseGround::of(&c.rules, n, cell, x0, &h, &sea);
+            let rain = c.rain(&g);
+            (c, rain)
+        });
         let coast = chamfer(n, cell, |c| map.is_sea(c));
         let coast = SparseGrid::from_dense(&coast, most_common(&coast));
         let mut wet = vec![false; n * n];
@@ -312,16 +353,26 @@ impl BiomeField {
             dir: (a.cos(), a.sin()),
             radius: map.world_radius() as f64,
             rain,
+            climate,
         }
+    }
+
+    /// The world's climate, if it has one (R4).
+    pub fn climate(&self) -> Option<&crate::climate::Climate> {
+        self.climate.as_ref().map(|c| &c.0)
     }
 
     /// The bytes each of its grids holds.
     pub fn grid_bytes(&self) -> Vec<(&'static str, usize)> {
-        vec![
+        let mut v = vec![
             ("biome field coast", self.coast.bytes()),
             ("biome field fresh water", crate::vec_bytes(&self.fresh)),
             ("biome field rain", self.rain.bytes()),
-        ]
+        ];
+        if let Some((_, r)) = &self.climate {
+            v.push(("biome field climate rain", r.bytes()));
+        }
+        v
     }
 
     /// A grid's value at (x, z) (cell c's `grid(c)`), bilinear between the cells' centres.
@@ -346,6 +397,24 @@ impl BiomeField {
     pub fn geography(&self, x: i64, z: i64, elevation: f64) -> Geography {
         let p = &self.params;
         let (xf, zf) = (x as f64, z as f64);
+        let fresh = self.sample(|c| self.fresh[c], xf, zf);
+        let t = (fresh / p.wet_reach).clamp(0.0, 1.0);
+        let rivers = 1.0 - t * t * (3.0 - 2.0 * t);
+        let coast = self.sample(|c| self.coast.get(c), xf, zf);
+        if let Some((c, grid)) = &self.climate {
+            let celsius = c.temperature_c(xf, zf, elevation);
+            let rain = c.rain_mm(grid, xf, zf);
+            let b = c.rules.biomes;
+            let wet = (rain / b.wet_mm).clamp(0.0, 1.0);
+            return Geography {
+                temperature: unit_of(celsius),
+                wetness: rivers + (wet - rivers) * b.moisture_share,
+                elevation,
+                coast,
+                celsius,
+                rain: Some(rain),
+            };
+        }
         let r = self.radius;
         let along = ((xf * self.dir.0 + zf * self.dir.1) / r).clamp(-1.0, 1.0);
         let climate = 0.5
@@ -354,9 +423,7 @@ impl BiomeField {
                 * p.climate_noise
                 * f64::from(fbm2(self.climate_seed, x, z, p.climate_wavelength, 2, None));
         let temperature = climate - p.lapse_rate * elevation.max(0.0) / 1000.0;
-        let fresh = self.sample(|c| self.fresh[c], xf, zf);
-        let t = (fresh / p.wet_reach).clamp(0.0, 1.0);
-        let mut wetness = 1.0 - t * t * (3.0 - 2.0 * t);
+        let mut wetness = rivers;
         if p.rain_share > 0.0 {
             wetness += (self.rainfall(xf, zf) - wetness) * p.rain_share;
         }
@@ -364,7 +431,9 @@ impl BiomeField {
             temperature,
             wetness,
             elevation,
-            coast: self.sample(|c| self.coast.get(c), xf, zf),
+            coast,
+            celsius: celsius_of(temperature),
+            rain: None,
         }
     }
 

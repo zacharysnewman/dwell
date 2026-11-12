@@ -197,7 +197,16 @@ Last updated: 2026-11-11 (0.52.108).
    still written only when it changed. Next: grazing applied to tall grass as chunks load.
 12. **Players' saved structures as placement sources** (owner 2026-11-11): per player (their library, usable
    in any world they create); placed copies editable, not protected; 32³ for now (may change), or larger
-   structures as a grid of 32³ tiles. Sharing between players: Future.
+   structures as a grid of 32³ tiles. Sharing between players: Future. The owner's words (2026-11-11): "Structures are
+   per player, eventually shareable (add to roadmap). Yes can be edited, not protected. Yes we can keep
+   32^3 for now, though we may change this later. Or save as an array of that size." **Built**
+   (2026-11-12, `claude/saved-structures-library`, STRUCTURES.md §9): the structures store as the player's
+   library (per device); a selection over 32 across / 64 tall saved as one tiled file of 32³ tiles, up to
+   `shared/structures/library.json`'s limits (128 × 64 × 128); the creative inventory's Structures tab
+   places one with the paste ghost (R turns 90°, right click places) as `Paste` region edits of at most
+   32³, which the server validates as any paste; a `structures` mode ability (creative only). Sharing:
+   FUTURE.md. Open: the server can't refuse a structure placement as such outside creative (both
+   capability flag bytes are full; a paste there is paid in items), the anchor, a ghost of the blocks.
 13. **Volumetric clouds** (owner 2026-11-11: "volumetric clouds in the sky. These clouds will likely be
    useful for weather sim, and volcano smoke. So they need to be performant."). **Built (branch
    `claude/volumetric-clouds`, CLOUDS.md §8):** a ray-marched layer in its own reduced-resolution pass
@@ -258,8 +267,15 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    mountains on a coarse grid (≥ 500 m, ≤ 400 a side, under 1 MiB), its rain feeding the rivers' discharge
    where `tectonics.climate` is 1 (only `realistic.json`); windward sides of the seeds' main ranges ≥ 3× wetter
    than their lees, both faces; default and starter goldens unchanged. The Chisel plates, latitude and wind
-   overlays moved to R4. Next: R4 (biomes by climate); q2's bands (R3 offers three, as data), q6 and q8 still
-   open. q5 (2026-11-11): no new rock blocks
+   overlays moved to R4. R4 built (2026-11-12): biomes chosen by climate alone (Whittaker-style): the presets'
+   `where` in °C (`celsius`) and annual rain in mm (`rain`), read from the climate (the rain re-marched over
+   the eroded map, `climate.json` `bands[].rainMm` and `biomes`); `realistic.json` lists the default and all
+   14 presets by bare name, no per-world tuning; the starter keeps its 0..1 tuning (its edit byte-identical)
+   and the default its goldens; `tests/realistic_biomes.rs` on both faces: no dry biome where the rain is a
+   wet coast's or on the main range's wet windward side, no forest above the tree line (−1.5 °C) and tundra
+   there, a colder band more boreal/tundra on the same ground. The Chisel overlays moved to R5. Next: R5
+   (geology and materials); q2's bands (R3 offers three, as data), q6, q8 and q9 (R4: presets for the cold
+   desert and tropical rainforest the default now takes) still open. q5 (2026-11-11): no new rock blocks
    for now; R5 uses today's blocks (stone, basalt, sandstone, red sandstone, sand, dirt) named in data, so
    new ones can replace them later.
 
@@ -379,6 +395,10 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    following the carve; every tier. Measured: 50 damaged cells +212 triangles a cell (as before), 6.0 ms
    against 2.6 ms undamaged; the terrain vertex 72 → 76 bytes. Left: the owner's look in game (no GPU in the
    cloud); the wood set has no block yet (logs have no `damage.look`).
+   Owner, 2026-11-12: **"The stone hits should be elongated low poly shards stone doesn't dent, it shatters."**
+   So stone gets no dent: each pickaxe hit spalls the face (flat, sharp-edged chip-outs, shallow and elongated,
+   lit as broken rock, not a dark pit) and knocks off elongated low-poly shards (a few per hit, tumbling) as the
+   per-hit pieces; soil keeps its bowl. In progress (cloud).
 19. **Lava glow, remaining** (owner 2026-11-11: "Lava should have bloom glow"; "Lava looks dark red instead of
    bright red/orange"; "It should darken as it solidifies though"). Built 0.52.107: colour by heat stops, heat in
    cells. **Bloom built (pending release, `claude/bloom`):** keyed on the scene's self-lit flag (lava, torches,
@@ -437,6 +457,9 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    `tests/chopping.rs` `felled_from_each_side_the_cut_opens_a_gash_toward_the_notch`, red on `matching`); a trunk
    at rest tilted settles column by column along its pose, a blocked column rising to free rows, no wood lost
    (BUGS.md #73 Fixed; docs/FELLING.md §4).
+   Owner, 2026-11-12, on BUGS.md #75 (trees couldn't be felled: one aim hacked one binding kerf): **"Merge the
+   fix"** — a swing at the deeper band lands in the other one, so chopping at one spot notches and fells in ~11
+   swings; ADR 0067's "clumsy straight hacking 3–4× more" rule is dropped.
 25. **Marks appear at contact, not on click** (owner 2026-11-12: "the gashes in blocks from tools show up on
    click instead of when the animation lines up with the block. We want that timing."). Every tool's hit (axe
    chop, pickaxe, shovel; the carve, cracks, chips, drops and sound) lands when the swing's head reaches the
@@ -566,6 +589,9 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
     between the worker's mesh and the screen: check the `cracks` stream after the job codec, the
     Unorm8x4 attribute and `crack_shade`'s slot in the browser. Shots: `stone-4-near.png`,
     `stone-zoom-0-2-4.png`, `diff-stone-4.png`, `dirt-sheet.png`.
+    **Fixed (`claude/cracks-and-fell-bugs`, BUGS.md #74):** the game's chunks append their ground items
+    to the opaque mesh after the crack stream was padded, so it fell short and the client dropped it whole;
+    the items now pad it. Seen in the browser after: crack strokes on the struck stone's face and top.
   - **The stone carve reads as dark spiky wedges** (`stone-4-near.png`): the shards' facets
     in shade are near-black blades, sharper than the painterly look; the dirt bowl reads well
     (`dirt-4-low.png`). From above and close the bowl's lit far wall can read as a post
@@ -576,6 +602,10 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
     fall (`fell-probe-sheet.png`, `c-alt-12.png`). The gash itself is pinned natively
     (`felled_from_each_side_…`); the in-game look waits on a reliable fell: a bench step that
     swings at a cell's two bands (as the test does), or a check that the bench's swings land deep.
+    **Fixed (`claude/cracks-and-fell-bugs`, BUGS.md #75):** every swing at one aim landed in the same
+    quarter-metre band and hacked one binding kerf; a swing at the deeper band now lands in the open one,
+    so one aim notches, and the stone axe's `biteM` 0.1 makes it 11 swings (ADR 0067 §2 amended). Bench
+    `fell-tree` chops a column at one aim and shoots the stump from the notch side.
   - **Camera sway works, subtly (item 17):** measured on the bursts, the level chop turns the view
     ~18 px (≈1.3°) right in the wind-up and back left through the strike; the vertical pitches up
     ~16 px in the wind-up. The bursts' ~100 ms frames miss the contact kick. `clip-strip` holds the
@@ -659,8 +689,11 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
   from it. **M1 built:** the LOD root (level 15) holds every size; protocol v23, so it needs a new
   compatibility line (the owner's call). **M2a built (native):** the generators, the disc and build volume
   (`WorldBounds`), the LOD and the server read the world's size; a saved 2× world reopens at 2×; 1× unchanged;
-  a 2× world creates natively in 4.6 s at 176 MB (1×: 3.7 s, 164 MB). Next: M2b (the browser's workers and
-  the dev link `?size=2x` / New world → "World size", desktop only), then 4×, 8×, 10×.
+  a 2× world creates natively in 4.6 s at 176 MB (1×: 3.7 s, 164 MB). **M2b built (the browser):** New world →
+  More options → World size (desktop pages only; hidden on touch) and the dev link `?size=2x`; the size saved
+  in the world's settings and its menu record, every worker builds its maps and generators at it, the client's
+  bounds, streaming, LOD and big map follow the join's size; 1× unchanged. **Next: the owner tests 2× on the
+  desktop**, then 4×, 8×, 10× with the bench's measurements at each.
 
 - **Sharing saved structures between players** (owner 2026-11-11: "eventually shareable").
 

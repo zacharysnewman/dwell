@@ -2,6 +2,35 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.54.29",
+      "changes": [
+        "New world → More options has a World size on desktop: make a world 2×, 4×, 8× or 10× as wide as today's (an early test of bigger maps; a bigger world takes longer to create).",
+        "A bigger world keeps its size when you reopen it, and its map and distant terrain reach its whole disc."
+      ]
+    },
+    {
+      "version": "0.54.28",
+      "changes": [
+        "Your saved structures are now a library you can place in any creative world: open the inventory (E) and pick one from the new Structures tab.",
+        "A structure follows your crosshair as a ghost box: R turns it 90°, M mirrors it, right click places it. Placed blocks are ordinary blocks you can edit.",
+        "Selections larger than 32 blocks across can now be saved: they are kept as a grid of 32-block tiles, up to 128 × 64 × 128."
+      ]
+    },
+    {
+      "version": "0.54.27",
+      "changes": [
+        "The Realistic test world now has biomes chosen by its climate: deserts and savanna in warm dry lands, forests on rainy windward slopes, tundra and snowfields above the tree line and in the far north.",
+        "The preset biomes now say where they belong in degrees and rainfall, so the same presets fit every climate band."
+      ]
+    },
+    {
+      "version": "0.54.26",
+      "changes": [
+        "Damaged stone, dirt and other blocks now show their cracks in game",
+        "Chopping at one spot on a trunk now notches it: a stone axe fells a tree in about a dozen swings"
+      ]
+    },
+    {
       "version": "0.54.25",
       "changes": [
         "Pickaxe, shovel and axe hits now land when the swing reaches the block, not on the click: the gash, cracks, chips, drops and hit sound all wait for the strike.",

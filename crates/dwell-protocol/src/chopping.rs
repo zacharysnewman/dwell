@@ -550,6 +550,19 @@ impl Cut {
         *self == Cut::default()
     }
 
+    /// The band of `side` a swing aimed at band `aimed` lands in: the aimed one, unless its kerf
+    /// is deeper than the other's, when the head comes in beside it, in the open wood (BUGS.md
+    /// #75: a player swings at one spot, and a quarter-metre band is too fine to aim at, so the
+    /// same aim swing after swing hacked one kerf and the tree never fell).
+    pub fn open_band(&self, side: usize, aimed: usize) -> usize {
+        let other = 1 - aimed.min(1);
+        if self.kerf[side][aimed.min(1)] > self.kerf[side][other] {
+            other
+        } else {
+            aimed.min(1)
+        }
+    }
+
     /// One swing of `tool` with `share` (`share`) into band `band` of side `side`: the kerf there
     /// deepens by `bite × share / (1 + kerf / bind)`, at most to the far side; when both bands are
     /// cut past the notch the chunk between comes out. Returns the metres cut.
@@ -972,14 +985,27 @@ mod tests {
         assert_eq!(n, 2, "0.26 a chop: past half in two");
     }
 
+    /// BUGS.md #75: a swing aimed at the band already cut deeper lands in the other, so one aim
+    /// notches; at an even cut it lands where aimed.
+    #[test]
+    fn a_swing_at_the_deeper_band_lands_in_the_open_one() {
+        let mut c = Cut::default();
+        assert_eq!(c.open_band(0, 0), 0);
+        assert_eq!(c.open_band(0, 1), 1);
+        c.swing(axe(), Y, 0, 0, 1.0);
+        assert_eq!(c.open_band(0, 0), 1);
+        assert_eq!(c.open_band(0, 1), 1);
+        assert_eq!(c.open_band(2, 0), 0, "another side as aimed");
+    }
+
     #[test]
     fn a_chunk_comes_out_when_both_bands_are_cut() {
         let mut c = Cut::default();
         c.swing(axe(), Y, 0, 0, 1.0);
         assert_eq!(c.notch[0], 0.0);
-        assert!(c.kerf[0][0] > 0.1);
+        assert!((f64::from(c.kerf[0][0]) - axe().bite_m).abs() < 1e-6);
         c.swing(axe(), Y, 0, 1, 1.0);
-        assert!((c.notch[0] - 0.12).abs() < 1e-6, "{c:?}");
+        assert!((f64::from(c.notch[0]) - axe().bite_m).abs() < 1e-6, "{c:?}");
         assert_eq!(c.kerf[0], [0.0, 0.0]);
         assert_eq!(c.deepest(Y), Some(0));
         // A cut never goes past the far side.

@@ -49,8 +49,13 @@ describe('structures page', () => {
       min: [10, 0, 5],
       size: [3, 3, 1],
     });
+    // Over 32 across it is saved as tiles (STRUCTURES.md §9), up to the library's limit.
     expect(saveBox('corners', deps(), ['0 0 0', '32 0 0'])).toEqual({
-      error: 'That is 33 × 1 × 1: a structure is at most 32 across and 64 tall.',
+      min: [0, 0, 0],
+      size: [33, 1, 1],
+    });
+    expect(saveBox('corners', deps(), ['0 0 0', '128 0 0'])).toEqual({
+      error: 'That is 129 × 1 × 1: a saved structure is at most 128 × 64 × 128.',
     });
   });
 

@@ -110,6 +110,11 @@ pub(super) fn append(
             push_polygon(m, &pts, color, &tile, lit, CELL_H);
         }
     }
+    // The crack overlay's stream, once the cells gave it, covers the items too (0: none; BUGS.md
+    // #74: a stream short of the vertices was dropped whole by the client).
+    if !m.cracks.is_empty() {
+        m.cracks.resize(m.positions.len() / 3, 0);
+    }
 }
 
 /// An item's look (`shared/inventory` `look`) as a mesh in metres, item-local (its base's middle at
@@ -533,6 +538,77 @@ mod tests {
                 mesh,
                 scatter(&padded, origin, &job(GroundDensity::default()))
             );
+        }
+    );
+
+    dwell_world::both_faces!(
+        /// A chunk with ground items and a cracked cell keeps the crack overlay's stream as long
+        /// as its opaque vertices (BUGS.md #74): the items are appended after the cells are meshed,
+        /// and a stream short of them made the client draw no crack anywhere in the chunk.
+        fn a_chunk_with_ground_items_keeps_its_cracks_for_every_vertex(f: FaceFrame) {
+            let chunk = f.cell([0, FLAT_TOP_Y + 1, 0]).map(|v| v.div_euclid(N));
+            let origin = chunk.map(|v| v * N);
+            // Face-local rows inside the chunk: grass at `g`, a stone block on it.
+            let g = f.row(origin[1]).min(f.row(origin[1] + N - 1)) + 3;
+            let mut cells = dwell_world::hash::HashMap::default();
+            let [ax, _, az] = SKY_APRON;
+            for x in -ax..N + ax {
+                for z in -az..N + az {
+                    cells.insert(f.cell([origin[0] + x, g, origin[2] + z]), f.state(M.grass));
+                    cells.insert(
+                        f.cell([origin[0] + x, g - 1, origin[2] + z]),
+                        f.state(M.dirt),
+                    );
+                }
+            }
+            let stone_at = f.cell([origin[0] + 8, g + 1, origin[2] + 8]);
+            cells.insert(stone_at, f.state(M.stone));
+            let at = |c: [i32; 3]| cells.get(&c).copied().unwrap_or(M.air);
+            let [ex, ey, ez] = SKY_EXTENT;
+            let [_, ay, _] = SKY_APRON;
+            let mut padded = vec![0u16; SKY_VOLUME];
+            for y in 0..ey {
+                for z in 0..ez {
+                    for x in 0..ex {
+                        let c = [origin[0] + x - ax, origin[1] + y - ay, origin[2] + z - az];
+                        padded[(x + ex * (z + ez * y)) as usize] = at(c);
+                    }
+                }
+            }
+            let job = GroundJob {
+                seed: 5,
+                ..GroundJob::default()
+            };
+            assert!(
+                !scatter(&padded, origin, &job).is_empty(),
+                "items on the field"
+            );
+            let local = std::array::from_fn(|k| stone_at[k] - origin[k]);
+            let view = dwell_protocol::damage::DamageView {
+                fraction: 200,
+                marks: vec![dwell_protocol::damage::HitMark {
+                    face: 4,
+                    point: [128, 128, 255],
+                }],
+            };
+            let m = crate::mesh_chunk_trees(
+                &padded,
+                &[],
+                f.is_b(),
+                origin,
+                &[],
+                Some(&job),
+                Default::default(),
+                &[(local, view)],
+                &[],
+            )
+            .expect("meshed")
+            .opaque;
+            assert!(
+                m.cracks.iter().any(|&c| c >> 16 & 0xff != 0),
+                "a cracked face"
+            );
+            assert_eq!(m.cracks.len(), m.positions.len() / 3, "every vertex");
         }
     );
 

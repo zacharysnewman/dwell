@@ -104,6 +104,8 @@ pub fn biome_from_json(v: &Value) -> Result<Biome, String> {
         wetness: range(w, "wetness").map_err(at)?,
         elevation: range(w, "elevation").map_err(at)?,
         coast: range(w, "coast").map_err(at)?,
+        celsius: range(w, "celsius").map_err(at)?,
+        rain: range(w, "rain").map_err(at)?,
     };
     let bands = v
         .get("bands")
@@ -1030,7 +1032,17 @@ pub struct Worldgen {
 /// build's key for the build's ground, else that key with the config's hash, so a test world's
 /// maps never stand in for the seed's own (`-c`: maps that carry their config, from 0.52.37).
 pub fn worldgen_map_key(seed: u64, config: &str) -> String {
-    let key = crate::worldmap::cache::key(seed);
+    worldgen_map_key_sized(seed, config, dwell_protocol::world_size::WorldSize::DEFAULT)
+}
+
+/// [`worldgen_map_key`] in a world of `size` (BIG_MAP.md M2b): today's key at 1×, the size's
+/// (`cache::key_sized`, `-x<scale>`) for a bigger world, so its maps never stand in for 1×'s.
+pub fn worldgen_map_key_sized(
+    seed: u64,
+    config: &str,
+    size: dwell_protocol::world_size::WorldSize,
+) -> String {
+    let key = crate::worldmap::cache::key_sized(seed, size);
     match world_config(config) {
         Ok(Some(_)) => format!("{key}-c{:016x}", worldgen_hash(config)),
         _ => key,
@@ -1079,4 +1091,25 @@ pub fn worldgen_map_bytes(seed: u64, config: &str) -> Result<Vec<u8>, String> {
         None => crate::worldmap::build_bytes(seed),
         Some(m) => crate::worldmap::codec::encode(&m),
     })
+}
+
+/// [`worldgen_map_bytes`] in a world of `size` (BIG_MAP.md M2b: the browser's map builder): 1×'s
+/// exactly at 1×; a bigger world's map over its own disc (`WorldMap::compute_sized`). A test world
+/// with its own height field is 1× only (Chisel tunes a 1× disc): refused at another size.
+pub fn worldgen_map_bytes_sized(
+    seed: u64,
+    config: &str,
+    size: dwell_protocol::world_size::WorldSize,
+) -> Result<Vec<u8>, String> {
+    if size.is_default() {
+        return worldgen_map_bytes(seed, config);
+    }
+    let m = crate::worldmap::WorldMap::compute_sized(seed, size);
+    Ok(crate::worldmap::codec::encode(
+        &match world_config(config)? {
+            None => m,
+            Some(e) if e.height.is_none() => m.with_worldgen(config.trim())?,
+            Some(_) => return Err("a test world with its own ground is only made at 1×".into()),
+        },
+    ))
 }

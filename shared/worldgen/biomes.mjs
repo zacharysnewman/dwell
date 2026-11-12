@@ -171,8 +171,20 @@ export const TERRAIN = {
 };
 /** An elevation band's blocks, by name: each must be a full block of the registry. */
 const BAND_BLOCKS = ["ground", "under", "rock", "shoreBlock"];
-/** The geography fields a biome's `where` ranges may name (B2's biome map; code, a fixed vocabulary). */
-export const WHERE_FIELDS = ["temperature", "wetness", "elevation", "coast"];
+/**
+ * The geography fields a biome's `where` ranges may name (B2's biome map; code, a fixed vocabulary):
+ * the 0..1 `temperature` and `wetness`, metres of `elevation` and `coast`; `celsius` (°C) and `rain`
+ * (annual mm), the presets' climate envelope (REALISTIC_WORLD.md R4): °C and rain from the climate in
+ * a world with one, `celsius` from the 0..1 temperature and `rain` not read in a world without.
+ */
+export const WHERE_FIELDS = [
+  "temperature",
+  "wetness",
+  "elevation",
+  "coast",
+  "celsius",
+  "rain",
+];
 const BAND_NAME = /^[a-z0-9_]+$/;
 
 /**

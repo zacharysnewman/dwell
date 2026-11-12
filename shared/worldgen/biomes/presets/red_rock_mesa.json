@@ -4,9 +4,13 @@
   "description": "Sand floors under stone mesas, cliff bands on every steep face (stone stands in for red rock until rock types).",
   "where": {
     "weight": 1,
-    "temperature": {
-      "min": 0.55,
-      "blend": 0.1
+    "celsius": {
+      "min": 12,
+      "blend": 2
+    },
+    "rain": {
+      "max": 450,
+      "blend": 100
     },
     "wetness": {
       "max": 0.3,

@@ -43,6 +43,24 @@ impl JobWorker {
             ),
         }
     }
+    /// A worker for a world of size `radius_scale` (BIG_MAP.md M2b; none or 1: today's), with the
+    /// LOD colour map's river valleys when `valleys`.
+    #[wasm_bindgen(js_name = worldSized)]
+    pub fn world_sized(
+        generator_version: u32,
+        world_seed: u64,
+        radius_scale: Option<u32>,
+        valleys: bool,
+    ) -> JobWorker {
+        Self {
+            runner: Runner::world_sized(
+                generator_version,
+                world_seed,
+                dwell_protocol::world_size::WorldSize::playable(radius_scale),
+                valleys.then_some(dwell_look::lod_map::LOD_MAP.valley_margin_m),
+            ),
+        }
+    }
     /// A worker that only meshes.
     pub fn mesher() -> JobWorker {
         Self {
@@ -81,12 +99,12 @@ pub struct WebJobs {
 
 impl WebJobs {
     /// `make_worker` creates a worker running the job worker script; `world` is the generator
-    /// version and seed the generation workers load, `maps` its world maps' bytes.
+    /// version, seed and size the generation workers load, `maps` its world maps' bytes.
     pub fn new(
         make_worker: &Function,
         generators: usize,
         meshers: usize,
-        world: (u32, u64),
+        world: (u32, u64, dwell_protocol::world_size::WorldSize),
         maps: &[Uint8Array],
         valleys: bool,
     ) -> Result<Self, JsValue> {
@@ -125,6 +143,11 @@ impl WebJobs {
                         &"worldSeed".into(),
                         &js_sys::BigInt::from(world.1).into(),
                     )?;
+                    // The world's size (BIG_MAP.md M2b): only a bigger world's, so 1×'s message
+                    // is as before.
+                    if !world.2.is_default() {
+                        Reflect::set(&init, &"radiusScale".into(), &world.2.radius_scale.into())?;
+                    }
                     // The world's maps (ADR 0049), copied to each worker, which installs them
                     // before making its generator.
                     let list = Array::new();
