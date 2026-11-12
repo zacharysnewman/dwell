@@ -903,6 +903,12 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    cliff at evening). Not in it: a chase or deer fleeing (on day 0 every pack is kilometres from any herd and
    players can't scare deer), far herds (none seen from above, unconfirmed), grazing (no grazing pose). Bugs found:
    BUGS.md (a herd popping up in size, deer overlapping, a wolf in a cliff, `?at=` into the ground).
+
+   Owner, 2026-11-12: "fix four bugs found filming the deer and wolves" (BUGS.md #79–#82): births or a double
+   spawn; no spacing; creature movement not keeping the body radius out of solid cells; `?at=`/teleport into the
+   ground. Fixed (cloud, after 0.54.101): births paced by data (`near.mate.restS`, `groupEveryS`; no double spawn),
+   bodies kept apart (`bodyRadiusM`, `limits.gapM`/`pushMps`) and out of walls, a buried player lifted onto the
+   ground above.
 37. **First-person arms from the player model** (owner 2026-11-12: "I thought we were going to swap out the AI
    generated first person character model? We discussed this yesterday."). The Peasant (the owner's Asset Store
    model) became other players' body and your shadow in 0.52.35 (CHARACTERS.md §11.5), but "Still rigid: your
