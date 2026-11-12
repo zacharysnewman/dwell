@@ -32,6 +32,7 @@ pub mod seam;
 pub mod shaders;
 pub mod shadows;
 pub mod skinned;
+pub mod streaming;
 pub mod timing;
 pub mod upscale;
 pub mod water;
@@ -5772,6 +5773,9 @@ impl TerrainRenderer for Renderer {
 impl crate::game::Scene for Renderer {
     fn draws_cards(&self) -> bool {
         cards_for(self.adapter, self.phone, self.cards_override)
+    }
+    fn upload_budget_bytes(&self) -> u64 {
+        streaming::StreamingBudgets::get().upload_bytes(self.phone)
     }
     fn draws_heightfield(&self) -> bool {
         heightfield_drawn(self.water().tier().heightfield, self.heightfield_override)
