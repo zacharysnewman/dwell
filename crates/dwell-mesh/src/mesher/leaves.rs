@@ -506,10 +506,17 @@ pub(crate) fn card_faces(
     })
 }
 
+/// The steps across each octahedral axis of a card's packed normal ([`card_speed`]): even, so 0 and
+/// every `1 - |x|` of a grid value are on the grid, the octahedral fold maps the grid onto itself,
+/// and face B's mirror (a y flip re-packed, `flip_arrays_y`) is face A's exactly. The WGSL
+/// `card_normal` (dwell-client `render/shaders.rs`) reads with the same grid.
+pub(crate) const CARD_GRID: f64 = 2048.0;
+
 /// A card's `plants.y` (the wind's speed for a plant, >= 0): the card's plane normal `n` (metres,
-/// unit), octahedral-packed into 11 + 11 bits, stored as -(1 + packed), which marks the vertex a
-/// card's (its wind speed 1). The cutout shaders' `plant_speed` and `card_normal` read it back
-/// (BUGS.md #78: a card on the crown's far side, facing away, is dropped in the vertex shader).
+/// unit), octahedral-packed on a [`CARD_GRID`]-step grid per axis (`u * (CARD_GRID + 1) + v`, under
+/// 2^23: exact in an f32), stored as -(1 + packed), which marks the vertex a card's (its wind speed
+/// 1). The cutout shaders' `plant_speed` and `card_normal` read it back (BUGS.md #78: a card on
+/// the crown's far side, facing away, is dropped in the vertex shader).
 pub(crate) fn card_speed(n: V) -> f32 {
     let l1 = n[0].abs() + n[1].abs() + n[2].abs();
     let (mut u, mut v) = (n[0] / l1, n[2] / l1);
@@ -518,16 +525,25 @@ pub(crate) fn card_speed(n: V) -> f32 {
         u = (1.0 - pv.abs()) * if pu >= 0.0 { 1.0 } else { -1.0 };
         v = (1.0 - pu.abs()) * if pv >= 0.0 { 1.0 } else { -1.0 };
     }
-    let q = |x: f64| ((x.clamp(-1.0, 1.0) * 0.5 + 0.5) * 2047.0).round();
-    -(1.0 + (q(u) * 2048.0 + q(v))) as f32
+    let q = |x: f64| ((x.clamp(-1.0, 1.0) * 0.5 + 0.5) * CARD_GRID).round();
+    let (mut qu, mut qv) = (q(u), q(v));
+    // The square's outer edges fold onto themselves (u and -u on the |v| = 1 edge are one normal,
+    // the four corners straight down): one of each pair, so a flip and back is the same bits.
+    if qv == 0.0 || qv == CARD_GRID {
+        qu = qu.max(CARD_GRID - qu);
+    }
+    if qu == 0.0 || qu == CARD_GRID {
+        qv = qv.max(CARD_GRID - qv);
+    }
+    -(1.0 + (qu * (CARD_GRID + 1.0) + qv)) as f32
 }
 
 /// `card_speed`'s normal back (the WGSL `card_normal`'s twin; face B's mirror re-packs with it).
 pub(crate) fn card_normal_of(speed: f32) -> V {
     let q = f64::from(-speed - 1.0);
-    let uq = (q / 2048.0).floor();
-    let vq = q - uq * 2048.0;
-    let (u, v) = (uq / 2047.0 * 2.0 - 1.0, vq / 2047.0 * 2.0 - 1.0);
+    let uq = (q / (CARD_GRID + 1.0)).floor();
+    let vq = q - uq * (CARD_GRID + 1.0);
+    let (u, v) = (uq / CARD_GRID * 2.0 - 1.0, vq / CARD_GRID * 2.0 - 1.0);
     let mut n = [u, 1.0 - u.abs() - v.abs(), v];
     if n[1] < 0.0 {
         n[0] = (1.0 - v.abs()) * if u >= 0.0 { 1.0 } else { -1.0 };

@@ -344,6 +344,12 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    wind shear; the light march on the base shape only. CPU twin and tests (flat base, rounded top, anvil,
    coverage 0, edge-only erosion, tiling, a fixture type by data, both faces, naga). Cost read from the shader:
    Medium ≤ 7.4k ALU a texel (was 5.3k), High ≤ 10.5k (was 7.6k).
+   Owner, 2026-11-12 (BUGS.md #97): **"Volumetric lighting also has some weird dithering where the light shafts look
+   pixelated. Not sure if this is a bug, a blending problem, or something else."** Then: **"Oh that dithering is
+   definitely cloud related."** Built (branch `claude/shaft-dither`): the clouds' composite no longer hands a near
+   pixel (leaves among sky gaps) the cloud behind it (CLOUDS.md §9.6), and the shafts' jitter is a 3 × 3 tile of
+   strata averaged by the composite's 3 × 3 box (was a static interleaved gradient). Next (local): the look at a
+   low sun behind clouds and a tree.
    Owner, 2026-11-12 (BUGS.md #90): **"The clouds also look really badly dithered when they overlap? I think
    mostly when you get to their level? Looks very pixelated."** Asked for in the same work: blue-noise jitter, a
    depth-aware bilateral upsample, neighbourhood clamping instead of history rejection near the layer, more
@@ -1398,6 +1404,13 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    client side (M-7c) so it reuses the finished travel.
 
 ## Done
+
+- **dwell-mesh's face-B parity test green (owner's brief 2026-11-12: "a_chunk_meshes_the_same_face_local_on_either_face::b
+  fails on main (\"cutout plants\"), reported by two sessions … fix the cause at the source so face B's plants are face
+  A's mirror … keep the density setting's behaviour"):** BUGS.md #98. Not the Tall grass density (6578783: cleared,
+  the test failed before it, and `plant_kept` hashes world cells only for a 0–100 % thinning); a leaf card's packed
+  normal drifted a grid step on face B's mirror. The packing's grid is now even, so face B's cards are face A's
+  mirror to the bit.
 
 - **Main's tests green again (owner 2026-11-12: "make main's tests green again (tests/fixes only)"):**
   four stale expectations, no code bugs. `checks.ts`'s areas lacked `shared/look/bloom.mjs` (render) and
