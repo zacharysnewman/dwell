@@ -247,3 +247,15 @@ preview and the driver, remove any `client/node_modules` symlink or built `clien
   cross-fade continues the shot. Far trees (#848) read as dark tree clumps from 15 m and as small dark squares seen
   straight down from ~150 m at night: fine at the frame's size. The worktree guard refuses python/curl commands with
   shell variables or loops: write a small script file with the paths inside and run it plainly.
+- 2026-11-12, bifacial v5 with `take.mjs` (portrait, 54.4 s, 18.0 MB; owner on v4: "The camera is upside down for the
+  out of the hole shot"): only the crane (s2) holds face A's up; shot 5 is `"up": "auto"` (upright on face B), camB
+  [1796.3, −50.5, 20707.3]: ~17 m from the landing (7.3 m out on the +x+z diagonal, feet y −44.5) and 6 m up, framed
+  between two pillars, so the player is ~210 px tall (a first try 3 m nearer gave ~260 px). s6's first keyframe follows
+  camB (`"auto"`: it turns over edge-on at the rim). **Timings:** the warm client build took 34 s; then each shot took
+  its length + ~10 s warm + 35–55 s to encode (s1 37 s, s2 39 s, portal 40 s, s6 55 s at `-preset medium`). Recording
+  all four shots plus the splice took ~5 min. The first run failed after s1 with "fetch failed": Node's http server drops
+  an idle keep-alive socket after 5 s, and the encode had left it idle 37 s. Fixed: `fetchRetrying` retries a stale-socket
+  error once, and the driver keeps sockets 10 min. After a camB move, `--only s5` took **2 min 34 s**, inside the
+  3-minute target, although it re-records s6 too (s6's first keyframe is camB, so it is stale). The intermediate encode
+  is now `-preset veryfast -crf 16` (the splice re-encodes) and still takes 30–40 s a shot, the largest share of the time
+  left. Encoding while capturing, or VideoToolbox, would cut it further.

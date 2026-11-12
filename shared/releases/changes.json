@@ -2,6 +2,18 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.55.15",
+      "changes": [
+        "Showcase video tooling: the bifacial video's landing shot is upright on face B and closer, and re-recording no longer fails after a long encode."
+      ]
+    },
+    {
+      "version": "0.55.14",
+      "changes": [
+        "A tool hit lands on whatever you're aiming at when the swing connects"
+      ]
+    },
+    {
       "version": "0.55.13",
       "changes": [
         "Behind the scenes: one-command showcase re-records"
