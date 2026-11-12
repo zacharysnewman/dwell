@@ -68,6 +68,9 @@ pub struct PortalRules {
     /// The look of the glowing motes drawn in the shaft round the midplane, by name
     /// (`shared/look/motes.json`; the client's, not the terrain's).
     pub motes: &'static str,
+    /// The exit push that carries a body swung up from the far face out of the opening
+    /// (BIFACIAL_WORLD.md §12.3; the player controller's, not the terrain's).
+    pub exit: dwell_world::portal_shafts::PortalExit,
 }
 
 mod table {

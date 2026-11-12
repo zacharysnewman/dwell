@@ -146,16 +146,27 @@ pub struct FormTunables {
     pub wisp_height: f64,
     /// How far the shape leans downwind per metre up (m/m).
     pub shear: f64,
-    /// The weather map's cover rises from 0 to 1 over this much of the deck's noise past the cut.
-    pub coverage_softness: f64,
+    /// The dilated Perlin–Worley's span (it lies in about 0.73–0.94), stretched to 0–1 before the
+    /// cover cuts it, so a cover of c leaves about c of the sky cloudy.
+    pub base_low: f64,
+    pub base_high: f64,
 }
 
-/// The weather map's data (`weather`, §9.2): the cloud type along the type axis and the rain.
+/// The weather map's data (`weather`, §9.2): regional fields, not the clouds (BUGS.md #100): the
+/// cloud type along the type axis, the cover about the coverage, and the rain.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct WeatherTunables {
     pub r#type: f64,
+    /// The type's spread (± about `type`) by a smooth field whose cells are `type_scale_m` across.
     pub type_variation: f64,
+    pub type_scale_m: f64,
+    /// How much the type rises with how far the cover is over the coverage (0: none).
     pub type_from_coverage: f64,
+    /// The cover's field: cells `cover_scale_m` across moving it by ± `cover_variation` (× 4c(1 − c)).
+    pub cover_scale_m: f64,
+    pub cover_variation: f64,
+    /// The deck's own noise's share of the cover (× 1 ± it): breaks the base texture's repeat.
+    pub deck_breakup: f64,
     pub precipitation: f64,
 }
 
@@ -649,24 +660,69 @@ pub struct Weather {
     pub precipitation: f64,
 }
 
-/// The weather at a column of stretched deck noise `n` ([`volume_stretch`]) and second noise `v`
-/// (0–1) under the global `coverage`: cover the deck's own cut, softened; the type rises with how
-/// far the column is past the cut (a cloud's core towers over its edges) and varies with `v`.
-/// `cloud_weather`.
-pub fn weather(t: &CloudTunables, n: f64, v: f64, coverage: f64) -> Weather {
+/// A regional field (0–1, stretched about its mean as the deck's): one octave of the deck's value
+/// noise on a lattice `scale_m` across (a whole multiple of the deck's cells that divides its
+/// period, so it tiles with it), at noise point `q` (cells) moved by `shift` (its own cells).
+/// `cloud_region`.
+pub fn region(t: &CloudTunables, q: [f64; 2], scale_m: f64, shift: [f64; 2]) -> f64 {
+    let k = scale_m / t.shape.scale_m;
+    let per = (period(t) as f64 / k).round() as i64;
+    let p = [q[0] / k + shift[0], q[1] / k + shift[1]];
+    volume_stretch(value(p, per))
+}
+
+/// Where the type's field is off the cover's (its own cells).
+const TYPE_SHIFT: [f64; 2] = [17.3, 41.9];
+
+/// The weather at a column (§9.2) from its regional cover field `c` and type field `v` and the
+/// deck's stretched noise `n` (each 0–1) under the global `coverage`: the cover is the coverage
+/// moved by the regional field (none and overcast stay so) and broken up by the deck's noise; the
+/// type is regional (Schneider 2015, Nubis 2023: a weather map at 8–16 km), not tied to each
+/// cloud's core, which made each cloud a tower of the deck's 2D noise (BUGS.md #100). `cloud_weather`.
+pub fn weather(t: &CloudTunables, c: f64, v: f64, n: f64, coverage: f64) -> Weather {
     let w = &t.weather;
-    let cut = 1.0 - coverage;
-    let cover = if coverage <= 0.0 {
-        0.0
-    } else {
-        smoothstep(cut, cut + t.form.coverage_softness, n)
-    };
+    let coverage = coverage.clamp(0.0, 1.0);
+    let regional = (coverage
+        + w.cover_variation * (2.0 * c - 1.0) * 4.0 * coverage * (1.0 - coverage))
+        .clamp(0.0, 1.0);
+    let cover = (regional * (1.0 + w.deck_breakup * (2.0 * n - 1.0))).clamp(0.0, 1.0);
     Weather {
         cover,
-        kind: (w.r#type + w.type_from_coverage * (n - cut) + w.type_variation * (2.0 * v - 1.0))
+        kind: (w.r#type
+            + w.type_variation * (2.0 * v - 1.0)
+            + w.type_from_coverage * (regional - coverage))
             .clamp(0.0, 1.0),
         precipitation: w.precipitation,
     }
+}
+
+/// The one-octave warp's offset at noise point `q` (cells), the warp field `warp_off` cells from
+/// it: found once per view sample (`cloud_vol_warp`).
+pub fn vol_warp(t: &CloudTunables, q: [f64; 2], warp_off: [f64; 2]) -> [f64; 2] {
+    let n = period(t);
+    let w = [q[0] + warp_off[0], q[1] + warp_off[1]];
+    [
+        2.0 * t.shape.warp * (value(w, n) - 0.5),
+        2.0 * t.shape.warp * (value([w[0] + 5.2, w[1] + 1.3], n) - 0.5),
+    ]
+}
+
+/// The weather at the column under noise point `q` (cells; `cloud_uniforms`' offsets plus the
+/// sample's horizontal offset over `shape.scaleM`) with the warp field `warp_off`: the march's
+/// per-sample weather (`cloud_layer_march`'s `wq`, `n`, `cloud_weather`).
+pub fn column_weather(
+    t: &CloudTunables,
+    q: [f64; 2],
+    warp_off: [f64; 2],
+    coverage: f64,
+) -> Weather {
+    let o = vol_warp(t, q, warp_off);
+    let wq = [q[0] + o[0], q[1] + o[1]];
+    let n = volume_stretch(fbm(t, wq, 2));
+    let w = &t.weather;
+    let c = region(t, q, w.cover_scale_m, [0.0, 0.0]);
+    let v = region(t, q, w.type_scale_m, TYPE_SHIFT);
+    weather(t, c, v, n, coverage)
 }
 
 /// The cover at `y` up the layer with the profile's anvil: from its top fade's start upward the
@@ -681,9 +737,10 @@ pub fn anvil_cover(p: &Profile, y: f64, cover: f64) -> f64 {
 
 /// The base shape's density (§9.3) from the base texture's sample `b` (RGBA: Perlin–Worley, Worley
 /// fBm ×3) `y` up the layer: the Perlin–Worley dilated by the Worley fBm
-/// (`remap(R, −(1 − fbm), 1, 0, 1)`), times the profile's gradient, cut by the column's cover
-/// (`remap(·, 1 − cover, 1, 0, 1) × cover`), so no cover is no cloud. `cloud_base_shape`.
-pub fn base_shape(b: [f64; 4], y: f64, w: &Weather, p: &Profile) -> f64 {
+/// (`remap(R, −(1 − fbm), 1, 0, 1)`), cut by the profile's gradient times the column's cover
+/// (Nubis: `saturate(remap(base, 1 − g·cover, 1))`), so the 3D noise carves the single clouds, the
+/// gradient rounds their tops, and no cover is no cloud. `cloud_base_shape`.
+pub fn base_shape(f: &FormTunables, b: [f64; 4], y: f64, w: &Weather, p: &Profile) -> f64 {
     let g = height_gradient(p, y);
     let cover = anvil_cover(p, y, w.cover);
     if g <= 0.0 || cover <= 0.0 {
@@ -691,7 +748,9 @@ pub fn base_shape(b: [f64; 4], y: f64, w: &Weather, p: &Profile) -> f64 {
     }
     let fbm = 0.625 * b[1] + 0.25 * b[2] + 0.125 * b[3];
     let base = remap(b[0], fbm - 1.0, 1.0, 0.0, 1.0).clamp(0.0, 1.0);
-    (remap(base * g, 1.0 - cover, 1.0, 0.0, 1.0).max(0.0) * cover).min(1.0)
+    let base = remap(base, f.base_low, f.base_high, 0.0, 1.0).clamp(0.0, 1.0);
+    let gc = g * cover;
+    remap(base, 1.0 - gc, 1.0, 0.0, 1.0).clamp(0.0, 1.0)
 }
 
 /// The detail's erosion of base density `d` (§9.3) by the detail fBm `hf` (0–1, its inverted
@@ -767,7 +826,7 @@ impl ShapeNoise {
         with_detail: bool,
     ) -> f64 {
         let p = type_profile(t.cloud_types, w.kind);
-        let d = base_shape(self.base_at(t, pm), y, w, &p);
+        let d = base_shape(&t.form, self.base_at(t, pm), y, w, &p);
         if d <= 0.0 {
             return 0.0;
         }
@@ -1376,7 +1435,31 @@ pub fn cloud_wgsl(t: &CloudTunables) -> String {
         format!("const CLOUD_EROSION: f32 = {};", f(fm.detail_erosion)),
         format!("const CLOUD_WISP: f32 = {};", f(fm.wisp_height)),
         format!("const CLOUD_SHEAR: vec2f = vec2f({}, {});", f(sx), f(sz)),
-        format!("const CLOUD_COVER_SOFT: f32 = {};", f(fm.coverage_softness)),
+        format!(
+            "const CLOUD_COVER_CELLS: f32 = {};",
+            f(w.cover_scale_m / s.scale_m)
+        ),
+        format!(
+            "const CLOUD_COVER_PERIOD: i32 = {};",
+            (period(t) as f64 * s.scale_m / w.cover_scale_m).round() as i64
+        ),
+        format!(
+            "const CLOUD_TYPE_CELLS: f32 = {};",
+            f(w.type_scale_m / s.scale_m)
+        ),
+        format!(
+            "const CLOUD_TYPE_PERIOD: i32 = {};",
+            (period(t) as f64 * s.scale_m / w.type_scale_m).round() as i64
+        ),
+        format!(
+            "const CLOUD_TYPE_SHIFT: vec2f = vec2f({}, {});",
+            f(TYPE_SHIFT[0]),
+            f(TYPE_SHIFT[1])
+        ),
+        format!("const CLOUD_COVER_VAR: f32 = {};", f(w.cover_variation)),
+        format!("const CLOUD_BASE_LOW: f32 = {};", f(fm.base_low)),
+        format!("const CLOUD_BASE_HIGH: f32 = {};", f(fm.base_high)),
+        format!("const CLOUD_BREAKUP: f32 = {};", f(w.deck_breakup)),
         format!("const CLOUD_TYPE_BASE: f32 = {};", f(w.r#type)),
         format!("const CLOUD_TYPE_VAR: f32 = {};", f(w.type_variation)),
         format!("const CLOUD_TYPE_COVER: f32 = {};", f(w.type_from_coverage)),
@@ -1617,19 +1700,41 @@ fn cloud_profile_mix(a: CloudProfile, b: CloudProfile, f: f32) -> CloudProfile {
 	return CloudProfile(mix(a.fade, b.fade, f), mix(a.anvil, b.anvil, f), mix(a.density, b.density, f), mix(a.darkening, b.darkening, f));
 }
 
-// The weather map's cover alone (the light samples'), from the stretched deck noise `n`.
-fn cloud_cover(n: f32, coverage: f32) -> f32 {
-	let cut = 1.0 - coverage;
-	return select(smoothstep(cut, cut + CLOUD_COVER_SOFT, n), 0.0, coverage <= 0.0);
+// Value noise on a lattice of period `per` cells (the regional fields', cloud_value's otherwise).
+fn cloud_value_p(p: vec2f, per: i32) -> f32 {
+	let i = floor(p);
+	let f = p - i;
+	let u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
+	let c = vec2i(i);
+	let h = array<vec2i, 4>(c, c + vec2i(1, 0), c + vec2i(0, 1), c + vec2i(1, 1));
+	var v: array<f32, 4>;
+	for (var k = 0; k < 4; k++) {
+		let w = vec2u(((h[k] % per) + per) % per);
+		var x = (w.x * 0x8da6b343u) ^ (w.y * 0xd8163841u);
+		x = (x ^ (x >> 16u)) * 0x7feb352du;
+		x = (x ^ (x >> 15u)) * 0x846ca68bu;
+		x ^= x >> 16u;
+		v[k] = f32(x) / 4294967295.0;
+	}
+	return mix(mix(v[0], v[1], u.x), mix(v[2], v[3], u.x), u.y);
 }
 
-// The weather map at a column (weather): x its cover, y its type along the type axis, from the
-// column's stretched deck noise `n`, the warped point `wq` (the type's second noise) and the coverage.
-fn cloud_weather(n: f32, wq: vec2f, coverage: f32) -> vec2f {
-	let cut = 1.0 - coverage;
-	let cover = cloud_cover(n, coverage);
-	let v = cloud_value(wq + vec2f(17.3, 41.9));
-	let kind = clamp(CLOUD_TYPE_BASE + CLOUD_TYPE_COVER * (n - cut) + CLOUD_TYPE_VAR * (2.0 * v - 1.0), 0.0, 1.0);
+// A regional field (region): one octave of value noise at `q` (cells) on a lattice `cells` deck
+// cells across, of period `per`, moved by `shift`, stretched about its mean.
+fn cloud_region(q: vec2f, cells: f32, per: i32, shift: vec2f) -> f32 {
+	return clamp((cloud_value_p(q / cells + shift, per) - 0.5) * CLOUD_CONTRAST + 0.5, 0.0, 1.0);
+}
+
+// The weather map at a column (weather, BUGS.md #100): x its cover, y its type along the type
+// axis: regional fields at the noise point `q` (cells), the cover broken up by the deck's
+// stretched noise `n` at the warped point. Not tied to each cloud: the 3D noise makes those.
+fn cloud_weather(q: vec2f, n: f32, coverage_in: f32) -> vec2f {
+	let coverage = clamp(coverage_in, 0.0, 1.0);
+	let c = cloud_region(q, CLOUD_COVER_CELLS, CLOUD_COVER_PERIOD, vec2f(0.0));
+	let v = cloud_region(q, CLOUD_TYPE_CELLS, CLOUD_TYPE_PERIOD, CLOUD_TYPE_SHIFT);
+	let regional = clamp(coverage + CLOUD_COVER_VAR * (2.0 * c - 1.0) * 4.0 * coverage * (1.0 - coverage), 0.0, 1.0);
+	let cover = clamp(regional * (1.0 + CLOUD_BREAKUP * (2.0 * n - 1.0)), 0.0, 1.0);
+	let kind = clamp(CLOUD_TYPE_BASE + CLOUD_TYPE_VAR * (2.0 * v - 1.0) + CLOUD_TYPE_COVER * (regional - coverage), 0.0, 1.0);
 	return vec2f(cover, kind);
 }
 
@@ -1643,7 +1748,8 @@ fn cloud_height_gradient(p: CloudProfile, y: f32) -> f32 {
 }
 
 // The base shape (base_shape) from the base texture's sample `b`: the Perlin-Worley dilated by the
-// Worley fBm, times the gradient `g`, cut by the cover (raised toward the top by the anvil).
+// Worley fBm, cut where it is under 1 - the gradient `g` × the cover (raised toward the top by the
+// anvil): Nubis's saturate(remap(base, 1 - g·cover, 1)), the 3D noise carving the clouds.
 fn cloud_base_shape(b: vec4f, y: f32, cover_in: f32, p: CloudProfile, g: f32) -> f32 {
 	var cover = cover_in;
 	if (p.anvil > 0.0 && cover > 0.0) {
@@ -1653,8 +1759,9 @@ fn cloud_base_shape(b: vec4f, y: f32, cover_in: f32, p: CloudProfile, g: f32) ->
 		return 0.0;
 	}
 	let fbm = dot(b.yzw, vec3f(0.625, 0.25, 0.125));
-	let base = clamp((b.x - (fbm - 1.0)) / (2.0 - fbm), 0.0, 1.0);
-	return min(max((base * g - (1.0 - cover)) / max(cover, 1e-4), 0.0) * cover, 1.0);
+	let base = clamp((clamp((b.x - (fbm - 1.0)) / (2.0 - fbm), 0.0, 1.0) - CLOUD_BASE_LOW) / (CLOUD_BASE_HIGH - CLOUD_BASE_LOW), 0.0, 1.0);
+	let gc = g * cover;
+	return clamp((base - (1.0 - gc)) / max(gc, 1e-4), 0.0, 1.0);
 }
 
 // The detail's erosion (erode): the fBm below CLOUD_WISP (wispy bases), its inverse above (billowy
@@ -1803,7 +1910,7 @@ fn cloud_layer_march(dir: vec3f, rise: f32, eye_h: f32, max_t: f32, jitter: f32,
 		// column's profile.
 		let wq = q + cloud_vol_warp(q, offsets.zw);
 		let n = cloud_vol_n(wq);
-		let wm = cloud_weather(n, wq, cfg.x);
+		let wm = cloud_weather(q, n, cfg.x);
 		if (wm.x <= 0.001) {
 			continue;
 		}
@@ -1846,9 +1953,9 @@ fn cloud_layer_march(dir: vec3f, rise: f32, eye_h: f32, max_t: f32, jitter: f32,
 			if (yl <= 0.0 || yl >= 1.0) {
 				break;
 			}
-			let cl = cloud_cover(cloud_vol_n(wq + sh.light.xz * (mid / CLOUD_SCALE)), cfg.x);
+			// The column's cover (regional: it barely changes along the light's path; no noise).
 			let pl = pm + vec3f(sh.light.x, sh.light_rise, sh.light.z) * mid;
-			od += len * cloud_base_shape(cloud_base_at(pl), yl, cl, prof, cloud_height_gradient(prof, yl)) * cloud_density_scale(prof, yl);
+			od += len * cloud_base_shape(cloud_base_at(pl), yl, wm.x, prof, cloud_height_gradient(prof, yl)) * cloud_density_scale(prof, yl);
 			at += len;
 			len *= CLOUD_VOL_LIGHT_GROWTH;
 		}
@@ -2794,12 +2901,12 @@ mod volume_tests {
         };
         (type_profile(CLOUDS.cloud_types, w.kind), w)
     }
-    const B: [f64; 4] = [0.8, 0.5, 0.5, 0.5];
+    const B: [f64; 4] = [0.9, 0.5, 0.5, 0.5];
 
     /// The broad cloud's base-shape density `y` up the layer (the light samples' shape).
     fn broad_density(y: f64) -> f64 {
         let (p, w) = broad();
-        base_shape(B, y, &w, &p) * density_scale(&p, &w, y)
+        base_shape(&CLOUDS.form, B, y, &w, &p) * density_scale(&p, &w, y)
     }
 
     /// A sample `y` up the broad cloud in the day's colours, lit from a light whose face-local up
@@ -2964,9 +3071,13 @@ mod volume_tests {
             src[a..a + b].to_owned()
         };
         let march = body("cloud_layer_march");
-        // One warp per view sample; the light samples take only the two-octave weather noise.
+        // One warp and one weather per view sample; the light samples reuse the column's cover
+        // (regional, BUGS.md #100): no 2D noise along the light's path.
         assert_eq!(march.matches("cloud_vol_warp(").count(), 1);
-        assert_eq!(march.matches("cloud_vol_n(").count(), 2);
+        assert_eq!(march.matches("cloud_vol_n(").count(), 1);
+        assert_eq!(march.matches("cloud_weather(").count(), 1);
+        let light = &march[march.find("for (var j = 0;").unwrap()..];
+        assert!(!light.contains("cloud_vol_n(") && !light.contains("cloud_weather("));
         assert!(!march.contains("dwell_cloud_density("));
         // The light leaves the march where it leaves the layer.
         assert!(march.contains("if (yl <= 0.0 || yl >= 1.0)"));
@@ -2977,6 +3088,79 @@ mod volume_tests {
         )));
         // The light's up part is the viewer's face's.
         assert!(body("cloud_shading").contains("let up = face_up(face);"));
+    }
+
+    // ----- Fair-weather clouds at noon (WORK_QUEUE item 13: "gloomy and dark") -----
+
+    /// A sample `y` up a column of cloud type `k` (a core of density 0.8 times its profile's
+    /// gradient) at noon, lit from straight up with High's light samples, seen at `c` (the view's
+    /// cosine with the light): its luminance over the sunlit white's (the frame's lit colour).
+    pub(super) fn noon_sample(t: &CloudTunables, w: &Weather, y: f64, c: f64) -> f64 {
+        let (up, sun, sky) = day_at(90.0);
+        let (lit, shade) = day_shading(t, up, sun, sky);
+        let p = type_profile(t.cloud_types, w.kind);
+        let h = t.volume.top_m - t.volume.base_m;
+        let dens = |y: f64| 0.8 * height_gradient(&p, y) * density_scale(&p, w, y);
+        let (above, below) = column_cover_m(t, &p, y, w.cover);
+        let od = light_depth(t, t.tiers.high.light_steps, y, dens(y), above, 1.0, |s| {
+            dens(y + s / h)
+        });
+        let l = sample_light(t, od, c, above, below);
+        lum(soft_clip(sample_colour(t, l, lit, shade))) / lum(lit)
+    }
+
+    /// A type's sunlit top (the highest y its gradient is over 0.15: little cloud above) and a point
+    /// just over its base (the whole column above it).
+    pub(super) fn top_and_base(t: &CloudTunables, k: f64) -> (f64, f64) {
+        let p = type_profile(t.cloud_types, k);
+        let top = (0..1000)
+            .map(|i| f64::from(i) / 1000.0)
+            .filter(|&y| height_gradient(&p, y) > 0.15)
+            .fold(0.0, f64::max);
+        (top, p.base[1] + 0.01)
+    }
+
+    #[test]
+    fn at_noon_fair_weather_clouds_are_white_and_only_storm_clouds_dark() {
+        // The papers' fair-weather cumulus (Schneider 2015's renders, Hillaire 2016 §5.7–5.8): tops
+        // near the sun's white, bases a light grey, not near-black: multiple scattering (the
+        // octaves' floor) and the sky's ambient keep the interior lit. A sunlit top at least 0.8
+        // of the white (seen side-on), a base at least 0.45 of it (seen from below at 30° up, the
+        // sun overhead) for stratocumulus and cumulus; cumulonimbus, three times as deep and
+        // denser, the darkest base.
+        let at = |name: &str| {
+            CLOUDS
+                .cloud_types
+                .iter()
+                .find(|c| c.name == name)
+                .unwrap()
+                .at
+        };
+        let mut bases = Vec::new();
+        for name in ["stratocumulus", "cumulus", "cumulonimbus"] {
+            let k = at(name);
+            let (top, base) = top_and_base(&CLOUDS, k);
+            let w = Weather {
+                cover: 1.0,
+                kind: k,
+                precipitation: 0.0,
+            };
+            let (hi, lo) = (
+                noon_sample(&CLOUDS, &w, top, 0.0),
+                noon_sample(&CLOUDS, &w, base, 0.5),
+            );
+            eprintln!("{name}: top {hi:.3}, base {lo:.3} of the sunlit white");
+            if name != "cumulonimbus" {
+                assert!(hi >= 0.8, "{name}'s sunlit top {hi:.3} of the white");
+                assert!(lo >= 0.45, "{name}'s base {lo:.3} of the white (gloomy)");
+            }
+            assert!(hi > lo, "{name}: top {hi:.3}, base {lo:.3}");
+            bases.push(lo);
+        }
+        assert!(
+            bases[2] < bases[1] - 0.05,
+            "the storm cloud's base is darker: {bases:.3?}"
+        );
     }
 
     // ----- The low sun's tint (WORK_QUEUE item 13) -----
@@ -3192,7 +3376,9 @@ mod volume_tests {
         // What is left of a cloud behind 400 m of that mid cloud.
         let behind = |e: f64| (-e * 0.25 * 400.0).exp();
         assert!(behind(0.006) > 0.5, "{:.3}", behind(0.006));
-        assert!(behind(CLOUDS.volume.extinction) < 0.1);
+        // At the shipped 0.015 such a thin mid cloud still hides most of what is behind it; real
+        // clouds' cores are denser (pyramid_tests' `a_cloud_behind_400_m_of_cloud_is_mostly_hidden`).
+        assert!(behind(CLOUDS.volume.extinction) < 0.25);
         // A thin eroded edge still lets the view through (density 0.05 over 50 m): soft edges.
         assert!((-CLOUDS.volume.extinction * 0.05 * 50.0).exp() > 0.9);
     }
@@ -3475,8 +3661,7 @@ mod shape_tests {
     use super::*;
     use std::sync::LazyLock;
 
-    static NOISE: LazyLock<ShapeNoise> =
-        LazyLock::new(|| ShapeNoise::bake(&CLOUDS, Some((32, 16))));
+    static NOISE: LazyLock<ShapeNoise> = LazyLock::new(|| ShapeNoise::bake(&CLOUDS, None));
     const H: f64 = CLOUDS.volume.top_m - CLOUDS.volume.base_m;
 
     fn kind(name: &str) -> f64 {
@@ -3488,32 +3673,38 @@ mod shape_tests {
             .at
     }
 
-    /// The density `y` up the layer at x, z (m) in a round cloud of radius 1.5 km about the origin
-    /// (its cover falling from 1 at the centre to 0 at the rim) of type `k`.
-    fn round_cloud(t: &CloudTunables, k: f64, x: f64, z: f64, y: f64, detail: bool) -> f64 {
-        let r = (x * x + z * z).sqrt();
+    /// The density `y` up the layer at x, z (m) under an even cover of 0.6 of type `k`, the noise
+    /// moved up by `lift` m (the 3D noise makes the single clouds, BUGS.md #100).
+    fn cloud_at(t: &CloudTunables, k: f64, x: f64, z: f64, y: f64, lift: f64, detail: bool) -> f64 {
         let w = Weather {
-            cover: (1.0 - r / 1500.0).clamp(0.0, 1.0),
+            cover: 0.6,
             kind: k,
             precipitation: 0.0,
         };
         let h = t.volume.base_m + y * H;
-        NOISE.density(t, shape_point(t, x, h, z), y, &w, [0.0, 0.0], detail)
+        let mut pm = shape_point(t, x, h, z);
+        pm[1] += lift;
+        NOISE.density(t, pm, y, &w, [0.0, 0.0], detail)
     }
 
-    /// The share of the cloud's footprint that has cloud `y` up (a horizontal slice's width).
+    fn round_cloud(t: &CloudTunables, k: f64, x: f64, z: f64, y: f64, detail: bool) -> f64 {
+        cloud_at(t, k, x, z, y, 0.0, detail)
+    }
+
+    /// The cloudy share of a slice `y` up: over one base tile across (it repeats) and eight lifts of
+    /// the noise through a tile, so it is the profile's, not one slice of the noise's.
     fn width(t: &CloudTunables, k: f64, y: f64) -> f64 {
-        let mut n = 0;
+        let tile = t.form.base_tile_m;
         let mut hit = 0;
-        for i in -40..=40 {
-            for j in -40..=40 {
-                let (x, z) = (f64::from(i) * 37.0, f64::from(j) * 37.0);
-                if x * x + z * z > 1500.0 * 1500.0 {
-                    continue;
-                }
-                n += 1;
-                if round_cloud(t, k, x, z, y, true) > 0.05 {
-                    hit += 1;
+        let mut n = 0;
+        for lift in 0..8 {
+            for i in 0..32 {
+                for j in 0..32 {
+                    let (x, z) = (f64::from(i) * tile / 32.0, f64::from(j) * tile / 32.0);
+                    n += 1;
+                    if cloud_at(t, k, x, z, y, f64::from(lift) * tile / 8.0, true) > 0.05 {
+                        hit += 1;
+                    }
                 }
             }
         }
@@ -3585,7 +3776,7 @@ mod shape_tests {
     fn no_coverage_is_no_cloud() {
         for i in 0..200 {
             let n = f64::from(i) / 199.0;
-            let w = weather(&CLOUDS, n, 0.5, 0.0);
+            let w = weather(&CLOUDS, n, 0.5, 1.0 - n, 0.0);
             assert_eq!(w.cover, 0.0);
             for y in [0.02, 0.1, 0.3, 0.8] {
                 let pm = shape_point(
@@ -3597,21 +3788,18 @@ mod shape_tests {
                 assert_eq!(NOISE.density(&CLOUDS, pm, y, &w, [0.0, 0.0], true), 0.0);
             }
         }
-        // Under the cut at the shipped coverage, none either; past it, cover rises to 1.
-        let cut = 1.0 - CLOUDS.shape.coverage;
+        // The cover is regional about the coverage: at the field's mean it is the coverage, it
+        // rises and falls with the field (and the deck's breakup), and overcast stays overcast.
+        let c = CLOUDS.shape.coverage;
+        assert!((weather(&CLOUDS, 0.5, 0.5, 0.5, c).cover - c).abs() < 1e-12);
+        assert!(weather(&CLOUDS, 0.9, 0.5, 0.5, c).cover > c);
+        assert!(weather(&CLOUDS, 0.1, 0.5, 0.5, c).cover < c);
+        assert!(weather(&CLOUDS, 0.5, 0.5, 0.9, c).cover > c);
+        assert_eq!(weather(&CLOUDS, 0.0, 0.5, 0.5, 1.0).cover, 1.0);
+        // The type is regional too: with typeFromCoverage 0 the cover doesn't move it.
         assert_eq!(
-            weather(&CLOUDS, cut - 0.01, 0.5, CLOUDS.shape.coverage).cover,
-            0.0
-        );
-        assert_eq!(
-            weather(
-                &CLOUDS,
-                cut + CLOUDS.form.coverage_softness,
-                0.5,
-                CLOUDS.shape.coverage
-            )
-            .cover,
-            1.0
+            weather(&CLOUDS, 0.9, 0.3, 0.5, c).kind,
+            weather(&CLOUDS, 0.1, 0.3, 0.5, c).kind
         );
     }
 
@@ -3701,7 +3889,7 @@ mod shape_tests {
 
     #[test]
     fn a_fixture_cloud_type_by_data_alone_shapes_the_clouds_and_the_shader() {
-        let b = [0.8, 0.5, 0.5, 0.5];
+        let b = [0.9, 0.5, 0.5, 0.5];
         let w = Weather {
             cover: 1.0,
             kind: 1.0,
@@ -3710,11 +3898,11 @@ mod shape_tests {
         let p = type_profile(WITH_TOWER.cloud_types, 1.0);
         assert_eq!(p.top, TOWER.top);
         assert!(
-            base_shape(b, 0.85, &w, &p) > 0.5,
+            base_shape(&WITH_TOWER.form, b, 0.85, &w, &p) > 0.5,
             "the tower reaches 85 % up"
         );
         let shipped = type_profile(CLOUDS.cloud_types, kind("cumulus"));
-        assert_eq!(base_shape(b, 0.85, &w, &shipped), 0.0);
+        assert_eq!(base_shape(&CLOUDS.form, b, 0.85, &w, &shipped), 0.0);
         // Between types the profile is mixed: halfway from the puff to the tower.
         let mid = type_profile(WITH_TOWER.cloud_types, 0.75);
         assert!((mid.top[1] - 0.55).abs() < 1e-9);
@@ -3996,5 +4184,304 @@ mod deck_relief_tests {
         assert_eq!(CloudQuality::Low.shadow_octaves(&flat), 0);
         let r = relief(&flat, CloudQuality::Low, 5.0, FaceFrame::A);
         assert!((r.sun_side - r.far_side).abs() < 0.05, "{r:.3?}");
+    }
+}
+
+/// BUGS.md #100: the clouds' shape over a fixture patch, as the march samples it (the CPU twin of
+/// `cloud_layer_march`'s density): each column's cloud top, how steep the tops are, how tall and
+/// how wide the clouds.
+#[cfg(test)]
+mod pyramid_tests {
+    use super::*;
+    use std::sync::LazyLock;
+
+    /// The shipped sizes: the facets' scale depends on the base texture's.
+    static NOISE: LazyLock<ShapeNoise> = LazyLock::new(|| ShapeNoise::bake(&CLOUDS, None));
+    const H: f64 = CLOUDS.volume.top_m - CLOUDS.volume.base_m;
+    /// The patch: SIDE columns STEP m apart, and LEVELS heights up the layer.
+    const SIDE: usize = 128;
+    const STEP: f64 = 32.0;
+    const LEVELS: usize = 96;
+    /// The density a cloud's top is drawn at (a visible edge).
+    const SEEN: f64 = 0.1;
+
+    struct Patch {
+        /// Each column's top (m over the layer's floor; None: clear) and its type's ceiling (m).
+        tops: Vec<Option<f64>>,
+        ceilings: Vec<f64>,
+        /// Whether the slice just over the layer's floor has cloud (the clouds' footprints).
+        bases: Vec<bool>,
+    }
+
+    /// The slice the footprints are read at (share of the layer: over every type's base fade-in).
+    const BASE_Y: f64 = 0.05;
+
+    /// The patch whose corner is noise point `q0` (cells).
+    fn patch(t: &CloudTunables, q0: [f64; 2]) -> Patch {
+        let mut tops = Vec::with_capacity(SIDE * SIDE);
+        let mut ceilings = Vec::with_capacity(SIDE * SIDE);
+        let mut bases = Vec::with_capacity(SIDE * SIDE);
+        for j in 0..SIDE {
+            for i in 0..SIDE {
+                let (x, z) = (i as f64 * STEP, j as f64 * STEP);
+                let q = [q0[0] + x / t.shape.scale_m, q0[1] + z / t.shape.scale_m];
+                let w = column_weather(t, q, [0.0, 0.0], t.shape.coverage);
+                ceilings.push(type_profile(t.cloud_types, w.kind).top[1] * H);
+                let (ax, az) = (q[0] * t.shape.scale_m, q[1] * t.shape.scale_m);
+                let top = (1..LEVELS).rev().find_map(|l| {
+                    let y = l as f64 / LEVELS as f64;
+                    let h = t.volume.base_m + y * H;
+                    let d = NOISE.density(t, shape_point(t, ax, h, az), y, &w, [0.0, 0.0], true);
+                    (d > SEEN).then_some(y * H)
+                });
+                tops.push(top);
+                let h = t.volume.base_m + BASE_Y * H;
+                let d = NOISE.density(t, shape_point(t, ax, h, az), BASE_Y, &w, [0.0, 0.0], true);
+                bases.push(d > SEEN);
+            }
+        }
+        Patch {
+            tops,
+            ceilings,
+            bases,
+        }
+    }
+
+    fn median(mut v: Vec<f64>) -> f64 {
+        v.sort_by(f64::total_cmp);
+        v[v.len() / 2]
+    }
+
+    /// The median rise per metre across the cloud tops (central differences where a column and
+    /// its four neighbours all have cloud).
+    fn top_slope(p: &Patch) -> f64 {
+        let at = |i: usize, j: usize| p.tops[j * SIDE + i];
+        let mut s = Vec::new();
+        for j in 1..SIDE - 1 {
+            for i in 1..SIDE - 1 {
+                if let (Some(_), Some(l), Some(r), Some(d), Some(u)) = (
+                    at(i, j),
+                    at(i - 1, j),
+                    at(i + 1, j),
+                    at(i, j - 1),
+                    at(i, j + 1),
+                ) {
+                    let gx = (r - l) / (2.0 * STEP);
+                    let gz = (u - d) / (2.0 * STEP);
+                    s.push((gx * gx + gz * gz).sqrt());
+                }
+            }
+        }
+        assert!(s.len() > 200, "the patch has clouds: {} columns", s.len());
+        median(s)
+    }
+
+    /// The clouds' footprints (4-connected cloudy columns of `cloudy`): each one's equivalent
+    /// diameter (m), once per column it covers, so the median is the size of the cloud a cloudy
+    /// column is in.
+    fn footprints(cloudy: &[bool]) -> Vec<f64> {
+        let mut seen = vec![false; cloudy.len()];
+        let mut out = Vec::new();
+        for start in 0..cloudy.len() {
+            if seen[start] || !cloudy[start] {
+                continue;
+            }
+            let mut stack = vec![start];
+            seen[start] = true;
+            let mut n = 0usize;
+            while let Some(c) = stack.pop() {
+                n += 1;
+                let (i, j) = (c % SIDE, c / SIDE);
+                let mut push = |k: usize| {
+                    if !seen[k] && cloudy[k] {
+                        seen[k] = true;
+                        stack.push(k);
+                    }
+                };
+                if i > 0 {
+                    push(c - 1);
+                }
+                if i + 1 < SIDE {
+                    push(c + 1);
+                }
+                if j > 0 {
+                    push(c - SIDE);
+                }
+                if j + 1 < SIDE {
+                    push(c + SIDE);
+                }
+            }
+            let d = 2.0 * (n as f64 * STEP * STEP / std::f64::consts::PI).sqrt();
+            out.extend(std::iter::repeat_n(d, n));
+        }
+        out
+    }
+
+    fn check(q0: [f64; 2]) {
+        let p = patch(&CLOUDS, q0);
+        let slope = top_slope(&p);
+        let union: Vec<bool> = p.tops.iter().map(Option::is_some).collect();
+        let size = median(footprints(&union));
+        let base = median(footprints(&p.bases));
+        let tallest = p.tops.iter().flatten().copied().fold(0.0, f64::max);
+        let share = p.tops.iter().flatten().count() as f64 / p.tops.len() as f64;
+        eprintln!(
+            "q0 {q0:?}: median top slope {slope:.2}, median footprint {size:.0} m (base slice {base:.0} m), tallest {tallest:.0} m, cloudy {share:.2}"
+        );
+        // The pyramids: each cloud a heightfield of the deck's 2D noise, its core towering (main
+        // measured a median rise of ~7 m per metre across). Real cumulus are about as wide as
+        // tall: the tops' median slope stays under 2.
+        assert!(slope < 2.0, "median cloud-top slope {slope:.2} (pyramids)");
+        // No cloud is taller than its type's profile lets it be (one level's leeway).
+        for (top, ceiling) in p.tops.iter().zip(&p.ceilings) {
+            if let Some(top) = top {
+                assert!(
+                    *top <= ceiling + H / LEVELS as f64,
+                    "{top:.0} m over {ceiling:.0} m"
+                );
+            }
+        }
+        // Single clouds, not a sheet nor specks: footprints (seen from below) in the cumulus band.
+        // Past the percolation point (half the columns cloudy) neighbours touch in projection,
+        // a cluster in a cloudy region: there the clouds' bases are the band's.
+        assert!(size >= 300.0, "median footprint {size:.0} m");
+        if share < 0.5 {
+            assert!(size <= 1500.0, "median footprint {size:.0} m");
+        } else {
+            assert!(base <= 1500.0, "median base footprint {base:.0} m");
+        }
+        assert!((0.1..0.8).contains(&share), "cloudy share {share:.2}");
+    }
+
+    dwell_world::both_faces!(
+        fn the_cloud_tops_are_rounded_not_pyramids(f: FaceFrame) {
+            // The noise point under an eye at the origin of face f (face B's clouds are another
+            // part of the noise), and a second patch farther off.
+            let u = cloud_uniforms(
+                &CLOUDS,
+                f.point([0.0, 100.0, 0.0]),
+                f,
+                0.0,
+                CloudQuality::High,
+                CLOUDS.shape.coverage,
+            );
+            let q0 = [f64::from(u[0][0]), f64::from(u[0][1])];
+            check(q0);
+            check([q0[0] + 37.0, q0[1] + 61.0]);
+        }
+    );
+
+    /// What is left of the view (its transmittance) through each 400 m of cloud (where the density
+    /// is over a twentieth) along rows across the fixture patch, at the view extinction `e`.
+    fn through_400_m(e: f64) -> Vec<f64> {
+        let t = &CLOUDS;
+        let mut out = Vec::new();
+        for y in [0.04, 0.08, 0.12] {
+            let h = t.volume.base_m + y * H;
+            for row in 0..16 {
+                let z = f64::from(row) * 250.0;
+                let (mut inside, mut od) = (0.0, 0.0);
+                for i in 0..1000 {
+                    let x = f64::from(i) * 8.0;
+                    let q = [x / t.shape.scale_m, z / t.shape.scale_m];
+                    let w = column_weather(t, q, [0.0, 0.0], t.shape.coverage);
+                    let d = NOISE.density(t, shape_point(t, x, h, z), y, &w, [0.0, 0.0], true);
+                    if d > 0.05 {
+                        inside += 8.0;
+                        od += d * 8.0;
+                        if inside >= 400.0 {
+                            out.push((-e * od).exp());
+                            (inside, od) = (0.0, 0.0);
+                        }
+                    }
+                }
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn a_cloud_behind_400_m_of_cloud_is_mostly_hidden() {
+        // The owner: clouds hide the ones behind them. At the shipped view extinction 0.015 (down
+        // from 0.03, whose hard shells showed the facets, BUGS.md #100) a cloud behind 400 m of
+        // cloud is at most ~15 % visible in the median.
+        let seen = through_400_m(CLOUDS.volume.extinction);
+        assert!(seen.len() > 20, "{} paths", seen.len());
+        let m = median(seen.clone());
+        eprintln!(
+            "through 400 m of cloud: median {m:.3}, {} paths",
+            seen.len()
+        );
+        assert!(m <= 0.15, "median {m:.3} still visible");
+        // And 0.006 (before #790) let half of it through.
+        assert!(median(through_400_m(0.006)) > 0.3);
+    }
+
+    #[test]
+    fn at_noon_the_shipped_skys_clouds_are_fair_weather_white() {
+        // WORK_QUEUE item 13 (owner: "gloomy and dark like not-quite storm clouds"): each cloudy
+        // column of the fixture patch lit at noon by its own weather (type, cover). Main tied the
+        // type to each cloud's core (typeFromCoverage 0.9), so cores took cumulonimbus's depth,
+        // density and the sky's light dimmed by ~1.5 km of cloud above: dark grey bases. The
+        // shipped sky is fair weather: sunlit tops ≥ 0.8 of the white, bases ≥ 0.45 (the
+        // volume_tests' bar, from the papers' look) in the median.
+        let p = patch(&CLOUDS, [0.0, 0.0]);
+        let (mut tops, mut bases) = (Vec::new(), Vec::new());
+        for j in 0..SIDE {
+            for i in 0..SIDE {
+                if p.tops[j * SIDE + i].is_none() {
+                    continue;
+                }
+                let q = [
+                    i as f64 * STEP / CLOUDS.shape.scale_m,
+                    j as f64 * STEP / CLOUDS.shape.scale_m,
+                ];
+                let w = column_weather(&CLOUDS, q, [0.0, 0.0], CLOUDS.shape.coverage);
+                let (top, base) = super::volume_tests::top_and_base(&CLOUDS, w.kind);
+                tops.push(super::volume_tests::noon_sample(&CLOUDS, &w, top, 0.0));
+                bases.push(super::volume_tests::noon_sample(&CLOUDS, &w, base, 0.5));
+            }
+        }
+        let (top, base) = (median(tops), median(bases));
+        eprintln!("noon: median sunlit top {top:.3}, base {base:.3} of the white");
+        assert!(top >= 0.8, "median sunlit top {top:.3}");
+        assert!(base >= 0.45, "median base {base:.3}: gloomy");
+    }
+
+    #[test]
+    fn the_columns_tile_seamlessly_with_the_wrap() {
+        let wrap = CLOUDS.shape.wrap_m;
+        let cells = wrap / CLOUDS.shape.scale_m;
+        for i in 0..40 {
+            let q = [f64::from(i) * 0.731, f64::from(i) * 1.37 + 3.0];
+            let a = column_weather(&CLOUDS, q, [0.4, 1.1], CLOUDS.shape.coverage);
+            let b = column_weather(
+                &CLOUDS,
+                [q[0] + cells, q[1] - cells],
+                [0.4, 1.1],
+                CLOUDS.shape.coverage,
+            );
+            assert!((a.cover - b.cover).abs() < 1e-9 && (a.kind - b.kind).abs() < 1e-9);
+            let y = 0.1;
+            let h = CLOUDS.volume.base_m + y * H;
+            let m = CLOUDS.shape.scale_m;
+            let da = NOISE.density(
+                &CLOUDS,
+                shape_point(&CLOUDS, q[0] * m, h, q[1] * m),
+                y,
+                &a,
+                [0.0, 0.0],
+                true,
+            );
+            let db = NOISE.density(
+                &CLOUDS,
+                shape_point(&CLOUDS, q[0] * m + wrap, h, q[1] * m - wrap),
+                y,
+                &b,
+                [0.0, 0.0],
+                true,
+            );
+            assert!((da - db).abs() < 1e-9, "{da} {db}");
+        }
     }
 }

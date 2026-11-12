@@ -167,6 +167,7 @@ The server tick (ARCHITECTURE §4.2) runs, for every player, **before** `Physics
 | 9 | `step_horizontal` | `PPCMovementLayerSystem` | Absorb external; on ground steeper than 44° the slide (§6.8); else during a sprint slide the sprint slide (§6.9); else the walking rule on the whole velocity in the platform's frame: on the ground accel/reverse along the input up to the walking speed, friction above it and when nothing is held; in the air input only adds, up to `max(walk speed, |v|)`, and turns a faster body (§6.12); step-up; edge guard |
 | 10 | `step_vertical` | `PPCVerticalLayerSystem` | Gravity; walk-off keeps platform Y; ceiling cancel; launch detection; ground following + snap |
 | 10b | `step_fall` | — (Dwell) | In a waterfall's sheet (`dwell_world::falls::push_at`): drawn down and out, never rising; on the ground carried out (§6.4) |
+| 10c | `step_portal` | — (Dwell) | In the top of a portal's shaft (`VoxelWorld::portals`, `PortalShafts::exit_push`): airborne and rising fast, pushed along the facing so it arcs out of the opening (BIFACIAL_WORLD.md §12.3) |
 | 10a | `step_impact` | — (Dwell) | This tick's hit from the new contacts, the landing and a ceiling cancel: `IMPACTED` (§6.10) |
 | 11 | `step_aggregate` | `PPCAggregateSystem` | `target = exclusive ? layer.velocity : horizontal.contribution + (0, vertical.target_y, 0)`; set the body's linear velocity |
 | 12 | `step_state` | `PPCStateSystem` | Priority: Climbing > Swimming > Flying > Sliding (§6.8, §6.9) > Crouching > Jumping/Falling > Running/Walking/Idle; ◆ moving is the target velocity less the platform's carry (`base_velocity`): still on a moving body is `Idle`, walking against its motion `Walking` (0.50.65) |
@@ -472,6 +473,15 @@ openings), **crouch height 0.9** (fits 1-tall crawlspaces with skin to spare).
   layer's wish velocity has the water's current where the body is added (`VoxelWorld::currents`,
   the same vector face-locally), so an idle swimmer drifts with it and swimming is in the water's
   frame (`a_swimmer_drifts_with_the_current_and_swims_in_the_waters_frame`, both faces).
+- **A portal's exit push** (BIFACIAL_WORLD.md §12.3; owner 2026-11-12: "land beside the hole"):
+  `step_portal`, after `step_fall`, not while climbing, flying, swimming or grounded, asks
+  `VoxelWorld::portals` (`dwell_world::portal_shafts`, filled from the generator and seed by the
+  server and by the client's `Game::set_world`, so the prediction pushes as the server does; nothing
+  new on the wire) whether the body is in a shaft's footprint with its feet within `exit.depth` m
+  under the opening and rising at least `exit.minRise` m/s; then it adds `exit.push` × dt along the
+  face-local facing to the horizontal `external` (kept in the air as momentum, like a fall's push).
+  A jump and a ladder climb are never pushed (`tests/portal_exit.rs`, `tests/portal_crossing.rs`,
+  `tests/predictor.rs`).
 - **Waterfalls** (Phase 53 G6, WATER_SURFACE_GRID.md §2e; owner 2026-11-06: a fall pushes what is in
   it down and out by how much flows, and can't be swum up): `step_fall`, after the vertical layer and
   not while climbing or flying, asks `dwell_world::falls::push_at` (the falls found from the water

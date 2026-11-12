@@ -169,6 +169,18 @@ test("bad entries fail with their path named", () => {
       (d) => (d.sources.lavaVent.color = "steam"),
       /sources\.lavaVent\.color must be a colour/,
     ],
+    [
+      (d) => (d.weather.coverScaleM = 3000),
+      /weather\.coverScaleM must be a whole multiple of shape\.scaleM that divides shape\.wrapM/,
+    ],
+    [
+      (d) => (d.weather.typeScaleM = 3 * d.shape.scaleM),
+      /weather\.typeScaleM must be a whole multiple of shape\.scaleM that divides shape\.wrapM/,
+    ],
+    [
+      (d) => (d.form.baseHigh = d.form.baseLow),
+      /form\.baseHigh must be greater than form\.baseLow/,
+    ],
   ];
   for (const [edit, message] of cases) {
     const d = data();

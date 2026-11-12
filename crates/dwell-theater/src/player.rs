@@ -96,6 +96,7 @@ impl Player {
                     time_of_day: raw.time_of_day,
                     ..Pose::new(p, aim)
                 }
+                .with_up(raw.up)
             }
             (Move::Track { .. }, Some((last, _))) if dt == 0.0 => last,
             _ => raw,
