@@ -309,8 +309,21 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    in the deck's palette; night and sunset tints kept; the light samples reuse the sample's warp (half the old
    cost each). A CPU twin with tests (top brighter than base, deeper darker, phase toward the sun, tier caps from
    data, both faces). Read from the shader: Medium ≤ ~5.3k ALU a texel (was 2.6k), High ≤ 7.6k (was 4.8k).
+   Owner, 2026-11-12: **"a bug with volumetric clouds z fighting against tall terrain like mountains."** (BUGS.md #88)
+   **Fixed (2026-11-12, cloud, CLOUDS.md §8.9):** each texel marches only to the farthest scene pixel under it, keeps
+   that scene span (not the jittered first cloud), and the composite and history weigh texels by it in metres;
+   CPU twin tests (no cloud behind the rock, no flip over the jitter, silhouettes, both faces). Next (local): the look
+   at a mountain in the layer and the pass's timings.
    Next (local): the in-game look side by side with the old deck (sun high, low sun, from above, night) and the
    bench before/after at the §8.3 views; tune by the data.
+   Owner, 2026-11-12, after the lighting rework: **"The clouds have lighting but they don't follow cloud shapes at all,
+   do some research into cloud simulation. They look like white blobs."** Today's density is the 2D deck's coverage
+   cut by height and eroded by 3D value noise, so clouds have no real form. Next (cloud): research the
+   production cloud models (Horizon Zero Dawn / Nubis, Frostbite, Red Dead Redemption 2) into docs/CLOUDS.md and
+   build the shape model: tiling 3D Perlin–Worley base and Worley detail noise baked at load, a weather map
+   (coverage, cloud type, precipitation), height profiles per cloud type (flat-based cumulus with billowing tops,
+   stratus sheets, towering cumulonimbus with anvils), base-shape remapping and edge erosion with curl distortion,
+   wind and shear; within the High-on-M1 budget.
 14. **Tall grass grows and spreads** (owner 2026-11-11: "I want tall grass to steadily grow and spread. It
    should probably have a max depending on climate/biome."). **Built** (ADR 0075 T3c, docs/ECOLOGY.md §10):
    `shared/worldgen/grass.json` (the rule as data: the block, the ground, the decoration whose climate
@@ -368,7 +381,18 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    default and starter worlds unchanged (a decoration no biome of a world lists now stands nowhere in it:
    before, a rock province's columns tried every decoration). q5 (2026-11-11): no new rock blocks
    for now; R5 uses today's blocks (stone, basalt, sandstone, red sandstone, sand, dirt) named in data, so
-   new ones can replace them later.
+   new ones can replace them later. R5 built (2026-11-12): rocks from plate history (`rocks.json`
+   `plateProvinces`: a setting on the face's plate layout → a stack by name, the first rule that holds
+   winning, the noise's provinces elsewhere): arc cones on andesite (shown as basalt), hotspot islands on a
+   shield basalt, collision cores and the subducting ranges' crests on granite over schist (stone), the
+   accreted strip by a trench on the limestone shelf (stone), rift floors and the plates' quiet interiors on
+   sandstone beds (red sandstone); new rocks and stacks only, weight 0 in the noise, so the default and the
+   starter are unchanged. Soils by rock × climate (`vegetation.json` `rockSoils` entries with `celsius` and
+   `moisture`, first that holds): andesite weathers to rocky soil in the cold, sand in the dry, deep loam in
+   warm wet air. Tests: `tests/realistic_rocks.rs` (both faces, seeds 1, 7, 42), `geology` fixture tests
+   (each setting, a rule or a rock's block swapped by data alone), `vegetation` (soil by climate),
+   `gen.test.mjs`. **Not done:** the plates/rock overlay in Chisel and on the in-game big map (§7 q8: a WASM
+   export of the layout and a view in each); moved to R6. Next: R6 (the World option).
 
    Owner, 2026-11-12, on q2 (which latitude bands): **"I think latitude bands are based on orbits right? Orbits
    should be seed determined."** So the climate band is not a list to pick from: the seed sets the world's orbit
@@ -1050,7 +1074,14 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
 
    Owner, 2026-11-12: **"Villagers should be able to hurt players."** A villager's sword strike that connects on a
    player damages them (through the damage rules: a new cause, knockback, the player's raised guard blocks it by the
-   same angle rule); modes without player damage (creative) are unaffected. In progress (cloud).
+   same angle rule); modes without player damage (creative) are unaffected. **Built (cloud, 2026-11-12):** an
+   NPC's blow past the player's block (glanced or connected) takes the weapon's `damage` through the damage
+   rules, a new cause `Weapon` (6; `Fall` to a client whose `CausesHello` doesn't name it, as `Burn`), and
+   pushes the player by the weapon's new `knockbackMps`/`liftMps` (shared/tools); a block recoils the NPC
+   unhurt; creative neither hurts nor pushes; the clash goes to clients as before. Tests (both faces,
+   `tests/weapons.rs`): an unguarded hit hurts and pushes, a raised guard across the blade blocks, creative
+   takes none, an older client hears `Fall`. Not yet: the client's own hurt look for a weapon (it shows the
+   generic damage flash), wolves biting players.
 39. **Livelier animals** (owner 2026-11-12, after the video had no chase or fleeing — on day one every pack is
    kilometres from any herd and players can't scare deer): chose **deer flee from players** (they notice a player
    within a distance by data, closer when crouching, and run off; wolves keep their distance unless hungry),
@@ -1442,6 +1473,11 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
   the in-game editor and a biome choice in the New world form.
 
 ## Future (needs owner answers)
+
+- **Geography presets for Realistic worlds** (owner 2026-11-12: "Let's hold that for a possible future feature."):
+  Mixed (today), Archipelago (oceanic plates only plus more hotspots: Hawaii-style chains and Japan-style arcs),
+  Continental (mostly continental plates); plate counts scaling with world size so big worlds get real continents.
+  Today every seed has at least one oceanic and one continental plate (plates.json `kinds.min`).
 
 - **A looser body in the chops** (owner 2026-11-12: "We can save loosening the stiff body for later"): the
   hips and legs turning into a level chop seen from behind, not the chest alone.

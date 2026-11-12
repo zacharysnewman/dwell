@@ -471,8 +471,9 @@ export function validateVegetation(data) {
 export function vegetationRust(data) {
   const rs = [`// ${vegetationHeader}`, ""];
   const types = data.soilTypes.map((t) => t.name);
+  const range = (v, lo, hi) => `[${(v ?? [lo, hi]).map(rf).join(", ")}]`;
   const soil = (s, rock) =>
-    `RockSoil { rock: ${JSON.stringify(rock)}, depth: ${rf(s.depth)}, soil_type: ${types.indexOf(s.type)} }`;
+    `RockSoil { rock: ${JSON.stringify(rock)}, depth: ${rf(s.depth)}, soil_type: ${types.indexOf(s.type)}, celsius: ${range(s.celsius, -1000, 1000)}, moisture: ${range(s.moisture, -1000, 1000)} }`;
   rs.push("/// The build's soil and vegetation.");
   rs.push("pub const VEGETATION: Vegetation = Vegetation {");
   rs.push(`    zero_c: ${rf(data.climate.zeroC)},`);
@@ -521,7 +522,9 @@ export function rocksRust(data) {
   const rs = [
     `// ${rocksHeader}`,
     "",
-    "use crate::geology::{Erosion, Geology, Jointing, Layer, Rock, Stack};",
+    "use crate::geology::{",
+    "    Erosion, Geology, Jointing, Layer, PlateProvinces, PlateRule, PlateSetting, Rock, Stack,",
+    "};",
     "",
   ];
   const joint = { bedded: "Bedded", vertical: "Vertical", massive: "Massive" };
@@ -577,6 +580,28 @@ export function rocksRust(data) {
   rs.push(`    core_stack: ${JSON.stringify(data.tectonic.core)},`);
   rs.push(`    snow_block: ${JSON.stringify(data.tectonic.snow)},`);
   rs.push(`    ice_block: ${JSON.stringify(data.tectonic.ice)},`);
+  const pp = data.plateProvinces ?? {
+    accretedWidth: 0,
+    coreWidth: 0,
+    rangeCore: [0, 0],
+    riftWidth: 0,
+    basinDistance: 0,
+    rules: [],
+  };
+  const setting = (n) => n[0].toUpperCase() + n.slice(1);
+  rs.push("    plate_provinces: PlateProvinces {");
+  rs.push(`        accreted_width: ${rf(pp.accretedWidth)},`);
+  rs.push(`        core_width: ${rf(pp.coreWidth)},`);
+  rs.push(`        range_core: [${pp.rangeCore.map(rf).join(", ")}],`);
+  rs.push(`        rift_width: ${rf(pp.riftWidth)},`);
+  rs.push(`        basin_distance: ${rf(pp.basinDistance)},`);
+  rs.push("        rules: &[");
+  for (const r of pp.rules)
+    rs.push(
+      `            PlateRule { setting: PlateSetting::${setting(r.setting)}, stack: ${JSON.stringify(r.stack)} },`,
+    );
+  rs.push("        ],");
+  rs.push("    },");
   rs.push("};");
   rs.push("");
   return rs.join("\n");

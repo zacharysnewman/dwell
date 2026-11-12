@@ -3277,7 +3277,8 @@ by speed (`dwell-client` `creatures.rs`).
 
 **Weapons [built: the server and the data; WORK_QUEUE item 35].** A tool of kind `weapon`
 (`shared/tools/tools.json`; the sword, `dwell:sword`) has no cutting fields and a `weapon`: `damage`,
-`knockbackM`, `maxTargets`, `durability` (merged into the tools' `durability` table) and `guard`, its
+`knockbackM`, `knockbackMps` and `liftMps` (the push a connecting NPC strike gives a player, m/s away
+along the ground and up; item 38), `maxTargets`, `durability` (merged into the tools' `durability` table) and `guard`, its
 swordplay (owner, 2026-11-12, the Wii Resort model: "you can only hold the sword vertical or
 horizontal, and you can choose to block or not. Attacking drops block, if you hit enemy sword within an
 angle threshold of perpendicular you're blocked, if within an angle of parallel it connects"): each
@@ -3324,8 +3325,14 @@ blade is coming, lowers it otherwise, swings back while the player recovers with
 once its `cooldownS` is over, and gives up `giveUpS` after the last strike; its guard changes go to the
 capable clients. Its blow lands at its swing's middle, against the player's raised block when the
 player faces it (the weapon's `frontDeg`): blocked (the NPC recoils), glanced or connected — sent as a
-clash, and **never hurting the player** (only animals and NPCs can be struck; whether NPCs may hurt
-players is the owner's open question; `Server::npc_strikes`). Not yet: slash clips of its own
+clash. **An NPC's strike hurts the player** (WORK_QUEUE item 38; owner, 2026-11-12: "Villagers should
+be able to hurt players."): past the block (glanced or connected) it takes the weapon's `damage` (a
+glance its `glanceDamage` share, rounded) through the server's `damage`, cause `Weapon` (6; sent as
+`Fall` to a client that never said it knows `Weapon`, as `Burn`), and pushes the player
+(`Server::knockback`, a `Knockback` event) `knockbackMps` away from the NPC along the ground and
+`liftMps` up, through the face's frame; a mode without the `damage` ability (creative) is neither hurt
+nor pushed, the clash still sent (`Server::npc_hit`; `Server::npc_strikes` logs each blow's outcome and
+health taken). Players never strike players. Not yet: slash clips of its own
 (CHARACTERS.md §5), the raised poses' clips and others' raised swords drawn (local). An NPC whose `npc.held` is a weapon holds it as its guard (its stance, lowered) from its spawn, and a strike on an NPC also calls its `fightBack` hook (`Creatures::attacked`); the villager has health (`health` 40, no drops).
 
 **NPCs [in progress: data, server and client logic built; the colours and held item in the renderer to
@@ -3818,7 +3825,8 @@ cells and cleared to air where the lava has gone; a `Rock` event's rows become t
 takes `steamWaterM` off the top of that column's water and is queued for the clients
 (`take_lava_steam`; not on the wire yet). A player whose feet are in lava burns (`Burn` per session,
 reset at death) through the server's `damage` (none in creative), cause `Burn` (5), sent as `Fall` to a
-client that never said it knows `Burn` (`CausesHello`, on the wire below). Saved with the world
+client that never said it knows `Burn` (`CausesHello`, on the wire below). An NPC's sword strike is
+cause `Weapon` (6; "Weapons"). Saved with the world
 as one record in an optional `lava` table (`Lava::to_bytes`: each field's face and `record_of`),
 written only when the world has lava; a record this build can't read is kept, not written over.
 
@@ -4501,7 +4509,7 @@ S→C  Vitals      0x5C, datagram with each snapshot while the mode has stamina 
 
 **Damage causes: `CausesHello` (reliable) [built, slice 3]** (VOLCANOES.md §6.2). A client sends
 `CausesHello` only to a server whose `Inventory` has `inventory_flags::CAUSES` (32): the last damage
-cause it knows (`DamageCause::MAX` as built). The server sends a cause past it (from `Burn`, 5) to that
+cause it knows (`DamageCause::MAX` as built). The server sends a cause past it (from `Burn`, 5; `Weapon`, 6) to that
 client as `Fall`, as it does `Drown` to a client without `VitalsHello`; a later cause needs no new hello.
 ```
 C→S  CausesHello 0x64, control: u8 the last DamageCause this client knows

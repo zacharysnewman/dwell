@@ -7,7 +7,8 @@ Realistic test world (`shared/worldgen/worlds/realistic.json`, `?worldgen=test:r
 world form); the default and the starter are unchanged. R3 built (2026-11-12): the climate from latitude, wind
 and terrain (`shared/worldgen/climate.json`, `dwell-worldgen` `climate.rs`) in the Realistic world, its rain
 feeding the rivers' discharge. R4 built (2026-11-12): biomes chosen by climate alone, the presets' `where` in
-°C and annual rain (mm), the Realistic world listing every preset unchanged. §8 (2026-11-12, design only):
+°C and annual rain (mm), the Realistic world listing every preset unchanged. R5 built (2026-11-12): rocks from
+plate history (`rocks.json` `plateProvinces`) and soils by rock × climate (`vegetation.json` `rockSoils`). §8 (2026-11-12, design only):
 orbits by seed set the latitude band, the sky and later seasons, in place of R3's picked band.
 
 ## 1. The owner's direction
@@ -411,6 +412,48 @@ debug views go (an overlay and sliders), since it already runs the generator's W
   replace them by data later), soils by rock × climate. Chisel: the rock overlay by setting. *Exit:* cones sit on
   volcanic stacks, collision cores on the core stack, basins on sandstone, accreted strips on their stack
   (tests by fixture; swapping a province's block by data alone changes it); soil type changes with climate on one rock; goldens unchanged.
+  **Built (2026-11-12):** `rocks.json` `plateProvinces` (checked by `biomes.mjs` `validateRocks`, a bad entry
+  failing with its rule named; emitted into `rocks.gen.rs`; read by `config.rs` for Chisel's edits): the
+  settings' widths and `rules`, each a setting → a stack by name, the first rule whose setting holds
+  winning; where none does, the provinces' noise picks as before. The settings are the code's vocabulary
+  (`geology::PlateSetting`, `PlateProvinces::settings` over the face's `PlateTectonics`, the boundary lines
+  of the column's own plate only): `arc` (within 0.85 of an arc cone's radius), `hotspot` (a chain's
+  island), `accreted` (within `accretedWidth` 2.5 km of a subducting boundary on the overriding side: the
+  forearc's scraped-off seafloor), `core` (within `coreWidth` 4.5 km of a collision, or `rangeCore` 2.5–7 km
+  behind a subducting boundary: the range's crest), `rift` (within `riftWidth` 3 km of a divergent
+  boundary), `basin` (over `basinDistance` 12 km from every boundary of the plate) and `default`. The rules:
+  arc → `dwell:arc_volcanics` (a new rock `dwell:andesite`, shown as the basalt block), hotspot →
+  `dwell:hotspot_shield` (`dwell:shield_basalt`, basalt), accreted → `dwell:limestone_shelf` (limestone,
+  stone), core → `dwell:collision_core` (granite over a new `dwell:schist`, stone), rift → `dwell:rift_fill`
+  (sandstone and shale), basin → `dwell:red_beds` (sandstone, red sandstone); no default rule, so the rest
+  keeps the noise's provinces. §7 q5: no new blocks; every rock names its blocks, so an andesite, schist or
+  limestone block replaces one by data. The new stacks have `weight` 0: a stack of weight 0 is never the
+  noise's (`Resolved` keeps the noise's thresholds over the weighted stacks only, so the default and the
+  starter pick exactly as before), and a rock only in stacks of weight 0 takes its block palettes after every
+other palette (`BiomeSet` `rock_palette`), so the existing palettes keep their ids (the starter's pin hashes
+them: red with the new rocks' palettes among the old, green after). `Resolved::with_tectonics` builds the face seed's plates (the world
+  map's) where `tectonics.plates` is 1, so only the Realistic world reads the rules. Soils: a `rockSoils`
+  entry may name `celsius` and `moisture` ranges; a rock's entries are read in order, the first that holds
+  winning, the last without a climate (`validateVegetation` fails an entry after it). Andesite: rocky
+  (0.3 m) at 0 °C and below, sandy (0.6 m, sand) under 0.15 moisture, deep loam (2 m) at 8 °C and more with
+  0.45 moisture or more, else loam (1 m); the shield basalt loam where wet, rocky where dry; schist rocky.
+  The soil depth (T3, the vegetation's) and the soil blocks (T3b, `soilBlocks`) read the climate there
+  only for a rock whose soils name one (the default and starter's rocks don't: their soils unchanged).
+  Tests: `geology::plate_province_tests` (each setting on the two-plate fixtures takes its rule's stack;
+  the build's rules show today's blocks; a rule's stack or a rock's block swapped by data alone changes
+  the province; no rules, the noise's; a weight-0 stack is never the noise's),
+  `vegetation::rock_climate_tests` (andesite's soil type and depth by climate; a climate entry added by
+  data alone), `tests/realistic_rocks.rs` on both faces (seeds 1, 7, 42: every arc cone on the arc's
+  stack, every hotspot island on the shield's, points by the collisions on the core's, by the trenches on
+  the shelf's and in the quiet interiors on the basin's, each met; the noise's provinces elsewhere),
+  `gen.test.mjs` (rules and soil climates by data, bad entries named); default and starter goldens
+  unchanged. *Deviations:* a setting's stack is one name, not a list with weights (the noise inside a
+  province is for later); province edges are sharp (the Realistic world's shaping strength is 0, so the
+  rocks show only through the soils, never as a stepped edge); the rock's blocks show on the ground only
+  where the shaping is on (`shaping.strength` > 0; the Realistic world's is 0, as before). No gravel or
+  pale stone block exists: the rocky soil and stone stand in. **Not done:** the plates and rock overlay in
+  Chisel and on the in-game big map (§7 q8; a WASM export of the layout and the settings and a view in
+  each: not quick); moved to R6.
 - **R6 The World option.** `newWorld` on `realistic.json`; its own golden hashes; the memory check on the
   phone tier (the bench `--touch`, BUGS.md #70's table). *Exit:* create, play and reload a Realistic world
   in the browser; a hash file for it; total at load on the phone page within ~10 % of the starter's.

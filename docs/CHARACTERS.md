@@ -264,7 +264,7 @@ the prop drawn as its model; the poses lean it as the axe's). **Outstanding (loc
 its own (`fp_slash_level`, `fp_slash_vertical` and the bodies', the blade's edge leading, fitted with
 `clip_probe --fit` and pinned by the probe's direction and edge tests, the clip named per tool), once the
 single sword's grip is measured from the FBX (ITEMS.md §1a′); and the block's raised pose (§ ARCHITECTURE.md
-"Weapons": players can't be struck yet, so a player's block is only a look).
+"Weapons": a player's raised block turns an NPC's strike across its blade; one past it hurts).
 
 ### 5.1 Your own body in first person **[built, C1b]**
 
@@ -828,7 +828,8 @@ by default) and a combat hook; the combat AI waits for the sword mechanic.
   (`counter`: the one that blocks that swing, `GuardDef::counter`; `random`), lowered otherwise; while
   the player recovers, within `strikeWithinM` and its `cooldownS` over, it swings back in its stance
   (attacking drops its block) and the server resolves the blow against the player's raised block
-  (blocked recoils the NPC); **an NPC's blow never hurts a player** (open question for the owner). The
+  (blocked recoils the NPC); a blow past the block **hurts the player** (WORK_QUEUE item 38: the weapon's
+  `damage`, cause `Weapon`, a `knockbackMps`/`liftMps` push; none in creative). The
   villager is 4 rows (2 m) tall since round 2: at 2 rows a level slash at eye height passed over it. Each NPC's `variant` is seeded from the world seed and
   its spawn cell; `npc_colours(def, variant)` picks one `to` per part, deterministically.
 - **Wire**: `Creatures` as before, plus, for a client with the `creatures.npcs` capability, its NPCs'
