@@ -569,13 +569,15 @@ fn cuts_are_saved_with_the_world() {
     };
     let mut fx = scene_with(f, cfg(), true, false);
     assert_eq!(fx.server.cut_of(f.cell([3, AT, 0])), Some(before));
-    // A client that says Hello is sent the saved cuts.
+    // A client that says Hello is sent the saved cuts (their depths: the bites go only to one that
+    // said `BitesHello`).
     fx.send(1, Message::Chop(ChopAction::Hello));
     fx.server.step();
+    let same = |k: &dwell_protocol::chopping::Cut| k.notch == before.notch && k.kerf == before.kerf;
     assert!(
-        fx.take(1).iter().any(
-            |(m, _)| matches!(m, Message::Cuts(c) if c.cuts.iter().any(|(_, k)| *k == before))
-        )
+        fx.take(1)
+            .iter()
+            .any(|(m, _)| matches!(m, Message::Cuts(c) if c.cuts.iter().any(|(_, k)| same(k))))
     );
 }
 
@@ -1322,3 +1324,97 @@ dwell_world::both_faces!(
         }
     }
 );
+
+// The axe's bites (WORK_QUEUE item 26): each hit records where it struck across the side, the
+// client carving a head-sized bite there; sent only to a client that said `BitesHello`.
+
+/// A swing at the trunk's −x side in the lower band, struck `z` across it (face-local).
+fn at_trunk_across(fx: &mut Fixture, f: FaceFrame, z: f64) {
+    let y = m_of_row(AT) + 0.12;
+    swing(fx, f, [3, AT, 0], [-1.0, 0.0, 0.0], [3.0, y, z], false);
+}
+
+dwell_world::both_faces!(
+    fn a_hit_records_its_bite_where_it_struck_and_the_fall_is_unchanged(f: FaceFrame) {
+        let mut fx = scene(f, "creative", true);
+        at_trunk_across(&mut fx, f, 0.3);
+        let cut = fx.server.cut_of(f.cell([3, AT, 0])).expect("cut");
+        // Side 0 (−x), the face-locally lower band, 0.3 across (z, a level axis on both faces).
+        let b = cut.bites[0].all();
+        assert_eq!(b.len(), 1, "{cut:?}");
+        assert!(
+            (f64::from(b[0].u) - 0.3).abs() < 1e-6 && b[0].band == 0,
+            "{b:?}"
+        );
+        // The next swing at the same spot lands in the open band, the same place across.
+        at_trunk_across(&mut fx, f, 0.3);
+        let cut = fx.server.cut_of(f.cell([3, AT, 0])).expect("cut");
+        assert_eq!(cut.bites[0].all()[1].band, 1);
+        // Hacking that spot still fells it in the rule's swings (ADR 0067 §2, BUGS.md #75).
+        let mut n = 2;
+        while cell_is(&mut fx, f, [3, AT, 0]) == log(f, "y") && n < 20 {
+            at_trunk_across(&mut fx, f, 0.3);
+            n += 1;
+        }
+        assert_eq!(n, 11, "felled at the eleventh swing");
+    }
+);
+
+#[test]
+fn bites_go_only_to_a_client_that_said_bites_hello_and_are_saved() {
+    // face-a-only: a wire and byte format.
+    let f = FaceFrame::A;
+    let db = WorldDb::in_memory().expect("db");
+    let cfg = || ServerConfig {
+        store: Some(WorldStore::new(db.clone(), false)),
+        ..config(f, "creative")
+    };
+    let before = {
+        let mut fx = scene_with(f, cfg(), true, true);
+        at_trunk_across(&mut fx, f, 0.4);
+        // Without `BitesHello` (an older client): its cuts carry no bites (it can't read them).
+        let cuts: Vec<CutsMessage> = fx
+            .take(1)
+            .into_iter()
+            .filter_map(|(m, _)| match m {
+                Message::Cuts(c) => Some(c),
+                _ => None,
+            })
+            .collect();
+        assert!(!cuts.is_empty() && cuts.iter().all(|c| !c.bites));
+        // Saying it brings all the cuts again with their bites, and every later one has them.
+        fx.server.on_datagram(1, &Message::BitesHello.encode());
+        fx.server.step();
+        let again: Vec<CutsMessage> = fx
+            .take(1)
+            .into_iter()
+            .filter_map(|(m, _)| match m {
+                Message::Cuts(c) => Some(c),
+                _ => None,
+            })
+            .collect();
+        assert!(
+            again
+                .iter()
+                .any(|c| c.bites && c.cuts.iter().any(|(_, k)| k.bites[0].n == 1)),
+            "{again:?}"
+        );
+        at_trunk_across(&mut fx, f, 0.4);
+        assert!(
+            fx.take(1)
+                .iter()
+                .any(|(m, _)| matches!(m, Message::Cuts(c) if c.bites))
+        );
+        let c = fx.server.cut_of(f.cell([3, AT, 0])).expect("cut");
+        fx.server.save_now();
+        fx.server.flush_store();
+        c
+    };
+    assert!(before.has_bites());
+    let fx = scene_with(f, cfg(), true, false);
+    assert_eq!(
+        fx.server.cut_of(f.cell([3, AT, 0])),
+        Some(before),
+        "saved with its bites"
+    );
+}

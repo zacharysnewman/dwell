@@ -495,8 +495,12 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    facets), the bites growing together into the notch as the chop goes on; cracks/splits along the grain from
    the cracks work. Next after item 24 (same code).
    Owner, 2026-11-12: **"Yes axe bites proposal looks good."** (head-sized V bites where each hit lands, joining
-   into the notch; grain cracks around them; felling unchanged at ~11 swings, leaving the V gash). In progress
-   (cloud).
+   into the notch; grain cracks around them; felling unchanged at ~11 swings, leaving the V gash). **Built
+   2026-11-12** (cloud, branch `claude/axe-bites-zzvudx`), waiting on the owner's look in game: each hit records
+   where it struck (`Cut::bites`) and the mesher carves a head-sized V there (`cut.bite.widthM` 0.14), a hit on a
+   bitten spot landing beside it so the bites join into the notch; the wood's `cut.cracks` (`wood` set) round them;
+   felling unchanged (11 swings at one aim, both faces); bites sent after a `BitesHello` and saved, an older cut
+   drawn as before (docs/BLOCK_DAMAGE.md §6.4, ADR 0067 note).
 27. **A felled trunk landing on its chopper flings them (BUGS.md #52)** (the owner's brief, 2026-11-12: fix the
    cause, "we shouldn't be capping player kick like that" (2026-11-08): no cap on the kick; a trunk hitting a
    player at speed must still knock them as physics says). **Built 2026-11-12** (branch `claude/pinch-fling`):

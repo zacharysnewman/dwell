@@ -346,8 +346,10 @@ pub struct Chop2Wood {
     pub wedge_matching: bool,
 }
 
-/// How a wood's cuts are carved into its cell's mesh (`cut` in the data): the notch as a V across
-/// the side, each band's kerf past it as a slit, the faces inside fresh wood.
+/// How a wood's cuts are carved into its cell's mesh (`cut` in the data): each hit a head-sized V
+/// bite where it struck (`bite`), the bites joining into the notch, cracks round them (`cracks`);
+/// a cut with no bites recorded (an older server or save) as the notch across the side and each
+/// band's kerf as a slit. The faces inside are fresh wood.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct CutLook {
     /// The atlas tile of the cut faces (none: the block's end-grain tile).
@@ -358,7 +360,30 @@ pub struct CutLook {
     pub open: f64,
     /// The kerf slits' width along the grain (m).
     pub kerf_width_m: f64,
+    /// The bites each hit carves (WORK_QUEUE item 26).
+    pub bite: BiteLook,
+    /// The crack overlay round the bites (a `shared/textures/cracks.json` set; none: no cracks),
+    /// its stages by the share of the fell (or buck) fraction cut.
+    pub cracks: Option<Cracks>,
 }
+
+/// A wood's bites (`cut.bite` in the data; WORK_QUEUE item 26): each hit carves a V the axe head's
+/// size where it struck, `width_m` across the side (its mouth), its two ends sloping over `ends_m`;
+/// a hit on a spot already bitten (in the same band) lands beside it, its centre `step` × the width
+/// from the other's, so the bites widen and join into the notch.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct BiteLook {
+    pub width_m: f64,
+    pub ends_m: f64,
+    pub step: f64,
+}
+
+/// The defaults of a wood's `cut.bite`.
+pub const BITE_LOOK: BiteLook = BiteLook {
+    width_m: 0.14,
+    ends_m: 0.03,
+    step: 0.6,
+};
 
 /// The chips a swing knocks out of a wood (`chips` in the data).
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -511,6 +536,61 @@ pub fn swing_normal(vertical: bool, look: [f64; 3]) -> [f64; 3] {
     }
 }
 
+/// The most bites a side keeps (later hits deepen the ones there).
+pub const MAX_BITES: usize = 12;
+
+/// Where one hit struck a side (WORK_QUEUE item 26): `u` its centre across the side (0..1 of the
+/// cell along the side's other axis, face-locally up for y, as the bands), `band` the band it cut.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Bite {
+    pub u: f32,
+    pub band: u8,
+}
+
+/// A side's bites, oldest first.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Bites {
+    pub n: u8,
+    pub at: [Bite; MAX_BITES],
+}
+
+impl Bites {
+    pub fn all(&self) -> &[Bite] {
+        &self.at[..usize::from(self.n).min(MAX_BITES)]
+    }
+
+    fn push(&mut self, b: Bite) {
+        if usize::from(self.n) < MAX_BITES {
+            self.at[usize::from(self.n)] = b;
+            self.n += 1;
+        }
+    }
+
+    fn write(&self, w: &mut ByteWriter) {
+        w.u8(self.n.min(MAX_BITES as u8));
+        for b in self.all() {
+            w.f32(b.u);
+            w.u8(b.band);
+        }
+    }
+
+    fn read(r: &mut ByteReader) -> Bites {
+        let n = r.u8();
+        r.check(usize::from(n) <= MAX_BITES);
+        let mut out = Bites::default();
+        for _ in 0..n.min(MAX_BITES as u8) {
+            let u = r.f32();
+            let band = r.u8();
+            r.check((0.0..=1.0).contains(&u) && usize::from(band) < BANDS);
+            out.push(Bite {
+                u,
+                band: band.min(1),
+            });
+        }
+        out
+    }
+}
+
 /// The cut in one wood cell (metres).
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Cut {
@@ -518,6 +598,10 @@ pub struct Cut {
     pub notch: [f32; SIDES],
     /// Each side's band's cut past its notch.
     pub kerf: [[f32; BANDS]; SIDES],
+    /// Where each side was struck (WORK_QUEUE item 26; the look only: the notch and kerfs are the
+    /// cut). Carried apart from the notch and kerfs ([`Cut::write_bites`]): none from an older
+    /// server or save, drawn as before.
+    pub bites: [Bites; SIDES],
 }
 
 impl Cut {
@@ -581,6 +665,64 @@ impl Cut {
             self.kerf[side][1] -= m;
         }
         gain
+    }
+
+    /// Whether any side records where it was struck (else it is drawn as before bites).
+    pub fn has_bites(&self) -> bool {
+        self.bites.iter().any(|b| b.n > 0)
+    }
+
+    /// Records a hit on `side` in band `band` aimed at `u` across the side (0..1, [`Bite::u`]):
+    /// a bite `look.width_m` wide centred there, or, where a bite in that band already lies
+    /// closer than `look.step` × the width, beside the nearest one in the open wood (the head
+    /// comes in beside the last bite, as [`Cut::open_band`] does along the grain), so hacking
+    /// one spot widens the notch across the side. Kept inside the cell; a side whose band has no
+    /// room left (or [`MAX_BITES`] bites) keeps its bites, which the cut deepens. Returns the
+    /// centre used.
+    pub fn bite(&mut self, grain: usize, side: usize, band: usize, u: f64, look: &BiteLook) -> f64 {
+        let size = extent(across_axes(grain)[1 - side / 2]);
+        let w = (look.width_m / size).clamp(0.01, 1.0);
+        let (lo, hi) = (0.5 * w, (1.0 - 0.5 * w).max(0.5 * w));
+        let step = (look.step * w).max(1e-3);
+        let band = band.min(1) as u8;
+        let mine: Vec<f64> = self.bites[side]
+            .all()
+            .iter()
+            .filter(|b| b.band == band)
+            .map(|b| f64::from(b.u))
+            .collect();
+        let free = |c: f64| mine.iter().all(|&m| (m - c).abs() >= step - 1e-6);
+        let aimed = u.clamp(lo, hi);
+        let mut cands = vec![aimed];
+        for &m in &mine {
+            cands.extend([m - step, m + step]);
+        }
+        let at = cands
+            .into_iter()
+            .filter(|&c| (lo - 1e-9..=hi + 1e-9).contains(&c) && free(c))
+            .min_by(|a, b| (a - aimed).abs().total_cmp(&(b - aimed).abs()));
+        match at {
+            Some(c) => {
+                self.bites[side].push(Bite { u: c as f32, band });
+                c
+            }
+            None => aimed,
+        }
+    }
+
+    /// The bites in the order the cut's sides list them, after the notch and kerfs: each side's
+    /// count and its bites (`u` as f32, the band).
+    pub fn write_bites(&self, w: &mut ByteWriter) {
+        for b in &self.bites {
+            b.write(w);
+        }
+    }
+
+    /// Reads [`Cut::write_bites`] into this cut.
+    pub fn read_bites(&mut self, r: &mut ByteReader) {
+        for b in &mut self.bites {
+            *b = Bites::read(r);
+        }
     }
 
     /// The side holding the notch (the chopping prototype's): the first side cut, a V.
@@ -669,6 +811,9 @@ pub struct Cuts {
 /// The save record's version.
 const CUTS_VERSION: u8 = 1;
 
+/// The mark before the bites' section in a save record and a `Cuts` message.
+pub const BITES_MARK: u8 = 1;
+
 impl Cuts {
     /// The cells in a stable order (saves and messages).
     pub fn sorted(&self) -> Vec<([i32; 3], Cut)> {
@@ -683,11 +828,19 @@ impl Cuts {
         w.u8(CUTS_VERSION);
         let all = self.sorted();
         w.u32(all.len() as u32);
-        for (c, k) in all {
-            for v in c {
+        for (c, k) in &all {
+            for &v in c {
                 w.i32(v);
             }
             k.write(&mut w);
+        }
+        // The bites (WORK_QUEUE item 26), after every cell, in the same order: an older build
+        // can't read the record and keeps it unread; an older record has none (drawn as before).
+        if all.iter().any(|(_, k)| k.has_bites()) {
+            w.u8(BITES_MARK);
+            for (_, k) in &all {
+                k.write_bites(&mut w);
+            }
         }
         out
     }
@@ -698,11 +851,19 @@ impl Cuts {
             return None;
         }
         let n = r.u32() as usize;
-        let mut cells = std::collections::HashMap::new();
+        let mut order = Vec::new();
         for _ in 0..n.min(bytes.len() / 60 + 1) {
             let c = [r.i32(), r.i32(), r.i32()];
-            cells.insert(c, Cut::read(&mut r));
+            order.push((c, Cut::read(&mut r)));
         }
+        if r.ok() && !r.at_end() {
+            let mark = r.u8();
+            r.check(mark == BITES_MARK);
+            for (_, k) in &mut order {
+                k.read_bites(&mut r);
+            }
+        }
+        let cells = order.into_iter().collect();
         (r.ok() && r.at_end()).then_some(Cuts { cells })
     }
 }
@@ -1055,7 +1216,15 @@ mod tests {
             Message::Cuts(CutsMessage {
                 cuts: vec![([4, -80, 12], c)],
                 gone: vec![[1, 2, 3]],
+                bites: false,
             }),
+            // With the bites (WORK_QUEUE item 26; to a client that said `BitesHello`).
+            Message::Cuts(CutsMessage {
+                cuts: vec![([4, -80, 12], bitten()), ([5, -80, 12], c)],
+                gone: vec![[1, 2, 3]],
+                bites: true,
+            }),
+            Message::BitesHello,
             // The swing's path and the held tool (CHOP_SWEEP).
             Message::Chop(ChopAction::Sweep {
                 tool: "dwell:stone_axe".into(),
@@ -1102,5 +1271,84 @@ mod tests {
         let mut v = b.clone();
         v[0] = 9;
         assert_eq!(Cuts::from_bytes(&v), None);
+    }
+
+    /// A cut with bites on two sides (a hit beside another, and one in the other band).
+    fn bitten() -> Cut {
+        let mut c = Cut::default();
+        c.swing(axe(), Y, 0, 0, 1.0);
+        c.bite(Y, 0, 0, 0.5, &BITE_LOOK);
+        c.swing(axe(), Y, 0, 0, 1.0);
+        c.bite(Y, 0, 0, 0.5, &BITE_LOOK);
+        c.swing(axe(), Y, 3, 1, 1.0);
+        c.bite(Y, 3, 1, 0.2, &BITE_LOOK);
+        c
+    }
+
+    /// WORK_QUEUE item 26: each hit records where it struck across the side; a hit on a bitten
+    /// spot in the same band lands beside it, nearest the aim, in the open wood; bites stay in
+    /// the cell and a side keeps at most `MAX_BITES`.
+    #[test]
+    fn a_hit_bites_where_it_struck_or_beside_a_bite_there() {
+        let l = BITE_LOOK;
+        let step = l.step * l.width_m;
+        let mut c = Cut::default();
+        assert!(!c.has_bites());
+        assert!((c.bite(Y, 0, 0, 0.5, &l) - 0.5).abs() < 1e-9);
+        assert!(c.has_bites());
+        // The same spot again: beside it (the nearer of the two sides to a slightly-right aim).
+        assert!((c.bite(Y, 0, 0, 0.52, &l) - (0.5 + step)).abs() < 1e-6);
+        assert!((c.bite(Y, 0, 0, 0.5, &l) - (0.5 - step)).abs() < 1e-6);
+        // The other band: where aimed.
+        assert!((c.bite(Y, 0, 1, 0.5, &l) - 0.5).abs() < 1e-9);
+        // At the cell's edge: kept inside it (the mouth in the cell).
+        assert!((c.bite(Y, 2, 0, 0.0, &l) - 0.5 * l.width_m).abs() < 1e-9);
+        // A lying log's side across y (½ m): the width is a larger share of it.
+        let mut k = Cut::default();
+        assert!((k.bite(0, 2, 0, 0.0, &l) - 0.5 * l.width_m / 0.5).abs() < 1e-9);
+        // Hacking one spot fills the side, then stops adding (the cut deepens them).
+        for _ in 0..40 {
+            c.bite(Y, 1, 0, 0.5, &l);
+        }
+        let n = c.bites[1].all().len();
+        assert!((7..=MAX_BITES).contains(&n), "{n} bites");
+        let mut us: Vec<f64> = c.bites[1].all().iter().map(|b| f64::from(b.u)).collect();
+        us.sort_by(f64::total_cmp);
+        assert!(us.windows(2).all(|w| w[1] - w[0] >= step - 1e-5), "{us:?}");
+        assert!(us[0] >= 0.5 * l.width_m - 1e-6 && us[n - 1] <= 1.0 - 0.5 * l.width_m + 1e-6);
+    }
+
+    /// The bites ride the save record after its cells: read back; a record without them (an
+    /// older build's) loads with none (drawn as before); a bad mark or a truncated one fails.
+    #[test]
+    fn the_cuts_record_keeps_bites_and_an_older_record_loads_without() {
+        let mut cuts = Cuts::default();
+        cuts.cells.insert([1, 2, 3], bitten());
+        let mut plain = Cut::default();
+        plain.swing(axe(), Y, 1, 0, 1.0);
+        cuts.cells.insert([0, 0, 0], plain);
+        let b = cuts.to_bytes();
+        assert_eq!(Cuts::from_bytes(&b), Some(cuts.clone()));
+        assert_eq!(Cuts::from_bytes(&b[..b.len() - 1]), None);
+        // An older record: the same cells and depths, no bites section.
+        let mut older = Cuts::default();
+        for (c, k) in &cuts.cells {
+            older.cells.insert(
+                *c,
+                Cut {
+                    bites: Default::default(),
+                    ..*k
+                },
+            );
+        }
+        let ob = older.to_bytes();
+        assert!(ob.len() < b.len());
+        let read = Cuts::from_bytes(&ob).expect("an older record reads");
+        assert!(read.cells.values().all(|k| !k.has_bites()));
+        assert_eq!(read, older);
+        let mut bad = b.clone();
+        let mark = ob.len();
+        bad[mark] = 7;
+        assert_eq!(Cuts::from_bytes(&bad), None);
     }
 }

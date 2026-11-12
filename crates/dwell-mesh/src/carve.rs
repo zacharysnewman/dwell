@@ -10,6 +10,9 @@
 //! become cells by the axis's size), face-local: the caller hands in a cut with face-local sides.
 
 use dwell_protocol::chopping::{BANDS, Cut, CutLook, SIDES, side_axis};
+
+mod bites;
+pub(crate) use bites::carve_bites;
 use dwell_world::CELL_H;
 
 /// What a carved face is, for its look: the uncut bark of side `s` (its outer plane, trimmed),
@@ -424,6 +427,7 @@ pub(crate) fn mirror_cut(grain: usize, cut: &Cut) -> Cut {
         if side_axis(grain, s) == 1 {
             out.notch[s] = cut.notch[s ^ 1];
             out.kerf[s] = cut.kerf[s ^ 1];
+            out.bites[s] = cut.bites[s ^ 1];
         }
     }
     out

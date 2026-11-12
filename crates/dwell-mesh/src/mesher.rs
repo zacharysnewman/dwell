@@ -1026,6 +1026,8 @@ fn carved_voxel(b: &mut Builder, cells: &Cells<'_>, k: &Kind, cell: [i32; 3], cu
             tint: [255; 3],
             open: 2.5,
             kerf_width_m: 0.035,
+            bite: dwell_protocol::chopping::BITE_LOOK,
+            cracks: None,
         },
         |w| w.cut,
     );
@@ -1038,7 +1040,15 @@ fn carved_voxel(b: &mut Builder, cells: &Cells<'_>, k: &Kind, cell: [i32; 3], cu
     let at = [f64::from(x), f64::from(y), f64::from(z)];
     // An octagonal log's cut is carved inside its octagon (round 2 of the chopping prototype).
     let outline = carve_outline(cells, cell, grain);
-    for f in carve::carve_in(grain, cut, &look, outline.as_deref()) {
+    // Each hit's bite where it struck (WORK_QUEUE item 26); a cut without bites (an older server's
+    // or save's) as before: the notch across the side, the kerfs as slits.
+    let faces = if cut.has_bites() {
+        carve::carve_bites(grain, cut, &look, outline.as_deref())
+    } else {
+        carve::carve_in(grain, cut, &look, outline.as_deref())
+    };
+    let crack = wood.and_then(|w| cut_cracks(w, &look, grain, cut, cell));
+    for f in faces {
         // The side (axis, sign) the face looks out of: a cut face's light comes from there.
         let (axis, sign, shade_axis) = match f.part {
             Part::Bark(s) | Part::Cut(s) | Part::Inner(s) => {
@@ -1080,6 +1090,11 @@ fn carved_voxel(b: &mut Builder, cells: &Cells<'_>, k: &Kind, cell: [i32; 3], cu
             })
             .collect();
         let flood = vec![cells.flood.cell([nx, ny, nz]); f.pts.len()];
+        // The cracks round the bites, over every face drawn (as a damaged block's, §6.3).
+        if crack.is_some() {
+            let n = b.vertex_count() as usize;
+            b.m.cracks.resize(n, 0);
+        }
         let first = b.m.uvs.len();
         b.polygon(
             &f.pts,
@@ -1091,12 +1106,50 @@ fn carved_voxel(b: &mut Builder, cells: &Cells<'_>, k: &Kind, cell: [i32; 3], cu
             None,
             Some((&light, &flood)),
         );
+        if let Some(c) = &crack {
+            let face = face_of(axis, sign);
+            let (pu, pv) = damage_mesh::plane_axes(axis);
+            let m = |p: &[f64; 3], a: usize| p[a] * if a == 1 { CELL_H } else { 1.0 };
+            b.m.cracks
+                .extend(f.pts.iter().map(|p| c.pack(face, [m(p, pu), m(p, pv)])));
+        }
         if tile.turn {
             for uv in b.m.uvs[first..].chunks_exact_mut(2) {
                 uv.swap(0, 1);
             }
         }
     }
+}
+
+/// A bitten wood cell's crack overlay (WORK_QUEUE item 26; the wood's `cut.cracks`): its stage by
+/// the share of the fell fraction (a standing wood) or the buck fraction cut, centred on the deepest
+/// side's newest bite; none for a cut without bites, below the first stage or without cracks.
+fn cut_cracks(
+    wood: &dwell_protocol::chopping::WoodDef,
+    look: &dwell_protocol::chopping::CutLook,
+    grain: usize,
+    cut: &Cut,
+    cell: [i32; 3],
+) -> Option<damage_mesh::CrackLayer> {
+    use dwell_protocol::chopping::side_axis;
+    let cracks = look.cracks.as_ref()?;
+    let through = if grain == 1 {
+        wood.fell_fraction
+    } else {
+        wood.buck_fraction
+    };
+    let fraction = (cut.cross(grain) / through.max(1e-6)).min(1.0);
+    let mut layer = damage_mesh::CrackLayer::of_cracks(cracks, fraction, cell)?;
+    let side = cut.deepest(grain)?;
+    let bite = cut.bites[side].all().last()?;
+    let size = |a: usize| if a == 1 { CELL_H } else { 1.0 };
+    let (a_side, a_u) = (side_axis(grain, side), side_axis(grain, side ^ 2));
+    let mut centre = [0.0; 3];
+    centre[a_side] = if side % 2 == 1 { size(a_side) } else { 0.0 };
+    centre[a_u] = f64::from(bite.u) * size(a_u);
+    centre[grain] = if bite.band == 0 { 0.25 } else { 0.75 } * size(grain);
+    layer.centre = centre;
+    Some(layer)
 }
 
 /// An octagonal log (ADR 0072, `dwell_blocks::octagon`): its prism's faces that nothing covers,
