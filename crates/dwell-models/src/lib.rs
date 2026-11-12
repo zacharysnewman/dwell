@@ -20,7 +20,7 @@ pub use table::{
 };
 
 /// The most colours one body's remap swaps (the skinned shader's `remap` rows).
-pub const MAX_REMAP: usize = 4;
+pub const MAX_REMAP: usize = 6;
 
 /// A palette ramp's base colour (sRGB `0xRRGGBB`), by name: what a model's faces carry (§11.2).
 pub fn ramp_base(name: &str) -> Option<u32> {
@@ -137,6 +137,8 @@ pub struct Grip {
     pub name: &'static str,
     /// (skin joint index, degrees Euler XYZ in the joint's frame).
     pub turns: &'static [(usize, [f32; 3])],
+    /// Metres the whole body is lowered while posed (an idle pose's `$drop`; 0 for a grip).
+    pub drop: f32,
 }
 
 impl ModelData {

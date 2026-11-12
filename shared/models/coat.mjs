@@ -217,3 +217,59 @@ export function applyCoat(bytes, coat, palette) {
   }
   return b;
 }
+
+/**
+ * Checks a model's `repaint` (a part of its mesh given a palette ramp of its own, so a variant can
+ * recolour it alone: the Peasant's hat, painted with its hair's colour in the pack):
+ * `[{ from, to, minY, beyond, above }]`, each vertex coloured with a stop of ramp `from` at least
+ * `minY` up (model units) and either `beyond` out from the up axis or `above` up takes the same stop
+ * of ramp `to`.
+ */
+export function validateRepaint(list, palette, at = "repaint") {
+  if (!Array.isArray(list) || list.length === 0)
+    throw new Error(`${at} is a non-empty list`);
+  list.forEach((r, i) => {
+    const w = `${at}[${i}]`;
+    for (const k of Object.keys(r))
+      if (!["from", "to", "minY", "beyond", "above", "$comment"].includes(k))
+        throw new Error(`${w}: unknown entry ${k}`);
+    for (const k of ["from", "to"])
+      if (typeof palette.ramps[r[k]] !== "object")
+        throw new Error(`${w}.${k}: no palette ramp ${r[k]}`);
+    if (r.from === r.to) throw new Error(`${w}: from and to are the same ramp`);
+    for (const k of ["minY", "beyond", "above"])
+      if (!Number.isFinite(r[k])) throw new Error(`${w}.${k} must be a number`);
+  });
+}
+
+/** The GLB with each `repaint` applied to every mesh's COLOR_0 (a new buffer). Applying it again
+ * changes nothing: the repainted vertices no longer have `from`'s colours. */
+export function applyRepaint(bytes, list, palette) {
+  const { b: src, json, binAt } = chunks(bytes);
+  const b = Buffer.from(src);
+  const stops = (ramp) =>
+    ["shadow", "base", "light"]
+      .filter((k) => typeof palette.ramps[ramp][k] === "string")
+      .map((k) => [k, hexRgb(palette.ramps[ramp][k])]);
+  for (const p of (json.meshes ?? []).flatMap((m) => m.primitives)) {
+    if (p.attributes.COLOR_0 === undefined) continue;
+    const pos = view(b, json, binAt, p.attributes.POSITION);
+    const col = view(b, json, binAt, p.attributes.COLOR_0);
+    for (let i = 0; i < pos.count; i++) {
+      const y = pos.get(i, 1);
+      const r = Math.hypot(pos.get(i, 0), pos.get(i, 2));
+      const s = [0, 1, 2].map((k) => toSrgb(col.get(i, k)));
+      for (const rp of list) {
+        if (y < rp.minY || (r < rp.beyond && y < rp.above)) continue;
+        const hit = stops(rp.from).find(([, c]) =>
+          c.every((v, k) => Math.abs(v - s[k]) < 1.5 / 255),
+        );
+        if (!hit) continue;
+        const to = stops(rp.to).find(([k]) => k === hit[0]) ?? stops(rp.to)[0];
+        for (let k = 0; k < 3; k++) col.set(i, k, toLinear(to[1][k]));
+        break;
+      }
+    }
+  }
+  return b;
+}

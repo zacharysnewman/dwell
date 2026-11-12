@@ -7,7 +7,12 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { applyCoat, validateCoat } from "./coat.mjs";
+import {
+  applyCoat,
+  applyRepaint,
+  validateCoat,
+  validateRepaint,
+} from "./coat.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..", "..");
@@ -229,6 +234,22 @@ export function validate(
         fail(`${at}: remap ${src}: ${e.message}`);
       }
     }
+    if (m.repaint !== undefined) {
+      try {
+        validateRepaint(m.repaint, palette);
+      } catch (e) {
+        fail(`${at}: ${e.message}`);
+      }
+      const bytes = read(path);
+      if (
+        !Buffer.from(applyRepaint(bytes, m.repaint, palette)).equals(
+          Buffer.from(bytes),
+        )
+      )
+        fail(
+          `${at}: ${m.glb} is not repainted: run node shared/models/import.mjs --coat ${name}`,
+        );
+    }
     if (m.coat !== undefined) {
       try {
         validateCoat(m.coat, palette);
@@ -354,16 +375,27 @@ export function validate(
           Array.isArray(joints)
         )
           fail(`${at}: poses: ${pose} is { joint: [x, y, z] }`);
-        const turns = Object.entries(joints).map(([j, r]) => {
-          const k = s.jointNames.indexOf(j);
-          if (k < 0)
-            fail(`${at}: poses: ${pose}: no joint ${j} in ${m.glb}'s skin`);
-          if (!(Array.isArray(r) && r.length === 3 && r.every(Number.isFinite)))
-            fail(`${at}: poses: ${pose}: ${j} is [x, y, z]`);
-          return { joint: k, rot: r };
-        });
+        // `$drop`: metres the whole body is lowered while posed (a sitting or lying animal: turns
+        // alone can't bring its hips or belly down to the ground).
+        const drop = joints.$drop ?? 0;
+        if (!(Number.isFinite(drop) && drop >= 0 && drop <= 2))
+          fail(`${at}: poses: ${pose}: $drop ${drop} is outside [0, 2] metres`);
+        const turns = Object.entries(joints)
+          .filter(([j]) => j !== "$drop")
+          .map(([j, r]) => {
+            const k = s.jointNames.indexOf(j);
+            if (k < 0)
+              fail(`${at}: poses: ${pose}: no joint ${j} in ${m.glb}'s skin`);
+            if (!(
+              Array.isArray(r) &&
+              r.length === 3 &&
+              r.every(Number.isFinite)
+            ))
+              fail(`${at}: poses: ${pose}: ${j} is [x, y, z]`);
+            return { joint: k, rot: r };
+          });
         if (!turns.length) fail(`${at}: poses: ${pose} turns no joint`);
-        poses.push({ name: pose, turns });
+        poses.push({ name: pose, turns, drop });
       }
     }
     const blend = m.poseBlendS ?? 0.5;
@@ -754,13 +786,13 @@ export function rust(data, models, glbRoot) {
     const grips = `&[${m.grips.poses
       .map(
         (g) =>
-          `Grip { name: ${JSON.stringify(g.name)}, turns: &[${g.turns.map((t) => `(${t.joint}, ${v3(t.rot)})`).join(", ")}] }`,
+          `Grip { name: ${JSON.stringify(g.name)}, turns: &[${g.turns.map((t) => `(${t.joint}, ${v3(t.rot)})`).join(", ")}], drop: ${f32(g.drop ?? 0)} }`,
       )
       .join(", ")}]`;
     const poses = `&[${m.poses
       .map(
         (g) =>
-          `Grip { name: ${JSON.stringify(g.name)}, turns: &[${g.turns.map((t) => `(${t.joint}, ${v3(t.rot)})`).join(", ")}] }`,
+          `Grip { name: ${JSON.stringify(g.name)}, turns: &[${g.turns.map((t) => `(${t.joint}, ${v3(t.rot)})`).join(", ")}], drop: ${f32(g.drop ?? 0)} }`,
       )
       .join(", ")}]`;
     const gripItems = `&[${m.grips.items.map(([i, g]) => `(${JSON.stringify(i)}, ${JSON.stringify(g)})`).join(", ")}]`;

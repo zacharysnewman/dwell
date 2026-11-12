@@ -35,7 +35,7 @@ test('the villager is the Peasant, its colours palette ramps (WORK_QUEUE item 38
   assert.equal(v.model, 'peasant');
   assert.deepEqual(
     v.npc.colours.map((c) => c.part),
-    ['shirt', 'trousers', 'skin', 'hair'],
+    ['shirt', 'trousers', 'skin', 'hair', 'hat'],
   );
 });
 

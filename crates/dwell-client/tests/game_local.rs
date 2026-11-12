@@ -3372,3 +3372,67 @@ fn spawn_herd_puts_a_herd_and_a_pack_by_the_player() {
         near(&mut rig, "dwell:wolf")
     );
 }
+
+/// The duel through the game (WORK_QUEUE item 35): a player holding the sword swings at a villager
+/// that fights back. Its block rises in the player's wind-up, the player's level slash across its
+/// upright blade is blocked (a clash), and in the player's recovery it strikes back.
+// face-a-only: the sandbox's face A spawn; the fight is face-local (sim weapons tests run both).
+#[test]
+fn a_sword_swing_through_the_game_meets_a_villagers_block_and_it_strikes_back() {
+    let mut rig = Rig::with_generator(GENERATOR_SANDBOX);
+    assert!(rig.run_until(60 * 30, |r| {
+        r.game
+            .as_ref()
+            .is_some_and(|g| g.debug_state().terrain_ready)
+    }));
+    rig.run_until(60, |_| false);
+    let ids = rig.core.lava_dev("spawnNpcs", &[1.0, 1.8, 0.0]);
+    assert!(ids.contains("[1]") || ids.contains("\"ids\":["), "{ids}");
+    rig.run_until(30, |_| false);
+    assert!(
+        rig.core
+            .lava_dev("npcsFight", &[])
+            .contains("\"fighting\":1")
+    );
+    {
+        let g = rig.game.as_mut().unwrap();
+        g.set_swordplay(true);
+        let i = g
+            .interaction
+            .palette()
+            .iter()
+            .position(|s| s.tool == Some("dwell:sword"))
+            .expect("the sword in the palette");
+        let slot = g.creative.slot();
+        assert!(g.set_creative_slot(slot, i));
+        assert!(g.held_tool().is_some(), "the sword is held");
+    }
+    // The hold reaches the server (and its answer turns sweeping on).
+    rig.run_until(60, |_| false);
+    let raised = |rig: &mut Rig| {
+        rig.core
+            .server()
+            .creatures()
+            .iter()
+            .find_map(|c| c.guard)
+            .is_some_and(|g| g.raised)
+    };
+    assert!(!raised(&mut rig), "lowered before a blade comes");
+    let now = rig.now;
+    rig.game.as_mut().unwrap().edit(EditAction::Break, now);
+    let rose = rig.run_until(20, raised);
+    let strikes = rig.core.server().strikes().to_vec();
+    assert!(
+        rose,
+        "the villager raises its block in the wind-up; strikes {strikes:?}"
+    );
+    rig.run_until(90, |_| false);
+    let strikes = rig.core.server().strikes().to_vec();
+    assert_eq!(
+        strikes.last().and_then(|s| s.clash),
+        Some(dwell_protocol::chopping::Clash::Blocked),
+        "{strikes:?}"
+    );
+    let n = rig.core.server().npc_strikes().to_vec();
+    assert!(!n.is_empty(), "it struck back in the recovery");
+}

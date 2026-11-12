@@ -38,7 +38,8 @@
           { "part": "shirt", "from": "wool_green", "to": ["wool_green", "wool_red", "wool_blue", "wool_yellow", "linen", "canvas"] },
           { "part": "trousers", "from": "flint", "to": ["flint", "leather", "canvas", "wool_blue", "bark"] },
           { "part": "skin", "from": "skin_fair", "to": ["skin_fair", "skin_tan", "skin_brown", "skin_deep"] },
-          { "part": "hair", "from": "hair_brown", "to": ["hair_brown", "hair_black", "hair_ginger", "hair_blonde"] }
+          { "part": "hair", "from": "hair_brown", "to": ["hair_brown", "hair_black", "hair_ginger", "hair_blonde"] },
+          { "part": "hat", "from": "wool_yellow", "to": ["wool_yellow", "leather", "bark", "soil", "flint", "stone"] }
         ]
       }
     }

@@ -770,7 +770,7 @@ impl SkinnedRenderer {
             if mask == 0 && !casts {
                 continue;
             }
-            let place = body_matrix(d, data, eye);
+            let mut place = body_matrix(d, data, eye);
             let blend = self.idle_poses.entry((mesh, d.seed)).or_insert((None, 0.0));
             *blend = blend_pose(*blend, d.idle_pose, dt, data.pose_blend_s);
             let mut local = model_pose(data, model, p, d.rig_pose.as_ref(), d.grip);
@@ -778,6 +778,11 @@ impl SkinnedRenderer {
                 && let Some(turns) = data.pose(name)
             {
                 dwell_models::grip::apply_weighted(model, turns, &mut local, w);
+                // Its `$drop`: the body lowered (in the model's units, under its scale).
+                if turns.drop > 0.0 {
+                    let down = [0.0, -turns.drop * w / data.scale.max(1e-6), 0.0];
+                    place = mm::mul(&place, &mm::trs(down, [0.0, 0.0, 0.0, 1.0], [1.0; 3]));
+                }
             }
             let globals = anim::globals(model, &local);
             hands[n] = hand_frame(data, model, &globals, &place);
