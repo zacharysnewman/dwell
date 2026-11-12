@@ -700,6 +700,19 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    feature's GPU cost on the M1 at High; a Trees group in Settings → Graphics (leaf cards and the rest) and a
    setting for every renderer tier feature (an audit test that none is hidden); cut what's large; reconsider the
    desktop default for M1-class GPUs.
+   **Performance target (owner, 2026-11-12, "you can record this"): "make the game run on most hardware smooth,
+   and pretty, 'most hardware' uses my m1 MacBook Air as the baseline. So while you might be able to eek out some
+   extra graphical fidelity on ultra. I want the core experience to be High on M1 MacBook Air."** Every visual
+   feature is budgeted against High at 60 fps on an M1 Air; extra fidelity goes in Ultra.
+   Owner on the cards and trees: "I think the internal leaf cards may be sucking up a lot of unneeded power and I
+   think the leaf cards on the back sides of trees and farther out trees are rendering which is unnecessary. I
+   also wonder if we should do billboards (maybe from above billboards too, possibly a few different angles so
+   we can switch between them like old Mario kart did with carts, and some trees too)... We're going to want to
+   have dense forests and so we really need to optimize." Plan: (1) measure; (2) cull cards inside the crown
+   (faces whose way out is blocked by more leaves) and on the crown's far side (facing away from the camera),
+   shorten the cards' range; (3) multi-angle impostors for far trees (views around and from above, baked per
+   species/stage/variant, switched by view angle, lit by a baked normal), replacing the far tree meshes, and
+   instancing for dense forests.
 
 ## Done
 
