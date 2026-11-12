@@ -387,6 +387,10 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    following the carve; every tier. Measured: 50 damaged cells +212 triangles a cell (as before), 6.0 ms
    against 2.6 ms undamaged; the terrain vertex 72 → 76 bytes. Left: the owner's look in game (no GPU in the
    cloud); the wood set has no block yet (logs have no `damage.look`).
+   Owner, 2026-11-12: **"The stone hits should be elongated low poly shards stone doesn't dent, it shatters."**
+   So stone gets no dent: each pickaxe hit spalls the face (flat, sharp-edged chip-outs, shallow and elongated,
+   lit as broken rock, not a dark pit) and knocks off elongated low-poly shards (a few per hit, tumbling) as the
+   per-hit pieces; soil keeps its bowl. In progress (cloud).
 19. **Lava glow, remaining** (owner 2026-11-11: "Lava should have bloom glow"; "Lava looks dark red instead of
    bright red/orange"; "It should darken as it solidifies though"). Built 0.52.107: colour by heat stops, heat in
    cells. **Bloom built (pending release, `claude/bloom`):** keyed on the scene's self-lit flag (lava, torches,
