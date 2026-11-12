@@ -477,7 +477,8 @@ depending on climate/biome." Data: `shared/worldgen/grass.json` (`gen.mjs` `vali
   50 %, 75 %, 100 % and seed 0, 10 %, 25 %, 50 % from a sprout to full; the gem chance only at full
   height (full drops exactly as before). **Generation** places each tuft at its column's top stage
   (`grass::generated_tuft`, the decoration's undergrowth factor as the share): the default world (one
-  biome, share 1) is unchanged; a world of several biomes gets shorter grass where it is dry. Full
+  biome, share 1) is unchanged; a world of several biomes gets shorter grass where it is dry (the starter: a
+  change to the terrain its seed generates, re-pinned, for the owner's next line). Full
   height is still one ½ m cell's 0.85; a ~1 m stand needs a two-cell top for the tallest climates
   (later).
 - **The world's switch**: saved in the optional `grass_growth` table (a version byte, the switch, each

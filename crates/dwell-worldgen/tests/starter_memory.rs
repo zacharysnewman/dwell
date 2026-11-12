@@ -88,8 +88,12 @@ fn fnv(h: &mut u64, bytes: &[u8]) {
 /// Re-pinned 2026-11-12 for the old-growth forest (WORK_QUEUE item 32): `preset:old_growth` on the
 /// starter's cool, wet lowland (its old-growth species, the `old_growth` placement and undergrowth); a
 /// change of the starter's terrain, so the owner raises the next line (0.55).
+/// Re-pinned 2026-11-12 for tall grass's growth stages (WORK_QUEUE item 14, docs/ECOLOGY.md §10): the
+/// state ids after `dwell:tall_grass` moved (its `stage` property), and its tufts generate at their
+/// climate's top stage, so the starter's drier biomes grow shorter grass; a change of the starter's
+/// terrain, so it waits on the owner's next line (0.55) with item 32's.
 const STARTER_PIN: [(Face, &str); 2] =
-    [(Face::A, "685a878b62e525b0"), (Face::B, "096e6cf26b398d0f")];
+    [(Face::A, "5ba7fe0c8f7088a1"), (Face::B, "eed13af772c1e10c")];
 
 #[test]
 fn the_starter_worlds_terrain_is_unchanged() {

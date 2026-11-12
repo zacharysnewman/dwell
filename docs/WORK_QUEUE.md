@@ -429,7 +429,9 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    still removes** the tuft (chosen: a player clears grass to build), and it regrows from the roots as a
    sprout; drops by stage through a new drop-rule `when` (more fiber and seed when tall, gems only at full;
    full drops as before); generation places tufts at their climate's top stage (the default one-biome world
-   unchanged). Not yet: a two-cell top for ~1 m grass in the lushest climates; the hide mechanic (Future).
+   unchanged; **the starter's drier biomes generate shorter tufts**, a change to the terrain the starter seed
+   generates: re-pinned, waiting on the owner's 0.55 line with item 32's). Not yet: a two-cell top for ~1 m
+   grass in the lushest climates; the hide mechanic (Future).
 
 15. **Realistic world** (owner 2026-11-11: "The realistic world should come from our systems (which may not be
    properly defined or built yet to support this) the seed should determine tectonic plates, rain shadow,
