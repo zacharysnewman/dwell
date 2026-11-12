@@ -1,7 +1,0 @@
-{
-  "changes": [
-    "Volumetric clouds take real cloud shapes: flat bases, billowing rounded tops, wispy undersides, leaning in the wind.",
-    "Cloud types by weather: thin stratus sheets, stratocumulus, cumulus and the odd towering cumulonimbus with an anvil.",
-    "Clouds no longer look dithered or pixelated when you fly up to them: smoother sampling, steadier frames and more detail near the cloud layer."
-  ]
-}
