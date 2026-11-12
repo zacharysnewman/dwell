@@ -350,6 +350,9 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    faces). An older client never asks and plays `break`; an older server never sends kinds. Tests: the
    server's (hello → the kind, no hello → plain break, red → green), the body's clip (red → green), the
    hello's schedule, wire vectors. Left: a look in game with two clients (no GPU in the cloud).
+   Owner, 2026-11-12: **"Level chop with off screen is fine. We can save loosening the stiff body for later."**
+   The level wind-up stays off the right edge; the body's hip twist moves to Future. Left: the blue sleeve blob at
+   the bottom of the screen mid-swing.
 18. **Digging marks that look carved** (owner 2026-11-11: "the 'chunks' of dirt aren't at all what we
    discussed. It should be like a normal map change (do we support normal/bump maps)? It's completely flat
    should look like mesh deformation (preferably without actually doing it for performance)"; "That part was
@@ -471,6 +474,9 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    hit carves a bite the size of the axe head where it struck (a wedge into the wood, like the dirt bowl and stone
    facets), the bites growing together into the notch as the chop goes on; cracks/splits along the grain from
    the cracks work. Next after item 24 (same code).
+   Owner, 2026-11-12: **"Yes axe bites proposal looks good."** (head-sized V bites where each hit lands, joining
+   into the notch; grain cracks around them; felling unchanged at ~11 swings, leaving the V gash). In progress
+   (cloud).
 27. **A felled trunk landing on its chopper flings them (BUGS.md #52)** (the owner's brief, 2026-11-12: fix the
    cause, "we shouldn't be capping player kick like that" (2026-11-08): no cap on the kick; a trunk hitting a
    player at speed must still knock them as physics says). **Built 2026-11-12** (branch `claude/pinch-fling`):
@@ -683,6 +689,9 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
   the in-game editor and a biome choice in the New world form.
 
 ## Future (needs owner answers)
+
+- **A looser body in the chops** (owner 2026-11-12: "We can save loosening the stiff body for later"): the
+  hips and legs turning into a level chop seen from behind, not the chest alone.
 
 - **Active volcanoes, lava and eruptions** — docs/proposals/VOLCANOES.md (owner 2026-11-11), all 5 questions answered.
   Phase V1 (lava as a fluid) moved into the queue (item 8); the later phases (volcano states, eruptions,
