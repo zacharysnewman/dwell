@@ -589,8 +589,10 @@ mod tests {
     #[test]
     fn every_species_names_its_sapling() {
         // face-a-only: names only.
+        // A species without a sapling (the tall broadleaf) is not planted: it stands only where a
+        // placement does.
         for (i, s) in SPECIES.iter().enumerate() {
-            let p = s.sapling.expect(s.name);
+            let Some(p) = s.sapling else { continue };
             assert_eq!(of_sapling(p.item), Some(i), "{}", s.name);
             assert!(
                 dwell_blocks::find_block(p.item).is_some(),

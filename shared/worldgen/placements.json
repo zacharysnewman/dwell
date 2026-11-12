@@ -1,5 +1,5 @@
 {
-  "$comment": "Structure placements (docs/WORLD_GENERATION.md §2, docs/STRUCTURES.md §8, ADR 0043): committed structures (shared/structures) the terrain generator stands on its ground. One candidate per `grid` cell, at a hashed point in it, kept by the density (inside the grove noise, `groves.outside` of it elsewhere), scaled by the height (`rise`: `low` at height[0], 1 from `full` up), and only where the ground at the anchor is one of `on`, its height (m above sea level) inside `height`, its slope at most `maxSlopeDeg` and, with footprint \"on\", every column under the structure is one of `on` too; of two candidates whose boxes come within `spacing` blocks the one with the lower priority hash is dropped. Each is turned by one of `rotate` and picked from `structures` by weight. `variants` swap blocks of a placed structure by the anchor's height (m above sea level): none at height[0], every one from height[1], a share in between (owner, 2026-10-21: snowy leaves on the pines high up). All decided from the world seed and positions, so chunks agree in any order. A structure name may be a tree species (shared/trees, ADR 0079): the placement stands that species' seeded trees at their drawn stages (`growth.variants`, `growth.wild`), each at the entry's weight; `conifer_groves` (pines) and `palm_coasts` (palms) are listed by the starter world only. A placement stands only where a biome that lists it (biomes `placements`) has weight, by that biome's `trees` density (ADR 0074 B5): `broadleaf_groves` and `boulders` are listed by presets only, so the default world has neither. Prototype content. Run `node shared/worldgen/gen.mjs` after editing; CI fails on stale output.",
+  "$comment": "Structure placements (docs/WORLD_GENERATION.md §2, docs/STRUCTURES.md §8, ADR 0043): committed structures (shared/structures) the terrain generator stands on its ground. One candidate per `grid` cell, at a hashed point in it, kept by the density (inside the grove noise, `groves.outside` of it elsewhere), scaled by the height (`rise`: `low` at height[0], 1 from `full` up), and only where the ground at the anchor is one of `on`, its height (m above sea level) inside `height`, its slope at most `maxSlopeDeg` and, with footprint \"on\", every column under the structure is one of `on` too; of two candidates whose boxes come within `spacing` blocks the one with the lower priority hash is dropped. Each is turned by one of `rotate` and picked from `structures` by weight. `variants` swap blocks of a placed structure by the anchor's height (m above sea level): none at height[0], every one from height[1], a share in between (owner, 2026-10-21: snowy leaves on the pines high up). All decided from the world seed and positions, so chunks agree in any order. A structure name may be a tree species (shared/trees, ADR 0079): the placement stands that species' seeded trees at their drawn stages (`growth.variants`, `growth.wild`), each at the entry's weight; `conifer_groves` (pines) and `palm_coasts` (palms) are listed by the starter world only. A placement stands only where a biome that lists it (biomes `placements`) has weight, by that biome's `trees` density (ADR 0074 B5): `broadleaf_groves` and `boulders` are listed by presets only, so the default world has neither. `rainforest_groves` (the tropical rainforest's, REALISTIC_WORLD.md §7 q9) stands the tall broadleaf species with oaks and palms close together (a 5 m grid, no spacing), listed by that preset only. Prototype content. Run `node shared/worldgen/gen.mjs` after editing; CI fails on stale output.",
   "placements": [
     {
       "name": "pine_groves",
@@ -72,6 +72,20 @@
       "height": [1, 2500],
       "maxSlopeDeg": 40,
       "spacing": 2,
+      "rotate": [0, 90, 180, 270]
+    },
+    {
+      "name": "rainforest_groves",
+      "structures": { "dwell:tall_broadleaf": 6, "dwell:oak": 2, "dwell:palm": 2 },
+      "on": ["dwell:grass"],
+      "footprint": "on",
+      "grid": 5,
+      "density": 0.85,
+      "groves": { "wavelength": 128, "coverage": 0.8, "outside": 0.45 },
+      "height": [2, 1100],
+      "rise": { "full": 20, "low": 0.5 },
+      "maxSlopeDeg": 40,
+      "spacing": 0,
       "rotate": [0, 90, 180, 270]
     }
   ]

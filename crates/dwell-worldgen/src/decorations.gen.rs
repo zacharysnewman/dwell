@@ -3,6 +3,7 @@
 use crate::decorations::Decoration;
 
 /// The terrain decorations (shared/worldgen/decorations.json), in their file order.
-pub static DECORATIONS: [Decoration; 1] = [
+pub static DECORATIONS: [Decoration; 2] = [
     Decoration { name: "meadow_grass", block: "dwell:tall_grass", on: &["dwell:grass"], density: 0.65, patch_wavelength: 56, patch_coverage: 0.65, max_slope: 1, min_height: 3, max_height: 1500, on_ramps: true },
+    Decoration { name: "dry_grass", block: "dwell:tall_grass", on: &["dwell:dirt"], density: 0.12, patch_wavelength: 40, patch_coverage: 0.35, max_slope: 1, min_height: 1, max_height: 2500, on_ramps: true },
 ];

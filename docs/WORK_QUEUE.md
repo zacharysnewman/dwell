@@ -333,8 +333,13 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    and the default its goldens; `tests/realistic_biomes.rs` on both faces: no dry biome where the rain is a
    wet coast's or on the main range's wet windward side, no forest above the tree line (−1.5 °C) and tundra
    there, a colder band more boreal/tundra on the same ground. The Chisel overlays moved to R5. Next: R5
-   (geology and materials); q2's bands (R3 offers three, as data), q6, q8 and q9 (R4: presets for the cold
-   desert and tropical rainforest the default now takes) still open. q5 (2026-11-11): no new rock blocks
+   (geology and materials); q2's bands (R3 offers three, as data), q6 and q8 still open. q9 (owner,
+   2026-11-12: "Yes add those biomes") built: `preset:cold_desert` (cold, nearly rainless: dry dirt and sand,
+   sparse dry grass, rocks, no trees, its own snow line) and `preset:tropical_rainforest` (hot, very wet: a
+   new tall broadleaf species, `shared/trees/tall_broadleaf.json`, with oaks and palms close together in
+   `rainforest_groves`, thick undergrowth, dark water) by their °C and rain envelopes, in the Realistic world
+   only; the default's share of its land fell from 21–47 % to under 3 % (REALISTIC_WORLD.md §7 q9); the
+   default and starter worlds unchanged. q5 (2026-11-11): no new rock blocks
    for now; R5 uses today's blocks (stone, basalt, sandstone, red sandstone, sand, dirt) named in data, so
    new ones can replace them later.
 

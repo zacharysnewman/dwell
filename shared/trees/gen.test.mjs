@@ -12,7 +12,7 @@ const fixture = () => JSON.parse(readFileSync(join(here, "fixtures/shrub.json"),
 
 test("the species and the fixture validate", () => {
   const names = loadSpecies(here, blocks).map((s) => s.name);
-  assert.deepEqual(names, ["dwell:oak", "dwell:palm", "dwell:pine"]);
+  assert.deepEqual(names, ["dwell:oak", "dwell:palm", "dwell:pine", "dwell:tall_broadleaf"]);
   assert.equal(loadSpecies(join(here, "fixtures"), blocks)[0].name, "test:shrub");
 });
 
@@ -38,9 +38,10 @@ test("a bad entry fails naming the species and the field", () => {
 
 test("every species names its own sapling, a block of the registry (ADR 0079 S4)", () => {
   const species = loadSpecies(here, blocks);
-  const items = species.map((s) => s.sapling.item);
+  // The tall broadleaf has none (the rainforest's canopy, not planted): every other species its own.
+  const items = species.filter((s) => s.sapling).map((s) => s.sapling.item);
   assert.deepEqual(items, ["dwell:oak_sapling", "dwell:palm_sapling", "dwell:pine_sapling"]);
-  for (const s of species) for (const g of s.sapling.plantOn) assert.ok(blocks.has(g), g);
+  for (const s of species.filter((s) => s.sapling)) for (const g of s.sapling.plantOn) assert.ok(blocks.has(g), g);
   // A species without a sapling is still valid (it is not planted).
   const s = fixture();
   delete s.sapling;
