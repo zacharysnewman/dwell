@@ -1951,7 +1951,15 @@ follow. **The Textures tab (B6, 0.52.42):** the painterly materials and palette 
    candidates whose boxes come within the spacing the lower priority hash is dropped, so a chunk
    decides every tree reaching into it from the cells around it alone (three reaches and the
    spacing; the ground for them is the height field over the chunk and a 15 m margin), in any
-   order. A tree's voxels go over air and replaceable cells only. Today one rule: the owner's two
+   order. A tree's voxels go over air and replaceable cells only. **Trunk pads [built, 0.55; WORK_QUEUE
+   item 44]:** a rule's `pad` (`"trunk"`, the default for a rule of tree species, or `"none"`)
+   levels the ground under each trunk column (the structure's lowest cells, a species tree's foot
+   logs, from its data; no ring) up to the row under the trunk's base with the column's own ground
+   (its surface block on top, its soil under), and makes any ramp there full cells, so a tree on a
+   slope stands flat (`Planter::pad`, `placements::pads_over`; `generate`'s column fill, the LOD's
+   tree levels too). The ground outside the trunk's columns is unchanged; the pads come from the
+   same `trees_in` as the trees, so chunks agree in any order. Generation only: grown and planted
+   trees stand on the ground as it is. Today one rule: the owner's two
    pines in groves on grass, at most 400 m up, more on higher ground, a random quarter turn and a
    60/40 mix ([`WORLD_GENERATION.md`](./WORLD_GENERATION.md) §2). **Per biome [built, 0.52.39,
    ADR 0074 B5]:** a rule stands only where a biome that lists it in `placements` has weight, its

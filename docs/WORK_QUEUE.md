@@ -1815,7 +1815,12 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    owner's pick follow. Options shown (https://claude.ai/artifact/ChMv9xuaABdEGfzRPVLDM9): today floating, A trunk
    reaches down, B level a pad, C flare + small fill. Owner: **"For now let's just do level pad, can just be the the
    tree width, 1m."** — fill the cells under the trunk's footprint only (no ring) up to the trunk's base; a change
-   to the terrain a seed generates, so a new compatibility line (0.55, the owner raises it).
+   to the terrain a seed generates, so a new compatibility line (0.55, the owner raises it). **Built
+   (branch `claude/tree-pads`):** a placement's `pad` ("trunk", the default for tree species, set on
+   the pines' rule; or "none") fills each trunk column (the structure's lowest cells) up to under the
+   base with the column's ground and makes ramps there full; the ground outside the trunk is unchanged,
+   the LOD's tree level the same (`tests/tree_pads.rs`, both faces). Left: the owner raises
+   `package.json` and `line.json` to 0.55 (the goldens and the starter pin are re-recorded here).
 
 45. **Floating trees drift, leaves let water through** (owner 2026-11-12: **"Also, trees they are floating in water should
    never settle, it causes them to block up rivers randomly instead of floating downstream. And leaves also should

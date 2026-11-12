@@ -88,8 +88,10 @@ fn fnv(h: &mut u64, bytes: &[u8]) {
 /// Re-pinned 2026-11-12 for the old-growth forest (WORK_QUEUE item 32): `preset:old_growth` on the
 /// starter's cool, wet lowland (its old-growth species, the `old_growth` placement and undergrowth); a
 /// change of the starter's terrain, so the owner raises the next line (0.55).
+/// Re-pinned 2026-11-12 for the trunk pads (WORK_QUEUE item 44, the 0.55 line): the ground under a
+/// placed tree's trunk levelled to its base, ramps there made full.
 const STARTER_PIN: [(Face, &str); 2] =
-    [(Face::A, "685a878b62e525b0"), (Face::B, "096e6cf26b398d0f")];
+    [(Face::A, "de93f2bec1176846"), (Face::B, "5558e54110d561f5")];
 
 #[test]
 fn the_starter_worlds_terrain_is_unchanged() {
