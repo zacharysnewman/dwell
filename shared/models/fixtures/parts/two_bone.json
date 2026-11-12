@@ -1,0 +1,9 @@
+{
+  "$comment": "The fixture's part map, by data alone (shared/models/parts.mjs): the vertex on the tip joint is the `tip`, the rest the `base`.",
+  "parts": ["tip", "base"],
+  "seed": [
+    { "part": "tip", "joints": ["tip"] },
+    { "part": "base", "y": [-2, 0.5] }
+  ],
+  "vertices": ["2122"]
+}

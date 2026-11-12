@@ -857,13 +857,28 @@ by default) and a combat hook; the combat AI waits for the sword mechanic.
   with the `npcs.swings` capability: its NPC part's pose is 3 (level) or 4 (vertical) while it swings
   (`NPC_STRIKE_POSES`), and the client plays the rig's `chop_level` or `chop_vertical` for it
   (`creatures::npc_role`).
-- **Repaint** (models.json `repaint`, shared/models/coat.mjs `applyRepaint`): one part of a model's
-  mesh is given a palette ramp of its own, so that an NPC colour part can recolour it alone. Each
-  vertex coloured with a stop of `from` at least `minY` up, and either `beyond` out from the up axis or
-  `above` up, takes the same stop of `to`. The Peasant's hat is hair_brown in the pack, so it becomes
-  `wool_yellow`, and the villager's `hat` part recolours it (owner, 2026-11-12: "Hat gets its own
-  colours"). `import.mjs --coat` applies it to the checked-in GLB, with no packs needed, and gen.mjs
-  fails when the GLB isn't repainted.
+- **Part maps** (BUGS.md #96, WORK_QUEUE item 43; `shared/models/parts.mjs`, models.json `parts`): which
+  part each vertex of a model's full mesh (`detail_0`) belongs to, a file a model
+  (`shared/models/parts/peasant.json`: `parts` the names, at most 6; `vertices` one character a vertex,
+  `0` none, `k` the k-th part; `seed` the rules that made the first painting). The vertices are the
+  source of truth; a prototype page will paint them by hand (item 43). `--seed` paints from rules (the
+  vertex's mesh island nearest a point, its colour's nearest palette ramp, its skin weight on joints,
+  its height; the first rule matching wins): the Peasant's hat and hair are islands of their own, the
+  skin (`skin_fair`, `skin_tan`), shirt (`wool_green`, `leaf`) and trousers (`flint`) by colour on the
+  body; the boots, belt and collar are no part and keep their colours. Each lower detail level takes
+  its parts from the full mesh (a triangle votes with its corners and centre, each the part of the
+  nearest full-mesh vertex of its colour). `gen.mjs` checks the file (names, every vertex a known part,
+  as many as the mesh has, every NPC colour part a part of its model) and writes each level's parts
+  into the model's table (`ModelData::parts`, `dwell_models::Parts`). `--render` draws the part map to
+  front, side and back PNGs (a colour a part) for checking it without the game; `--stats` counts the
+  vertices of each part at each level.
+- **Repaint** (models.json `repaint`, shared/models/coat.mjs `applyRepaint`): a part of a model's mesh
+  given a palette ramp of its own: each vertex of `part` coloured with a stop of `from` takes the same
+  stop of `to`. The Peasant's hat is hair_brown in the pack, so it becomes `wool_yellow` (owner,
+  2026-11-12: "Hat gets its own colours"); the hair's fringe, caught by the first repaint (by height,
+  to 0.54.171), takes `hair_brown` back. `import.mjs --coat` applies it to the checked-in GLB with no
+  packs needed (re-seeding the part map if a re-import changed the mesh), and gen.mjs fails when the
+  GLB isn't repainted.
 - **Idle poses' `$drop`** (§11.6, models.json `poses`): metres the whole body is lowered while posed, for
   a sitting or lying animal, since joint turns can't bring the hips down. It is blended in with the
   pose (`Grip::drop`, render/skinned.rs). The wolf's skeleton: `spine.004` is the hips, `spine`…`spine.003`
@@ -874,11 +889,15 @@ by default) and a combat hook; the combat AI waits for the sword mechanic.
   kind's data and variant) and held item; its role is its speed's while moving, else `look` or `sit`
   (the Peasant has neither clip yet, so they play its fallback, idle).
 - **Drawn** (2026-11-12): `render::characters::creature_draw` turns a creature into its skinned draw
-  and what its hand shows. An NPC's colours become a **remap** (`dwell_models::colour_remap`: per
-  part the model ramp's base and the picked ramp's base, by name from `RAMP_BASES`, which
-  `shared/models/gen.mjs` writes from `shared/textures/palette.json`; at most `MAX_REMAP` 4), sent per
-  body in the skinned instance block after the light (`remap` rows); the vertex shader swaps a face
-  whose colour is a pair's base (within 1.5/255) for the other. Its `held` item is drawn as a player's
+  and what its hand shows. An NPC's colours become a **remap by part** (`dwell_models::part_remap`:
+  per part of its model's part map, the model ramp's base and the picked ramp's base, sRGB, by name
+  from `RAMP_BASES`, which `shared/models/gen.mjs` writes from `shared/textures/palette.json`; at most
+  `MAX_REMAP` 6 parts), sent per body in the skinned instance block after the light (`remap` rows, a
+  pair a part). Each vertex carries its part in its colour's alpha byte (`skinned::vertex_bytes`), and
+  the vertex shader gives a remapped part's vertex the new base at its shade of the old (luminance over
+  the old base's; `dwell_models::recolour` mirrors it), so the Peasant's skin_tan neck and the hair's
+  shading follow the variant too. To 0.54.171 the remap matched colours, so whatever shared a
+  ramp with a part took its colour (BUGS.md #96). Its `held` item is drawn as a player's
   is, on the Peasant's `hand.R` (§11.5), in the item's tool's level hold (`sword`), the fist closed
   on it (`grips`). Animals, and NPCs from servers without the NPC part, draw as modelled.
   `an_npc_is_drawn_in_its_variants_colours_with_its_sword_in_its_fist` pins it (both faces).
@@ -887,11 +906,15 @@ by default) and a combat hook; the combat AI waits for the sword mechanic.
   characters rig's clip for its role (`npc_rig_pose`: idle, walk, sprint; a role the rig has no clip
   for, `look` and `sit`, plays idle), looped at a phase of its own, its held item's hold on top, so the
   sword sits in its fist as in a player's.
-- **The remap matches linear colours** (round 2 fix): the GLBs' `COLOR_0` is linear (glTF), so the
-  remap compares the ramp bases through the sRGB curve (`dwell_models::srgb_to_linear`); in sRGB it
-  matched no vertex and every villager drew alike. Seen in game (5 spawned villagers): shirts,
-  trousers and skin vary; the `hair` part's `hair_brown` is mostly the **hat** (its 942 vertices), so
-  hats take hair colours: the part→ramp guess needs the owner's call (a hat part of its own).
+- **The vertices carry sRGB colours** (BUGS.md #96): the GLBs' `COLOR_0` is linear (glTF), and the
+  skinned shader reads its vertex colour as sRGB bytes; to 0.54.171 the linear values went in
+  as they were, so every skinned model drew darker than its palette and the dark ramps near black
+  (a skin_deep villager's face at a sixteenth of its brightness: "jet black"). `vertex_bytes` now
+  encodes them through the sRGB curve (`dwell_models::linear_to_srgb`), so a model draws its palette's
+  colours. `every_villager_variant_draws_its_face_in_its_skin_and_its_hair_in_its_hair` (render/skinned.rs)
+  pins it: at every detail level and 64 variants, the face (the head's front at nose height) draws the
+  variant's skin at its shade and as bright as the ramp, the back of the head its hair, no head vertex
+  is clothes and the hat is only its brim and crown.
 - **Dev**: `__dwell.spawnHerd(kind, size?, offset?)` (a local world) puts a far record of a deer
   herd (`'deer'`) or a wolf pack (`'wolf'`) of `size` head (5) `offset` m (12) along +x from the
   player, fed and rested; the near ecology brings it in as individuals on its next tick, posed by
