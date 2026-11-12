@@ -1,5 +1,10 @@
 {
-  "$comment": "The world's voxel grids (docs/proposals/MOON_WORLD.md): every buildable two-faced disc a world has, each with its own frame (where it sits and how it turns: `rest` is the home world, the grid everything else is placed against; `orbit` follows the sky's moon path, docs/DAY_NIGHT.md), its disc radius (`radiusM`, or `world` for the world's own size, docs/proposals/BIG_MAP.md), its seed (`seedSalt` mixed into the world seed; none keeps the world seed), its surface gravity (`gravityScale` × the home world's), the distance from its centre inside which a flying player is captured into its frame (`captureM`, moving grids only) and the distance past which it is drawn as a far body from its baked maps (`farM`) and its generator by kind (`terrain`: today's home generator, crates/dwell-worldgen TerrainGenerator; `cratered`: the moon rules below). Heights are face-local metres (+y up from the grid's midplane, the same frame as the home terrain's), and each face is generated from its own seed stream like the home world's (bifacial::face_seed). Read by crates/dwell-worldgen/src/grids.rs, which validates every entry with a message. The content is prototype (ARCHITECTURE.md §6.1).",
+  "$comment": "The world's voxel grids (docs/proposals/MOON_WORLD.md): every buildable two-faced disc a world has, each with its own frame (where it sits and how it turns: `rest` is the home world, the grid everything else is placed against; `orbit` follows the sky's moon path, docs/DAY_NIGHT.md), its disc radius (`radiusM`, or `world` for the world's own size, docs/proposals/BIG_MAP.md), its seed (`seedSalt` mixed into the world seed; none keeps the world seed), its surface gravity (`gravityScale` × the home world's), the distance from its centre inside which a flying player is captured into its frame (`captureM`, moving grids only) and the distance past which it is drawn as a far body from its baked maps (`farM`), how high its ground reaches over its midplane (`surfaceM`, far flight's slab) and its generator by kind (`terrain`: today's home generator, crates/dwell-worldgen TerrainGenerator; `cratered`: the moon rules below). Heights are face-local metres (+y up from the grid's midplane, the same frame as the home terrain's), and each face is generated from its own seed stream like the home world's (bifacial::face_seed). Read by crates/dwell-worldgen/src/grids.rs, which validates every entry with a message. The content is prototype (ARCHITECTURE.md §6.1).",
+  "travel": {
+    "$comment": "Travel between the grids (MOON_WORLD.md §7). Far flight: farther than `aboveM` from every grid's slab (its disc, `surfaceM` thick each side of its midplane) a flier goes at least `perS` × that distance m/s, up to `maxMps`, so the moon's ~597 km take about a minute and a half and the speed falls smoothly toward either surface. A player captured inside a grid's `captureM` is released past `captureM` × `releaseFactor`.",
+    "farFlight": { "aboveM": 2000, "perS": 0.12, "maxMps": 20000 },
+    "releaseFactor": 1.1
+  },
   "grids": [
     {
       "name": "dwell:home",
@@ -7,6 +12,7 @@
       "radiusM": "world",
       "gravityScale": 1,
       "farM": 400000,
+      "surfaceM": 2400,
       "generator": { "kind": "terrain" }
     },
     {
@@ -17,6 +23,7 @@
       "gravityScale": 0.1667,
       "captureM": 40000,
       "farM": 150000,
+      "surfaceM": 200,
       "generator": {
         "kind": "cratered",
         "$comment": "Cratered plains over a datum, ridged noise for the ridges, maria as smooth low basins (fewer craters, flatter, darker), and a crater field of size classes, each `perKm2` craters a km² with radii drawn in `radiusM`. Heights never go under `minM` (the grid's floor over its midplane, where overlapping craters would dig through). A crater's profile, by radius R: a floor `depthRatio` × R deep (at most `maxDepthM`) flat over `floorFraction` of R, a bowl up to a rim `rimRatio` × R high (at most `maxRimM`) at R, and ejecta falling off as the cube of the distance out to `reach` × R. `bake.size` is the far-LOD map's texels a side per face.",

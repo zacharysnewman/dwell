@@ -1568,7 +1568,18 @@ player on face B stands upside down in the world.
   `target_hit` with `HOME`), and the controller's face at spawn and the predictor's stand-in frames
   (`HOME`). Not yet: the renderer still draws a body by its (offset, quaternion) pair and the home
   chunks unrotated (a model matrix per grid comes with M-5's LOD per grid), and chunk storage,
-  streaming, colliders and the protocol carry no grid id (M-7). The both-faces check's rule 3 fails
+  streaming and the protocol carry no grid id (M-7's follow-up).
+- **Travel between grids [in progress, M-7 partial, 2026-11-12] ([`proposals/MOON_WORLD.md`](./proposals/MOON_WORLD.md) §7.1).**
+  `dwell-sim` `travel.rs`: a **space per grid** (`GridSpace`: its own `VoxelWorld` generating its
+  chunks from its generator in its local frame, its own `Physics` and `Players`), so the controller
+  and collision run unchanged in each grid's local frame and a player in the moon's space moves with
+  it. The moon's frame at a tick is M-4's orbit (`grid_frame_at`: position, tidally locked axes,
+  velocity and spin). `Travel::update` captures a flier inside a grid's `captureM` and releases it
+  past `captureM × releaseFactor` (`grids.json` `travel`), keeping its world position and velocity
+  (`GridFrame::release` → `capture`), its controller state, the new grid's face and its gravity
+  (`Players::set_gravity_scale`); far from every grid it sets the far-flight speed
+  (`Players::set_far_fly_speed`, `travel.farFlight`). Native and tested only: the server's session
+  loop, chunks and snapshots per grid (the `grid.frames` capability) are the follow-up. The both-faces check's rule 3 fails
   on a world point turned into a grid's space by hand (`inverse * (p − origin)`) outside `grid.rs`
   unless marked `// grid-boundary: <reason>`.
 - **Generation.** `dwell_worldgen::BifacialTerrain` (`bifacial.rs`) holds two `TerrainGenerator`s working

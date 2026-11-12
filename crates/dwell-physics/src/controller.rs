@@ -454,6 +454,25 @@ struct Player {
     touched: Vec<DVec3>,
     /// This tick the ceiling probe stopped the rise: the ceiling is met before its contact.
     ceiling_stop: bool,
+    /// The grid's surface gravity × the config's (MOON_WORLD.md §7: the moon's ⅙):
+    /// [`Players::set_gravity_scale`]. The take-off speeds are kept, so a jump goes 1/scale as high.
+    gravity_scale: f32,
+    /// The far-flight speed (m/s) the server gives a flier far from every grid
+    /// ([`Players::set_far_fly_speed`]): flight is at least this fast. 0 near the ground.
+    far_fly_speed: f32,
+}
+
+impl Player {
+    /// The config under this player's gravity: gravity × the scale, the jump height ÷ it, so the
+    /// take-off speed is the config's (the same bits at scale 1).
+    fn scaled_cfg(&self) -> PlayerControllerConfig {
+        let mut c = self.cfg;
+        if self.gravity_scale != 1.0 {
+            c.body.gravity *= self.gravity_scale;
+            c.jump.height /= self.gravity_scale;
+        }
+        c
+    }
 }
 
 /// Ladder frame: facing axis and plate centre of the ladder in a cell.
@@ -668,6 +687,8 @@ impl Players {
             pre_step: Vec3::ZERO,
             touched: Vec::new(),
             ceiling_stop: false,
+            gravity_scale: 1.0,
+            far_fly_speed: 0.0,
         };
         if handle as usize == self.players.len() {
             self.players.push(Some(p));
@@ -770,6 +791,36 @@ impl Players {
         let body = p.body;
         physics.set_position(body, position);
         physics.set_velocity(body, velocity.as_dvec3());
+    }
+
+    /// Puts the player on the face its body is on (mirroring the layers' vertical state, as a
+    /// midplane crossing does); true when it changed. For a player moved into another grid's space
+    /// (MOON_WORLD.md §7), whose face there is the side of that grid's midplane.
+    pub fn settle_face(&mut self, physics: &Physics, h: PlayerHandle) -> bool {
+        Self::update_face(physics, self.get_mut(h))
+    }
+
+    /// The player's gravity × the config's: its grid's surface gravity (MOON_WORLD.md §7, the
+    /// moon's ⅙). Take-off speeds are kept, so a jump rises 1/scale as high and falls as long.
+    pub fn set_gravity_scale(&mut self, h: PlayerHandle, scale: f32) {
+        assert!(scale > 0.0 && scale.is_finite(), "gravity scale {scale}");
+        self.get_mut(h).gravity_scale = scale;
+    }
+    pub fn gravity_scale(&self, h: PlayerHandle) -> f32 {
+        self.get(h).gravity_scale
+    }
+
+    /// The far-flight speed (m/s, MOON_WORLD.md §7): while flying, the player flies at least this
+    /// fast (0: the slider's speed alone). The server sets it from the distance to the nearest grid.
+    pub fn set_far_fly_speed(&mut self, physics: &mut Physics, h: PlayerHandle, speed: f32) {
+        let speed = speed.max(0.0);
+        if speed > 0.0 {
+            physics.raise_max_linear_velocity(f64::from(speed) * 1.1);
+        }
+        self.get_mut(h).far_fly_speed = speed;
+    }
+    pub fn far_fly_speed(&self, h: PlayerHandle) -> f32 {
+        self.get(h).far_fly_speed
     }
 
     /// Instant velocity change (knockback, explosions): absorbed next tick.
@@ -1707,7 +1758,7 @@ impl Players {
     fn step_swim(&mut self, i: usize, world: &mut VoxelWorld, physics: &mut Physics) {
         let rules = self.vitals;
         let p = self.players[i].as_mut().expect("live");
-        let cfg = p.cfg;
+        let cfg = p.scaled_cfg();
         let position = Self::pos(physics, p);
         let body_velocity = Self::vel(physics, p);
         {
@@ -1874,6 +1925,7 @@ impl Players {
         let cfg = p.cfg;
         let body_velocity = Self::vel(physics, p);
         let position = Self::pos(physics, p);
+        let far = p.far_fly_speed;
         let c = &mut p.c;
         if !c.fly.flying {
             if !c.input.fly {
@@ -1899,7 +1951,8 @@ impl Players {
         }
         // The slider's level sets the speed, the same at every height.
         let base = cfg.fly.speed * if c.input.run { cfg.fly.run_factor } else { 1.0 };
-        let speed = base * fly_speed_factor(c.input.fly_speed);
+        // Far from every grid the server raises it (far flight, MOON_WORLD.md §7).
+        let speed = (base * fly_speed_factor(c.input.fly_speed)).max(far);
         let mut wish = move_direction(&c.input) * speed;
         wish.y = (f32::from(u8::from(c.input.jump)) - f32::from(u8::from(c.input.crouch))) * speed;
         let mut velocity =
@@ -2229,7 +2282,7 @@ impl Players {
     fn step_horizontal(&mut self, i: usize, world: &mut VoxelWorld, physics: &mut Physics) {
         let ring = self.ring;
         let p = self.players[i].as_mut().expect("live");
-        let cfg = p.cfg;
+        let cfg = p.scaled_cfg();
         let m = cfg.movement;
         let grounded = p.c.ground.grounded;
         p.drive_lift = 0.0;
@@ -2412,7 +2465,7 @@ impl Players {
         actual: Vec3,
         last_contribution: Vec3,
     ) {
-        let cfg = p.cfg;
+        let cfg = p.scaled_cfg();
         let s = cfg.sprint_slide;
         let c = &mut p.c;
         let base = flat(c.platform.base_velocity);
@@ -2523,7 +2576,7 @@ impl Players {
     // 9 — PPCVerticalLayerSystem
     fn step_vertical(&mut self, i: usize, _: &mut VoxelWorld, physics: &mut Physics) {
         let p = self.players[i].as_mut().expect("live");
-        let cfg = p.cfg;
+        let cfg = p.scaled_cfg();
         let gravity = -cfg.body.gravity;
         let body_y = Self::vel(physics, p).y;
         let drive_lift = p.drive_lift;

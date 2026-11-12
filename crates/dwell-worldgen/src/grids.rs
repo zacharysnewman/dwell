@@ -55,6 +55,9 @@ pub struct GridDef {
     /// Past this distance (m) from the viewer the grid is drawn as a far body (its baked maps,
     /// MOON_WORLD.md §5), nearer as LOD terrain.
     pub far_m: f64,
+    /// How high its ground reaches over its midplane (m, face-local): the slab far flight measures
+    /// its distance from (MOON_WORLD.md §7).
+    pub surface_m: f64,
     pub generator: GridGenerator,
 }
 
@@ -353,6 +356,7 @@ pub fn parse_grids(text: &str) -> Result<Vec<GridDef>, String> {
             Some(_) => Some(positive(g, "captureM", &at)?),
         };
         let far_m = positive(g, "farM", &at)?;
+        let surface_m = positive(g, "surfaceM", &at)?;
         if frame == GridFrameKind::Rest && capture_m.is_some() {
             return Err(format!(
                 "{at}: the grid at rest captures nobody (no `captureM`)"
@@ -384,6 +388,7 @@ pub fn parse_grids(text: &str) -> Result<Vec<GridDef>, String> {
             gravity_scale,
             capture_m,
             far_m,
+            surface_m,
             generator,
         });
     }
@@ -412,6 +417,56 @@ pub fn grids() -> &'static [GridDef] {
 /// The build's grid named `name` (`dwell:moon`).
 pub fn grid(name: &str) -> Option<&'static GridDef> {
     grids().iter().find(|g| g.name == name)
+}
+
+/// Travel between the grids (`grids.json` `travel`, MOON_WORLD.md §7).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct TravelRules {
+    /// Far flight starts this far (m) from the nearest grid's slab.
+    pub far_above_m: f64,
+    /// Far flight's speed per metre of that distance (1/s): `v = perS × d`.
+    pub far_per_s: f64,
+    /// Far flight's top speed (m/s).
+    pub far_max_mps: f64,
+    /// A captured player is released past `captureM` × this (> 1: hysteresis).
+    pub release_factor: f64,
+}
+
+impl TravelRules {
+    /// The far-flight speed at `d` m from the nearest grid's slab: 0 nearer than `aboveM` (the
+    /// slider's speed alone), else `perS × d` up to the top.
+    pub fn far_speed(&self, d: f64) -> f64 {
+        if d <= self.far_above_m {
+            0.0
+        } else {
+            (self.far_per_s * d).min(self.far_max_mps)
+        }
+    }
+}
+
+/// Parses and validates `grids.json`'s `travel` block.
+pub fn parse_travel(text: &str) -> Result<TravelRules, String> {
+    let v: Value = serde_json::from_str(text).map_err(|e| format!("grids: {e}"))?;
+    let t = v.get("travel").ok_or("grids: no `travel` block")?;
+    let at = "grids `travel`";
+    let far = get(t, "farFlight", at)?;
+    let at_far = "grids `travel.farFlight`";
+    let rules = TravelRules {
+        far_above_m: positive(far, "aboveM", at_far)?,
+        far_per_s: positive(far, "perS", at_far)?,
+        far_max_mps: positive(far, "maxMps", at_far)?,
+        release_factor: positive(t, "releaseFactor", at)?,
+    };
+    if rules.release_factor <= 1.0 {
+        return Err(format!("{at}: `releaseFactor` must be over 1 (hysteresis)"));
+    }
+    Ok(rules)
+}
+
+/// The build's travel rules (`grids.json` `travel`); a bad file panics with its message.
+pub fn travel() -> TravelRules {
+    static T: OnceLock<TravelRules> = OnceLock::new();
+    *T.get_or_init(|| parse_travel(GRIDS_JSON).unwrap_or_else(|e| panic!("{e}")))
 }
 
 /// One crater of the field, face-local (m).

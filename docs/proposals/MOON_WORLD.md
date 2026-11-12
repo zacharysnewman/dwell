@@ -2,7 +2,8 @@
 
 **Status:** proposal, written 2026-11-12 (WORK_QUEUE item 27). Slices **M-1 built** (the grids'
 data, the moon's generator, the far-body bake, the moon spawn search; native, not wired into the
-game), **M-3 built** (the `GridFrame` abstraction, §2.1) and **M-4 built** (the celestial model, §6: logic and tests, not drawn yet). Not architecture until an ADR adopts it; open questions in §12.
+game), **M-3 built** (the `GridFrame` abstraction, §2.1) and **M-4 built** (the celestial model, §6: logic and tests, not drawn yet) and **M-7 partial** (travel
+natively: spaces per grid, capture and release, gravity per grid, far flight; §7.1). Not architecture until an ADR adopts it; open questions in §12.
 
 ## 1. Brief and the owner's answers (2026-11-12)
 
@@ -272,6 +273,48 @@ Proposed: positions as data (`shared/look/sky_bodies.json`, or an `orbit` block 
 - **Precision.** At 597 km an f32 is ~6 cm: everything is drawn camera-relative and simulated in the
   player's grid frame (f64 at the frame change), never in raw world f32.
 
+### 7.1 Travel as built [M-7 partial, 2026-11-12]
+
+`dwell-sim` `travel.rs`, native and tested, not yet held by the server's session loop:
+
+- **A space per grid** (`GridSpace`): the grid's own `VoxelWorld` (chunks from its generator in its
+  local frame, `grid_generator`: the moon's `CrateredTerrain::generate`, chunks off its slab air and
+  never stored), its own `Physics` and `Players`. Positions in a space are grid-local, so the
+  controller runs unchanged on every grid (down toward that grid's midplane by face, both faces
+  through `FaceFrame`), with that grid's chunk colliders. A player in the moon's space is locked to it.
+- **Frames** (`grid_frame_at`): home `GridFrame::HOME`; the moon at `Celestial::moon_position` with
+  `moon_axes` (as a quaternion, `quat_of_axes`), its velocity and spin from the orbit (central
+  differences; a grid point carried one tick lands within 1 cm of the next tick's frame).
+- **Capture and release** (`Travel::update`, before each tick): a **flier** within `captureM` of a
+  grid's centre (its midplane's centre) moves into its space: `release` from the old frame, `capture`
+  into the new, at the same instant; its controller state (`Players::restore`), its face there
+  (`Players::settle_face`, the vertical state mirrored as at a midplane crossing) and the grid's
+  gravity go with it. Past `captureM × releaseFactor` (1.1) it goes back to home the same way.
+- **Gravity per grid**: `Players::set_gravity_scale` (the grid's `gravityScale`): gravity × the
+  scale everywhere the controller applies it, the jump's take-off speed kept, so a jump on the moon
+  rises 6× as high and lasts 6× as long (`dwell-physics` `tests/grid_gravity.rs`; scale 1 the same
+  bits).
+- **Far flight**: `grids.json` `travel.farFlight` (`aboveM` 2000, `perS` 0.12, `maxMps` 20 000):
+  past `aboveM` from every grid's slab (its disc, `surfaceM` each side of its midplane) the server
+  sets `Players::set_far_fly_speed(perS × d)`, which flight takes as its least speed.
+- **The look across** (`look_across`): a face-local look continued onto another grid's face with the
+  same world direction (for the client's view, then rolled upright as at a midplane crossing).
+- **Tests** (`dwell-sim` `tests/travel.rs`): a scripted flight from 300 m over home to the moon's
+  spawn on face A, and round its rim to face B, a landing, a ⅙ g jump (6× the config's height, ±5%),
+  and back to home: one capture and one release, each keeping the world position (≤ 1 cm) and the
+  world velocity (≤ 1 cm/s) at the switch's instant; the trip out takes 90 s to face A (110 s to
+  face B, round the rim), the moon jump 7.44 m (6× home's). After a switch, flight steers relative
+  to the new grid (its wish is a speed in that grid, which moves ~1.8 km/s), so the path turns over
+  the next ticks as a change of heading does; the position never jumps.
+
+**Left for the follow-up (M-7b):** the server holding the spaces per session (`server.rs`), the
+moon's chunks streamed per grid (keyed `(grid, chunk)`, storage per grid), the player's grid id in
+snapshots behind the **`grid.frames`** capability (not in `capabilities.json` yet: a build that
+listed it without sending the id would mislead newer ones), the client drawing a captured player and
+rolling its view to the new down, and the predictor taking the far-flight speed (it predicts the
+slider's speed and is corrected). Tier 1 bodies on the moon fall at the home gravity (their space's
+`Physics` default) until then.
+
 ## 8. Moon spawn, faces A and B [search built, M-1; the choice M-8]
 
 `CrateredTerrain::spawn_point(face)`: a golden-angle spiral from the disc's centre to the first
@@ -307,7 +350,7 @@ starts in the moon's frame with its gravity, and the home world streams in only 
 | **M-4** [built] | The celestial model (§6): the moon's orbit as data, phases from geometry, moonlight by lit share with a night floor; the orbit's phase an optional world setting | `cargo test -p dwell-look --lib celestial` (13 tests, both faces): full when opposite the sun, new when between, lit share monotonic; face A toward home at every phase; both faces' phases equal; the floor kept; the clock and the sun unchanged (golden); `MOON_PHASE` round-trips and is absent by default (`dwell-protocol`) |
 | M-5 | LOD per grid: the moon's LOD terrain inside `farM`, the far body beyond, crossfaded | the moon's LOD from its generator at 150 km; no seam at the switch (screenshot) |
 | M-6 | The home world's bake from its world map (water mask), drawn from far | bake tests on both faces; a screenshot from 600 km |
-| M-7 | Streaming the moon's chunks per grid; far flight; capture and release; gravity per grid; the grid id in snapshots (new line) | a scripted flight home → moon → home with no jump in position (≤ 1 cm) on both of the moon's faces; ⅙ g jump height |
+| M-7 [partial] | Streaming the moon's chunks per grid; far flight; capture and release; gravity per grid; the grid id in snapshots (new line) | a scripted flight home → moon → home with no jump in position (≤ 1 cm) on both of the moon's faces; ⅙ g jump height |
 | M-8 | Moon spawn A and B in the New world form and `?spawn=moon`, `moon-b` | a new world spawned on each face stands on the moon's ground in its frame |
 
 ## 12. Open questions for the owner

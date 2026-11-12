@@ -571,6 +571,15 @@ layer — so a player can rise from the ground to see the whole world (ARCHITECT
   Only the wire format's range holds a position: |x|, |y|, |z| stop at `fly.position_limit`
   (`POS64_LIMIT` − 1 km), the velocity clamped to arrive exactly. Spawning a player raises the
   physics world's velocity limit (Rapier's default is 400 m/s) above the fastest flight speed.
+- **Far flight and gravity per grid** (MOON_WORLD.md §7.1, M-7 partial). `Players::set_far_fly_speed`
+  gives flight a least speed (the server sets it from the distance to every grid's slab, `grids.json`
+  `travel.farFlight`: 0 within 2 km, then 0.12/s × the distance up to 20 km/s), so the moon's ~597 km
+  take about 90 s. `Players::set_gravity_scale` (a grid's `gravityScale`, the moon's ⅙) scales
+  gravity wherever the layers apply it (fall, swim band, slides, the vertical layer) with the jump's
+  take-off speed kept, so a jump rises 1/scale as high (scale 1: the same bits). Neither is on the
+  wire: the predictor predicts the slider's speed and home gravity until M-7's follow-up. A player
+  moved into another grid's space keeps its controller state (`restore`) and takes that grid's face
+  (`settle_face`, the vertical state mirrored as at a midplane crossing).
 - **Leaving flight** hands back to the normal layers with the current velocity, like leaving
   water: the player falls, and a hard landing does impact damage (§6.10). Landing while flying does
   not end flight (the vertical layer, which reports `LANDED`, is skipped), and flight is exempt
