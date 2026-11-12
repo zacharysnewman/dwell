@@ -1445,6 +1445,10 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    v2 review, owner: **"The camera shouldn't flip on the wide shot, show it's upside down."** — the wide shot of the
    player coming out on face B keeps face A's up (the camera never takes face B's frame), so face B and the player
    rising out of its hole read upside down, hanging under the disc. Clouds off in every shot (owner: they "might look
+   v4 review, owner: **"The camera is upside down for the out of the hole shot. I just wanted the not upside down for
+   the initial wide shot so you could tell it was a different side without the disorientation."** — only the
+   initial wide (the crane from face A round under to face B) holds face A's up; the out-of-the-hole shot on face B
+   uses face B's own up (upright, `up: "auto"`).
    weird", confirmed by the v2 comparison).
    **Built 2026-11-12:** a keyframe `up` ("a" | "b" | "auto", default auto) holds a face's up, roll and look frame
    across the midplane (THEATER_MODE.md §3.1; presets and the keyframe editor's Up take it); the next take uses
@@ -1936,6 +1940,21 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    to drop PRs for notes only updates."** Done: the stale CI runs of merged/closed branches cancelled; CI skips
    docs-only changes (`paths-ignore` docs/** and *.md); notes (BUGS/WORK_QUEUE entries) ride along with the next real
    change instead of their own PR (CI already cancels superseded runs per branch).
+
+50. **Fast re-records: one command per video, shots kept until approved** (owner 2026-11-12: "I would guess that would
+   take about 3 minutes to re-record. What are you expecting and why might it be slower currently?" → explained:
+   ~20 min because every shot is re-recorded, an agent drives each step, camera spots found by trial; owner:
+   **"Yeah build thst"**). Keep each finished shot as a compressed clip until the owner approves the video (raw
+   frames still deleted); `take.mjs <video> [--only s5]` records the named shots from the committed plan and paths
+   and re-splices with no agent in the loop; an agent only for new camera spots. Owner (2026-11-12): **build this
+   before the v5 re-record** (v5 was stopped); the bifacial manifest must make shot 5's camera and `up: "auto"` easy to
+   set (only the initial wide holds face A's up; the out-of-the-hole shot is upright in face B's frame).
+   **Built 2026-11-12:** `.claude/skills/record/videos/bifacial/video.json` (v4's shots: s1, s2, the `portal` take with
+   parts s3–s5 and shot 5's `camB`/`fov`/`up` as args, s6) and `take.mjs <video> [--only s5] [--splice-only]
+   [--dry-run]`, `--clean <video>`: records the named, missing and stale shots into a per-shot clip cache (frames
+   encoded and deleted right after capture), reuses the rest, splices with `splice.py`. Tests without a browser
+   (`take.test.mjs`, in CI): the manifest validates, shot selection and the cache, and the generated plan equals v4's
+   hand-written one. Not yet run against the real browser (the first use is the v5 re-record, on the Mac).
 
 ## Future (needs owner answers)
 
