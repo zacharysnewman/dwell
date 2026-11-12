@@ -63,3 +63,23 @@ fn a_2x_world_s_spawn_is_on_its_own_island() {
         "inside the disc"
     );
 }
+
+both_faces!(
+    /// A 10× world (BUGS.md #91: the owner's loaded with sky only) spawns on its own disc, its feet
+    /// in air on solid ground, on each face's generator (face-local).
+    fn a_10x_world_s_spawn_stands_on_its_ground(f: FaceFrame) {
+        let ten = WorldSize::named("10x").expect("a named size");
+        let big = BifacialTerrain::sized(11, ten);
+        let g = big.local(f.face);
+        let s = g.spawn_point();
+        assert!(s.iter().all(|v| v.is_finite()), "a finite spawn: {s:?}");
+        assert!(
+            g.world().inside_disc(s[0] as i64, s[2] as i64),
+            "on the 10× disc: {s:?}"
+        );
+        let (x, z) = (s[0].floor() as i32, s[2].floor() as i32);
+        let row = dwell_world::row_of_m(s[1]);
+        assert!(!g.solid_at(x, row, z), "the feet in air: {s:?}");
+        assert!(g.solid_at(x, row - 1, z), "on solid ground: {s:?}");
+    }
+);

@@ -332,6 +332,16 @@ pub fn encode_job(id: u32, job: &Job) -> Vec<u8> {
             w.u8(6);
             w.bytes(payload);
         }
+        Job::CloudNoise {
+            detail,
+            size,
+            z0,
+            z1,
+        } => {
+            w.u8(8);
+            w.u8(u8::from(*detail));
+            [*size, *z0, *z1].into_iter().for_each(|v| w.u32(v));
+        }
         Job::LodMap {
             face,
             heights,
@@ -470,6 +480,12 @@ pub fn decode_job(bytes: &[u8]) -> Result<(u32, Job), DecodeError> {
             w: r.i32()?,
             h: r.i32()?,
         },
+        8 => Job::CloudNoise {
+            detail: r.u8()? == 1,
+            size: r.u32()?,
+            z0: r.u32()?,
+            z1: r.u32()?,
+        },
         _ => return Err(DecodeError),
     };
     Ok((id, job))
@@ -550,6 +566,10 @@ pub fn encode_output(id: u32, out: &Output) -> Vec<u8> {
                 }
                 None => w.u8(0),
             }
+        }
+        Output::CloudNoise(b) => {
+            w.u8(9);
+            w.bytes(b);
         }
     }
     w.0
@@ -632,6 +652,7 @@ pub fn decode_output(bytes: &[u8]) -> Result<(u32, Output), DecodeError> {
         6 => Output::Failed(String::from_utf8_lossy(&r.bytes()?).into_owned()),
         7 => Output::Done,
         8 => Output::LodMap(if r.u8()? == 1 { Some(r.bytes()?) } else { None }),
+        9 => Output::CloudNoise(r.bytes()?),
         _ => return Err(DecodeError),
     };
     Ok((id, out))
@@ -711,6 +732,12 @@ mod tests {
                 w: 5,
                 h: 2,
             },
+            Job::CloudNoise {
+                detail: true,
+                size: 16,
+                z0: 3,
+                z1: 9,
+            },
         ];
         let mut jobs = jobs.to_vec();
         jobs.push(Job::MeshChunk {
@@ -782,6 +809,11 @@ mod tests {
         assert_eq!(
             decode_output(&encode_output(3, &failed)).unwrap(),
             (3, failed)
+        );
+        let noise = Output::CloudNoise(vec![1, 2, 3, 250]);
+        assert_eq!(
+            decode_output(&encode_output(5, &noise)).unwrap(),
+            (5, noise)
         );
     }
 

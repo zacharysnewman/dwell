@@ -935,16 +935,20 @@ fn card_normal(packed: f32) -> vec3f {
 }
 // BUGS.md #78 (the M1 at High): a leaf card the eye can't see costs no pixels. Dropped when the
 // eye is more than CARD_BACK_CULL_M behind its plane (the crown's far side, facing away; the
-// plane's distance is the same at its four corners, so a card goes whole) or every corner of it is
-// past its fade's end (the margin over its size). `rel` the corner before the wind's sway, `n` the
-// card's normal in the world.
+// plane's distance is the same at its four corners, so a card goes whole). Any plant (a card, a
+// blade of tall grass) is dropped when its corner is past its fade's end by more than its size
+// (2 m: every corner is then past the end, so it goes whole): the forest's edge drew every blade
+// out to the full-detail distance, all discarded in the fragment stage (WORK_QUEUE item 32, the
+// edge's 14 ms of cutout). `rel` the corner before the wind's sway, `n` the card's normal in the
+// world.
 fn card_dropped(rel: vec3f, n: vec3f, plant: vec4f) -> bool {
+    if (plant.w > 0.0 && length(rel) > plant.w + 2.0) {
+        return true;
+    }
     if (plant.y >= 0.0) {
         return false;
     }
-    let behind = dot(n, rel);
-    return (CARD_BACK_CULL_M > 0.0 && behind > CARD_BACK_CULL_M)
-        || (plant.w > 0.0 && length(rel) > plant.w + 2.0);
+    return CARD_BACK_CULL_M > 0.0 && dot(n, rel) > CARD_BACK_CULL_M;
 }
 
 // The wind sways a vertex by its `plant.x` (m): leaning with the gusts, a faster flutter on top.
@@ -1464,16 +1468,17 @@ fn composited(p: vec2i, ndc: vec2f, decks: Decks) -> Composited {
     return s;
 }
 
-// The volume march's per-pixel step offset (interleaved gradient noise), turned each frame (a
-// golden-ratio step over 16 frames) so the accumulation averages the steps' dither away.
+// The volume march's per-pixel step offset: the baked blue-noise tile (dwell_cloud_blue; BUGS.md
+// #90: was interleaved gradient noise), turned each frame (a golden-ratio step over 16 frames) so
+// the accumulation averages the steps' dither away (dwell-look cloud_jitter).
 fn cloud_jitter(p: vec2i, frame_index: u32) -> f32 {
-    let ign = fract(52.9829189 * fract(0.06711056 * f32(p.x) + 0.00583715 * f32(p.y)));
-    return fract(ign + f32(frame_index % 16u) * 0.618034);
+    return fract(dwell_cloud_blue(p) + f32(frame_index % 16u) * 0.618034);
 }
 
 // The volumetric clouds' accumulation (docs/CLOUDS.md §8.6): the last frame's camera (right, up,
 // forward, the half-angle tangents) and params: x the share of the new frame (1: no history),
-// y the frame index, z how far the eye moved since the last frame (m).
+// y the frame index, z how far the eye moved since the last frame (m), w the pass's resolution
+// divisor.
 struct CloudPrev {
     right: vec4f,
     up: vec4f,
@@ -1493,8 +1498,7 @@ struct CloudOut {
 // footprint is the divisor's square: at most CLOUD_DEPTH_TAPS² loads (Medium's ¼: 16).
 fn cloud_scene_span(p: vec2i, ray_len: f32) -> vec2f {
     let full = vec2i(textureDimensions(scene_depth));
-    let low = vec2i(textureDimensions(cloud_dist_history));
-    let k = clamp((full + low - vec2i(1)) / low, vec2i(1), vec2i(CLOUD_DEPTH_TAPS));
+    let k = clamp(vec2i(i32(cloud_prev.params.w)), vec2i(1), vec2i(CLOUD_DEPTH_TAPS));
     var span = vec2f(CLOUD_VOL_MAX_DISTANCE, 0.0);
     for (var y = 0; y < CLOUD_DEPTH_TAPS; y++) {
         if (y >= k.y) {
@@ -1554,13 +1558,11 @@ fn cloud_history_at(uv: vec2f, rec: vec2f) -> CloudHistory {
     return CloudHistory(sum / max(weight, 1e-8), min(weight, 1.0));
 }
 
-// The clouds pass (docs/CLOUDS.md §8.6, §8.9): the volume marched at the tier's reduced resolution,
-// to the farthest scene pixel under the texel (none of its cloud behind its rock; the whole layer
-// where any of it is sky), blended with the last frame's result reprojected by direction (the
-// clouds are far; where they are near, the eye's move over their distance hands over to the new
-// frame) from the history texels whose march ended where this one's does. Colour premultiplied by
-// its cover; beside it the scene's span under the texel (nearest, farthest; m along the ray), which
-// the jitter doesn't move: the composite's depth-aware upsample reads it.
+// The clouds pass (docs/CLOUDS.md §8.6, §8.9, §9): the volume marched at the tier's reduced
+// resolution, to the farthest scene pixel under the texel (none of its cloud behind its rock; the
+// whole layer where any of it is sky): this frame's raw march, premultiplied by its cover, and the
+// scene's span under the texel (nearest, farthest; m along the ray) with the first cloud's distance
+// (z; 65000: none). The resolve (clouds_resolve_fs) puts it together with the history.
 @fragment
 fn clouds_fs(i: SkyOut) -> CloudOut {
     let ray = view_ray(i.ndc);
@@ -1573,8 +1575,40 @@ fn clouds_fs(i: SkyOut) -> CloudOut {
     if (m.first >= 0.0) {
         layer = dwell_cloud_hazed(m, sky(dir), frame.cloud_cfg);
     }
-    let cur = vec4f(layer.rgb * layer.a, layer.a);
     let first = select(65000.0, m.first, m.first >= 0.0);
+    return CloudOut(vec4f(layer.rgb * layer.a, layer.a), vec4f(rec, first, 0.0));
+}
+
+// The clouds' resolve (BUGS.md #90; dwell-look neighbourhood_box, resolve): this frame's raw march
+// at the texel with the last frame's result reprojected by direction (the clouds are far) from the
+// history texels whose march ended where this one's does, clamped into the box of this frame's 3 × 3
+// neighbours whose scene matched (mean ± CLOUD_HISTORY_CLAMP deviations): a moving eye in or near
+// the layer keeps its history, clamped, instead of showing the raw jittered march.
+@fragment
+fn clouds_resolve_fs(i: SkyOut) -> @location(0) vec4f {
+    let ray = view_ray(i.ndc);
+    let dir = normalize(ray);
+    let p = vec2i(i.clip.xy);
+    let size = vec2i(textureDimensions(cloud_raw));
+    let cur = textureLoad(cloud_raw, p, 0);
+    let rec = textureLoad(cloud_dist_now, p, 0).xy;
+    var m1 = vec4f(0.0);
+    var m2 = vec4f(0.0);
+    var n = 0.0;
+    for (var k = 0; k < 9; k++) {
+        let q = clamp(p + vec2i(k % 3 - 1, k / 3 - 1), vec2i(0), size - vec2i(1));
+        if (dwell_cloud_upsample_weight(rec.y, textureLoad(cloud_dist_now, q, 0).xy) < 0.5) {
+            continue;
+        }
+        let c = textureLoad(cloud_raw, q, 0);
+        m1 += c;
+        m2 += c * c;
+        n += 1.0;
+    }
+    m1 /= max(n, 1.0);
+    let sd = sqrt(max(m2 / max(n, 1.0) - m1 * m1, vec4f(0.0)));
+    let lo = min(m1 - CLOUD_HISTORY_CLAMP * sd, cur);
+    let hi = max(m1 + CLOUD_HISTORY_CLAMP * sd, cur);
     var out = cur;
     let f = dot(dir, cloud_prev.forward.xyz);
     if (cloud_prev.params.x < 1.0 && f > 1e-3) {
@@ -1582,12 +1616,10 @@ fn clouds_fs(i: SkyOut) -> CloudOut {
         if (abs(pn.x) < 1.0 && abs(pn.y) < 1.0) {
             let uv = vec2f(pn.x * 0.5 + 0.5, 0.5 - pn.y * 0.5);
             let hist = cloud_history_at(uv, rec);
-            let parallax = cloud_prev.params.z / max(min(first, 20000.0), 1.0);
-            let w = mix(cloud_prev.params.x, 1.0, smoothstep(0.001, 0.01, parallax));
-            out = mix(hist.color, cur, mix(1.0, w, hist.matched));
+            out = mix(clamp(hist.color, lo, hi), cur, mix(1.0, cloud_prev.params.x, hist.matched));
         }
     }
-    return CloudOut(out, vec4f(rec, 0.0, 0.0));
+    return out;
 }
 
 // The clouds pass's result at a full-resolution pixel (`ndc`, its `ray`, the scene's view depth
@@ -3565,6 +3597,7 @@ fn scene_bindings(samples: u32) -> String {
     };
     let bloom = dwell_look::bloom::BLOOM.intensity as f32;
     let taps = dwell_look::clouds::MAX_DIVISOR;
+    let clamp = dwell_look::clouds::HISTORY_CLAMP as f32;
     format!(
         "const SCENE_SAMPLES: i32 = {samples};\n\
          const BLOOM_INTENSITY: f32 = {bloom:?};\n\
@@ -3581,8 +3614,11 @@ fn scene_bindings(samples: u32) -> String {
          @group(3) @binding(2) var cloud_history_sampler: sampler;\n\
          @group(3) @binding(3) var<uniform> cloud_prev: CloudPrev;\n\
          @group(3) @binding(5) var cloud_dist_history: texture_2d<f32>;\n\
-         const CLOUD_DEPTH_TAPS: i32 = {taps};\n{}",
-        dwell_look::clouds::cloud_march_wgsl(3, 4),
+         @group(3) @binding(9) var cloud_raw: texture_2d<f32>;\n\
+         @group(3) @binding(10) var cloud_dist_now: texture_2d<f32>;\n\
+         const CLOUD_DEPTH_TAPS: i32 = {taps};\n\
+         const CLOUD_HISTORY_CLAMP: f32 = {clamp:?};\n{}",
+        dwell_look::clouds::cloud_march_wgsl(3, 4, 6),
     )
 }
 
@@ -4209,6 +4245,29 @@ mod tests {
     }
 
     #[test]
+    fn every_plant_past_its_fade_is_dropped_in_the_vertex_stage() {
+        // WORK_QUEUE item 32: the forest edge drew every blade of tall grass out to the
+        // full-detail distance and discarded it in the fragment stage (14 of the edge's 25 ms
+        // on the M1 at High). Any plant past its fade's end (plant.w) is dropped whole, not only
+        // leaf cards (plant.y < 0): the fade check comes before the cards-only return.
+        let src = super::source(4);
+        let at = src.find("fn card_dropped(").expect("card_dropped");
+        let body = &src[at..at + src[at..].find("\n}\n").expect("end")];
+        let fade = body
+            .find("plant.w > 0.0 && length(rel) > plant.w + 2.0")
+            .expect("the fade drop");
+        let cards_only = body.find("plant.y >= 0.0").expect("the cards-only return");
+        assert!(
+            fade < cards_only,
+            "grass past its fade is not dropped:\n{body}"
+        );
+        assert!(
+            src.contains("if (card_dropped(still,"),
+            "cutout_vs drops by it"
+        );
+    }
+
+    #[test]
     fn every_terrain_draw_cross_fades_and_a_level_fading_out_takes_no_ink() {
         // The LOD cross-fade (dwell-lod fade.rs): chunks, cutouts, sections, stand-ins and water
         // all discard by the draw's fade, and the opaque ones flag their view depth while fading
@@ -4491,7 +4550,14 @@ mod tests {
         // The march runs in the clouds pass only (at the tier's resolution), accumulated.
         assert_eq!(src.matches("= dwell_cloud_march(").count(), 1);
         assert!(body("clouds_fs").contains("= dwell_cloud_march("));
-        assert!(body("clouds_fs").contains("cloud_history_at(uv, rec)"));
+        // BUGS.md #90: the history goes in the resolve, clamped to the raw march's neighbourhood
+        // (not dropped as the eye moves), and the jitter is the baked blue noise.
+        let resolve = body("clouds_resolve_fs");
+        assert!(resolve.contains("cloud_history_at(uv, rec)"));
+        assert!(resolve.contains("mix(clamp(hist.color, lo, hi), cur,"));
+        assert!(!resolve.contains("parallax"));
+        assert!(!body("clouds_fs").contains("cloud_history"));
+        assert!(body("cloud_jitter").contains("dwell_cloud_blue(p)"));
         let cheap = body("sky_above_with_clouds");
         assert!(!cheap.contains("dwell_cloud_march") && !cheap.contains("upsampled_clouds"));
         // BUGS.md #88: the march ends at the texel's farthest scene pixel, the texel keeps its
@@ -4500,7 +4566,9 @@ mod tests {
         let fs = body("clouds_fs");
         assert!(fs.contains("let rec = cloud_scene_span(p, length(ray));"));
         assert!(fs.contains("dwell_cloud_march_end(rec)"));
-        assert!(fs.contains("return CloudOut(out, vec4f(rec, 0.0, 0.0));"));
+        assert!(fs.contains(
+            "return CloudOut(vec4f(layer.rgb * layer.a, layer.a), vec4f(rec, first, 0.0));"
+        ));
         let up = body("upsampled_clouds");
         assert!(up.contains("dwell_cloud_upsample_weight(e, textureLoad(cloud_dist_tex"));
         assert!(!up.contains("smoothstep(0.95, 1.05"));

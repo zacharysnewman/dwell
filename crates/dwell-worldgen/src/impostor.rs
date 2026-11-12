@@ -54,6 +54,8 @@ pub struct Config {
     pub leaf: [f32; 3],
     pub log: [f32; 3],
     pub margin: f32,
+    /// The hand-over per Far trees tier, by the tier's name (`far.tiers`).
+    pub far: Vec<(String, Far)>,
     /// How far a leaf's normal leans out of the crown (shared/look/leaves.json `canopyBlend`).
     pub canopy_blend: f32,
 }
@@ -74,7 +76,14 @@ impl Config {
         for k in obj.keys() {
             if !matches!(
                 k.as_str(),
-                "$comment" | "views" | "viewPx" | "stages" | "variants" | "albedo" | "marginM"
+                "$comment"
+                    | "views"
+                    | "viewPx"
+                    | "stages"
+                    | "variants"
+                    | "albedo"
+                    | "marginM"
+                    | "far"
             ) {
                 return Err(format!("unknown field `{k}`"));
             }
@@ -149,6 +158,7 @@ impl Config {
         };
         let (leaf, log) = (colour("leaf")?, colour("log")?);
         let margin = num(field("marginM")?, "marginM", 0.0, 4.0)? as f32;
+        let far = parse_far(field("far")?)?;
         let mut out = Config {
             views: Vec::new(),
             azimuths,
@@ -160,6 +170,7 @@ impl Config {
             leaf,
             log,
             margin,
+            far,
             canopy_blend: canopy_blend(),
         };
         out.views = out.layout();
@@ -185,6 +196,37 @@ impl Config {
     /// A view's side in texels for `tier`.
     pub fn px(&self, tier: Tier) -> u32 {
         self.view_px[tier as usize]
+    }
+
+    /// The hand-over of the Far trees tier named `tier` (`None`: no such tier).
+    pub fn far(&self, tier: &str) -> Option<Far> {
+        self.far.iter().find(|(n, _)| n == tier).map(|(_, f)| *f)
+    }
+
+    /// The one view a pixel draws when it dithers between [`Config::pick`]'s views: the view
+    /// whose share of the cumulative weights holds `threshold` (0–1, the screen's bayer value),
+    /// so across the screen each view shows on its weight's share of the pixels.
+    pub fn dither(&self, dir: [f32; 3], threshold: f32) -> usize {
+        let picks = self.pick(dir);
+        let mut acc = 0.0;
+        for &(i, w) in &picks {
+            acc += w;
+            if threshold < acc {
+                return i;
+            }
+        }
+        picks.last().map_or(0, |p| p.0)
+    }
+
+    /// Which baked tree a tree of `seed` at growth `stage` draws: (stage slot, variant), the
+    /// nearest baked stage (the quad scaled to the tree's own size; a tie takes the lower) and
+    /// `hash(seed) mod variants`.
+    pub fn baked_for(&self, seed: u32, stage: u32) -> (usize, u32) {
+        let slot = (0..self.stages.len())
+            .min_by_key(|&i| (self.stages[i].abs_diff(stage), self.stages[i]))
+            .unwrap_or(0);
+        let h = seed.wrapping_mul(0x9E37_79B9).rotate_left(13) ^ seed;
+        (slot, h % self.variants)
     }
 
     /// The views a camera looking from direction `dir` (toward the camera, face-local) blends,
@@ -239,6 +281,102 @@ impl Config {
         }
         out
     }
+}
+
+/// Where far trees become impostors for one Far trees tier (`far.tiers`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Far {
+    /// Whether impostors draw at all (`draw: "impostor"`; `"none"` draws no far trees).
+    pub impostor: bool,
+    pub from: f32,
+    pub fade: f32,
+    /// Where far trees stop (`f32::INFINITY` for never).
+    pub to: f32,
+}
+
+impl Far {
+    /// The impostor's share of a tree `dist` m from the eye: 0 nearer than `from` (the real
+    /// tree), rising linearly across `fade` to 1, and 0 again beyond `to` (nothing drawn).
+    pub fn share(&self, dist: f32) -> f32 {
+        if !self.impostor || dist > self.to {
+            return 0.0;
+        }
+        if self.fade <= 0.0 {
+            return if dist >= self.from { 1.0 } else { 0.0 };
+        }
+        ((dist - self.from) / self.fade).clamp(0.0, 1.0)
+    }
+
+    /// The near tree's share at `dist`: what the impostor leaves, so each pixel of the
+    /// crossfade shows exactly one of them (the shares sum to 1 inside `to`).
+    pub fn near_share(&self, dist: f32) -> f32 {
+        if !self.impostor {
+            return 1.0;
+        }
+        if dist > self.to {
+            return 0.0;
+        }
+        1.0 - self.share(dist)
+    }
+}
+
+fn parse_far(v: &Value) -> Result<Vec<(String, Far)>, String> {
+    let tiers = v
+        .get("tiers")
+        .and_then(Value::as_object)
+        .ok_or("`far.tiers` must be an object")?;
+    let mut out = Vec::new();
+    for (name, t) in tiers {
+        if name.starts_with('$') {
+            continue;
+        }
+        let at = |k: &str| format!("far.tiers.{name}.{k}");
+        let bad_draw = || format!("`{}` must be \"impostor\" or \"none\"", at("draw"));
+        let far = match t.get("draw").and_then(Value::as_str) {
+            Some("none") => Far {
+                impostor: false,
+                from: 0.0,
+                fade: 0.0,
+                to: 0.0,
+            },
+            Some("impostor") => {
+                let num = |k: &str| -> Result<f32, String> {
+                    t.get(k)
+                        .and_then(Value::as_f64)
+                        .filter(|x| (0.0..=100_000.0).contains(x))
+                        .map(|x| x as f32)
+                        .ok_or(format!("`{}` must be a number in [0, 100000]", at(k)))
+                };
+                let (from, fade, to) = (num("fromM")?, num("fadeM")?, num("toM")?);
+                if to != 0.0 && to < from + fade {
+                    return Err(format!("`{}` must be 0 or past fromM + fadeM", at("toM")));
+                }
+                Far {
+                    impostor: true,
+                    from,
+                    fade,
+                    to: if to == 0.0 { f32::INFINITY } else { to },
+                }
+            }
+            _ => return Err(bad_draw()),
+        };
+        out.push((name.clone(), far));
+    }
+    if out.is_empty() {
+        return Err("`far.tiers` holds no tier".into());
+    }
+    Ok(out)
+}
+
+/// The face-local direction from a tree's foot at `tree` toward the eye at `eye` (both world
+/// positions on `face`): what [`Config::pick`] takes. Crosses the face only through `FaceFrame`.
+pub fn view_dir(face: dwell_world::FaceFrame, tree: [f64; 3], eye: [f64; 3]) -> [f32; 3] {
+    let (t, e) = (face.point(tree), face.point(eye));
+    [
+        (e[0] - t[0]) as f32,
+        (e[1] - t[1]) as f32,
+        (e[2] - t[2]) as f32,
+    ]
 }
 
 /// A palette colour by `ramp.stop`, a bare ramp's base or a swatch, as 0–1 sRGB.
@@ -827,4 +965,114 @@ mod tests {
         let sum: f32 = c.pick([0.3, 0.8, -0.2]).iter().map(|x| x.1).sum();
         assert!((sum - 1.0).abs() < 1e-5);
     }
+
+    #[test]
+    fn the_far_tiers_parse_and_a_bad_one_fails_naming_its_field() {
+        // face-a-only: data only.
+        let c = Config::get();
+        let on = c.far("on").expect("the `on` tier");
+        assert!(on.impostor && on.from > 0.0 && on.fade > 0.0, "{on:?}");
+        assert!(!c.far("off").expect("the `off` tier").impostor);
+        let bad = IMPOSTORS_JSON.replace("\"fadeM\": 24", "\"fadeM\": -1");
+        let e = Config::parse(&bad).unwrap_err();
+        assert!(e.contains("far.tiers.on.fadeM"), "{e}");
+        let bad = IMPOSTORS_JSON.replace("\"draw\": \"none\"", "\"draw\": \"blob\"");
+        assert!(
+            Config::parse(&bad)
+                .unwrap_err()
+                .contains("far.tiers.off.draw")
+        );
+        // A tier added by data alone.
+        let added = IMPOSTORS_JSON.replace(
+            "\"off\": { \"draw\": \"none\" }",
+            "\"off\": { \"draw\": \"none\" }, \"near\": { \"draw\": \"impostor\", \"fromM\": 32, \"fadeM\": 8, \"toM\": 400 }",
+        );
+        let n = Config::parse(&added).unwrap().far("near").unwrap();
+        assert_eq!((n.from, n.fade, n.to), (32.0, 8.0, 400.0));
+        assert_eq!(n.share(401.0), 0.0);
+    }
+
+    #[test]
+    fn the_hand_over_crossfades_with_shares_summing_to_one() {
+        // face-a-only: distances only.
+        let f = Config::get().far("on").unwrap();
+        assert_eq!(f.share(f.from - 1.0), 0.0);
+        assert_eq!(f.near_share(f.from - 1.0), 1.0);
+        assert_eq!(f.share(f.from + f.fade + 1.0), 1.0);
+        let mid = f.from + f.fade / 2.0;
+        assert!((f.share(mid) - 0.5).abs() < 1e-5);
+        for d in [0.0, f.from, mid, f.from + f.fade, 5000.0] {
+            assert!((f.share(d) + f.near_share(d) - 1.0).abs() < 1e-5, "at {d}");
+        }
+        let off = Config::get().far("off").unwrap();
+        assert_eq!((off.share(500.0), off.near_share(500.0)), (0.0, 1.0));
+    }
+
+    #[test]
+    fn dithering_shows_each_view_on_its_weights_share_of_the_pixels() {
+        // face-a-only: data only.
+        let c = Config::get();
+        let dir = [0.6, 0.35, 0.25];
+        let picks = c.pick(dir);
+        assert!(picks.len() >= 2, "{picks:?}");
+        let n = 1000;
+        let mut counts = std::collections::HashMap::new();
+        for k in 0..n {
+            let t = (k as f32 + 0.5) / n as f32;
+            *counts.entry(c.dither(dir, t)).or_insert(0) += 1;
+        }
+        for (i, w) in picks {
+            let got = counts.get(&i).copied().unwrap_or(0) as f32 / n as f32;
+            assert!((got - w).abs() < 0.002, "view {i}: {got} vs {w}");
+        }
+        // On an exact view every pixel draws it.
+        assert!((0..10).all(|k| c.dither(c.views[3], k as f32 / 10.0) == 3));
+    }
+
+    #[test]
+    fn a_tree_takes_the_nearest_baked_stage_and_a_variant_by_its_seed() {
+        // face-a-only: data only.
+        let c = Config::get();
+        assert_eq!(c.stages, vec![2, 4, 7]);
+        assert_eq!(c.baked_for(1, 0).0, 0);
+        assert_eq!(c.baked_for(1, 3).0, 0, "3 is as near 2 as 4: the lower");
+        assert_eq!(c.baked_for(1, 5).0, 1);
+        assert_eq!(c.baked_for(1, 6).0, 2);
+        assert_eq!(c.baked_for(1, 99).0, 2);
+        let mut seen = std::collections::HashSet::new();
+        for seed in 0..64 {
+            let (_, v) = c.baked_for(seed, 4);
+            assert!(v < c.variants);
+            assert_eq!(c.baked_for(seed, 4).1, v, "deterministic");
+            seen.insert(v);
+        }
+        assert_eq!(seen.len() as u32, c.variants, "every variant is used");
+    }
+}
+
+#[cfg(test)]
+mod face_tests {
+    use super::*;
+    use dwell_world::FaceFrame;
+
+    dwell_world::both_faces!(
+        fn the_view_a_far_tree_shows_is_the_same_on_both_faces(f: FaceFrame) {
+            // A tree and an eye placed face-locally through `f` pick the views face A's do.
+            let c = Config::get();
+            let tree = [12.0, 40.0, -7.0];
+            for eye in [[60.0, 52.0, -7.0], [12.0, 140.0, -6.0], [-30.0, 41.0, 25.0]] {
+                let a = c.pick(view_dir(FaceFrame::A, tree, eye));
+                let here = c.pick(view_dir(f, f.point(tree), f.point(eye)));
+                assert_eq!(a.len(), here.len(), "{eye:?}");
+                for ((i, w), (j, v)) in a.iter().zip(&here) {
+                    assert_eq!(i, j, "{eye:?}");
+                    assert!((w - v).abs() < 1e-5);
+                }
+            }
+            // An eye straight over the tree (face-locally) sees the top view.
+            let top = c.views.len() - 1;
+            let d = view_dir(f, f.point(tree), f.point([12.0, 300.0, -7.0]));
+            assert_eq!(c.dither(d, 0.7), top);
+        }
+    );
 }

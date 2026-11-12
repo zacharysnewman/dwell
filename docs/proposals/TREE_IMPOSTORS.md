@@ -1,7 +1,12 @@
 # Far trees as multi-angle impostors
 
 **Status:** proposal (2026-11-12), WORK_QUEUE item 31 (and item 30's step 3). Phase **I-1 (the bake)
-is built** (`dwell_worldgen::impostor`, data `shared/trees/impostors/impostors.json`); drawing is not.
+is built** (`dwell_worldgen::impostor`, data `shared/trees/impostors/impostors.json`). **I-3's CPU half is
+built** (2026-11-12): the hand-over per Far trees tier as data (`far.tiers`, §5: `on` an impostor from 96 m
+over a 24 m fade, `off` none), `Far::share`/`near_share` (the crossfade, shares summing to 1),
+`Config::dither` (the one view a pixel draws, each view on its weight's share of the pixels),
+`Config::baked_for` (nearest baked stage, variant by seed) and `view_dir` (through `FaceFrame`, tested on
+both faces). The GPU half (atlas upload, instances, the billboard shader) and I-2's tree lists are not.
 Open questions for the owner at the end.
 
 The owner (2026-11-12): "billboards (maybe from above billboards too, possibly a few different angles so we
@@ -101,8 +106,9 @@ bake is a pure function of the species data.
 
 ## 5. Where impostors take over
 
-The hand-over is **data per tier** (a new `far` block in the impostors file, I-3): `fromM` (where an
-impostor starts), `fadeM` (the crossfade's width) and `toM` (where trees stop, if anywhere). Proposed:
+The hand-over is **data per tier** (the `far` block in the impostors file, **built**: `far.tiers` by the
+Far trees setting's values, each `draw` `impostor` or `none`): `fromM` (where an
+impostor starts), `fadeM` (the crossfade's width) and `toM` (where trees stop, 0 for never). Proposed:
 High (M1) from 96 m, Ultra 160 m, phone 48 m — chosen by measurement in I-3 against the leaf cards'
 fade (48–64 m) and the chunk meshes' reach.
 

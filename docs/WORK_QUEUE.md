@@ -39,6 +39,17 @@ The running order across the items below; each line names its item, where the ow
    cell's outline (item 18 lever 3); half the hit shards on phones (the flag nothing sets yet).
 9. **Big worlds (BIG_MAP.md)** — BUGS.md #76 (browser memory grows with world size) before 8×/10×; #77 (bigger
    islands lose their ranges, speckled lakes: an owner look question); region maps built ahead with no hitches.
+   **10× world creation (BUGS.md #91, owner 2026-11-12):** "I tried to start a 10x world … up to 3 minutes so far
+   on 'Shaping the world map...' 0/2. Doesn't indicate well what it's doing."; then "started the server 200+
+   seconds in … almost 1 minute looking for a place to stand … still 0/2 280+ seconds in"; then "Loaded in 300s
+   in, but I can only see the skies of both faces, no world." / "Can't move." Target: a 10× world playable in
+   well under 30 s on a fast Mac, with progress inside each face's map build.
+   Then (owner): the empty-sky world shows "Could not connect to 10x…": the client must wait for the local server's
+   ready signal, not a fixed timeout, and a dead worker must report its error clearly.
+   **Fixed natively (2026-11-12):** the uplift and the channels' index grew with the radius (a 10× face 43.7 s and a
+   12.4 GB server natively); now a 10× face is 3.1 s (1×: 1.9 s) and its server 6.2 s at 484 MB; the map stage shows
+   each face's steps; a dying server worker says why (BUGS.md #91, BIG_MAP.md §3.1). **Next: the owner tries 10× in
+   the browser again.**
 10. **Realistic R5–R6 (item 15)** — geology by plate history with today's blocks; the World option.
 
 ### Waiting on the owner (each with what it means and the default meanwhile)
@@ -324,6 +335,21 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    (coverage, cloud type, precipitation), height profiles per cloud type (flat-based cumulus with billowing tops,
    stratus sheets, towering cumulonimbus with anvils), base-shape remapping and edge erosion with curl distortion,
    wind and shear; within the High-on-M1 budget.
+   **Built (2026-11-12, branch `claude/cloud-shapes`, CLOUDS.md §9):** the research (Schneider 2015/2017/2022,
+   Hillaire 2016, Bauer 2019, Häggström 2018) in §9.1; the shape model as data: a weather map from the deck's
+   noise (cover, cloud type, precipitation; `weather`), height profiles per cloud type (`cloudTypes`: stratus,
+   stratocumulus, cumulus, cumulonimbus with an anvil; a new type is a list entry), a Perlin–Worley base (64³)
+   and Worley detail (32³) baked once in the job workers (`Job::CloudNoise`, the deck until whole), the base
+   remapped by the cover, the edges eroded by curl-distorted detail (wispy bases, billowy tops; the core stays),
+   wind shear; the light march on the base shape only. CPU twin and tests (flat base, rounded top, anvil,
+   coverage 0, edge-only erosion, tiling, a fixture type by data, both faces, naga). Cost read from the shader:
+   Medium ≤ 7.4k ALU a texel (was 5.3k), High ≤ 10.5k (was 7.6k).
+   Owner, 2026-11-12 (BUGS.md #90): **"The clouds also look really badly dithered when they overlap? I think
+   mostly when you get to their level? Looks very pixelated."** Asked for in the same work: blue-noise jitter, a
+   depth-aware bilateral upsample, neighbourhood clamping instead of history rejection near the layer, more
+   resolution or steps near or inside the layer by data per tier, a CPU test of a sharp silhouette and stability
+   under the jitter. **Built (same branch, CLOUDS.md §9.6).** Next (local): the in-game look (sun high, low sun,
+   from above, night, through the layer) against the old blobs and the bench before/after; tune by the data.
 14. **Tall grass grows and spreads** (owner 2026-11-11: "I want tall grass to steadily grow and spread. It
    should probably have a max depending on climate/biome."). **Built** (ADR 0075 T3c, docs/ECOLOGY.md §10):
    `shared/worldgen/grass.json` (the rule as data: the block, the ground, the decoration whose climate
@@ -919,6 +945,12 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    (`dwell_worldgen::impostor`, data `shared/trees/impostors/impostors.json`, preview sheet
    `docs/proposals/tree-impostors-bake.png`). Next: I-2 tree lists per section (cloud-able), then I-3 drawing
    (local, GPU, measured on the M1 at High). Waiting on the owner: the proposal's questions.
+   **I-3's CPU half built (2026-11-12, local):** the hand-over per Far trees tier as data (`impostors.json`
+   `far.tiers`: `on` an impostor from 96 m over a 24 m fade, `off` none), the crossfade's shares, the dithered
+   view pick, the baked stage/variant per tree and the view direction through `FaceFrame` (tests on both faces).
+   **Not built:** the GPU half (atlas upload, instance buffer, the billboard shader with the baked normals and
+   depth offset) and I-2's tree lists; the far trees are still `lod_trees.rs`'s. Next (local): I-2, then the
+   draw, measured with `forest-perf`.
 
 32. **A tall dense forest for performance reference** (owner 2026-11-12: "We should have a tall dense forest
    biome/climate for performance reference on trees."). A biome preset (tall, closely spaced mature trees — an
@@ -939,6 +971,17 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    edge and inside (24.7 ms at the edge on the M1 at High; the near pass's cutout leaves and tall grass, sun
    shadows), then the impostors (item 31); re-record the forest video after, with most of it in the forest, recorded
    frame-exact (the screencast, not real time) so a slow page doesn't show as a slow video.
+
+   **The forest's frame, measured (2026-11-12, M1 Air, `forest-perf` at High, `--unthrottled`, `gpu.frame`
+   p50 / p95 ms):** before inside 17.0 / 18.8, edge 25.2 / 26.4, above 14.6 / 15.8. The edge's ablation
+   (`forest-edge-ablate`): the cutout meshes (leaf cards + tall grass) off 24.6 → 9.8 (−14.8 ms, `gpu.near`
+   21.9 → 7.7), sun shadows off −3.3, full detail 192 → 96 m −1.8. **Cut:** tall grass past its fade (88 m) was
+   drawn out to the full-detail distance and discarded per fragment; any plant past its fade is now dropped
+   whole in the vertex stage, as leaf cards were. After: inside **14.7 / 15.4** (under 16.7), edge 24.3 / 25.7
+   (unchanged: its cutout cost is the cards and grass within their fades, seen from just over the crowns),
+   above 14.5 / 15.8. **Outstanding:** the edge, ~9 ms over. Next: split the edge's 14.8 ms between the leaf
+   cards and the near grass (`?cards=0` against the default) and cut it inside the High look (the cards'
+   fade 24–40 m, cards seen edge-on from above, grass under a closed canopy).
 33. **Licensed music replaces the generated music** (owner 2026-11-12: "I downloaded a big music set as a Unity
    asset, I'd like the casual game music setup in a prototype and make it play randomly in the game. Probably
    needs compression. It'll replace the current music which is AI generated."). The pack: *Andrew Sitkov Music*
