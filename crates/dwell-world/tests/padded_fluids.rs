@@ -77,8 +77,7 @@ fn continued_per_voxel(w: &VoxelWorld, c: ChunkCoord, apron: [i32; 3], out: &mut
                 if !missing(side(x), dy, side(z)) {
                     continue;
                 }
-                let v = own.voxels()
-                    [local_index(x.clamp(0, n - 1), y - dy * n, z.clamp(0, n - 1))];
+                let v = own.voxels()[local_index(x.clamp(0, n - 1), y - dy * n, z.clamp(0, n - 1))];
                 let info = dwell_blocks::info(v);
                 if info.liquid || info.flooded {
                     out[((pz + ez * py) * ex + px) as usize] = v;

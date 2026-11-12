@@ -263,14 +263,12 @@ pub fn encode_job(id: u32, job: &Job) -> Vec<u8> {
         } => {
             w.u8(4);
             // The message's size up front: one allocation, not a doubling buffer.
-            let generated = ground.as_ref().map_or(0, |(_, gone, g)| 12 * gone.len() + 2 * g.len());
+            let generated = ground
+                .as_ref()
+                .map_or(0, |(_, gone, g)| 12 * gone.len() + 2 * g.len());
             let damage_bytes: usize = damage.len() * 64;
             w.0.reserve(
-                64 + 2 * padded.len()
-                    + light.len()
-                    + cuts.len() * 128
-                    + generated
-                    + damage_bytes,
+                64 + 2 * padded.len() + light.len() + cuts.len() * 128 + generated + damage_bytes,
             );
             // Bit 0 the mirror, bit 1 no water tops, bit 2 no leaf cards.
             w.u8(u8::from(*mirror) | if *water_tops { 0 } else { 2 } | if *cards { 0 } else { 4 });

@@ -755,7 +755,11 @@ pub struct Game<S: Scene> {
     map: Option<Vec<u8>>,
     /// Finished chunk meshes waiting for their upload, taken under the frame's byte budget
     /// (`Scene::upload_budget_bytes`, `dwell_game::upload_budget`; BUGS.md #72).
-    mesh_uploads: dwell_game::upload_budget::UploadQueue<(dwell_game::chunk_stream::Coord, u64, Box<ChunkMeshes>)>,
+    mesh_uploads: dwell_game::upload_budget::UploadQueue<(
+        dwell_game::chunk_stream::Coord,
+        u64,
+        Box<ChunkMeshes>,
+    )>,
     /// The revealed big map's finished tiles, not yet taken (`crate::map_reveal::encode_tile`).
     reveal: std::collections::VecDeque<Vec<u8>>,
     /// The explored cells' generated tiles, not yet taken: (face, ti, tk), RGBA (None: no

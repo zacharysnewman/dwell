@@ -404,6 +404,40 @@ tree trunks with the leaf cards. What might be dropping frames since the last wh
   and answer each mesh start's padded light; a smaller step is lighting a chunk across frames (the BFS resumable
   under the stream budget). The minimap's tiles were not touched: they are under their own 2 ms budget
   (`shared/ui/map.json` `revealed.budgetMs`; `fillReveal` 0.1–0.2 s in the traces). Then a real iPhone check.
+- **Round 5 (branch `claude/fps-moving-3`): a chunk's flood light across frames.** `LightMap::begin_load` and `resume`
+  run the one-shot load's own steps (each channel's removal queue, the cells lit back, the brightest-first spread)
+  a slice at a time, the search's state kept between frames; the streamer resumes it `LIGHT_SLICE_CELLS` (1024) cells
+  between looks at the clock while the next slice fits its light budget, and the chunk stays unlit for meshing (its
+  own and its neighbours') until it is done, so no mesh starts on half its light. Any other light update finishes it
+  first, and so does a change to a chunk the light holds in its column or the ones beside it
+  (`VoxelWorld::settle_light_near`); the chunks arriving all round while it lights, not held until their own light,
+  leave it be (finishing it at each arrival put 14–19 ms into `jobs.apply` at 6× in the first try). Tests (both
+  faces): the light lit 512 cells a slice ends as the one-shot light, every slice within 7 × its cells' writes
+  (red with the budget ignored: one slice); an edit mid-light gives the load-then-edit light and matches a relight
+  from scratch, and a new chunk arriving beside it leaves it part way (red when any nearby arrival finished it);
+  the streamer's `a_big_chunks_light_runs_across_frames_within_their_budget_and_meshes_once_lit` (a 30 ms light at
+  an 8 ms budget: red at once, frame 0 spent 30 ms; green, at most 4.8 ms + one slice a frame, meshed only once lit).
+  `phone-moving` at CPU 4× and 6× (Low, default world, one run each, against main after round 4):
+
+  | Route | CPU | Build | interval p50 / p95 / p99 | dropped (> 20 ms) | frame.cpu p50 / p95 / p99 | frames > 16.7 ms CPU | mesh_dirty p95 / max | jobs.apply p95 / max |
+  | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+  | walk | 4x | main (round 4) | 16.7 / 18.5 / 18.7 | 0 of 478 | 3.9 / 13.4 / 17.5 | 6 | 7.9 / 13.3 | 2.2 / 3.7 |
+  | walk | 4x | this branch | 16.7 / 18.5 / 18.7 | 0 of 479 | 3.9 / 11.3 / 12.1 | 1 | 6.8 / 8.5 | 2.1 / 4.4 |
+  | sprint | 4x | main (round 4) | 16.7 / 18.5 / 18.6 | 0 of 479 | 3.5 / 9.1 / 15.7 | 4 | 4.0 / 12.7 | 2.3 / 4.5 |
+  | sprint | 4x | this branch | 16.7 / 18.4 / 18.7 | 0 of 479 | 3.4 / 10.1 / 12.0 | 0 | 4.6 / 8.4 | 2.3 / 4.4 |
+  | fly | 4x | main (round 4) | 16.7 / 18.3 / 18.6 | 5 of 609 | 3.7 / 12.4 / 17.8 | 12 | 5.8 / 13.5 | 2.4 / 5.3 |
+  | fly | 4x | this branch | 16.7 / 18.3 / 18.6 | 2 of 613 | 3.6 / 11.7 / 12.6 | 1 | 6.0 / 8.1 | 2.3 / 5.4 |
+  | walk | 6x | main (round 4) | 16.7 / 18.7 / 33.3 | 17 of 461 | 5.7 / 19.9 / 25.4 | 29 | 10.8 / 17.9 | 3.4 / 6.4 |
+  | walk | 6x | this branch | 16.7 / 18.6 / 32.0 | 8 of 471 | 5.9 / 13.2 / 17.8 | 6 | 7.1 / 8.4 | 3.3 / 5.8 |
+  | sprint | 6x | main (round 4) | 16.7 / 18.5 / 32.8 | 11 of 470 | 5.2 / 13.0 / 23.1 | 12 | 5.0 / 18.6 | 3.4 / 7.3 |
+  | sprint | 6x | this branch | 16.7 / 18.6 / 18.7 | 4 of 478 | 5.2 / 12.9 / 14.8 | 2 | 6.4 / 8.8 | 3.4 / 7.7 |
+  | fly | 6x | main (round 4) | 16.7 / 33.2 / 48.8 | 49 of 551 | 5.5 / 21.1 / 28.1 | 36 | 9.3 / 21.2 | 3.4 / 8.3 |
+  | fly | 6x | this branch | 16.7 / 32.9 / 34.5 | 43 of 562 | 5.6 / 15.0 / 23.9 | 16 | 6.7 / 8.4 | 3.5 / 8.2 |
+
+  **The 6× flight's worst `mesh_dirty` is 8.4 ms (21.2 before; the target was under 16.7)**, every route's at 4× and 6×
+  under 9.1 ms. Frames over 16.7 ms of CPU at 6×: 77 → 24 over the three routes; dropped frames at 6×: 77 → 55. The
+  6× flight's worst frames now are `ticks` (13–20 ms: the prediction's ticks, the terrain collision loading while
+  flying), not the loading: the next cut there. Still open: a real iPhone check while moving.
 
 ### 71. "Starting the graphics" takes a long time with no elapsed time shown (fixed after 0.52.101)
 
