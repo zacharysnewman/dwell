@@ -245,6 +245,10 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    on trunk faces z-fight. In progress (local): measure each feature's cost on the `--touch` page at Low (default
    and starter worlds) against an older release; cards off on Low/phone, no cards against log faces, a Low tier
    for every new visual; tier pins and a z-fight test.
+   Owner, 2026-11-12 (after leaf cards went off on phones and Low): **"I got 60 fps when standing still on
+   Low."** So standing still is fixed; the drops left are while moving: next, a moving scenario on the `--touch`
+   page with the CPU throttled (chunk streaming, meshing, uploads, LOD refinement, the minimap), per-frame
+   main-thread work and upload sizes.
 17. **Axe swing directions and animation tools** (owner 2026-11-11: "The axe animations are still trash. They
    don't swing in the right direction at all. Make yourself some tools to properly observe animations, movement
    directions, positions over time, etc. Should swing right to left for horizontal and up to down for vertical";
