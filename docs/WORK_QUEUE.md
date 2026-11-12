@@ -218,7 +218,15 @@ Last updated: 2026-11-11 (0.52.108).
    desktop default, Low the 2D deck); plumes with a colour by data; the cheap deck kept for Snell's
    window and reflections. Bench from above: High +1.5 ms (budget 1.5), Medium +0.9 ms (budget 0.8).
    Next: trace the clouds pass's fixed cost; plumes as run-time uniforms for a volcano or weather
-   system.
+   system. **Built (2026-11-12, CLOUDS.md §8.7):** plumes as a run-time list by name
+   (`dwell_look::plumes`, `plumeSlots` 8 as data) packed each frame into one uniform and marched apart
+   from the layer over each crossed plume's own span (`plumeSteps` per tier: High 8, Medium 6, none on
+   Low/Off/CPU), so a plume is a buffer write, not a pipeline; the first source a faint steam plume
+   over each world lava vent's top molten cell (`sources.lavaVent`, both faces); `__dwell.plume(op,
+   args)`. The pass's cost read from the shader: the march's arithmetic is ~0.15 G ALU a frame on
+   Medium, so the measured 0.8–0.9 ms is the pass's fixed part; cut the sky per texel, the plumes in
+   every layer step and the layer's samples with no coverage. Left: timing those cuts and tracing the
+   pass's start and history copy on a GPU (local bench).
 
 Cloud sessions: logic-only items can run as `claude --cloud` sessions in parallel (verified 2026-11-11).
 

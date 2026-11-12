@@ -54,6 +54,7 @@ pub const CLOUDS: CloudTunables = CloudTunables {
         powder: 0.3,
         ambient: 0.2,
         max_distance_m: 22000.0,
+        plume_billow: 0.6,
     },
     tiers: VolumeTiers {
         high: VolumeTier {
@@ -61,18 +62,32 @@ pub const CLOUDS: CloudTunables = CloudTunables {
             light_steps: 1,
             divisor: 2,
             history_blend: 0.2,
+            plume_steps: 8,
         },
         medium: VolumeTier {
             steps: 10,
             light_steps: 0,
             divisor: 4,
             history_blend: 0.2,
+            plume_steps: 6,
         },
         low: VolumeTier {
             steps: 0,
             light_steps: 0,
             divisor: 1,
             history_blend: 1.0,
+            plume_steps: 0,
+        },
+    },
+    plume_slots: 8,
+    sources: PlumeSources {
+        lava_vent: PlumeSource {
+            radius_m: 14.0,
+            spread: 2.5,
+            density: 0.35,
+            color: [0.909804, 0.901961, 0.886275],
+            rise_mps: 3.0,
+            height_m: 180.0,
         },
     },
     plumes: &[],

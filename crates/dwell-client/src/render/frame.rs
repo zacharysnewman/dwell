@@ -251,7 +251,8 @@ impl BloomChain {
 }
 
 /// The clouds pass's own group (3; binding 0 is the motion pass's `finished`): the accumulated
-/// clouds of the last frame, a filtering sampler, and the last frame's camera (`CloudPrev`).
+/// clouds of the last frame, a filtering sampler, the last frame's camera (`CloudPrev`) and the
+/// run-time plumes (`CloudPlumes`, docs/CLOUDS.md §8.7).
 pub fn cloud_history_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
     device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         label: Some("cloud history"),
@@ -273,8 +274,25 @@ pub fn cloud_history_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
                 },
                 count: None,
             },
+            wgpu::BindGroupLayoutEntry {
+                binding: 4,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: wgpu::BufferSize::new(cloud_plume_bytes()),
+                },
+                count: None,
+            },
         ],
     })
+}
+
+/// The run-time plumes' uniform (`CloudPlumes`): its head and `plume_slots` plumes
+/// (`dwell_look::plumes::PlumeList::pack`).
+pub fn cloud_plume_bytes() -> u64 {
+    let slots = dwell_look::clouds::CLOUDS.plume_slots as usize;
+    (4 * (dwell_look::plumes::HEAD_FLOATS + dwell_look::plumes::PLUME_FLOATS * slots)) as u64
 }
 
 /// The clouds pass's uniform (`CloudPrev`): five vec4s.
@@ -361,6 +379,7 @@ pub struct SceneGroups<'a> {
     pub clouds: (u32, u32),
     pub cloud_layout: &'a wgpu::BindGroupLayout,
     pub cloud_prev: &'a wgpu::Buffer,
+    pub cloud_plumes: &'a wgpu::Buffer,
     /// Bloom's chain (`dwell_look::bloom::chain`; (1, 1, 1) off) and its passes' group layout.
     pub bloom: (u32, u32, u32),
     pub bloom_layout: &'a wgpu::BindGroupLayout,
@@ -472,6 +491,10 @@ impl Targets {
                 wgpu::BindGroupEntry {
                     binding: 3,
                     resource: groups.cloud_prev.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: groups.cloud_plumes.as_entire_binding(),
                 },
             ],
         });
