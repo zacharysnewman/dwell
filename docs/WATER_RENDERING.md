@@ -1219,4 +1219,21 @@ through `emitted_hue` (the tone curve on the brightest channel, the hue kept). T
 - **Burning:** a `Burn` damage hit shows a red-orange screen edge (`burnEdge`: colour, opacity,
   seconds; the HUD's `#burn-edge`, `game.rs` `burn_edge_strength`) and plays `sizzle`.
 
+## 18. River steps as one surface: step cells (2026-11-12, BUGS.md #92)
 
+Owner, 2026-11-12: "I'm seeing some edge triangles and thin lines at slope transitions on downhill water." A held
+river's levels step down ½ m (a cell) at a time, in diagonal bands where it crosses the grid on the diagonal. §10's
+pour slopes were drawn one per side of a pool's edge cell (`slope_over`), so on a diagonal staircase an open cell
+with the upper reach on two sides held two slopes crossing, one touching it only at a corner held none (the slopes
+beside ended in vertical wedge triangles), and the lower pool's top stayed under every slope.
+
+Now the water over a step is a **step cell** (`mesher.rs` `step_cell`, `step_water`): an open cell over a pool's
+water (a liquid, or a flooded cell whose water stands in it) that touches, by a side or a corner, a column of the same
+water one row higher whose top shows (0.05–1.5 cells above the pool's surface, as §10's slopes). It draws one surface:
+each corner at the highest such upper level among the three other cells round that corner, else at the pool's
+surface. A corner's height depends only on the cells round it, so step cells, the upper tops and the lower tops all
+meet at the same vertices (no cracks, no T-junctions); the surface splits across the diagonal that leaves a lone
+corner alone, so a diagonal band's two step cells make one plane. The pool's top under a step cell, the upper
+column's side toward it and the strip below it (§10) are not drawn: they are inside the water. Its sides are drawn
+only against open air that holds no such water (a step at a bank, from the pool's surface up to the slope). Calm pools
+and falls are unchanged. Test: `a_diagonal_staircase_river_is_one_continuous_surface` (both faces).

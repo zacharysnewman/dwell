@@ -1592,6 +1592,10 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
 
 ## Smaller items, after the queue
 
+- **Downhill water's steps (BUGS.md #92; owner, 2026-11-12: "I'm seeing some edge triangles and thin lines at slope
+  transitions on downhill water.")** — fixed 2026-11-12 (`claude/water-steps`, WATER_RENDERING.md §18): the open
+  cells at a river's ½ m steps are step cells whose corners are shared with the reaches above and below, so a river
+  stepping on the diagonal is one continuous sloped surface. Next (local): the owner's spot in the browser.
 - **Leaves rubber-band (BUGS.md #94, 2026-11-12, `claude/leaves-rubberband-dy5tni`), done.** Owner: "seems to be a mismatch
   between server and client for leaves collision. Jumping into the leaves of a tree makes you rubberband falling to
   the ground endlessly until you back out of the leaves." The server's buried-player lift took leaves (solid but
