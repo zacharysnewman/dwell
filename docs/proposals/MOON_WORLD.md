@@ -2,7 +2,9 @@
 
 **Status:** proposal, written 2026-11-12 (WORK_QUEUE item 27). Slices **M-1 built** (the grids'
 data, the moon's generator, the far-body bake, the moon spawn search; native, not wired into the
-game), **M-3 built** (the `GridFrame` abstraction, §2.1) and **M-4 built** (the celestial model, §6: logic and tests, not drawn yet). Not architecture until an ADR adopts it; open questions in §12.
+game), **M-3 built** (the `GridFrame` abstraction, §2.1), **M-4 built** (the celestial model, §6) and **M-2 built**
+(the sky draws the moon from both: its baked face A lit by the real sun, today's size and halo × the lit share;
+baked at the join on the main thread, not cached yet). Not architecture until an ADR adopts it; open questions in §12.
 
 ## 1. Brief and the owner's answers (2026-11-12)
 
@@ -302,7 +304,7 @@ starts in the moon's frame with its gravity, and the home world streams in only 
 | Phase | What | Exit criteria |
 |---|---|---|
 | **M-1** [built] | Grids data (`grids.json`), the `cratered` generator on both faces, `moon_dust`, the generic far-body bake, the moon spawn search | `cargo test -p dwell-worldgen --test grids` (19 tests, both faces): crater floors under raised rims, density by data, flatter maria, bake deterministic/differing, normals out of crater walls, spawn flat |
-| M-2 | The sky draws the moon from its bake at M-4's position: today's size, glow and brightness (owner: "the moon should look bright"); the baked normals lit by the sun direction; the face from the orbit; moonlight from M-4's `moonlight` | the client bakes in a worker and caches per world; a screenshot per phase angle on both faces; the lit part as bright as today's moon and its halo today's × the lit share (a full moon side by side with today's); CPU-adapter tier |
+| **M-2** [built] | The sky draws the moon from its bake at M-4's position: today's size, glow and brightness (owner: "the moon should look bright"); the baked normals lit by the sun direction; the face from the orbit; moonlight from M-4's `moonlight` | the client bakes in a worker and caches per world; a screenshot per phase angle on both faces; the lit part as bright as today's moon and its halo today's × the lit share (a full moon side by side with today's); CPU-adapter tier |
 | **M-3** [built] | `GridFrame`: the frame abstraction (world ↔ grid ↔ face) for rendering, collision, targeting and gravity; the home grid the identity | the identity frame changes no result (parity tests across physics, targeting, meshing); a moving test grid's points round-trip |
 | **M-4** [built] | The celestial model (§6): the moon's orbit as data, phases from geometry, moonlight by lit share with a night floor; the orbit's phase an optional world setting | `cargo test -p dwell-look --lib celestial` (13 tests, both faces): full when opposite the sun, new when between, lit share monotonic; face A toward home at every phase; both faces' phases equal; the floor kept; the clock and the sun unchanged (golden); `MOON_PHASE` round-trips and is absent by default (`dwell-protocol`) |
 | M-5 | LOD per grid: the moon's LOD terrain inside `farM`, the far body beyond, crossfaded | the moon's LOD from its generator at 150 km; no seam at the switch (screenshot) |

@@ -546,6 +546,10 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    moon should look bright."** The far-body moon (M-2) keeps today's halo/glow and brightness: the baked normals
    and albedo shape its surface, but its lit part is as bright as today's moon (exposure-independent emissive-like
    brightness and the same glow around it), scaled by the phase's lit share (physical phases).
+   **M-2 built 2026-11-12** (branch `claude/moon-m2-sky`): the sky draws the moon from the celestial model and its baked terrain (M-2): its direction `Celestial::view`'s, its face A (tidally locked) baked once at the join (`dwell-worldgen` `bake_far`, 256², `render/moon.rs`), packed with mips into one storage buffer (frame group binding 20: the composite already binds WebGPU's 16 sampled textures), each texel lit as N·L of its baked normal (slopes × `moon.relief` 8) by the real sun direction, its albedo the bake's over its brightest (so the lit part is today's `moon.color`); halo × the lit share; moonlight `nightFloor` + the rest × lit share. A CPU adapter packs no normals (a flat disc by the albedo). Same angular size (1.2°) and glow constants. Deviations: the bake runs on the
+   main thread at the join (~0.1 s native), not a worker, and is not cached; the world's `MOON_PHASE` is
+   Owner, 2026-11-12, changing Q3: "You mentioned a dome something, maybe do that": `moon.domeBias` 0.6 blends a sphere's normal into the baked ones, so phases read as crescents, halves and gibbous with the craters on top, and the lit share (`celestial::disc_lit`, the mean N·L of that domed disc over full's) drives the halo and the moonlight: one model for the drawn moon and its light.
+   not threaded into the sky yet (the data's start phase); no browser screenshots yet (time box).
    **M-4 built 2026-11-12** (branch `claude/moon-m4-celestial-jxijig`): the celestial model (`dwell-look`
    `celestial.rs`, DAY_NIGHT.md §14): the moon's orbit as data (`daynight.json` `moonOrbit`: 5°, ~597 km, the
    node turning every 96 days; the month `moon.cycleDays` 8), tidally locked (face A toward home), phases and

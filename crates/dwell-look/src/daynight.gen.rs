@@ -35,6 +35,8 @@ pub const DAY_NIGHT: DayNight = DayNight {
         glow: 0.14,
         glow_color: [0.776471, 0.839216, 1.0],
         new_moon_light: 0.55,
+        relief: 8.0,
+        dome_bias: 0.6,
         night_floor: 0.15,
     },
     moon_orbit: MoonOrbit {
