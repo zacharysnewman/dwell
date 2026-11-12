@@ -669,6 +669,15 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    aria dirt block)"; "Yes for now, let's just do earth gravity out to moon. We likely need an atmosphere
    transition now between sky thinning to space. Clouds shouldn't extend past the earth atmosphere either."; the
    moon "should match previous size for now. We'll play by ear a bit when we travel there."
+   **Built 2026-11-12** (branch `claude/moon-month-maria-wgxts3`): the month is 8.25 days
+   (`shared/look/daynight.json` `moon.cycleDays`), so each full moon comes a quarter day later on the clock and over
+   four months both faces get one near their midnight (`dwell-look` celestial test); the maria's ground is a new
+   darker block `dwell:moon_mare_dust` (prototype content: the `mare_regolith` palette ramp, a painterly tile like
+   the moon dust's; appended, no state id moves), named by `grids.json` `maria.block`, and the far bake's colour is
+   now each ground block's `color` (no separate maria albedo), so the bake is darker over the maria by the same
+   data. Owner's note on the PR: the baked maria were too faint after #682's shading, so the mare block's `color`
+   (`#555459`) is 0.55 × the moon dust's luma, the old sky moon's seas (`1 − moon.maria`); a test pins the bake's
+   maria/highland contrast at 0.55. Tests on both faces (`--test grids`, 26).
 
 28. **An atmosphere: the sky thinning to space** (owner 2026-11-12: "We likely need an atmosphere transition now
    between sky thinning to space. Clouds shouldn't extend past the earth atmosphere either."). With flight to the
@@ -680,6 +689,59 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    `dwell_space` and its CPU twin, the fog thinning to none, clouds' and plumes' tops refused above the
    top (clouds.mjs) and run-time plumes cut there; today's sky exactly on the ground (a golden pin), both
    faces. **Left:** the browser check (local, a GPU), the home world drawn from far (M-6's bake).
+
+29. **Thicker, more realistic distance haze** (owner 2026-11-12: "I think our atmospheric distance fog should be a
+   little thicker, it doesn't seem quite realistic in farther mountains, hills looking whiter. What do you
+   propose?"). Today (shared/look/fog.json) the haze reaches half at 16 km at sea level, density 0.95, scale
+   height 1800 m, fading far terrain to the horizon's (pale, warm) colour. Proposed: aerial perspective — far
+   land fades toward a bluer air colour (the sky a little above the horizon, warmer toward the sun, bluer away),
+   loses contrast and saturation before it disappears, the haze half-distance shorter (~10 km) and the scale
+   height lower (~1200 m) so valleys haze and peaks stand clearer. **Built as data, defaults unchanged
+   (2026-11-11, branch `claude/haze`):** fog.json gained `air` (`elevationDeg`: fade toward the sky that far
+   above the horizon; `sunTint` with `warm`/`cool`) and `veil` (`saturation`, `contrast`, `halfM`: far land
+   greys and its darks fill with the air before the haze hides it), all 0 today (golden test pins today's
+   output), and `presets` B `thicker` (10 km, 1200 m), C `aerial` (B + air 4° up + veil 0.45/0.35), D
+   `aerial-sun` (C + sunTint 1), drawn with `?haze=<name>` (DAY_NIGHT.md §4). A 4×4 contact sheet (cone at
+   8 km from 3000 m at noon, a valley with hills at noon, the cone at 16:48 toward and away from the sun)
+   showed the differences are **modest at these values**: C greys and blues the far ridges in the valley
+   most convincingly; the lower scale height makes the cone seen from 3000 m slightly *clearer*, not
+   thicker (the eye is above most of the haze); D's tint is barely visible and warms noon hills toward
+   dust. The white below the cone in those shots is the cloud deck, not the haze. **Waiting on the owner:**
+   pick a preset (or ask for a stronger C: e.g. elevationDeg 8, saturation 0.6) and its values move to the
+   top level of fog.json.
+
+30. **Desktop frame rate on the M1 and hidden graphics settings (P0)** (owner 2026-11-12: "It seems like we're
+   hiding some performance settings. I don't see 'tree' options in our settings for graphics. I think cards are
+   killing my m1 mac too." / "Running 26fps." / "GPU at 31ms"). The desktop default preset is High (leaf cards
+   on, high shadows, shafts, bloom, medium volumetric clouds, distanceM 256). Found: the Leaf cards switch exists
+   but sits under Settings → View, not Graphics; several costly features have no setting at all (distant/LOD
+   shadows, tall grass, far trees, hit shards, far herds). Next (local, after item 29's variants): measure each
+   feature's GPU cost on the M1 at High; a Trees group in Settings → Graphics (leaf cards and the rest) and a
+   setting for every renderer tier feature (an audit test that none is hidden); cut what's large; reconsider the
+   desktop default for M1-class GPUs.
+   **Performance target (owner, 2026-11-12, "you can record this"): "make the game run on most hardware smooth,
+   and pretty, 'most hardware' uses my m1 MacBook Air as the baseline. So while you might be able to eek out some
+   extra graphical fidelity on ultra. I want the core experience to be High on M1 MacBook Air."** Every visual
+   feature is budgeted against High at 60 fps on an M1 Air; extra fidelity goes in Ultra.
+   Owner on the cards and trees: "I think the internal leaf cards may be sucking up a lot of unneeded power and I
+   think the leaf cards on the back sides of trees and farther out trees are rendering which is unnecessary. I
+   also wonder if we should do billboards (maybe from above billboards too, possibly a few different angles so
+   we can switch between them like old Mario kart did with carts, and some trees too)... We're going to want to
+   have dense forests and so we really need to optimize." Plan: (1) measure; (2) cull cards inside the crown
+   (faces whose way out is blocked by more leaves) and on the crown's far side (facing away from the camera),
+   shorten the cards' range; (3) multi-angle impostors for far trees (views around and from above, baked per
+   species/stage/variant, switched by view angle, lit by a baked normal), replacing the far tree meshes, and
+   instancing for dense forests.
+
+31. **Far trees as multi-angle impostors** (owner 2026-11-12: "billboards (maybe from above billboards too,
+   possibly a few different angles so we can switch between them like old Mario kart did with carts, and some
+   trees too)" and "The farther distant thoughts on billboards are because our low LOD trees look pretty bad and
+   not very much like our closer trees, so it's a rough transition."). Far trees drawn as impostors baked from the
+   real tree models (each species, growth stage and seed variant; views around the tree and from above,
+   albedo + normal + depth so they're lit by the sun and fog like the real ones), switched or blended by view
+   angle, crossfaded with the near trees with no pop; replaces the LOD's blob trees (lod_trees.rs) and makes
+   dense forests cheap (one quad a tree, instanced). In progress (cloud): the bake (a CPU ray cast of the voxel
+   tree into an atlas) and the data; drawing them is local after.
 
 ## Done
 
@@ -911,8 +973,13 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
   a 2× world creates natively in 4.6 s at 176 MB (1×: 3.7 s, 164 MB). **M2b built (the browser):** New world →
   More options → World size (desktop pages only; hidden on touch) and the dev link `?size=2x`; the size saved
   in the world's settings and its menu record, every worker builds its maps and generators at it, the client's
-  bounds, streaming, LOD and big map follow the join's size; 1× unchanged. **Next: the owner tests 2× on the
-  desktop**, then 4×, 8×, 10× with the bench's measurements at each.
+  bounds, streaming, LOD and big map follow the join's size; 1× unchanged. **Checked on the M1's bench
+  (2026-11-11, `?size=`, seed 0):** 2× plays — maps 3.0 s, spawn search 2.9 s, playing at 11.2 s (1×: 2.1, 1.5,
+  8.7 s), every big map level right over the 200 km disc, no gap at the old 50 km rim, a 3.8 km flight at
+  128 m/s at 60 fps (frame.cpu p95 9 ms); 4× plays — maps 7.3 s, playing at 25.3 s. The F4 height map's
+  widest zoom showed only the 1× disc (fixed). Open: the page's memory grows with the area (BUGS.md #76:
+  non-mesh 749 → 979 → 1 819 MB at 1×/2×/4×) and the bigger islands lose their mountains to a speckle of
+  lakes (#77). **Next: the owner tests 2× on the desktop**; #76 before 8× and 10×.
 
 - **Sharing saved structures between players** (owner 2026-11-11: "eventually shareable").
 

@@ -756,7 +756,7 @@
       "textures": "leaves"
     },
     {
-      "$comment": "The moon's ground (docs/proposals/MOON_WORLD.md M-1): gray dust over the whole moon world for now, the moon generator's one block (shared/worldgen/moon.json `block`). Digs like sand. Prototype content (ARCHITECTURE.md §6.1).",
+      "$comment": "The moon's ground (docs/proposals/MOON_WORLD.md M-1): gray dust over the whole moon world for now, the moon generator's one block (shared/worldgen/grids.json `block`; the maria take `dwell:moon_mare_dust`). Digs like sand. Prototype content (ARCHITECTURE.md §6.1).",
       "name": "moon_dust",
       "damage": { "default": 11, "shovel": 7, "look": { "kind": "scoops", "size": 0.38, "color": "#6f6d78", "crack": "#4a4850", "depth": 0.12, "cracks": { "set": "soil", "stages": [0.2, 0.45, 0.65, 0.85], "strength": 0.6 } }, "chips": { "count": 6, "color": "#8a8890", "speed": 1.6, "size": 0.04 } },
       "sound": "dwell:sand",
@@ -766,6 +766,18 @@
       "properties": { "flooded": ["false", "true"] },
       "color": "#9a9898",
       "textures": "moonDust"
+    },
+    {
+      "$comment": "The moon's darker ground in its maria (docs/proposals/MOON_WORLD.md §12 Q1; owner, 2026-11-12: \"keep darker seas (add a dark moon aria dirt block)\"): the cratered generator's `maria.block` (shared/worldgen/grids.json). Its `color` is also the far bake's albedo over the maria: 0.55 × the moon dust's luma, the old sky moon's seas (its shader's `1 − moon.maria`, 0.45), so the far moon keeps their contrast. Digs like moon dust. Prototype content (ARCHITECTURE.md §6.1).",
+      "name": "moon_mare_dust",
+      "damage": { "default": 11, "shovel": 7, "look": { "kind": "scoops", "size": 0.38, "color": "#3a3940", "crack": "#27262c", "depth": 0.12, "cracks": { "set": "soil", "stages": [0.2, 0.45, 0.65, 0.85], "strength": 0.6 } }, "chips": { "count": 6, "color": "#4a4950", "speed": 1.6, "size": 0.04 } },
+      "sound": "dwell:sand",
+      "density": 1500,
+      "shape": "full",
+      "placeable": true,
+      "properties": { "flooded": ["false", "true"] },
+      "color": "#555459",
+      "textures": "moonMareDust"
     }
   ]
 }

@@ -230,7 +230,7 @@ pub fn behind_haze(e: f64, height: f64, density: f64) -> f64 {
     let h = height.max(0.0);
     let fog = fog::FogSettings {
         density,
-        ..fog::FOG
+        ..*fog::active()
     };
     let mid = FaceFrame::A.y(dwell_world::MIDPLANE_M);
     let path = fog::haze_amount(&fog, mid + h, mid, h / (-e).max(1e-6));
@@ -291,8 +291,8 @@ pub fn sky_wgsl_with(moon_ground: &str) -> String {
         ("BEHIND_FROM", d.sky.behind_from),
         ("BEHIND_TO", d.sky.behind_to.max(d.sky.behind_from + 1e-3)),
         ("BEHIND_HEIGHT", d.sky.behind_height_m.max(1e-3)),
-        ("SKY_FOG_SIGMA", fog::fog_sigma(fog::FOG.distance_m)),
-        ("SKY_FOG_HEIGHT", fog::FOG.height_m),
+        ("SKY_FOG_SIGMA", fog::fog_sigma(fog::active().distance_m)),
+        ("SKY_FOG_HEIGHT", fog::active().height_m),
         ("SKY_SEA_LEVEL", dwell_world::SEA_LEVEL_M),
         ("SKY_MAX_EXPONENT", fog::MAX_EXPONENT),
         ("SUN_RADIUS", d.sun.radius_deg.to_radians()),
@@ -336,6 +336,21 @@ pub fn sky_wgsl_with(moon_ground: &str) -> String {
         "const SPACE_COLOR: vec3f = {};",
         vec3(a.space_color)
     ));
+    // Aerial perspective (fog.rs `air_direction`, `air_tint`, `veiled`; the composite's
+    // `haze_air`, `haze_veiled`): HAZE_AERIAL false draws the plain fade to the horizon's colour.
+    let h = fog::active();
+    s.push(format!("const HAZE_AERIAL: bool = {};", h.aerial()));
+    for (name, v) in [
+        ("HAZE_LIFT", h.air_elevation_deg.to_radians().sin()),
+        ("HAZE_SUN_TINT", h.sun_tint),
+        ("HAZE_VEIL_HALF", h.veil_half_m),
+        ("HAZE_VEIL_SATURATION", h.veil_saturation),
+        ("HAZE_VEIL_CONTRAST", h.veil_contrast),
+    ] {
+        s.push(format!("const {name}: f32 = {};", f(v)));
+    }
+    s.push(format!("const HAZE_WARM: vec3f = {};", vec3(h.warm)));
+    s.push(format!("const HAZE_COOL: vec3f = {};", vec3(h.cool)));
     s.push(format!("const MOON_COLOR: vec3f = {};", vec3(d.moon.color)));
     s.push(format!(
         "const MOON_GLOW_COLOR: vec3f = {};",
@@ -567,7 +582,8 @@ mod tests {
 
     /// The ground's sky is today's exactly (docs/DAY_NIGHT.md §15): the atmosphere's thinning is a
     /// no-op at or below its base. Values recorded from `sky_color` before the atmosphere existed
-    /// (times of day, unit directions, face B, sRGB).
+    /// (times of day, unit directions, face B, sRGB); face B's row at 0.8 toward the moon re-recorded
+    /// for the 8.25-day month (its phase, so its glow, moved).
     #[test]
     // both-faces: the golden rows hold face A's and face B's sky, recorded together.
     fn the_sky_on_the_ground_is_todays_exactly() {
@@ -596,7 +612,7 @@ mod tests {
             (0.8, [-0.7011930431234068, 0.050085217365957634, 0.7112100865965983], false, [0.8134899088731719, 0.7683449340293006, 0.6978263816353129]),
             (0.8, [-0.7011930431234068, 0.050085217365957634, 0.7112100865965983], true, [0.252864398713008, 0.28120175935221287, 0.4346187383564934]),
             (0.8, [0.300006600217808, -0.4000088002904107, 0.8660190526287391], false, [0.9374553068596571, 0.8278412467477312, 0.6716624195310075]),
-            (0.8, [0.300006600217808, -0.4000088002904107, 0.8660190526287391], true, [0.14186467819420184, 0.18089147629674138, 0.33247624578197044]),
+            (0.8, [0.300006600217808, -0.4000088002904107, 0.8660190526287391], true, [0.14209124292537045, 0.18112650880998532, 0.3327145625694438]),
             (0.0, [0.0, 1.0, 0.0], false, [0.028905393193166266, 0.0485971513341277, 0.13501581809948343]),
             (0.0, [0.0, 1.0, 0.0], true, [0.89753314883075, 0.8977448726599567, 0.8823254325707794]),
             (0.0, [0.6007212985974549, 0.30036064929872747, 0.7408896016035278], false, [0.08239390991623335, 0.11086325582470048, 0.20954412397483954]),

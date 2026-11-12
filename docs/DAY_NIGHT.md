@@ -28,7 +28,7 @@ proposed on 2026-10-16 (§8):
 | Where the data lives | `shared/look/daynight.json` (clock, sun path, sun/moon/star looks, keyframes), generated and validated |
 | Keyframes | 14 over the day, keyed by the sun's angle along its path, interpolated in Oklab |
 | Sun | A limb-darkened disc, larger near the horizon, with a bloom and a glow sized by data |
-| Moon | Opposite the sun (as the bifacial world had it), with phases over an 8-day cycle, maria and earthshine |
+| Moon | Opposite the sun (as the bifacial world had it), with phases over an 8.25-day cycle, maria and earthshine |
 | Stars | Procedural, turning with the sky, faded by the sky's brightness, twinkling |
 | Face B | Shares the one sky: its time of day is face A's + 12 hours (10 min day, 20 min night) |
 | The sky rotation setting | Removed (the time of day is the world's); dev switches replace it |
@@ -124,6 +124,25 @@ direction (`dwell_sky`, the same function that draws the sky), and below the hor
 horizon's colour in that azimuth. So distant terrain melts into the sky at every time of day: into
 the warm band toward a setting sun, into the dark blue horizon at night. There is no separate fog
 colour to keep in step. The keyframes vary only the fog's density.
+
+**Aerial perspective (data, off by default; WORK_QUEUE item 29).** `shared/look/fog.json` also holds
+how far land fades, all of it still read from the sky so it stays in step with the time of day:
+
+- `air.elevationDeg`: the colour far land fades toward is the sky's at least that many degrees above
+  the horizon in the ray's azimuth (bluer than the pale horizon by day); 0 is the horizon's, as above.
+- `air.sunTint` with `warm` and `cool` (per-channel multipliers): that colour warmer facing the sun's
+  azimuth, cooler away; 0 none.
+- `veil.saturation`, `veil.contrast`, `veil.halfM`: before the haze hides it, far land greys and its
+  darks fill with the air colour (shadows haze first), half of each by `halfM`; 0s none.
+
+dwell-look `fog.rs` (`air_direction`, `air_tint`, `veiled`) is the reference; the composite's
+`haze_air` and `haze_veiled` (`shaders.rs`) apply it in `fogged`, behind a WGSL constant
+`HAZE_AERIAL`, so with today's zeros the composite is the plain fade, unchanged (the golden test
+`fog::tests::todays_fog_output_is_pinned`). It costs one more `dwell_sky` and a few multiplies per
+fogged pixel when on, the same on the CPU adapter's tier. `presets` in the file name variants over
+these values (`thicker`, `aerial`, `aerial-sun`: item 29's B, C and D); `?haze=<name>` draws one
+(`setHaze`, set before the shaders are built) to compare. The values at the top level are what every
+client draws; picking a preset is moving its values there.
 
 ## 5. Drawing
 
@@ -735,9 +754,11 @@ minimum still." for new-moon nights; and "the moon should look bright": today's 
   f32); a world without it (every world before it) takes `moon.startPhase`, so older worlds keep
   working and a world that sets none joins byte-identically. `Celestial::for_world` builds the model
   from a world's settings.
-- **An 8-day month brings the full moon at the same clock time** (face A's midnight with
-  `startPhase` 0.5), so face B's nights see it a half day off (92% lit); a fractional month or a
-  world's own phase moves that.
+- **The month is 8.25 days** (owner, 2026-11-12: "Sounds good" to a fractional month): each
+  month's full moon comes a quarter day later on the clock than the last, so over four months it
+  falls at face A's midnight, dawn, face B's midnight and dusk in turn, and both faces' nights get
+  full moons (`celestial::tests::the_full_moon_comes_round_the_clock_…`). The 8-day month it
+  replaced brought every full moon at face A's midnight.
 - **Tests** (`cargo test -p dwell-look --lib celestial`): the sun golden; the orbit's distance and
   latitude; full opposite the sun, new between; the lit share monotonic new → full → new; the month
   and the daily lag; tidally locked (face A toward home at every phase, both faces); both faces'

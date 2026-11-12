@@ -17,6 +17,7 @@ import {
   itemSwatch,
   loadWasm,
   pingServer,
+  setHaze,
   setWorldFileVersion,
   swatchSize,
   type WasmBytes,
@@ -798,8 +799,12 @@ async function start(): Promise<App | null> {
       painted: () => loading.painted(),
       settled: (c) => c.gpuSettled(),
       load: (onBytes) => loadTools(onBytes),
-      create: () =>
-        Client.create(canvas, {
+      create: () => {
+        // ?haze=<preset> draws a fog preset (shared/look/fog.json; a dev tool, DEV_TOOLS.md),
+        // set before the renderer bakes the fog into its shaders.
+        const haze = new URLSearchParams(location.search).get('haze');
+        if (haze) setHaze(haze);
+        return Client.create(canvas, {
           displayName: displayName(),
           clientVersion: recordedVersion(),
           makeWorker: makeJobWorker,
@@ -825,7 +830,8 @@ async function start(): Promise<App | null> {
           samples: antialiasMode(
             antialiasFromQuery(location.search, loadSettings(mobile).antialias).mode,
           ).samples,
-        }),
+        });
+      },
     });
   } catch (err) {
     loading.abort();

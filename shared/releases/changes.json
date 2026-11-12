@@ -2,6 +2,59 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.54.70",
+      "changes": [
+        "The moon's month is now 8¼ days, so the full moon rises at a different hour each month and both sides of the world get full-moon nights",
+        "The moon's seas (maria) are a darker moon dust, and they look darker from afar too"
+      ]
+    },
+    {
+      "version": "0.54.69",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.68",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.67",
+      "changes": [
+        "Behind the scenes: design notes"
+      ]
+    },
+    {
+      "version": "0.54.66",
+      "changes": [
+        "Behind the scenes: design answers"
+      ]
+    },
+    {
+      "version": "0.54.65",
+      "changes": [
+        "Bigger worlds: the F4 height map's widest zoom now shows the whole world, not only its middle."
+      ]
+    },
+    {
+      "version": "0.54.64",
+      "changes": [
+        "Chopping one spot now widens the axe's bites across the trunk into a real notch, instead of a tall narrow slot down the log.",
+        "The notch reaches round the trunk's corners, thin trunks included.",
+        "Wood cracks now show around the bites as you chop.",
+        "A swing after the tree falls bites the stump instead of wiping out the gash; chop the stump down to clear it, and it drops wood."
+      ]
+    },
+    {
+      "version": "0.54.63",
+      "changes": [
+        "Climbing high now thins the sky to black space: stars by day, a thin bright glow along the world's rim below you, and a sharper, whiter sun",
+        "The fog fades away as you leave the air, and clouds never reach past the top of the atmosphere"
+      ]
+    },
+    {
       "version": "0.54.62",
       "changes": [
         "Design: seed-rolled orbits to set each world's climate band, sky and later seasons, no change in game yet"

@@ -75,6 +75,14 @@ pub async fn probe_scene() -> Result<Vec<u8>, JsError> {
 
 /// The hotbar picture of palette slot `slot` (TILE × TILE RGBA8): a ½ m piece of a full block
 /// shows as the world draws a ½ m cell, its tile's top half (`dwell_mesh::half_swatch`).
+/// Draws the fog preset `name` (shared/look/fog.json `presets`; `?haze=<name>`, a dev tool to
+/// compare them) instead of the fog every client draws. Called before the client is created (the
+/// shaders bake the fog in); returns whether `name` is a preset.
+#[wasm_bindgen(js_name = setHaze)]
+pub fn set_haze(name: &str) -> bool {
+    dwell_look::fog::select(name)
+}
+
 #[wasm_bindgen(js_name = hotbarSwatch)]
 pub fn hotbar_swatch(slot: usize) -> Vec<u8> {
     let palette = dwell_game::block_interaction::palette();

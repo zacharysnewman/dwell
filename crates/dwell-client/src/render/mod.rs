@@ -47,7 +47,7 @@ use dwell_game::brush_tool::{BrushOutline, GhostFace, GhostKind};
 use dwell_lod::fade::Fade;
 use dwell_look::clouds::{CLOUDS, CloudQuality, cloud_uniforms};
 use dwell_look::daynight::{DAY_SKY_FLOATS, DayState};
-use dwell_look::fog::{FOG, fog_sigma};
+use dwell_look::fog::{self, fog_sigma};
 use dwell_look::lod_shadows::LOD_SHADOWS;
 use dwell_look::motion::{MOTION, vanishing_point};
 use dwell_look::outline::{OUTLINE, OutlineMode, outline_uniforms};
@@ -3204,8 +3204,8 @@ impl Renderer {
         // render clock: frozen while the look is paused, render_clock.rs).
         let seconds = (crate::render_clock::now_ms() - self.start_ms) / 1000.0;
         put(&[
-            fog_sigma(FOG.distance_m) as f32,
-            FOG.height_m as f32,
+            fog_sigma(fog::active().distance_m) as f32,
+            fog::active().height_m as f32,
             seconds as f32,
             self.plant_wind as f32,
         ]);

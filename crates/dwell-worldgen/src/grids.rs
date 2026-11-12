@@ -93,7 +93,7 @@ pub struct RidgeRule {
     pub in_maria: f64,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct MariaRule {
     /// A jittered grid of this cell (m), one candidate basin a cell.
     pub cell_m: f64,
@@ -108,8 +108,10 @@ pub struct MariaRule {
     pub flatten: f64,
     /// The share of craters kept inside a mare.
     pub crater_density: f64,
-    /// The mare's albedo, × the block's colour.
-    pub albedo: f64,
+    /// The maria's ground block, by name (a darker dust): a column at least half in a mare
+    /// ([`CrateredTerrain::mare_weight`] ≥ ½) is this block, and the far bake's colour there is
+    /// its `color`.
+    pub block: String,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -215,13 +217,19 @@ fn noise_rule(v: &Value, at: &str) -> Result<NoiseRule, String> {
     })
 }
 
-fn crater_rules(g: &Value, at: &str) -> Result<CraterRules, String> {
-    let block = get(g, "block", at)?
+/// A block name at `path`, which must name a block of the registry.
+fn block_name(v: &Value, path: &str, at: &str) -> Result<String, String> {
+    let block = get(v, path, at)?
         .as_str()
-        .ok_or_else(|| format!("{at}: `block` must be a block name"))?;
+        .ok_or_else(|| format!("{at}: `{path}` must be a block name"))?;
     if dwell_blocks::state(block).is_none() {
-        return Err(format!("{at}: `block` names no block (`{block}`)"));
+        return Err(format!("{at}: `{path}` names no block (`{block}`)"));
     }
+    Ok(block.to_owned())
+}
+
+fn crater_rules(g: &Value, at: &str) -> Result<CraterRules, String> {
+    let block = block_name(g, "block", at)?;
     let r = get(g, "ridges", at)?;
     let m = get(g, "maria", at)?;
     let c = get(g, "craters", at)?;
@@ -252,7 +260,7 @@ fn crater_rules(g: &Value, at: &str) -> Result<CraterRules, String> {
         edge_m: positive(m, "edgeM", at)?,
         flatten: share(m, "flatten", at)?,
         crater_density: share(m, "craterDensity", at)?,
-        albedo: share(m, "albedo", at)?,
+        block: block_name(m, "block", &format!("{at} maria"))?,
     };
     if maria.radius_m[1] >= maria.cell_m {
         return Err(format!(
@@ -266,7 +274,7 @@ fn crater_rules(g: &Value, at: &str) -> Result<CraterRules, String> {
     }
     let bake = bake_size(g, at)?;
     Ok(CraterRules {
-        block: block.to_owned(),
+        block,
         datum_m: num(g, "datumM", at)?,
         min_m: {
             let m = positive(g, "minM", at)?;
@@ -527,7 +535,7 @@ pub struct FarBake {
     /// RGBA: the face-local normal (R = x, G = z, B = up; each `(n + 1) / 2 × 255`), A the height
     /// over `height_range` (0 at its low end, 255 at its high); outside the disc straight up, A 0.
     pub normal_height: Vec<u8>,
-    /// RGBA: the ground's colour × its albedo (maria darker), A 255 inside the disc, 0 outside.
+    /// RGBA: the ground's colour (its blocks' `color`, the maria's darker block), A 255 inside the disc, 0 outside.
     /// Under water it is the ground under the water (the bed): the renderer lays the water's own
     /// look over it by `water`.
     pub albedo: Vec<u8>,
@@ -655,6 +663,8 @@ pub struct CrateredTerrain {
     radius: f64,
     seeds: [u64; 2],
     block: StateId,
+    /// The maria's ground.
+    mare_block: StateId,
 }
 
 const PLAINS: u32 = 0x4D_0001;
@@ -682,6 +692,7 @@ impl CrateredTerrain {
             radius: def.radius_m?,
             seeds: [face_seed(seed, Face::A), face_seed(seed, Face::B)],
             block: dwell_blocks::require(&rules.block),
+            mare_block: dwell_blocks::require(&rules.maria.block),
         })
     }
 
@@ -847,6 +858,16 @@ impl CrateredTerrain {
             .then(|| (self.height(face, cx, cz) / CELL_H).round() as i64 - 1)
     }
 
+    /// The ground block of column (x, z) on `face`: the maria's block where the column's centre
+    /// is at least half in a mare, the grid's block elsewhere.
+    pub fn surface_block(&self, face: Face, x: i64, z: i64) -> StateId {
+        if self.mare_weight(face, x as f64 + 0.5, z as f64 + 0.5) >= 0.5 {
+            self.mare_block
+        } else {
+            self.block
+        }
+    }
+
     /// A spawn column on `face` (MOON_WORLD.md §7): the first point of a spiral out from the
     /// disc's centre whose ground is flat (heights within 1 m over 4 m round it) and clear of every
     /// crater wall (not within 1.2 radii of a crater 10 m or wider). Face-local (x, top of the
@@ -896,11 +917,12 @@ impl CrateredTerrain {
                 let wx = i64::from(local.x * S + x);
                 let wz = i64::from(local.z * S + z);
                 let top = self.top_row(f.face, wx, wz);
+                let ground = f.state(self.surface_block(f.face, wx, wz));
                 for y in 0..S {
                     let row = i64::from(local.y * S + y);
                     let solid = top.is_some_and(|t| row >= 0 && row <= t);
                     let ly = if f.is_b() { S - 1 - y } else { y };
-                    cells[local_index(x, ly, z)] = if solid { f.state(self.block) } else { M.air };
+                    cells[local_index(x, ly, z)] = if solid { ground } else { M.air };
                 }
             }
         }
@@ -925,8 +947,13 @@ impl FarSource for CrateredTerrain {
         self.height_at_scale(face, x, z, texel_m)
     }
     fn far_albedo(&self, face: Face, x: f64, z: f64) -> [f64; 3] {
-        let c = dwell_blocks::info(self.block).color;
-        let k = 1.0 - self.mare_weight(face, x, z) * (1.0 - self.rules.maria.albedo);
-        [(c >> 16) & 0xff, (c >> 8) & 0xff, c & 0xff].map(|v| f64::from(v) / 255.0 * k)
+        // Each block's own colour (blocks.json `color`), blended across a mare's soft edge.
+        let rgb = |s: StateId| {
+            let c = dwell_blocks::info(s).color;
+            [(c >> 16) & 0xff, (c >> 8) & 0xff, c & 0xff].map(|v| f64::from(v) / 255.0)
+        };
+        let (high, mare) = (rgb(self.block), rgb(self.mare_block));
+        let w = self.mare_weight(face, x, z);
+        std::array::from_fn(|i| high[i] + (mare[i] - high[i]) * w)
     }
 }
