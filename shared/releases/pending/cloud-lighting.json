@@ -1,0 +1,6 @@
+{
+  "changes": [
+    "Volumetric clouds are shaded: darker bases, sunlit tops and a silver lining toward the sun, so their shapes read",
+    "Medium clouds now shadow themselves toward the sun, as High does"
+  ]
+}
