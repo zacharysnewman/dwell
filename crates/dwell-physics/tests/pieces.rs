@@ -160,3 +160,111 @@ fn a_felled_octagonal_trunk_falls_and_settles_on_a_flat_side() {
         at.y
     );
 }
+
+/// A piece of `cells` (centres relative to its origin, face-local; 1 m × `half_y` × 1 m boxes of
+/// `mass` kg each), at `origin` (face-local), turned by `rotation` (face-local), moving at
+/// `velocity` (face-local).
+fn moving_piece(
+    w: &mut PlayerTestWorld,
+    cells: &[Vec3],
+    half_y: f64,
+    mass: f64,
+    origin: Vec3,
+    rotation: dwell_physics::DQuat,
+    velocity: Vec3,
+) -> dwell_physics::BodyHandle {
+    let cells: Vec<PieceCell> = cells
+        .iter()
+        .map(|c| {
+            let c = mirror_vec(*c);
+            PieceCell {
+                center: DVec3::new(f64::from(c.x), f64::from(c.y), f64::from(c.z)),
+                half: DVec3::new(0.5, half_y, 0.5),
+                mass,
+                collide: dwell_physics::Collide::All,
+                hull: None,
+                joined: 0,
+            }
+        })
+        .collect();
+    let piece = w.physics.add_piece(to_world(origin), &cells, false);
+    w.physics.set_rotation(piece, mirror_rotation(rotation));
+    let v = mirror_vec(velocity);
+    w.physics.set_velocity(
+        piece,
+        DVec3::new(f64::from(v.x), f64::from(v.y), f64::from(v.z)),
+    );
+    piece
+}
+
+#[test]
+fn a_piece_coming_down_on_a_standing_player_pins_them_not_squeezes_them_out() {
+    // BUGS.md #52: a felled trunk's slanted underside came down on its chopper and the
+    // frictionless capsule, pinched between it and the ground, could only be squeezed out
+    // sideways, at the descent over the slant's slope (a 10° slab at 6 m/s: ~34 m/s, flung tens
+    // of metres). A piece pressing a player down grips them (`physics::PinchGrip`): they stay put
+    // or are carried at the piece's own speed. Red before: thrown far.
+    let mut w = PlayerTestWorld::new();
+    w.floor();
+    let e = w.spawn(Vec3::new(0.5, 0.0, 0.5));
+    w.step(5);
+    let start = w.pos(e);
+    // A 6 m × ½ m × 2 m slab of 1.2 t tilted 6°, its underside a little over the player's head.
+    let cells: Vec<Vec3> = (0..6)
+        .flat_map(|x| (0..2).map(move |z| Vec3::new(x as f32 - 2.5, 0.0, z as f32 - 0.5)))
+        .collect();
+    moving_piece(
+        &mut w,
+        &cells,
+        0.25,
+        100.0,
+        Vec3::new(1.5, 2.4, 0.5),
+        euler(0.0, 0.0, 6.0),
+        Vec3::new(0.0, -6.0, 0.0),
+    );
+    let mut far: f32 = 0.0;
+    let mut fastest: f32 = 0.0;
+    for _ in 0..ticks(2.0) {
+        w.step(1);
+        let d = w.pos(e) - start;
+        far = far.max((d.x * d.x + d.z * d.z).sqrt());
+        fastest = fastest.max(w.horizontal_speed(e));
+    }
+    println!("squeezed {far} m, {fastest} m/s");
+    assert!(
+        far < 1.0 && fastest < 4.0,
+        "the slab squeezed the player {far} m out, at {fastest} m/s"
+    );
+}
+
+#[test]
+fn a_piece_moving_into_a_standing_player_throws_them_as_hard_as_physics_says() {
+    // BUGS.md #52, the owner (2026-11-08): "we shouldn't be capping player kick like that". The
+    // pinch's grip is for contacts from above: a 900 kg log swung sideways into a player at
+    // 10 m/s (an inelastic hit: momentum kept, 900 · 10 / 980 ≈ 9.2 m/s) throws them at about
+    // its speed, uncapped.
+    let mut w = PlayerTestWorld::new();
+    w.floor();
+    let e = w.spawn(Vec3::new(0.5, 0.0, 0.5));
+    w.step(5);
+    let cells: Vec<Vec3> = (-1..=1).map(|z| Vec3::new(0.0, 0.0, z as f32)).collect();
+    moving_piece(
+        &mut w,
+        &cells,
+        0.5,
+        300.0,
+        Vec3::new(-2.5, 1.0, 0.5),
+        dwell_physics::DQuat::IDENTITY,
+        Vec3::new(10.0, 0.0, 0.0),
+    );
+    let mut fastest: f32 = 0.0;
+    for _ in 0..ticks(0.5) {
+        w.step(1);
+        fastest = fastest.max(w.vel(e).x);
+    }
+    println!("thrown at {fastest} m/s");
+    assert!(
+        (7.0..11.0).contains(&fastest),
+        "a 10 m/s log threw the player at {fastest} m/s"
+    );
+}

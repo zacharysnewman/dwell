@@ -632,6 +632,8 @@ impl Players {
             .restitution(0.0)
             .restitution_combine_rule(CoefficientCombineRule::Min)
             .collision_groups(groups(Layer::Character))
+            // A piece pressing the player down grips them (`physics::PinchGrip`, §6.6).
+            .active_hooks(ActiveHooks::MODIFY_SOLVER_CONTACTS)
             .build();
         let collider =
             physics
