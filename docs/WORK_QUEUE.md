@@ -1055,7 +1055,14 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
 
    Owner, 2026-11-12: **"Villagers should be able to hurt players."** A villager's sword strike that connects on a
    player damages them (through the damage rules: a new cause, knockback, the player's raised guard blocks it by the
-   same angle rule); modes without player damage (creative) are unaffected. In progress (cloud).
+   same angle rule); modes without player damage (creative) are unaffected. **Built (cloud, 2026-11-12):** an
+   NPC's blow past the player's block (glanced or connected) takes the weapon's `damage` through the damage
+   rules, a new cause `Weapon` (6; `Fall` to a client whose `CausesHello` doesn't name it, as `Burn`), and
+   pushes the player by the weapon's new `knockbackMps`/`liftMps` (shared/tools); a block recoils the NPC
+   unhurt; creative neither hurts nor pushes; the clash goes to clients as before. Tests (both faces,
+   `tests/weapons.rs`): an unguarded hit hurts and pushes, a raised guard across the blade blocks, creative
+   takes none, an older client hears `Fall`. Not yet: the client's own hurt look for a weapon (it shows the
+   generic damage flash), wolves biting players.
 39. **Livelier animals** (owner 2026-11-12, after the video had no chase or fleeing — on day one every pack is
    kilometres from any herd and players can't scare deer): chose **deer flee from players** (they notice a player
    within a distance by data, closer when crouching, and run off; wolves keep their distance unless hungry),
@@ -1422,6 +1429,11 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
   the in-game editor and a biome choice in the New world form.
 
 ## Future (needs owner answers)
+
+- **Geography presets for Realistic worlds** (owner 2026-11-12: "Let's hold that for a possible future feature."):
+  Mixed (today), Archipelago (oceanic plates only plus more hotspots: Hawaii-style chains and Japan-style arcs),
+  Continental (mostly continental plates); plate counts scaling with world size so big worlds get real continents.
+  Today every seed has at least one oceanic and one continental plate (plates.json `kinds.min`).
 
 - **A looser body in the chops** (owner 2026-11-12: "We can save loosening the stiff body for later"): the
   hips and legs turning into a level chop seen from behind, not the chest alone.

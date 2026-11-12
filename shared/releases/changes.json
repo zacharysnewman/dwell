@@ -2,6 +2,27 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.54.138",
+      "changes": [
+        "Villagers' sword strikes now hurt you and knock you back, unless your raised sword blocks across their blade",
+        "Creative players are never hurt by villagers"
+      ]
+    },
+    {
+      "version": "0.54.137",
+      "changes": [
+        "Settings → Graphics is grouped into Display, Lighting, Sky & weather, Water, Terrain & trees, Effects and Distance.",
+        "New graphics settings: Tall grass, Far trees, Distant shadows, Hit shards, Particles and Far herds, so every visual feature can be turned down.",
+        "Every preset keeps today's look; lower these yourself for more frame rate."
+      ]
+    },
+    {
+      "version": "0.54.136",
+      "changes": [
+        "Behind the scenes: a flying benchmark at High, measuring what costs frames over forests"
+      ]
+    },
+    {
       "version": "0.54.135",
       "changes": [
         "Behind the scenes: work queue notes"

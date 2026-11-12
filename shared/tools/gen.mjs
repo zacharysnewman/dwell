@@ -26,8 +26,10 @@ const TOOL_FIELDS = ['name', 'kind', 'swingSeconds', 'biteM', 'bindM', 'across',
 /** An axe's cutting fields: a weapon has none (it cuts no wood). */
 const AXE_FIELDS = ['biteM', 'bindM', 'across', 'along', 'sharpness', 'clears', 'chop2'];
 /** A weapon's strike (WORK_QUEUE item 35): damage and knockback per hit, the most creatures a
- * swing hits, and the hits it survives (merged into `durability.items`). */
-const WEAPON_FIELDS = ['damage', 'knockbackM', 'maxTargets', 'durability', 'guard'];
+ * swing hits, and the hits it survives (merged into `durability.items`); `knockbackMps` and
+ * `liftMps` the push a connecting hit gives a player (item 38: an NPC's strike; m/s away from the
+ * striker along the ground, and up). */
+const WEAPON_FIELDS = ['damage', 'knockbackM', 'knockbackMps', 'liftMps', 'maxTargets', 'durability', 'guard'];
 /** A weapon's swordplay (owner, 2026-11-12: perpendicular blocks, parallel connects): each
  * stance's blade roll, the thresholds, a glance's damage share, a block's recoil, the guarded arc. */
 const GUARD_FIELDS = ['stances', 'blockWithinDeg', 'connectWithinDeg', 'glanceDamage', 'recoilS', 'frontDeg', 'raiseAfterS', 'clash'];
@@ -186,6 +188,10 @@ export function validateTools(data, items, blocks, heldItems = loadHeldItems(), 
       known(w, WEAPON_FIELDS, `${at}.weapon`);
       inRange(w, 'damage', 0, 1000, `${at}.weapon`, true);
       inRange(w, 'knockbackM', 0, 8, `${at}.weapon`);
+      const knockbackMps = w.knockbackMps ?? 0;
+      const liftMps = w.liftMps ?? 0;
+      inRange({ knockbackMps, liftMps }, 'knockbackMps', 0, 30, `${at}.weapon`);
+      inRange({ knockbackMps, liftMps }, 'liftMps', 0, 30, `${at}.weapon`);
       const maxTargets = w.maxTargets ?? 1;
       if (!Number.isInteger(maxTargets) || maxTargets < 1 || maxTargets > 16) fail(`${at}.weapon.maxTargets must be a whole number in [1, 16]`);
       const durability = w.durability ?? null;
@@ -217,7 +223,7 @@ export function validateTools(data, items, blocks, heldItems = loadHeldItems(), 
       inRange(g, 'recoilS', 0, 3, gat);
       inRange(g, 'frontDeg', 0, 360, gat, true);
       const guard = { levelRollDeg: stances.level.rollDeg, verticalRollDeg: stances.vertical.rollDeg, blockWithinDeg: g.blockWithinDeg, connectWithinDeg: g.connectWithinDeg, glanceDamage: g.glanceDamage, recoilS: g.recoilS, frontDeg: g.frontDeg, raiseAfterS: g.raiseAfterS, levelPose: stances.level.raisedPose ?? null, verticalPose: stances.vertical.raisedPose ?? null, levelBlade: blades.level, verticalBlade: blades.vertical, clash: { sound: c.sound, hearM: c.hearM, sparks, glanceShare: c.glanceShare } };
-      weapon = { damage: w.damage, knockbackM: w.knockbackM, maxTargets, durability, guard };
+      weapon = { damage: w.damage, knockbackM: w.knockbackM, knockbackMps, liftMps, maxTargets, durability, guard };
       Object.assign(t, { biteM: 0, bindM: 0, across: 0, along: 0, sharpness: 1 });
     } else {
       if (t.weapon !== undefined) fail(`${at}.weapon: only a weapon has one (kind ${t.kind})`);
@@ -649,7 +655,7 @@ export function toolsRust(d) {
   for (const t of d.tools) {
     const kind = t.kind[0].toUpperCase() + t.kind.slice(1);
     rs.push(
-      `    ToolDef { name: "${t.name}", kind: ToolKind::${kind}, held: ${t.held === null ? 'None' : `Some("${t.held}")`}, swing_seconds: ${f64(t.swingSeconds)}, bite_m: ${f64(t.biteM)}, bind_m: ${f64(t.bindM)}, across: ${f64(t.across)}, along: ${f64(t.along)}, sharpness: ${f64(t.sharpness)}, held_vertical: ${optStr(t.heldVertical)}, swing: ${swingRust(t.swing)}, clears: &[${t.clears.map((b) => `"${b}"`).join(', ')}], chop2_bite: ${f64(t.chop2.bite)}, weapon: ${t.weapon === null ? 'None' : `Some(WeaponDef { damage: ${f64(t.weapon.damage)}, knockback_m: ${f64(t.weapon.knockbackM)}, max_targets: ${t.weapon.maxTargets}, guard: GuardDef { level_roll_deg: ${f64(t.weapon.guard.levelRollDeg)}, vertical_roll_deg: ${f64(t.weapon.guard.verticalRollDeg)}, block_within_deg: ${f64(t.weapon.guard.blockWithinDeg)}, connect_within_deg: ${f64(t.weapon.guard.connectWithinDeg)}, glance_damage: ${f64(t.weapon.guard.glanceDamage)}, recoil_s: ${f64(t.weapon.guard.recoilS)}, front_deg: ${f64(t.weapon.guard.frontDeg)}, raise_after_s: ${f64(t.weapon.guard.raiseAfterS)}, level_pose: ${optStr(t.weapon.guard.levelPose)}, vertical_pose: ${optStr(t.weapon.guard.verticalPose)}, level_blade: ${bladeRust(t.weapon.guard.levelBlade)}, vertical_blade: ${bladeRust(t.weapon.guard.verticalBlade)}, clash: ClashLook { sound: ${optStr(t.weapon.guard.clash.sound)}, hear_m: ${f64(t.weapon.guard.clash.hearM)}, sparks: ${chipsOpt(t.weapon.guard.clash.sparks)}, glance_share: ${f64(t.weapon.guard.clash.glanceShare)} } } })`} },`,
+      `    ToolDef { name: "${t.name}", kind: ToolKind::${kind}, held: ${t.held === null ? 'None' : `Some("${t.held}")`}, swing_seconds: ${f64(t.swingSeconds)}, bite_m: ${f64(t.biteM)}, bind_m: ${f64(t.bindM)}, across: ${f64(t.across)}, along: ${f64(t.along)}, sharpness: ${f64(t.sharpness)}, held_vertical: ${optStr(t.heldVertical)}, swing: ${swingRust(t.swing)}, clears: &[${t.clears.map((b) => `"${b}"`).join(', ')}], chop2_bite: ${f64(t.chop2.bite)}, weapon: ${t.weapon === null ? 'None' : `Some(WeaponDef { damage: ${f64(t.weapon.damage)}, knockback_m: ${f64(t.weapon.knockbackM)}, knockback_mps: ${f64(t.weapon.knockbackMps)}, lift_mps: ${f64(t.weapon.liftMps)}, max_targets: ${t.weapon.maxTargets}, guard: GuardDef { level_roll_deg: ${f64(t.weapon.guard.levelRollDeg)}, vertical_roll_deg: ${f64(t.weapon.guard.verticalRollDeg)}, block_within_deg: ${f64(t.weapon.guard.blockWithinDeg)}, connect_within_deg: ${f64(t.weapon.guard.connectWithinDeg)}, glance_damage: ${f64(t.weapon.guard.glanceDamage)}, recoil_s: ${f64(t.weapon.guard.recoilS)}, front_deg: ${f64(t.weapon.guard.frontDeg)}, raise_after_s: ${f64(t.weapon.guard.raiseAfterS)}, level_pose: ${optStr(t.weapon.guard.levelPose)}, vertical_pose: ${optStr(t.weapon.guard.verticalPose)}, level_blade: ${bladeRust(t.weapon.guard.levelBlade)}, vertical_blade: ${bladeRust(t.weapon.guard.verticalBlade)}, clash: ClashLook { sound: ${optStr(t.weapon.guard.clash.sound)}, hear_m: ${f64(t.weapon.guard.clash.hearM)}, sparks: ${chipsOpt(t.weapon.guard.clash.sparks)}, glance_share: ${f64(t.weapon.guard.clash.glanceShare)} } } })`} },`,
     );
   }
   rs.push('];');

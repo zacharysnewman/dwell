@@ -265,7 +265,8 @@
     "Crush": 2,
     "Explosion": 3,
     "Drown": 4,
-    "Burn": 5
+    "Burn": 5,
+    "Weapon": 6
   },
   "chunkForms": {
     "Generated": 0,
