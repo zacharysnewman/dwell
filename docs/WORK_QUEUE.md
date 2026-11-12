@@ -289,6 +289,15 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    for now; R5 uses today's blocks (stone, basalt, sandstone, red sandstone, sand, dirt) named in data, so
    new ones can replace them later.
 
+   Owner, 2026-11-12, on q2 (which latitude bands): **"I think latitude bands are based on orbits right? Orbits
+   should be seed determined."** So the climate band is not a list to pick from: the seed sets the world's orbit
+   (its distance from the sun → overall warmth, its axial tilt → seasons and how climate changes across the disc,
+   its day and year length within playable bounds) and the moon's orbit, and the latitude band and seasons follow
+   from them; one celestial model (MOON_WORLD.md §6) shared by the sky and the Realistic climate (R3). Design
+   update in progress (cloud).
+   Owner, 2026-11-12: q6 "dormant volcanoes only for now."; q8 "also on the big map" (overlays in Chisel and the
+   in-game big map); q9 asked "how does the default biome fill them?" (answer pending). Big map q5: "No, no
+   hitches" — region maps built ahead of the player.
 16. **Phone frame rate (P0)** (owner 2026-11-11, iPhone 17, Safari, setting Low: "I'm only getting ~23 fps on
    mobile, seeing lots of z-fighting on tree trunks with the leaf cards. What might be dropping frames since the
    last while. Used to get 60 fps"). Suspect: leaf cards are on in every tier but CPU, Low included; cards lying
@@ -612,6 +621,15 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    the Lambert ball 76 px, now 91 px; ×1 12 / 11 / 13 px. The bake's rim was already filled (outside texels the
    mean albedo, `render/moon.rs` `pack`): no dark ring. Left: the baked albedo's maria read faint next to the old
    procedural ones (the full moon near white), a look question for the owner.
+   Owner's answers, 2026-11-12: a fractional month ("Sounds good": 8.25 days); "keep darker seas (add a dark moon
+   aria dirt block)"; "Yes for now, let's just do earth gravity out to moon. We likely need an atmosphere
+   transition now between sky thinning to space. Clouds shouldn't extend past the earth atmosphere either."; the
+   moon "should match previous size for now. We'll play by ear a bit when we travel there."
+
+28. **An atmosphere: the sky thinning to space** (owner 2026-11-12: "We likely need an atmosphere transition now
+   between sky thinning to space. Clouds shouldn't extend past the earth atmosphere either."). With flight to the
+   moon, climbing should fade the sky's scattering to black space with stars by day, the horizon glow becoming a
+   thin limb; clouds and plumes stay below the atmosphere's top (data); the moon has none. In progress (cloud).
 
 ## Done
 

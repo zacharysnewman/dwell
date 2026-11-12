@@ -283,4 +283,6 @@ Answered by the owner, 2026-11-11:
 Open:
 
 5. Is a fraction of a second's wait for a new region's map acceptable when a player first nears it?
+   **Answered (owner, 2026-11-12): "No, no hitches"** — region maps are built ahead of the player (prefetched
+   in workers from the direction and speed of travel, including far flight) so nearing a region never waits.
 6. Is 1–2 minutes to create a 10×-area world acceptable for the test, before the regional maps?
