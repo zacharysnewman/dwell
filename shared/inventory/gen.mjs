@@ -33,7 +33,7 @@ const TOP_FIELDS = [
 const ITEM_FIELDS = ['name', 'label', 'color', 'size', 'stack', 'value', 'look'];
 const LOOK_FIELDS = ['shape', 'size', 'texture', 'color'];
 /** The looks' shapes (a fixed vocabulary: `dwell_protocol::inventory::LookShape`). */
-export const LOOK_SHAPES = ['rod', 'lump', 'cluster'];
+export const LOOK_SHAPES = ['rod', 'lump', 'cluster', 'shard'];
 /** A model look's shape (`look: { model }`): not written in the data, implied by `model`. */
 /** A look shape's Rust variant (`rod` → `Rod`). */
 export const lookVariant = (s) => s[0].toUpperCase() + s.slice(1);

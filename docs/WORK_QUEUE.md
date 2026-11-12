@@ -277,6 +277,13 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    in stone, the notch in wood), seen from every angle and at the edges, collision still the full block;
    (b) each hit also knocks off a real 3D piece (clod, shard, wood chip) that falls and is picked up as
    today's per-hit drops are. 0.52.11x's per-pixel relief (built) is the stopgap until (a) lands.
+   **Status (carved-mesh):** built (BLOCK_DAMAGE.md §6.2): (a) the struck faces meshed as a grid pushed in by
+   the height field (soils' bowls, stone's angular facets), watertight (the outline never moves), the face's
+   uvs and light, a per-cell triangle budget in data (`damage.look` `profile`/`facets`/`grid`/`triangles`),
+   on every tier (the decals and relief quads no longer emitted; cracks not drawn on carved faces); the
+   axe's notch was already real geometry. (b) the per-hit drops were already 3D loose items; the rock shard
+   now has its own angular `shard` look. Measured: 50 damaged cells +213 triangles and ~70 µs a cell.
+   Left: the owner's look review in game (no GPU in the cloud), then removing the shader's unused relief.
 19. **Lava glow, remaining** (owner 2026-11-11: "Lava should have bloom glow"; "Lava looks dark red instead of
    bright red/orange"; "It should darken as it solidifies though"). Built 0.52.107: colour by heat stops, heat in
    cells. Left: the bloom pass (keyed on emissive; tiers, off on CPU/Low); the crust covering less of hot lava

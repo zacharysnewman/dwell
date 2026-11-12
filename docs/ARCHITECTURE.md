@@ -835,12 +835,15 @@ mode with `instantBreaks` (creative, 0.52.51) anything but a breaking tool break
 client predicts only one-hit breaks and tells the server its held pickaxe or shovel by
 `ChopAction::Held`. **The look [built, D2 0.52.28]:** the client keeps the server's `Damage` per cell
 (`ChunkStream::set_damage`), the chunk's mesh job carries its damaged cells
-(`dwell_mesh::mesh_chunk_damaged`), and the mesher draws each hit mark as decals just off the struck
-face in the opaque mesh (`mesher/damage_mesh.rs`: stone an angular shard in a fresher tone, soils a
-round scoop carved per pixel — one quad per struck face whose hollow the terrain shader computes from
-parameters packed in its vertex colour and light (`relief`, `dent_shade`: bent normal, parallax march
-on Medium, rim shadow, damp floor; BLOCK_DAMAGE.md §6.1) — and cracks growing with the damage fraction;
-face-local through the face-B turn-over; collision unchanged), from the block's `damage.look` data. A hit short of breaking plays the
+(`dwell_mesh::mesh_chunk_damaged`), and the mesher **carves** each struck face (BLOCK_DAMAGE.md §6.2,
+built): the face leaves the greedy merge and is meshed as a tensor grid over its marks' reach whose
+vertices are pushed in by a height field (`mesher/relief.rs` `Carve`: soils' merged bowls, smooth-lit;
+stone's angular facets round each hit, flat-lit), with the face's uvs, corner light, and a darker, more
+occluded floor; the field is 0 on the cell's edge, so the face's outline and its neighbours' are
+unchanged (watertight); each cell's struck faces share a triangle budget (`damage.look` `profile`,
+`facets`, `grid`, `triangles`). The decals and §6.1's per-pixel relief quads are no longer emitted (the
+shader's relief path is unreached, kept until the owner's look review); cracks are not drawn on carved
+faces; face-local through the face-B turn-over; collision unchanged), from the block's `damage.look` data. A hit short of breaking plays the
 material's `Hit` sound at the struck point.
 **Drawing** (`render/skinned.rs`, inside `CharacterRenderer`): the model's one mesh (36-byte
 vertices: position, normal, sRGB colour, 4 × u8 joints, 4 × unorm8 weights; the Peasant 1,834

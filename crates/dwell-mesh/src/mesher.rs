@@ -1934,6 +1934,7 @@ pub(crate) fn mesh_chunk_full(
                 (at, carve::mirror_cut(grain, cut))
             })
             .collect();
+        let damaged = damaged_cells(&inner, damage, true);
         let mut m = mesh_cells(
             kinds,
             &mirror_padded(&inner),
@@ -1943,10 +1944,9 @@ pub(crate) fn mesh_chunk_full(
             &carved,
             flags,
             trees,
+            &damaged,
         );
         ground_mesh::append(&mut m.opaque, kinds, &flood, &items, origin, true);
-        let damaged = damaged_cells(&inner, damage, true);
-        damage_mesh::append(&mut m.opaque, kinds, &flood, &damaged);
         ChunkMeshes {
             opaque: flip_arrays_y(m.opaque),
             transparent: flip_arrays_y(m.transparent),
@@ -1960,10 +1960,11 @@ pub(crate) fn mesh_chunk_full(
             .filter(|(c, _)| in_chunk(*c))
             .map(|(c, cut)| (*c, *cut))
             .collect();
-        let mut m = mesh_cells(kinds, &inner, &occ, &flood, origin, &carved, flags, trees);
-        ground_mesh::append(&mut m.opaque, kinds, &flood, &items, origin, false);
         let damaged = damaged_cells(&inner, damage, false);
-        damage_mesh::append(&mut m.opaque, kinds, &flood, &damaged);
+        let mut m = mesh_cells(
+            kinds, &inner, &occ, &flood, origin, &carved, flags, trees, &damaged,
+        );
+        ground_mesh::append(&mut m.opaque, kinds, &flood, &items, origin, false);
         m
     };
     let water = (!flags.water_tops)
@@ -2005,7 +2006,8 @@ fn in_chunk(c: [i32; 3]) -> bool {
 }
 
 /// The meshes of a chunk of face A (or a mirrored one), in chunk-local cells; `carved` its cut
-/// wood cells (face-local, as the padded block); `trees` the species trees' leaf tints (ADR 0079).
+/// wood cells (face-local, as the padded block); `trees` the species trees' leaf tints (ADR 0079);
+/// `damaged` its damaged cells (face-local), whose struck faces are carved (BLOCK_DAMAGE.md §6.2).
 #[allow(clippy::too_many_arguments)]
 fn mesh_cells(
     kinds: &Kinds,
@@ -2016,7 +2018,30 @@ fn mesh_cells(
     carved: &HashMap<[i32; 3], Cut>,
     flags: ChunkFlags,
     trees: &[TreeTint],
+    damaged: &[([i32; 3], u16, DamageView)],
 ) -> ChunkMeshes {
+    // The struck faces of damaged cubes with a damage look (a cell holding another state than
+    // the one hit is undamaged), by cell and face: carved instead of merged.
+    let mut struck: HashMap<([i32; 3], usize), usize> = HashMap::new();
+    for (i, (c, state, view)) in damaged.iter().enumerate() {
+        let k = kinds.of(*state);
+        if padded[padded_index(c[0], c[1], c[2])] != *state
+            || k.shape != Shape::Full
+            || k.style.render != RenderMode::Opaque
+            || k.style.octagon
+            || k.style.leafy
+            || carved.contains_key(c)
+            || dwell_protocol::damage::look_of(k.style.block).is_none()
+        {
+            continue;
+        }
+        for mk in &view.marks {
+            if mk.face < 6 {
+                struck.insert((*c, usize::from(mk.face)), i);
+            }
+        }
+    }
+    let mut struck_faces: Vec<(damage_mesh::StruckFace, usize)> = Vec::new();
     // A cut cell is carved only if it is drawn as an opaque cube.
     let carved: HashMap<[i32; 3], Cut> = carved
         .iter()
@@ -2158,6 +2183,31 @@ fn mesh_cells(
                             surface_row = SURFACE_BIT;
                         }
                     }
+                    if !struck.is_empty()
+                        && let Some(&di) = struck.get(&(cell, face))
+                    {
+                        let (color, tile) =
+                            side_surface(&k.style, face, side_rule(&cells, &k, cx, cy, cz, face));
+                        let lkey = corner_keys(
+                            &cells,
+                            &mut vertex_rays,
+                            (face, plane),
+                            [i, j],
+                            [nx, ny, nz],
+                        );
+                        struck_faces.push((
+                            damage_mesh::StruckFace {
+                                cell,
+                                face,
+                                color,
+                                tile,
+                                light: lkey.map(key_light),
+                                flood: lkey.map(key_flood),
+                            },
+                            di,
+                        ));
+                        continue;
+                    }
                     let rule = side_rule(&cells, &k, cx, cy, cz, face).map_or(0, |r| r as i32 + 1);
                     let alone = if face == 2
                         && k.liquid
@@ -2265,6 +2315,32 @@ fn mesh_cells(
                 }
             }
         }
+    }
+    // The struck faces carved (BLOCK_DAMAGE.md §6.2): each cell's visible struck faces share its
+    // triangle budget.
+    for (sf, di) in &struck_faces {
+        let (_, state, view) = &damaged[*di];
+        let Some(look) = dwell_protocol::damage::look_of(kinds.of(*state).style.block) else {
+            continue;
+        };
+        let faces = struck_faces
+            .iter()
+            .filter(|(o, _)| o.cell == sf.cell)
+            .count();
+        let marks: Vec<_> = view
+            .marks
+            .iter()
+            .filter(|m| usize::from(m.face) == sf.face)
+            .collect();
+        let fraction = f64::from(view.fraction) / 255.0;
+        let carve = damage_mesh::carve_of(sf.face, &marks, &look, fraction);
+        damage_mesh::carve_face(
+            &mut opaque.m,
+            sf,
+            &carve,
+            &look,
+            damage_mesh::grid_for(&look, faces),
+        );
     }
     // Leaves (shared/look/leaves.json): whole cells, chamfered where exposed, lit as a crown.
     let crowns = leaves::Crowns::new(&cells);
