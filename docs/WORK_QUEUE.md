@@ -478,6 +478,15 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    hook; PLAYER_CONTROLLER.md §6.6), so the frictionless capsule is pinned, not squeezed out; side hits stay
    frictionless and uncapped. The repro is un-ignored (0.4–0.5 m, was 155–160 m; both faces).
 
+27. **The moon as a real bifacial world** (owner 2026-11-12: "we're going to make the moon a real bifacial world
+   like the current world, with simple gray dirt across the whole thing for now. Farthest LOD, AKA the one you
+   can see now, should be a simple lighting normal map based on the actual terrain. It should glow like it is
+   now and cast light like it does now, and it should be the same size in the sky as it is now."). Owner's
+   answers: travel and landing later, but design for it now (the moon's terrain is the one you'd stand on);
+   about ¼ of our disc (~12.5 km radius); terrain from the world's seed with moon rules (cratered plains, ridges,
+   maria), gray dirt everywhere for now — every world its own moon; today's motion, size in the sky, glow and
+   moonlight kept, the face shown follows its orbit. Design first (docs/proposals/MOON_WORLD.md), then build.
+
 ## Done
 
 - **Axe swing directions and animation tools (owner 2026-11-11: "The axe animations are still trash.
