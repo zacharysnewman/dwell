@@ -1052,7 +1052,9 @@ around each player (out to 3 m plus twice a tick's travel, capped), re-synced in
 an edit or a streamed chunk, and dropped every 64 ticks when more than 2 chunks from every player;
 **[built, 0.49.42]** a chunk's full cubes enter (and leave) the collider a little a tick, those within
 the players' and pieces' reach at once (`TerrainCollision::catch_up`, `COLLISION_CELLS_PER_TICK`;
-PLAYER_CONTROLLER.md §5), so a teleport's buried chunks no longer land on one tick;
+PLAYER_CONTROLLER.md §5), so a teleport's buried chunks no longer land on one tick; the client's
+prediction on a phone takes fewer of the rest a tick (`Players::set_collision_cells_per_tick`,
+`shared/render/streaming.json` `collisionCellsPerTick`; the cells within reach still at once);
 a chunk with no solid cell holds nothing, so open sky costs no collision memory. Cells that collide
 as their full cube go into the `Voxels` collider; **shaped cells** — the generated ramps (below,
 Phase 41) — go into **one triangle mesh per chunk** (Parry `TriMesh`, `FIX_INTERNAL_EDGES`, placed
@@ -3851,6 +3853,7 @@ in the code yet.
 | `SLOW_FRAME_MESHES_MAX` (client, `pool.rs`) | 8× | A slow page keeps more chunk meshes in flight: the usual number × its frame interval / 16.7 ms, at most 8×, queued in the pool and started as workers free between frames (at CI's ~5 fps a few starts a frame left the workers idle and the loading screen waited its 20 s timeout) |
 | `STREAM_MESH_SHARE` (client, `stream_budget.rs`) | 0.4 | The budget's share the light leaves to the mesh starts while chunks wait to be meshed |
 | `LIGHT_SLICE_CELLS` (client, `chunk_stream.rs`) | 1024 | Cells of a chunk's flood light between looks at the clock: ~0.1 ms natively, ~0.5 ms on a phone's CPU; one chunk's light was 15–20 ms of a frame at CPU 6× (BUGS.md #72) |
+| `collisionCellsPerTick` (client prediction, data: `shared/render/streaming.json`) | desktop 8192 (the server's `COLLISION_CELLS_PER_TICK`), phone 1024 | Terrain collider cells a prediction tick puts in outside the player's reach; the cells within reach go in at once, so the player moves the same. The 8192 were 8–10 ms of a tick at CPU 6× (BUGS.md #72) |
 | `uploadBytesPerFrame` (client, data: `shared/render/streaming.json`) | desktop 4 MiB, phone 512 KiB | The chunk mesh bytes one frame uploads (the first mesh always goes; the rest wait in order); a mesh larger than it is written over several frames, this much a frame (`render/staged.rs`). On the bench's phone page at CPU 4× an upload costs ~4 ms a MB and moving brought bursts of 1.8–3.7 MB in a frame (BUGS.md #72) |
 | **LOD (§6.6), Phase 4** | | |
 | `LOD_SECTION_CELLS` | 32 | Cells per LOD section edge (level 0 = a chunk) |

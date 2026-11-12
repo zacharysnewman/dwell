@@ -452,6 +452,37 @@ tree trunks with the leaf cards. What might be dropping frames since the last wh
   under 9.1 ms. Frames over 16.7 ms of CPU at 6×: 77 → 24 over the three routes; dropped frames at 6×: 77 → 55. The
   6× flight's worst frames now are `ticks` (13–20 ms: the prediction's ticks, the terrain collision loading while
   flying), not the loading: the next cut there. Still open: a real iPhone check while moving.
+- **Round 6 (branch `claude/fps-moving-4`): the prediction's ticks.** A tick of 13–20 ms in the 6× flight is one
+  tick (`ticks.count` 1), not a catch-up of several, and its time is the terrain collider (`Players::tick_terrain`):
+  natively, on a streamed world like the client's, a tick that reaches new chunks takes up to 1.4 ms building them
+  (`ensure_box`) and up to 1.6 ms putting cells in the voxel collider (`catch_up`: the cells in the player's reach,
+  then `COLLISION_CELLS_PER_TICK`, 8192, more of new chunks a tick), ~8–10 ms each at 6×; Rapier's step is
+  ~0.4 ms a tick. **Cut:** the prediction's tick puts fewer of those background cells in on a phone
+  (`Players::set_collision_cells_per_tick`, data: `shared/render/streaming.json` `collisionCellsPerTick`, desktop the
+  server's 8192, phone 1024); the cells within the player's reach still go in at once whatever the budget, so the
+  player moves the same, and the server is unchanged. Test `dwell-physics` `collision_budget`
+  `a_smaller_collision_budget_bounds_a_ticks_cells_and_moves_the_player_the_same`: red with the budget ignored (a
+  tick put 8437 cells in), green (≤ 1024 + the reach's), and the run's feet equal the default budget's on every one
+  of 600 ticks across a chunk border; `streaming` pins desktop at the server's budget and the phone's below it. The
+  controller suites pass on both faces (`cargo test -p dwell-physics`, 263 tests, and again with `DWELL_FACE=b`). Main's #642 (the
+  `PinchGrip` contact hook, contact recycling off for the player's pairs) measured with it (the last column): no
+  cost on the tick here, mean and p95 within the runs' noise. `phone-moving`, ms:
+
+  | Route | CPU | main (round 5) ticks mean / p95 / max | this branch, before #642 | this branch with #642 | frames > 16.7 ms CPU (main → branch) | dropped (> 20 ms) (main → branch) |
+  | --- | --- | --- | --- | --- | --- | --- |
+  | walk | 4x | 0.50 / 1.2 / 11.7 | 0.54 / 1.5 / 8.2 | 0.42 / 1.3 / 8.3 | 1 → 1 | 0 → 0 |
+  | sprint | 4x | 0.34 / 1.0 / 11.1 | 0.45 / 1.4 / 7.9 | 0.41 / 1.3 / 8.2 | 0 → 0 | 0 → 0 |
+  | fly | 4x | 0.62 / 1.7 / 14.1 | 0.73 / 2.0 / 11.2 | 0.67 / 2.0 / 10.8 | 1 → 1 | 2 → 2 |
+  | walk | 6x | 0.83 / 1.7 / 17.5 | 0.80 / 1.9 / 11.6 | 0.68 / 1.9 / 12.6 | 6 → 2 | 8 → 5 |
+  | sprint | 6x | 0.61 / 1.6 / 15.8 | 0.72 / 2.2 / 11.7 | 0.62 / 1.7 / 10.9 | 2 → 2 | 4 → 8 |
+  | fly | 6x | 1.05 / 2.5 / 19.8 | 1.25 / 3.9 / 16.4 | 1.12 / 3.3 / 18.8 | 16 → 8 | 43 → 37 |
+
+  The 6× ticks' worst: walk 17.5 → 12.6, sprint 15.8 → 10.9, fly 19.8 → 18.8 (one frame; the flight's p95 2.5 → 3.3,
+  the cells within reach now going in as the player reaches them). What is left in the worst ticks is building a
+  newly reached chunk's collision (`ensure_box`, ~1.4 ms natively): building the chunks ahead of a moving player
+  between frames was tried and parked (on the test's generated world the builds ahead read neighbours that then
+  changed, and their rebuilds landed in the ticks; it needs a streamed-world test). Still open: that, and a real
+  iPhone check while moving.
 
 ### 71. "Starting the graphics" takes a long time with no elapsed time shown (fixed after 0.52.101)
 
