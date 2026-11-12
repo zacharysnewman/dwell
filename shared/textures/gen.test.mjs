@@ -160,6 +160,38 @@ test('"strokes" alpha covers only the strokes; clip paints inside them', () => {
   assert.deepEqual(texel(imageRows(tile), 16, TILE - 2), texel(tile, 16, 1));
 });
 
+test('tall grass is painted like the grass top it stands on, darker at the foot', () => {
+  // WORK_QUEUE item 21 (owner, 2026-11-11): the tufts read pale, whitish-green, against the grass
+  // (tips in the meadow ramp's light stop, #c8e06a). Covered texels' average in linear light, by
+  // rows of the tile (row 0 is the foot).
+  const lin = (c) => ((c /= 255) <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+  const average = (tile, y0, y1) => {
+    const sum = [0, 0, 0];
+    let n = 0;
+    for (let y = y0; y < y1; y++) {
+      for (let x = 0; x < TILE; x++) {
+        const t = texel(tile, x, y);
+        if (t[3] < 128) continue;
+        for (let k = 0; k < 3; k++) sum[k] += lin(t[k]);
+        n++;
+      }
+    }
+    return sum.map((v) => v / n);
+  };
+  const luma = ([r, g, b]) => 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  const grass = average(paintMaterial('grass_top', materials, palette), 0, TILE);
+  const tuft = paintMaterial('tall_grass', materials, palette);
+  const [foot, tips, all] = [average(tuft, 0, 11), average(tuft, 21, TILE), average(tuft, 0, TILE)];
+  // The tips the grass top's colour (each channel within 12 %), never lighter than it by more.
+  for (let k = 0; k < 3; k++) {
+    assert.ok(Math.abs(tips[k] - grass[k]) <= 0.12 * grass[k], `tips ${tips} against the grass top's ${grass}`);
+  }
+  assert.ok(luma(tips) <= 1.12 * luma(grass), `tips ${luma(tips)} against ${luma(grass)}`);
+  // A bit darker at the foot, and overall no paler than the grass.
+  assert.ok(luma(foot) < 0.92 * luma(tips), `foot ${luma(foot)}, tips ${luma(tips)}`);
+  assert.ok(luma(all) <= luma(grass), `the tuft ${luma(all)} against the grass top's ${luma(grass)}`);
+});
+
 test('bad entries fail with a message naming them', () => {
   const cases = [
     [(m) => (m.materials.stone.layers[1].kind = 'splat'), /materials\.stone\.layers\[1\]\.kind must be one of/],

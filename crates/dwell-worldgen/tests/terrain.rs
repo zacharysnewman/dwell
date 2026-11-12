@@ -794,6 +794,62 @@ fn meadows_of_tall_grass_grow_on_grass_by_the_decoration_data() {
     );
 }
 
+both_faces!(
+    /// WORK_QUEUE item 21 (owner, 2026-11-11: "Yes make the meadow grass fix"): tall grass grows over
+    /// the meadow's ½ m grass ramps too (decorations.json `onRamps`), in the cell over the ramp, at
+    /// about the share it grows on flat grass; never over a 1 m ramp. Red before: no ramp had any,
+    /// so ~40 % of a meadow's surface showed bare stripes. Read through the world on either face.
+    fn tall_grass_grows_over_half_metre_grass_ramps(f: FaceFrame) {
+        use dwell_blocks::state_property;
+        let seed = 7;
+        let terrain = bifacial::BifacialTerrain::for_generator(GENERATOR_TERRAIN, seed).unwrap();
+        let g = terrain.local(f.face);
+        let mut world = VoxelWorld::new(generator_for(GENERATOR_TERRAIN, seed), None);
+        let tall = require("dwell:tall_grass");
+        let grass_ramp = dwell_blocks::find_block("dwell:grass_ramp").expect("grass ramps");
+        let (mut flat, mut flat_tufts, mut ramps, mut ramp_tufts, mut steep_tufts) =
+            (0, 0, 0, 0, 0);
+        for (cx, cz) in [(0, 0), (1, 0), (0, 1), (-3, 5), (12, -7), (5, 5), (-6, -2)] {
+            for z in cz * S..cz * S + S {
+                for x in cx * S..cx * S + S {
+                    let top = g.ground_y(x, z).expect("inside");
+                    let mut at = |y: i32| {
+                        let [wx, wy, wz] = f.cell([x, y, z]);
+                        f.state(world.get_voxel(wx, wy, wz))
+                    };
+                    let (m, over) = (at(top), at(top + 1));
+                    let tuft = over == tall;
+                    if m == M.grass {
+                        flat += 1;
+                        flat_tufts += i32::from(tuft);
+                    } else if dwell_blocks::block_of(m).name == grass_ramp.name {
+                        match state_property(m, "shape") {
+                            Some("ramp") => {
+                                ramps += 1;
+                                ramp_tufts += i32::from(tuft);
+                            }
+                            _ => steep_tufts += i32::from(tuft),
+                        }
+                    }
+                }
+            }
+        }
+        assert!(
+            flat > 500 && ramps > 200,
+            "{flat} flat, {ramps} ramp grass tops"
+        );
+        let (on_flat, on_ramps) = (
+            f64::from(flat_tufts) / f64::from(flat),
+            f64::from(ramp_tufts) / f64::from(ramps),
+        );
+        assert!(
+            ramp_tufts > 20 && on_ramps > 0.5 * on_flat,
+            "tufts on {ramp_tufts} of {ramps} ramps ({on_ramps:.3}) against {on_flat:.3} on flat"
+        );
+        assert_eq!(steep_tufts, 0, "none over a 1 m ramp");
+    }
+);
+
 #[test]
 fn generated_ramps_follow_the_rule_across_chunk_borders_and_hold_the_sea_at_the_shore() {
     // HALF_HEIGHT_GRID.md §4: each natural top is the rule's answer over its 9 columns' heights,

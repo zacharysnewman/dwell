@@ -245,6 +245,10 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    on trunk faces z-fight. In progress (local): measure each feature's cost on the `--touch` page at Low (default
    and starter worlds) against an older release; cards off on Low/phone, no cards against log faces, a Low tier
    for every new visual; tier pins and a z-fight test.
+   Owner, 2026-11-12 (after leaf cards went off on phones and Low): **"I got 60 fps when standing still on
+   Low."** So standing still is fixed; the drops left are while moving: next, a moving scenario on the `--touch`
+   page with the CPU throttled (chunk streaming, meshing, uploads, LOD refinement, the minimap), per-frame
+   main-thread work and upload sizes.
 17. **Axe swing directions and animation tools** (owner 2026-11-11: "The axe animations are still trash. They
    don't swing in the right direction at all. Make yourself some tools to properly observe animations, movement
    directions, positions over time, etc. Should swing right to left for horizontal and up to down for vertical";
@@ -269,6 +273,9 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    chops (its vertical strip now holds the vertical grip). Left: the owner's look review (the first-person
    wind-up leaves the screen, the third-person body turns only at the chest), remote players' chop
    direction (a protocol change).
+   Owner, 2026-11-12: **"The camera could have some sway with the chop."** In progress (cloud): a small camera
+   sway following the swing (a lean into the wind-up, a kick at contact, settling in the recovery), as tool
+   data, honouring the camera-shake/motion settings.
 18. **Digging marks that look carved** (owner 2026-11-11: "the 'chunks' of dirt aren't at all what we
    discussed. It should be like a normal map change (do we support normal/bump maps)? It's completely flat
    should look like mesh deformation (preferably without actually doing it for performance)"; "That part was
@@ -317,17 +324,32 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    starter 661 MB at load, the default 662 (the starter was 850 at 0.52.68); server 83 MB, world workers
    83 + 83, core 99, GPU meshes 258. Within a few MB of the default, so one world worker on phones is not
    needed for memory. Left: a check on the iPhone itself (the owner's crash report predates 0.52.99).
-21. **Meadow tall grass** (owner's call pending, 2026-11-11): the meadow's grass grows in patches, never on ½ m
+21. **Meadow tall grass** (approved 2026-11-11; built 2026-11-12, waiting on the owner's look): the meadow's grass grows in patches, never on ½ m
    grass ramps (~40 % of the meadow), drawn pale. Denser patches or tufts on ramps change the default world's
    terrain (a new compatibility line); a less pale tuft is a look change only. Asked the owner which.
 
    Owner, 2026-11-11, asked whether it rides along with 0.53: "What's this meadow grass change?" — explained;
    Owner, 2026-11-11: **"Yes make the meadow grass fix."** Tufts on grass ramps, denser/wider patches, less
    pale tufts. 0.53.0 has already shipped, so this worldgen change takes the next line (0.54).
+
+   Built 2026-11-12 (`claude/meadow-tall-grass-fix-ea4p5m`, the 0.54 line; the owner raises
+   `package.json` at merge): a decoration rule's `onRamps` puts tufts over ½ m grass ramps (both
+   faces; the mesher already stood a plant's feet on a ramp), the meadow's patches wider and denser
+   (`decorations.json`: density 0.65, wavelength 56 m, coverage 0.65), the starter steppe's
+   `undergrowth` 0.75 → 0.85 so it stays sparse; the starter's meadow spot went from 11 % to 33 % of
+   its grass tops with tall grass, its steppe 8 %. The tuft's tile is painted in the grass top's
+   colours, darker at the foot (no light-stop tips). Goldens and the starter pin regenerated.
+   Left: the owner's look in game; grass growth still regrows tufts on flat grass only.
 22. **Settings and version buttons look like web links** (owner 2026-11-11: "I thought we had settings and
    version buttons changed queued, is that true?" — it wasn't recorded anywhere; then "The buttons should be
    aligned to match the design of the others instead of looking like web links"). Restyle them as the menu's
    own buttons, aligned with the others.
+
+23. **Expandable sections in the main menu** (owner 2026-11-12: "Our main menu has some expandable sections that
+   don't have good UI best practices to indicate they can expand and collapse. Improve these."). Built
+   (0.54.x): New world's More options, Versions' Earlier versions and About share one disclosure style: a
+   chevron right when closed and down when open, a hover and pressed background, a focus ring; About is a
+   real disclosure button (aria-expanded, aria-controls). The world card's ⋯ menu keeps its button.
 
 ## Done
 

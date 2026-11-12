@@ -241,7 +241,7 @@
         "maxSlope": 0.8,
         "block": "dwell:snow"
       },
-      "undergrowth": 0.75,
+      "undergrowth": 0.85,
       "soilBlocks": true
     },
     {

@@ -50,6 +50,7 @@ const KEYS = [
   "patches",
   "maxSlope",
   "height",
+  "onRamps",
   "$comment",
 ];
 const isNum = (v) => typeof v === "number" && Number.isFinite(v);
@@ -129,6 +130,18 @@ export function validateDecorations(data, blocks) {
     )) {
       fail(`${at}: maxSlope must be a whole number of metres in [0, 16]`);
     }
+    if (d.onRamps !== undefined) {
+      if (typeof d.onRamps !== "boolean") fail(`${at}: onRamps must be true or false`);
+      // Over a ½ m ramp of its ground (HALF_HEIGHT_GRID.md §5): the ramp must exist and the
+      // block may stand on it.
+      for (const o of d.onRamps ? d.on : []) {
+        const ramp = `${o}_ramp`;
+        if (!blocks.get(ramp)) fail(`${at}: onRamps: ${o} has no ramps (${ramp})`);
+        if (block.placeOn && !block.placeOn.includes(ramp)) {
+          fail(`${at}: onRamps: ${d.block} may not stand on ${ramp} (its placeOn)`);
+        }
+      }
+    }
     const h = d.height;
     if (!(
       Array.isArray(h) &&
@@ -156,7 +169,7 @@ export function decorationsRust(data) {
   for (const d of data.decorations) {
     const p = d.patches ?? { wavelength: 0, coverage: 1 };
     rs.push(
-      `    Decoration { name: ${JSON.stringify(d.name)}, block: ${JSON.stringify(d.block)}, on: &[${d.on.map((o) => JSON.stringify(o)).join(", ")}], density: ${rf(d.density)}, patch_wavelength: ${p.wavelength}, patch_coverage: ${rf(p.coverage)}, max_slope: ${d.maxSlope}, min_height: ${d.height[0]}, max_height: ${d.height[1]} },`,
+      `    Decoration { name: ${JSON.stringify(d.name)}, block: ${JSON.stringify(d.block)}, on: &[${d.on.map((o) => JSON.stringify(o)).join(", ")}], density: ${rf(d.density)}, patch_wavelength: ${p.wavelength}, patch_coverage: ${rf(p.coverage)}, max_slope: ${d.maxSlope}, min_height: ${d.height[0]}, max_height: ${d.height[1]}, on_ramps: ${d.onRamps === true} },`,
     );
   }
   rs.push("];");

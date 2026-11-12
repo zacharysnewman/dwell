@@ -712,13 +712,88 @@ kbd.phrase {
   border-top: 1px solid var(--line);
 }
 
-.mm-more summary {
+/* Expandable sections (owner, 2026-11-12: "expandable sections that don't have good UI best practices
+   to indicate they can expand and collapse"): every <details> summary and disclosure button shows a
+   chevron that points right when closed and down when open, a hover and pressed background, and a
+   focus ring; the native marker is hidden so all of them look alike. */
+.mm-more summary,
+.version-earlier summary {
   display: flex;
   align-items: center;
+  gap: 8px;
   min-height: 44px;
+  padding: 0 8px;
+  margin: 0 -8px;
+  border-radius: 8px;
   color: var(--ink);
   font: 700 16px var(--font-body);
+  list-style: none;
   cursor: pointer;
+  user-select: none;
+}
+
+.mm-more summary::-webkit-details-marker,
+.version-earlier summary::-webkit-details-marker {
+  display: none;
+}
+
+.mm-more summary::before,
+.version-earlier summary::before,
+.mm-disclosure::after {
+  content: '';
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-right: 2.5px solid currentColor;
+  border-bottom: 2.5px solid currentColor;
+  transform: rotate(-45deg);
+  transition: transform 120ms ease-out;
+}
+
+.mm-more[open] > summary::before,
+.version-earlier[open] > summary::before,
+.mm-disclosure[aria-expanded='true']::after {
+  transform: rotate(45deg) translate(-2px, -2px);
+}
+
+.mm-more summary:hover,
+.version-earlier summary:hover,
+.mm-disclosure:hover {
+  background: rgb(31 43 56 / 7%);
+}
+
+.mm-more summary:active,
+.version-earlier summary:active,
+.mm-disclosure:active {
+  background: rgb(31 43 56 / 12%);
+}
+
+.mm-more summary:focus-visible,
+.version-earlier summary:focus-visible,
+.mm-disclosure:focus-visible {
+  outline: 3px solid var(--ink);
+  outline-offset: 2px;
+}
+
+/* About: an inline disclosure button, the chevron after its name. */
+.mm-disclosure {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--ink);
+  font: 700 13px var(--font-body);
+  cursor: pointer;
+}
+
+.mm-disclosure::after {
+  width: 6px;
+  height: 6px;
+  border-width: 2px;
 }
 
 #menu-message:empty {
@@ -880,7 +955,8 @@ body:has(#main-menu) .game-menu {
 }
 
 .version-earlier summary {
-  cursor: pointer;
+  font-size: 13px;
+  min-height: 40px;
 }
 
 .version-earlier-name {
