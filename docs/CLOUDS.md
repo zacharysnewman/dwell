@@ -54,8 +54,9 @@ defaults were chosen and are open to change (§6):
     the day sky's ambient, the moon's and the night sky's ambient lights.
   - Day or night by the sun's height over the face (the cycle has one time of day all round the
     sky; before it, a turned sky could be night on one side and day on the other).
-  - Self-shadow (High): `lit = exp(−absorption × (0.35·d + d'))`, with `d'` the density
-    `shadowStepM` toward the light. Low uses `0.6·d` alone.
+  - Self-shadow: `lit = exp(−absorption × (0.35·d + d'))`, with `d'` the density
+    `shadowStepM` toward the light at `shadowOctaves` (Medium, High) or `lowShadowOctaves` (Low)
+    octaves; with 0 of them, `0.6·d` alone (Low until 2026-11-12, §10).
   - A silver lining brightens thin cloud near the light. A low sun warms the lit parts toward
     `sunset`.
   - Distant cloud mixes toward the clear sky behind it, which already carries the horizon haze.
@@ -713,3 +714,63 @@ entries' ranges.
 Left (local, no GPU in the cloud session): the look at sunrise and sunset against `?clouds=` the deck, and the
 A/B of `?cloudExtinction=0.006` / `0.03` / `0.05` with `gpu.clouds`; tune by `volume.sunsetShade`,
 `light.sunWarmth` and `volume.extinction`.
+
+## 10. The deck's lighting, then and now (2026-11-12, WORK_QUEUE item 13)
+
+Owner: "our new 2D clouds seem to have lost most of their lighting from the original too … They almost looked
+3D." The deck as it was before the volumetric work (`76e4e772`, the parent of `93fd6c26`) against today's, term by
+term. The shading code (`dwell_cloud_layer`) is the same function: the lighting rework (`857f4a86`) left the
+deck alone and the golden-hour change (`5c27c068`) only moved its low-sun ramp and far haze into shared
+functions (`cloud_low_sun`, `cloud_far_haze`, the same numbers). What changed is **which deck players see**:
+before, the Medium, High and Ultra presets drew the deck at the setting `high` (5 octaves and the self-shadow
+sample) and only phones drew `low`; since the volume, the deck in the sky is only Low (phones, the Mobile preset,
+`?clouds=low`, and every tier while the volume's noise bakes), which never took the sample. So the deck people
+compared was the old phone deck.
+
+| Term | Old desktop deck (`high`, before 93fd6c26) | Deck until this change (Low) | Now |
+|---|---|---|---|
+| Relief / normal from the noise gradient | none (the relief came from the sample below) | none | none: the sample does it |
+| Self-shadow sample toward the sun | yes: `d'` `shadowStepM` (320 m) toward the light's horizontal part, all 5 octaves | **no** | yes on every tier: Low at `lowShadowOctaves` 2, Medium and High (reflections, Snell's window) at `shadowOctaves` 5 |
+| Thickness darkening (undersides) | `exp(−1.1 × (0.35·d + d'))`: a core's own density counted ~1.35× | `exp(−1.1 × 0.6·d)`: cores ~0.52 lit, grey-white | as old (Low's cores 0.26 lit at noon) |
+| Rim / silver lining toward the sun | `silverLining` × (view·light)^`silverPower` × (1 − d)² | same | same |
+| Ambient / sky colour | `shade` × half the day sky's hue; `sunlit` × the sun's | same | same |
+| Edge softness | `edgeSoftness` 0.16, contrast 1.9 | same | same |
+| Sunset ramp | `sunWarmth` up to ~24°, the lit part toward `sunset`, shade at 0.75 of it | same (shared with the volume since 5c27c068) | same |
+| Far haze | 0.85 toward the clear sky by the fade end | same (shared) | same |
+| Octaves | 5 | 3 (`lowOctaves`) | 3 on Low (detail, not relief: kept for the phones' cost) |
+| From above | the sample skipped, `topLight` | same | same |
+
+**Restored.** The self-shadow sample is data: `light.shadowOctaves` (Medium and High) and
+`light.lowShadowOctaves` (Low), each at most its tier's octaves (the generator checks; `cloud_cfg.z` carries the
+count, 0 none; the reflections take the sky's count when their tier's shadow bit is set). Low's sample is
+coarser than the shape (2 of 3 octaves): the big shapes cast the shading, the fine ones don't matter to it.
+
+**Cost (value-noise evaluations a deck pixel, each four hashes and a quintic blend).** Low: 7 → 9 (the warp's
+two 2-octave fields, 3 shape octaves, +2 for the sample; +29 %). The old desktop deck was 14. Medium and High
+draw the deck only in reflections and Snell's window, where the reflection tier's shadow bit already gates the
+sample: 9 → 14 there when it is set.
+
+**CPU reference** (`cargo run -p dwell-look --release --example deck_lighting -- <dir>`): an 8 × 8-cell patch
+(~8 km) from below, straight up, at a 70° and a 5° sun, written as PNGs, with `deck_relief`'s measures (mean
+light share of sun-facing edges, far edges, cores with density ≥ 0.85, thin edges ≤ 0.35):
+
+| Deck | Sun | Noises | Sun side | Far side | Relief | Cores | Thin |
+|---|---|---|---|---|---|---|---|
+| Low before | 70° | 7 | 0.734 | 0.723 | +0.010 | 0.521 | 0.926 |
+| Low before | 5° | 7 | 0.734 | 0.723 | +0.010 | 0.521 | 0.926 |
+| Old desktop (= Medium/High now) | 70° | 14 | 0.687 | 0.427 | +0.260 | 0.286 | 0.780 |
+| Old desktop | 5° | 14 | 0.672 | 0.517 | +0.155 | 0.382 | 0.733 |
+| Low restored | 70° | 9 | 0.611 | 0.412 | +0.199 | 0.264 | 0.733 |
+| Low restored | 5° | 9 | 0.659 | 0.450 | +0.209 | 0.350 | 0.708 |
+
+In the images the old and restored decks have warm, bright edges on the sun's side and greyer interiors and far
+edges at 5°, and blue-grey cores under white rims at noon; Low before is one flat tone (white at noon, flat
+orange at 5°). Before, Low's light share was a function of the density alone, so the two sides measured the same.
+
+Tests (`deck_relief_tests`, both faces, face-local parity): Low's sun-facing edges at least 0.12 brighter than
+its far edges at 5°, its cores at most 0.4 lit and 0.3 below its thin edges at 70° (both red before: +0.010, cores
+0.521); every tier that draws the deck takes the sample and Low keeps ≥ 70 % of the old relief; the sample off
+by data is flat again. `clouds.test.mjs`: the new entries' bounds.
+
+Left (local, a GPU): the deck in game at `?clouds=low` against the old screenshots (sun high, low sun, from
+above, night) and `gpu.composite` on Low before and after; tune by `lowShadowOctaves` and `shadowStepM`.

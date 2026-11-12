@@ -376,6 +376,15 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    almost looked 3D"** — compare the deck as it was before the volumetric work (before 93fd6c26, e.g. at
    122b0f0e) with today's deck term by term (fake relief/normals from the noise, self-shadowing toward the sun,
    rim/silver light, the dark undersides, the sunset ramp) and restore what was lost.
+   **Built (2026-11-12, cloud, branch `claude/deck-lighting-lp3c01`, CLOUDS.md §10):** the shading code was never changed;
+   what changed is which deck shows. Before the volume, desktops drew the deck at `high` (5 octaves and a
+   self-shadow sample toward the sun); since, the sky's deck is only Low (phones, `?clouds=low`, and while the
+   volume's noise bakes), which never took the sample, so its light was a function of density alone: no sun side,
+   grey-white cores. The sample is now data on every tier (`light.lowShadowOctaves` 2 on Low,
+   `light.shadowOctaves` 5 for Medium/High's deck in reflections); Low 7 → 9 noise evaluations a pixel (old
+   desktop 14). CPU reference renders (`examples/deck_lighting.rs`) and tests on both faces: Low's sun side vs far
+   side +0.010 → +0.209 at 5°, cores 0.521 → 0.264 lit at 70° (old desktop +0.155, 0.286). Next (local): the look
+   in game at `?clouds=low` and `gpu.composite` on Low before/after.
    **Built (2026-11-12, cloud, branch `claude/cloud-golden-hour-zjl391`, CLOUDS.md §9.8):** the tint was lost in
    the ambient: the deck warms its whole colour at a low sun, the volume only the sun's light, and a volume
    sample's light is mostly the cool sky's. Now the shade (sky light and ground bounce) takes the deck's warm
@@ -1016,6 +1025,26 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    crossfade, then the LOD sections stop drawing tree cells. The forest edge says it is also the frame-rate
    lever (item 32): the near pass there is bound by the leaves' triangles, and `lod_trees.rs` draws the same
    chamfered cells past 96 m.
+   **I-3's GPU draw built (2026-11-12, local, `claude/impostors-gpu`):** the far trees are impostors
+   (client `render/impostors.rs`, ARCHITECTURE.md §6.6): the atlas baked by the job workers and uploaded per
+   layer, instances per 64 m tile from `far_trees` to 1024 m, `imp_fs` (dithered view, baked normals, the scene's
+   sun/ambient/fog, received shadows), the near leaves' complementary dither (`TREE_LEAF_FADE`), and chunks wholly
+   past the hand-over and the plants' fades (90 m) submit no cutout draw; the Far trees setting picks the tier,
+   `?impostors=0` (bench config `impostors-off`) the old `lod_trees.rs` path. **Hand-over: 48 m over 16 m** (data),
+   the nearest measured; 96 m saved nothing at the edge (leaves dropped in the vertex stage still cost their
+   vertices, so the cut is by chunk). `forest-perf` on the M1 Air at High, `gpu.frame` p95 ms, before
+   (`impostors-off`) → after: **inside 15.5 → 15.5, edge 25.8 → 23.4, above 15.6 → 12.3** (`gpu.near` p95: 13.0 →
+   11.0, 22.5 → 18.6, 13.1 → 8.5). A `frag_depth` depth offset to the baked depth was built first: with it (tiles
+   unsorted) the edge's `gpu.near` was 32.4 ms p95, without it and tiles drawn nearest first 24.9 (both at the
+   96 m hand-over; it turns off early depth on ~70 k overlapping quads), so it was dropped. Look (shots in the PR): forests reach the horizon with their crowns instead of bare trunks on flat
+   green; at 48 m the impostors read paler and noisier than the near crowns (no ambient occlusion baked, nearest
+   texel sampling, no mips) and near trunks (logs drawn to full detail) show under them.
+   **Left (the next session):** the edge is still **23.4 ms p95, ~7 ms over 16.7**: the cutout chunks within 90 m
+   (the tall grass's fade keeps them submitted; leaves alone could stop at 64 m) — split grass and leaves into
+   separate meshes or draws so leaf chunks stop at the hand-over; the impostors' own cost (not yet isolated:
+   add a `view` switch); the look at the hand-over (bake the near leaves' AO/darkening into the albedo, mips per
+   layer, the trunks handed over too); felled trees left out of the tiles; shadows cast (I-5); I-4 (delete
+   `lod_trees.rs`); the phone run (32 px atlas, ~10 MB); BUGS.md #95 (the LOD ground under far trees).
 
 32. **A tall dense forest for performance reference** (owner 2026-11-12: "We should have a tall dense forest
    biome/climate for performance reference on trees."). A biome preset (tall, closely spaced mature trees — an
@@ -1375,6 +1404,13 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    client side (M-7c) so it reuses the finished travel.
 
 ## Done
+
+- **dwell-mesh's face-B parity test green (owner's brief 2026-11-12: "a_chunk_meshes_the_same_face_local_on_either_face::b
+  fails on main (\"cutout plants\"), reported by two sessions … fix the cause at the source so face B's plants are face
+  A's mirror … keep the density setting's behaviour"):** BUGS.md #98. Not the Tall grass density (6578783: cleared,
+  the test failed before it, and `plant_kept` hashes world cells only for a 0–100 % thinning); a leaf card's packed
+  normal drifted a grid step on face B's mirror. The packing's grid is now even, so face B's cards are face A's
+  mirror to the bit.
 
 - **Main's tests green again (owner 2026-11-12: "make main's tests green again (tests/fixes only)"):**
   four stale expectations, no code bugs. `checks.ts`'s areas lacked `shared/look/bloom.mjs` (render) and

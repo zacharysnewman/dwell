@@ -65,6 +65,9 @@ pub struct CloudLight {
     pub night_shade: Rgb,
     pub absorption: f64,
     pub shadow_step_m: f64,
+    /// The deck's self-shadow sample's octaves on Medium and High, and on Low (0: none).
+    pub shadow_octaves: u32,
+    pub low_shadow_octaves: u32,
     pub silver_lining: f64,
     pub silver_power: f64,
     pub sun_warmth: f64,
@@ -312,8 +315,20 @@ impl CloudQuality {
             Self::Medium | Self::High => t.shape.octaves,
         }
     }
-    pub fn self_shadow(self) -> bool {
-        self == Self::High
+    /// Whether the deck takes its self-shadow sample toward the light ([`Self::shadow_octaves`]).
+    pub fn self_shadow(self, t: &CloudTunables) -> bool {
+        self.shadow_octaves(t) > 0
+    }
+    /// The octaves of the deck's self-shadow sample toward the light (0: none): `light.lowShadowOctaves`
+    /// on Low, `light.shadowOctaves` on Medium and High (the deck they draw in reflections and Snell's
+    /// window), at most the tier's own octaves (docs/CLOUDS.md §10).
+    pub fn shadow_octaves(self, t: &CloudTunables) -> u32 {
+        let n = match self {
+            Self::Off => 0,
+            Self::Low => t.light.low_shadow_octaves,
+            Self::Medium | Self::High => t.light.shadow_octaves,
+        };
+        n.min(self.octaves(t))
     }
     /// The volumetric march this setting draws (`tiers`; Off: none). Zero steps: the 2D deck.
     pub fn volume(self, t: &CloudTunables) -> VolumeTier {
@@ -459,7 +474,7 @@ pub fn cloud_uniforms(
         [
             coverage.clamp(0.0, 1.0) as f32,
             quality.octaves(t) as f32,
-            if quality.self_shadow() { 1.0 } else { 0.0 },
+            quality.shadow_octaves(t) as f32,
             height as f32,
         ],
         [
@@ -932,6 +947,160 @@ pub fn deck_day_colour(
         .sunset
         .map(|c| c * (SUNSET_SHADE + (1.0 - SUNSET_SHADE) * lit));
     mix3(day, warm, low_sun(t, sun_up) * lit)
+}
+
+/// One point of the 2D deck as `dwell_cloud_layer` shades it by day from below (the CPU twin, for
+/// the relief tests and the reference renders, docs/CLOUDS.md §10): no band, no far haze, no
+/// footprint fade.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct DeckShade {
+    /// The cloud's density (0–1; the layer's cover is it × `shape.opacity`).
+    pub density: f64,
+    /// The light share (0 shaded, 1 in full light): Beer over the cloud's own thickness and, with
+    /// a self-shadow sample, the cloud a `light.shadowStepM` step toward the light.
+    pub lit: f64,
+    /// The colour (sRGB), the silver lining included.
+    pub colour: Rgb,
+}
+
+/// The deck at noise point `p` (cells, as [`density`]'s) under the light `light` (a unit world
+/// direction toward the sun, above face `face`), seen along the unit world ray `view`, at
+/// `octaves` with a self-shadow sample of `shadow_octaves` (0: none; [`CloudQuality::shadow_octaves`]).
+#[allow(clippy::too_many_arguments)]
+pub fn deck_shade(
+    t: &CloudTunables,
+    p: [f64; 2],
+    warp_off: [f64; 2],
+    light: [f64; 3],
+    face: FaceFrame,
+    view: [f64; 3],
+    octaves: u32,
+    shadow_octaves: u32,
+    coverage: f64,
+    sun_hue: Rgb,
+    ambient_hue: Rgb,
+) -> DeckShade {
+    let none = DeckShade {
+        density: 0.0,
+        lit: 1.0,
+        colour: [0.0; 3],
+    };
+    if octaves == 0 {
+        return none;
+    }
+    let pw = warped(t, p, warp_off);
+    let d = shape(t, fbm(t, pw, octaves), coverage);
+    if d <= 0.0 {
+        return none;
+    }
+    let l = face.vector(light);
+    let occl = if shadow_octaves > 0 {
+        let step = t.light.shadow_step_m / t.shape.scale_m;
+        let q = [pw[0] + l[0] * step, pw[1] + l[2] * step];
+        0.35 * d + shape(t, fbm(t, q, shadow_octaves), coverage)
+    } else {
+        0.6 * d
+    };
+    let lit = (-t.light.absorption * occl).exp();
+    let mut col = deck_day_colour(t, lit, l[1], sun_hue, ambient_hue);
+    let toward = (view[0] * light[0] + view[1] * light[1] + view[2] * light[2]).max(0.0);
+    let rim = t.light.silver_lining * toward.powf(t.light.silver_power) * (1.0 - d) * (1.0 - d);
+    let glow = DAY_NIGHT.brightest().glow;
+    for (c, g) in col.iter_mut().zip(glow) {
+        *c += rim * g;
+    }
+    DeckShade {
+        density: d,
+        lit,
+        colour: col,
+    }
+}
+
+/// The deck's relief over a fixed noise patch ([`deck_relief`]): mean light shares (0–1).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct DeckRelief {
+    /// Cloud edges facing the sun (the density falls toward it).
+    pub sun_side: f64,
+    /// Cloud edges facing away from it.
+    pub far_side: f64,
+    /// The thick cores (density ≥ 0.85): the undersides.
+    pub core: f64,
+    /// The thin edges (density ≤ 0.35).
+    pub thin: f64,
+}
+
+/// [`deck_shade`]'s light share over the patch of 8 × 8 noise cells at the origin (`n`² samples,
+/// the data's coverage, no warp drift), seen from below straight up, the sun `light` (a unit
+/// face-local direction toward it) given to face `face`: the sun-facing edges against the far
+/// edges, and the cores against the thin edges. The tests' and the reference renders' measure.
+pub fn deck_relief(
+    t: &CloudTunables,
+    octaves: u32,
+    shadow_octaves: u32,
+    light: [f64; 3],
+    face: FaceFrame,
+    n: usize,
+) -> DeckRelief {
+    let cov = t.shape.coverage;
+    let world = face.vector(light);
+    let up = face.vector([0.0, 1.0, 0.0]);
+    let horiz = {
+        let m = light[0].hypot(light[2]).max(1e-9);
+        [light[0] / m, light[2] / m]
+    };
+    let h = 1.0 / 32.0;
+    let dens = |p: [f64; 2]| density(t, p, [0.0; 2], octaves, cov);
+    let (mut sums, mut counts) = ([0.0; 4], [0usize; 4]);
+    for j in 0..n {
+        for i in 0..n {
+            let p = [8.0 * i as f64 / n as f64, 8.0 * j as f64 / n as f64];
+            let s = deck_shade(
+                t,
+                p,
+                [0.0; 2],
+                world,
+                face,
+                up,
+                octaves,
+                shadow_octaves,
+                cov,
+                [1.0; 3],
+                [1.0; 3],
+            );
+            let d = s.density;
+            if d <= 0.0 {
+                continue;
+            }
+            let g = [
+                (dens([p[0] + h, p[1]]) - dens([p[0] - h, p[1]])) / (2.0 * h),
+                (dens([p[0], p[1] + h]) - dens([p[0], p[1] - h])) / (2.0 * h),
+            ];
+            let along = g[0] * horiz[0] + g[1] * horiz[1];
+            let mut add = |k: usize| {
+                sums[k] += s.lit;
+                counts[k] += 1;
+            };
+            if (0.15..0.85).contains(&d) && along < -0.5 {
+                add(0);
+            }
+            if (0.15..0.85).contains(&d) && along > 0.5 {
+                add(1);
+            }
+            if d >= 0.85 {
+                add(2);
+            }
+            if d <= 0.35 {
+                add(3);
+            }
+        }
+    }
+    let m = |k: usize| sums[k] / counts[k].max(1) as f64;
+    DeckRelief {
+        sun_side: m(0),
+        far_side: m(1),
+        core: m(2),
+        thin: m(3),
+    }
 }
 
 /// How much far cloud takes the sky behind it (`cloud_far_haze`), at most.
@@ -2071,13 +2240,15 @@ fn dwell_cloud_layer(clear: vec3f, dir: vec3f, face: f32, deck: vec4f, fw: f32, 
 	// The light: the sun or the moon, whichever is above this face.
 	let sun_up = dot(sun, up);
 	let light = select(moon, sun, sun_up >= dot(moon, up));
-	// Self-shadow (High): the density a step toward the light, plus the cloud's own thickness. Not
+	// Self-shadow (cfg.z: the sample's octaves, 0 none; light.shadowOctaves / lowShadowOctaves): the
+	// density a step toward the light, plus the cloud's own thickness, so sun-facing edges are lit,
+	// far edges and thick undersides shaded (what made the deck read 3D, docs/CLOUDS.md §10). Not
 	// from above: the sunlit top barely shows it (topLight), so the second sample is skipped there.
 	let from_above = cfg.w < 0.0;
 	var occl = 0.6 * d;
 	if (cfg.z > 0.0 && !from_above && !band) {
 		let toward = light.xz * CLOUD_SHADOW_STEP;
-		occl = 0.35 * d + cloud_shape(cloud_fbm(p + toward, octaves, fw), cfg.x);
+		occl = 0.35 * d + cloud_shape(cloud_fbm(p + toward, min(i32(cfg.z), octaves), fw), cfg.x);
 	}
 	// Seen from above, the deck's sunlit top: the light reaches it through less cloud.
 	let lit = exp(-CLOUD_ABSORPTION * occl * select(1.0, 1.0 - CLOUD_TOP_LIGHT, from_above && dot(light, up) > 0.0));
@@ -2433,8 +2604,12 @@ mod tests {
         assert_eq!(u(CloudQuality::Off)[1], 0.0);
         assert_eq!(u(CloudQuality::Low)[1], CLOUDS.shape.low_octaves as f32);
         assert_eq!(u(CloudQuality::High)[1], CLOUDS.shape.octaves as f32);
-        assert_eq!(u(CloudQuality::Low)[2], 0.0);
-        assert_eq!(u(CloudQuality::High)[2], 1.0);
+        assert_eq!(u(CloudQuality::Off)[2], 0.0);
+        assert_eq!(
+            u(CloudQuality::Low)[2],
+            CLOUDS.light.low_shadow_octaves as f32
+        );
+        assert_eq!(u(CloudQuality::High)[2], CLOUDS.light.shadow_octaves as f32);
         assert_eq!(u(CloudQuality::High)[0], 0.4);
         const { assert!(CLOUDS.shape.low_octaves < CLOUDS.shape.octaves) };
         for (name, q) in [
@@ -3732,5 +3907,94 @@ mod shape_tests {
             assert!((upsample_cover(v, 4005.0, &texels) - 0.2).abs() < 0.01);
             assert!((upsample_cover(v, reach, &texels) - 0.9).abs() < 0.01);
         }
+    }
+}
+
+/// The 2D deck's relief (WORK_QUEUE item 13, docs/CLOUDS.md §10): the old deck's self-shadow
+/// sample toward the sun, which made it read 3D, restored on every tier that draws it.
+#[cfg(test)]
+mod deck_relief_tests {
+    use super::*;
+
+    /// A sun `deg` over the face along +X, face-local.
+    fn sun_at(deg: f64) -> [f64; 3] {
+        let r = deg.to_radians();
+        [r.cos(), r.sin(), 0.0]
+    }
+
+    fn relief(t: &CloudTunables, q: CloudQuality, deg: f64, f: FaceFrame) -> DeckRelief {
+        deck_relief(t, q.octaves(t), q.shadow_octaves(t), sun_at(deg), f, 96)
+    }
+
+    dwell_world::both_faces!(
+        /// At a low sun the deck's sun-facing edges are lit and its far edges shaded, on Low (the
+        /// deck players see on phones and while the volume's noise bakes) as on the old desktop
+        /// deck. Red before: Low took no sample toward the sun, so both sides were the same.
+        fn the_low_decks_sun_facing_side_is_brighter_than_its_far_side(f: FaceFrame) {
+            let r = relief(&CLOUDS, CloudQuality::Low, 5.0, f);
+            assert!(
+                r.sun_side - r.far_side >= 0.12,
+                "sun side {:.3} vs far side {:.3}",
+                r.sun_side,
+                r.far_side
+            );
+            // Face-local: the same relief on both faces.
+            assert_eq!(r, relief(&CLOUDS, CloudQuality::Low, 5.0, FaceFrame::A));
+        }
+    );
+
+    dwell_world::both_faces!(
+        /// The thick cores (the undersides seen from below) are dark against the thin edges at noon:
+        /// the self-shadow sample adds the cloud's thickness again. Red before on Low (0.6 × the
+        /// density alone: grey-white throughout).
+        fn the_low_decks_undersides_are_darker_than_its_thin_edges(f: FaceFrame) {
+            let r = relief(&CLOUDS, CloudQuality::Low, 70.0, f);
+            assert!(r.core <= 0.4, "cores {:.3}", r.core);
+            assert!(
+                r.thin - r.core >= 0.3,
+                "thin {:.3} vs cores {:.3}",
+                r.thin,
+                r.core
+            );
+            assert_eq!(r, relief(&CLOUDS, CloudQuality::Low, 70.0, FaceFrame::A));
+        }
+    );
+
+    /// Every tier that draws the deck (Low in the sky, Medium and High in reflections and Snell's
+    /// window) takes the sample; the old desktop deck (all octaves, a full sample) is Medium's and
+    /// High's.
+    // face-a-only: the tiers' sample counts are face-free; the relief on both faces is pinned above.
+    #[test]
+    fn every_tier_drawing_the_deck_takes_the_self_shadow_sample() {
+        assert_eq!(CloudQuality::Off.shadow_octaves(&CLOUDS), 0);
+        for q in [CloudQuality::Low, CloudQuality::Medium, CloudQuality::High] {
+            assert!(q.shadow_octaves(&CLOUDS) > 0, "{q:?}");
+            assert!(q.shadow_octaves(&CLOUDS) <= q.octaves(&CLOUDS), "{q:?}");
+            let u = cloud_uniforms(&CLOUDS, [0.0; 3], FaceFrame::A, 0.0, q, 0.4)[1];
+            assert_eq!(u[2], q.shadow_octaves(&CLOUDS) as f32, "{q:?}");
+        }
+        let old = relief(&CLOUDS, CloudQuality::Medium, 5.0, FaceFrame::A);
+        let low = relief(&CLOUDS, CloudQuality::Low, 5.0, FaceFrame::A);
+        // Low's coarser sample keeps most of the old deck's relief.
+        assert!(
+            low.sun_side - low.far_side >= 0.7 * (old.sun_side - old.far_side),
+            "low {low:.3?} vs old {old:.3?}"
+        );
+    }
+
+    /// The sample is data: no octaves for it, no relief (the deck before the restore).
+    // face-a-only: a data switch; the relief on both faces is pinned above.
+    #[test]
+    fn the_self_shadow_sample_is_data() {
+        let flat = CloudTunables {
+            light: CloudLight {
+                low_shadow_octaves: 0,
+                ..CLOUDS.light
+            },
+            ..CLOUDS
+        };
+        assert_eq!(CloudQuality::Low.shadow_octaves(&flat), 0);
+        let r = relief(&flat, CloudQuality::Low, 5.0, FaceFrame::A);
+        assert!((r.sun_side - r.far_side).abs() < 0.05, "{r:.3?}");
     }
 }

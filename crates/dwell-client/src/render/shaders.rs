@@ -102,6 +102,10 @@ struct Frame {
     lean_hinge: vec4f,
     lean_up: vec4f,
     lean_axis: vec4f,
+    // The far trees' hand-over (render/impostors.rs, dwell-worldgen `impostor::Far`): x where it
+    // starts, y its fade (m), z where far trees stop, w 1 when impostors draw (else the near
+    // trees' leaves draw to the full-detail distance as before).
+    far_trees: vec4f,
     // The day/night cycle (dwell-look `DaySky`): the sun, moon and stars, the viewer's sky and each
     // face's lights.
     day: DaySky,
@@ -915,17 +919,18 @@ fn tree_lean(rel: vec3f) -> vec3f {
     return frame.lean_hinge.xyz + d * c + cross(k, d) * s + k * dot(k, d) * (1.0 - c);
 }
 
-// A leaf card's `plant.y` is -(1 + its plane normal octahedral-packed in 11 + 11 bits)
-// (dwell-mesh leaves.rs `card_speed`): a plant's is its wind speed (>= 0), a card's 1.
+// A leaf card's `plant.y` is -(1 + its plane normal octahedral-packed on a 2048-step grid per
+// axis, u * 2049 + v) (dwell-mesh leaves.rs `card_speed`, `CARD_GRID`): a plant's is its wind
+// speed (>= 0), a card's 1.
 fn plant_speed(plant: vec4f) -> f32 {
     return select(plant.y, 1.0, plant.y < 0.0);
 }
 fn card_normal(packed: f32) -> vec3f {
     let q = -packed - 1.0;
-    let uq = floor(q / 2048.0);
-    let vq = q - uq * 2048.0;
-    let u = uq / 2047.0 * 2.0 - 1.0;
-    let v = vq / 2047.0 * 2.0 - 1.0;
+    let uq = floor(q / 2049.0);
+    let vq = q - uq * 2049.0;
+    let u = uq / 2048.0 * 2.0 - 1.0;
+    let v = vq / 2048.0 * 2.0 - 1.0;
     var n = vec3f(u, 1.0 - abs(u) - abs(v), v);
     if (n.y < 0.0) {
         // Octahedral decoding's quadrant sign (not a face sign): +1 where the coordinate is >= 0.
@@ -943,6 +948,11 @@ fn card_normal(packed: f32) -> vec3f {
 // world.
 fn card_dropped(rel: vec3f, n: vec3f, plant: vec4f) -> bool {
     if (plant.w > 0.0 && length(rel) > plant.w + 2.0) {
+        return true;
+    }
+    // A tree's leaf face (`TREE_LEAF_FADE`) past the far trees' hand-over: the impostors' alone.
+    if (plant.w < 0.0 && frame.far_trees.w > 0.5
+        && length(rel) > frame.far_trees.x + frame.far_trees.y + 2.0) {
         return true;
     }
     if (plant.y >= 0.0) {
@@ -999,6 +1009,15 @@ struct CutoutSceneOut {
     @builtin(sample_mask) mask: u32,
 };
 
+// The near trees' share of a pixel `dist` m off (`Far::near_share`): 1 nearer than the far
+// trees' hand-over, falling to 0 across its fade (1 when no impostors draw).
+fn near_tree_share(dist: f32) -> f32 {
+    if (frame.far_trees.w < 0.5) {
+        return 1.0;
+    }
+    return 1.0 - clamp((dist - frame.far_trees.x) / max(frame.far_trees.y, 1e-3), 0.0, 1.0);
+}
+
 // A per-pixel value in [0, 1) that varies from pixel to pixel (interleaved gradient noise).
 fn pixel_noise(p: vec2f) -> f32 {
     return fract(52.9829189 * fract(dot(floor(p), vec2f(0.06711056, 0.00583715))));
@@ -1040,6 +1059,11 @@ fn cutout_fs(i: CutoutOut, @builtin(front_facing) front: bool) -> CutoutSceneOut
     var fade = 1.0;
     if (i.fade.y > 0.0) {
         fade = 1.0 - smoothstep(i.fade.x, i.fade.y, length(i.rel));
+        cover *= fade;
+    }
+    // A tree's leaf face hands over to the far trees' impostors (`imp_fs` keeps the other pixels).
+    if (i.fade.y < 0.0) {
+        fade = near_tree_share(length(i.rel));
         cover *= fade;
     }
     // Near the eye a leaf's faces dissolve (dithered, as a fading plant), from a third of its
@@ -2877,7 +2901,7 @@ fn reflected_env(r: vec3f, rel: vec3f, fw: f32, clouds: f32) -> vec3f {
         let height = frame.cloud_cfg.w - face_rise(face, rel);
         let offsets = vec4f(frame.clouds.xy + rel.xz / CLOUD_SCALE, frame.clouds.zw);
         let deck = dwell_cloud_deck(r, face, offsets, height);
-        let cfg = vec4f(frame.cloud_cfg.x, octaves, f32(reflect_bits() & 1u), height);
+        let cfg = vec4f(frame.cloud_cfg.x, octaves, select(0.0, frame.cloud_cfg.z, (reflect_bits() & 1u) != 0u), height);
         c = mix(under, dwell_clouds(under, clear, r, face, deck, fw, offsets, cfg, cloud_lighting()), clouds);
     }
     return inverse_display(c);
@@ -3652,6 +3676,7 @@ pub fn source(samples: u32) -> String {
         scene_bindings(samples),
         water_slope()
     ) + &super::heightfield::wgsl()
+        + &super::impostors::wgsl(dwell_worldgen::impostor::Config::get())
 }
 
 /// The flood light's shading constants (shared/look/light.json; docs/DAY_NIGHT.md §11).

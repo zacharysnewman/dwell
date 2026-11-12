@@ -30,7 +30,7 @@
     "evolveDirectionDeg": 200
   },
   "light": {
-    "$comment": "sRGB tints of the frame's lights (the renderer's sun, moon and sky ambient colours, so the clouds follow whatever sets the lights): sunlit (the sun's) and shade (the day sky's ambient) by day, nightLit (the moon's) and nightShade (the night sky's ambient) by moonlight, sunset the warm tint of a low sun. absorption: how fast light dims through cloud. shadowStepM: how far toward the light the self-shadow samples (High only). silverLining/silverPower: the bright rim of thin cloud near the sun or moon, and how tight it is around it. sunWarmth: how much a low sun tints the clouds. topLight: how much less light the deck's top loses through the cloud, seen from above (bright sunlit tops).",
+    "$comment": "sRGB tints of the frame's lights (the renderer's sun, moon and sky ambient colours, so the clouds follow whatever sets the lights): sunlit (the sun's) and shade (the day sky's ambient) by day, nightLit (the moon's) and nightShade (the night sky's ambient) by moonlight, sunset the warm tint of a low sun. absorption: how fast light dims through cloud. shadowStepM: how far toward the light the self-shadow samples. shadowOctaves/lowShadowOctaves: the octaves of the deck's self-shadow sample toward the light on Medium and High (the deck they draw in reflections and Snell's window) and on Low (the 2D deck in the sky: phones, and while the volume's noise bakes); 0 none, at most the tier's octaves. The sample is what makes the deck read 3D: sun-facing edges lit, far edges and thick undersides shaded (docs/CLOUDS.md §10). silverLining/silverPower: the bright rim of thin cloud near the sun or moon, and how tight it is around it. sunWarmth: how much a low sun tints the clouds. topLight: how much less light the deck's top loses through the cloud, seen from above (bright sunlit tops).",
     "sunlit": "#fffaf0",
     "shade": "#eceae6",
     "sunset": "#ffbc8a",
@@ -38,6 +38,8 @@
     "nightShade": "#3a3e4c",
     "absorption": 1.1,
     "shadowStepM": 320,
+    "shadowOctaves": 5,
+    "lowShadowOctaves": 2,
     "silverLining": 0.9,
     "silverPower": 8,
     "sunWarmth": 0.4,

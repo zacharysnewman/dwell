@@ -57,6 +57,14 @@ leaves a hole (or an unfilled cell) under each far tree's trunk/column (the tree
 not filled), or T-junction cracks where the far tree's mesh meets the LOD ground; at that distance the gap is a
 pixel or two and the sky behind the disc shows through.
 
+Looked at 2026-11-12 (impostors session, not fixed): with the impostors on (`claude/impostors-gpu`) the LOD sections
+mesh **no** tree cells (`mesh_section_trees(…, false)`). The section's surface pass draws a column's top cell only
+(`lod_mesher.rs` ~l. 499 skips tree cells above the surface, `special.y`); where a column's top is a tree cell (a
+trunk, a crown) the ground cell under it is not the column's top and gets no top face, so without the tree cells
+there is a hole in the ground the size of the trunk's column — the likely cause, and with impostors the holes show
+between the far trees from above. Fix: the generator's "ground without trees" for the section's surface (proposal
+I-4), with a watertightness test (every column of a forest section has a top face at its ground).
+
 ### 92. Downhill water shows edge triangles and thin lines at its ½ m level steps
 
 Owner, 2026-11-12 (screenshot + block dump): "I'm seeing some edge triangles and thin lines at slope transitions on
@@ -472,6 +480,19 @@ face, or the placement check against its shape.
 
 
 ## Fixed
+
+### 98. `dwell-mesh`'s face-parity test fails on face B at a leaf card's packed normal (fixed after 0.54.173)
+
+Owner's brief, 2026-11-12: "`cargo test -p dwell-mesh` a_chunk_meshes_the_same_face_local_on_either_face::b fails on
+main (\"cutout plants\"), reported by two sessions." Suspected: 6578783's Tall grass density (a per-cell hash not
+face-local) or the faded-plant drop. Cause: neither; the test fails the same at e9b27e2, before 6578783. The
+differing value is a leaf card's `plants.y`, its plane normal octahedral-packed (#78's far-side cull, `card_speed`).
+Two parts: the test's `local_mesh` turned positions and normals face-local but not the packed normal; and the
+packing's 2047-step grid is odd, so the octahedral fold falls between grid points and face B's mirror (unpack, flip
+y, re-pack in `flip_arrays_y`) drifted a step from face A's (-786733 vs -786734). Fixed: the grid is 2048 steps
+(`leaves::CARD_GRID`, radix 2049, the WGSL `card_normal` with it), the square's folded edges and corners packed one
+way, and `local_mesh` un-flips the packed normal. Tests: the parity test (red → green), and
+`a_leaf_cards_packed_normal_flips_exactly` (red on the old grid: a flip and back changed the bits).
 
 ### 94. Jumping into a tree's leaves rubber-bands you toward the ground until you back out (fixed after 0.54.14x)
 
