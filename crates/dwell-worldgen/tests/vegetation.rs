@@ -138,8 +138,8 @@ dwell_world::both_faces!(
     /// Soil is thinner on steep hard rock than on flat, wet valley floors.
     fn soil_is_thin_on_steep_hard_rock(f: FaceFrame) {
         let v = VEGETATION;
-        let (steep, _) = v.soil("dwell:granite", 30.0, 0.0);
-        let (floor, _) = v.soil("dwell:shale", 2.0, 1.0);
+        let (steep, _) = v.soil("dwell:granite", 30.0, 0.0, 10.0);
+        let (floor, _) = v.soil("dwell:shale", 2.0, 1.0, 10.0);
         assert!(
             steep * 5.0 < floor,
             "granite at 30°: {steep} m; a shale floor: {floor} m"

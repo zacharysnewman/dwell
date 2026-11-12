@@ -673,9 +673,13 @@ pub struct BiomeSet {
     pub geology: crate::geology::Resolved,
     /// Each biome's own stack (its `rockStack`), by index into the geology's stacks.
     biome_stack: Vec<Option<usize>>,
-    /// The rocks' palettes from here: rock r's scree palette at `rock_first + 2r` (ground and
-    /// under its scree, rock its face), its cap palette at `+ 1` (ground and under its cap).
+    /// The rocks' palettes from here (the first rock's).
     rock_first: u16,
+    /// Rock r's scree palette (ground and under its scree, rock its face); its cap palette at
+    /// `+ 1` (ground and under its cap). The rocks of the noise's stacks (weight above 0) from
+    /// `rock_first` in order; a rock only in stacks of weight 0 (R5's plate provinces) after
+    /// every other palette, so adding one leaves the others' palettes where they were.
+    rock_palette: Vec<u16>,
     /// The drainage seen from above (T4), built only where a biome erodes.
     drainage: Option<crate::geology::DrainageField>,
     /// Each stack's lowest soft layer's top (m within its period; T4's base level).
@@ -780,7 +784,7 @@ impl BiomeSet {
             palettes.extend(b.bands.iter().map(Bands::of));
         }
         let rock_first = palettes.len() as u16;
-        for r in geology.rocks {
+        let push_rock = |palettes: &mut Vec<Bands>, r: &crate::geology::Rock| {
             let (face, cap, scree) = (
                 dwell_blocks::require(r.face),
                 dwell_blocks::require(r.cap),
@@ -798,6 +802,27 @@ impl BiomeSet {
                 rock: face,
                 shore: scree,
             });
+            palettes.len() as u16 - 2
+        };
+        // A rock only in stacks of weight 0 (R5) takes its palettes last (below).
+        let late: Vec<bool> = geology
+            .rocks
+            .iter()
+            .map(|r| {
+                let in_stack = |w: bool| {
+                    geology
+                        .stacks
+                        .iter()
+                        .any(|s| (s.weight > 0.0) == w && s.layers.iter().any(|l| l.rock == r.name))
+                };
+                !in_stack(true) && in_stack(false)
+            })
+            .collect();
+        let mut rock_palette = vec![0u16; geology.rocks.len()];
+        for (i, r) in geology.rocks.iter().enumerate() {
+            if !late[i] {
+                rock_palette[i] = push_rock(&mut palettes, r);
+            }
         }
         let biome_stack = list
             .iter()
@@ -890,6 +915,12 @@ impl BiomeSet {
                 Some(f)
             })
             .collect();
+        // The rocks only in stacks of weight 0 (R5), last.
+        for (i, r) in geology.rocks.iter().enumerate() {
+            if late[i] {
+                rock_palette[i] = push_rock(&mut palettes, r);
+            }
+        }
         Self {
             list: list.to_vec(),
             palettes,
@@ -900,6 +931,7 @@ impl BiomeSet {
                 .with_tectonics(map.tectonics),
             biome_stack,
             rock_first,
+            rock_palette,
             drainage: (geology.erosion.strength > 0.0
                 && list.iter().any(|b| b.erosion > 0.0 || b.gullies > 0.0))
             .then(|| crate::geology::DrainageField::of(map, geology.erosion.threshold)),
@@ -1478,6 +1510,20 @@ impl TerrainGenerator {
     /// rock shaping's or the erosion's), not its biome band's.
     pub fn is_rock_palette(&self, col: &Column) -> bool {
         self.biomes.biome_of_palette(col.palette).is_none()
+    }
+
+    /// The soil type `rock` weathers to at face-local (x, z) over `base` m: by the climate there
+    /// where the rock's soils name one (R5), else the rock's own.
+    fn soil_type_of(&self, rock: &str, x: i64, z: i64, base: f64) -> u8 {
+        let v = &self.vegetation;
+        if v.climate_dependent(rock)
+            && let Some(geo) = self.biomes.geography(x, z, base)
+        {
+            return v
+                .rock_soil(rock, v.celsius(geo.temperature), geo.wetness)
+                .soil_type;
+        }
+        v.rock_soil(rock, f64::NAN, f64::NAN).soil_type
     }
 
     /// This generator's geology (`rocks.json`).
@@ -2312,7 +2358,7 @@ impl TerrainGenerator {
             && band != Band::Shore
         {
             use crate::geology::Part;
-            let scree = self.biomes.rock_first + 2 * r as u16;
+            let scree = self.biomes.rock_palette[r];
             match part {
                 Part::Wall => (palette, band) = (scree, Band::Rock),
                 Part::Talus => (palette, band) = (scree, Band::Ground),
@@ -2330,7 +2376,7 @@ impl TerrainGenerator {
             // T3b: the soil type's blocks (sand under the grass on sandstone, say) on the band's
             // own ground, by the rock at the surface.
             let rock = self.surface_rock(&mix, x, z, base);
-            let soil = self.vegetation.rock_soil(rock.name).soil_type;
+            let soil = self.soil_type_of(rock.name, x, z, base);
             if let Some(p) = self
                 .biomes
                 .soil_palette(usize::from(mix.chosen), level_band, soil)
@@ -2914,7 +2960,12 @@ impl TerrainGenerator {
         };
         let v = &self.vegetation;
         let (rock, _) = self.rock_at_surface(x, z);
-        let (soil_depth, soil_type) = v.soil(rock.name, slope_deg, geo.wetness);
+        let (soil_depth, soil_type) = v.soil(
+            rock.name,
+            slope_deg,
+            geo.wetness,
+            v.celsius(geo.temperature),
+        );
         Some(crate::vegetation::Climate {
             temperature_c: v.celsius(geo.temperature),
             moisture: geo.wetness,

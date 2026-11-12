@@ -677,6 +677,55 @@ test('the checked-in rocks are valid, generate the checked-in Rust, and take a r
   bad((x) => (x.erosion.flow = 1), /erosion: unknown flow/);
 });
 
+test('R5: plateProvinces map plate settings to stacks by name, by data alone; bad entries fail naming them', () => {
+  const rocks = () => JSON.parse(readFileSync(join(here, 'rocks.json'), 'utf8'));
+  const d = rocks();
+  // Every rule names a stack; the new stacks take no share of the noise's provinces.
+  const stacks = new Map(d.stacks.map((s) => [s.name, s]));
+  for (const r of d.plateProvinces.rules) assert.ok(stacks.has(r.stack), r.setting);
+  for (const n of ['dwell:arc_volcanics', 'dwell:hotspot_shield', 'dwell:collision_core', 'dwell:rift_fill'])
+    assert.equal(stacks.get(n).weight, 0, n);
+  // A rule swapped and one added by data alone.
+  d.plateProvinces.rules.find((r) => r.setting === 'core').stack = 'dwell:granite_core';
+  d.plateProvinces.rules.push({ setting: 'default', stack: 'dwell:badland_beds' });
+  const out = rocksRust(validateRocks(d, blocks));
+  assert.match(out, /PlateRule \{ setting: PlateSetting::Core, stack: "dwell:granite_core" \}/);
+  assert.match(out, /PlateRule \{ setting: PlateSetting::Default, stack: "dwell:badland_beds" \}/);
+  const bad = (f, msg) => {
+    const x = rocks();
+    f(x);
+    assert.throws(() => validateRocks(x, blocks), msg);
+  };
+  bad((x) => (x.plateProvinces.rules[0].setting = 'mantle'), /plateProvinces: rule setting "mantle" must be one of/);
+  bad((x) => (x.plateProvinces.rules[0].stack = 'dwell:nothing'), /plateProvinces: rule arc: stack "dwell:nothing" is not a stack/);
+  bad((x) => x.plateProvinces.rules.push({ ...x.plateProvinces.rules[0] }), /plateProvinces: rule arc is listed twice/);
+  bad((x) => (x.plateProvinces.rangeCore = [9000, 1000]), /plateProvinces: rangeCore must be/);
+  bad((x) => (x.plateProvinces.riftWidth = -1), /plateProvinces: riftWidth must be/);
+  bad((x) => (x.plateProvinces.depth = 1), /plateProvinces: unknown depth/);
+});
+
+test('R5: a rock\'s soils by climate, in order; bad climates fail naming the rock', () => {
+  const veg = () => JSON.parse(readFileSync(join(here, 'vegetation.json'), 'utf8'));
+  const andesite = veg().rockSoils.filter((r) => r.rock === 'dwell:andesite');
+  assert.ok(new Set(andesite.map((r) => r.type)).size >= 2, 'andesite weathers by climate');
+  assert.ok(!andesite.at(-1).celsius && !andesite.at(-1).moisture, 'its last entry names no climate');
+  const d = veg();
+  d.rockSoils.unshift({ rock: 'dwell:granite', celsius: [10, 40], moisture: [0.5, 1], depth: 1.5, type: 'dwell:loamy' });
+  assert.match(
+    vegetationRust(validateVegetation(d)),
+    /RockSoil \{ rock: "dwell:granite", depth: 1\.5, soil_type: 1, celsius: \[10\.0, 40\.0\], moisture: \[0\.5, 1\.0\] \}/,
+  );
+  const bad = (f, msg) => {
+    const x = veg();
+    f(x);
+    assert.throws(() => validateVegetation(x), msg);
+  };
+  bad((x) => x.rockSoils.push({ rock: 'dwell:shale', depth: 1, type: 'dwell:loamy' }), /rockSoils: dwell:shale is listed after its entry without a climate/);
+  bad((x) => (x.rockSoils[0].celsius = [5, 1]), /rockSoils: dwell:sandstone: celsius must be \[least, most\]/);
+  bad((x) => (x.rockSoils[0].moisture = [0, 2]), /rockSoils: dwell:sandstone: moisture must be/);
+  bad((x) => (x.rockSoils[0].rain = [0, 1]), /rockSoils: dwell:sandstone: unknown rain/);
+});
+
 test('a biome opts in to erosion and gullies in [0, 1]; the default biome does not', async () => {
   const { biomeRefs } = await import('./gen.mjs');
   const { validateBiome } = await import('./biomes.mjs');
