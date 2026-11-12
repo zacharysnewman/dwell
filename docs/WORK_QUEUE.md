@@ -236,6 +236,12 @@ Last updated: 2026-11-11 (0.52.108).
 
 Cloud sessions: logic-only items can run as `claude --cloud` sessions in parallel (verified 2026-11-11).
 
+   Owner, 2026-11-12: **"The clouds make those screenshots hard to read. Also the lighting on the new clouds just
+   looks like it's all bright white so the actual shape is difficult or impossible to read. Our old 2D clouds had
+   better lighting, use that as a reference."** Next: light the volume like the old deck read — shaded bases and
+   self-shadowing toward the sun (a short light march), sky-coloured ambient on the shaded side, a brighter
+   sun-facing rim — matched against the old 2D deck's look side by side; and bench shots taken with clouds off
+   unless the shot is about clouds.
 14. **Tall grass grows and spreads** (owner 2026-11-11: "I want tall grass to steadily grow and spread. It
    should probably have a max depending on climate/biome."). **Built** (ADR 0075 T3c, docs/ECOLOGY.md §10):
    `shared/worldgen/grass.json` (the rule as data: the block, the ground, the decoration whose climate
