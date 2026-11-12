@@ -16,6 +16,13 @@ Last updated: 2026-11-11 (0.52.108).
 
 ## Queued next, in order (2026-11-12)
 
+Owner, 2026-11-12: **"How are realistic worlds going? And forests? Those are the two I'm most interested in
+seeing."** → next on the Mac after the flying frame rate: a look at both (screenshots/video of a Realistic world —
+plates, ranges, rain shadow, biomes by climate — and the old-growth forest), then R6 (the Realistic world in New
+world) and the far-tree impostors drawn (I-2/I-3); R5 (geology) in the cloud now.
+
+
+
 The running order across the items below; each line names its item, where the owner's words and details are.
 
 1. **High at 60 fps on the M1 Air (item 30, P0)** — running locally: measure each feature at High, cull leaf cards
