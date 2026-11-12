@@ -1650,7 +1650,9 @@ player on face B stands upside down in the world.
   brakes a body, so a fall of the rim's 2 km passes through at speed and gravity (toward the
   midplane on both sides) draws it back: it swings across the midplane (BIFACIAL_WORLD.md §10).
 - **Crossing.** A player climbs through a **portal** (a shaft through the bedrock with a ladder the
-  whole way, generated from the seed: *Bedrock and portals* above), digs down through the core's
+  whole way, generated from the seed: *Bedrock and portals* above) or drops into one (it swings
+  across the midplane and the shaft's exit push carries it out of the far opening onto the ground
+  beside it: `portals.exit`, the controller's `step_portal`, BIFACIAL_WORLD.md §12.3), digs down through the core's
   stone to the bedrock, or goes over the rim, and the face switches (with 5 cm of hysteresis) when the body is across the midplane; the
   controller state is mirrored with the frame, the body turns over and the view keeps pointing
   exactly the same way: the look continues across (heading kept, pitch mirrored; on the crossing
@@ -4083,6 +4085,7 @@ in the code yet.
 | `CORE_ANCHOR_LAYERS` | 8 | Rows (4 m on ½ m cells) either side of the midplane that anchor both faces (Phase 20); within `CORE_LAYERS` (checked at compile time) |
 | `bedrock.thickness` (`shared/worldgen/midplane.json`) | 1 m (2 rows) per face | The indestructible bedrock's rows from the midplane on each face (Phase 48); within `CORE_LAYERS` (validated) |
 | `portals` (`shared/worldgen/midplane.json`) | 4–8, ≥ 3 km apart, within 26 km, ≤ 40 m above sea, radius 2.5 m | The seeded portals through the bedrock: count, spacing, siting, shaft radius, rim (stone, 1 m × ½ m), ladder (south wall), 4 m clear ground (Phase 48, BIFACIAL_WORLD.md §12) |
+| `portals.exit` (`shared/worldgen/midplane.json`) | push 30 m/s², depth 2 m, minRise 10 m/s | The shaft's exit push: a body rising fast through a shaft's top 2 m is pushed along its facing and lands ~6 m from the axis on the ground beside the opening (the controller's `step_portal`, BIFACIAL_WORLD.md §12.3) |
 | `WORLD_RADIUS` | 50 000 m | Radius of the world disc; beyond it, the void |
 | `ISLAND_RADIUS` | 25 000 m | The interim island's mean radius, absolute (owner, 2026-10-15; the terrain definition's layout in Phase 17) |
 | `FLAT_TOP_Y` | 64 rows (32 m) | The flat worlds' surface (the flat test world, the structure sandbox); metre twin `FLAT_TOP_M` |

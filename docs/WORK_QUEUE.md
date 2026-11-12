@@ -1405,6 +1405,13 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    Portal exit (owner's answer, 2026-11-12): **land beside the hole** — today a player rises ~12 m out of the far
    face's hole, falls back and bounces between the faces forever; the portal gives a small sideways push (or slows
    the fall-back) so the player arcs out and lands on the far face's ground beside the hole.
+   **Built 2026-11-12** (BIFACIAL_WORLD.md §12.3): the shaft's **exit push**, a steady crosswind across its top
+   2 m (`midplane.json` `portals.exit`: 30 m/s², `minRise` 10 m/s so a jump and the ladder never take it), along the
+   player's facing; however fast the rise, the player lands ~6 m from the axis (2–4 m past the rim). Momentum in the
+   shared controller (`step_portal`, from `VoxelWorld::portals` on the server and in the prediction: no replays).
+   A far opening the swing can't reach, or a rise into the monument's arches, falls back and comes out on a later
+   swing (seed 0: 12 of 16 drops out on the first, all within 3 crossings). For the portal shot: face between the
+   pillars (a diagonal) when jumping in.
    Owner refinement for (4)/(5), 2026-11-12: **"Like a farther out non first person view of the other side."** — after
    the motes, cut to a third-person camera farther out on face B (15–40 m from the portal, looking at the hole) as the
    player flies up out of it, not first person; the jump stays first person on face A.
