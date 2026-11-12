@@ -8,6 +8,7 @@
 
 pub mod arena;
 pub mod blasts;
+pub mod bloom;
 pub mod camera;
 pub mod characters;
 pub mod display;
@@ -1177,6 +1178,11 @@ pub struct Renderer {
     shafts: ShaftQuality,
     scene_read_layout: wgpu::BindGroupLayout,
     shafts_pipeline: pipeline::Lazy,
+    /// Bloom (WORK_QUEUE item 19): the setting, its levels' group layout and its passes'
+    /// pipelines (`bloom.rs`).
+    bloom: dwell_look::bloom::BloomQuality,
+    bloom_layout: wgpu::BindGroupLayout,
+    bloom_pipelines: bloom::BloomPipelines,
     /// The volumetric clouds pass (docs/CLOUDS.md §8.6): its group layout, uniform, pipeline, the
     /// last frame's camera (right, up, forward, tangents; the eye) and the frame count (jitter).
     cloud_layout: wgpu::BindGroupLayout,
@@ -1889,6 +1895,10 @@ impl Renderer {
             "shafts_fs",
             frame::SHAFTS.into(),
         );
+        // Bloom's passes (WORK_QUEUE item 19): the bright pass over the same scene group.
+        let bloom_layout = frame::bloom_layout(&device);
+        let bloom_pipelines =
+            bloom::BloomPipelines::new(&device, samples, &scene_read_layout, &bloom_layout);
         // The volumetric clouds pass (docs/CLOUDS.md §8.6): the march into the clouds buffer and
         // its distances, at the tier's reduced size, over the last frame's (group 3).
         let cloud_layout = frame::cloud_history_layout(&device);
@@ -2139,6 +2149,9 @@ impl Renderer {
             shafts: ShaftQuality::High,
             scene_read_layout,
             shafts_pipeline,
+            bloom: dwell_look::bloom::BloomQuality::High,
+            bloom_layout,
+            bloom_pipelines,
             cloud_layout,
             cloud_prev_buffer,
             clouds_pipeline,
@@ -2480,6 +2493,14 @@ impl Renderer {
     fn shaft_tier(&self) -> Option<ShaftTier> {
         shafts_for(self.adapter, self.shafts).tier()
     }
+    /// The Bloom setting (Off, Low, High; WORK_QUEUE item 19).
+    pub fn set_bloom(&mut self, quality: dwell_look::bloom::BloomQuality) {
+        self.bloom = quality;
+    }
+    /// Bloom's tier this frame draws (`bloom::bloom_for`: none on a CPU adapter or a phone).
+    fn bloom_tier(&self) -> Option<dwell_look::bloom::BloomTier> {
+        bloom::bloom_for(self.adapter, self.phone, self.bloom).tier()
+    }
     /// The clouds' coverage, 0 (clear) to 1 (overcast): the data's by default; a weather system's
     /// to set.
     pub fn set_cloud_coverage(&mut self, coverage: f64) {
@@ -2655,6 +2676,9 @@ impl Renderer {
         }
         if self.shaft_tier().is_some() {
             set.push(&self.shafts_pipeline);
+        }
+        if self.bloom_tier().is_some() {
+            set.extend(self.bloom_pipelines.all());
         }
         set
     }
@@ -3646,8 +3670,15 @@ impl Renderer {
             .shaft_tier()
             .map_or((1, 1), |t| dwell_look::shafts::buffer_size(self.size, t));
         let clouds = cloud_buffer_size(self.size, self.cloud_tier());
+        // Bloom's chain at the tier's size (1 × 1, one level, with none).
+        let bloom = self
+            .bloom_tier()
+            .map_or((1, 1, 1), |t| dwell_look::bloom::chain(self.size, t));
         if self.targets.as_ref().is_some_and(|t| {
-            t.under.is_some() == under && t.shafts_size() == shafts && t.clouds_size() == clouds
+            t.under.is_some() == under
+                && t.shafts_size() == shafts
+                && t.clouds_size() == clouds
+                && t.bloom.size() == bloom
         }) {
             return;
         }
@@ -3667,6 +3698,8 @@ impl Renderer {
                 clouds,
                 cloud_layout: &self.cloud_layout,
                 cloud_prev: &self.cloud_prev_buffer,
+                bloom,
+                bloom_layout: &self.bloom_layout,
             },
             under.then_some((&self.under_layout, &self.under_sampler)),
         ));
@@ -4338,6 +4371,13 @@ impl Renderer {
             pass.set_pipeline(&self.shafts_pipeline);
             pass.draw(0..3, 0..1);
             calls += 1;
+        }
+        // Bloom (WORK_QUEUE item 19) from the finished scene's self-lit pixels down its chain and
+        // back up, when the tier draws it (the composite adds it).
+        if self.bloom_tier().is_some() {
+            calls += self
+                .bloom_pipelines
+                .encode(&mut encoder, &targets.scene_read, &targets.bloom);
         }
         let cpu = crate::telemetry::now_ms() - t0 + collect_ms;
         // With the wind on, the composite draws the finished image and the motion pass reads it
@@ -6546,6 +6586,32 @@ mod tests {
         let _ = &*r.shafts_pipeline;
         assert!(r.shafts_pipeline.built());
         assert_eq!(pipeline::created() - before, 1, "made once, on first use");
+        draws_cleanly(r);
+    }
+
+    /// Bloom off (WORK_QUEUE item 19: Low, the phone tier, a CPU adapter) builds none of its
+    /// pipelines; switched on, the warm-up takes its three and a frame draws its chain.
+    #[test]
+    fn bloom_off_builds_no_pipeline_and_on_draws_its_chain() {
+        use dwell_look::bloom::BloomQuality;
+        let mut r = noop_renderer();
+        r.set_bloom(BloomQuality::Off);
+        while !r.warm_pipelines() {
+            r.device.poll(wgpu::PollType::wait_indefinitely()).unwrap();
+        }
+        assert!(
+            r.bloom_pipelines.all().iter().all(|p| !p.built()),
+            "bloom is off"
+        );
+        let warm_off = r.warm_set().len();
+        r.set_bloom(BloomQuality::High);
+        if r.bloom_tier().is_some() {
+            assert_eq!(
+                r.warm_set().len() - warm_off,
+                3,
+                "the warm-up takes its three"
+            );
+        }
         draws_cleanly(r);
     }
 

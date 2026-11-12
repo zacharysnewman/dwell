@@ -3383,6 +3383,23 @@ in 0.48.2.
   `riverCurrentBandM` (0.2 m, `flow.json`; `Water::as_river`): the river by an edit runs as the
   river round it, while a pool behind a dam, a drained or diverted reach and placed water keep
   their own. Only the current reported changes, not the water's movement.
+- **[built, pending release] Bloom** (WORK_QUEUE item 19; data `shared/look/bloom.json` → `dwell-look`
+  `bloom.gen.rs` by `shared/look/bloom.mjs`, validated, a retuned tier by data alone, CI stale check;
+  `render/bloom.rs`): the glow round self-lit surfaces, keyed on emissive, not on brightness. After the
+  light shafts, a bright pass (`bloom_bright_fs`, its own module, over `frame::scene_read_layout`) takes
+  only the pixels the scene flags self-lit (`self_lit_depth`: lava, flames, lamps), each one's linear
+  light above `threshold` by its brightest channel × its self-lit sample share, averaged over its
+  footprint into the first level of an `rgba16float` chain (`frame::BloomChain`, one texture whose mips
+  halve) at the tier's share of the drawing buffer; down passes (`bloom_down_fs`, the dual filter's five
+  taps) to the last level, then up passes (`bloom_up_fs`, a 3 × 3 tent `radius` texels apart, added by
+  blending) back into the second level, which the composite samples filtered (scene group binding 6,
+  `with_bloom` first in `with_shafts`): × `intensity`, added to the pixel's linear light before the tone
+  curve (the composite's colour taken back through `inverse_display`, only the difference the glow makes
+  added, so a pixel without glow is unchanged). Settings → Graphics → Bloom (`dwell.bloom`; a preset
+  field `bloom`): High (High and Ultra) ½ per axis with 5 levels, Low (Medium) ¼ with 4, Off (Low and
+  Mobile) none; a CPU adapter and the phone tier never draw it (`bloom_for`; the owner plays on Low on an
+  iPhone); `?bloom=` overrides it for the bench. Its three pipelines are lazy (`pipeline::Lazy`): an off
+  tier builds none, and its chain is 1 × 1 (the composite's `with_bloom` returns at once).
 - **[built, 0.50.24] Light shafts** ([ADR 0064](./adr/0064-light-shafts.md); data `shared/look/shafts.json` →
   `dwell-look` `shafts.gen.rs` by `shared/look/shafts.mjs`, validated, a fixture fluid by data alone,
   CI stale check): one pass after the scene passes (`shafts_fs`, `gpu.shafts`) into an
@@ -3705,6 +3722,9 @@ a second for 2–3 s once the world's LOD has settled — EXPLOSIVES.md §6.
    or once it comes to rest, and is capped at `DEBRIS_MAX_BODIES` (oldest removed first).
 
 ### 7.4 Tunable constants
+
+Bloom's look and tiers are data in `shared/look/bloom.json` (threshold 0.05 of the scene's linear
+light, intensity 0.9, the up taps 1 texel apart; High ½ resolution and 5 levels, Low ¼ and 4).
 
 The light shafts' tiers, strengths, reaches, decays and per-fluid looks are data in
 `shared/look/shafts.json` (ADR 0064; High: ½ resolution, 24 samples, 4 lights at 12 samples each;

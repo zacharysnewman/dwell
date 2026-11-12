@@ -5,6 +5,7 @@
 //! `shared/look/daynight.json`).
 
 pub mod ambient;
+pub mod bloom;
 pub mod clouds;
 #[path = "clouds.gen.rs"]
 mod clouds_gen;

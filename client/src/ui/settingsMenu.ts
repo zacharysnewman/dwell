@@ -30,11 +30,15 @@ import {
   sanitizeAntialias,
 } from './antialiasSettings';
 import {
+  BLOOM_QUALITIES,
   CLOUD_QUALITIES,
+  DEFAULT_BLOOM,
   DEFAULT_SHAFTS,
   SHAFT_QUALITIES,
   defaultClouds,
+  sanitizeBloom,
   sanitizeShafts,
+  type BloomQuality,
   type CloudQuality,
   type ShaftQuality,
 } from './viewSettings';
@@ -64,6 +68,7 @@ import {
   PRESET_KEY,
   SHADOWS_KEY,
   SHAFTS_KEY,
+  BLOOM_KEY,
   WATER_KEY,
   pinnedRecord,
   pinsIn,
@@ -153,6 +158,8 @@ export interface Settings {
   clouds: CloudQuality;
   /** The light shafts: off, low or high (dwell-look's shafts.rs, ADR 0064). */
   shafts: ShaftQuality;
+  /** Bloom, the glow round self-lit surfaces: off, low or high (dwell-look's bloom.rs). */
+  bloom: BloomQuality;
   /** The water quality (ui/waterSettings.ts). */
   water: WaterSettings;
   /** The sun's and moon's shadows (ui/shadowSettings.ts). */
@@ -198,6 +205,7 @@ export function baseSettings(mobile: boolean, reducedMotion = false): Settings {
     audio: { ...DEFAULT_VOLUMES },
     clouds: defaultClouds(mobile),
     shafts: DEFAULT_SHAFTS,
+    bloom: DEFAULT_BLOOM,
     water: defaultWater(mobile),
     shadows: defaultShadows(mobile),
     motion: defaultMotion(reducedMotion),
@@ -231,6 +239,7 @@ export function settingsJson(s: Settings): string {
     },
     clouds: s.clouds,
     shafts: s.shafts,
+    bloom: s.bloom,
     water: {
       quality: s.water.quality,
       flowRipples: s.water.flowRipples,
@@ -336,6 +345,7 @@ export function storedSettings(mobile: boolean, defaults: Settings): Settings {
     audio: loadVolumes(),
     clouds: CLOUD_QUALITIES.find((q) => q === load(CLOUDS_KEY)) ?? defaults.clouds,
     shafts: sanitizeShafts(load(SHAFTS_KEY), defaults.shafts),
+    bloom: sanitizeBloom(load(BLOOM_KEY), defaults.bloom),
     water: sanitizeWater(load(WATER_KEY), defaults.water),
     shadows: sanitizeShadows(load(SHADOWS_KEY), defaults.shadows),
     motion: sanitizeMotion(load(MOTION_KEY), prefersReducedMotion()),
@@ -401,6 +411,7 @@ function writeSettings(s: Settings, pins: ReadonlySet<string>): void {
     [AUDIO_KEY, { ...asRecord(load(AUDIO_KEY)), ...s.audio }],
     [CLOUDS_KEY, s.clouds],
     [SHAFTS_KEY, s.shafts],
+    [BLOOM_KEY, s.bloom],
     [WATER_KEY, waterRecord(load(WATER_KEY), s.water)],
     [SHADOWS_KEY, shadowRecord(load(SHADOWS_KEY), s.shadows)],
     [MOTION_KEY, motionRecord(load(MOTION_KEY), s.motion)],
@@ -537,6 +548,15 @@ const CHOICES: ChoiceSpec<ShaftQuality>[] = [
     labels: { off: 'Off', low: 'Low', high: 'High' },
     get: (s) => s.shafts,
     with: (s, v) => ({ ...s, shafts: v }),
+  },
+  {
+    label: 'Bloom',
+    pin: 'bloom',
+    hint: 'The glow round lava, torches and flames; Low is lighter on the GPU (never on phones)',
+    choices: BLOOM_QUALITIES,
+    labels: { off: 'Off', low: 'Low', high: 'High' },
+    get: (s) => s.bloom,
+    with: (s, v) => ({ ...s, bloom: v }),
   },
 ];
 

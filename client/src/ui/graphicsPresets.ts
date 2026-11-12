@@ -14,7 +14,7 @@ import data from '../../../shared/settings/graphics-presets.json';
 import type { Settings } from './settingsMenu';
 import { DETAIL_LIMITS, detailLimits } from './detailSettings';
 import { UPSCALE } from './renderScaleSettings';
-import { CLOUD_QUALITIES, SHAFT_QUALITIES } from './viewSettings';
+import { BLOOM_QUALITIES, CLOUD_QUALITIES, SHAFT_QUALITIES } from './viewSettings';
 import { SHADOW_QUALITIES } from './shadowSettings';
 import { WATER_QUALITIES } from './waterSettings';
 
@@ -95,6 +95,11 @@ export const PRESET_FIELDS = {
     check: oneOf(SHAFT_QUALITIES),
     get: (s) => s.shafts,
     with: (s, v) => ({ ...s, shafts: v as Settings['shafts'] }),
+  },
+  bloom: {
+    check: oneOf(BLOOM_QUALITIES),
+    get: (s) => s.bloom,
+    with: (s, v) => ({ ...s, bloom: v as Settings['bloom'] }),
   },
   clouds: {
     check: oneOf(CLOUD_QUALITIES),

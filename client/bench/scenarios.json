@@ -37,6 +37,21 @@
       ]
     },
     {
+      "name": "bloom",
+      "notes": "Bloom (WORK_QUEUE item 19): the starter's summit lava lake filled fast (its vent × 30), by night, shot and the frame recorded; run with --compare and configs that set ?bloom=off|low|high or ?preset= to see the glow and its GPU cost (gpu.bloom is inside gpu.frame).",
+      "query": { "worldgen": "test:starter", "seed": "0", "fresh": "1", "at": "30008.5,200,-8000.5" },
+      "steps": [
+        { "do": "settle", "maxS": 60 },
+        { "do": "lava", "op": "rate", "args": [30] },
+        { "do": "wait", "s": 25 },
+        { "do": "time", "t": 0.95 },
+        { "do": "shot", "name": "lake-night", "at": [30006.5, 250, -8006.5], "yaw": -45, "pitch": -50, "maxS": 20 },
+        { "do": "mark" },
+        { "do": "wait", "s": 5 },
+        { "do": "record", "name": "lake-night" }
+      ]
+    },
+    {
       "name": "lava-lake",
       "notes": "Lava's look (VOLCANOES.md §6.3): the starter world's summit lava lake, its vent's rate × 30 (the dev `lava` step) so it fills in seconds, by day and by night, the frame near it; then a dev vent by the sea for lava meeting water (obsidian, steam).",
       "query": { "worldgen": "test:starter", "seed": "0", "fresh": "1", "at": "30008.5,200,-8000.5" },

@@ -144,8 +144,110 @@ pub fn scene_layout(device: &wgpu::Device, samples: u32) -> wgpu::BindGroupLayou
             // The volumetric clouds' buffer and their first cloud's distance (CLOUDS.md §8.6).
             filterable(4),
             filterable(5),
+            // Bloom's blurred glow (its chain's second level; WORK_QUEUE item 19).
+            filterable(6),
         ],
     })
+}
+
+/// Bloom's down and up passes' group (0): one level of the chain they read and a filtering sampler.
+pub fn bloom_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
+    device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("bloom level"),
+        entries: &[
+            filterable(0),
+            wgpu::BindGroupLayoutEntry {
+                binding: 1,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                count: None,
+            },
+        ],
+    })
+}
+
+/// Bloom's chain's format: the glow's linear light.
+pub const BLOOM: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
+
+/// Bloom's chain (WORK_QUEUE item 19): one texture whose levels halve, a view of each level (the
+/// passes draw into one and read the next), and a group over each level for the passes that read
+/// it. 1 × 1 with one level with bloom off.
+pub struct BloomChain {
+    pub texture: wgpu::Texture,
+    pub levels: Vec<wgpu::TextureView>,
+    pub groups: Vec<wgpu::BindGroup>,
+}
+
+impl BloomChain {
+    fn new(
+        device: &wgpu::Device,
+        (width, height, levels): (u32, u32, u32),
+        layout: &wgpu::BindGroupLayout,
+        sampler: &wgpu::Sampler,
+    ) -> Self {
+        let (width, height) = (width.max(1), height.max(1));
+        let fits = 32 - width.min(height).leading_zeros();
+        let count = levels.clamp(1, fits);
+        let texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("bloom"),
+            size: wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: count,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: BLOOM,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        });
+        let levels: Vec<_> = (0..count)
+            .map(|l| {
+                texture.create_view(&wgpu::TextureViewDescriptor {
+                    label: Some("bloom level"),
+                    base_mip_level: l,
+                    mip_level_count: Some(1),
+                    ..Default::default()
+                })
+            })
+            .collect();
+        let groups = levels
+            .iter()
+            .map(|view| {
+                device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some("bloom level"),
+                    layout,
+                    entries: &[
+                        wgpu::BindGroupEntry {
+                            binding: 0,
+                            resource: wgpu::BindingResource::TextureView(view),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 1,
+                            resource: wgpu::BindingResource::Sampler(sampler),
+                        },
+                    ],
+                })
+            })
+            .collect();
+        Self {
+            texture,
+            levels,
+            groups,
+        }
+    }
+
+    /// The chain's first level's size and its level count.
+    pub fn size(&self) -> (u32, u32, u32) {
+        let s = self.texture.size();
+        (s.width, s.height, self.texture.mip_level_count())
+    }
+
+    /// The level the composite reads: the blurred glow (the second), or the only one with bloom off.
+    pub fn shown(&self) -> &wgpu::TextureView {
+        &self.levels[1.min(self.levels.len() - 1)]
+    }
 }
 
 /// The clouds pass's own group (3; binding 0 is the motion pass's `finished`): the accumulated
@@ -244,6 +346,8 @@ pub struct Targets {
     pub cloud_dist: Target,
     pub cloud_history: Target,
     pub cloud_group: wgpu::BindGroup,
+    /// Bloom's chain (its tier's size; 1 × 1 with bloom off).
+    pub bloom: BloomChain,
 }
 
 /// What [`Targets::new`] makes the scene's groups with: the scene layout, the shafts pass's read
@@ -257,6 +361,9 @@ pub struct SceneGroups<'a> {
     pub clouds: (u32, u32),
     pub cloud_layout: &'a wgpu::BindGroupLayout,
     pub cloud_prev: &'a wgpu::Buffer,
+    /// Bloom's chain (`dwell_look::bloom::chain`; (1, 1, 1) off) and its passes' group layout.
+    pub bloom: (u32, u32, u32),
+    pub bloom_layout: &'a wgpu::BindGroupLayout,
 }
 
 impl Targets {
@@ -368,6 +475,7 @@ impl Targets {
                 },
             ],
         });
+        let bloom = BloomChain::new(device, groups.bloom, groups.bloom_layout, groups.sampler);
         let scene = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("scene"),
             layout,
@@ -395,6 +503,10 @@ impl Targets {
                 wgpu::BindGroupEntry {
                     binding: 5,
                     resource: wgpu::BindingResource::TextureView(&cloud_dist.1),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 6,
+                    resource: wgpu::BindingResource::TextureView(bloom.shown()),
                 },
             ],
         });
@@ -452,6 +564,7 @@ impl Targets {
             cloud_dist,
             cloud_history,
             cloud_group,
+            bloom,
         }
     }
 
@@ -485,6 +598,7 @@ impl Drop for Targets {
         self.clouds.0.destroy();
         self.cloud_dist.0.destroy();
         self.cloud_history.0.destroy();
+        self.bloom.texture.destroy();
         if let Some(((t, _), _)) = &self.under {
             t.destroy();
         }

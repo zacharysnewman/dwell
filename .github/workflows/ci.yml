@@ -100,6 +100,8 @@ jobs:
           node --test shared/look/underwater.test.mjs
           node shared/look/shafts.mjs
           node --test shared/look/shafts.test.mjs
+          node shared/look/bloom.mjs
+          node --test shared/look/bloom.test.mjs
           node shared/look/waterfalls.mjs
           node --test shared/look/waterfalls.test.mjs
           node shared/look/daynight.mjs
