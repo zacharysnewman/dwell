@@ -294,6 +294,16 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    Owner, 2026-11-12, again: **"Also the volumetric clouds still look bad no proper lighting or shading?"** In progress
    (cloud): a light march toward the sun for self-shadowing, darker bases, sky-coloured ambient, silver lining —
    matched against the old 2D deck; then the in-game look and cost (local).
+   **Built (2026-11-12, branch `claude/cloud-lighting`, CLOUDS.md §8.8):** the volume lit as data: Medium takes 4
+   light samples toward the sun (High 6; growing steps, stopping where the path leaves the layer; the cause was
+   Medium taking none), Beer with a multiple-scattering floor and a powder term, a dual-lobe Henyey–Greenstein
+   phase (the silver lining toward the sun), the sky's light from above and a darker warm ground bounce from
+   below dimmed by the cloud over and under each sample (read free from its own noise): bases ~0.45, tops ~0.95
+   in the deck's palette; night and sunset tints kept; the light samples reuse the sample's warp (half the old
+   cost each). A CPU twin with tests (top brighter than base, deeper darker, phase toward the sun, tier caps from
+   data, both faces). Read from the shader: Medium ≤ ~5.3k ALU a texel (was 2.6k), High ≤ 7.6k (was 4.8k).
+   Next (local): the in-game look side by side with the old deck (sun high, low sun, from above, night) and the
+   bench before/after at the §8.3 views; tune by the data.
 14. **Tall grass grows and spreads** (owner 2026-11-11: "I want tall grass to steadily grow and spread. It
    should probably have a max depending on climate/biome."). **Built** (ADR 0075 T3c, docs/ECOLOGY.md §10):
    `shared/worldgen/grass.json` (the rule as data: the block, the ground, the decoration whose climate
