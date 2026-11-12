@@ -1755,7 +1755,19 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    the trunk are not levelled, so a trunk's downhill side stands over a ramp or a drop. Options, analysis and the
    owner's pick follow.
 
+45. **Floating trees drift, leaves let water through** (owner 2026-11-12: **"Also, trees they are floating in water should
+   never settle, it causes them to block up rivers randomly instead of floating downstream. And leaves also should
+   let water flow through freely."**). A body floating in water (a felled trunk, a crown) never settles back into
+   blocks while it floats; it keeps drifting with the current until it beaches on dry ground (then settles as
+   today). Leaf blocks are open to the water grid (water flows through their cells as through air, the leaves
+   kept), in place and on bodies.
+
 ## Future (needs owner answers)
+
+- **Waterlogging** (owner 2026-11-12: "Eventually we'll want to make it so some blocks if they don't move for a little
+  while or 'move enough' they'll get waterlogged, sink to the bottom and then settle."): floating bodies of
+  certain blocks soak up water after resting still for a while or travelling far enough, sink, and settle on the
+  bed — per-block data (soak time, distance).
 
 - **Tall grass hides you** (owner 2026-11-12: "I like the hide mechanic idea, save this for later."): tall grass
   hides a crouched player from animals and NPCs (and deer bed down in it).
