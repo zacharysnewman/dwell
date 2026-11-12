@@ -379,6 +379,28 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    chevron right when closed and down when open, a hover and pressed background, a focus ring; About is a
    real disclosure button (aria-expanded, aria-controls). The world card's ⋯ menu keeps its button.
 
+24. **Felling: the gash, and trunks lost on slopes** (owner 2026-11-12: "The tree chop currently makes 2 half
+   slopes both at the same angle, which doesn't line up with the chop you make in the side of the tree. It just
+   slices the tree after it's broken like you cut it through with a sword in one swipe. The tree is supposed to
+   have the big gash I was imagining 2 half blocks one upside down one right side up, both with the 'short
+   side' facing the cut."). Restated to the owner: the stump an upright ramp low at the notch side, the trunk's
+   new bottom an upside-down ramp thin at the notch side, opening a V gash toward the side chopped (the data's
+   `fellWedgeTrunk: open`, today `matching`), lined up with the notch and the fall. Waiting on the owner's
+   confirmation. Also BUGS.md #73: a trunk settled diagonally up a slope loses most of its cells into the ground.
+   Owner, 2026-11-12: **"Yes that was the shape I meant too."** In progress (cloud), with BUGS.md #73.
+25. **Marks appear at contact, not on click** (owner 2026-11-12: "the gashes in blocks from tools show up on
+   click instead of when the animation lines up with the block. We want that timing."). Every tool's hit (axe
+   chop, pickaxe, shovel; the carve, cracks, chips, drops and sound) lands when the swing's head reaches the
+   block (the swing's contact time from its data), not when the button is pressed. In progress (cloud).
+   Owner, 2026-11-12: **"Tools should only consume durability on hit."** Added to the same work: wear once per
+   landed hit (wood, a bounce, a pickaxe or shovel hit), at contact; never a miss or a cancelled swing.
+26. **Axe bites like the other tools' marks** (owner 2026-11-12: "The tree chopping slice doesn't match the other
+   tools style. It cuts a line all the way across which is much bigger than the tool head. It should align more
+   with the dirt and stone ones."). Today an axe hit cuts a kerf slit across the log's whole width. Wanted: each
+   hit carves a bite the size of the axe head where it struck (a wedge into the wood, like the dirt bowl and stone
+   facets), the bites growing together into the notch as the chop goes on; cracks/splits along the grain from
+   the cracks work. Next after item 24 (same code).
+
 ## Done
 
 - **Axe swing directions and animation tools (owner 2026-11-11: "The axe animations are still trash.
