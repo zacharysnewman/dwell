@@ -26,6 +26,8 @@ const SCHEMA = {
     horizonFade: [0.001, 1],
     fadeStartM: [0, 1e7],
     fadeEndM: [1, 1e7],
+    rimMarginM: [0, 1e6],
+    rimFadeM: [1, 1e6],
   },
   shape: {
     scaleM: [16, 1e6],

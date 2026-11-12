@@ -45,26 +45,6 @@ own sound — possibly all three, each per cell or per tick rather than per step
 (clipping from stacked sounds, or a sound restarted every tick); the first-person body's walk clip speed against the
 walk speed (stride length 1.6 m a loop vs the controller's speed — too high a playback rate).
 
-### 101. Clouds draw in the void beyond the world's rim, under a far camera
-
-Found 2026-11-12 recording the bifacial showcase (seed 7, a theater camera 140 km from the centre, 11 km up,
-looking at the disc, time 0.29). With clouds on, a cloud layer fills the void below the camera out there, where
-there is no world: on **Low** (the 2D deck) a flat sheet of hard-edged white blotches from the frame's bottom to the
-horizon; on **High** (volumetric) rows of tall, thin grey spires with noisy, jagged edges — "crazy triangles" from a
-distance — standing in front of the stars. Neither tier draws anything visible over the island itself from there.
-At 120 km out and 3 km up the camera sits inside the layer and the frame is a wall of grey smears. The clouds seem
-to be a layer around the camera, not clipped to the disc (or to its face's sky). Off, the frame is clean. Expected:
-no clouds beyond the rim (a cloud field bounded by the disc, fading out at the edge). Stills: the bifacial v2
-deliverables (`outline_clouds_off/low/high.png`). Showcase work uses clouds off meanwhile.
-
-### 102. A bright horizontal band in face B's sky seen from beyond the rim
-
-Found 2026-11-12 with #101's camera, clouds off: a soft white-grey band a few degrees wide crosses the whole frame
-below the disc (in face B's half of the sky, between the disc and the stars), and stays there while the camera
-pushes in, orbits and rises; from under face B it shows below the disc the same way. It reads as a glow stripe
-that isn't anything in the world: likely face B's sky horizon/haze glow drawn at its own horizon for a camera far
-outside the disc. Cosmetic; it shows in every far shot of the outline.
-
 ### 100. Volumetric clouds look like "crazy triangles"
 
 Owner, 2026-11-12: "the clouds look ridiculous at least the volumetric ones. Look like crazy triangles. Find a
@@ -523,6 +503,50 @@ shallow ramp, maybe same problem with steep ramps too?" Not investigated yet: ta
 face, or the placement check against its shape.
 
 ## Fixed
+
+### 102. A bright horizontal band in face B's sky seen from beyond the rim (fixed after 0.54.191)
+
+Found 2026-11-12 with #101's camera, clouds off: a soft white-grey band a few degrees wide crosses the whole frame
+below the disc (in face B's half of the sky, between the disc and the stars), and stays there while the camera
+pushes in, orbits and rises; from under face B it shows below the disc the same way. It reads as a glow stripe
+that isn't anything in the world: likely face B's sky horizon/haze glow drawn at its own horizon for a camera far
+outside the disc. Cosmetic; it shows in every far shot of the outline.
+
+Cause: the atmosphere's limb (`atmosphere.json`: the horizon's colour gathered into a band `limbWidthDeg` wide at
+`−atan(height / limbDistanceM)`, the rim as seen from over the disc), drawn for any viewer above the atmosphere's
+base wherever it was: 11 km up it sits at −12.4°, under the disc, in both the eye's sky and the other face's (whose
+limb, flipped into its frame, lands on the same rows). Out past the rim there is no world to make one. Fixed: the
+limb fades out for a viewer past the rim over `limbFadeM` (10 km; `Atmosphere::limb_weight`, `Air::limb_weight`,
+`DaySky.space.z`, the renderer's `day_in_air` with the eye's distance from the axis); over the disc it is as before.
+Test (`lib.rs`, both faces): `no_bright_band_under_the_disc_from_far_past_the_rim` — the sky across the rows 2–22°
+below the horizon from the reported view has no row brighter than the rows 2° either side (red before: "a band at
+11° below the horizon: 0.479 over 0.446"), the limb still there for an eye over the disc, and the sky above the
+horizon unchanged. The look is still to be checked on the Mac.
+
+### 101. Clouds draw in the void beyond the world's rim, under a far camera (fixed after 0.54.191)
+
+Found 2026-11-12 recording the bifacial showcase (seed 7, a theater camera 140 km from the centre, 11 km up,
+looking at the disc, time 0.29). With clouds on, a cloud layer fills the void below the camera out there, where
+there is no world: on **Low** (the 2D deck) a flat sheet of hard-edged white blotches from the frame's bottom to the
+horizon; on **High** (volumetric) rows of tall, thin grey spires with noisy, jagged edges — "crazy triangles" from a
+distance — standing in front of the stars. Neither tier draws anything visible over the island itself from there.
+At 120 km out and 3 km up the camera sits inside the layer and the frame is a wall of grey smears. The clouds seem
+to be a layer around the camera, not clipped to the disc (or to its face's sky). Off, the frame is clean. Expected:
+no clouds beyond the rim (a cloud field bounded by the disc, fading out at the edge). Stills: the bifacial v2
+deliverables (`outline_clouds_off/low/high.png`). Showcase work uses clouds off meanwhile.
+
+Cause: the deck (a sphere under the eye) and the volume's march (out to `volume.maxDistanceM` along the ray) were
+both a layer round the eye, with nothing tying them to the world; from 140 km out the deck's horizon (~86 km) and
+the march's 22 km reach all lay in the void, so the clouds drew there and none over the island. Fixed: both are
+masked to the world's radius (its size's, `Renderer::set_world_radius` at the join) plus `deck.rimMarginM` (2 km)
+from the disc's axis, fading out over the last `deck.rimFadeM` (6 km) — the frame's `cloud_disc` uniform,
+`dwell_cloud_rim` on the deck's hit and on each march sample's cover, and `cloud_rim_span` cutting the march to the
+part of the ray over the disc, so a far eye's march takes no samples. The eye-in-cloud fog is masked the same way.
+The density function is untouched (#100). Tests (`clouds.rs` `rim_tests`, both faces, the CPU twins `rim_cover` /
+`rim_span`): `a_far_eye_sees_no_deck_beyond_the_rim` and `a_far_eye_marches_nothing_in_the_void` (red with the mask
+off: cloud 88.9 km from the axis), `over_the_island_the_clouds_are_as_before`, and
+`the_shader_masks_the_deck_and_the_march_by_the_rim`. The look from the showcase's camera is still to be checked on
+the Mac (cloud sessions have no GPU).
 
 ### 105. The "no" sound for clicking at nothing is too loud and jarring (fixed after 0.54.205)
 

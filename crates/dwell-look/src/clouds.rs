@@ -30,6 +30,10 @@ pub struct DeckTunables {
     pub horizon_fade: f64,
     pub fade_start_m: f64,
     pub fade_end_m: f64,
+    /// The clouds reach this past the world's radius from the disc's axis (BUGS.md #101) …
+    pub rim_margin_m: f64,
+    /// … fading out over the last this many metres.
+    pub rim_fade_m: f64,
 }
 
 /// The noise and its remapping to cloud (`shape`).
@@ -1210,6 +1214,49 @@ pub fn layer_span(v: &VolumeTunables, rise: f64, eye_h: f64, max_t: f64) -> Opti
     (t1 > t0).then_some((t0, t1))
 }
 
+/// The clouds' edge round the disc's axis for a world of radius `world_radius_m` (BUGS.md #101):
+/// the frame's `cloud_disc` (x, y the eye's world x and z, m from the axis; z the edge's radius, the
+/// world's plus `deck.rim_margin_m`; w the fade inside it, `deck.rim_fade_m`).
+pub fn cloud_disc(t: &CloudTunables, eye: [f64; 3], world_radius_m: f64) -> [f32; 4] {
+    [
+        eye[0] as f32,
+        eye[2] as f32,
+        (world_radius_m + t.deck.rim_margin_m) as f32,
+        t.deck.rim_fade_m as f32,
+    ]
+}
+
+/// How much of the clouds the world keeps at `rel` (m across from the eye, world x and z) under
+/// the frame's `disc` ([`cloud_disc`]): all over the disc, fading out toward the edge, none past it:
+/// no cloud floats in the void beyond the rim. `dwell_cloud_rim` is this.
+pub fn rim_cover(disc: [f32; 4], rel: [f64; 2]) -> f64 {
+    let [x, z, edge, fade] = disc.map(f64::from);
+    let r = (x + rel[0]).hypot(z + rel[1]);
+    1.0 - smoothstep(edge - fade, edge, r)
+}
+
+/// `span` (m along the unit ray `dir`, world) cut to the part inside the clouds' edge round the
+/// disc's axis (`disc`, [`cloud_disc`]); `None` where the ray stays outside it. A far eye's march
+/// takes no samples in the void (`cloud_rim_span` is this).
+pub fn rim_span(disc: [f32; 4], dir: [f64; 3], span: (f64, f64)) -> Option<(f64, f64)> {
+    let [x, z, edge, _] = disc.map(f64::from);
+    // |o + d·t|² = edge² in the horizontal plane.
+    let a = dir[0] * dir[0] + dir[2] * dir[2];
+    let b = x * dir[0] + z * dir[2];
+    let c = x * x + z * z - edge * edge;
+    if a < 1e-12 {
+        return (c <= 0.0).then_some(span);
+    }
+    let disc = b * b - a * c;
+    if disc < 0.0 {
+        return None;
+    }
+    let s = disc.sqrt();
+    let t0 = span.0.max((-b - s) / a);
+    let t1 = span.1.min((-b + s) / a);
+    (t1 > t0).then_some((t0, t1))
+}
+
 /// The distances along the ray of a march's `steps` samples over `span` offset by `jitter`
 /// (`cloud_layer_march`'s `t`).
 pub fn march_samples(span: (f64, f64), jitter: f64, steps: u32) -> Vec<f64> {
@@ -1874,7 +1921,7 @@ fn cloud_vol_light(sh: CloudShading, od: f32, above: f32, below: f32, ray: vec2f
 // an eye `eye_h` above sea level, in front-to-back colour (rgb, not divided by cover) and
 // transmittance (a), and the first cloud's distance. Early-outs: no coverage, or a ray that never
 // crosses the layer inside the reach, takes no samples.
-fn cloud_layer_march(dir: vec3f, rise: f32, eye_h: f32, max_t: f32, jitter: f32, offsets: vec4f, cfg: vec4f, steps: i32, light_steps: i32, sh: CloudShading, extinction: f32) -> CloudMarch {
+fn cloud_layer_march(dir: vec3f, rise: f32, eye_h: f32, max_t: f32, jitter: f32, offsets: vec4f, cfg: vec4f, steps: i32, light_steps: i32, sh: CloudShading, extinction: f32, disc: vec4f) -> CloudMarch {
 	let none = CloudMarch(vec4f(0.0, 0.0, 0.0, 1.0), -1.0);
 	if (cfg.x <= 0.0) {
 		return none;
@@ -1889,6 +1936,10 @@ fn cloud_layer_march(dir: vec3f, rise: f32, eye_h: f32, max_t: f32, jitter: f32,
 	} else if (eye_h < CLOUD_VOL_BASE || eye_h > CLOUD_VOL_TOP) {
 		return none;
 	}
+	// Only over the disc (rim_span): a far eye's ray in the void takes no samples (BUGS.md #101).
+	let span = cloud_rim_span(dir, disc, vec2f(t0, t1));
+	t0 = span.x;
+	t1 = span.y;
 	if (t1 <= t0) {
 		return none;
 	}
@@ -1910,7 +1961,8 @@ fn cloud_layer_march(dir: vec3f, rise: f32, eye_h: f32, max_t: f32, jitter: f32,
 		// column's profile.
 		let wq = q + cloud_vol_warp(q, offsets.zw);
 		let n = cloud_vol_n(wq);
-		let wm = cloud_weather(q, n, cfg.x);
+		var wm = cloud_weather(q, n, cfg.x);
+		wm.x *= dwell_cloud_rim(rel, disc);
 		if (wm.x <= 0.001) {
 			continue;
 		}
@@ -2134,7 +2186,7 @@ fn dwell_cloud_upsample_split(e: f32, dist: vec3f) -> vec2f {
 // samples, a powder term, a dual-lobe phase (the silver lining toward the light), the sky's light
 // from above and the ground's darker bounce from below, dimmed by the cloud over and under. The
 // layer is colour (rgb, not hazed: dwell_cloud_hazed) and cover (a).
-fn dwell_cloud_march(dir: vec3f, face: f32, max_t: f32, jitter: f32, offsets: vec4f, cfg: vec4f, inside: vec4f, lights: CloudLighting, extinction: f32) -> CloudMarch {
+fn dwell_cloud_march(dir: vec3f, face: f32, max_t: f32, jitter: f32, offsets: vec4f, cfg: vec4f, inside: vec4f, lights: CloudLighting, extinction: f32, disc: vec4f) -> CloudMarch {
 	let none = CloudMarch(vec4f(0.0), -1.0);
 	let steps = i32(floor(inside.w));
 	let light_steps = i32(round(fract(inside.w) * 8.0));
@@ -2144,7 +2196,7 @@ fn dwell_cloud_march(dir: vec3f, face: f32, max_t: f32, jitter: f32, offsets: ve
 	let eye_h = CLOUD_ALTITUDE - cfg.w;
 	let rise = face_rise(face, dir);
 	let sh = cloud_shading(face, lights);
-	let layer = cloud_layer_march(dir, rise, eye_h, max_t, jitter, offsets, cfg, steps, light_steps, sh, select(CLOUD_VOL_EXTINCTION, extinction, extinction > 0.0));
+	let layer = cloud_layer_march(dir, rise, eye_h, max_t, jitter, offsets, cfg, steps, light_steps, sh, select(CLOUD_VOL_EXTINCTION, extinction, extinction > 0.0), disc);
 	let m = dwell_cloud_plumes(layer, dir, rise, eye_h, max_t, jitter, sh);
 	let trans = m.layer.a;
 	let cover = 1.0 - trans;
@@ -2247,10 +2299,34 @@ fn dwell_cloud_fade(height: f32) -> vec2f {
 	return vec2f(max(CLOUD_FADE_START, 0.4 * far), max(CLOUD_FADE_END, far));
 }
 
+// How much of the clouds the world keeps `rel` m across from the eye (world x, z) under the frame's
+// `disc` (dwell-look cloud_disc: the eye's world x, z, the edge's radius round the disc's axis and
+// the fade inside it): none past the rim's margin (BUGS.md #101; rim_cover is its twin).
+fn dwell_cloud_rim(rel: vec2f, disc: vec4f) -> f32 {
+	return 1.0 - smoothstep(disc.z - disc.w, disc.z, length(disc.xy + rel));
+}
+
+// `t` (the span along the unit ray `dir`) cut to the part inside the clouds' edge (rim_span): x >= y
+// where the ray stays outside it.
+fn cloud_rim_span(dir: vec3f, disc: vec4f, t: vec2f) -> vec2f {
+	let a = dot(dir.xz, dir.xz);
+	let b = dot(disc.xy, dir.xz);
+	let c = dot(disc.xy, disc.xy) - disc.z * disc.z;
+	if (a < 1e-12) {
+		return select(vec2f(1.0, 0.0), t, c <= 0.0);
+	}
+	let k = b * b - a * c;
+	if (k < 0.0) {
+		return vec2f(1.0, 0.0);
+	}
+	let s = sqrt(k);
+	return vec2f(max(t.x, (-b - s) / a), min(t.y, (-b + s) / a));
+}
+
 // `height` is the deck's height above the eye (negative: the eye is above it). From below, clouds
 // show above the horizon; from above, rays down past the deck's horizon meet its top, faded where
-// they graze it.
-fn dwell_cloud_deck(dir: vec3f, face: f32, offsets: vec4f, height: f32) -> vec4f {
+// they graze it. Only over the disc (`edge`: the frame's cloud_disc, dwell_cloud_rim).
+fn dwell_cloud_deck(dir: vec3f, face: f32, offsets: vec4f, height: f32, edge: vec4f) -> vec4f {
 	let above = face_rise(face, dir);
 	let e = CLOUD_CURVATURE + CLOUD_ALTITUDE - height;
 	let k = -height * (2.0 * (CLOUD_CURVATURE + CLOUD_ALTITUDE) - height);
@@ -2271,9 +2347,10 @@ fn dwell_cloud_deck(dir: vec3f, face: f32, offsets: vec4f, height: f32) -> vec4f
 	let use_band = band.y > shown;
 	let d = select(t, band.x, use_band);
 	let q = offsets.xy + dir.xz * (d / CLOUD_SCALE);
+	let rim = dwell_cloud_rim(dir.xz * d, edge);
 	// The band is flagged by a negative weight: it is the layer seen through its length, so it
 	// takes the coverage's mean rather than the noise (whose columns would show as stripes).
-	return vec4f(q, d, select(shown, -band.y, use_band));
+	return vec4f(q, d, select(shown, -band.y, use_band) * rim);
 }
 
 // The deck seen edge-on from within the layer (`cross_fade_m` either side of it): along a ray
@@ -4483,5 +4560,172 @@ mod pyramid_tests {
             );
             assert!((da - db).abs() < 1e-9, "{da} {db}");
         }
+    }
+}
+
+#[cfg(test)]
+mod rim_tests {
+    //! BUGS.md #101: the clouds only over the disc. From the bifacial showcase's camera (140 km
+    //! from the axis, 11 km up, looking 4–6° down at the disc) both tiers drew a layer in the void
+    //! under the eye: the deck and the volume were a layer round the eye, not bounded by the world.
+    use super::*;
+    use dwell_world::both_faces;
+
+    const RADIUS: f64 = dwell_protocol::world::WORLD_RADIUS as f64;
+
+    /// The view's rays (face-local: +y up): toward the disc's axis from +x, yaw ±30°, pitch from
+    /// level to 25° down (the frame's rows and more).
+    fn rays() -> Vec<[f64; 3]> {
+        let mut out = Vec::new();
+        for yaw in (-30..=30).step_by(5) {
+            for pitch in 0..=50 {
+                let (y, p) = (
+                    f64::from(yaw).to_radians(),
+                    -f64::from(pitch).to_radians() / 2.0,
+                );
+                out.push([-p.cos() * y.cos(), p.sin(), p.cos() * y.sin()]);
+            }
+        }
+        out
+    }
+
+    /// The deck's hit along the face-local ray `local` from `eye` (world) on face `f`, and how much
+    /// of it the rim keeps (`dwell_cloud_deck`'s distance and its rim weight); None for no hit.
+    fn deck_rim(f: FaceFrame, eye: [f64; 3], local: [f64; 3]) -> Option<([f64; 2], f64)> {
+        let t = &CLOUDS;
+        let height = deck_height(t, eye[1], f);
+        let d = deck_distance(local[1], height, t.deck.altitude_m, t.deck.curvature_m)?;
+        let dir = f.vector(local);
+        let rel = [dir[0] * d, dir[2] * d];
+        let disc = cloud_disc(t, eye, RADIUS);
+        Some(([eye[0] + rel[0], eye[2] + rel[1]], rim_cover(disc, rel)))
+    }
+
+    both_faces!(
+        fn a_far_eye_sees_no_deck_beyond_the_rim(f: FaceFrame) {
+            let edge = RADIUS + CLOUDS.deck.rim_margin_m;
+            for (out, up) in [
+                (140_000.0, 11_000.0),
+                (118_000.0, 9_000.0),
+                (160_000.0, 13_000.0),
+            ] {
+                let eye = [out, f.y(dwell_world::SEA_LEVEL_M + up), 0.0];
+                let mut hits = 0;
+                for local in rays() {
+                    let Some((at, rim)) = deck_rim(f, eye, local) else {
+                        continue;
+                    };
+                    hits += 1;
+                    let r = at[0].hypot(at[1]);
+                    if r >= edge {
+                        assert_eq!(
+                            rim,
+                            0.0,
+                            "cloud {:.1} km from the axis, {local:?}",
+                            r / 1000.0
+                        );
+                    }
+                }
+                assert!(hits > 100, "the deck is under the eye: {hits}");
+            }
+        }
+    );
+
+    both_faces!(
+        fn over_the_island_the_clouds_are_as_before(f: FaceFrame) {
+            // An eye over the island: every deck hit and every march sample within the rim's fade
+            // keeps all its cloud, and the march's span is the layer's, as before the mask.
+            let t = &CLOUDS;
+            let v = &t.volume;
+            let inner = RADIUS + t.deck.rim_margin_m - t.deck.rim_fade_m;
+            for eye in [
+                [0.0, f.y(dwell_world::SEA_LEVEL_M + 2.0), 0.0],
+                [12_000.0, f.y(dwell_world::SEA_LEVEL_M + 600.0), -9_000.0],
+                [20_000.0, f.y(dwell_world::SEA_LEVEL_M + 2_500.0), 5_000.0],
+            ] {
+                let disc = cloud_disc(t, eye, RADIUS);
+                for local in rays()
+                    .into_iter()
+                    .chain([[0.6, 0.8, 0.0], [0.0, 0.3, 0.95]])
+                {
+                    if let Some((at, rim)) = deck_rim(f, eye, local)
+                        && at[0].hypot(at[1]) <= inner
+                    {
+                        assert_eq!(rim, 1.0, "{eye:?} {local:?}");
+                    }
+                    let dir = f.vector(local);
+                    let eye_h = f.y(eye[1]) - dwell_world::SEA_LEVEL_M;
+                    let Some(span) = layer_span(v, local[1], eye_h, 1e9) else {
+                        continue;
+                    };
+                    assert_eq!(rim_span(disc, dir, span), Some(span), "{eye:?} {local:?}");
+                    for s in march_samples(span, 0.5, 16) {
+                        assert_eq!(rim_cover(disc, [dir[0] * s, dir[2] * s]), 1.0);
+                    }
+                }
+            }
+        }
+    );
+
+    both_faces!(
+        fn a_far_eye_marches_nothing_in_the_void(f: FaceFrame) {
+            // The volume's march out there: its span inside the reach never comes within the edge,
+            // so it takes no samples (from 120 km out and 3 km up, inside the layer, too).
+            let v = &CLOUDS.volume;
+            for (out, up) in [
+                (140_000.0, 11_000.0),
+                (120_000.0, 3_000.0),
+                (75_000.0, 2_000.0),
+            ] {
+                let eye = [out, f.y(dwell_world::SEA_LEVEL_M + up), 0.0];
+                let disc = cloud_disc(&CLOUDS, eye, RADIUS);
+                let mut crossed = 0;
+                for local in rays().into_iter().chain([[0.0, 1.0, 0.0], [1.0, 0.0, 0.0]]) {
+                    let Some(span) = layer_span(v, local[1], up, 1e9) else {
+                        continue;
+                    };
+                    crossed += 1;
+                    assert_eq!(
+                        rim_span(disc, f.vector(local), span),
+                        None,
+                        "{out} {up} {local:?}"
+                    );
+                }
+                assert!(crossed > 0, "{out} {up}");
+            }
+            // An eye just past the rim marches only the part over the disc, faded toward its edge.
+            let eye = [
+                RADIUS + 1_000.0,
+                f.y(dwell_world::SEA_LEVEL_M + 2_000.0),
+                0.0,
+            ];
+            let disc = cloud_disc(&CLOUDS, eye, RADIUS);
+            let dir = f.vector([-1.0, 0.0, 0.0]);
+            let span = layer_span(v, 0.0, 2_000.0, 1e9).unwrap();
+            let (t0, t1) = rim_span(disc, dir, span).unwrap();
+            assert_eq!(t0, 0.0);
+            assert!(
+                (t1 - (2.0 * RADIUS + 2.0 * CLOUDS.deck.rim_margin_m - 1_000.0)
+                    .min(v.max_distance_m))
+                .abs()
+                    < 1.0
+            );
+            assert!(rim_cover(disc, [0.0, 0.0]) < 1.0);
+            assert_eq!(rim_cover(disc, [-10_000.0, 0.0]), 1.0);
+        }
+    );
+
+    #[test]
+    fn the_shader_masks_the_deck_and_the_march_by_the_rim() {
+        let src = cloud_wgsl(&CLOUDS) + &cloud_march_wgsl(0, 0, 1);
+        let body = |name: &str| {
+            let a = src.find(&format!("fn {name}(")).unwrap();
+            src[a..a + src[a..].find("\n}\n").unwrap()].to_owned()
+        };
+        assert!(body("dwell_cloud_deck").contains("dwell_cloud_rim(dir.xz * d, edge)"));
+        let march = body("cloud_layer_march");
+        assert!(march.contains("cloud_rim_span(dir, disc, vec2f(t0, t1))"));
+        assert!(march.contains("wm.x *= dwell_cloud_rim(rel, disc)"));
+        assert!(body("dwell_cloud_march").contains(", disc)"));
     }
 }

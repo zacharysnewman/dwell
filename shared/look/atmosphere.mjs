@@ -20,6 +20,7 @@ export const ATMOSPHERE_SCHEMA = {
   limbBrightness: [0, 4],
   limbWidthDeg: [0.05, 30],
   limbDistanceM: [1000, 1e8],
+  limbFadeM: [1, 1e8],
   sunWhiteness: [0, 1],
   sunBloom: [0, 1],
 };

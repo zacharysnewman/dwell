@@ -1429,6 +1429,12 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    ridiculous, at least the volumetric ones. Look like crazy triangles."** — clouds off for every shot unless on
    clearly reads better. Checked: from beyond the rim both tiers draw a cloud layer in the void under the camera
    (BUGS.md #101), so v2 is clouds off throughout.
+   Owner, 2026-11-12: **"fix BUGS.md #101 (clouds draw in the empty space beyond the disc's rim) and #102 (a bright
+   horizontal band in face B's sky in every far shot)"** — clouds only over the disc (masked to the world's radius
+   plus a margin as data, fading out near the rim), and the band's source found and fixed. Done (after 0.54.191):
+   the deck and the volume stop at the rim (`clouds.json` `deck.rimMarginM`/`rimFadeM`); the band was the
+   atmosphere's limb, now faded out past the rim (`atmosphere.json` `limbFadeM`). The look from the far camera is
+   still to be checked on the Mac; far shots can take clouds on again once #100's shapes are in.
    **Video 1 v2 recorded 2026-11-12** (48.7 s, 6 clips, 17.8 MB): (1) the disc's outline from 160 → 118 km out,
    9–13 km up, a slow push; (2) an orbit-crane from over face A through the midplane to under face B at night; (3)
    first person walking between the monument's pillars to the hole and dropping in (no ladder); (4) the fall past the

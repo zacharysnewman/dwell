@@ -30,6 +30,13 @@ defaults were chosen and are open to change (§6):
   ≈ 38 km at the horizon. Below the horizon the clouds are hidden. They fade in over `horizonFade`,
   fade out between `fadeStartM` and `fadeEndM` along the ray, and fade as the eye comes within
   `crossFadeM` of the deck. From above, the deck's top shows (§7).
+- **Only over the disc** (BUGS.md #101). The deck and the volume reach the world's radius (its size's,
+  at the join) plus `rimMarginM` (2 km) from the disc's axis, fading out over the last `rimFadeM`
+  (6 km): the frame's `cloud_disc` (the eye's world x and z, the edge, the fade; `cloud_disc` in
+  `clouds.rs`), `dwell_cloud_rim` on the deck's hit and on each march sample's cover, and
+  `cloud_rim_span` cutting the march to the part of the ray over the disc (a far eye's march takes no
+  samples). CPU twins `rim_cover` and `rim_span`. Without it both were a layer round the eye, drawn in
+  the void under a camera far past the rim.
 - **World-anchored, f32-safe.** The hit's horizontal offset from the eye is added to the noise point
   under the eye. That point is `(eye − wind·t) mod wrapM` in cells, computed in f64 on the CPU. The
   lattice repeats every `wrapM` (128 km, a whole number of `scaleM` cells), and each octave's
