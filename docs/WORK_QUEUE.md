@@ -1285,6 +1285,13 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
 
 ## Done
 
+- **Main's tests green again (owner 2026-11-12: "make main's tests green again (tests/fixes only)"):**
+  four stale expectations, no code bugs. `checks.ts`'s areas lacked `shared/look/bloom.mjs` (render) and
+  `src/theater/` (ui); the textures test's known palette deviations gained obsidian's near-black shadow
+  and lava's self-lit top (the lava look); the client NPC test expected four colour parts, five since
+  the hat got its own (8a5f8a1). `hosting.test.ts` and `hostPanel.test.ts` failed only without the
+  wasm package (`npm run build:wasm`).
+
 - **Axe swing directions and animation tools (owner 2026-11-11: "The axe animations are still trash.
   They don't swing in the right direction at all. Make yourself some tools to properly observe
   animations"):** the clip probe (`cargo run -p dwell-client --example clip_probe`, DEV_TOOLS.md "Clip

@@ -72,9 +72,12 @@ describe('the Textures tab', () => {
 
   it('flags colours off the art direction; the build palette only its known deviations', () => {
     const e = buildTextures();
-    // Snow's top and the deer's cream belly are near white (the brightest content there is).
+    // Snow's top and the deer's cream belly are near white (the brightest content there is);
+    // obsidian is near-black glass and lava's top is self-lit (the lava look, VOLCANOES.md §6.3).
     expect(paletteWarnings(e.palette).map((w) => w.ref)).toEqual([
       'snow.light',
+      'obsidian.shadow',
+      'lava.light',
       'deer_cream.light',
     ]);
     e.palette.ramps.meadow = { shadow: '#020202', base: '#82bd45', light: '#4a6aff' };
