@@ -2,6 +2,12 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.54.20",
+      "changes": [
+        "A felled tree landing on you no longer flings you across the map: it pins or shoves you as a real log would"
+      ]
+    },
+    {
       "version": "0.54.19",
       "changes": [
         "Other players' axe swings now show their actual chop, level or overhead, instead of a generic break swing."
