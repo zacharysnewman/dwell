@@ -975,6 +975,8 @@ pub struct Game<S: Scene> {
     /// The listener's surroundings for the ambience beds (AUDIO.md §2c), read a few times a second.
     ambience: dwell_game::ambience::Listening,
     ambience_due_s: f64,
+    /// The eye under a fluid's surface at the last draw (`underwater`).
+    eye_underwater: bool,
     ambience_trees: Vec<usize>,
     /// Other players' health events, held until their bodies are drawn at that moment (the
     /// interpolation delay), so a hurt sounds with the hit that caused it: (local ms, event).
@@ -1168,6 +1170,7 @@ impl<S: Scene> Game<S> {
                 ..Default::default()
             },
             ambience_due_s: 0.0,
+            eye_underwater: false,
             ambience_trees: dwell_game::ambience::tree_blocks(),
             pending_player_events: Vec::new(),
             remote_impacts: Default::default(),
@@ -3307,8 +3310,14 @@ impl<S: Scene> Game<S> {
 
     /// The listener's surroundings for the ambience beds (AUDIO.md §2c), in
     /// `dwell_game::ambience::INPUTS` order.
-    pub fn ambience(&self) -> [f64; 9] {
+    pub fn ambience(&self) -> [f64; 10] {
         self.ambience.to_array()
+    }
+
+    /// Whether the eye is under a fluid's surface at the last draw: the shell muffles the world's
+    /// buses (docs/AUDIO.md §3a, BUGS.md #104).
+    pub fn underwater(&self) -> bool {
+        self.eye_underwater
     }
 
     /// The camera at the last draw, for the audio listener: eye, forward, up.
@@ -3842,15 +3851,16 @@ impl<S: Scene> Game<S> {
             self.current.standing_height
         };
         let store = self.streamer.store_mut();
+        let near = Surroundings::read(feet, face, self.current.radius, height, |[x, y, z]| {
+            store.get_voxel(x, y, z)
+        });
         let Surroundings {
             ground,
             body,
             walls,
             ceiling,
-        } = Surroundings::read(feet, face, self.current.radius, height, |[x, y, z]| {
-            store.get_voxel(x, y, z)
-        });
-        let liquid = |id: u16| id != 0 && dwell_blocks::info(id).liquid;
+            ..
+        } = near;
         MoverSample {
             feet,
             velocity,
@@ -3858,7 +3868,7 @@ impl<S: Scene> Game<S> {
             grounded,
             crouched,
             face,
-            submerged: submerged.unwrap_or(if liquid(body) { 1.0 } else { 0.0 }),
+            submerged: submerged.unwrap_or_else(|| near.submerged()),
             carry: [0.0; 3],
             ground,
             body,
@@ -4485,6 +4495,7 @@ impl<S: Scene> Game<S> {
             dwell_look::underwater::line_reach_m(),
             |x, y, z| store.get_voxel(x, y, z),
         );
+        self.eye_underwater = dwell_game::ambience::hears_underwater(eye_fluid);
         self.scene.borrow_mut().set_eye_fluid(eye_fluid);
         let lean = self.tree_lean(now_ms);
         self.scene.borrow_mut().set_tree_lean(lean);
@@ -4737,6 +4748,7 @@ impl<S: Scene> Game<S> {
             );
             l.day = dwell_game::ambience::daylight(self.day.sun, face);
             l.fire_m = fire_m;
+            l.underwater = f64::from(u8::from(self.eye_underwater));
             self.ambience = l;
         }
         let vitals = HudVitals::of(&self.predictor.controller().vitals, self.vitals_rules)

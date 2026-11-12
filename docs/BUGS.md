@@ -6,14 +6,6 @@ pins it.
 
 ## Open
 
-### 104. Swimming underwater sounds like swimming at the surface; underwater sound isn't muffled
-
-Owner, 2026-11-12: "swimming underwater sounds like swimming on the water surface, when underwater sounds should be
-muffled, high pass filter maybe?" Underwater, the swim strokes play the surface splash sounds, and the world's sounds
-aren't filtered. Expected: underwater strokes their own soft, deep sounds; everything heard with the head
-underwater through a low-pass filter (muffled: highs cut, ~500–1000 Hz) with a little reverb/volume drop, eased in
-and out at the surface crossing.
-
 ### 103. Walking through tall grass is loud, fast and crackly; the first-person legs step too fast
 
 Owner, 2026-11-12: "Walking through tall grass is really loud and obnoxious. Bad sound effect for it I think, it's
@@ -503,6 +495,34 @@ shallow ramp, maybe same problem with steep ramps too?" Not investigated yet: ta
 face, or the placement check against its shape.
 
 ## Fixed
+
+### 104. Swimming underwater sounds like swimming at the surface; underwater sound isn't muffled (fixed; the listening check is the owner's)
+
+Owner, 2026-11-12: "swimming underwater sounds like swimming on the water surface, when underwater sounds should be
+muffled, high pass filter maybe?" Underwater, the swim strokes play the surface splash sounds, and the world's sounds
+aren't filtered. Expected: underwater strokes their own soft, deep sounds; everything heard with the head
+underwater through a low-pass filter (muffled: highs cut, ~500–1000 Hz) with a little reverb/volume drop, eased in
+and out at the surface crossing.
+Owner, 2026-11-12, more: "Swimming in the surface is too loud and high even then, like a kid learning to swim
+splashing." So the surface strokes too: much quieter and lower/softer (a calm stroke, not a splash), fewer/longer
+strokes matching the swim stroke's rate, slight pitch/volume variation, a softer asset or the current one filtered.
+
+**Fix.** A stroke is chosen by the head's depth (`dwell_game::sound::head_under`: the body's submerged share at the
+vitals' `headFraction`, 0.9, the line drowning counts from; another player's read at its head line,
+`Surroundings::submerged`): head under plays the set's new `swim_under` (`dwell:water_swim_under`: the
+`water-swim-*.m4a` recordings an octave down, `shift` −12, through a 600 Hz low-pass); at the surface `swim`
+(`dwell:water_swim`: the same recordings quieter, 0.6 → 0.32, 2 semitones down, ±1.5 semitones of variation, a 2.5 kHz
+low-pass; the procedural form lost its bright droplet plinks). The swim gait is one stroke per 3 m (was 2.4: a stroke a
+second at the 3 m/s swim speed) at gain 0.45 (was 0.7). With the eye under a fluid's surface (the renderer's own test,
+`hears_underwater` over `eye_fluid`, face-local) the data's buses (`underwater.buses`: effects and ambience; never
+the UI or music) go through a low-pass at 800 Hz and drop to 0.6, gliding over 0.25 s at the crossing, and the
+`underwater` ambience bed (the sea loop, heard through the filter) fades in. All data (`shared/sounds/dwell.json`
+`underwater`, samples `shift`/`lowpassHz`, AUDIO.md §3a). Tests: `a_swim_stroke_is_chosen_by_how_deep_the_head_is`
+(both faces; red before: 13 surface strokes and none deep with the head under),
+`surface_strokes_sound_once_a_stroke_about_once_a_second` (red before: 25 strokes in 20 s),
+`another_swimmers_depth_is_read_at_its_head_line` and `the_listener_hears_underwater_only_with_the_eye_under_the_surface`
+(both faces), `client/src/audio/underwater.test.ts` (the filter's targets and glide, the UI and music buses dry, the
+strokes' bounded gains, red before: 0.7 × 0.6 = 0.42 over the 0.2 bound). The listening check is the owner's.
 
 ### 92. Downhill water shows edge triangles and thin lines at its ½ m level steps (fixed after 0.54.142; the browser check left local)
 

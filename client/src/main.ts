@@ -659,6 +659,8 @@ function zoomMap(app: App, delta: number): void {
 function playSounds(app: App, player: EventPlayer, beds: AmbiencePlayer): void {
   player.playAll(decodeSounds(app.client.takeSounds()));
   beds.update(decodeSurroundings(app.client.ambience()));
+  // The eye under water muffles the world's buses (AUDIO.md §3a).
+  audio().setUnderwater(app.client.underwater());
   const l = app.client.listener();
   if (l.length === 9) {
     const v = (i: number): [number, number, number] => [l[i] ?? 0, l[i + 1] ?? 0, l[i + 2] ?? 0];

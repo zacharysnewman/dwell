@@ -31,6 +31,7 @@ const base: Surroundings = {
   trees: 0,
   day: 1,
   fireM: 99,
+  underwater: 0,
 };
 const at = (s: Partial<Surroundings>): Record<string, number> => bedGains(A, { ...base, ...s });
 
@@ -38,9 +39,16 @@ describe('ambience beds (AUDIO.md §2c)', () => {
   it('reads the probe in the Rust order', () => {
     expect([...INPUTS]).toEqual(AMBIENCE_INPUTS);
     expect(decodeSurroundings([])).toBeNull();
-    const s = decodeSurroundings([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    const s = decodeSurroundings([1, 2, 3, 4, 5, 6, 7, 8, 9, 1]);
     expect(s?.altitude).toBe(1);
     expect(s?.fireM).toBe(9);
+    expect(s?.underwater).toBe(1);
+  });
+
+  it('plays the underwater bed only with the eye under water (BUGS.md #104)', () => {
+    expect(at({ underwater: 0 })['dwell:underwater']).toBe(0);
+    expect(at({ underwater: 1 })['dwell:underwater'] ?? 0).toBeGreaterThan(0.05);
+    expect(at({ underwater: 1 })['dwell:underwater'] ?? 0).toBeLessThanOrEqual(A.cap);
   });
 
   it('blows harder up high and in the open', () => {

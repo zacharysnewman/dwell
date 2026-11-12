@@ -1607,7 +1607,7 @@ impl Client {
 
     /// The game's sound events since the last call (docs/AUDIO.md §5): 7 numbers each (kind,
     /// block state, intensity, x, y, z, flags), for the shell's audio (`client/src/audio`).
-    /// The listener's surroundings for the ambience beds (docs/AUDIO.md §2c): 9 numbers in
+    /// The listener's surroundings for the ambience beds (docs/AUDIO.md §2c): 10 numbers in
     /// `dwell_game::ambience::INPUTS` order; empty before the game runs.
     pub fn ambience(&self) -> Vec<f64> {
         self.inner
@@ -1615,6 +1615,16 @@ impl Client {
             .game
             .as_ref()
             .map_or_else(Vec::new, |g| g.ambience().to_vec())
+    }
+
+    /// Whether the eye is under a fluid's surface (docs/AUDIO.md §3a): the shell muffles the
+    /// world's buses. False before the game runs.
+    pub fn underwater(&self) -> bool {
+        self.inner
+            .borrow()
+            .game
+            .as_ref()
+            .is_some_and(|g| g.underwater())
     }
 
     #[wasm_bindgen(js_name = takeSounds)]

@@ -7,7 +7,7 @@
     "run": {"stride": 2.7, "gain": 0.85},
     "crouch": {"stride": 1.1, "gain": 0.28},
     "climb": {"stride": 0.75, "gain": 0.6},
-    "swim": {"stride": 2.4, "gain": 0.7}
+    "swim": {"stride": 3.0, "gain": 0.45}
   },
   "events": {
     "step": {"set": "step"},
@@ -59,7 +59,8 @@
     "brush": {"set": "brush", "fallback": false, "speed": [0.4, 6]},
     "stick_snap": {"sound": "stick_snap"},
     "steam_hiss": {"sound": "steam_hiss"},
-    "sizzle": {"sound": "sizzle"}
+    "sizzle": {"sound": "sizzle"},
+    "swim_under": {"set": "swim_under", "fallback": false}
   },
   "creatures": {
     "$comment": "AUDIO.md §2d: each creature model's sounds — a footstep every stride walked, a startle when it breaks into a run, a call now and then (every callEveryS [min, max] seconds) — heard within radiusM.",
@@ -69,6 +70,15 @@
       "deer": {"stride": 1.2, "step": "deer_step", "startle": "deer_snort"},
       "doe": {"stride": 1.1, "step": "deer_step", "startle": "deer_snort"}
     }
+  },
+  "underwater": {
+    "$comment": "AUDIO.md §3a (BUGS.md #104): with the eye under a fluid's surface every world sound is heard muffled: each listed bus goes through a low-pass at `lowpassHz` (Q `q`) and drops to `gain`, eased over `easeS` at the crossing; open, the filter sits at `openHz` (transparent). The UI and music buses are not listed, so they are never muffled.",
+    "buses": ["effects", "ambience"],
+    "lowpassHz": 800,
+    "q": 0.7,
+    "gain": 0.6,
+    "easeS": 0.25,
+    "openHz": 20000
   },
   "ambient": {
     "fire": {"radiusM": 10, "max": 4},
@@ -107,6 +117,9 @@
       ]},
       "fire": {"files": ["fire-loop-1.m4a"], "gain": 0.2, "when": [
         {"input": "fireM", "from": 8, "full": 1.5}
+      ]},
+      "underwater": {"files": ["sea-loop-1.m4a"], "gain": 0.2, "when": [
+        {"input": "underwater", "from": 0, "full": 1}
       ]}
     }
   },
@@ -208,6 +221,7 @@
       "enter": "water_enter",
       "exit": "water_exit",
       "swim": "water_swim",
+      "swim_under": "water_swim_under",
       "impact": "water_enter"
     }
   },
@@ -1256,8 +1270,8 @@
       ]
     },
     "water_swim": {
-      "samples": {"files": ["water-swim-1.m4a", "water-swim-2.m4a", "water-swim-3.m4a", "water-swim-4.m4a"], "gain": 0.6, "pitch": 1},
-      "gain": 1.16,
+      "samples": {"files": ["water-swim-1.m4a", "water-swim-2.m4a", "water-swim-3.m4a", "water-swim-4.m4a"], "gain": 0.32, "pitch": 1.5, "shift": -2, "lowpassHz": 2500},
+      "gain": 0.7,
       "reverb": 0.099,
       "variation": {"pitch": 2, "gain": 1.5, "cutoff": 0.2, "time": 0.15},
       "layers": [
@@ -1274,16 +1288,28 @@
           "gain": 0.45,
           "filters": [{"type": "lowpass", "freq": 350}],
           "env": {"attack": 0.05, "decay": 0.25}
+        }
+      ]
+    },
+    "water_swim_under": {
+      "samples": {"files": ["water-swim-1.m4a", "water-swim-2.m4a", "water-swim-3.m4a", "water-swim-4.m4a"], "gain": 0.4, "pitch": 1.5, "shift": -12, "lowpassHz": 600},
+      "gain": 0.6,
+      "reverb": 0.15,
+      "variation": {"pitch": 2, "gain": 1.5, "cutoff": 0.2, "time": 0.15},
+      "layers": [
+        {
+          "source": "noise",
+          "color": "brown",
+          "gain": 0.5,
+          "filters": [{"type": "lowpass", "freq": 300}],
+          "env": {"attack": 0.12, "hold": 0.1, "decay": 0.45}
         },
         {
-          "source": "osc",
-          "wave": "sine",
-          "freq": 420,
-          "to": 1000,
-          "gain": 0.1,
-          "at": 0.08,
-          "env": {"attack": 0.002, "decay": 0.04},
-          "grains": {"count": [3, 6], "spread": 0.3, "gain": [0.3, 1], "pitch": 7}
+          "source": "noise",
+          "color": "pink",
+          "gain": 0.2,
+          "filters": [{"type": "bandpass", "freq": 180, "q": 1.0, "to": 360}],
+          "env": {"attack": 0.1, "decay": 0.4}
         }
       ]
     },

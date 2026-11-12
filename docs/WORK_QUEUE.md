@@ -1480,6 +1480,13 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
 
 ## Done
 
+- **Underwater audio (owner 2026-11-12: "swimming underwater sounds like swimming on the water surface, when
+  underwater sounds should be muffled, high pass filter maybe?"; and "Swimming in the surface is too loud and high
+  even then, like a kid learning to swim splashing."):** BUGS.md #104. Strokes by the head's depth (a soft, deep
+  `swim_under` with the head under, a calm, filtered `swim` at the surface, one a second); the world's buses muffled
+  by a low-pass with the eye under water, eased at the crossing, plus an underwater bed; all data (AUDIO.md §3a). The
+  listening check is the owner's.
+
 - **dwell-mesh's face-B parity test green (owner's brief 2026-11-12: "a_chunk_meshes_the_same_face_local_on_either_face::b
   fails on main (\"cutout plants\"), reported by two sessions … fix the cause at the source so face B's plants are face
   A's mirror … keep the density setting's behaviour"):** BUGS.md #98. Not the Tall grass density (6578783: cleared,

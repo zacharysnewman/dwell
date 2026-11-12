@@ -333,6 +333,25 @@ reflections and a darkening tail), at each sound's `reverb` send (kept low: the 
 Envelopes hold their gain at 0 before they start (a param's intrinsic 1 would pass a source's first
 sample as a click).
 
+### 3a. Under water (BUGS.md #104, 2026-11-12)
+
+With the eye under a fluid's drawn surface the world is heard muffled. The test is the renderer's own
+(`dwell_world::fluid::eye_fluid`, face-local; `dwell_game::ambience::hears_underwater`), so the muffle starts and
+ends with the underwater fog; the client hands it over each frame (`underwater()`), and as the ambience's tenth
+input (`underwater`, 0/1). The data's `underwater` section: `buses` (the mixer's buses that reach the master through
+the muffle: `effects` and `ambience`; the `ui` and `music` buses go straight in and are never muffled), `lowpassHz`
+and `q` (one shared `BiquadFilterNode`, 800 Hz, Q 0.7, under water), `gain` (their level under water, 0.6), `easeS`
+(0.25 s: the cutoff glides exponentially, the level linearly, only at a crossing) and `openHz` (20 kHz in air,
+transparent). The ambience bed `underwater` (the sea loop, through the same filter) fades in under water.
+
+**Swim strokes** pick their sound by the head's depth: with the body's submerged share at the vitals' `headFraction`
+(0.9, the line drowning counts from; another player's from the block at its head line) a stroke plays the set's
+`swim_under`, else its `swim` (`swim_under` has `fallback: false`: a set without one plays nothing). Water's are the
+same `water-swim-*.m4a` recordings: `water_swim_under` an octave down (`shift` −12) through a 600 Hz low-pass,
+`water_swim` quieter, 2 semitones down through a 2.5 kHz low-pass. A sample's `shift` (semitones, every play) and
+`lowpassHz` (a low-pass on every play) are optional fields of `samples` (§2b). The swim gait strokes once per 3 m: a
+stroke a second at the 3 m/s swim speed.
+
 **Levels** were set from the renders: each sound's `gain` was tuned to an A-weighted loudness
 target for its category (footsteps quieter than landings and breaks, hits and player sounds
 quieter still, UI sounds soft), with single plays peaking at or below about 0.6 so overlapping
