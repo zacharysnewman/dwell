@@ -103,7 +103,7 @@ fn terrain_section(t: &dwell_worldgen::BifacialTerrain, c: LodCoord) -> Generate
     t.generate_lod(c, &mut cells, Some(&mut a), Some(&mut b));
     let first = dwell_world::lod::first_face_a_row(c);
     let pack = |s: &dwell_world::lod::LodSurfaces, ran: bool| {
-        (ran && in_world(c) && !s.is_empty()).then(|| {
+        (ran && dwell_world::lod::in_world(c) && !s.is_empty()).then(|| {
             s.iter()
                 .flat_map(|c| {
                     [
@@ -1020,6 +1020,26 @@ fn culls_nothing_near_the_rim_where_the_other_face_shows_past_the_edge() {
 }
 
 #[test]
+fn the_rim_is_the_world_s_own() {
+    // BIG_MAP.md M2: a 2× world's rim is at 100 km, so 1 km in from today's rim is far from it.
+    use dwell_protocol::world_size::WorldSize;
+    let two = dwell_world::WorldBounds::of(WorldSize::named("2x").unwrap());
+    let r1 = f64::from(dwell_world::WORLD_RADIUS);
+    for (world, x, near) in [
+        (dwell_world::WorldBounds::DEFAULT, r1 - 1000.0, true),
+        (two, r1 - 1000.0, false),
+        (two, 2.0 * r1 - 1000.0, true),
+    ] {
+        let mut host = Host::new();
+        host.bifacial = true;
+        let mut lod = system(4.0, 256, 16, 8);
+        lod.set_world(world);
+        lod.update(&camera([x, 100.0, 0.5], 0.0, -10.0), 50.0, &mut host);
+        assert_eq!(lod.near_rim, near, "{x} m out in a {:?} world", world.size);
+    }
+}
+
+#[test]
 fn meshes_level_7_and_up_sections_for_the_viewers_face_the_other_faces_rows_are_stone() {
     // Regression: such sections hold rows of both faces and were meshed with face A's surfaces
     // only. Seen from face B they are meshed without surfaces (face A's would be wrong there).
@@ -1302,7 +1322,7 @@ fn asks_again_with_the_revision_it_holds_when_an_index_entry_changes_unchanged_s
     r.run(10);
     s.answer(&mut r);
     assert!(s.asked.is_empty());
-    assert!(in_world(section_at(8, site)));
+    assert!(dwell_world::lod::in_world(section_at(8, site)));
 }
 
 // --- LOD chunk requests (§6.6) -------------------------------------------------------------------

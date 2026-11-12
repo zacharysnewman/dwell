@@ -31,7 +31,7 @@ use dwell_blocks::require;
 use dwell_protocol::{decode_lod_cells, encode_lod_cells};
 use dwell_world::lod::{
     LodCells, LodCoord, LodGenerator, MAX_LEVEL, PAD, SECTION_CELLS, VOLUME, cell_index, child,
-    chunk_of_lod, downsample_octant, downsample_section_octant, in_world, lod_of_chunk, parent,
+    chunk_of_lod, downsample_octant, downsample_section_octant, in_world_of, lod_of_chunk, parent,
     section_origin, section_size,
 };
 use dwell_world::{Chunk, ChunkCoord, local_index};
@@ -108,6 +108,8 @@ pub struct LodPropagation {
     pub base_hits: u64,
     /// Jobs run elsewhere (`take_job`, `deliver`), never on the calling thread but to drain.
     remote: bool,
+    /// The world's disc and volume: sections outside are never marked.
+    world: dwell_world::WorldBounds,
 }
 
 fn decode(encoded: &[u8]) -> LodCells {
@@ -201,7 +203,14 @@ impl LodPropagation {
             generator_runs: 0,
             base_hits: 0,
             remote: false,
+            world: dwell_world::WorldBounds::DEFAULT,
         }
+    }
+
+    /// Propagation over a world of these bounds (its size's disc and volume, BIG_MAP.md M2).
+    pub fn with_world(mut self, world: dwell_world::WorldBounds) -> Self {
+        self.world = world;
+        self
     }
 
     /// Propagation whose jobs run elsewhere (the browser's LOD worker): `take_job`, `deliver`.
@@ -266,7 +275,7 @@ impl LodPropagation {
         self.mark_dirty(parent(lod_of_chunk(c)));
     }
     pub fn mark_dirty(&mut self, c: LodCoord) {
-        if in_world(c) {
+        if in_world_of(c, &self.world) {
             self.dirty.insert(c);
             self.hold.remove(&c);
         }
@@ -276,7 +285,7 @@ impl LodPropagation {
     /// marks it dirty at once meanwhile.
     pub fn mark_chunk_settling(&mut self, c: ChunkCoord, hold: u64) {
         let s = parent(lod_of_chunk(c));
-        if in_world(s) && self.dirty.insert(s) {
+        if in_world_of(s, &self.world) && self.dirty.insert(s) {
             self.hold.insert(s, self.steps + hold);
         }
     }

@@ -23,11 +23,14 @@ pub enum Overlap {
     Outside,
 }
 
+/// A shape from data, stretched across (x and z) by a whole `across` for a bigger world (BIG_MAP.md
+/// M2): a sphere becomes a spheroid as wide as the world's disc and as tall as today's, so the rows
+/// (`y_range`, the chunk rows, the LOD rows) are every size's. `across` 1 is the shape itself.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct BuildVolume(pub BoundsShape);
+pub struct BuildVolume(pub BoundsShape, pub i64);
 
-/// The world's build volume, from data.
-pub const BUILD_VOLUME: BuildVolume = BuildVolume(dwell_protocol::BOUNDS);
+/// The world's build volume, from data (a 1× world's).
+pub const BUILD_VOLUME: BuildVolume = BuildVolume(dwell_protocol::BOUNDS, 1);
 
 /// Twice a coordinate's distance from the nearest point of [lo2, hi2] (doubled coordinates).
 fn nearest2(c2: i128, lo2: i128, hi2: i128) -> i128 {
@@ -41,14 +44,21 @@ fn nearest2(c2: i128, lo2: i128, hi2: i128) -> i128 {
 }
 
 impl BuildVolume {
+    /// This volume stretched across for a world of `size` (`radius_scale` × as wide, as tall).
+    pub const fn sized(self, size: dwell_protocol::world_size::WorldSize) -> Self {
+        Self(self.0, self.1 * size.radius_scale as i64)
+    }
+
     /// The voxel (x, y, z): its centre (x + ½, y + ½, z + ½) is inside.
     pub fn contains_voxel(&self, x: i64, y: i64, z: i64) -> bool {
         match self.0 {
             BoundsShape::Sphere { center, radius } => {
-                // Doubled coordinates keep the half-voxel centre exact in integers.
+                // Doubled coordinates keep the half-voxel centre exact in integers; the rows are
+                // scaled up by `across` rather than x and z down, so a spheroid stays exact.
+                let a = i128::from(self.1);
                 let d = |v: i64, c: i64| i128::from(2 * v + 1) - 2 * i128::from(c);
-                let (dx, dy, dz) = (d(x, center[0]), d(y, center[1]), d(z, center[2]));
-                let r2 = 2 * i128::from(radius);
+                let (dx, dy, dz) = (d(x, center[0]), a * d(y, center[1]), d(z, center[2]));
+                let r2 = 2 * i128::from(radius) * a;
                 dx * dx + dy * dy + dz * dz < r2 * r2
             }
             BoundsShape::Slab { min_y, max_y } => (min_y..max_y).contains(&y),
@@ -66,14 +76,18 @@ impl BuildVolume {
                 let lo = |a: usize| 2 * i128::from(min[a]) + 1;
                 let hi = |a: usize| 2 * i128::from(max[a]) - 1;
                 let c = |a: usize| 2 * i128::from(center[a]);
-                let r2 = 2 * i128::from(radius);
+                // Row distances × `across` (see `contains_voxel`).
+                let w = |a: usize| if a == 1 { i128::from(self.1) } else { 1 };
+                let r2 = 2 * i128::from(radius) * i128::from(self.1);
                 let r2 = r2 * r2;
-                let near: i128 = (0..3).map(|a| nearest2(c(a), lo(a), hi(a)).pow(2)).sum();
+                let near: i128 = (0..3)
+                    .map(|a| (w(a) * nearest2(c(a), lo(a), hi(a))).pow(2))
+                    .sum();
                 if near >= r2 {
                     return Overlap::Outside;
                 }
                 let far: i128 = (0..3)
-                    .map(|a| (c(a) - lo(a)).abs().max((hi(a) - c(a)).abs()).pow(2))
+                    .map(|a| (w(a) * (c(a) - lo(a)).abs().max((hi(a) - c(a)).abs())).pow(2))
                     .sum();
                 if far < r2 {
                     Overlap::Inside
@@ -124,10 +138,13 @@ pub fn inside_build_volume(x: i64, y: i64, z: i64) -> bool {
 mod tests {
     use super::*;
 
-    const SPHERE: BuildVolume = BuildVolume(BoundsShape::Sphere {
-        center: [0, 0, 0],
-        radius: 50_000,
-    });
+    const SPHERE: BuildVolume = BuildVolume(
+        BoundsShape::Sphere {
+            center: [0, 0, 0],
+            radius: 50_000,
+        },
+        1,
+    );
 
     #[test]
     fn the_world_is_the_data_sphere() {
@@ -213,12 +230,52 @@ mod tests {
     }
 
     #[test]
+    fn a_bigger_world_s_volume_is_as_wide_as_its_disc_and_as_tall_as_today_s() {
+        use dwell_protocol::world_size::WorldSize;
+        assert_eq!(BUILD_VOLUME.sized(WorldSize::DEFAULT), BUILD_VOLUME);
+        let two = BUILD_VOLUME.sized(WorldSize::named("2x").unwrap());
+        assert_eq!(two.y_range(), BUILD_VOLUME.y_range(), "the same rows");
+        assert!(two.contains_voxel(99_999, 0, 0) && !two.contains_voxel(100_000, 0, 0));
+        assert!(two.contains_voxel(0, 0, -100_000) && !two.contains_voxel(0, 0, -100_001));
+        assert!(two.contains_voxel(0, 49_999, 0) && !two.contains_voxel(0, 50_000, 0));
+        // Halfway out, the rows reach as far as today's sphere's halfway out.
+        let half = |v: &BuildVolume, x: i64, y: i64| v.contains_voxel(x, y, 0);
+        assert_eq!(
+            half(&two, 50_000, 43_000),
+            half(&BUILD_VOLUME, 25_000, 43_000)
+        );
+        assert_eq!(
+            half(&two, 50_000, 43_301),
+            half(&BUILD_VOLUME, 25_000, 43_301)
+        );
+        // Boxes agree with their voxels.
+        let c = ChunkCoord::new(3_124, 0, 0);
+        assert_eq!(two.chunk_overlap(c), Overlap::Inside);
+        assert_eq!(
+            two.chunk_overlap(ChunkCoord::new(3_124, 18, 0)),
+            Overlap::Partial
+        );
+        assert_eq!(BUILD_VOLUME.chunk_overlap(c), Overlap::Outside);
+        assert_eq!(
+            two.chunk_overlap(ChunkCoord::new(2_000, 0, 0)),
+            Overlap::Inside
+        );
+        assert_eq!(
+            two.chunk_overlap(ChunkCoord::new(3_200, 0, 0)),
+            Overlap::Outside
+        );
+    }
+
+    #[test]
     fn a_slab_fixture_bounds_rows_only() {
         // The closed set's second shape, from data alone: as a world's bounds would be.
-        let slab = BuildVolume(BoundsShape::Slab {
-            min_y: -64,
-            max_y: 64,
-        });
+        let slab = BuildVolume(
+            BoundsShape::Slab {
+                min_y: -64,
+                max_y: 64,
+            },
+            1,
+        );
         assert!(slab.contains_voxel(9_000_000, -64, -9_000_000));
         assert!(slab.contains_voxel(0, 63, 0) && !slab.contains_voxel(0, 64, 0));
         assert!(!slab.contains_voxel(0, -65, 0));
