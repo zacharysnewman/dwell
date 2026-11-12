@@ -376,6 +376,11 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    almost looked 3D"** — compare the deck as it was before the volumetric work (before 93fd6c26, e.g. at
    122b0f0e) with today's deck term by term (fake relief/normals from the noise, self-shadowing toward the sun,
    rim/silver light, the dark undersides, the sunset ramp) and restore what was lost.
+   Owner, 2026-11-12: **"In terms of color too, the clouds seem gloomy and dark like not-quite storm clouds."** Fair-
+   weather cumulus should read bright white on top and light grey below; only cumulonimbus/precipitation darkens.
+   Likely: the higher view extinction (#790) with the light's multiple scattering too weak (the papers' octave/
+   multi-scatter approximation), ambient dimming with cloud above too strong, and `cloudTypes` darkening on the
+   ordinary types.
    **Built (2026-11-12, cloud, branch `claude/deck-lighting-lp3c01`, CLOUDS.md §10):** the shading code was never changed;
    what changed is which deck shows. Before the volume, desktops drew the deck at `high` (5 octaves and a
    self-shadow sample toward the sun); since, the sky's deck is only Low (phones, `?clouds=low`, and while the
