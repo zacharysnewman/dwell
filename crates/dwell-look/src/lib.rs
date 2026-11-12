@@ -22,6 +22,7 @@ pub mod lod_map;
 pub mod lod_shadows;
 pub mod motes;
 pub mod motion;
+pub mod orbits;
 pub mod outline;
 pub mod pixel_art;
 pub mod plumes;

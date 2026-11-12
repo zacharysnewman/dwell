@@ -181,6 +181,7 @@ fn decoded_fields_are_the_vectors_values() {
         mode: "creative",
         size: dwell_protocol::world_size::WorldSize::DEFAULT,
         moon_phase: None,
+        orbit: None,
     };
     let s = f
         .settings(d)
@@ -250,6 +251,7 @@ fn decoded_fields_are_the_vectors_values() {
         mode: "creative",
         size: dwell_protocol::world_size::WorldSize::DEFAULT,
         moon_phase: None,
+        orbit: None,
     };
     assert_eq!(f.settings(d), plain.settings(d));
     let Some(Message::RegionEdit(r)) = Message::decode(&get("region_edit_paste_keep")) else {

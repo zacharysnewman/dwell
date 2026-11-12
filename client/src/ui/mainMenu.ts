@@ -7,6 +7,7 @@
 // and regenerating a world too, so the world is the build's own. A build served at the launcher's
 // path (a local or preview build) shows it itself (ui/menuPage.ts).
 import { WORLD_CHOICES } from './worldChoices';
+import { ORBIT_WORLDS, SKY_PRESETS, skyOptions } from './sky';
 import { DEFAULT_MODE, GAME_MODES } from './modes.gen';
 import { modeLabel } from './modes';
 import { changesFor } from '../version/changes';
@@ -178,6 +179,8 @@ export interface NewWorldValues {
   worldgen?: string;
   /** A bigger world's size by name (`2x`, BIG_MAP.md M2b), or '' / `1x` for today's. */
   size?: string;
+  /** A Realistic world's Sky preset (REALISTIC_WORLD.md §8, orbits.json), or '' for the default. */
+  sky?: string;
 }
 
 /**
@@ -213,6 +216,8 @@ export function newWorldRoute(v: NewWorldValues): Record<string, string> {
     WORLD_SIZES.some((s) => s.name === v.size && s.radiusScale !== 1)
       ? { size: v.size }
       : {}),
+    // A world that rolls an orbit (Realistic) only: the others keep today's sky.
+    ...skyOptions(v.worldgen, v.sky),
   };
 }
 
@@ -254,6 +259,8 @@ export class MainMenu {
   private newWorldHead!: HTMLButtonElement;
   /** New world → More options' World size (BIG_MAP.md M2b); none on a touch page. */
   private sizeField: HTMLLabelElement | null = null;
+  /** New world → More options' Sky (REALISTIC_WORLD.md §8): shown for a world that rolls an orbit. */
+  private skyField: HTMLLabelElement | null = null;
 
   constructor(
     parent: HTMLElement,
@@ -479,7 +486,12 @@ export class MainMenu {
       this.deps.go(route);
     });
     advanced.hidden = false;
-    more.append(summary, ...(this.sizeField ? [this.sizeField] : []), advanced);
+    more.append(
+      summary,
+      ...(this.sizeField ? [this.sizeField] : []),
+      ...(this.skyField ? [this.skyField] : []),
+      advanced,
+    );
     return this.page(
       'menu-page-new-world',
       pageHead('New world', () => {
@@ -658,10 +670,30 @@ export class MainMenu {
       if (c.description) option.title = c.description;
       world.append(option);
     }
+    // The Sky (REALISTIC_WORLD.md §8, desktop and phone): the orbit's preset, for a world that rolls
+    // one (its climate reads the sky); hidden for the others, which keep today's sky.
+    const sky = document.createElement('select');
+    sky.id = 'world-sky';
+    for (const p of SKY_PRESETS) {
+      const option = document.createElement('option');
+      option.value = p.name;
+      option.textContent = p.label;
+      option.title = p.description;
+      sky.append(option);
+    }
+    this.skyField = field('Sky', sky);
+    this.skyField.id = 'world-sky-field';
+    this.skyField.title =
+      "The world's orbit, rolled from its seed: its latitude, its day and its moon.";
+    const showSky = (): void => {
+      if (this.skyField) this.skyField.hidden = !ORBIT_WORLDS.includes(world.value);
+    };
+    showSky();
     // A world file is terrain: the Type follows it.
     world.addEventListener('change', () => {
       if (world.value) type.value = 'terrain';
       type.disabled = world.value !== '';
+      showSky();
     });
     const submit = document.createElement('button');
     submit.type = 'submit';
@@ -714,6 +746,7 @@ export class MainMenu {
           spawn: spawn.value,
           worldgen: world.value,
           ...(sizes.length ? { size: size.value } : {}),
+          sky: sky.value,
         }),
       );
     });

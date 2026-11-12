@@ -77,6 +77,15 @@ old moon?"); now the full moon is lit evenly to its edge (×8: 91 px against the
 ball 76 px) and the phases still darken only past the terminator. The stars are fixed to the sky, which turns about the path's axis
 by the solar angle.
 
+**A world's own orbit** (orbits by seed, [REALISTIC_WORLD.md](./proposals/REALISTIC_WORLD.md) §8, O1–O2
+**[built]**): `riseYawDeg`, `noonElevationDeg`, the clock and the moon's month, inclination, node and phase above
+are **today's orbit** (`dwell_look::orbits::Orbit::today`: the pole 90° − 60° = 30° over face A's horizon, its yaw
+31°). A world with a Sky preset (a Realistic world; `shared/look/orbits.json`) rolls its own from its seed at
+creation and keeps it in its settings (`CELESTIAL`, `CLOCK`, `MOON_PHASE`): its noon stands 90° − its pole on
+both faces, its sun rises at its pole's yaw, its day and month are its own. `orbits::day_night_for` builds the
+world's cycle from its settings; a world without `CELESTIAL` is today's cycle exactly. The keyframes stay keyed
+by the solar angle, so a lower noon keeps noon's colours.
+
 **Face B** shares the sky. The sun is over face B exactly when it is under face A, so face B's
 solar angle is face A's + 180° and its look is the same keyframes at that angle: when face A has
 noon, face B has midnight under the moon. Face B therefore has 10 minutes of daylight and 20 of

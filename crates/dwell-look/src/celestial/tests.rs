@@ -287,6 +287,7 @@ fn the_worlds_phase_moves_its_month_and_a_world_without_one_takes_the_datas() {
         mode: "creative",
         size: dwell_protocol::world_size::WorldSize::DEFAULT,
         moon_phase: None,
+        orbit: None,
     };
     let older = Celestial::for_world(&s);
     assert_eq!(older.start_phase, DAY_NIGHT.moon.start_phase);
