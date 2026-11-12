@@ -457,9 +457,62 @@ pub(super) fn leaf_voxel(
             let kn = cells.kind(c[0], c[1], c[2]);
             kn.shape != super::Shape::Empty && !kn.style.leafy
         };
-        let list = cards(ex, world, &LEAVES.cards, at, blocked);
+        let open = card_faces(ex, LEAVES.cards.interior_cells, |d, step| {
+            let mut c = cell;
+            c[FACES[d].0] += FACES[d].1 * step;
+            // Past the padding: unknown, taken as open (the cards kept).
+            inside(c).then(|| cells.kind(c[0], c[1], c[2]).style.leafy)
+        });
+        let list = cards(open, world, &LEAVES.cards, at, blocked);
         emit_cards(b, cells, k, cell, &list, tint);
     }
+}
+
+/// The exposed faces `ex` that get cards: those whose way out is open. A face is dropped when a
+/// leaf cell lies `2..=reach` cells straight out of it (`leafy_at(face, step)`: Some(leafy) for
+/// the cell `step` cells out, None where unknown, taken as open): it looks into a cavity inside
+/// the crown, where its cards would be drawn and hidden (BUGS.md #73).
+pub(crate) fn card_faces(
+    ex: [bool; 6],
+    reach: u32,
+    leafy_at: impl Fn(usize, i32) -> Option<bool>,
+) -> [bool; 6] {
+    std::array::from_fn(|d| {
+        ex[d]
+            && !(2..=reach as i32)
+                .map_while(|step| leafy_at(d, step))
+                .any(|leafy| leafy)
+    })
+}
+
+/// A card's `plants.y` (the wind's speed for a plant, >= 0): the card's plane normal `n` (metres,
+/// unit), octahedral-packed into 11 + 11 bits, stored as -(1 + packed), which marks the vertex a
+/// card's (its wind speed 1). The cutout shaders' `plant_speed` and `card_normal` read it back
+/// (BUGS.md #73: a card on the crown's far side, facing away, is dropped in the vertex shader).
+pub(crate) fn card_speed(n: V) -> f32 {
+    let l1 = n[0].abs() + n[1].abs() + n[2].abs();
+    let (mut u, mut v) = (n[0] / l1, n[2] / l1);
+    if n[1] < 0.0 {
+        let (pu, pv) = (u, v);
+        u = (1.0 - pv.abs()) * if pu >= 0.0 { 1.0 } else { -1.0 };
+        v = (1.0 - pu.abs()) * if pv >= 0.0 { 1.0 } else { -1.0 };
+    }
+    let q = |x: f64| ((x.clamp(-1.0, 1.0) * 0.5 + 0.5) * 2047.0).round();
+    -(1.0 + (q(u) * 2048.0 + q(v))) as f32
+}
+
+/// `card_speed`'s normal back (the WGSL `card_normal`'s twin; face B's mirror re-packs with it).
+pub(crate) fn card_normal_of(speed: f32) -> V {
+    let q = f64::from(-speed - 1.0);
+    let uq = (q / 2048.0).floor();
+    let vq = q - uq * 2048.0;
+    let (u, v) = (uq / 2047.0 * 2.0 - 1.0, vq / 2047.0 * 2.0 - 1.0);
+    let mut n = [u, 1.0 - u.abs() - v.abs(), v];
+    if n[1] < 0.0 {
+        n[0] = (1.0 - v.abs()) * if u >= 0.0 { 1.0 } else { -1.0 };
+        n[2] = (1.0 - u.abs()) * if v >= 0.0 { 1.0 } else { -1.0 };
+    }
+    normalise(n).unwrap_or([0.0, 1.0, 0.0])
 }
 
 /// A leaf card: its corners (metres from the cell's centre, counter-clockwise seen from its
@@ -600,6 +653,10 @@ fn emit_cards(
     for card in list {
         let d = card.face;
         let (a, s) = FACES[d];
+        // The card's plane normal, for the vertex shader's far-side cull (`card_speed`).
+        let p = &card.pts;
+        let edge = |i: usize| -> V { std::array::from_fn(|c| p[i][c] - p[0][c]) };
+        let card_normal = normalise(cross(edge(1), edge(3))).unwrap_or(unit(d));
         let mut fq = [0.5; 3];
         fq[a] = if s > 0 { 1.0 } else { 0.0 };
         let light = vertex_light(AO_OPEN, cells.sky_rays(cell, fq, unit(d), 60 + d as i64));
@@ -639,7 +696,7 @@ fn emit_cards(
             };
             b.m.plants.extend([
                 sway as f32,
-                1.0,
+                card_speed(card_normal),
                 look.fade_start_m as f32,
                 look.fade_end_m as f32,
             ]);

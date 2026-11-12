@@ -2539,6 +2539,61 @@ dwell_world::both_faces!(
 );
 
 dwell_world::both_faces!(
+    /// BUGS.md #73 (the M1 at High, owner: "the internal leaf cards may be sucking up a lot of
+    /// unneeded power"): a crown with a cavity inside (a 7-cell shell of leaves round a 3-cell
+    /// hollow) draws no card into the hollow, where every one would be hidden, and keeps its
+    /// outer faces' cards. Red before: the hollow's six inner walls carried cards.
+    fn a_crowns_inner_cavity_draws_no_cards(f: FaceFrame) {
+        let leaf = require("dwell:leaves");
+        let shell = 5..=11;
+        let hollow = 7..=9;
+        let mut cells = Vec::new();
+        for x in shell.clone() {
+            for y in shell.clone() {
+                for z in shell.clone() {
+                    if !(hollow.contains(&x) && hollow.contains(&y) && hollow.contains(&z)) {
+                        cells.push((x, y, z, leaf));
+                    }
+                }
+            }
+        }
+        let m = in_cells(
+            super::mesh_chunk_flags(
+                &voxels(&cells),
+                &[],
+                f.is_b(),
+                [0; 3],
+                &[],
+                None,
+                ChunkFlags {
+                    water_tops: true,
+                    cards: true,
+                },
+            )
+            .expect("padded"),
+        )
+        .cutout;
+        let carded: Vec<[f64; 3]> = (0..m.positions.len() / 3)
+            .filter(|&i| m.plants[i * 4 + 3] > 0.0)
+            .map(|i| std::array::from_fn(|a| f64::from(m.positions[i * 3 + a])))
+            .collect();
+        assert_eq!(carded.len() % 4, 0);
+        let (lo, hi) = (f64::from(*hollow.start()), f64::from(*hollow.end() + 1));
+        let inner = carded
+            .chunks_exact(4)
+            .filter(|card| {
+                card.iter()
+                    .all(|p| (0..3).all(|a| p[a] > lo + 1e-4 && p[a] < hi - 1e-4))
+            })
+            .count();
+        let total = carded.len() / 4;
+        assert_eq!(inner, 0, "{inner} of the crown's {total} cards lie in its hollow");
+        // The outer faces keep theirs: 6 faces of 7 × 7 cells, about one card per face or more.
+        assert!(total > 6 * 49 / 2, "the outer faces keep their cards: {total}");
+    }
+);
+
+dwell_world::both_faces!(
     /// Leaf cards never reach into a trunk (owner, 2026-11-11: "lots of z-fighting on tree trunks
     /// with the leaf cards"): a leaf with logs on its four sides and below it, as a crown's cell
     /// beside a trunk, draws no card with a corner inside a log's cell, nor one lying within ε of a

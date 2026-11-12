@@ -93,7 +93,7 @@ export type Step =
   | { do: 'shadows'; quality: 'off' | 'low' | 'high' }
   | {
       do: 'view';
-      clouds?: 'off' | 'low' | 'high';
+      clouds?: 'off' | 'low' | 'medium' | 'high';
       speedEffects?: boolean;
       distanceM?: number;
       pixelError?: number;
@@ -102,6 +102,12 @@ export type Step =
       flowRipples?: boolean;
       flowFoam?: boolean;
       waterfalls?: boolean;
+      shafts?: 'off' | 'low' | 'high';
+      bloom?: 'off' | 'low' | 'high';
+      torchShadows?: 'off' | 'low' | 'high';
+      cards?: boolean;
+      grass?: boolean;
+      renderScale?: number;
     }
   /** Breaks or places at the crosshair, as a click does; selects a hotbar slot. */
   | { do: 'edit'; action: 'break' | 'place' }
@@ -392,6 +398,12 @@ const STEP_FIELDS: Record<Step['do'], readonly string[]> = {
     'flowRipples',
     'flowFoam',
     'waterfalls',
+    'shafts',
+    'bloom',
+    'cards',
+    'grass',
+    'renderScale',
+    'torchShadows',
   ],
   edit: ['action'],
   select: ['slot'],
@@ -498,9 +510,17 @@ export function parseStep(where: string, v: unknown): Step {
     }
     case 'view': {
       const c = o.clouds;
-      if (c !== undefined && c !== 'off' && c !== 'low' && c !== 'high') {
-        throw new ViewError(`${at('clouds')}: expected "off", "low" or "high"`);
+      if (c !== undefined && c !== 'off' && c !== 'low' && c !== 'medium' && c !== 'high') {
+        throw new ViewError(`${at('clouds')}: expected "off", "low", "medium" or "high"`);
       }
+      const tier = (k: string): 'off' | 'low' | 'high' | undefined => {
+        const v = o[k];
+        if (v === undefined) return undefined;
+        if (v !== 'off' && v !== 'low' && v !== 'high') {
+          throw new ViewError(`${at(k)}: expected "off", "low" or "high"`);
+        }
+        return v;
+      };
       const opt = <T>(k: string, v: T | undefined): Record<string, T> =>
         v === undefined ? {} : { [k]: v };
       return {
@@ -531,6 +551,15 @@ export function parseStep(where: string, v: unknown): Step {
         ...opt(
           'waterfalls',
           o.waterfalls === undefined ? undefined : bool(at('waterfalls'), o.waterfalls),
+        ),
+        ...opt('shafts', tier('shafts')),
+        ...opt('bloom', tier('bloom')),
+        ...opt('torchShadows', tier('torchShadows')),
+        ...opt('cards', o.cards === undefined ? undefined : bool(at('cards'), o.cards)),
+        ...opt('grass', o.grass === undefined ? undefined : bool(at('grass'), o.grass)),
+        ...opt(
+          'renderScale',
+          o.renderScale === undefined ? undefined : num(at('renderScale'), o.renderScale, 0.25, 1),
         ),
       };
     }

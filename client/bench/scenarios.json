@@ -8259,6 +8259,624 @@
           "s": 0.4
         }
       ]
+    },
+    {
+      "name": "high-forest",
+      "notes": "WORK_QUEUE item 30 (BUGS.md #73): the High preset in the starter's broadleaf forest, every costly feature switched off in turn mid-run (cards, shadows, torch shadows, shafts, bloom, clouds, water, tall grass, the full-detail distance, the render scale at full), each recorded 4 s; run --unthrottled on the M1 for gpu.frame per feature (docs/DEV_TOOLS.md, High on the M1).",
+      "window": {
+        "width": 1280,
+        "height": 800,
+        "pixelRatio": 2
+      },
+      "query": {
+        "worldgen": "test:starter",
+        "seed": "0",
+        "fresh": "1",
+        "preset": "high"
+      },
+      "steps": [
+        {
+          "do": "settle",
+          "maxS": 60
+        },
+        {
+          "do": "spot",
+          "spot": "starter:broadleaf",
+          "name": "forest"
+        },
+        {
+          "do": "settle",
+          "maxS": 30
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "record",
+          "name": "forest-high"
+        },
+        {
+          "do": "view",
+          "cards": false
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "record",
+          "name": "forest-cards-off"
+        },
+        {
+          "do": "view",
+          "cards": true
+        },
+        {
+          "do": "shadows",
+          "quality": "low"
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "record",
+          "name": "forest-shadows-low"
+        },
+        {
+          "do": "shadows",
+          "quality": "off"
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "record",
+          "name": "forest-shadows-off"
+        },
+        {
+          "do": "shadows",
+          "quality": "high"
+        },
+        {
+          "do": "view",
+          "torchShadows": "off"
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "record",
+          "name": "forest-torch-off"
+        },
+        {
+          "do": "view",
+          "torchShadows": "low"
+        },
+        {
+          "do": "view",
+          "shafts": "off"
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "record",
+          "name": "forest-shafts-off"
+        },
+        {
+          "do": "view",
+          "shafts": "high"
+        },
+        {
+          "do": "view",
+          "bloom": "off"
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "record",
+          "name": "forest-bloom-off"
+        },
+        {
+          "do": "view",
+          "bloom": "high"
+        },
+        {
+          "do": "view",
+          "clouds": "off"
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "record",
+          "name": "forest-clouds-off"
+        },
+        {
+          "do": "view",
+          "clouds": "medium"
+        },
+        {
+          "do": "water",
+          "quality": "low"
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "record",
+          "name": "forest-water-low"
+        },
+        {
+          "do": "water",
+          "quality": "medium"
+        },
+        {
+          "do": "view",
+          "grass": false
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "record",
+          "name": "forest-grass-off"
+        },
+        {
+          "do": "view",
+          "grass": true
+        },
+        {
+          "do": "view",
+          "distanceM": 128
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "record",
+          "name": "forest-distance-128"
+        },
+        {
+          "do": "view",
+          "distanceM": 256
+        },
+        {
+          "do": "view",
+          "renderScale": 1
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "record",
+          "name": "forest-scale-full"
+        },
+        {
+          "do": "view",
+          "renderScale": 0.5
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "record",
+          "name": "forest-high-again"
+        }
+      ]
+    },
+    {
+      "name": "high-open",
+      "notes": "high-forest's ablations on open ground (the starter's beach).",
+      "window": {
+        "width": 1280,
+        "height": 800,
+        "pixelRatio": 2
+      },
+      "query": {
+        "worldgen": "test:starter",
+        "seed": "0",
+        "fresh": "1",
+        "preset": "high"
+      },
+      "steps": [
+        {
+          "do": "settle",
+          "maxS": 60
+        },
+        {
+          "do": "spot",
+          "spot": "starter:beach",
+          "name": "beach"
+        },
+        {
+          "do": "settle",
+          "maxS": 30
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "record",
+          "name": "open-high"
+        },
+        {
+          "do": "view",
+          "cards": false
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "record",
+          "name": "open-cards-off"
+        },
+        {
+          "do": "view",
+          "cards": true
+        },
+        {
+          "do": "shadows",
+          "quality": "low"
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "record",
+          "name": "open-shadows-low"
+        },
+        {
+          "do": "shadows",
+          "quality": "off"
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "record",
+          "name": "open-shadows-off"
+        },
+        {
+          "do": "shadows",
+          "quality": "high"
+        },
+        {
+          "do": "view",
+          "torchShadows": "off"
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "record",
+          "name": "open-torch-off"
+        },
+        {
+          "do": "view",
+          "torchShadows": "low"
+        },
+        {
+          "do": "view",
+          "shafts": "off"
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "record",
+          "name": "open-shafts-off"
+        },
+        {
+          "do": "view",
+          "shafts": "high"
+        },
+        {
+          "do": "view",
+          "bloom": "off"
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "record",
+          "name": "open-bloom-off"
+        },
+        {
+          "do": "view",
+          "bloom": "high"
+        },
+        {
+          "do": "view",
+          "clouds": "off"
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "record",
+          "name": "open-clouds-off"
+        },
+        {
+          "do": "view",
+          "clouds": "medium"
+        },
+        {
+          "do": "water",
+          "quality": "low"
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "record",
+          "name": "open-water-low"
+        },
+        {
+          "do": "water",
+          "quality": "medium"
+        },
+        {
+          "do": "view",
+          "grass": false
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "record",
+          "name": "open-grass-off"
+        },
+        {
+          "do": "view",
+          "grass": true
+        },
+        {
+          "do": "view",
+          "distanceM": 128
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "record",
+          "name": "open-distance-128"
+        },
+        {
+          "do": "view",
+          "distanceM": 256
+        },
+        {
+          "do": "view",
+          "renderScale": 1
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "record",
+          "name": "open-scale-full"
+        },
+        {
+          "do": "view",
+          "renderScale": 0.5
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "record",
+          "name": "open-high-again"
+        }
+      ]
     }
   ]
 }

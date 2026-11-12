@@ -915,6 +915,37 @@ fn tree_lean(rel: vec3f) -> vec3f {
     return frame.lean_hinge.xyz + d * c + cross(k, d) * s + k * dot(k, d) * (1.0 - c);
 }
 
+// A leaf card's `plant.y` is -(1 + its plane normal octahedral-packed in 11 + 11 bits)
+// (dwell-mesh leaves.rs `card_speed`): a plant's is its wind speed (>= 0), a card's 1.
+fn plant_speed(plant: vec4f) -> f32 {
+    return select(plant.y, 1.0, plant.y < 0.0);
+}
+fn card_normal(packed: f32) -> vec3f {
+    let q = -packed - 1.0;
+    let uq = floor(q / 2048.0);
+    let vq = q - uq * 2048.0;
+    let u = uq / 2047.0 * 2.0 - 1.0;
+    let v = vq / 2047.0 * 2.0 - 1.0;
+    var n = vec3f(u, 1.0 - abs(u) - abs(v), v);
+    if (n.y < 0.0) {
+        n = vec3f((1.0 - abs(v)) * select(-1.0, 1.0, u >= 0.0), n.y, (1.0 - abs(u)) * select(-1.0, 1.0, v >= 0.0));
+    }
+    return normalize(n);
+}
+// BUGS.md #73 (the M1 at High): a leaf card the eye can't see costs no pixels. Dropped when the
+// eye is more than CARD_BACK_CULL_M behind its plane (the crown's far side, facing away; the
+// plane's distance is the same at its four corners, so a card goes whole) or every corner of it is
+// past its fade's end (the margin over its size). `rel` the corner before the wind's sway, `n` the
+// card's normal in the world.
+fn card_dropped(rel: vec3f, n: vec3f, plant: vec4f) -> bool {
+    if (plant.y >= 0.0) {
+        return false;
+    }
+    let behind = dot(n, rel);
+    return (CARD_BACK_CULL_M > 0.0 && behind > CARD_BACK_CULL_M)
+        || (plant.w > 0.0 && length(rel) > plant.w + 2.0);
+}
+
 // The wind sways a vertex by its `plant.x` (m): leaning with the gusts, a faster flutter on top.
 // frame.fog.z is the time (s), frame.fog.w the wind's scale (0 when effects are off).
 fn sway(rel: vec3f, plant: vec4f) -> vec3f {
@@ -922,7 +953,7 @@ fn sway(rel: vec3f, plant: vec4f) -> vec3f {
     if (amount == 0.0) {
         return rel;
     }
-    let t = frame.fog.z * plant.y;
+    let t = frame.fog.z * plant_speed(plant);
     let p = frame.tan.zw + rel.xz;
     let g = gust(p, t);
     let flutter = sin(2.7 * t + dot(p, vec2f(0.73, 0.41))) * 0.25;
@@ -937,8 +968,14 @@ fn cutout_vs(v: CutoutIn, @builtin(instance_index) k: u32) -> CutoutOut {
     let draw = draws[k];
     var o: CutoutOut;
     o.draw = k;
-    o.rel = sway(tree_lean(draw.offset.xyz + qrot(draw.quat, v.position * draw.offset.w)), v.plant);
+    let still = tree_lean(draw.offset.xyz + qrot(draw.quat, v.position * draw.offset.w));
+    o.rel = sway(still, v.plant);
     o.clip = frame.view_proj * vec4f(o.rel, 1.0);
+    if (card_dropped(still, qrot(draw.quat, card_normal(v.plant.y)), v.plant)) {
+        // Outside the clip volume, the same point for every corner: a card dropped whole draws
+        // nothing (one past the fade's margin only where all of it is faded out anyway).
+        o.clip = vec4f(0.0, 0.0, -1.0, 1.0);
+    }
     o.normal = qrot(draw.quat, v.normal);
     o.color = v.color;
     o.uv = v.uv;

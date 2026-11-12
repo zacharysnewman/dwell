@@ -60,6 +60,8 @@ export function validateLeaves(data) {
     "swayM",
     "fadeStartM",
     "fadeEndM",
+    "interiorCells",
+    "backCullM",
     "tiers",
   ]);
   if (typeof c.tile !== "string" || !/^[A-Za-z0-9_]+$/.test(c.tile))
@@ -69,6 +71,15 @@ export function validateLeaves(data) {
   checkNumber("cards.swayM", c.swayM, 0, 0.5);
   checkNumber("cards.fadeStartM", c.fadeStartM, 0, 512);
   checkNumber("cards.fadeEndM", c.fadeEndM, c.fadeStartM + 1, 1024);
+  if (
+    !Number.isInteger(c.interiorCells) ||
+    c.interiorCells < 0 ||
+    c.interiorCells > 8
+  )
+    fail(
+      `cards.interiorCells must be a whole number in [0, 8], got ${JSON.stringify(c.interiorCells)}`,
+    );
+  checkNumber("cards.backCullM", c.backCullM, 0, 64);
   checkKeys("cards.tiers", c.tiers, TIERS);
   for (const t of TIERS) {
     if (typeof c.tiers[t] !== "boolean")
@@ -100,6 +111,8 @@ export function leavesRust(data) {
     `        sway_m: ${rf(data.cards.swayM)},`,
     `        fade_start_m: ${rf(data.cards.fadeStartM)},`,
     `        fade_end_m: ${rf(data.cards.fadeEndM)},`,
+    `        interior_cells: ${data.cards.interiorCells},`,
+    `        back_cull_m: ${rf(data.cards.backCullM)},`,
     "        tiers: CardTiers {",
     ...TIERS.map((t) => `            ${t}: ${data.cards.tiers[t]},`),
     "        },",
