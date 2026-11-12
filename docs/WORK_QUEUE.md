@@ -530,6 +530,10 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    Design: docs/proposals/MOON_WORLD.md; M-1 built (grids.json, the moon's cratered generator on both faces, the
    generic far-body bake, `dwell:moon_dust`). Owner's answers to §12 (2026-11-12): tidally locked; physical phases
    (no dome bias); "A darker floor but a minimum still." for new-moon nights; ~1–1.5 minutes to fly there.
+   Owner, 2026-11-12: **"If not already planned we want the same moon shine/glow effects we already had. So the
+   moon should look bright."** The far-body moon (M-2) keeps today's halo/glow and brightness: the baked normals
+   and albedo shape its surface, but its lit part is as bright as today's moon (exposure-independent emissive-like
+   brightness and the same glow around it), scaled by the phase's lit share (physical phases).
 
 ## Done
 
