@@ -136,7 +136,7 @@ fields, ranges and names fail with the entry named):
 | `time {t, moon?}` | shows the time of day `t` (0–1, 0 midnight) and optionally the moon's phase on this client (`?time=`, `?moon=`; DAY_NIGHT.md) |
 | `timelapse {name, frames, from?, to?, waitS?}` | `frames` screenshots `<name>-00.png`… from time of day `from` (0) toward `to` (1), wrapping past midnight, waiting `waitS` (0.3 s) after each |
 | `lod {on}` | draws the distant terrain (LOD) or not, live (`__dwell.setLod`; the sections still stream, so it comes back at once): what the full-detail chunks alone hold. `?lod=off` (or `?lod=0`) runs with no LOD at all |
-| `view {clouds?, speedEffects?, distanceM?, pixelError?, smoke?, flowParticles?, flowRipples?, flowFoam?, waterfalls?}` | sets other settings mid-run, not stored (`__dwell.setView`): the clouds (`off`, `low`, `high`), the speed effects (motion blur and streaks), the full-detail distance (m) and the LOD's pixel error, the blasts' smoke, the water's flecks, flow ripples, flow foam and waterfalls; each one given replaces the menu's value. With `water` and `shadows`, one page can record every feature on and off in turn ([Cost profile](#cost-profile-m1-air)) |
+| `view {clouds?, speedEffects?, distanceM?, pixelError?, smoke?, flowParticles?, flowRipples?, flowFoam?, waterfalls?, shafts?, bloom?, torchShadows?, cards?, grass?, renderScale?}` | sets other settings mid-run, not stored (`__dwell.setView`): the clouds (`off`, `low`, `medium`, `high`), the speed effects (motion blur and streaks), the full-detail distance (m) and the LOD's pixel error, the blasts' smoke, the water's flecks, flow ripples, flow foam and waterfalls, the light shafts, bloom and torch shadows (`off`, `low`, `high`), the leaf cards (true/false: only chunks meshed after it follow, so measure them with a configuration, `cards-off`), every cutout mesh drawn or not (`grass`: plants, ladders and the leaf cards together) and the render scale (0.25–1); each one given replaces the menu's value. With `water` and `shadows`, one page can record every feature on and off in turn ([Cost profile](#cost-profile-m1-air)) |
 | `water {quality?, debug?}` | sets the water quality (`low`, `medium`, `high`) and/or its cost-isolation switches (`?waterdbg=` names, `""` for none) mid-run, through `__dwell.setWater` |
 | `burst {name, frames, clock?, maxFlicker?}` | a still camera's burst: `frames` screenshots `<name>-00.png`… back to back (the HUD hidden) and their **flicker** (`flickerOf`: the share of pixels whose brightness moves more than 3 of 255 from one frame to the next, and the mean move), printed and saved in `report.json`'s `bursts`; over `maxFlicker` (a share) the run fails. With `clock` the time of day runs on from it at the world clock's rate, set every animation frame (the bench's is otherwise held), so the light moves as in play. `shadows-still` reads the shadows' flicker against Off's (DAY_NIGHT.md §10). With `drift {position, yaw, pitch}` (after a `camera` step) the camera moves on by that much each frame (metres and degrees, at most 1 m and 1°): z-fighting shows only while the view moves (it stops with the camera), and a drift of millimetres and thousandths of a degree moves the view under a pixel by a fraction of a pixel, so surfaces swap only where they fight in depth. Such a burst is read by its **hue flips** (`hueFlipsOf`, also in every burst's result: the share of pixels, coloured in both frames, whose hue moves over 40° from one frame to the next — grass becoming dirt); over `maxHueFlips` the run fails. `lod-zfight` holds the LOD's z-fighting under a bar (ARCHITECTURE.md §6.6, "Known bug class") |
 | `clip-strip {name, vertical?, frames?, views?, at?}` | one axe swing frame by frame (see "Clip probe and clip strip" below): the level (or `vertical`) chop held at `frames` (2–24, default 8) clip times from 0 to the clip's end (`__dwell.holdSwing`), each shot from the `views` (`fp` your eyes; `tp-behind`, `tp-side`: a stand-in 4 m ahead of `at` holding your tool, standing still facing +Z, seen from behind-right and from its right side), `<name>-<view>-00.png`…, and a contact sheet `<name>-sheet.png` (a row per view, each frame labelled with its clip time). Hold the axe first (`give`, `pick`) |
@@ -818,6 +818,35 @@ full-screen passes cost more natively. Leads are the surface
 texture, which its compositor then draws), and the native loop spinning a core (`ControlFlow::Poll`)
 on a chip whose CPU and GPU share power and memory bandwidth. Whatever native gains, it is not GPU
 time, so the GPU budget is the one to spend work on.
+
+## High on the M1 (BUGS.md #78)
+
+WORK_QUEUE item 30's measurement, 2026-11-12, on this repo's M1 (8-core GPU) on the real GPU: `npm run bench --
+--warm --unthrottled high-forest high-open` (`?preset=high`, a 1280×800 window at pixel ratio 2, so a 2560×1600
+buffer drawn at High's 50 %). Each scenario settles at its spot (the starter's broadleaf forest from 8 m up; its
+beach), then switches one feature off at a time mid-run (`view`, `shadows`, `water` steps), 1.5 s to settle and 4 s
+recorded each. The leaf cards follow their switch only in chunks meshed after it, so their row is a fresh page per
+configuration (`--compare --configs raster,cards-off`). `gpu.frame` mean (ms):
+
+| Record (feature off) | Forest before | Δ | Forest after | Δ | Open ground (before) | Δ |
+| --- | --- | --- | --- | --- | --- | --- |
+| High | 15.63 / 15.73 | | 15.47 | | 9.24 | |
+| Leaf cards off (`?cards=0`, a fresh page) | 15.11 | −0.62 | 15.18 | −0.29 | — | |
+| Shadows Low | 15.43 | −0.20 | 15.23 | −0.24 | 8.91 | −0.33 |
+| Shadows Off | 13.96 | −1.67 | 14.03 | −1.44 | 8.27 | −0.97 |
+| Torch shadows Off | 15.58 | −0.05 | 15.45 | −0.02 | 9.13 | −0.12 |
+| Light shafts Off | 15.78 | +0.15 | 15.50 | +0.03 | 9.13 | −0.12 |
+| Bloom Off | 15.19 | −0.44 | 14.88 | −0.60 | 8.71 | −0.53 |
+| Clouds Off (from Medium) | 15.65 | +0.02 | 15.23 | −0.24 | 8.80 | −0.45 |
+| Water Low | 14.81 | −0.82 | 14.58 | −0.89 | 8.39 | −0.86 |
+| Every cutout mesh off (leaf cubes' cutout, tall grass, flowers, ladders, cards) | 10.90 | −4.73 | 11.00 | −4.47 | 7.68 | −1.56 |
+| Full detail 128 m (from 256) | 12.98 | −2.65 | 13.06 | −2.41 | 7.64 | −1.61 |
+| Render scale 100 % (from 50 %) | 29.93 | +14.30 | 29.58 | +14.11 | 19.92 | +10.67 |
+
+The spot's view holds few trees and much grass (its screenshot), so the cutout row is mostly tall grass. Run-to-run
+spread is ~0.3–0.5 ms. The denser mixed forest (`high-mixed`, after the culls) read 17.05 ms at High (cards 0.23, the cutout meshes 4.2),
+so High's full detail went 256 → 192 m: 13.88 ms there. The largest levers left are the cutout meshes (a Tall grass
+setting needs a mesher flag), the full-detail distance and sun shadows.
 
 ## Cost profile (M1 Air)
 

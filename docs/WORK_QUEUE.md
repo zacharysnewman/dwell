@@ -790,6 +790,14 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    shorten the cards' range; (3) multi-angle impostors for far trees (views around and from above, baked per
    species/stage/variant, switched by view angle, lit by a baked normal), replacing the far tree meshes, and
    instancing for dense forests.
+   **Round 1 (2026-11-12, BUGS.md #78; `claude/high-on-m1`):** measured on this repo's M1 at High
+   (docs/DEV_TOOLS.md "High on the M1"): the broadleaf spot 15.5–15.7 ms GPU, open ground 9.2; leaf cards 0.6 ms,
+   the cutout meshes together (leaves' cutout, tall grass, ladders, cards) 4.5–4.7, full detail 256 → 128 m 2.4–2.7,
+   sun shadows 1.4–1.7, water 0.8–0.9, bloom 0.4–0.6, the rest ≤ 0.3. Done: steps (2)'s culls (cavity faces,
+   far-side cards in the vertex shader, cards past their fade, fade 24–40 m) took the cards to 0.29 ms; Leaf cards in
+   Settings → Graphics → Trees; an audit test for tier functions without a setting. The mixed forest read 17.05 ms after them, so High's full detail
+   went 256 → 192 m (Ultra keeps 352): 13.88 ms there. Next: a Tall grass setting (a mesher flag; the renderer's cutout switch also hides
+   leaves and ladders), a dense-forest spot that reproduces the owner's 31 ms, then (3) impostors.
 
 31. **Far trees as multi-angle impostors** (owner 2026-11-12: "billboards (maybe from above billboards too,
    possibly a few different angles so we can switch between them like old Mario kart did with carts, and some
