@@ -15,6 +15,26 @@ Suspects: the light-shaft pass marches at reduced resolution with a per-pixel di
 Bayer pattern) and is composited without a blur, temporal accumulation or a depth-aware upsample, so the dither
 pattern itself shows; or its accumulation's history is rejected every frame. Fix like #90's clouds: blue-noise
 jitter, temporal accumulation with a clamped history, a depth-aware (bilateral) blur/upsample.
+Owner, 2026-11-12 (later): "Oh that dithering is definitely cloud related." So the volumetric clouds' composite over
+the scene is the first suspect (the pattern covers trees and ground in front of the clouds), the shafts second.
+**Fixed in code (2026-11-12, branch `claude/shaft-dither`), the in-game look left for a local check:**
+- **Clouds (the cause the owner saw):** the composite's depth-aware upsample (`upsampled_clouds`) normalised its weights,
+  so where none of a pixel's four ½- or ¼-resolution texels matched its scene, the fallback's tiny weights became the
+  whole cloud of their marches. Among leaves every texel holds a gap of sky, so its march runs past the leaves to the
+  sky's reach and none matches a leaf pixel: the cloud *behind* the tree drew *over* it, in the texel grid's and the
+  gaps' pattern, jittered frame to frame. Now a fallback texel whose first cloud is past the pixel's scene lends its
+  weight with no cloud (`dwell_cloud_upsample_split`, twin `upsample_cover`; CLOUDS.md §9.6).
+  Test `a_canopy_with_sky_in_every_texel_draws_no_cloud_from_behind_it` (dwell-look `clouds`): failed on main ("a leaf
+  pixel drew 1 of the cloud behind it"), passes now.
+- **Shafts:** their per-texel jitter was a static interleaved gradient (a diagonal pattern) composited with one
+  bilinear tap. Now a 3 × 3 tile of the step's nine strata (`shaft_jitter`, `SHAFT_TILE`) and a 3 × 3 box of bilinear
+  taps in the composite (`shaft_blur`, `SHAFT_BLUR`): nine times the steps where the scene is smooth, no history (the
+  shafts are a screen-space blur toward the light, the same in front of a silhouette as beside it, so no depth test).
+  Cost: 8 more bilinear taps a pixel in the composite, only while shafts draw; the pass is unchanged. Test
+  `the_composited_shafts_behind_a_tree_show_no_dither_pattern` (dwell-look `shafts`): the dither seen (the composite
+  less the same composite of the converged glow) behind a fixture tree failed at the raw pass's on main and is now
+  under a quarter of it; dwell-client pins the shader to the twins.
+Move to Fixed once the owner's look at a low sun behind clouds and a tree confirms it.
 
 ### 96. Villagers' faces are jet black, not their skin colour
 

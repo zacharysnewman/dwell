@@ -414,6 +414,41 @@ fn rgb(c: u32) -> [f64; 3] {
     [16, 8, 0].map(|s| f64::from((c >> s) & 0xff) / 255.0)
 }
 
+/// The order of the 3 × 3 tile of sample offsets ([`shaft_jitter`]): each of the nine strata of a
+/// step once, neighbours far apart.
+pub const SHAFT_TILE: [u32; 9] = [0, 5, 7, 8, 3, 1, 4, 6, 2];
+
+/// The shafts pass's per-texel offset (0–1) for its samples (`shafts_jitter`'s twin), at the
+/// texel `p` of the shafts' buffer: the 3 × 3 tile's stratum (BUGS.md #97: was an interleaved
+/// gradient, whose diagonal pattern showed). Any 3 × 3 block of texels holds every stratum once,
+/// so the composite's box ([`shaft_blur`]) is the glow of nine times the steps where the scene is
+/// smooth: interleaved sampling, no history needed.
+pub fn shaft_jitter(p: [i32; 2]) -> f64 {
+    let k = (p[0].rem_euclid(3) + 3 * p[1].rem_euclid(3)) as usize;
+    (f64::from(SHAFT_TILE[k]) + 0.5) / 9.0
+}
+
+/// The composite's filter over the shafts' buffer (`with_shafts`): the box's half width in texels
+/// (1: 3 × 3, the jitter's tile). The shafts are a screen-space blur toward the light, the same
+/// in front of a silhouette as beside it, so the box needs no depth test.
+pub const SHAFT_BLUR: i32 = 1;
+
+/// The composite's shafts at texel `p` of a `w` × `h` buffer `field` (row by row): the box of
+/// [`SHAFT_BLUR`] round it, clamped to the buffer (`with_shafts`'s taps, at texel centres).
+pub fn shaft_blur(field: &[f64], w: usize, h: usize, p: [i32; 2]) -> f64 {
+    let mut sum = 0.0;
+    let mut n = 0.0;
+    for dy in -SHAFT_BLUR..=SHAFT_BLUR {
+        for dx in -SHAFT_BLUR..=SHAFT_BLUR {
+            let x = (p[0] + dx).clamp(0, w as i32 - 1) as usize;
+            let y = (p[1] + dy).clamp(0, h as i32 - 1) as usize;
+            sum += field[y * w + x];
+            n += 1.0;
+        }
+    }
+    sum / n
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -728,5 +763,87 @@ mod tests {
         let s = sun_through(unit([1.0, 0.2, 0.0]), 1.333);
         assert!(s[1] > 0.2 && (s[0] * s[0] + s[1] * s[1] + s[2] * s[2] - 1.0).abs() < 1e-9);
         assert_eq!(sun_through([0.0, 1.0, 0.0], 1.333), [0.0, 1.0, 0.0]);
+    }
+
+    /// `shafts_air`'s radial blur at texel `p` (shafts-buffer texels) toward the light at `light`,
+    /// with the sample offset `j`, over a scene whose open sky is `open` (1 open, 0 geometry).
+    fn air_glow(
+        p: [f64; 2],
+        light: [f64; 2],
+        j: f64,
+        steps: u32,
+        open: &dyn Fn([f64; 2]) -> f64,
+    ) -> f64 {
+        let l = &SUN_SHAFTS;
+        let radius = 40.0 * l.disc_radius;
+        let delta = [
+            (light[0] - p[0]) * l.reach / f64::from(steps),
+            (light[1] - p[1]) * l.reach / f64::from(steps),
+        ];
+        let (mut sum, mut total, mut w) = (0.0, 0.0, 1.0);
+        for k in 0..steps {
+            let t = f64::from(k) + j;
+            let q = [p[0] + delta[0] * t, p[1] + delta[1] * t];
+            let r = ((q[0] - light[0]).hypot(q[1] - light[1]) / radius).min(1.0);
+            sum += open(q) * (1.0 - r) * (1.0 - r) * w;
+            total += w;
+            w *= l.decay;
+        }
+        sum / total
+    }
+
+    #[test]
+    fn the_composited_shafts_behind_a_tree_show_no_dither_pattern() {
+        // BUGS.md #97: a low sun behind a tree (a trunk and a round crown on an 80 × 80 texel
+        // buffer, the sun just above the crown). The pass's per-texel jitter offsets High's 24
+        // samples; composited as it was (no filter over an interleaved-gradient jitter) the
+        // jitter's pattern showed as a fine diagonal crosshatch. Against the converged glow (64
+        // offsets a texel, through the same filter), the composite's error is under a quarter of the
+        // raw pass's.
+        let (w, h) = (80usize, 80usize);
+        let light = [40.0, 22.0];
+        let open = |q: [f64; 2]| {
+            let trunk = (q[0] - 40.0).abs() < 3.0 && q[1] > 30.0;
+            let crown = (q[0] - 40.0).hypot(q[1] - 34.0) < 12.0;
+            let gaps = ((q[0] * 0.9).sin() * (q[1] * 1.1).sin()) > 0.55;
+            if trunk || (crown && !gaps) { 0.0 } else { 1.0 }
+        };
+        let steps = HIGH.steps;
+        let raw: Vec<f64> = (0..w * h)
+            .map(|i| {
+                let p = [(i % w) as i32, (i / w) as i32];
+                let c = [f64::from(p[0]) + 0.5, f64::from(p[1]) + 0.5];
+                air_glow(c, light, shaft_jitter(p), steps, &open)
+            })
+            .collect();
+        let truth: Vec<f64> = (0..w * h)
+            .map(|i| {
+                let c = [(i % w) as f64 + 0.5, (i / w) as f64 + 0.5];
+                (0..64)
+                    .map(|k| air_glow(c, light, (f64::from(k) + 0.5) / 64.0, steps, &open))
+                    .sum::<f64>()
+                    / 64.0
+            })
+            .collect();
+        // The dither seen: the composite of the pass less the same composite of the converged glow
+        // (the filter's own softening is the look, not the dither).
+        let (mut err_raw, mut err_shown) = (0.0, 0.0);
+        for i in 0..w * h {
+            let p = [(i % w) as i32, (i / w) as i32];
+            err_raw += (raw[i] - truth[i]).powi(2);
+            err_shown += (shaft_blur(&raw, w, h, p) - shaft_blur(&truth, w, h, p)).powi(2);
+        }
+        let (err_raw, err_shown) = (
+            (err_raw / (w * h) as f64).sqrt(),
+            (err_shown / (w * h) as f64).sqrt(),
+        );
+        assert!(
+            err_raw > 0.005,
+            "the fixture shows no dither to remove: {err_raw}"
+        );
+        assert!(
+            err_shown < 0.25 * err_raw,
+            "the composited shafts keep the jitter's pattern: rms error {err_shown} against the raw pass's {err_raw}"
+        );
     }
 }

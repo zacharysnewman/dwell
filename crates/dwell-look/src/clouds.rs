@@ -1216,16 +1216,23 @@ pub fn upsample_band(v: &VolumeTunables, e: f64, rec: [f64; 2]) -> f64 {
 /// The composite's cloud cover at a pixel whose scene is `e` m along its ray (`reach`: the sky)
 /// from the four nearest texels, each (its cover, its `texel_depth`, its bilinear weight):
 /// `upsampled_clouds`'s twin.
+/// Each texel's `rec` is its `texel_depth` and the distance to its march's first cloud
+/// (`f64::INFINITY`: none), as the clouds pass's second target holds them.
 /// Where no texel's march ended at the pixel's scene (a sub-texel spire), the nearest match leads
-/// by `UPSAMPLE_FALLBACK`'s share: still a function of depths alone, so it doesn't flicker.
-pub fn upsample_cover(v: &VolumeTunables, e: f64, texels: &[(f64, [f64; 2], f64)]) -> f64 {
+/// by `UPSAMPLE_FALLBACK`'s share: still a function of depths alone, so it doesn't flicker. Such a
+/// fallback texel whose first cloud is past the pixel's scene (its band beyond, soft to twice it)
+/// lends its weight with no cloud (BUGS.md #97): leaves with sky in every texel took the cloud
+/// behind them, the fallback's share normalised to all of it.
+pub fn upsample_cover(v: &VolumeTunables, e: f64, texels: &[(f64, [f64; 3], f64)]) -> f64 {
     let (mut sum, mut weight) = (0.0, 0.0);
     for &(cover, rec, bilinear) in texels {
-        let band = upsample_band(v, e, rec);
-        let w = bilinear
-            * (upsample_weight(v, e, rec) + UPSAMPLE_FALLBACK / (1.0 + (rec[1] - e).abs() / band));
-        sum += w * cover;
-        weight += w;
+        let depth = [rec[0], rec[1]];
+        let band = upsample_band(v, e, depth);
+        let matched = bilinear * upsample_weight(v, e, depth);
+        let fallback = bilinear * UPSAMPLE_FALLBACK / (1.0 + (rec[1] - e).abs() / band);
+        let in_front = 1.0 - smoothstep(band, 2.0 * band, rec[2] - e);
+        sum += (matched + fallback * in_front) * cover;
+        weight += matched + fallback;
     }
     if weight > 0.0 { sum / weight } else { 0.0 }
 }
@@ -1995,6 +2002,21 @@ fn dwell_cloud_upsample_weight(e: f32, rec: vec2f) -> f32 {
 	let band = max(max(min(rec.y - rec.x, CLOUD_VOL_DEPTH_BAND_RANGE * e), CLOUD_VOL_DEPTH_BAND * e), 1.0);
 	let miss = abs(rec.y - e);
 	return 1.0 - smoothstep(band, 2.0 * band, miss) + CLOUD_UPSAMPLE_FALLBACK / (1.0 + miss / band);
+}
+
+// A texel's part in the composite's upsample at a pixel whose scene is `e` m along its ray, for
+// the clouds pass's record `dist` (the scene span xy, the first cloud z; 65000: none): x the
+// weight (dwell_cloud_upsample_weight's), y the share of it that takes the texel's cloud. A
+// fallback texel (no match) whose first cloud is past the pixel's scene lends its weight with no
+// cloud (upsample_cover's twin, BUGS.md #97: leaves with sky in every texel drew the cloud behind).
+fn dwell_cloud_upsample_split(e: f32, dist: vec3f) -> vec2f {
+	let rec = dist.xy;
+	let band = max(max(min(rec.y - rec.x, CLOUD_VOL_DEPTH_BAND_RANGE * e), CLOUD_VOL_DEPTH_BAND * e), 1.0);
+	let miss = abs(rec.y - e);
+	let matched = 1.0 - smoothstep(band, 2.0 * band, miss);
+	let fallback = CLOUD_UPSAMPLE_FALLBACK / (1.0 + miss / band);
+	let in_front = 1.0 - smoothstep(band, 2.0 * band, dist.z - e);
+	return vec2f(matched + fallback, matched + fallback * in_front);
 }
 
 // The volumetric clouds along the unit ray `dir` out to `max_t` (m): the layer, then the run-time
@@ -3244,16 +3266,22 @@ mod depth_tests {
         p: [i32; 2],
         frame: u32,
         cloud: (f64, f64),
-    ) -> (f64, [f64; 2], Vec<f64>) {
+    ) -> (f64, [f64; 3], Vec<f64>) {
         let reach = V.max_distance_m;
         let r = scene_range(scene, reach);
+        let [near, far] = texel_depth(r);
         let steps = CLOUDS.tiers.medium.steps;
         let jitter = cloud_jitter(&BLUE, 16, p, frame);
         let Some(span) = layer_span(&V, rise, EYE_H, march_end(r, reach)) else {
-            return (0.0, texel_depth(r), vec![]);
+            return (0.0, [near, far, f64::INFINITY], vec![]);
         };
-        let (cover, _) = fixture_march(span, jitter, steps, cloud);
-        (cover, texel_depth(r), march_samples(span, jitter, steps))
+        let (cover, first) = fixture_march(span, jitter, steps, cloud);
+        let first = if first < 0.0 { f64::INFINITY } else { first };
+        (
+            cover,
+            [near, far, first],
+            march_samples(span, jitter, steps),
+        )
     }
 
     static BLUE: std::sync::LazyLock<Vec<u8>> =
@@ -3296,7 +3324,7 @@ mod depth_tests {
         for frame in 0..16 {
             let (cover, rec, _) = texel(&ROCK, RISE, [7, 3], frame, cloud);
             for e in ROCK {
-                let w = upsample_weight(&V, e, rec);
+                let w = upsample_weight(&V, e, [rec[0], rec[1]]);
                 seen.push(w);
                 assert!(cover > 0.0, "frame {frame}: the cloud in front is gone");
             }
@@ -3333,6 +3361,75 @@ mod depth_tests {
         assert!((open - (0.25 * sky.0 + 0.75 * edge.0)).abs() < 1e-9);
     }
 
+    /// The composite's cloud at each full-resolution pixel of a `w` × `w` scene (`depths`, row by row,
+    /// 0: sky) on `frame`, its clouds pass at ½ resolution (High's divisor 2): every pixel's four
+    /// texels by their bilinear shares, as `upsampled_clouds` takes them.
+    fn composite_cover(depths: &[f64], w: usize, frame: u32, cloud: (f64, f64)) -> Vec<f64> {
+        let reach = V.max_distance_m;
+        let tw = w / 2;
+        let texels: Vec<_> = (0..tw * tw)
+            .map(|i| {
+                let (tx, ty) = (i % tw, i / tw);
+                let foot: Vec<f64> = (0..4)
+                    .map(|k| depths[(2 * ty + k / 2) * w + 2 * tx + k % 2])
+                    .collect();
+                texel(&foot, RISE, [tx as i32, ty as i32], frame, cloud)
+            })
+            .collect();
+        (0..w * w)
+            .map(|i| {
+                let (x, y) = (i % w, i / w);
+                let at = |v: usize| (v as f64 + 0.5) / 2.0 - 0.5;
+                let (fx, fy) = (at(x), at(y));
+                let (bx, by) = (fx.floor(), fy.floor());
+                let taps: Vec<_> = (0..4)
+                    .map(|k| {
+                        let (ox, oy) = ((k % 2) as f64, (k / 2) as f64);
+                        let cx = (bx + ox).clamp(0.0, (tw - 1) as f64) as usize;
+                        let cy = (by + oy).clamp(0.0, (tw - 1) as f64) as usize;
+                        let sx = if ox > 0.0 { fx - bx } else { 1.0 - (fx - bx) };
+                        let sy = if oy > 0.0 { fy - by } else { 1.0 - (fy - by) };
+                        let t = &texels[cy * tw + cx];
+                        (t.0, t.1, sx * sy)
+                    })
+                    .collect();
+                let d = depths[i];
+                upsample_cover(&V, if d > 0.0 { d.min(reach) } else { reach }, &taps)
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_canopy_with_sky_in_every_texel_draws_no_cloud_from_behind_it() {
+        // BUGS.md #97 (owner: "definitely cloud related"): leaves 12 m out with a gap of sky in
+        // every ½-resolution texel, a cloud 3.5–9 km behind them (in the layer). Every texel's march runs to the
+        // sky's reach, so none matches a leaf pixel; the composite's fallback weights, normalised,
+        // handed the leaves the jittered cloud behind them, in a pattern of the texel grid and the
+        // gaps. A leaf pixel shows no cloud on any frame; the gaps show the cloud.
+        let w = 16;
+        let depths: Vec<f64> = (0..w * w)
+            .map(|i| if (i % w + i / w) % 3 == 0 { 0.0 } else { 12.0 })
+            .collect();
+        let cloud = (3500.0, 9000.0);
+        let mut worst: f64 = 0.0;
+        let mut gap: f64 = 1.0;
+        for frame in 0..16 {
+            let cover = composite_cover(&depths, w, frame, cloud);
+            for (i, c) in cover.iter().enumerate() {
+                if depths[i] > 0.0 {
+                    worst = worst.max(*c);
+                } else {
+                    gap = gap.min(*c);
+                }
+            }
+        }
+        assert!(
+            worst < 1e-3,
+            "a leaf pixel drew {worst} of the cloud behind it"
+        );
+        assert!(gap > 0.5, "the sky in the gaps lost its cloud: {gap}");
+    }
+
     #[test]
     fn the_shader_twins_are_valid_and_every_tier_fits_the_depth_taps() {
         for t in [CLOUDS.tiers.high, CLOUDS.tiers.medium, CLOUDS.tiers.low] {
@@ -3352,6 +3449,7 @@ mod depth_tests {
         .validate(&module)
         .expect("WGSL validates");
         assert!(src.contains("fn dwell_cloud_upsample_weight(e: f32, rec: vec2f) -> f32"));
+        assert!(src.contains("fn dwell_cloud_upsample_split(e: f32, dist: vec3f) -> vec2f"));
         assert!(src.contains(&format!(
             "const CLOUD_VOL_DEPTH_BAND: f32 = {};",
             f(V.depth_band)
@@ -3801,8 +3899,9 @@ mod shape_tests {
         // within 1 % of its side's, whatever the bilinear shares say.
         let v = &CLOUDS.volume;
         let reach = v.max_distance_m;
-        let rock = [4000.0, 4010.0];
-        let sky = [reach, reach];
+        // Both texels' first cloud 3.6 km out, in front of the rock.
+        let rock = [4000.0, 4010.0, 3600.0];
+        let sky = [reach, reach, 3600.0];
         for share in [0.1, 0.5, 0.9] {
             let texels = [(0.2, rock, share), (0.9, sky, 1.0 - share)];
             assert!((upsample_cover(v, 4005.0, &texels) - 0.2).abs() < 0.01);
