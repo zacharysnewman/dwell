@@ -1350,6 +1350,10 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
   and lava's self-lit top (the lava look); the client NPC test expected four colour parts, five since
   the hat got its own (8a5f8a1). `hosting.test.ts` and `hostPanel.test.ts` failed only without the
   wasm package (`npm run build:wasm`).
+  **Still red, found along the way (not fixed here):** `dwell-client`'s
+  `game_local.rs` `a_long_trip_over_the_terrain_keeps_the_near_ring_at_full_detail` (BUGS #54's test): a
+  near chunk waits 277 frames (bar 120) at frame 4619, chunk (63, 14, 224); deterministic, and the same at
+  every commit back to 588e896, so older than this checkout's recent history; needs its own look.
 
 - **Axe swing directions and animation tools (owner 2026-11-11: "The axe animations are still trash.
   They don't swing in the right direction at all. Make yourself some tools to properly observe
