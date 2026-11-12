@@ -559,6 +559,7 @@ mod tests {
                 speed: 2.0,
                 chunk: 1.0,
                 contact_s: 0.0,
+                repeat_s: None,
             },
             BreakTool {
                 item: "test:golden_trowel",
@@ -567,6 +568,7 @@ mod tests {
                 speed: 2.5,
                 chunk: 2.0,
                 contact_s: 0.0,
+                repeat_s: None,
             },
         ];
         let h = |held| hits_to_break_in(&damage, &tools, "test:clay", held);
@@ -650,6 +652,7 @@ mod tests {
             speed: 2.0,
             chunk: 1.5,
             contact_s: 0.0,
+            repeat_s: None,
         }];
         assert_eq!(hit_chunk_in(&tools, Some("test:trowel")), 24);
         assert_eq!(hit_chunk_in(&tools, Some("test:stick")), HitMark::ONE);

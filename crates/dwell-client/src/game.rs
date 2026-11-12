@@ -887,6 +887,8 @@ pub struct Game<S: Scene> {
     /// this player's last strike was blocked (its view's recoil: the time, the weapon, its plane).
     swordplay: bool,
     pub guard_input: crate::swordplay::GuardInput,
+    /// The use (Break) button held: a tool that repeats keeps swinging (crate::held_use).
+    pub held_use: crate::held_use::HeldUse,
     pub remote_guards: dwell_world::hash::HashMap<dwell_protocol::Fighter, (bool, bool)>,
     recoil: Option<(f64, &'static dwell_protocol::chopping::ToolDef, bool)>,
     /// The ground densities the chunk meshes were scattered with (ADR 0074 B5), by chunk, where
@@ -1082,6 +1084,7 @@ impl<S: Scene> Game<S> {
             remote_tools: Default::default(),
             swordplay: false,
             guard_input: Default::default(),
+            held_use: Default::default(),
             remote_guards: Default::default(),
             recoil: None,
             ground_density: Default::default(),
@@ -2434,6 +2437,15 @@ impl<S: Scene> Game<S> {
         holder: dwell_game::build_drag::Holder,
         now_ms: f64,
     ) -> bool {
+        // Break held: a tool that repeats keeps swinging until let go (WORK_QUEUE item 17).
+        if action == EditAction::Break {
+            self.held_use.press(holder);
+            let swung = self.edit_with(action, Some(holder), now_ms);
+            if swung {
+                self.held_use.started(now_ms);
+            }
+            return swung;
+        }
         // On a held body (built on a build platform, so lined up with the world's grid): the click
         // places against it, and the drag builds on in the world's cells next to it, which the
         // server puts into the body (docs/BUILT_BODIES.md §3).
@@ -2644,6 +2656,45 @@ impl<S: Scene> Game<S> {
     }
 
     /// `holder` let go of Place: its drag stroke ends.
+    /// The use (Break) button let go by `holder`: a held tool stops repeating; the swing under
+    /// way plays out.
+    pub fn release_use(&mut self, holder: dwell_game::build_drag::Holder) {
+        self.held_use.release(holder);
+    }
+
+    /// Whether the tool in hand keeps swinging while Break is held (its `repeatOnHold`).
+    pub fn use_repeats(&self) -> bool {
+        match self.held_tool() {
+            Some(t) => t.repeat_on_hold,
+            None => {
+                crate::held_use::Repeat::of_break(self.held_break_item())
+                    != crate::held_use::Repeat::No
+            }
+        }
+    }
+
+    /// Break held with a tool whose data repeats (`repeatOnHold`): the next swing, a whole new
+    /// one aimed at what is targeted now, once the last is over (a chopping tool) or its
+    /// `repeatS` has passed and its contact landed (a pickaxe, a shovel).
+    fn repeat_held_use(&mut self, now_ms: f64) {
+        if !self.held_use.held() || self.dead {
+            return;
+        }
+        let (repeat, ready) = match self.held_tool() {
+            Some(t) => (
+                crate::held_use::Repeat::of_tool(t),
+                self.chop.ready(t, now_ms),
+            ),
+            None => (
+                crate::held_use::Repeat::of_break(self.held_break_item()),
+                !self.pending_hits.busy(now_ms),
+            ),
+        };
+        if self.held_use.due(repeat, ready, now_ms) && self.edit(EditAction::Break, now_ms) {
+            self.held_use.started(now_ms);
+        }
+    }
+
     pub fn release_place(&mut self, holder: dwell_game::build_drag::Holder) {
         self.drag.release(holder);
         // The weapon's block (swordplay): a tap turns the stance, else the block drops.
@@ -3228,6 +3279,7 @@ impl<S: Scene> Game<S> {
 
     fn update_swing_run(&mut self, now_ms: f64) -> CameraOffset {
         self.land_hits(now_ms);
+        self.repeat_held_use(now_ms);
         // The axe put away mid-swing: the swing stops, landing nothing (the server's too).
         if self
             .chop

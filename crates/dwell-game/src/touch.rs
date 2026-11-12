@@ -197,6 +197,9 @@ pub struct TouchControls {
     look_pointer: Option<LookPointer>,
     /// A held look finger was replaced before its lift arrived: its hold ends next frame.
     hold_lost: bool,
+    /// The held tool keeps swinging while Break is held (its `repeatOnHold`; WORK_QUEUE item 17):
+    /// a still hold in Break mode is then a hold too, not nothing.
+    pub hold_breaks: bool,
     buttons: [TouchButtonState; 7],
     run_latched: bool,
     stick_run: bool,
@@ -211,6 +214,7 @@ impl Default for TouchControls {
             stick_offset: (0.0, 0.0),
             look_pointer: None,
             hold_lost: false,
+            hold_breaks: false,
             buttons: TouchButton::ALL.map(|b| TouchButtonState::new(b.spec().mode)),
             run_latched: false,
             stick_run: false,
@@ -303,13 +307,14 @@ impl TouchControls {
     }
 
     /// Each frame (`now_ms` on the events' clock): [`TouchEvent::Hold`] once, when the look finger
-    /// has been held still for HOLD_MS in Place mode.
+    /// has been held still for HOLD_MS in Place mode, or in Break mode with a tool that keeps
+    /// swinging held ([`hold_breaks`](Self::hold_breaks)).
     pub fn hold_due(&mut self, now_ms: f64) -> Option<TouchEvent> {
         if std::mem::take(&mut self.hold_lost) {
             return Some(TouchEvent::HoldEnd);
         }
-        let place = self.button_active(TouchButton::Edit);
-        let p = self.look_pointer.as_mut().filter(|p| !p.held && place)?;
+        let holds = self.button_active(TouchButton::Edit) || self.hold_breaks;
+        let p = self.look_pointer.as_mut().filter(|p| !p.held && holds)?;
         let (sx, sy, st) = p.start;
         let (lx, ly) = p.last;
         let still = (lx - sx).hypot(ly - sy) <= TAP_SLOP;
@@ -546,6 +551,25 @@ mod tests {
         assert_eq!(t.hold_due(5000.0 + 50.0), None);
         assert_eq!(t.look_up(4, 5000.0 + 60.0, false), Some(TouchEvent::Tap));
         const { assert!(HOLD_MS < TAP_MS) };
+    }
+
+    #[test]
+    fn a_still_hold_in_break_mode_with_a_repeating_tool_swings_on_until_it_lifts() {
+        // WORK_QUEUE item 17: holding a tool that keeps swinging (an axe, a pickaxe).
+        let mut t = TouchControls::new();
+        t.hold_breaks = true;
+        t.look_down(1, 100.0, 100.0, 0.0);
+        assert_eq!(t.hold_due(HOLD_MS - 1.0), None);
+        assert_eq!(t.hold_due(HOLD_MS), Some(TouchEvent::Hold));
+        assert_eq!(t.hold_due(HOLD_MS + 16.0), None, "once");
+        assert_eq!(
+            t.look_up(1, HOLD_MS + 500.0, false),
+            Some(TouchEvent::HoldEnd)
+        );
+        // A quick tap still taps (one swing).
+        t.look_down(2, 100.0, 100.0, 2000.0);
+        assert_eq!(t.hold_due(2000.0 + 50.0), None);
+        assert_eq!(t.look_up(2, 2000.0 + 60.0, false), Some(TouchEvent::Tap));
     }
 
     // Beyond the TS suite (whose controls needed a DOM): the state machine the listeners feed.

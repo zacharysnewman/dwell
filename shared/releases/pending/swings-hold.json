@@ -1,0 +1,6 @@
+{
+  "changes": [
+    "Hold the use button to keep swinging an axe, sword, pickaxe or shovel: each swing hits whatever you aim at then, until you let go.",
+    "An axe or sword swing that hits something no longer plays its animation twice: it pulls straight back to rest."
+  ]
+}

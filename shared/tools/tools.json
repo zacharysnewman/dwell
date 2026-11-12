@@ -13,6 +13,7 @@
     {
       "name": "dwell:stone_axe",
       "kind": "axe",
+      "repeatOnHold": true,
       "swingSeconds": 0.45,
       "biteM": 0.1,
       "bindM": 0.05,
@@ -110,6 +111,7 @@
     {
       "name": "dwell:metal_axe",
       "kind": "axe",
+      "repeatOnHold": true,
       "swingSeconds": 0.45,
       "biteM": 0.2,
       "bindM": 0.05,
@@ -207,6 +209,7 @@
     {
       "name": "dwell:sword",
       "kind": "weapon",
+      "repeatOnHold": true,
       "swingSeconds": 0.5,
       "held": "sword",
       "heldVertical": "sword_vertical",
@@ -349,7 +352,7 @@
     }
   },
   "breaking": {
-    "$comment": "Which tool breaks which blocks faster (owner, 2026-11-10: \"pickaxe, shovel, and axe. Stone and Metal variants\"): `classes` maps a tool class to the blocks (by name) it is the right tool for, each block in at most one; `tiers` is a tier's break speed (a multiple of the bare hand's, 1), as a number or `{ speed, chunk }`: `chunk` (×, default 1, [0.25, 4]) how big a piece each hit of the tier takes off, the carve's mark width and depth (owner, 2026-11-12: \"Metal tools break double sized bigger chunks off and reach 50% broken faster, which is when the blocks break. Also have double durability.\": metal speed 2 × stone's, chunk 2; the metal axe's `biteM` and `chop2.bite` 2 × the stone axe's); `tools` gives an item (shared/inventory) its class and tier. A break of a block holding the right class goes at its tier's speed, anything else at 1 (dwell_protocol::chopping::break_speed). A tool's `contactS` is when its swing's head meets the block, seconds after the click (the arms' `break` clip strikes at 0.26 s; WORK_QUEUE item 25: the hit, its marks, drops, sound and wear land then, the server applying it that long after the request arrives; none: 0, at once); the axe's contact is its `swing`'s (`windupS` and the arc's time to the hit). The axe's chopping (`tools` above) is unchanged.",
+    "$comment": "Which tool breaks which blocks faster (owner, 2026-11-10: \"pickaxe, shovel, and axe. Stone and Metal variants\"): `classes` maps a tool class to the blocks (by name) it is the right tool for, each block in at most one; `tiers` is a tier's break speed (a multiple of the bare hand's, 1), as a number or `{ speed, chunk }`: `chunk` (×, default 1, [0.25, 4]) how big a piece each hit of the tier takes off, the carve's mark width and depth (owner, 2026-11-12: \"Metal tools break double sized bigger chunks off and reach 50% broken faster, which is when the blocks break. Also have double durability.\": metal speed 2 × stone's, chunk 2; the metal axe's `biteM` and `chop2.bite` 2 × the stone axe's); `tools` gives an item (shared/inventory) its class and tier. A break of a block holding the right class goes at its tier's speed, anything else at 1 (dwell_protocol::chopping::break_speed). A tool's `contactS` is when its swing's head meets the block, seconds after the click (the arms' `break` clip strikes at 0.26 s; WORK_QUEUE item 25: the hit, its marks, drops, sound and wear land then, the server applying it that long after the request arrives; none: 0, at once); the axe's contact is its `swing`'s (`windupS` and the arc's time to the hit). The axe's chopping (`tools` above) is unchanged. A tool's `repeatOnHold` (owner, 2026-11-12: \"I wanted you to be able to hold the key down for tools like the axe.\"; a chopping tool's in `tools`, a break tool's here, never both): holding the use button keeps swinging it until let go, each swing a full one hitting what is aimed at then (wear on a hit only); a break tool's `repeatS` the time between its swings (default 0.5, at least its `contactS`).",
     "tiers": {
       "stone": { "speed": 1.5, "chunk": 1 },
       "metal": { "speed": 3, "chunk": 2 }
@@ -383,25 +386,33 @@
         "item": "dwell:stone_pickaxe",
         "class": "pickaxe",
         "tier": "stone",
-        "contactS": 0.26
+        "contactS": 0.26,
+        "repeatOnHold": true,
+        "repeatS": 0.5
       },
       {
         "item": "dwell:metal_pickaxe",
         "class": "pickaxe",
         "tier": "metal",
-        "contactS": 0.26
+        "contactS": 0.26,
+        "repeatOnHold": true,
+        "repeatS": 0.5
       },
       {
         "item": "dwell:wooden_shovel",
         "class": "shovel",
         "tier": "stone",
-        "contactS": 0.26
+        "contactS": 0.26,
+        "repeatOnHold": true,
+        "repeatS": 0.5
       },
       {
         "item": "dwell:metal_shovel",
         "class": "shovel",
         "tier": "metal",
-        "contactS": 0.26
+        "contactS": 0.26,
+        "repeatOnHold": true,
+        "repeatS": 0.5
       }
     ]
   }

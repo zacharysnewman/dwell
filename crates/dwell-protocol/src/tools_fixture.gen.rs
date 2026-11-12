@@ -8,7 +8,7 @@ pub const CHOP2_DEFAULT: bool = false;
 
 /// The tools, by item name.
 pub static TOOLS: &[ToolDef] = &[
-    ToolDef { name: "dwell:stick", kind: ToolKind::Weapon, held: None, swing_seconds: 0.4, bite_m: 0.0, bind_m: 0.0, across: 0.0, along: 0.0, sharpness: 1.0, held_vertical: None, swing: SwingDef { windup_s: 0.1, active_s: 0.1, hit_stop_s: 0.07, recover_hit_s: 0.2, recover_miss_s: 0.3, reach_m: 1.5, arc_deg: 90.0, samples: 8, camera_level: SwingCamera { keys: &[], kick: CameraKick { offset: CameraOffset { yaw: 0.0, pitch: 0.0, roll: 0.0, bob: [0.0, 0.0, 0.0] }, decay_s: 0.1, miss: 0.0, bounce: 0.0 } }, camera_vertical: SwingCamera { keys: &[], kick: CameraKick { offset: CameraOffset { yaw: 0.0, pitch: 0.0, roll: 0.0, bob: [0.0, 0.0, 0.0] }, decay_s: 0.1, miss: 0.0, bounce: 0.0 } }, stamina_cost: 0.0, swish: None, bounce: None, rustle: None, rustle_leaves: 4 }, clears: &[], chop2_bite: 0.045, weapon: Some(WeaponDef { damage: 3.0, knockback_m: 0.25, knockback_mps: 0.0, lift_mps: 0.0, max_targets: 1, guard: GuardDef { level_roll_deg: 0.0, vertical_roll_deg: 90.0, block_within_deg: 45.0, connect_within_deg: 45.0, glance_damage: 0.5, recoil_s: 0.3, front_deg: 180.0, raise_after_s: 0.15, level_pose: None, vertical_pose: None, level_blade: RaisedBlade { grip: [0.06, 1.3, 0.44], tip: [-0.72, 1.38, 0.53] }, vertical_blade: RaisedBlade { grip: [0.5, 1.38, 0.33], tip: [0.38, 1.73, -0.45] }, clash: ClashLook { sound: None, hear_m: 32.0, sparks: None, glance_share: 0.5 } } }) },
+    ToolDef { name: "dwell:stick", kind: ToolKind::Weapon, held: None, swing_seconds: 0.4, bite_m: 0.0, bind_m: 0.0, across: 0.0, along: 0.0, sharpness: 1.0, held_vertical: None, swing: SwingDef { windup_s: 0.1, active_s: 0.1, hit_stop_s: 0.07, recover_hit_s: 0.2, recover_miss_s: 0.3, reach_m: 1.5, arc_deg: 90.0, samples: 8, camera_level: SwingCamera { keys: &[], kick: CameraKick { offset: CameraOffset { yaw: 0.0, pitch: 0.0, roll: 0.0, bob: [0.0, 0.0, 0.0] }, decay_s: 0.1, miss: 0.0, bounce: 0.0 } }, camera_vertical: SwingCamera { keys: &[], kick: CameraKick { offset: CameraOffset { yaw: 0.0, pitch: 0.0, roll: 0.0, bob: [0.0, 0.0, 0.0] }, decay_s: 0.1, miss: 0.0, bounce: 0.0 } }, stamina_cost: 0.0, swish: None, bounce: None, rustle: None, rustle_leaves: 4 }, clears: &[], chop2_bite: 0.045, weapon: Some(WeaponDef { damage: 3.0, knockback_m: 0.25, knockback_mps: 0.0, lift_mps: 0.0, max_targets: 1, guard: GuardDef { level_roll_deg: 0.0, vertical_roll_deg: 90.0, block_within_deg: 45.0, connect_within_deg: 45.0, glance_damage: 0.5, recoil_s: 0.3, front_deg: 180.0, raise_after_s: 0.15, level_pose: None, vertical_pose: None, level_blade: RaisedBlade { grip: [0.06, 1.3, 0.44], tip: [-0.72, 1.38, 0.53] }, vertical_blade: RaisedBlade { grip: [0.5, 1.38, 0.33], tip: [0.38, 1.73, -0.45] }, clash: ClashLook { sound: None, hear_m: 32.0, sparks: None, glance_share: 0.5 } } }), repeat_on_hold: true },
 ];
 
 /// The blocks an axe cuts, by block name.
@@ -76,10 +76,10 @@ pub const WEAR_BREAK_SOUND: Option<&str> = Some("stick_snap");
 
 /// Each tool item's class, tier and that tier's break speed (`breaking.tools`).
 pub static BREAK_TOOLS: &[BreakTool] = &[
-    BreakTool { item: "dwell:stone_axe", class: "axe", tier: "stone", speed: 1.5, chunk: 1.0, contact_s: 0.0 },
-    BreakTool { item: "dwell:metal_axe", class: "axe", tier: "metal", speed: 3.0, chunk: 2.0, contact_s: 0.0 },
-    BreakTool { item: "dwell:stone_pickaxe", class: "pickaxe", tier: "stone", speed: 1.5, chunk: 1.0, contact_s: 0.26 },
-    BreakTool { item: "dwell:metal_pickaxe", class: "pickaxe", tier: "metal", speed: 3.0, chunk: 2.0, contact_s: 0.26 },
-    BreakTool { item: "dwell:wooden_shovel", class: "shovel", tier: "stone", speed: 1.5, chunk: 1.0, contact_s: 0.26 },
-    BreakTool { item: "dwell:metal_shovel", class: "shovel", tier: "metal", speed: 3.0, chunk: 2.0, contact_s: 0.26 },
+    BreakTool { item: "dwell:stone_axe", class: "axe", tier: "stone", speed: 1.5, chunk: 1.0, contact_s: 0.0, repeat_s: None },
+    BreakTool { item: "dwell:metal_axe", class: "axe", tier: "metal", speed: 3.0, chunk: 2.0, contact_s: 0.0, repeat_s: None },
+    BreakTool { item: "dwell:stone_pickaxe", class: "pickaxe", tier: "stone", speed: 1.5, chunk: 1.0, contact_s: 0.26, repeat_s: Some(0.5) },
+    BreakTool { item: "dwell:metal_pickaxe", class: "pickaxe", tier: "metal", speed: 3.0, chunk: 2.0, contact_s: 0.26, repeat_s: Some(0.5) },
+    BreakTool { item: "dwell:wooden_shovel", class: "shovel", tier: "stone", speed: 1.5, chunk: 1.0, contact_s: 0.26, repeat_s: Some(0.5) },
+    BreakTool { item: "dwell:metal_shovel", class: "shovel", tier: "metal", speed: 3.0, chunk: 2.0, contact_s: 0.26, repeat_s: Some(0.5) },
 ];
