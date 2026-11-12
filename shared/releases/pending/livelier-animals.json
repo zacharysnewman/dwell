@@ -1,8 +1,0 @@
-{
-  "changes": [
-    "Deer notice you and run off as a herd: sneak (crouch) or stand still to get closer, sprint and they spot you from farther away",
-    "Wolves keep their distance from you unless their pack is hungry",
-    "Hungry wolf packs travel toward the nearest deer herd, so you can come across a hunt",
-    "Deer and wolves pick idle behaviours by species (grazing, looking up, ear flicks, sitting, lying down); the poses aren't drawn yet"
-  ]
-}
