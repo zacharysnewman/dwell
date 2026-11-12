@@ -40,7 +40,8 @@ and records at the page's device size; the driver gives a fixed viewport.)
 re-shows some), e.g. `setInterval(() => document.querySelectorAll('body > *:not(canvas):not(#game)')
 .forEach(e => e.style.visibility = 'hidden'), 300)` — check the canvas's id first. Clouds off unless the
 shot is about clouds (owner: "The clouds make those screenshots hard to read"): the graphics settings or
-`?clouds=off`. Golden hour reads best: `d.setTime(0.265–0.3)` sunrise, `0.68–0.73` evening.
+`localStorage['dwell.clouds'] = '"off"'` before load (there is no `?clouds=` parameter, `?preset=high` turns them
+back on, and the driver starts a fresh profile each launch, so set it again and reload). Golden hour reads best: `d.setTime(0.265–0.3)` sunrise, `0.68–0.73` evening.
 
 **Finding subjects:** `d.creatures()` (near animals: x, y, z, yaw, speed), `d.ecology()` (herds and packs,
 their ids and positions), `d.lava('report')`, spots in `client/bench/spots.json`.
@@ -126,3 +127,10 @@ preview and the driver, remove any `client/node_modules` symlink or built `clien
   terrain; animals mostly stand and mill, so 15 s clips feel static — plan action (chases, fleeing) or shorter
   clips; on day one wolf packs were kilometres from herds, so no hunt happened (WORK_QUEUE item 39 adds roaming
   packs and deer that flee from players).
+- 2026-11-12, Realistic world and old-growth forest (portrait, 5 clips, ~55 s): theater paths with `ease` (drone
+  passes) and `crane` (rises through a canopy) worked first time. Paths need `"formatVersion": 1`; yaw is face-local
+  (`FaceFrame::look`): 0 = +z, 90 = +x, 180 = −z. The big map is **M** (`d.press('KeyM', true)`, then `Minus` to zoom
+  out), not F4 (the old height overlay). Warm a far drone path's start first (cut to its first keyframe, ~10 s) or
+  it starts on bare LOD. `?at=` into a dense forest put the eye inside the ground or a crown; the world's own spawn
+  (a beach at the forest's edge) gave the best walk-in (`d.press('KeyW', true)` with `d.look` easing the view). The
+  screencast fell to ~15 fps on a high rise over the forest; with the theater HUD off no arms showed in first person.
