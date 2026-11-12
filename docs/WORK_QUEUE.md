@@ -356,6 +356,11 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    see-through, march their full length and self-shadow weakly (part of the flat white look). Real cumulus is ~0.05 /m.
    Next, in the in-game cloud check: an A/B of extinction 0.006 → ~0.03–0.05 (data), measuring the look and
    `gpu.clouds`; keep soft eroded edges so higher opacity doesn't read as solid blobs.
+   Owner, clarifying: **"to be clear, light should still go through the clouds, but what is looking bad is the
+   clouds behind the one in front and you usually can't see other separate clouds blocked behind ones in front of
+   you?"** So: raise the view ray's opacity (`volume.extinction`, what hides a cloud behind another) and leave the
+   light's path as it is (`light.absorption`, the sun through the cloud: lit edges, silver lining, glow); they are
+   separate numbers already.
 14. **Tall grass grows and spreads** (owner 2026-11-11: "I want tall grass to steadily grow and spread. It
    should probably have a max depending on climate/biome."). **Built** (ADR 0075 T3c, docs/ECOLOGY.md §10):
    `shared/worldgen/grass.json` (the rule as data: the block, the ground, the decoration whose climate
