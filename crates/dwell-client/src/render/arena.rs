@@ -121,8 +121,23 @@ impl Arena {
     /// Copies a mesh in: `vertices` (interleaved, the format's stride) and `indices` (relative to
     /// its first vertex).
     pub fn upload(&mut self, format: usize, vertices: &[u8], indices: &[u8]) -> Region {
+        let r = self.reserve(format, vertices.len() as u64, indices.len() as u64);
+        let buffer = &self.pages[format][r.page].buffer;
+        self.queue.write_buffer(buffer, r.vertex_offset, vertices);
+        self.queue.write_buffer(buffer, r.index_offset, indices);
+        r
+    }
+
+    /// Writes `data` at `offset` in a page (a staged mesh's slice, `staged.rs`).
+    pub fn write_at(&self, format: usize, page: usize, offset: u64, data: &[u8]) {
+        if let Some(p) = self.pages.get(format).and_then(|f| f.get(page)) {
+            self.queue.write_buffer(&p.buffer, offset, data);
+        }
+    }
+
+    /// Room for a mesh of `vlen` vertex bytes and `ilen` index bytes, nothing written yet.
+    pub fn reserve(&mut self, format: usize, vlen: u64, ilen: u64) -> Region {
         let stride = self.strides[format];
-        let (vlen, ilen) = (vertices.len() as u64, indices.len() as u64);
         let fits = |p: &mut Page| -> Option<(u64, u64)> {
             let v = p.free.alloc(vlen, stride)?;
             match p.free.alloc(ilen, 4) {
@@ -160,9 +175,6 @@ impl Arena {
                 (pages.len() - 1, v, i)
             }
         };
-        let buffer = &self.pages[format][page].buffer;
-        self.queue.write_buffer(buffer, v, vertices);
-        self.queue.write_buffer(buffer, i, indices);
         Region {
             format,
             page,

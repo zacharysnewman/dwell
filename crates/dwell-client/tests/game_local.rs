@@ -49,6 +49,8 @@ struct Recorder {
     /// The scene's upload budget a frame (None: unlimited), and the chunk mesh bytes handed to it
     /// since `frame_bytes` was last cleared, with the count of chunks.
     upload_budget: Option<u64>,
+    /// A chunk mesh is still being written (the renderer's staged writes): none handed over.
+    uploads_waiting: bool,
     frame_bytes: u64,
     frame_chunks: usize,
 }
@@ -133,6 +135,9 @@ impl Scene for Recorder {
     fn set_debug_lines(&mut self, _lines: Option<&[Line]>) {}
     fn upload_budget_bytes(&self) -> u64 {
         self.upload_budget.unwrap_or(u64::MAX)
+    }
+    fn uploads_waiting(&self) -> bool {
+        self.uploads_waiting
     }
     fn stats(&self) -> RenderStats {
         RenderStats::default()
@@ -446,6 +451,31 @@ fn no_frame_uploads_more_chunk_mesh_bytes_than_the_scenes_budget() {
         "{over} of {frames} frames uploaded more than {budget} B of several meshes (most {most} B)"
     );
     assert!(drained, "the view finished meshing ({uploads} meshes in {frames} frames)");
+}
+
+/// BUGS.md #72: a chunk mesh over the phone's budget is written a slice a frame
+/// (render/staged.rs); while it is, no more meshes are handed over, so the writes can't pile up.
+// face-a-only: the upload budget counts bytes, whichever face the chunks are on.
+#[test]
+fn no_mesh_is_handed_over_while_the_scene_is_still_writing_one() {
+    let mut rig = Rig::new();
+    assert!(
+        rig.run_until(60 * 30, |r| !r.scene.borrow().chunks.is_empty()),
+        "chunks arrive"
+    );
+    rig.scene.borrow_mut().uploads_waiting = true;
+    let mut handed = 0;
+    for _ in 0..120 {
+        rig.scene.borrow_mut().frame_chunks = 0;
+        rig.frame();
+        handed += rig.scene.borrow().frame_chunks;
+    }
+    assert_eq!(handed, 0, "{handed} meshes handed over while one was being written");
+    rig.scene.borrow_mut().uploads_waiting = false;
+    assert!(
+        rig.run_until(60 * 10, |r| r.scene.borrow().frame_chunks > 0),
+        "handed over again once written"
+    );
 }
 
 #[test]
