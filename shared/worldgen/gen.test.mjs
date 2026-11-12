@@ -1016,6 +1016,23 @@ test('grass.json validates, its output is current, and bad entries fail naming t
   // A rule by data alone: another ground and rates.
   const fixture = validateGrass({ ...grass(), on: ['dwell:dirt'], spreadPerDay: 1, reach: 2 }, blocks, decorations);
   assert.match(grassRust(fixture), /on: &\["dwell:dirt"\]/);
+  // Growing in height (docs/ECOLOGY.md §10): the stages, by data.
+  const stages = (patch) => ({ ...grass(), stages: { ...grass().stages, ...patch } });
+  const badStages = (patch, re) => assert.throws(() => validateGrass(stages(patch), blocks, decorations), re);
+  badStages({ property: 'nope' }, /stages.property "nope" is not a property of dwell:tall_grass/);
+  badStages({ order: ['0', '1', '3'], days: [3, 4], share: [0, 0.5, 1] }, /at least 4 values/);
+  badStages({ order: ['3', '2', '1', '0'] }, /must end with the property's default 3/);
+  badStages({ order: ['0', '1', '1', '3'] }, /each of dwell:tall_grass's stage values once/);
+  badStages({ days: [1, 1, 1] }, /add up to at least 7/);
+  badStages({ days: [3, 4] }, /stages.days must give each stage but the last/);
+  badStages({ share: [0.1, 0.2, 0.4, 0.6] }, /must start at 0/);
+  badStages({ share: [0, 0.5, 0.4, 0.6] }, /must not fall/);
+  badStages({ extra: 1 }, /stages: unknown extra/);
+  assert.throws(() => validateGrass({ ...grass(), stages: undefined }, blocks, decorations), /stages must be an object/);
+  // A fixture's slower stages by data alone.
+  const slow = validateGrass(stages({ days: [10, 10, 10], share: [0, 0, 0, 0.9] }), blocks, decorations);
+  assert.match(grassRust(slow), /GrassStage \{ value: "1", days: 10\.0, share: 0\.0 \}/);
+  assert.match(grassRust(slow), /GrassStage \{ value: "3", days: 0\.0, share: 0\.9 \}/);
 });
 
 const loadClimate = () => JSON.parse(readFileSync(join(here, 'climate.json'), 'utf8'));

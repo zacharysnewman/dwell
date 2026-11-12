@@ -444,6 +444,18 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    Plan: a growth-stage property on the plant (a new property, default the full stage, so not breaking, ADR 0063),
    stages and days per stage as data in grass.json, each stage's height from the block's look, the climate share
    capping the top stage, drops per stage; one cell (≤ ~1 m) first, a two-cell top for the tallest climates later.
+   **Built** (2026-11-12, `claude/grass-height`, docs/ECOLOGY.md §10 "Growing in height"): tall grass's `stage`
+   property (0 sprout … 3 full, the default, so placed and saved grass is full as before); each stage's height
+   block data (`cross.heights`, the mesher draws it, the selection box scales); grass.json `stages` (days per
+   stage 3, 3, 4: about 10 days to full; the climate share each stage needs, 0, 0.2, 0.4, 0.6); the grass step
+   grows standing tufts a stage at a time up to their column's top stage in the same catch-up; spread and
+   regrown tufts start as a sprout; eaten tufts go back to a sprout (worlds that grow grass); **broken by hand
+   still removes** the tuft (chosen: a player clears grass to build), and it regrows from the roots as a
+   sprout; drops by stage through a new drop-rule `when` (more fiber and seed when tall, gems only at full;
+   full drops as before); generation places tufts at their climate's top stage (the default one-biome world
+   unchanged; **the starter's drier biomes generate shorter tufts**, a change to the terrain the starter seed
+   generates: re-pinned, waiting on the owner's 0.55 line with item 32's). Not yet: a two-cell top for ~1 m
+   grass in the lushest climates; the hide mechanic (Future).
 
 15. **Realistic world** (owner 2026-11-11: "The realistic world should come from our systems (which may not be
    properly defined or built yet to support this) the seed should determine tectonic plates, rain shadow,

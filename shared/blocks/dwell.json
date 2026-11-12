@@ -291,9 +291,14 @@
       "$comment": "Prototype content (docs/TRANSPARENT_BLOCKS.md §6): blades of grass, the first plant. No collision; crossed quads drawn cutout, jittered per cell, swaying in the wind and fading out before the LOD; placed by hand only (world generation doesn't grow it), on grass or dirt, replaced by what is placed into it, and gone with the block under it.",
       "name": "tall_grass",
       "drops": [
-        { "item": "dwell:grass_fiber" },
-        { "item": "dwell:grass_seed", "chance": 0.5 },
-        { "chance": 0.125, "pick": [{ "item": "dwell:gem", "weight": 95 }, { "item": "dwell:gem_large", "weight": 5 }] }
+        { "item": "dwell:grass_fiber", "when": { "stage": ["3"] } },
+        { "item": "dwell:grass_fiber", "chance": 0.75, "when": { "stage": ["2"] } },
+        { "item": "dwell:grass_fiber", "chance": 0.5, "when": { "stage": ["1"] } },
+        { "item": "dwell:grass_fiber", "chance": 0.25, "when": { "stage": ["0"] } },
+        { "item": "dwell:grass_seed", "chance": 0.5, "when": { "stage": ["3"] } },
+        { "item": "dwell:grass_seed", "chance": 0.25, "when": { "stage": ["2"] } },
+        { "item": "dwell:grass_seed", "chance": 0.1, "when": { "stage": ["1"] } },
+        { "chance": 0.125, "when": { "stage": ["3"] }, "pick": [{ "item": "dwell:gem", "weight": 95 }, { "item": "dwell:gem_large", "weight": 5 }] }
       ],
       "sound": "dwell:grass",
       "density": 200,
@@ -301,8 +306,14 @@
       "placeable": true,
       "look": "cross",
       "render": "cutout",
+      "properties": { "stage": ["3", "2", "1", "0"] },
       "cross": {
         "height": 0.85,
+        "heights": {
+          "$comment": "Growth stages (docs/ECOLOGY.md §10, shared/worldgen/grass.json `stages`): a sprout (0) to full height (3, the default: tall grass placed, or saved before stages, is full).",
+          "property": "stage",
+          "heights": { "0": 0.25, "1": 0.45, "2": 0.65, "3": 0.85 }
+        },
         "quads": 2,
         "jitter": {
           "offset": 0.22,

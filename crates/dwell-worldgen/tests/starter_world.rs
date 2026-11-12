@@ -864,7 +864,6 @@ fn tall_grass_counts() {
             .unwrap();
         TerrainGenerator::with_map(face_seed(0, Face::A), Arc::new(map))
     };
-    let tall = dwell_blocks::require("dwell:tall_grass");
     let grass = dwell_blocks::require("dwell:grass");
     for (label, x, z) in [
         ("meadow", 10100, 16300),
@@ -881,11 +880,11 @@ fn tall_grass_counts() {
                 for cy in row - 2..=row + 2 {
                     let mut c = Chunk::default();
                     g.generate(ChunkCoord::new(wx, cy, wz), &mut c);
-                    tufts += c.voxels().iter().filter(|&&m| m == tall).count();
+                    tufts += c.voxels().iter().filter(|&&m| is_tall(m)).count();
                     on += c.voxels().iter().filter(|&&m| m == grass).count();
                     let mut c = Chunk::default();
                     game.generate(ChunkCoord::new(wx, cy, wz), &mut c);
-                    game_tufts += c.voxels().iter().filter(|&&m| m == tall).count();
+                    game_tufts += c.voxels().iter().filter(|&&m| is_tall(m)).count();
                 }
             }
         }
@@ -908,7 +907,6 @@ fn tall_grass_counts() {
 /// generated: (tufts, tops).
 fn tuft_share(g: &TerrainGenerator, x: i32, z: i32, r: i32) -> (usize, usize) {
     use dwell_blocks::StateId;
-    let tall = dwell_blocks::require("dwell:tall_grass");
     let air = dwell_blocks::require("dwell:air");
     let grass = dwell_blocks::require("dwell:grass");
     let top = |m: StateId| {
@@ -944,9 +942,9 @@ fn tuft_share(g: &TerrainGenerator, x: i32, z: i32, r: i32) -> (usize, usize) {
                         continue;
                     }
                     let (m, over) = (at(lx, y, lz), at(lx, y + 1, lz));
-                    if top(m) && (over == air || over == tall) {
+                    if top(m) && (over == air || is_tall(over)) {
                         tops += 1;
-                        tufts += usize::from(over == tall);
+                        tufts += usize::from(is_tall(over));
                     }
                 }
             }
@@ -998,7 +996,6 @@ fn the_steppe_keeps_sparse_tall_grass() {
         .unwrap()
         .1;
     assert!(share < meadow, "thinner than the meadow ({meadow})");
-    let tall = dwell_blocks::require("dwell:tall_grass");
     let mut tufts = 0;
     for cz in -2..2 {
         for cx in -2..2 {
@@ -1008,9 +1005,14 @@ fn the_steppe_keeps_sparse_tall_grass() {
             for cy in row - 1..=row + 1 {
                 let mut c = Chunk::default();
                 g.generate(ChunkCoord::new(wx, cy, wz), &mut c);
-                tufts += c.voxels().iter().filter(|&&m| m == tall).count();
+                tufts += c.voxels().iter().filter(|&&m| is_tall(m)).count();
             }
         }
     }
     assert!(tufts > 0, "tall grass round the steppe spot");
+}
+
+/// Whether `m` is tall grass at any growth stage (docs/ECOLOGY.md §10).
+fn is_tall(m: dwell_blocks::StateId) -> bool {
+    m != dwell_blocks::AIR && dwell_blocks::block_of(m).name == "dwell:tall_grass"
 }

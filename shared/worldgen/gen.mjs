@@ -2064,7 +2064,7 @@ export function validateGrass(data, blocks, decorations) {
     throw new Error(`grass.json: ${m}`);
   };
   if (typeof data !== "object" || data === null) fail("must be an object");
-  const keys = ["$comment", "block", "on", "onRamps", "decoration", ...Object.keys(GRASS)];
+  const keys = ["$comment", "block", "on", "onRamps", "decoration", "stages", ...Object.keys(GRASS)];
   const extra = Object.keys(data).filter((k) => !keys.includes(k));
   if (extra.length) fail(`unknown ${extra.join(", ")}`);
   if (typeof data.block !== "string" || !blocks.has(data.block))
@@ -2103,7 +2103,36 @@ export function validateGrass(data, blocks, decorations) {
   for (const k of ["reach", "openAbove", "catchUpDays"]) {
     if (!Number.isInteger(data[k])) fail(`${k} must be a whole number`);
   }
+  validateGrassStages(data, blocks.get(data.block), fail);
   return data;
+}
+
+/** The least mean days from sprout to full height (owner 2026-11-12: "a week or more"). */
+export const GRASS_MIN_DAYS_TO_FULL = 7;
+
+/** grass.json's `stages` (growing in height, docs/ECOLOGY.md §10) against the grown block. */
+function validateGrassStages(data, block, fail) {
+  const st = data.stages;
+  if (typeof st !== "object" || st === null) fail("stages must be an object");
+  const extra = Object.keys(st).filter((k) => !["$comment", "property", "order", "days", "share"].includes(k));
+  if (extra.length) fail(`stages: unknown ${extra.join(", ")}`);
+  const values = block.properties?.[st.property];
+  if (!values) fail(`stages.property ${JSON.stringify(st.property)} is not a property of ${data.block}`);
+  if (!Array.isArray(st.order) || st.order.length < 4)
+    fail("stages.order must list at least 4 values (a sprout to full)");
+  if (st.order.length !== values.length || st.order.some((v) => !values.includes(v)) || new Set(st.order).size !== st.order.length)
+    fail(`stages.order must list each of ${data.block}'s ${st.property} values once (${values.join(", ")})`);
+  if (st.order[st.order.length - 1] !== values[0])
+    fail(`stages.order must end with the property's default ${values[0]} (full: placed and saved tall grass)`);
+  if (!Array.isArray(st.days) || st.days.length !== st.order.length - 1 || st.days.some((d) => !(isNum(d) && d >= 1 && d <= 60)))
+    fail("stages.days must give each stage but the last its mean days, each in [1, 60]");
+  const total = st.days.reduce((a, b) => a + b, 0);
+  if (total < GRASS_MIN_DAYS_TO_FULL)
+    fail(`stages.days must add up to at least ${GRASS_MIN_DAYS_TO_FULL} (a sprout to full height in a week or more), not ${total}`);
+  if (!Array.isArray(st.share) || st.share.length !== st.order.length || st.share.some((v) => !(isNum(v) && v >= 0 && v <= 1)))
+    fail("stages.share must give each stage a climate share in [0, 1]");
+  if (st.share[0] !== 0) fail("stages.share must start at 0 (a sprout grows wherever grass does)");
+  if (st.share.some((v, i) => i > 0 && v < st.share[i - 1])) fail("stages.share must not fall from stage to stage");
 }
 
 /** The Rust for the validated grass growth (grass.json). */
@@ -2124,6 +2153,13 @@ export function grassRust(g) {
     `    reach: ${g.reach},`,
     `    open_above: ${g.openAbove},`,
     `    catch_up_days: ${g.catchUpDays},`,
+    `    stage_property: ${JSON.stringify(g.stages.property)},`,
+    "    stages: &[",
+    ...g.stages.order.map(
+      (v, i) =>
+        `        GrassStage { value: ${JSON.stringify(v)}, days: ${f(g.stages.days[i] ?? 0)}, share: ${f(g.stages.share[i])} },`,
+    ),
+    "    ],",
     "};",
     "",
   ].join("\n");
