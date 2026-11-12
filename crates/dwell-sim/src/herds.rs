@@ -18,7 +18,10 @@
 //! seeded from (world seed, record id, member).
 
 use crate::creatures::{Creatures, Get, feet_row, feet_y, group_kinds};
-use dwell_ecology::{Activity, Data, Diet, Ecosystem, Group, HurtReact, Island, NearDef};
+use dwell_ecology::{
+    Activity, Data, Diet, Ecosystem, Group, HurtReact, IdlePose, Island, NearDef, PlayerReact,
+    pick_idle,
+};
 use dwell_protocol::SIM_HZ;
 use dwell_world::{Face, FaceFrame, cell_of_pos, m_of_row};
 
@@ -77,7 +80,43 @@ pub struct Member {
     /// striker stood.
     pub hurt_s: f64,
     pub hurt_from: [f64; 2],
+    /// Seconds left alarmed by a player (its group's flight, `near.players`), and where (face-local
+    /// x, z) the player stood.
+    pub alarm_s: f64,
+    pub alarm_from: [f64; 2],
+    /// Its pose (an idle's, eating's or sleep's; Stand moving) and the seconds its idle has left.
+    pub pose: IdlePose,
+    pub idle_s: f64,
     rng: u64,
+}
+
+impl Member {
+    fn new(creature: u32, hunger: f64, energy: f64, x: f64, z: f64, rng: u64) -> Self {
+        Self {
+            creature,
+            hunger,
+            energy,
+            mind: Mind::LookingForCompany,
+            x,
+            z,
+            sleep_s: 0.0,
+            hurt_s: 0.0,
+            hurt_from: [0.0; 2],
+            alarm_s: 0.0,
+            alarm_from: [0.0; 2],
+            pose: IdlePose::Stand,
+            idle_s: 0.0,
+            rng,
+        }
+    }
+}
+
+/// How a player moves, as animals notice it (WORK_QUEUE item 39): crouching, and its horizontal
+/// speed (m/s).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Stance {
+    pub crouching: bool,
+    pub speed: f64,
 }
 
 /// A herd or pack near players: its record (out of the far step) and its individuals.
@@ -145,6 +184,8 @@ pub struct World<'a> {
     pub ecos: &'a mut [Ecosystem],
     /// The living players' feet (world).
     pub players: &'a [[f64; 3]],
+    /// Their stances, by the same index (a player without one stands still).
+    pub stances: &'a [Stance],
     pub get: Get<'a>,
     /// Whether it is night on each face.
     pub night: [bool; 2],
@@ -263,6 +304,17 @@ fn players_on(players: &[[f64; 3]], k: usize) -> Vec<[f64; 3]> {
         .map(|&p| (FaceFrame::at_height(p[1]), p))
         .filter(|(f, _)| face_index(*f) == k)
         .map(|(f, p)| f.point(p))
+        .collect()
+}
+
+/// The players on face `k`, face-local, with their stances.
+fn players_seen_on(players: &[[f64; 3]], stances: &[Stance], k: usize) -> Vec<([f64; 3], Stance)> {
+    players
+        .iter()
+        .enumerate()
+        .map(|(i, &p)| (FaceFrame::at_height(p[1]), p, i))
+        .filter(|(f, _, _)| face_index(*f) == k)
+        .map(|(f, p, i)| (f.point(p), stances.get(i).copied().unwrap_or_default()))
         .collect()
 }
 
@@ -476,18 +528,7 @@ impl Near {
                     for ((at, mut rng), &kind) in places.into_iter().zip(&kinds) {
                         let yaw = roll(&mut rng) * 360.0;
                         let id = creatures.add_driven(kind, f.point(at), yaw, rng)?;
-                        members.push(Member {
-                            creature: id,
-                            hunger: r.hunger,
-                            energy: r.energy,
-                            mind: Mind::LookingForCompany,
-                            x: at[0],
-                            z: at[2],
-                            sleep_s: 0.0,
-                            hurt_s: 0.0,
-                            hurt_from: [0.0; 2],
-                            rng,
-                        });
+                        members.push(Member::new(id, r.hunger, r.energy, at[0], at[2], rng));
                     }
                     Some(members)
                 })();
@@ -511,6 +552,41 @@ impl Near {
     }
 
     fn think(&mut self, w: &mut World, creatures: &mut Creatures, dt: f64) -> Vec<[i32; 3]> {
+        let seen_players: Vec<Vec<([f64; 3], Stance)>> = (0..FACES.len())
+            .map(|k| players_seen_on(w.players, w.stances, k))
+            .collect();
+        // A herd that flees players flees as one (WORK_QUEUE item 39): a member that notices one
+        // alarms its whole group, from that player, for the data's `calmS`.
+        for g in &mut self.groups {
+            let Some(p) = w.data.species[g.record.species]
+                .near
+                .and_then(|n| n.players)
+                .filter(|p| p.react == PlayerReact::Flee)
+            else {
+                continue;
+            };
+            let noticed = g.members.iter().find_map(|m| {
+                seen_players[g.face]
+                    .iter()
+                    .map(|(q, st)| ((q[0] - m.x).hypot(q[2] - m.z), q, st))
+                    .filter(|(d, _, st)| *d <= p.notice_at(st.crouching, st.speed, m.hunger))
+                    .min_by(|a, b| a.0.total_cmp(&b.0))
+                    .map(|(_, q, _)| [q[0], q[2]])
+            });
+            if let Some(from) = noticed {
+                for m in &mut g.members {
+                    m.alarm_s = p.calm_s.max(dt);
+                    m.alarm_from = from;
+                    m.sleep_s = 0.0;
+                }
+            }
+        }
+        // Each face's far prey records (a pack near players tracks a herd still a record).
+        let records: Vec<Vec<(usize, f64, f64)>> = w
+            .ecos
+            .iter()
+            .map(|e| e.groups.iter().map(|g| (g.species, g.x, g.z)).collect())
+            .collect();
         let mut seen = Vec::new();
         for (gi, g) in self.groups.iter().enumerate() {
             for (mi, m) in g.members.iter().enumerate() {
@@ -564,6 +640,8 @@ impl Near {
                     .map_or(1.0, |c| c.health_share(&creatures.table));
                 decide(
                     DecideIn {
+                        players: &seen_players[me.face],
+                        records: &records[me.face],
                         def: &def,
                         health,
                         diet: sp.diet,
@@ -647,12 +725,37 @@ impl Near {
                     }
                     Go::Wander => {
                         c.pace = 1.0;
-                        if c.target.is_none() && roll(&mut m.rng) < 0.3 {
-                            let a = roll(&mut m.rng) * std::f64::consts::TAU;
-                            let d = def.wander_m * (0.3 + 0.7 * roll(&mut m.rng));
-                            c.target = Some([me.x + d * a.sin(), me.z + d * a.cos()]);
+                        if c.target.is_some() {
+                            m.pose = IdlePose::Stand;
+                        } else if m.idle_s > 0.0 {
+                            m.idle_s -= dt;
+                        } else if def.idles.is_empty() || roll(&mut m.rng) < def.walk_chance {
+                            // Walk (with no idles, as before: a walk at the data's chance).
+                            if def.idles.is_empty() && roll(&mut m.rng) >= def.walk_chance {
+                                m.pose = IdlePose::Stand;
+                            } else {
+                                let a = roll(&mut m.rng) * std::f64::consts::TAU;
+                                let d = def.wander_m * (0.3 + 0.7 * roll(&mut m.rng));
+                                c.target = Some([me.x + d * a.sin(), me.z + d * a.cos()]);
+                                m.pose = IdlePose::Stand;
+                            }
+                        } else if let Some(i) = pick_idle(def.idles, roll(&mut m.rng)) {
+                            // An idle by the data's weights (graze, look up, sit, …).
+                            let [lo, hi] = i.seconds;
+                            m.pose = i.pose;
+                            m.idle_s = lo + (hi - lo) * roll(&mut m.rng);
                         }
                     }
+                }
+            }
+            // Its pose for what it does: eating's and sleep's by the data, Stand on the move.
+            match m.mind {
+                Mind::Eating => m.pose = def.graze.map_or(IdlePose::Graze, |g| g.pose),
+                Mind::Sleeping => m.pose = def.sleep.pose,
+                Mind::Wandering | Mind::LookingForFood => {}
+                _ => {
+                    m.pose = IdlePose::Stand;
+                    m.idle_s = 0.0;
                 }
             }
         }
@@ -670,18 +773,7 @@ impl Near {
             };
             let g = &mut self.groups[gi];
             g.births += 1;
-            g.members.push(Member {
-                creature: id,
-                hunger: 0.5,
-                energy: 1.0,
-                mind: Mind::LookingForCompany,
-                x: at[0],
-                z: at[1],
-                sleep_s: 0.0,
-                hurt_s: 0.0,
-                hurt_from: [0.0; 2],
-                rng,
-            });
+            g.members.push(Member::new(id, 0.5, 1.0, at[0], at[1], rng));
         }
         // The killed, last to first so the indices hold.
         dead.sort_unstable();
@@ -757,6 +849,10 @@ fn eat_block(
 }
 
 struct DecideIn<'a> {
+    /// The players on its face (face-local feet) with their stances.
+    players: &'a [([f64; 3], Stance)],
+    /// Its face's far records (species, x, z).
+    records: &'a [(usize, f64, f64)],
     def: &'a NearDef,
     /// Its health as a share of its whole.
     health: f64,
@@ -822,6 +918,45 @@ fn decide(i: DecideIn, m: &mut Member, nearest: Nearest) -> Act {
         let run = fl.radius_m;
         return Act::Go(Go::To([me.x + ax * run, me.z + az * run], fl.pace));
     }
+    // 1b. Players (WORK_QUEUE item 39): a group alarmed by one runs from it (the pre-pass in
+    //     `think` alarms the whole group); an avoider walks off to keep its notice distance.
+    if let Some(p) = def.players {
+        if p.react == PlayerReact::Flee && m.alarm_s > 0.0 {
+            m.alarm_s -= i.dt;
+            m.mind = Mind::Fleeing;
+            m.sleep_s = 0.0;
+            let [px, pz] = m.alarm_from;
+            let (dx, dz) = (me.x - px, me.z - pz);
+            let d = dx.hypot(dz);
+            let (ax, az) = if d > 1e-6 {
+                (dx / d, dz / d)
+            } else {
+                (1.0, 0.0)
+            };
+            return Act::Go(Go::To([me.x + ax * p.run_m, me.z + az * p.run_m], p.pace));
+        }
+        if p.react == PlayerReact::Avoid
+            && let Some((q, d, r)) = i
+                .players
+                .iter()
+                .map(|(q, st)| {
+                    let d = (q[0] - me.x).hypot(q[2] - me.z);
+                    (q, d, p.notice_at(st.crouching, st.speed, m.hunger))
+                })
+                .filter(|(_, d, r)| d <= r)
+                .min_by(|a, b| a.1.total_cmp(&b.1))
+        {
+            m.mind = Mind::Fleeing;
+            m.sleep_s = 0.0;
+            let (ax, az) = if d > 1e-6 {
+                ((me.x - q[0]) / d, (me.z - q[2]) / d)
+            } else {
+                (1.0, 0.0)
+            };
+            let run = r - d + 2.0;
+            return Act::Go(Go::To([me.x + ax * run, me.z + az * run], p.pace));
+        }
+    }
     // 2. Asleep: rest until rested (or too hungry) and the nap's least is over.
     let sl = def.sleep;
     if m.mind == Mind::Sleeping {
@@ -860,9 +995,26 @@ fn decide(i: DecideIn, m: &mut Member, nearest: Nearest) -> Act {
                 m.mind = Mind::Chasing;
                 Act::Go(Go::To([o.x, o.z], h.sprint))
             }
-            _ => {
+            // Out of sense: track the nearest prey within `trackM`, an individual or a herd's far
+            // record (WORK_QUEUE item 39), to bring the hunt in range.
+            near => {
+                let record = i
+                    .records
+                    .iter()
+                    .filter(|r| species.contains(&r.0))
+                    .map(|r| ((r.1, r.2), (r.1 - me.x).hypot(r.2 - me.z)))
+                    .min_by(|a, b| a.1.total_cmp(&b.1));
+                let target = near
+                    .map(|(o, d)| ((o.x, o.z), d))
+                    .into_iter()
+                    .chain(record)
+                    .filter(|t| t.1 <= h.track_m)
+                    .min_by(|a, b| a.1.total_cmp(&b.1));
                 m.mind = Mind::LookingForFood;
-                Act::Go(Go::Wander)
+                match target {
+                    Some(((x, z), _)) => Act::Go(Go::To([x, z], 1.0)),
+                    None => Act::Go(Go::Wander),
+                }
             }
         };
     }
@@ -948,9 +1100,32 @@ mod tests {
         DATA.find(name).unwrap()
     }
 
+    /// `d` with no species noticing players: the older scenes are about the animals among
+    /// themselves, a player standing by only to bring them near.
+    fn unnoticing(d: Data) -> Data {
+        let species: Vec<_> = d
+            .species
+            .iter()
+            .map(|s| {
+                let mut s = *s;
+                if let Some(mut n) = s.near {
+                    n.players = None;
+                    s.near = Some(n);
+                }
+                s
+            })
+            .collect();
+        Data {
+            species: Box::leak(species.into_boxed_slice()),
+            ..d
+        }
+    }
+
     struct Scene {
         f: FaceFrame,
         data: Data,
+        /// The players' stances (none: standing still).
+        stances: Vec<Stance>,
         near: Near,
         creatures: Creatures,
         islands: Vec<Island>,
@@ -962,15 +1137,26 @@ mod tests {
     }
 
     impl Scene {
-        /// Groups `(species, x, z, size, hunger)` on face `f`'s ecosystem (the other face's none).
+        /// Groups `(species, x, z, size, hunger)` on face `f`'s ecosystem (the other face's none),
+        /// none noticing the players ([`unnoticing`]).
         fn new(f: FaceFrame, groups: &[(&str, f64, f64, f64, f64)], seed: u64) -> Self {
-            let isl = Island::from_ground(&DATA, 4, -300.0, |_, _| Ground::Land {
+            Self::with_data(f, unnoticing(DATA), groups, seed)
+        }
+
+        /// The same with the species of `data`, as they are.
+        fn with_data(
+            f: FaceFrame,
+            data: Data,
+            groups: &[(&str, f64, f64, f64, f64)],
+            seed: u64,
+        ) -> Self {
+            let isl = Island::from_ground(&data, 4, -300.0, |_, _| Ground::Land {
                 height_m: 10.0,
                 slope_deg: 1.0,
             });
             let mut ecos: Vec<Ecosystem> = (0..2)
                 .map(|_| {
-                    let mut e = Ecosystem::new(&isl, &DATA, seed);
+                    let mut e = Ecosystem::new(&isl, &data, seed);
                     e.groups.clear();
                     e
                 })
@@ -979,7 +1165,7 @@ mod tests {
             for (id, &(name, x, z, size, hunger)) in groups.iter().enumerate() {
                 ecos[k].groups.push(Group {
                     id: id as u32,
-                    species: species(name),
+                    species: data.find(name).unwrap(),
                     x,
                     z,
                     size,
@@ -990,7 +1176,8 @@ mod tests {
             }
             Self {
                 f,
-                data: DATA,
+                data,
+                stances: Vec::new(),
                 near: Near::default(),
                 creatures: Creatures::new(Table::SHIPPED),
                 islands: vec![isl.clone(), isl],
@@ -1016,6 +1203,7 @@ mod tests {
                     islands: &self.islands,
                     ecos: &mut self.ecos,
                     players: &players,
+                    stances: &self.stances,
                     get: &g,
                     night: [self.night; 2],
                     seed: self.seed,
@@ -1459,6 +1647,257 @@ mod tests {
             s.run(&[(500.0, 0.0)], 0.5, |_| {});
             assert!(s.ecos[k].near.is_empty());
             assert_eq!(s.ecos[k].groups[0].size, 3.0);
+        }
+    );
+
+    /// The members of `species`' near groups.
+    fn members<'a>(s: &'a Scene, name: &str) -> Vec<&'a Member> {
+        let sp = s.data.find(name).unwrap();
+        s.near
+            .groups
+            .iter()
+            .filter(|g| g.record.species == sp)
+            .flat_map(|g| &g.members)
+            .collect()
+    }
+
+    /// The face-local distance from `(x, z)` to the nearest creature of the near groups of `name`.
+    fn nearest_to(s: &Scene, name: &str, x: f64, z: f64) -> f64 {
+        members(s, name)
+            .iter()
+            .filter_map(|m| s.creatures.get(m.creature))
+            .map(|c| {
+                let l = s.f.point(c.position);
+                (l[0] - x).hypot(l[2] - z)
+            })
+            .fold(f64::INFINITY, f64::min)
+    }
+
+    const WALKING: Stance = Stance {
+        crouching: false,
+        speed: 3.0,
+    };
+    const CROUCHING: Stance = Stance {
+        crouching: true,
+        speed: 1.5,
+    };
+
+    both_faces!(
+        fn a_herd_flees_a_player_within_its_notice_distance_and_calms(f: FaceFrame) {
+            // WORK_QUEUE item 39 (owner, 2026-11-12: "deer flee from players"): a walking player
+            // 16 m from a fed herd (inside `noticeM` 22): every deer runs, the whole herd, away.
+            let mut s = Scene::with_data(f, DATA, &[("dwell:deer", -14.0, 0.0, 3.0, 0.1)], 5);
+            s.stances = vec![WALKING];
+            s.run(&[(-30.0, 0.0)], 0.1, |_| {});
+            let start = nearest_to(&s, "dwell:deer", -30.0, 0.0);
+            assert!(start < 22.0, "in range: {start}");
+            s.run(&[(-30.0, 0.0)], 1.0, |_| {});
+            let minds: Vec<_> = members(&s, "dwell:deer").iter().map(|m| m.mind).collect();
+            assert!(
+                minds.iter().all(|&m| m == Mind::Fleeing),
+                "the herd flees as one: {minds:?}"
+            );
+            s.run(&[(-30.0, 0.0)], 4.0, |_| {});
+            let gone = nearest_to(&s, "dwell:deer", -30.0, 0.0);
+            assert!(gone > start + 10.0, "ran off: {start} → {gone}");
+            // Out of notice for `calmS` (8 s), it calms.
+            s.run(&[(-30.0, 0.0)], 12.0, |_| {});
+            assert!(
+                members(&s, "dwell:deer")
+                    .iter()
+                    .all(|m| m.mind != Mind::Fleeing && m.alarm_s <= 0.0),
+                "calmed"
+            );
+        }
+    );
+
+    both_faces!(
+        fn a_crouching_player_gets_closer_before_the_deer_notice(f: FaceFrame) {
+            // 14 m off: past `crouchM` (8), inside `noticeM` (22). Crouching, the deer stay;
+            // walking at the same place, they run.
+            for (stance, flees) in [(CROUCHING, false), (WALKING, true)] {
+                let mut s = Scene::with_data(f, DATA, &[("dwell:deer", 0.0, 0.0, 1.0, 0.1)], 9);
+                s.stances = vec![stance];
+                s.run(&[(-14.0, 0.0)], 3.0, |_| {});
+                let fled = members(&s, "dwell:deer")
+                    .iter()
+                    .any(|m| m.mind == Mind::Fleeing || m.alarm_s > 0.0);
+                assert_eq!(fled, flees, "{stance:?}");
+            }
+            let p = DATA.species[species("dwell:deer")]
+                .near
+                .unwrap()
+                .players
+                .unwrap();
+            assert!(p.notice_at(true, 1.0, 0.0) < p.notice_at(false, 3.0, 0.0));
+            assert!(
+                p.notice_at(false, 0.0, 0.0) < p.notice_at(false, 3.0, 0.0),
+                "still"
+            );
+            assert!(
+                p.notice_at(false, 8.0, 0.0) > p.notice_at(false, 3.0, 0.0),
+                "running"
+            );
+        }
+    );
+
+    both_faces!(
+        fn wolves_keep_their_distance_from_players_unless_hungry(f: FaceFrame) {
+            // A fed wolf 12 m from a standing player (inside `stillM` 18) walks off; a hungry one
+            // (over `boldAboveHunger`) only keeps `boldM` (8 m) and doesn't.
+            for (hunger, avoids) in [(0.1, true), (0.9, false)] {
+                let mut s = Scene::with_data(f, DATA, &[("dwell:wolf", 12.0, 0.0, 1.0, hunger)], 4);
+                s.run(&[(0.0, 0.0)], 0.6, |_| {});
+                let start = nearest_to(&s, "dwell:wolf", 0.0, 0.0);
+                let mut kept = false;
+                s.run(&[(0.0, 0.0)], 3.0, |n| {
+                    kept |= n
+                        .groups
+                        .iter()
+                        .flat_map(|g| &g.members)
+                        .any(|m| m.mind == Mind::Fleeing);
+                });
+                assert_eq!(kept, avoids, "hunger {hunger}");
+                if avoids {
+                    let end = nearest_to(&s, "dwell:wolf", 0.0, 0.0);
+                    assert!(
+                        end >= 18.0 - 1.0 && end > start,
+                        "kept its distance: {start} → {end}"
+                    );
+                }
+            }
+        }
+    );
+
+    both_faces!(
+        fn a_hungry_pack_tracks_a_herd_out_of_sense_and_the_hunt_starts(f: FaceFrame) {
+            // 80 m apart (past `hunt.senseM` 28, inside `trackM` 160): the pack walks to the herd
+            // and, once in sense, chases and kills (WORK_QUEUE item 39).
+            let mut s = Scene::new(
+                f,
+                &[
+                    ("dwell:deer", 40.0, 0.0, 3.0, 0.1),
+                    ("dwell:wolf", -40.0, 0.0, 2.0, 0.9),
+                ],
+                12,
+            );
+            let mut chased = false;
+            s.run(&[(0.0, 30.0)], 90.0, |n| {
+                chased |= n
+                    .groups
+                    .iter()
+                    .flat_map(|g| &g.members)
+                    .any(|m| m.mind == Mind::Chasing);
+            });
+            assert!(chased, "the pack closed in and chased");
+            let deaths = s
+                .near
+                .groups
+                .iter()
+                .find(|g| g.record.species == species("dwell:deer"))
+                .map_or(3, |g| g.deaths);
+            assert!(deaths >= 1, "a kill");
+        }
+    );
+
+    #[test]
+    fn idle_picks_follow_the_data_weights() {
+        // Every species' idles: over an even spread of rolls, each pose's share is its weight's.
+        for sp in DATA.species {
+            let idles = sp.near.unwrap().idles;
+            assert!(!idles.is_empty(), "{} idles", sp.name);
+            let total: f64 = idles.iter().map(|i| i.weight).sum();
+            let n = 10_000;
+            let mut count = std::collections::HashMap::new();
+            for k in 0..n {
+                let i = pick_idle(idles, (k as f64 + 0.5) / n as f64).unwrap();
+                *count.entry(i.pose).or_insert(0usize) += 1;
+            }
+            for i in idles {
+                let share = count[&i.pose] as f64 / n as f64;
+                assert!(
+                    (share - i.weight / total).abs() < 0.01,
+                    "{}: {:?} {share}",
+                    sp.name,
+                    i.pose
+                );
+            }
+        }
+        assert!(pick_idle(&[], 0.5).is_none());
+    }
+
+    both_faces!(
+        fn deer_graze_head_down_and_wolves_sit_and_lie_by_their_idles(f: FaceFrame) {
+            // Fed and rested (no food to find, no mate: `mate` needs a fed pair under the cap,
+            // and one each is alone), they idle in their data's poses only, all of them in time.
+            let mut s = Scene::new(
+                f,
+                &[
+                    ("dwell:deer", 20.0, 0.0, 1.0, 0.0),
+                    ("dwell:wolf", -20.0, 0.0, 1.0, 0.0),
+                ],
+                21,
+            );
+            let mut poses: std::collections::HashMap<&str, std::collections::HashSet<IdlePose>> =
+                Default::default();
+            for _ in 0..120 {
+                s.run(&[(0.0, 40.0)], 1.0, |_| {});
+                for name in ["dwell:deer", "dwell:wolf"] {
+                    for m in members(&s, name) {
+                        poses.entry(name).or_default().insert(m.pose);
+                    }
+                }
+            }
+            for name in ["dwell:deer", "dwell:wolf"] {
+                let def = DATA.species[species(name)].near.unwrap();
+                let allowed: std::collections::HashSet<_> = def
+                    .idles
+                    .iter()
+                    .map(|i| i.pose)
+                    .chain([IdlePose::Stand, def.sleep.pose])
+                    .chain(def.graze.map(|g| g.pose))
+                    .collect();
+                let seen = &poses[name];
+                assert!(seen.is_subset(&allowed), "{name}: {seen:?}");
+            }
+            assert!(
+                poses["dwell:deer"].contains(&IdlePose::Graze),
+                "{:?}",
+                poses["dwell:deer"]
+            );
+            let wolf = &poses["dwell:wolf"];
+            assert!(
+                wolf.contains(&IdlePose::Sit) && wolf.contains(&IdlePose::Lie),
+                "{wolf:?}"
+            );
+        }
+    );
+
+    both_faces!(
+        fn a_fixture_species_flees_players_and_idles_by_data_alone(f: FaceFrame) {
+            // The fixture's fox (shared/ecology/fixtures/ecology.json): `players` flee at
+            // `noticeM` 15, `crouchM` 3; idles sit and look up, walking never.
+            let data = dwell_ecology::fixture::DATA;
+            for (stance, at, flees) in [(WALKING, 10.0, true), (CROUCHING, 10.0, false)] {
+                let mut s = Scene::with_data(f, data, &[("test:fox", 0.0, 0.0, 2.0, 0.0)], 2);
+                s.stances = vec![stance];
+                let mut fled = false;
+                let mut poses = std::collections::HashSet::new();
+                s.run(&[(-at, 0.0)], 6.0, |n| {
+                    for m in n.groups.iter().flat_map(|g| &g.members) {
+                        fled |= m.mind == Mind::Fleeing;
+                        poses.insert(m.pose);
+                    }
+                });
+                assert_eq!(fled, flees, "{stance:?}");
+                if !flees {
+                    assert!(
+                        poses.is_subset(&[IdlePose::Stand, IdlePose::Sit, IdlePose::LookUp].into()),
+                        "{poses:?}"
+                    );
+                    assert!(poses.contains(&IdlePose::Sit), "{poses:?}");
+                }
+            }
         }
     );
 

@@ -813,3 +813,89 @@ dwell_world::both_faces!(
         assert_eq!(back, Some(eco));
     }
 );
+
+/// A long flat island, 12 km east to west and 2.4 km north to south (WORK_QUEUE item 39: prey far
+/// past a pack's sense).
+fn long_island(data: &Data) -> Island {
+    let n = (12000.0 / data.island.cell_m) as usize;
+    let x0 = -(n as f64 - 1.0) * data.island.cell_m / 2.0;
+    Island::from_ground(data, n, x0, |_, z| {
+        if z.abs() > 1200.0 {
+            Ground::Water
+        } else {
+            Ground::Land {
+                height_m: 20.0,
+                slope_deg: 2.0,
+            }
+        }
+    })
+}
+
+#[test]
+fn a_hungry_pack_roams_toward_the_nearest_herd_and_the_hunt_starts() {
+    // WORK_QUEUE item 39 (owner, 2026-11-12: "hungry packs travel toward the nearest herd"): a
+    // pack 10 km from the only herd, far past its 3 km sense, closes on it day by day (not a random
+    // heading), and once in sense it hunts.
+    let isl = long_island(&DATA);
+    let mut eco = by_hand(
+        &isl,
+        vec![
+            group(0, deer(), 5000.0, 0.0, 8.0, 0.1),
+            group(1, wolf(), -5000.0, 0.0, 4.0, 0.35),
+        ],
+    );
+    let gap = |e: &Ecosystem| {
+        let (h, p) = (&e.groups[0], &e.groups[1]);
+        (h.x - p.x).hypot(h.z - p.z)
+    };
+    let mut last = gap(&eco);
+    let mut hunted = false;
+    for day in 0..12 {
+        step(&isl, &DATA, &mut eco, 0.5);
+        let pack = eco.groups.iter().find(|g| g.species == wolf()).unwrap();
+        let now = gap(&eco);
+        if day == 0 {
+            // Hungry, not yet starving (under `disperse.aboveHunger`): roaming, by `roam`.
+            assert_eq!(pack.activity, Activity::Roaming, "roams to it");
+        }
+        if last > DATA.species[wolf()].sense_radius_m {
+            assert!(now < last - 500.0, "half-day {day}: closer: {last} → {now}");
+        }
+        hunted |= pack.activity == Activity::Hunting;
+        last = now;
+    }
+    assert!(hunted, "the hunt started: {last} m apart");
+}
+
+#[test]
+fn a_fed_pack_and_one_without_roam_dont_head_for_the_herd() {
+    // Fed (under `roam.towardPreyAboveHunger`) it rests; the fixture's fox roams by data alone.
+    let isl = long_island(&DATA);
+    let mut eco = by_hand(
+        &isl,
+        vec![
+            group(0, deer(), 5000.0, 0.0, 8.0, 0.1),
+            group(1, wolf(), -5000.0, 0.0, 4.0, 0.0),
+        ],
+    );
+    step(&isl, &DATA, &mut eco, 0.2);
+    assert_eq!(eco.groups[1].activity, Activity::Resting);
+    let data = fixture::DATA;
+    let (hare, fox) = (
+        data.find("test:hare").unwrap(),
+        data.find("test:fox").unwrap(),
+    );
+    assert!(data.species[fox].roam.is_some() && data.species[hare].roam.is_none());
+    let isl = long_island(&data);
+    let mut eco = by_hand(
+        &isl,
+        vec![
+            group(0, hare, 4000.0, 0.0, 6.0, 0.1),
+            group(1, fox, -4000.0, 0.0, 2.0, 0.6),
+        ],
+    );
+    let before = eco.groups[1].x;
+    step(&isl, &data, &mut eco, 0.5);
+    assert_eq!(eco.groups[1].activity, Activity::Roaming);
+    assert!(eco.groups[1].x > before + 300.0, "toward the hares");
+}
