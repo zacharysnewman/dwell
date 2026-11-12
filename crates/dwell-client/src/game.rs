@@ -3753,7 +3753,12 @@ impl<S: Scene> Game<S> {
 
     /// The local player brushing through foliage and stepping onto ground items this tick
     /// (AUDIO.md §5): a rustle by speed, a stick's snap.
-    fn foliage_and_ground_sounds(&mut self, c: &ClientState, grounded: bool) {
+    fn foliage_and_ground_sounds(
+        &mut self,
+        c: &ClientState,
+        grounded: bool,
+        stride: dwell_game::sound::Stride,
+    ) {
         let feet = c.feet();
         let foliage = {
             let store = self.streamer.store_mut();
@@ -3773,6 +3778,7 @@ impl<S: Scene> Game<S> {
             foliage,
             speed,
             1.0 / SIM_HZ as f64,
+            stride,
             cell,
             None,
             |cell| self.ground_step_at(cell),
@@ -3790,7 +3796,12 @@ impl<S: Scene> Game<S> {
 
     /// Other players brushing through foliage and stepping onto ground items (AUDIO.md §2e), from
     /// their drawn (interpolated) positions: no wire message of their own.
-    fn remote_contact_sounds(&mut self, views: &[dwell_game::remotes::RemoteView], dt: f64) {
+    fn remote_contact_sounds(
+        &mut self,
+        views: &[dwell_game::remotes::RemoteView],
+        strides: &dwell_world::hash::HashMap<u16, dwell_game::sound::Stride>,
+        dt: f64,
+    ) {
         let height = self.current.standing_height;
         let samples: Vec<_> = views
             .iter()
@@ -3808,6 +3819,7 @@ impl<S: Scene> Game<S> {
                     .sqrt(),
                 grounded: on_ground(v.state),
                 height,
+                stride: strides.get(&v.player_id).copied().unwrap_or_default(),
             })
             .collect();
         let local = self.player_id;
@@ -4078,8 +4090,10 @@ impl<S: Scene> Game<S> {
             1.0 / SIM_HZ as f64,
         );
         sample.carry = c.carry;
+        let from = self.sounds.len();
         self.mover_sounds.update(&sample, None, &mut self.sounds);
-        self.foliage_and_ground_sounds(&c, sample.grounded);
+        let stride = dwell_game::sound::Stride::of(&sample, &self.sounds[from..]);
+        self.foliage_and_ground_sounds(&c, sample.grounded, stride);
         // Across the midplane the body turns over and the look goes on across: the heading kept,
         // the pitch mirrored, the camera pointing the same way and rolling upright (face_flip.rs).
         (input.look.yaw, input.look.pitch) =
@@ -4227,6 +4241,8 @@ impl<S: Scene> Game<S> {
 
         // Remote players, interpolated.
         let views = self.remotes.sample(now_ms);
+        // Each one's footsteps this frame, for the rustle layered on them (BUGS.md #103).
+        let mut strides = dwell_world::hash::HashMap::default();
         // Their raised blocks (the server's guards, WORK_QUEUE item 35), by the weapon in hand.
         self.bodies.guards = self
             .remote_guards
@@ -4265,10 +4281,15 @@ impl<S: Scene> Game<S> {
                     dt,
                 );
                 sample.carry = carry;
+                let from = self.sounds.len();
                 self.remote_sounds
                     .entry(v.player_id)
                     .or_insert_with(|| MoverSounds::with_voice(v.player_id))
                     .update(&sample, Some(v.feet), &mut self.sounds);
+                strides.insert(
+                    v.player_id,
+                    dwell_game::sound::Stride::of(&sample, &self.sounds[from..]),
+                );
             }
             // The full body, animated from the snapshot's controller state (bodies.rs).
             let registry = &self.registry;
@@ -4288,7 +4309,7 @@ impl<S: Scene> Game<S> {
                 .borrow_mut()
                 .set_player(u32::from(v.player_id), Some(view));
         }
-        self.remote_contact_sounds(&views, dt);
+        self.remote_contact_sounds(&views, &strides, dt);
         for id in self.remotes.ids() {
             if !drawn.contains(&id) {
                 self.scene.borrow_mut().set_player(u32::from(id), None);

@@ -3,11 +3,16 @@
   "namespace": "dwell",
   "fallback": "stone",
   "gaits": {
-    "walk": {"stride": 2.0, "gain": 0.55},
-    "run": {"stride": 2.7, "gain": 0.85},
+    "walk": {"stride": 2.5, "gain": 0.55},
+    "run": {"stride": 2.8, "gain": 0.85},
     "crouch": {"stride": 1.1, "gain": 0.28},
     "climb": {"stride": 0.75, "gain": 0.6},
     "swim": {"stride": 3.0, "gain": 0.45}
+  },
+  "brush": {
+    "$comment": "Moving through foliage (tall grass, leaves; AUDIO.md §5 `brush`, BUGS.md #103): on its feet a body rustles only with a footstep, at most one rustle a step; off them (falling, flying, climbing through leaves) one every `everyM` metres moved. Never closer than `minS` seconds either way, and never on entering a cell.",
+    "everyM": 2.5,
+    "minS": 0.3
   },
   "events": {
     "step": {"set": "step"},
@@ -826,7 +831,8 @@
       ]
     },
     "grass_step": {
-      "samples": {"files": ["grass-step-1.m4a", "grass-step-2.m4a", "grass-step-3.m4a", "grass-step-4.m4a", "grass-step-5.m4a", "grass-step-6.m4a"], "gain": 0.5, "pitch": 1},
+      "samples": {"files": ["grass-step-1.m4a", "grass-step-2.m4a", "grass-step-3.m4a", "grass-step-4.m4a", "grass-step-5.m4a", "grass-step-6.m4a"], "gain": 0.4, "pitch": 1},
+      "voices": 2,
       "gain": 1.902,
       "reverb": 0.055,
       "variation": {"pitch": 2, "gain": 1.5, "cutoff": 0.18, "time": 0.18},
@@ -2161,12 +2167,12 @@
       ]
     },
     "leaf_brush": {
-      "gain": 0.35, "reverb": 0.04,
-      "variation": {"pitch": 2, "gain": 1.5, "cutoff": 0.2, "time": 0.2},
-      "intensity": {"gain": [0.3, 1], "cutoff": [0.7, 1], "time": [1.2, 0.8]},
+      "$comment": "A soft swish layered on a footstep through tall grass or leaves (BUGS.md #103): pink noise only, a slow attack, no grains (the old white-noise grains crackled at five rustles a second); one voice, never restarted.",
+      "gain": 0.16, "reverb": 0.03, "voices": 1, "minGapS": 0.25,
+      "variation": {"pitch": 2, "gain": 1.5, "cutoff": 0.15, "time": 0.15},
+      "intensity": {"gain": [0.4, 1], "cutoff": [0.8, 1], "time": [1.1, 0.9]},
       "layers": [
-        {"source": "noise", "color": "pink", "gain": 0.45, "filters": [{"type": "bandpass", "freq": 2400, "q": 0.7}], "env": {"attack": 0.03, "hold": 0.08, "decay": 0.25}},
-        {"source": "noise", "color": "white", "gain": 0.15, "filters": [{"type": "highpass", "freq": 3500, "q": 0.6}], "env": {"attack": 0.002, "decay": 0.03}, "grains": {"count": [5, 9], "spread": 0.3, "gain": [0.3, 1], "pitch": 4}}
+        {"source": "noise", "color": "pink", "gain": 0.4, "filters": [{"type": "bandpass", "freq": 1800, "q": 0.6}, {"type": "lowpass", "freq": 4500}], "env": {"attack": 0.05, "hold": 0.05, "decay": 0.22}}
       ]
     },
     "axe_rustle": {

@@ -1187,12 +1187,34 @@ pub fn encode(events: &[SoundEvent]) -> Vec<f64> {
     v
 }
 
-/// Moving through foliage (AUDIO.md §5 `brush`, sounds round 2b): a passable block the body is
-/// in (leaves, tall grass) rustles its set's `brush` — one rustle every `BRUSH_EVERY_M` moved
-/// through it, never closer than `BRUSH_MIN_S`, louder the faster (the event's `speed`). Standing
-/// still in a bush is silent.
-pub const BRUSH_EVERY_M: f64 = 0.8;
-pub const BRUSH_MIN_S: f64 = 0.18;
+/// Moving through foliage (AUDIO.md §5 `brush`, sounds round 2b, BUGS.md #103): a passable block
+/// the body is in (leaves, tall grass) rustles its set's `brush`, louder the faster (the event's
+/// `speed`). On its feet a body rustles only with a footstep (`Stride::stepped`), at most one
+/// rustle a step, layered on it; off its feet (falling, flying, climbing through leaves) one every
+/// `BRUSH_EVERY_M` moved. Never closer than `BRUSH_MIN_S`, never on entering a cell, and standing
+/// still in a bush is silent. Both are data (shared/sounds `brush`).
+pub const BRUSH_EVERY_M: f64 = brush_sounds::EVERY_M;
+pub const BRUSH_MIN_S: f64 = brush_sounds::MIN_S;
+
+/// What a body's feet did this update, for the sounds layered on its footsteps.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Stride {
+    /// On a ground gait (walking, running, crouching): its foliage rustles with its steps.
+    pub on_feet: bool,
+    /// A footstep sounded this update.
+    pub stepped: bool,
+}
+
+impl Stride {
+    /// The stride of a mover's sample whose update pushed `events`.
+    pub fn of(s: &MoverSample, events: &[SoundEvent]) -> Self {
+        Self {
+            on_feet: matches!(gait_of(s), Some(Gait::Walk | Gait::Run | Gait::Crouch)),
+            stepped: events.iter().any(|e| e.kind == SoundKind::Step),
+        }
+    }
+}
+
 /// Where up the body (m above the feet, face-local) foliage is looked for: the shins, the waist,
 /// the head.
 const BRUSH_AT_M: [f64; 3] = [0.2, 0.8, 1.5];
@@ -1224,33 +1246,48 @@ pub fn foliage_at(
     0
 }
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug)]
 pub struct BrushSounds {
-    /// Metres moved through foliage since the last rustle.
+    /// Metres moved through foliage off its feet since the last rustle.
     moved: f64,
     /// Seconds since the last rustle.
     since: f64,
 }
 
+impl Default for BrushSounds {
+    fn default() -> Self {
+        Self {
+            moved: 0.0,
+            since: BRUSH_MIN_S,
+        }
+    }
+}
+
 impl BrushSounds {
-    /// One update: the foliage the body is in (`foliage_at`; 0: none), its speed (m/s) and the
-    /// time since the last update (s); a rustle at `at` (None: at the listener).
+    /// One update: the foliage the body is in (`foliage_at`; 0: none), its speed (m/s), the time
+    /// since the last update (s) and its `stride`; a rustle at `at` (None: at the listener).
     pub fn update(
         &mut self,
         foliage: StateId,
         speed: f64,
         dt: f64,
+        stride: Stride,
         at: Option<[f64; 3]>,
         out: &mut Vec<SoundEvent>,
     ) {
         self.since += dt;
         if foliage == 0 {
-            // Stepping in starts a rustle at once.
-            self.moved = BRUSH_EVERY_M;
+            self.moved = 0.0;
             return;
         }
-        self.moved += speed * dt;
-        if self.moved < BRUSH_EVERY_M || self.since < BRUSH_MIN_S {
+        let due = if stride.on_feet {
+            self.moved = 0.0;
+            stride.stepped
+        } else {
+            self.moved += speed * dt;
+            self.moved >= BRUSH_EVERY_M
+        };
+        if !due || self.since < BRUSH_MIN_S {
             return;
         }
         let Some(i) = speed_intensity(SoundKind::Brush, speed) else {
@@ -1305,21 +1342,23 @@ impl Default for ContactSounds {
 
 impl ContactSounds {
     /// One update: the foliage the body is in (`foliage_at`), its speed (m/s), the time since the
-    /// last update (s), the open cell its feet stand in while on the ground (None: off it), and
-    /// `ground_item(cell)`: the point and step event of a ground item there that has one. A
-    /// rustle sounds at `at` (None: the listener), a step at its item.
+    /// last update (s), its `stride` (its footsteps this update), the open cell its feet stand in
+    /// while on the ground (None: off it), and `ground_item(cell)`: the point and step event of a
+    /// ground item there that has one. A rustle sounds at `at` (None: the listener), a step at
+    /// its item.
     #[allow(clippy::too_many_arguments)]
     pub fn update(
         &mut self,
         foliage: StateId,
         speed: f64,
         dt: f64,
+        stride: Stride,
         feet_cell: Option<[i32; 3]>,
         at: Option<[f64; 3]>,
         ground_item: impl FnOnce([i32; 3]) -> Option<([f64; 3], SoundKind)>,
         out: &mut Vec<SoundEvent>,
     ) {
-        self.brush.update(foliage, speed, dt, at, out);
+        self.brush.update(foliage, speed, dt, stride, at, out);
         self.snap_since += dt;
         if let Some(cell) = self.steps.update(feet_cell)
             && self.snap_since >= SNAP_MIN_S
@@ -1342,6 +1381,8 @@ pub struct ContactSample {
     pub grounded: bool,
     /// The body's height (m): foliage is looked for below it.
     pub height: f64,
+    /// Its footsteps this update (its `MoverSounds`', `Stride::of`).
+    pub stride: Stride,
 }
 
 /// The open cell a body's feet stand in (just above the ground's top) on `face`.
@@ -1380,6 +1421,7 @@ impl RemoteContacts {
                 foliage,
                 s.speed,
                 dt,
+                s.stride,
                 cell,
                 Some(s.feet),
                 &mut ground_item,
@@ -2560,30 +2602,31 @@ mod tests {
     }
 
     #[test]
-    fn walking_through_leaves_rustles_by_distance_at_most_every_min_interval() {
+    fn moving_through_leaves_off_its_feet_rustles_by_distance_at_most_every_min_interval() {
         let leaves = dwell_blocks::parse_state("dwell:leaves").expect("leaves");
         let mut b = BrushSounds::default();
         let mut out = Vec::new();
         let dt = 1.0 / 60.0;
-        // Standing in a bush: silent.
+        let air = Stride::default();
+        // Hanging in a bush: silent.
         for _ in 0..120 {
-            b.update(leaves, 0.0, dt, None, &mut out);
+            b.update(leaves, 0.0, dt, air, None, &mut out);
         }
         assert!(out.is_empty());
-        // Walking 4 m/s for 2 s through it: about one rustle per BRUSH_EVERY_M (8 m), the first
-        // at once.
-        for _ in 0..120 {
-            b.update(leaves, 4.0, dt, None, &mut out);
+        // Falling or flying 4 m/s for 5 s through it: one rustle per BRUSH_EVERY_M (20 m).
+        for _ in 0..300 {
+            b.update(leaves, 4.0, dt, air, None, &mut out);
         }
-        assert!((9..=11).contains(&out.len()), "{}", out.len());
+        let want = (20.0 / BRUSH_EVERY_M) as usize;
+        assert!((want - 1..=want).contains(&out.len()), "{}", out.len());
         assert!(
             out.iter()
                 .all(|e| e.kind == SoundKind::Brush && e.block == leaves)
         );
-        // Sprinting 20 m/s: capped by BRUSH_MIN_S (1 s → at most 6), at full intensity.
+        // 20 m/s: capped by BRUSH_MIN_S (1 s → at most 1 / BRUSH_MIN_S), at full intensity.
         out.clear();
         for _ in 0..60 {
-            b.update(leaves, 20.0, dt, None, &mut out);
+            b.update(leaves, 20.0, dt, air, None, &mut out);
         }
         assert!(
             out.len() <= (1.0 / BRUSH_MIN_S) as usize + 1,
@@ -2594,9 +2637,141 @@ mod tests {
         // Out of the leaves: nothing.
         out.clear();
         for _ in 0..60 {
-            b.update(0, 4.0, dt, None, &mut out);
+            b.update(0, 4.0, dt, air, None, &mut out);
         }
         assert!(out.is_empty());
+    }
+
+    /// Walks `metres` at `speed` (m/s) in `state` over grass with tall grass at the shins, a tick
+    /// at a time, through the local player's two trackers as the game runs them (`MoverSounds`,
+    /// then `ContactSounds` with its `Stride`); with `patchy` the tall grass grows in every other
+    /// cell only (a cell entered every metre). Returns every event.
+    fn walk_through_tall_grass(
+        state: PlayerState,
+        speed: f64,
+        metres: f64,
+        patchy: bool,
+    ) -> Vec<SoundEvent> {
+        let grass = dwell_blocks::parse_state("dwell:grass").expect("grass");
+        let tall = dwell_blocks::parse_state("dwell:tall_grass").expect("tall grass");
+        let dt = 1.0 / 60.0;
+        let mut m = MoverSounds::new();
+        let mut c = ContactSounds::default();
+        let mut out = Vec::new();
+        let ticks = (metres / (speed * dt)).round() as usize;
+        for i in 0..=ticks {
+            let x = speed * dt * i as f64;
+            let s = MoverSample {
+                feet: [x, 40.0, 0.5],
+                velocity: [speed, 0.0, 0.0],
+                state,
+                grounded: true,
+                crouched: state == PlayerState::Crouching,
+                ground: grass,
+                dt,
+                ..standing()
+            };
+            let from = out.len();
+            m.update(&s, None, &mut out);
+            let stride = Stride::of(&s, &out[from..]);
+            let foliage = if !patchy || (x.floor() as i64) % 2 == 0 {
+                tall
+            } else {
+                0
+            };
+            c.update(foliage, speed, dt, stride, None, None, |_| None, &mut out);
+        }
+        out
+    }
+
+    /// BUGS.md #103 (owner, 2026-11-12): "Walking through tall grass is really loud and
+    /// obnoxious ... it's also playing really fast ... are there 3 SFX playing while walking on
+    /// grass?" A rustle sounded every 0.8 m (~5 a second at the walk, two or three over each
+    /// footstep, on entering each patch at once). Now: N steps are N footsteps on the grass and at
+    /// most one rustle each, sounding with its step, at the gait's stride.
+    #[test]
+    fn walking_through_tall_grass_is_one_footstep_a_step_and_at_most_one_rustle_on_it() {
+        let grass = dwell_blocks::parse_state("dwell:grass").expect("grass");
+        for (state, gait, speed) in [
+            (PlayerState::Walking, Gait::Walk, 5.0),
+            (PlayerState::Running, Gait::Run, 8.0),
+            (PlayerState::Crouching, Gait::Crouch, 1.6),
+        ] {
+            for patchy in [false, true] {
+                let metres = 30.0;
+                let out = walk_through_tall_grass(state, speed, metres, patchy);
+                let steps: Vec<_> = out.iter().filter(|e| e.kind == SoundKind::Step).collect();
+                let brushes = out.iter().filter(|e| e.kind == SoundKind::Brush).count();
+                let n = steps.len();
+                let want = metres / gait.stride();
+                assert!(
+                    (n as f64 - want).abs() <= 1.0,
+                    "{state:?}: {n} steps over {metres} m, want {want}"
+                );
+                assert!(
+                    steps
+                        .iter()
+                        .all(|e| e.block == grass && e.gait == Some(gait))
+                );
+                assert!(
+                    brushes <= n,
+                    "{state:?} patchy {patchy}: {brushes} rustles over {n} steps"
+                );
+                if !patchy && speed >= 0.4 {
+                    assert!(brushes >= n - 1, "{state:?}: {brushes} rustles, {n} steps");
+                }
+                // Every rustle sounds in the same tick as a footstep (layered on it).
+                let mut last_step = None;
+                for (i, e) in out.iter().enumerate() {
+                    if e.kind == SoundKind::Step {
+                        last_step = Some(i);
+                    }
+                    if e.kind == SoundKind::Brush {
+                        assert_eq!(
+                            last_step.map(|s| i - s),
+                            Some(1),
+                            "{state:?}: a rustle not on a step: {out:?}"
+                        );
+                    }
+                }
+                let only = |k: SoundKind| matches!(k, SoundKind::Step | SoundKind::Brush);
+                assert!(out.iter().all(|e| only(e.kind)), "{:?}", kinds(&out));
+            }
+        }
+        // Natural cadences: ~2 steps a second at the walk, under 3 at the sprint.
+        assert!((1.8..=2.2).contains(&(5.0 / Gait::Walk.stride())));
+        assert!((2.5..=3.0).contains(&(8.0 / Gait::Run.stride())));
+    }
+
+    #[test]
+    fn rustles_on_feet_are_never_closer_than_the_min_interval() {
+        let tall = dwell_blocks::parse_state("dwell:tall_grass").expect("tall grass");
+        let mut b = BrushSounds::default();
+        let mut out = Vec::new();
+        let dt = 1.0 / 60.0;
+        // A step every tick (no gait does this; the limit holds anyway): at most one per
+        // BRUSH_MIN_S, and none without a step.
+        let step = Stride {
+            on_feet: true,
+            stepped: true,
+        };
+        for _ in 0..60 {
+            b.update(tall, 5.0, dt, step, None, &mut out);
+        }
+        assert!(
+            out.len() <= (1.0 / BRUSH_MIN_S) as usize + 1,
+            "{}",
+            out.len()
+        );
+        out.clear();
+        let between = Stride {
+            on_feet: true,
+            stepped: false,
+        };
+        for _ in 0..120 {
+            b.update(tall, 5.0, dt, between, None, &mut out);
+        }
+        assert!(out.is_empty(), "a rustle between steps: {out:?}");
     }
 
     dwell_world::both_faces! {
@@ -2657,22 +2832,27 @@ mod tests {
             };
             let stick = feet_cell(f.point([25.25, 40.0, 0.25]), f);
             let item = |c: [i32; 3]| (c == stick).then(|| (dwell_world::pos_of_cell(c), SoundKind::StickSnap));
-            let sample = |id, x: f64| ContactSample {
+            // A footstep every 30 frames (2 m at 4 m/s).
+            let sample = |id, x: f64, i: i32| ContactSample {
                 player_id: id,
                 feet: f.point([x, 40.0, 0.25]),
                 face: f,
                 speed: 4.0,
                 grounded: true,
                 height: 1.8,
+                stride: Stride {
+                    on_feet: true,
+                    stepped: i % 30 == 29,
+                },
             };
             let mut r = RemoteContacts::default();
             let mut out = Vec::new();
             // Players 2 (remote) and 1 (local) walk side by side through the leaves for 2 s.
             for i in 0..120 {
                 let x = 10.0 + 4.0 * dt * f64::from(i);
-                r.update(1, &[sample(2, x), sample(1, x)], dt, voxel, item, &mut out);
+                r.update(1, &[sample(2, x, i), sample(1, x, i)], dt, voxel, item, &mut out);
             }
-            assert!((9..=11).contains(&out.len()), "{out:?}");
+            assert_eq!(out.len(), 4, "a rustle on each of its 4 steps: {out:?}");
             for e in &out {
                 assert_eq!((e.kind, e.block), (SoundKind::Brush, leaves));
                 let at = e.at.expect("at the remote player, not the listener");
@@ -2684,7 +2864,7 @@ mod tests {
             out.clear();
             for i in 0..90 {
                 let x = 22.0 + 4.0 * dt * f64::from(i);
-                r.update(1, &[sample(2, x.min(25.25))], dt, voxel, item, &mut out);
+                r.update(1, &[sample(2, x.min(25.25), 0)], dt, voxel, item, &mut out);
             }
             assert_eq!(kinds(&out), vec![SoundKind::StickSnap], "{out:?}");
             assert_eq!(out[0].at, Some(dwell_world::pos_of_cell(stick)));
@@ -2701,7 +2881,16 @@ mod tests {
         let snap = |cell: [i32; 3]| Some(([f64::from(cell[0]), 0.0, 0.0], SoundKind::StickSnap));
         // A new stick cell every tick for half a second: at most one per SNAP_MIN_S.
         for i in 0..30 {
-            c.update(0, 10.0, 1.0 / 60.0, Some([i, 0, 0]), None, snap, &mut out);
+            c.update(
+                0,
+                10.0,
+                1.0 / 60.0,
+                Stride::default(),
+                Some([i, 0, 0]),
+                None,
+                snap,
+                &mut out,
+            );
         }
         let n = out.len();
         assert!(n >= 3 && n <= (0.5 / SNAP_MIN_S) as usize + 1, "{n}");

@@ -83,7 +83,13 @@ export interface IntensityDef {
 }
 
 export interface SoundDef {
+  $comment?: string;
   gain: number;
+  /** At most this many plays of the sound at once; more are dropped, never restarted (default
+   * `DEFAULT_SOUND_VOICES`, BUGS.md #103). */
+  voices?: number;
+  /** No second play within this many seconds of the last one (default 0). */
+  minGapS?: number;
   /** Send to the room reverb, 0–1. */
   reverb?: number;
   variation: VariationDef | 'none';
@@ -235,6 +241,8 @@ export interface SoundData {
       }
     >;
   };
+  /** Brushing through foliage (AUDIO.md §5 `brush`): the Rust game's rate; here for the checks. */
+  brush: { everyM: number; minS: number };
   sounds: Record<string, SoundDef>;
   /** Every sample file shipped: its published name and its file in shared/sounds/samples. */
   sampleFiles: { file: string; source: string }[];
