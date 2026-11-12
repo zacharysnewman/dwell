@@ -321,8 +321,9 @@ pub struct WoodDef {
     /// The stored-ramp block a felled cell splits into (Phase 55 T2): the stump keeps its ramp
     /// rising away from the notch, the trunk's bottom its upside-down ramp. None: the cell goes.
     pub fell_wedge: Option<&'static str>,
-    /// The trunk's upside-down ramp lies parallel to the stump's (`fellWedgeTrunk: matching`)
-    /// rather than as the notch's upper face (`open`, the default; `dwell_sim::felling::WedgeTrunk`).
+    /// The trunk's upside-down ramp lies parallel to the stump's (`fellWedgeTrunk: matching`, the
+    /// default) rather than as the notch's upper face (`open`, the log's since 2026-11-12: the gash;
+    /// `dwell_sim::felling::WedgeTrunk`).
     pub fell_wedge_matching: bool,
     /// The felled trunk's tip toward the notch (`fellTip`, owner 2026-11-09: "make the tree tip if
     /// needed, like we used to, maybe 3/4 of the force"): a share of the scripted topple spin

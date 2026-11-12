@@ -98,7 +98,16 @@ felling (FELLING.md). Scope: tools and woods are per build; cuts are per world, 
    past the hinge side). At 0.75 and 0.85 the 3.5 m test trunk leant ~5° and rocked back upright on
    the matching slope; at 1 it is down past 60° toward the notch in ~1.25 s on both faces, so the
    log's `fellTip` is 1. A breaking change (new block states, a changed fell): it ships
-   in 0.51.0, the line's first release.
+   in 0.51.0, the line's first release. **Revised 2026-11-12** (WORK_QUEUE item 24; owner: "The
+   tree chop currently makes 2 half slopes both at the same angle, which doesn't line up with the
+   chop you make in the side of the tree … supposed to have the big gash … 2 half blocks one upside
+   down one right side up, both with the 'short side' facing the cut"; confirmed "Yes that was the
+   shape I meant"): the log's `fellWedgeTrunk` is `open` (the default stays `matching`), so the
+   stump's ramp is low at the notch rising away and the trunk's thin at the notch, a V open toward
+   the side chopped; the notch's direction is the deepest side's (`side_normal`), so any of the
+   four sides. `fellTip` stays 1: the trunk falls toward the notch from each side on both faces
+   (`tests/chopping.rs` `felled_from_each_side_the_cut_opens_a_gash_toward_the_notch`). Not
+   breaking: the states exist, a fell's outcome only.
 6. **Bucking.** A lying wood (grain level) is cut the same way, best by vertical swings across it,
    and cut through at `buckFraction`: its cell (a 1 m length) goes and, in a mode that uses items,
    drops `buckDrops` (rolled with the server's entropy) as loose items (ADR 0066). In creative

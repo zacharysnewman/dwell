@@ -2,6 +2,56 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.54.18",
+      "changes": [
+        "Test world: the Realistic world's seed now raises mountain ranges, trenches, rift valleys, volcano arcs and island chains from its own tectonic plates, and the plates decide where land and sea are (?worldgen=test:realistic)"
+      ]
+    },
+    {
+      "version": "0.54.17",
+      "changes": [
+        "Smoother frame rate on phones while exploring: lighting newly loaded terrain is spread over several frames instead of stalling one"
+      ]
+    },
+    {
+      "version": "0.54.16",
+      "changes": [
+        "Tall grass on gentle grass slopes now grows back after it is eaten or cut, and meadow grass spreads onto those slopes too."
+      ]
+    },
+    {
+      "version": "0.54.15",
+      "changes": [
+        "A felled tree leaves an open V-shaped gash on the side you chopped, like a real felling notch",
+        "A tree that comes to rest lying up a hill settles along the slope instead of most of it vanishing into the ground"
+      ]
+    },
+    {
+      "version": "0.54.14",
+      "changes": [
+        "Behind the scenes: notes on running cloud sessions"
+      ]
+    },
+    {
+      "version": "0.54.13",
+      "changes": [
+        "Fewer hitches on phones while moving: a big piece of new terrain is now sent to the GPU over a few frames instead of all at once",
+        "Less work on the main thread when terrain at the edge of the view loads"
+      ]
+    },
+    {
+      "version": "0.54.12",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.11",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
       "version": "0.54.10",
       "changes": [
         "Behind the scenes: work queue and bug notes"

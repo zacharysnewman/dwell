@@ -6,14 +6,6 @@ pins it.
 
 ## Open
 
-### 73. A felled trunk lying diagonally up a slope loses most of its cells when it settles
-
-Owner, 2026-11-12: "I've also seen big chunks of a tree disappear if it settled diagonal long ways up a high, it
-settles flat and most of the tree disappears into the ground." A felled trunk that comes to rest lying along a
-slope (tilted, its length up the hill) is settled back into the grid as flat cells, and the cells that land
-inside the ground are dropped, so most of the tree vanishes. Expected: the settled trunk follows the slope (or
-cells that would overlap the ground are lifted onto it, or the trunk stays a body), never losing wood.
-
 ### 69. A dark vertical column in the far terrain before the starter world's volcano
 
 Found 2026-11-11 (0.52.64) on the starter world's tour: `?worldgen=test:starter&fresh=1&at=8571.5,350,-4866.5`
@@ -153,6 +145,9 @@ the grounded controller cancels the downward part of the push each step, and the
 separation compounds sideways each step (16 → 48 m/s over 12 ticks). Later options: the tree's
 mass (a non-dominant piece), contact softness or a corrective-velocity limit for player–piece
 contacts, CCD so the overlap stays shallow, or the controller keeping the pinch's downward push.
+Measured again 2026-11-12 (WORK_QUEUE item 24): with the log's `fellWedgeTrunk` now `open` (the gash, the
+trunk's foot thin at the notch) the ignored repro flings the chopper ~155–160 m (face A 154.7 m, face B 160.0 m),
+up from ~104–108 m on the `matching` wedge (103.8 m, 107.8 m) just before; still open.
 
 ### 51. Reopening a world in the same tab stalls on CI: spawn's reload and settings' reload
 
@@ -270,6 +265,18 @@ face, or the placement check against its shape.
 
 ## Fixed
 
+### 73. A felled trunk lying diagonally up a slope loses most of its cells when it settles (fixed after 0.54.10)
+
+Owner, 2026-11-12: "I've also seen big chunks of a tree disappear if it settled diagonal long ways up a high, it
+settles flat and most of the tree disappears into the ground." The settle snapped the body's rotation to lying flat
+about its reference cell (its foot), so a trunk resting up a hill was laid level at its foot's height, inside the
+hill; lifting the whole piece one or two rows didn't free it, and every carrier whose cell was taken was dropped.
+Now a piece at rest tilted follows its pose column by column (`felling::follow_pose`), and a column whose carriers
+are blocked rises to the first free rows (or drops a row onto the ground under it): it steps along the hill, the log
+axis along the trunk, no wood lost (docs/FELLING.md §4). Pinned by `dwell-sim` `felling.rs`
+`a_trunk_at_rest_up_a_slope_settles_whole_along_the_hill` (both faces; an 8 m trunk on a 1:2 hillside): red before
+(3 of 16 logs settled), green with the fix.
+
 ### 72. ~23 fps on an iPhone at Low, and z-fighting where leaf cards meet tree trunks (fixed after 0.52.109; the frame rate partly)
 
 Owner, 2026-11-11 (iPhone 17, Safari, quality Low): "I'm only getting ~23 fps on mobile, seeing lots of z-fighting on
@@ -356,6 +363,81 @@ tree trunks with the leaf cards. What might be dropping frames since the last wh
   (DEV_TOOLS.md "Flight loading", fix 2), the sky volume's copy (`padded_box`, the largest main-thread cost: copy it in
   the worker, or ship the chunk and its neighbours once), a chunk's upload split across frames, and the minimap's
   tile work; then a real iPhone check while moving.
+- **Round 4 (branch `claude/fps-moving-2`).** The bench's `phone-moving` scenario (walk, sprint, fly 8 s each in turn,
+  default world, Low) at CPU 4× and 6×, budgets left out so every route runs, against main after round 3:
+
+  | Route | CPU | Build | interval p50 / p95 / p99 | dropped (> 20 ms) | frame.cpu p50 / p95 / p99 | frames > 16.7 ms CPU | mesh_dirty p95 / max | jobs.apply p95 / max |
+  | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+  | walk | 4x | main (round 3) | 16.7 / 18.5 / 18.6 | 0 of 478 | 3.7 / 13.8 / 17.5 | 7 | 8.8 / 12.3 | 3.4 / 7.2 |
+  | walk | 4x | this branch | 16.7 / 18.5 / 18.7 | 0 of 478 | 3.9 / 13.4 / 17.5 | 6 | 7.9 / 13.3 | 2.2 / 3.7 |
+  | sprint | 4x | main (round 3) | 16.7 / 18.5 / 18.6 | 0 of 480 | 3.1 / 10.9 / 15.3 | 2 | 6.8 / 12.4 | 3.4 / 7.4 |
+  | sprint | 4x | this branch | 16.7 / 18.5 / 18.6 | 0 of 479 | 3.5 / 9.1 / 15.7 | 4 | 4.0 / 12.7 | 2.3 / 4.5 |
+  | fly | 4x | main (round 3) | 16.7 / 18.3 / 18.6 | 5 of 606 | 3.6 / 13.3 / 18.4 | 13 | 7.4 / 13.1 | 3.6 / 8.5 |
+  | fly | 4x | this branch | 16.7 / 18.3 / 18.6 | 5 of 609 | 3.7 / 12.4 / 17.8 | 12 | 5.8 / 13.5 | 2.4 / 5.3 |
+  | walk | 6x | main (round 3) | 16.7 / 31.7 / 35.0 | 28 of 452 | 6.2 / 18.7 / 26.3 | 28 | 9.6 / 18.7 | 5.4 / 8.6 |
+  | walk | 6x | this branch | 16.7 / 18.7 / 33.3 | 17 of 461 | 5.7 / 19.9 / 25.4 | 29 | 10.8 / 17.9 | 3.4 / 6.4 |
+  | sprint | 6x | main (round 3) | 16.7 / 18.6 / 33.4 | 18 of 463 | 4.9 / 14.7 / 25.1 | 17 | 6.4 / 18.0 | 6.7 / 10.8 |
+  | sprint | 6x | this branch | 16.7 / 18.5 / 32.8 | 11 of 470 | 5.2 / 13.0 / 23.1 | 12 | 5.0 / 18.6 | 3.4 / 7.3 |
+  | fly | 6x | main (round 3) | 16.7 / 33.7 / 48.7 | 69 of 523 | 5.1 / 22.4 / 30.1 | 49 | 8.6 / 20.0 | 5.1 / 13.5 |
+  | fly | 6x | this branch | 16.7 / 33.2 / 48.8 | 49 of 551 | 5.5 / 21.1 / 28.1 | 36 | 9.3 / 21.2 | 3.4 / 8.3 |
+
+  Over the three routes at 6× the dropped frames go from 115 to 77 and `jobs.apply`'s worst from 13.5 to 8.3 ms (4×:
+  8.5 → 5.3); at 4× the routes were already near 60 and move little. **Cuts:** (1) the sky volume's copy
+  (`padded_box`): the fluid continuation into missing neighbours (BUGS 8) looked a neighbour up for each of the
+  volume's 124k voxels at every chunk on the streamed view's edge; it now looks each up once and visits only the
+  missing ones' part of the apron (`voxel.rs` `continue_fluids_into_missing`; 0.44 → 0.12 s in the 4× flight's
+  trace). Tests `padded_fluids`: the blocks equal the per-voxel rule's for five sets of missing neighbours, and
+  `a_chunk_on_the_streamed_edge_copies_its_sky_volume_about_as_fast_as_one_inside`, red on the old rule (edge 0.38 ms,
+  inside 0.05), green. (2) A mesh job's message is written into one buffer sized up front (`jobs/codec.rs`): test
+  `a_mesh_job_is_written_into_one_buffer_sized_up_front`, red on the old writer (535 KB in a 1 MB doubling buffer),
+  green; `encode_job` left the trace's top. (3) A chunk mesh over the frame's upload budget is written a slice a frame
+  into room reserved in the arena (`render/staged.rs`, pumped before each draw; the old mesh drawn until it is whole;
+  `upload.staged_bytes` ≤ 512 KiB a frame on the phone), and no further mesh is handed over meanwhile
+  (`Scene::uploads_waiting`): tests `staged` (no frame over the budget, a chunk shown only once whole, a replaced one
+  dropped) and `game_local` `no_mesh_is_handed_over_while_the_scene_is_still_writing_one`, red with the wait ignored
+  (288 meshes handed over), green. The sky volume is still copied on the main thread (`padded_box` 0.12 s, the copy
+  itself); sending the worker the chunk and its neighbours instead would need the workers to hold the streamed world.
+  **Not done:** the flood light off the main thread (`LightMap::load`, now the largest main-thread cost: `run_from`
+  0.26–0.40 s self, and `mesh_dirty`'s worst frames at 6×, 18–21 ms, are one chunk's light). It is a larger change than
+  this round's box: the light map is the main thread's state (edits relight it at once, meshes read its padded light,
+  creatures and players their flood light), so a worker would have to hold the streamed voxels and the light map
+  and answer each mesh start's padded light; a smaller step is lighting a chunk across frames (the BFS resumable
+  under the stream budget). The minimap's tiles were not touched: they are under their own 2 ms budget
+  (`shared/ui/map.json` `revealed.budgetMs`; `fillReveal` 0.1–0.2 s in the traces). Then a real iPhone check.
+- **Round 5 (branch `claude/fps-moving-3`): a chunk's flood light across frames.** `LightMap::begin_load` and `resume`
+  run the one-shot load's own steps (each channel's removal queue, the cells lit back, the brightest-first spread)
+  a slice at a time, the search's state kept between frames; the streamer resumes it `LIGHT_SLICE_CELLS` (1024) cells
+  between looks at the clock while the next slice fits its light budget, and the chunk stays unlit for meshing (its
+  own and its neighbours') until it is done, so no mesh starts on half its light. Any other light update finishes it
+  first, and so does a change to a chunk the light holds in its column or the ones beside it
+  (`VoxelWorld::settle_light_near`); the chunks arriving all round while it lights, not held until their own light,
+  leave it be (finishing it at each arrival put 14–19 ms into `jobs.apply` at 6× in the first try). Tests (both
+  faces): the light lit 512 cells a slice ends as the one-shot light, every slice within 7 × its cells' writes
+  (red with the budget ignored: one slice); an edit mid-light gives the load-then-edit light and matches a relight
+  from scratch, and a new chunk arriving beside it leaves it part way (red when any nearby arrival finished it);
+  the streamer's `a_big_chunks_light_runs_across_frames_within_their_budget_and_meshes_once_lit` (a 30 ms light at
+  an 8 ms budget: red at once, frame 0 spent 30 ms; green, at most 4.8 ms + one slice a frame, meshed only once lit).
+  `phone-moving` at CPU 4× and 6× (Low, default world, one run each, against main after round 4):
+
+  | Route | CPU | Build | interval p50 / p95 / p99 | dropped (> 20 ms) | frame.cpu p50 / p95 / p99 | frames > 16.7 ms CPU | mesh_dirty p95 / max | jobs.apply p95 / max |
+  | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+  | walk | 4x | main (round 4) | 16.7 / 18.5 / 18.7 | 0 of 478 | 3.9 / 13.4 / 17.5 | 6 | 7.9 / 13.3 | 2.2 / 3.7 |
+  | walk | 4x | this branch | 16.7 / 18.5 / 18.7 | 0 of 479 | 3.9 / 11.3 / 12.1 | 1 | 6.8 / 8.5 | 2.1 / 4.4 |
+  | sprint | 4x | main (round 4) | 16.7 / 18.5 / 18.6 | 0 of 479 | 3.5 / 9.1 / 15.7 | 4 | 4.0 / 12.7 | 2.3 / 4.5 |
+  | sprint | 4x | this branch | 16.7 / 18.4 / 18.7 | 0 of 479 | 3.4 / 10.1 / 12.0 | 0 | 4.6 / 8.4 | 2.3 / 4.4 |
+  | fly | 4x | main (round 4) | 16.7 / 18.3 / 18.6 | 5 of 609 | 3.7 / 12.4 / 17.8 | 12 | 5.8 / 13.5 | 2.4 / 5.3 |
+  | fly | 4x | this branch | 16.7 / 18.3 / 18.6 | 2 of 613 | 3.6 / 11.7 / 12.6 | 1 | 6.0 / 8.1 | 2.3 / 5.4 |
+  | walk | 6x | main (round 4) | 16.7 / 18.7 / 33.3 | 17 of 461 | 5.7 / 19.9 / 25.4 | 29 | 10.8 / 17.9 | 3.4 / 6.4 |
+  | walk | 6x | this branch | 16.7 / 18.6 / 32.0 | 8 of 471 | 5.9 / 13.2 / 17.8 | 6 | 7.1 / 8.4 | 3.3 / 5.8 |
+  | sprint | 6x | main (round 4) | 16.7 / 18.5 / 32.8 | 11 of 470 | 5.2 / 13.0 / 23.1 | 12 | 5.0 / 18.6 | 3.4 / 7.3 |
+  | sprint | 6x | this branch | 16.7 / 18.6 / 18.7 | 4 of 478 | 5.2 / 12.9 / 14.8 | 2 | 6.4 / 8.8 | 3.4 / 7.7 |
+  | fly | 6x | main (round 4) | 16.7 / 33.2 / 48.8 | 49 of 551 | 5.5 / 21.1 / 28.1 | 36 | 9.3 / 21.2 | 3.4 / 8.3 |
+  | fly | 6x | this branch | 16.7 / 32.9 / 34.5 | 43 of 562 | 5.6 / 15.0 / 23.9 | 16 | 6.7 / 8.4 | 3.5 / 8.2 |
+
+  **The 6× flight's worst `mesh_dirty` is 8.4 ms (21.2 before; the target was under 16.7)**, every route's at 4× and 6×
+  under 9.1 ms. Frames over 16.7 ms of CPU at 6×: 77 → 24 over the three routes; dropped frames at 6×: 77 → 55. The
+  6× flight's worst frames now are `ticks` (13–20 ms: the prediction's ticks, the terrain collision loading while
+  flying), not the loading: the next cut there. Still open: a real iPhone check while moving.
 
 ### 71. "Starting the graphics" takes a long time with no elapsed time shown (fixed after 0.52.101)
 

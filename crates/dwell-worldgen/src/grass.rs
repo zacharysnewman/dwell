@@ -2,7 +2,9 @@
 //! (`shared/worldgen/grass.json`, generated into `grass.gen.rs` by `shared/worldgen/gen.mjs`): once
 //! a world day, an empty cell over a grass block takes tall grass when its column is **fertile** and
 //! tall grass stands within `reach` columns (`spreadPerDay`), or when it held generated grass that
-//! was eaten or cut (`regrowPerDay`: the roots).
+//! was eaten or cut (`regrowPerDay`: the roots). With `onRamps` a ½ m ramp of a ground block is
+//! ground too, the tuft in the cell over it, as worldgen's decorations put it (HALF_HEIGHT_GRID.md
+//! §5); never a 1 m ramp's pieces.
 //!
 //! **The cap is the climate's.** A column is fertile when the decoration's own per-cell roll (the
 //! one that decides generated tall grass, `Placer::roll`) is under `maxDensity` × the climate's share
@@ -22,6 +24,7 @@
 use std::collections::HashSet;
 
 use dwell_blocks::{AIR, StateId};
+use dwell_world::ramps::{RampFacing, gentle_cell};
 use dwell_world::{CHUNK_SIZE, ChunkCoord, FaceFrame};
 
 use crate::noise::{hash3, mix32, seed_word, unit};
@@ -33,6 +36,9 @@ pub struct GrassData {
     pub block: &'static str,
     /// The ground blocks it grows on, by name.
     pub on: &'static [&'static str],
+    /// Whether a ½ m ramp of an `on` block (its `<name>_ramp` family's dry upright `ramp` piece,
+    /// any facing) is ground too; never a 1 m ramp's pieces.
+    pub on_ramps: bool,
     /// The decoration whose per-cell roll and climate envelope set the cap.
     pub decoration: &'static str,
     /// The most share of a stretch's open grass cells holding it, at the climate's best.
@@ -82,6 +88,7 @@ pub trait Cells {
 pub struct Rule {
     pub data: GrassData,
     block: StateId,
+    /// The ground states, face-local: the `on` blocks and, with `onRamps`, their ½ m ramps.
     on: Vec<StateId>,
     seed: u32,
 }
@@ -91,7 +98,17 @@ impl Rule {
         Self {
             data,
             block: dwell_blocks::require(data.block),
-            on: data.on.iter().map(|o| dwell_blocks::require(o)).collect(),
+            on: data
+                .on
+                .iter()
+                .flat_map(|&o| {
+                    let ramps = RampFacing::ALL
+                        .into_iter()
+                        .filter(|_| data.on_ramps)
+                        .filter_map(move |facing| gentle_cell(o, facing, false));
+                    std::iter::once(dwell_blocks::require(o)).chain(ramps)
+                })
+                .collect(),
             seed: seed_word(world_seed, 0x6A55_0000),
         }
     }
@@ -109,6 +126,11 @@ impl Rule {
     /// The most share of a column's open grass cells holding tall grass at a climate share.
     pub fn cap(&self, share: f64) -> f64 {
         self.data.max_density * share.clamp(0.0, 1.0)
+    }
+
+    /// Whether face-local state `s` is ground the rule grows on.
+    pub fn grows_on(&self, s: StateId) -> bool {
+        self.on.contains(&s)
     }
 
     /// Whether a column of this envelope may hold tall grass.

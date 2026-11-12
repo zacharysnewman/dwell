@@ -15,7 +15,9 @@
 //! grid (§4): the boundaries are found on a coarse scan ([`SCAN_CELL`]) and the plate under a
 //! point is a function of the vectors. It is face-local: each face draws its own layout from its
 //! face seed (owner, 2026-11-11: face B its own plates, a different region), in that face's x, z.
-//! Not wired into any world yet: nothing a seed generates changes.
+//! A Realistic world (`tectonics.plates` 1, phase R2) reads it through `plate_tectonics.rs`: the
+//! plates' coast is the base field's coast, and the boundaries, ordered into polylines
+//! ([`Boundary::polylines`]), carry the uplift.
 
 use dwell_world::Face;
 
@@ -103,7 +105,7 @@ pub struct PlateFixture {
 mod table {
     include!("plates.gen.rs");
 }
-pub use table::{FIXTURES, PLATES};
+pub use table::{FIXTURES, PLATES, UPLIFT};
 
 /// The cell of the coarse scan that finds the boundaries (m): ≥ 500 m, so the layout stays a
 /// function of vectors at any map size (REALISTIC_WORLD.md §4).
@@ -200,7 +202,60 @@ impl Boundary {
     pub fn subducting_plate(&self) -> Option<usize> {
         self.meeting.subducts.map(|i| self.plates[i])
     }
+
+    /// The plate that rides over the other (the arc's side), on a subducting boundary.
+    pub fn overriding_plate(&self) -> Option<usize> {
+        self.meeting.subducts.map(|i| self.plates[1 - i])
+    }
+
+    /// The boundary's scan points ordered into polylines (R2): from a point, walk to the nearest
+    /// unvisited point within `link` m, one way then the other; the points within
+    /// [`ABSORB`] × [`SCAN_CELL`] of each point taken are the same stretch (the scan's staircase)
+    /// and dropped; a gap wider than `link` starts a new polyline. Then each line is thinned to
+    /// vertices at least `spacing` m apart (its two ends kept).
+    pub fn polylines(&self, link: f64, spacing: f64) -> Vec<Vec<[f64; 2]>> {
+        let mut left = self.points.clone();
+        let absorb = (ABSORB * SCAN_CELL).powi(2);
+        let mut lines = Vec::new();
+        while !left.is_empty() {
+            let start = left.remove(0);
+            left.retain(|&q| dist2(q, start) > absorb);
+            let mut line = std::collections::VecDeque::from([start]);
+            for front in [false, true] {
+                loop {
+                    let end = if front { line[0] } else { line[line.len() - 1] };
+                    let next = left
+                        .iter()
+                        .enumerate()
+                        .map(|(i, &q)| (dist2(q, end), i))
+                        .filter(|&(d, _)| d <= link * link)
+                        .min_by(|a, b| a.0.total_cmp(&b.0));
+                    let Some((_, i)) = next else { break };
+                    let q = left.remove(i);
+                    left.retain(|&r| dist2(r, q) > absorb);
+                    if front {
+                        line.push_front(q);
+                    } else {
+                        line.push_back(q);
+                    }
+                }
+            }
+            let line: Vec<[f64; 2]> = line.into();
+            let mut thin = vec![line[0]];
+            for (k, &q) in line.iter().enumerate().skip(1) {
+                let last = k + 1 == line.len();
+                if last || dist2(q, thin[thin.len() - 1]) >= spacing * spacing {
+                    thin.push(q);
+                }
+            }
+            lines.push(thin);
+        }
+        lines
+    }
 }
+
+/// The scan points within this many scan cells of a point taken into a polyline are its stretch.
+pub const ABSORB: f64 = 0.8;
 
 /// A hotspot: a point fixed in the mantle under a moving plate.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -209,8 +264,8 @@ pub struct Hotspot {
     pub at: [f64; 2],
     /// The plate over it.
     pub plate: usize,
-    /// The unit direction its chain runs, older islands that way (against the plate's motion);
-    /// zero for a still plate.
+    /// The unit direction its chain runs, older islands that way: along the plate's motion (the
+    /// plate carries each island off the fixed hotspot, R2); zero for a still plate.
     pub trail: [f64; 2],
 }
 
@@ -333,6 +388,34 @@ impl PlateLayout {
         self.plates[self.plate_at(x, z)].kind == PlateKind::Continental
     }
 
+    /// The signed distance (m) to the plates' coast at a face-local point: > 0 on land (a
+    /// continental plate inside the sea margin), < 0 at sea; the land/sea mask's sign
+    /// ([`PlateLayout::is_land`]). The distance to a plate's edge is its warped Voronoi bisector's
+    /// with the nearest plate of the other kind, capped by the distance to the sea margin.
+    pub fn coast_distance(&self, x: f64, z: f64) -> f64 {
+        let edge = self.rules.reach - self.rules.sea_margin - (x * x + z * z).sqrt();
+        if self.plates.is_empty() {
+            return edge.min(-1.0);
+        }
+        let (wx, wz) = self.warped(x, z);
+        let a = self.plate_at(x, z);
+        let pa = &self.plates[a];
+        let da = dist2([wx, wz], pa.centre);
+        let mut near = f64::INFINITY;
+        for (b, pb) in self.plates.iter().enumerate() {
+            if b == a || pb.kind == pa.kind {
+                continue;
+            }
+            let gap = dist2(pa.centre, pb.centre).sqrt().max(1.0);
+            near = near.min((dist2([wx, wz], pb.centre) - da) / (2.0 * gap));
+        }
+        let near = near.min(1.0e6);
+        match pa.kind {
+            PlateKind::Continental => near.min(edge),
+            PlateKind::Oceanic => (-near).min(edge),
+        }
+    }
+
     fn warped(&self, x: f64, z: f64) -> (f64, f64) {
         let a = self.rules.warp_amplitude;
         if a <= 0.0 {
@@ -408,7 +491,7 @@ impl PlateLayout {
                 let [vx, vz] = self.plates[plate].motion;
                 let s = (vx * vx + vz * vz).sqrt();
                 let trail = if s > 0.0 {
-                    [-vx / s, -vz / s]
+                    [vx / s, vz / s]
                 } else {
                     [0.0, 0.0]
                 };

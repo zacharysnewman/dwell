@@ -1,11 +1,13 @@
 //! Tall grass growing and spreading (ADR 0075 T3c, docs/ECOLOGY.md §10), on both faces: it spreads
 //! over days up to and never past the climate's cap, a dry stretch stays sparse, a player's block
-//! wins, eaten grass regrows, a load catches up a bounded number of days, and a rule added by data
-//! alone grows on its own ground.
+//! wins, eaten grass regrows, a load catches up a bounded number of days, a rule added by data
+//! alone grows on its own ground, and tufts regrow and spread over ½ m grass ramps (`onRamps`) but
+//! never over a 1 m ramp.
 
 use std::collections::HashMap;
 
 use dwell_blocks::{AIR, StateId, require};
+use dwell_world::ramps::{RampFacing, gentle_cell, steep_cells};
 use dwell_world::{CHUNK_SIZE, ChunkCoord, FLAT_TOP_Y, FaceFrame, both_faces};
 use dwell_worldgen::grass::{Cells, GRASS, GrassData, Rule};
 use dwell_worldgen::noise::{hash2, unit};
@@ -289,6 +291,157 @@ both_faces!(
         let mut on_grass = meadow(f, require("dwell:grass"), tall);
         grow_daily(&rule, &mut on_grass, f, &env, 3);
         assert_eq!(density(&on_grass, f, tall), 1.0 / 1024.0, "not its ground");
+    }
+);
+
+/// A ½ m grass ramp (face-local, upright) descending toward `facing`.
+fn half_ramp(facing: RampFacing) -> StateId {
+    gentle_cell("dwell:grass", facing, false).expect("grass has ½ m ramps")
+}
+
+/// The pieces of a 1 m grass ramp (face-local, from the bottom).
+fn metre_ramp(facing: RampFacing) -> Vec<StateId> {
+    steep_cells("dwell:grass", facing, false).expect("grass has 1 m ramps")
+}
+
+both_faces!(
+    fn a_cut_tuft_on_a_ramp_regrows(f: FaceFrame) {
+        let rule = Rule::build(7);
+        let tall = rule.block();
+        let env = climate(1.0);
+        // Generated tufts over ½ m ramps on the fertile columns (as worldgen's `onRamps` puts
+        // them, in the cell over the ramp), all cut.
+        let mut w = meadow(f, require("dwell:grass"), AIR);
+        let mut stand = Vec::new();
+        for x in 0..CHUNK_SIZE {
+            for z in 0..CHUNK_SIZE {
+                if (x + z) % 5 == 0 && rule.fertile(env(x, z)) {
+                    let facing = RampFacing::ALL[(x as usize) % 4];
+                    w.natural(f, [x, FLOOR + 1, z], half_ramp(facing));
+                    w.natural(f, [x, FLOOR + 2, z], tall);
+                    stand.push([x, FLOOR + 2, z]);
+                }
+            }
+        }
+        for &p in &stand {
+            w.edit(f, p, AIR);
+        }
+        grow_daily(&rule, &mut w, f, &env, 20);
+        let back = stand.iter().filter(|&&p| w.at(f, p) == tall).count();
+        assert!(
+            back as f64 > 0.9 * stand.len() as f64,
+            "{back} of {} cut ramp tufts regrew in 20 days",
+            stand.len()
+        );
+    }
+);
+
+both_faces!(
+    fn grass_spreads_onto_half_metre_ramps_up_to_the_cap_and_never_onto_a_metre_ramp(f: FaceFrame) {
+        let rule = Rule::build(7);
+        let tall = rule.block();
+        let env = climate(1.0);
+        let mut w = meadow(f, require("dwell:grass"), tall);
+        // A band of ½ m ramps east of the tuft and a band of 1 m ramps west of it, flat ground
+        // between, none with generated grass.
+        let (half, metre) = (18..26, 4..12);
+        for z in 0..CHUNK_SIZE {
+            for x in half.clone() {
+                w.natural(f, [x, FLOOR + 1, z], half_ramp(RampFacing::East));
+            }
+            for x in metre.clone() {
+                for (i, &s) in metre_ramp(RampFacing::West).iter().enumerate() {
+                    w.natural(f, [x, FLOOR + 1 + i as i32, z], s);
+                }
+            }
+        }
+        grow_daily(&rule, &mut w, f, &env, 300);
+        let mut on_ramps = 0;
+        let mut fertile = 0;
+        for z in 0..CHUNK_SIZE {
+            for x in half.clone() {
+                fertile += usize::from(rule.fertile(env(x, z)));
+                if w.at(f, [x, FLOOR + 2, z]) == tall {
+                    on_ramps += 1;
+                    assert!(rule.fertile(env(x, z)), "({x}, {z}) is not fertile");
+                }
+            }
+            for x in metre.clone() {
+                for y in FLOOR + 1..FLOOR + 5 {
+                    assert_ne!(
+                        w.at(f, [x, y, z]),
+                        tall,
+                        "tall grass on a 1 m ramp at {x}, {y}, {z}"
+                    );
+                }
+            }
+        }
+        // The climate's cap holds over ramps as on flat: only fertile columns, and they fill.
+        assert!(
+            on_ramps as f64 > 0.8 * fertile as f64,
+            "spread onto {on_ramps} of {fertile} fertile ramp cells"
+        );
+    }
+);
+
+both_faces!(
+    fn a_lone_steep_piece_is_not_ground(f: FaceFrame) {
+        // A 1 m ramp's upper piece broken off leaves its lower piece: still not ground for a tuft.
+        let rule = Rule::build(7);
+        let tall = rule.block();
+        let env = climate(1.0);
+        let mut w = meadow(f, require("dwell:grass"), tall);
+        let lower = metre_ramp(RampFacing::North)[0];
+        for x in 0..CHUNK_SIZE {
+            for z in 0..CHUNK_SIZE {
+                if (x, z) != (16, 16) && (x - 16).abs() <= 3 && (z - 16).abs() <= 3 {
+                    w.natural(f, [x, FLOOR + 1, z], lower);
+                }
+            }
+        }
+        grow_daily(&rule, &mut w, f, &env, 100);
+        for x in 13..20 {
+            for z in 13..20 {
+                assert_ne!(
+                    w.at(f, [x, FLOOR + 2, z]),
+                    tall,
+                    "a tuft on a steep piece at {x}, {z}"
+                );
+            }
+        }
+    }
+);
+
+both_faces!(
+    fn a_rule_without_on_ramps_keeps_off_ramps(f: FaceFrame) {
+        // The same rule by data alone with `onRamps` off: ramps are not its ground.
+        let rule = Rule::new(
+            GrassData {
+                on_ramps: false,
+                ..GRASS
+            },
+            7,
+        );
+        let tall = rule.block();
+        assert!(Rule::build(7).grows_on(half_ramp(RampFacing::South)));
+        assert!(!rule.grows_on(half_ramp(RampFacing::South)));
+        let env = climate(1.0);
+        let mut w = meadow(f, require("dwell:grass"), tall);
+        for x in 18..26 {
+            for z in 0..CHUNK_SIZE {
+                w.natural(f, [x, FLOOR + 1, z], half_ramp(RampFacing::South));
+            }
+        }
+        grow_daily(&rule, &mut w, f, &env, 300);
+        for x in 18..26 {
+            for z in 0..CHUNK_SIZE {
+                assert_ne!(
+                    w.at(f, [x, FLOOR + 2, z]),
+                    tall,
+                    "a tuft on a ramp at {x}, {z}"
+                );
+            }
+        }
     }
 );
 

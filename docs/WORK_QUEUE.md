@@ -218,6 +218,10 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    eaten grass regrows; the far forage's most is scaled by the same climate share. A per-world switch in an
    optional `grass_growth` table: on for new worlds, off for worlds saved before it (their meadows stay as
    they were). Not yet: a setting in the world menu.
+   Since 2026-11-12 (`claude/ramp-tufts-regrow`, the follow-up item 21 left): grass.json's `onRamps`
+   makes a ½ m ramp of its ground ground too (validated as decorations' `onRamps`: the ramp exists and
+   the tuft's `placeOn` allows it), so a tuft on a ramp that is eaten or cut regrows and spreading
+   reaches ramp cells, under the same climate cap; never a 1 m ramp's pieces (tests on both faces).
 
 15. **Realistic world** (owner 2026-11-11: "The realistic world should come from our systems (which may not be
    properly defined or built yet to support this) the seed should determine tectonic plates, rain shadow,
@@ -234,8 +238,12 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    plate count unanswered (the proposal's 3–5, as data). **Status:** R1 built: the plate layout
    (`shared/worldgen/plates.json`, `plates.gen.rs`, `dwell-worldgen` `plates.rs`: plates by kind, motion and
    age, boundaries classified by relative motion with the subducting side, hotspots, a land/sea mask), tested
-   on both faces, not wired into any world (goldens unchanged). The Chisel plates overlay moved to R2. Next:
-   R2 (uplift from boundaries); q2's bands, q6 and q8 still open. q5 (2026-11-11): no new rock blocks
+   on both faces. R2 built (2026-11-12): uplift from the boundaries (`plate_tectonics.rs`, `plates.json`
+   `uplift`: ranges on the overriding side and trenches, collision ranges, rifts, low transform ridges,
+   scaled by each boundary's rate; arc cones on the overriding side; hotspot chains older along the plate's
+   motion) and the plates' coast, in the Realistic test world (`worlds/realistic.json`, `test:realistic`, not
+   in the New world form); default and starter goldens unchanged; the map builds faster than the default's.
+   The Chisel plates overlay moved again, to R3. Next: R3 (climate); q2's bands, q6 and q8 still open. q5 (2026-11-11): no new rock blocks
    for now; R5 uses today's blocks (stone, basalt, sandstone, red sandstone, sand, dirt) named in data, so
    new ones can replace them later.
 
@@ -254,6 +262,15 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    (`shared/render/streaming.json`), one loading item past the deadline a frame, a faster `interleave`, bench record
    budgets and the `phone-moving` scenario. Left: the flood light off the main thread, the sky volume's copy
    (`padded_box`), a chunk's upload split across frames, the minimap's tiles; a real iPhone check while moving.
+   **Status (fps-moving-2):** built: the sky volume's fluid continuation only where a neighbour is missing
+   (`padded_box` 0.44 → 0.12 s in a 4× flight), mesh job messages in one buffer, a chunk mesh over the phone's
+   budget written over several frames; at 6× the three routes drop 77 frames where they dropped 115 (BUGS.md #72
+   round 4). Left: the flood light off the main thread (the largest main-thread cost; one chunk's light is the
+   worst frames at 6×), then a real iPhone check while moving.
+   **Status (fps-moving-3):** built: a chunk's flood light lit a slice at a time across frames within the light
+   budget (the chunk unmeshed until lit; edits and nearby held chunks finish it first). The 6× flight's worst
+   `mesh_dirty` 21.2 → 8.4 ms; frames over 16.7 ms of CPU at 6× 77 → 24 (BUGS.md #72 round 5). Left: the
+   prediction's ticks in flight (13–20 ms frames at 6×), a real iPhone check while moving.
 17. **Axe swing directions and animation tools** (owner 2026-11-11: "The axe animations are still trash. They
    don't swing in the right direction at all. Make yourself some tools to properly observe animations, movement
    directions, positions over time, etc. Should swing right to left for horizontal and up to down for vertical";
@@ -362,7 +379,8 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    `undergrowth` 0.75 → 0.85 so it stays sparse; the starter's meadow spot went from 11 % to 33 % of
    its grass tops with tall grass, its steppe 8 %. The tuft's tile is painted in the grass top's
    colours, darker at the foot (no light-stop tips). Goldens and the starter pin regenerated.
-   Left: the owner's look in game; grass growth still regrows tufts on flat grass only.
+   Left: the owner's look in game. Grass growth regrowing and spreading tufts on ½ m ramps too: done
+   2026-11-12 (item 14, grass.json `onRamps`).
 22. **Settings and version buttons look like web links** (owner 2026-11-11: "I thought we had settings and
    version buttons changed queued, is that true?" — it wasn't recorded anywhere; then "The buttons should be
    aligned to match the design of the others instead of looking like web links"). Restyle them as the menu's
@@ -380,9 +398,13 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    have the big gash I was imagining 2 half blocks one upside down one right side up, both with the 'short
    side' facing the cut."). Restated to the owner: the stump an upright ramp low at the notch side, the trunk's
    new bottom an upside-down ramp thin at the notch side, opening a V gash toward the side chopped (the data's
-   `fellWedgeTrunk: open`, today `matching`), lined up with the notch and the fall. Waiting on the owner's
-   confirmation. Also BUGS.md #73: a trunk settled diagonally up a slope loses most of its cells into the ground.
-   Owner, 2026-11-12: **"Yes that was the shape I meant too."** In progress (cloud), with BUGS.md #73.
+   `fellWedgeTrunk: open`, today `matching`), lined up with the notch and the fall. Owner, 2026-11-12: "Yes that
+   was the shape I meant too." Also BUGS.md #73: a trunk settled diagonally up a slope loses most of its cells into the
+   ground. **Built 2026-11-12** (branch `claude/fell-gash`), waiting on the owner's look: the log's
+   `fellWedgeTrunk` is `open` (the notch's side from the deepest cut, any of the four, both faces;
+   `tests/chopping.rs` `felled_from_each_side_the_cut_opens_a_gash_toward_the_notch`, red on `matching`); a trunk
+   at rest tilted settles column by column along its pose, a blocked column rising to free rows, no wood lost
+   (BUGS.md #73 Fixed; docs/FELLING.md §4).
 25. **Marks appear at contact, not on click** (owner 2026-11-12: "the gashes in blocks from tools show up on
    click instead of when the animation lines up with the block. We want that timing."). Every tool's hit (axe
    chop, pickaxe, shovel; the carve, cracks, chips, drops and sound) lands when the swing's head reaches the
@@ -392,6 +414,12 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    Built (cloud, needs the owner's look in game): tool data `contactS` (pickaxes, shovels 0.26 s; the axe its
    swing's), the server lands hits at contact and drops cancelled ones, the client's sound and chips at
    contact, a bounce wears once and leaves alone don't (docs/BLOCK_DAMAGE.md §8).
+26. **Axe bites like the other tools' marks** (owner 2026-11-12: "The tree chopping slice doesn't match the other
+   tools style. It cuts a line all the way across which is much bigger than the tool head. It should align more
+   with the dirt and stone ones."). Today an axe hit cuts a kerf slit across the log's whole width. Wanted: each
+   hit carves a bite the size of the axe head where it struck (a wedge into the wood, like the dirt bowl and stone
+   facets), the bites growing together into the notch as the chop goes on; cracks/splits along the grain from
+   the cracks work. Next after item 24 (same code).
 
 ## Done
 

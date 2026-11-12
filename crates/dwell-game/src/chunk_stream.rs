@@ -103,6 +103,15 @@ pub trait ChunkStore {
     /// Lights a chunk now held (stored, or all air): the streamer calls it within its per-frame
     /// budget, after the chunk arrived ([`ChunkStreamer::mesh_dirty`]).
     fn light_chunk(&mut self, _coord: Coord) {}
+    /// Starts a chunk's light to be finished by [`Self::light_resume`] (docs/BUGS.md #72); by
+    /// default lit at once.
+    fn light_begin(&mut self, coord: Coord) {
+        self.light_chunk(coord);
+    }
+    /// Goes on with the light begun, at most `steps` cells; whether it is done.
+    fn light_resume(&mut self, _steps: usize) -> bool {
+        true
+    }
     /// Whether it keeps a flood light (chunks then wait to be lit before they are meshed).
     fn keeps_light(&self) -> bool {
         false
@@ -117,6 +126,10 @@ pub trait ChunkStore {
         Vec::new()
     }
 }
+
+/// The cells a chunk's light goes on with between looks at the clock (`mesh_dirty`): ~0.1 ms
+/// natively, ~0.5 ms on a phone's CPU.
+pub const LIGHT_SLICE_CELLS: usize = 1024;
 
 /// The client sim's voxel world is the store.
 /// With [`VoxelWorld::enable_light`] (the client) it keeps the flood light of what it holds.
@@ -171,6 +184,12 @@ impl ChunkStore for VoxelWorld {
     }
     fn light_chunk(&mut self, coord: Coord) {
         self.light_load(ChunkCoord::from_array(coord));
+    }
+    fn light_begin(&mut self, coord: Coord) {
+        VoxelWorld::light_begin(self, ChunkCoord::from_array(coord));
+    }
+    fn light_resume(&mut self, steps: usize) -> bool {
+        VoxelWorld::light_resume(self, steps)
     }
     fn keeps_light(&self) -> bool {
         self.light().is_some()
@@ -624,6 +643,9 @@ pub struct ChunkStreamer<S, G, M: Mesher, V> {
     /// The frame's one item that runs past the deadline goes to the mesh starts next (BUGS.md #72):
     /// set when a light that ran past the deadline left them none, cleared once they start one.
     mesh_first: bool,
+    /// The chunk whose light is part way (`ChunkStore::light_begin`; BUGS.md #72), still unlit
+    /// for meshing (its own and its neighbours') until its light is done.
+    lighting: Option<Coord>,
     /// Lit and meshed after the near ring, before the rest (`set_second_centre`).
     second: Option<SecondCentre>,
     /// World cells meshed as air while held here (`hide_cells`): a settling piece's blocks while
@@ -692,6 +714,7 @@ where
             light_cost: ItemCost::default(),
             mesh_cost: ItemCost::default(),
             mesh_first: false,
+            lighting: None,
             second: None,
             hidden: HashSet::default(),
             cuts: HashMap::default(),
@@ -837,6 +860,9 @@ where
             self.forget(key);
             self.resyncing.remove(&key);
             self.unlit_set.remove(&key);
+            if self.lighting == Some(key) {
+                self.lighting = None;
+            }
             self.drawn_revision += 1;
             self.pristine.remove(&key);
             self.generated.remove(&key);
@@ -1019,7 +1045,7 @@ where
         let to_mesh = self.dirty.len() > 0 && self.mesher.capacity() > self.meshing.len();
         let light_forces = !(self.mesh_first && to_mesh);
         let mut lit_past = false;
-        if !self.unlit.is_empty() {
+        if !self.unlit.is_empty() || self.lighting.is_some() {
             let light_deadline = if to_mesh {
                 deadline - budget.mesh_ms
             } else {
@@ -1037,14 +1063,27 @@ where
             keyed.sort_by(|a, b| order_of(&a.0, &b.0));
             let rest = keyed.into_iter().map(|(_, c)| c);
             let mut rest = rest.peekable();
-            while rest.peek().is_some()
+            // A chunk's light goes on a slice (`LIGHT_SLICE_CELLS`) at a time while the next fits
+            // before the deadline, across frames (BUGS.md #72: one chunk's light was 15–20 ms
+            // of a frame at CPU 6×); the chunk stays unlit for meshing until it is done.
+            while (self.lighting.is_some() || rest.peek().is_some())
                 && self
                     .light_cost
                     .fits(ran + usize::from(!light_forces), t, light_deadline)
             {
-                let c = rest.next().expect("peeked");
-                self.unlit_set.remove(&c);
-                self.store.light_chunk(c);
+                let c = match self.lighting {
+                    Some(c) => c,
+                    None => {
+                        let c = rest.next().expect("peeked");
+                        self.store.light_begin(c);
+                        self.lighting = Some(c);
+                        c
+                    }
+                };
+                if self.store.light_resume(LIGHT_SLICE_CELLS) {
+                    self.lighting = None;
+                    self.unlit_set.remove(&c);
+                }
                 let t1 = now();
                 self.light_cost.took(t1 - t);
                 t = t1;
@@ -1428,7 +1467,17 @@ where
 
     /// The chunk arrived: lit later, within `mesh_dirty`'s budget.
     fn queue_light(&mut self, key: Coord) {
-        if self.store.keeps_light() && self.unlit_set.insert(key) {
+        if !self.store.keeps_light() {
+            return;
+        }
+        // Its light part way read the voxels it had (the store finishes it before they change):
+        // lit again from the start.
+        if self.lighting == Some(key) {
+            self.lighting = None;
+            self.unlit.push_back(key);
+            return;
+        }
+        if self.unlit_set.insert(key) {
             self.unlit.push_back(key);
         }
     }
@@ -1787,15 +1836,48 @@ mod tests {
         unloads: Vec<(Vec<Coord>, Vec<Coord>)>,
         /// What every padded block holds.
         fill: u16,
+        /// A resumable light (BUGS.md #72): a chunk's light is this many 1 ms slices (0: lit at
+        /// once in `light_chunk`), and the slices left of the one begun.
+        light_slices: usize,
+        slices_left: Option<(Coord, usize)>,
     }
     impl ChunkStore for FakeStore {
+        fn light_begin(&mut self, coord: Coord) {
+            if self.light_slices == 0 {
+                self.light_chunk(coord);
+            } else {
+                self.slices_left = Some((coord, self.light_slices));
+            }
+        }
+        fn light_resume(&mut self, _steps: usize) -> bool {
+            let Some((c, left)) = self.slices_left else {
+                return true;
+            };
+            if let Some(clock) = &self.light_clock {
+                clock.set(clock.get() + 1.0);
+            }
+            if left <= 1 {
+                self.slices_left = None;
+                self.lit.push(c);
+                true
+            } else {
+                self.slices_left = Some((c, left - 1));
+                false
+            }
+        }
         fn keeps_light(&self) -> bool {
             self.light_clock.is_some()
         }
         fn light_chunk(&mut self, coord: Coord) {
             self.lit.push(coord);
             if let Some(c) = &self.light_clock {
-                c.set(c.get() + 10.0);
+                // The whole light at once: a resumable one's slices, or 10 ms.
+                let ms = if self.light_slices == 0 {
+                    10.0
+                } else {
+                    self.light_slices as f64
+                };
+                c.set(c.get() + ms);
             }
         }
         fn unload_chunks(&mut self, stored: &[Coord], air: &[Coord]) {
@@ -2311,6 +2393,43 @@ mod tests {
         let t = clock.clone();
         s.mesh_dirty([16.0; 3], StreamBudget::new(4.0, 2.0), move || t.get());
         assert_eq!(s.store().lit.len(), 2);
+    }
+
+    #[test]
+    fn a_big_chunks_light_runs_across_frames_within_their_budget_and_meshes_once_lit() {
+        // BUGS.md #72: one chunk's light was 15–20 ms of a frame at CPU 6×, the worst frames
+        // left. Lit a slice at a time, no frame spends more than its light budget (one slice
+        // over it at most), and the chunk isn't meshed on half its light.
+        let (mut s, _) = setup();
+        let clock = Rc::new(std::cell::Cell::new(0.0));
+        s.store_mut().light_clock = Some(clock.clone());
+        s.store_mut().light_slices = 30; // 30 ms of light
+        s.on_chunk_data(generated([0, 0, 0]));
+        finish(&mut s, [0, 0, 0]);
+        let mut frames = 0;
+        while s.store().lit.is_empty() {
+            let before = clock.get();
+            let t = clock.clone();
+            // An 8 ms budget, 3.2 of it the mesh starts': the light stops at 4.8 ms.
+            s.mesh_dirty([16.0; 3], StreamBudget::new(8.0, 3.2), move || t.get());
+            let spent = clock.get() - before;
+            assert!(
+                spent <= 4.8 + 1.0,
+                "frame {frames} spent {spent} ms on light"
+            );
+            if s.store().lit.is_empty() {
+                assert!(s.store().meshed_from.is_empty(), "meshed on half its light");
+            }
+            frames += 1;
+            assert!(frames < 20, "the light never finished");
+        }
+        assert!(frames >= 5, "lit in {frames} frames: not spread");
+        let t = clock.clone();
+        s.mesh_dirty([16.0; 3], StreamBudget::new(8.0, 3.2), move || t.get());
+        assert!(
+            s.store().meshed_from.contains(&[0, 0, 0]),
+            "meshed once lit"
+        );
     }
 
     #[test]

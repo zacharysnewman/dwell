@@ -367,7 +367,8 @@ depending on climate/biome." Data: `shared/worldgen/grass.json` (`gen.mjs` `vali
   grown to today's whole world day (the world's days × `growth_speed`, as trees) and grows the days
   each missed, at most `catchUpDays` (20) at once: a chunk first loaded on day 1000 grows days
   980–999, not a thousand. Each day an open cell (air, with `openAbove` cells of air over it) over an
-  `on` block (`dwell:grass`) of a fertile column takes `block` with `spreadPerDay` (0.15) when tall grass
+  `on` block (`dwell:grass`; with `onRamps`, also over a ½ m ramp of it, as worldgen's decorations put
+  tufts, never over a 1 m ramp's pieces) of a fertile column takes `block` with `spreadPerDay` (0.15) when tall grass
   stands within `reach` columns (and a metre up or down), or `regrowPerDay` (0.25) when it held
   generated tall grass that is gone (**grazed** by deer, §8, or cut). Rolls hash (seed, day, face-local
   cell): face B grows face A's mirror.

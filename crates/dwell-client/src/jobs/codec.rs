@@ -27,20 +27,25 @@ impl W {
     fn f64(&mut self, v: f64) {
         self.0.extend_from_slice(&v.to_le_bytes());
     }
-    fn u16s(&mut self, v: &[u16]) {
+    /// A length, then each value's `N` little-endian bytes, written into space made at once
+    /// (BUGS.md #72: a push per value, with the buffer doubling under a mesh job's 248 KB sky
+    /// volume, was `encode_job`'s 0.13–0.27 s of the main thread in a phone flight).
+    fn values<T: Copy, const N: usize>(&mut self, v: &[T], le: impl Fn(T) -> [u8; N]) {
         self.u32(v.len() as u32);
-        v.iter()
-            .for_each(|x| self.0.extend_from_slice(&x.to_le_bytes()));
+        let start = self.0.len();
+        self.0.resize(start + N * v.len(), 0);
+        for (d, &x) in self.0[start..].chunks_exact_mut(N).zip(v) {
+            d.copy_from_slice(&le(x));
+        }
+    }
+    fn u16s(&mut self, v: &[u16]) {
+        self.values(v, u16::to_le_bytes);
     }
     fn u32s(&mut self, v: &[u32]) {
-        self.u32(v.len() as u32);
-        v.iter()
-            .for_each(|x| self.0.extend_from_slice(&x.to_le_bytes()));
+        self.values(v, u32::to_le_bytes);
     }
     fn f32s(&mut self, v: &[f32]) {
-        self.u32(v.len() as u32);
-        v.iter()
-            .for_each(|x| self.0.extend_from_slice(&x.to_le_bytes()));
+        self.values(v, f32::to_le_bytes);
     }
     fn bytes(&mut self, v: &[u8]) {
         self.u32(v.len() as u32);
@@ -257,6 +262,14 @@ pub fn encode_job(id: u32, job: &Job) -> Vec<u8> {
             cards,
         } => {
             w.u8(4);
+            // The message's size up front: one allocation, not a doubling buffer.
+            let generated = ground
+                .as_ref()
+                .map_or(0, |(_, gone, g)| 12 * gone.len() + 2 * g.len());
+            let damage_bytes: usize = damage.len() * 64;
+            w.0.reserve(
+                64 + 2 * padded.len() + light.len() + cuts.len() * 128 + generated + damage_bytes,
+            );
             // Bit 0 the mirror, bit 1 no water tops, bit 2 no leaf cards.
             w.u8(u8::from(*mirror) | if *water_tops { 0 } else { 2 } | if *cards { 0 } else { 4 });
             origin.iter().for_each(|v| w.i32(*v));
@@ -608,6 +621,39 @@ mod tests {
     use super::super::Runner;
     use super::*;
     use dwell_world::GENERATOR_TERRAIN;
+
+    #[test]
+    fn a_mesh_job_is_written_into_one_buffer_sized_up_front() {
+        // BUGS.md #72: the sky volume (44 × 64 × 44 cells, 248 KB) pushed a value at a time into a
+        // doubling buffer made `encode_job` a tenth of the main thread's loading work on a phone.
+        let n = dwell_world::SKY_VOLUME;
+        let job = Job::MeshChunk {
+            padded: (0..n).map(|i| i as u16).collect(),
+            light: vec![0xf3; dwell_mesh::PADDED_VOLUME],
+            mirror: false,
+            origin: [0, 0, 0],
+            cuts: Vec::new(),
+            damage: Vec::new(),
+            ground: Some((7, vec![[1, 2, 3]], vec![5; n])),
+            water_tops: true,
+            cards: true,
+        };
+        let out = encode_job(9, &job);
+        assert!(
+            out.capacity() - out.len() <= 4096,
+            "{} B written into a {} B buffer: it grew as it went",
+            out.len(),
+            out.capacity()
+        );
+        let (id, back) = decode_job(&out).expect("decodes");
+        assert_eq!(id, 9);
+        let Job::MeshChunk { padded, ground, .. } = back else {
+            panic!("a mesh job");
+        };
+        assert_eq!(padded.len(), n);
+        assert_eq!(padded[1234], 1234);
+        assert_eq!(ground.map(|g| g.2.len()), Some(n));
+    }
 
     #[test]
     fn every_job_and_result_round_trips() {
