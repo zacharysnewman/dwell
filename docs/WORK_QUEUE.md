@@ -973,7 +973,9 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    body, or first person with the arms and held item); and three more:
    16. The bifacial world — flying out past the rim and over the edge to face B, gravity turning, the other
        face's sky, the world seen from beneath.
-   17. Underwater — diving in a lake or the sea, the surface from below with the sky through it, light shafts.
+   17. Underwater — diving in a lake or the sea, the surface from below with the sky through it, light shafts;
+       with the water transition itself (owner 2026-11-12: "Water transition as part of the underwater showcase."):
+       the camera passing through the surface going in and coming back out.
    18. Rivers from mountains to the sea — a long follow down a river from the peaks through valleys to its
        mouth (partly time-lapsed).
    19. Multiplayer (owner 2026-11-12: "Multiplayer we haven't showcased.") — two or three players in one world
