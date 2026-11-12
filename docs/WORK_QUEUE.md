@@ -292,8 +292,10 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    (one number, `crust` of the hot stop, waiting on the owner's look); the cooling river not yet seen in game.
 20. **Starter world on iPhone, again** (owner 2026-11-11: "iOS can't handle the starter world. It crashes and
    restarts quite often. What's so much heavier about it?"). 0.52.99–0.52.104: ecology 12.5 → 0.9 MB, starter
-   biome grids 53.6 → 15.9 MB a process. Left: re-measure on the `--touch` page; if still near the limit, one
-   world worker on phones.
+   biome grids 53.6 → 15.9 MB a process. Re-measured at 0.53.2 on the `--touch` page (BUGS.md #70): the
+   starter 661 MB at load, the default 662 (the starter was 850 at 0.52.68); server 83 MB, world workers
+   83 + 83, core 99, GPU meshes 258. Within a few MB of the default, so one world worker on phones is not
+   needed for memory. Left: a check on the iPhone itself (the owner's crash report predates 0.52.99).
 21. **Meadow tall grass** (owner's call pending, 2026-11-11): the meadow's grass grows in patches, never on ½ m
    grass ramps (~40 % of the meadow), drawn pale. Denser patches or tufts on ramps change the default world's
    terrain (a new compatibility line); a less pale tuft is a look change only. Asked the owner which.
