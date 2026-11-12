@@ -299,7 +299,8 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    terrain (a new compatibility line); a less pale tuft is a look change only. Asked the owner which.
 
    Owner, 2026-11-11, asked whether it rides along with 0.53: "What's this meadow grass change?" — explained;
-   waiting on the answer.
+   Owner, 2026-11-11: **"Yes make the meadow grass fix."** Tufts on grass ramps, denser/wider patches, less
+   pale tufts. 0.53.0 has already shipped, so this worldgen change takes the next line (0.54).
 22. **Settings and version buttons look like web links** (owner 2026-11-11: "I thought we had settings and
    version buttons changed queued, is that true?" — it wasn't recorded anywhere; then "The buttons should be
    aligned to match the design of the others instead of looking like web links"). Restyle them as the menu's
