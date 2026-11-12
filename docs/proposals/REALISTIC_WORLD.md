@@ -459,7 +459,8 @@ Open: q9 (waiting on the owner), and §8.10's orbit questions. q2 moved to §8 (
    on the in-game big map.
 9. **Climates no preset covers (R4):** in the Realistic world the default biome takes the cool, nearly
    rainless interior (a cold desert) and the very wet tropics (a tropical rainforest). Add presets for
-   them, or keep the fallback there? Owner asked (2026-11-12): "how does the default biome fill them?" (explained:
+   them, or keep the fallback there? **Answered (owner, 2026-11-12): "Yes add those biomes"** (after asking "how
+does the default biome fill them?" (explained:
    the default is plain temperate grassland with generic trees and rocks, so a cold dry interior and a wet
    tropical coast would both look like ordinary meadow); waiting on the answer.
 
@@ -679,8 +680,8 @@ with hotter/colder."** — the orbit's variety is a world setting (New world →
 little), *Extreme* (wider ranges: hotter and colder worlds); more presets by data. 3. **the moon's orbit by seed
 too**, its size in the sky kept. Default-generator worlds: **Realistic worlds only** roll orbits; the default
 and starter keep today's sky — owner: "We'll likely roll orbits out to regular worlds too, but for now it's a
-good reference point to compare to." Still open: 4 (how much the two faces' climates differ) and 5 (the gradient across
-the disc) — the proposal's defaults until answered.
+good reference point to compare to." 4 and 5 answered: "climates should align with the systems in place, orbits, etc." / "Follow orbital
+systems" — both come from the orbits model alone.
 
 
 1. **Seasons now or later?** Proposed: the orbit (φ, distance, the moon) first (O1–O3), seasons' model O4 and
