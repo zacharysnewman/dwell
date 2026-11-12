@@ -536,6 +536,36 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
 
 ## Smaller items, after the queue
 
+- **Visual pass 2 (2026-11-12), today's merges seen in Chrome on the GPU** (bench scenarios in a scratch
+  file, `?world=flat` and `starter:meadow-grass`; shots named below):
+  - **Damage cracks don't show in game (item 18, BLOCK_DAMAGE.md §6.3).** Stone struck 2 and 4 times
+    with the stone pickaxe (it breaks on the 5th, the stone tier's 1.5×) and dirt dug 2 and 4 times with
+    the shovel: the carve shows, but no crack strokes anywhere, not round the dent, not on the struck
+    cell's other faces. A pixel diff of `stone-0` against `stone-2`/`stone-4` (same view) changes only
+    inside the dent (none ≥ 4/255 on the cell's top or the face round it). Native tests pass
+    (`damage_mesh` overlay per vertex, `terrain_vertices_carry_the_crack_bytes`), so the loss is
+    between the worker's mesh and the screen: check the `cracks` stream after the job codec, the
+    Unorm8x4 attribute and `crack_shade`'s slot in the browser. Shots: `stone-4-near.png`,
+    `stone-zoom-0-2-4.png`, `diff-stone-4.png`, `dirt-sheet.png`.
+  - **The stone carve reads as dark spiky wedges** (`stone-4-near.png`): the shards' facets
+    in shade are near-black blades, sharper than the painterly look; the dirt bowl reads well
+    (`dirt-4-low.png`). From above and close the bowl's lit far wall can read as a post
+    (`dirt-2-close.png`).
+  - **Felling not reached with the bench's swings (item 24).** A one-cell log column on the flat
+    world: 4 level swings aimed high (pitch −3°) cut nothing visible; 4 low (−18°) a kerf; 12 more
+    alternating high/low and 4 vertical left a thin kerf and one vertical slit, no notch opening and no
+    fall (`fell-probe-sheet.png`, `c-alt-12.png`). The gash itself is pinned natively
+    (`felled_from_each_side_…`); the in-game look waits on a reliable fell: a bench step that
+    swings at a cell's two bands (as the test does), or a check that the bench's swings land deep.
+  - **Camera sway works, subtly (item 17):** measured on the bursts, the level chop turns the view
+    ~18 px (≈1.3°) right in the wind-up and back left through the strike; the vertical pitches up
+    ~16 px in the wind-up. The bursts' ~100 ms frames miss the contact kick. `clip-strip` holds the
+    arms only (`holdSwing`), so it shows no sway; a blue blob at the bottom of first person mid-swing
+    (the off hand's sleeve?) at 0.446 s (`level-sheet.png`) is worth a look.
+  - **Meadow tall grass 0.54 (item 21): good.** Tufts stand on the ½ m ramps as on flat grass, in the
+    grass top's colour (not pale); they read soft at a distance (`meadow-0.png`, `meadow-1.png`).
+  - Not checked: item 25's contact timing (not merged), remote chop (two clients).
+
 - **Visual pass (2026-11-11), found in game** (spots `starter:*` in `client/bench/spots.json`, found by
   `starter_world` `feature_spots`; shots named `starter-<spot>.png`):
   - **Tall grass nearly absent in game: not a loss (checked 2026-11-11, `claude/tall-grass-missing`).**
