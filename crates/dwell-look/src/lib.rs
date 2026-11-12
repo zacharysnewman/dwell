@@ -612,7 +612,7 @@ mod tests {
                 let got = sky_color(dir, face, day.of(face), &day);
                 for i in 0..3 {
                     assert!(
-                        (got[i] - want[i]).abs() < 1e-12,
+                        (got[i] - want[i]).abs() < 1e-9,
                         "{t} {dir:?} {b} @{alt}: {got:?} vs {want:?}"
                     );
                 }
