@@ -50,8 +50,10 @@ pub struct SwingDef {
     pub reach_m: f64,
     pub arc_deg: f64,
     pub samples: u32,
-    /// The camera's jolt on a hit (degrees).
-    pub kick_deg: f64,
+    /// The view's sway with the swing (`camera` in the data, per swing kind; docs/CHARACTERS.md
+    /// §5.2): the level swing's and the vertical one's.
+    pub camera_level: SwingCamera,
+    pub camera_vertical: SwingCamera,
     /// What a swing will draw from stamina when stamina exists (unused until then).
     pub stamina_cost: f64,
     /// Sound events (shared/sounds): the arc's swish, a bounce off what is not a wood.
@@ -63,11 +65,139 @@ pub struct SwingDef {
     pub rustle_leaves: u32,
 }
 
+/// One key of a swing's camera sway (`camera.<kind>.keys`): at phase time `t` (0 the swing's
+/// start, 1 the wind-up's end, 2 the arc's end, 3 a miss's recovery's end), the view's offset:
+/// `yaw` degrees toward the screen's right, `pitch` up, `roll` the view leaning right (its top
+/// toward the screen's right), `bob` metres along the view's right, up and back.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct CameraKey {
+    pub t: f64,
+    pub yaw: f64,
+    pub pitch: f64,
+    pub roll: f64,
+    pub bob: [f64; 3],
+}
+
+/// A view offset (the same axes as [`CameraKey`]): added to the view drawn, never to the aim.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct CameraOffset {
+    pub yaw: f64,
+    pub pitch: f64,
+    pub roll: f64,
+    pub bob: [f64; 3],
+}
+
+impl CameraOffset {
+    pub const ZERO: CameraOffset = CameraOffset {
+        yaw: 0.0,
+        pitch: 0.0,
+        roll: 0.0,
+        bob: [0.0; 3],
+    };
+    pub fn scaled(self, k: f64) -> CameraOffset {
+        CameraOffset {
+            yaw: self.yaw * k,
+            pitch: self.pitch * k,
+            roll: self.roll * k,
+            bob: self.bob.map(|b| b * k),
+        }
+    }
+    pub fn plus(self, o: CameraOffset) -> CameraOffset {
+        CameraOffset {
+            yaw: self.yaw + o.yaw,
+            pitch: self.pitch + o.pitch,
+            roll: self.roll + o.roll,
+            bob: std::array::from_fn(|k| self.bob[k] + o.bob[k]),
+        }
+    }
+    /// The largest angle (degrees) or bob (as cm) in it: for "is it at rest" checks.
+    pub fn size(&self) -> f64 {
+        let bob = self.bob.iter().fold(0.0f64, |m, b| m.max(b.abs()));
+        self.yaw
+            .abs()
+            .max(self.pitch.abs())
+            .max(self.roll.abs())
+            .max(bob * 100.0)
+    }
+}
+
+/// The kick at contact (`camera.<kind>.kick`): an offset added at the moment the head meets
+/// something (or passes the arc's middle on a miss), dying away over `decay_s`; a miss kicks at
+/// `miss` of it, a hit into a wood at 1, a bounce off anything else at `bounce`.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct CameraKick {
+    pub offset: CameraOffset,
+    pub decay_s: f64,
+    pub miss: f64,
+    pub bounce: f64,
+}
+
+/// A swing kind's camera sway: keyed offsets over its phase time and the kick at contact. No
+/// keys: no sway.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct SwingCamera {
+    pub keys: &'static [CameraKey],
+    pub kick: CameraKick,
+}
+
+impl SwingCamera {
+    /// The keyed offset at phase time `t` (0–3), eased between keys (each key a still point);
+    /// zero outside the keys.
+    pub fn at(&self, t: f64) -> CameraOffset {
+        let k = self.keys;
+        let (Some(first), Some(last)) = (k.first(), k.last()) else {
+            return CameraOffset::ZERO;
+        };
+        if !(first.t..=last.t).contains(&t) {
+            return CameraOffset::ZERO;
+        }
+        let i = k.iter().rposition(|key| key.t <= t).unwrap_or(0);
+        let a = k[i];
+        let b = k.get(i + 1).copied().unwrap_or(a);
+        let span = b.t - a.t;
+        let u = if span > 1e-9 { (t - a.t) / span } else { 0.0 };
+        let e = u * u * (3.0 - 2.0 * u);
+        let mix = |x: f64, y: f64| x + (y - x) * e;
+        CameraOffset {
+            yaw: mix(a.yaw, b.yaw),
+            pitch: mix(a.pitch, b.pitch),
+            roll: mix(a.roll, b.roll),
+            bob: std::array::from_fn(|j| mix(a.bob[j], b.bob[j])),
+        }
+    }
+}
+
 impl SwingDef {
+    /// A time `s` s into a miss as phase time (0 the start, 1 the wind-up's end, 2 the arc's end,
+    /// 3 the recovery's end): the camera's keys are placed in it, so they follow the timings.
+    pub fn phase_time(&self, s: f64) -> f64 {
+        let w = self.windup_s.max(1e-6);
+        let a = self.active_s.max(1e-6);
+        let r = self.recover_miss_s.max(1e-6);
+        if s < self.windup_s {
+            (s / w).max(0.0)
+        } else if s < self.windup_s + self.active_s {
+            1.0 + (s - self.windup_s) / a
+        } else {
+            (2.0 + (s - self.windup_s - self.active_s) / r).min(3.0)
+        }
+    }
+    /// The camera sway of a level or a vertical swing.
+    pub fn camera(&self, vertical: bool) -> &SwingCamera {
+        if vertical {
+            &self.camera_vertical
+        } else {
+            &self.camera_level
+        }
+    }
     /// When along the swing (s from its start) the head reaches arc step `step`.
     pub fn time_of_step(&self, step: u32) -> f64 {
         let n = self.samples.max(2) - 1;
         self.windup_s + self.active_s * f64::from(step.min(n)) / f64::from(n)
+    }
+    /// When a centred hit lands (s): the arc's middle step, where a miss's camera kick lands.
+    pub fn centre_s(&self) -> f64 {
+        self.time_of_step(self.samples.max(2).saturating_sub(1) / 2)
     }
     /// How long a swing that hit at arc step `step` lasts, and one that missed.
     pub fn hit_length(&self, step: u32) -> f64 {

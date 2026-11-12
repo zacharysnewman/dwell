@@ -3,8 +3,18 @@ import { defaultMotion, motionRecord, sanitizeMotion } from './motionSettings';
 
 describe('motion settings', () => {
   it('default on, off when the browser prefers reduced motion', () => {
-    expect(defaultMotion(false)).toEqual({ speedEffects: true, fovBoost: 1, plantSway: true });
-    expect(defaultMotion(true)).toEqual({ speedEffects: false, fovBoost: 1, plantSway: false });
+    expect(defaultMotion(false)).toEqual({
+      speedEffects: true,
+      fovBoost: 1,
+      plantSway: true,
+      cameraSway: true,
+    });
+    expect(defaultMotion(true)).toEqual({
+      speedEffects: false,
+      fovBoost: 1,
+      plantSway: false,
+      cameraSway: false,
+    });
     expect(sanitizeMotion(null, true)).toEqual(defaultMotion(true));
   });
 
@@ -13,6 +23,7 @@ describe('motion settings', () => {
       speedEffects: false,
       fovBoost: 1,
       plantSway: true,
+      cameraSway: true,
     });
     expect(sanitizeMotion({ speedEffects: 'yes', fovBoost: Number.NaN }, false)).toEqual(
       defaultMotion(false),
@@ -32,19 +43,43 @@ describe('motion settings', () => {
 
   it('is append-only: a stored record keeps fields this build does not know', () => {
     const stored = { speedEffects: true, fovBoost: 0.5, radialBlur: 0.3, future: { a: 1 } };
-    const out = motionRecord(stored, { speedEffects: false, fovBoost: 0.25, plantSway: false });
+    const out = motionRecord(stored, {
+      speedEffects: false,
+      fovBoost: 0.25,
+      plantSway: false,
+      cameraSway: false,
+    });
     expect(out).toEqual({
       speedEffects: false,
       fovBoost: 0.25,
       plantSway: false,
+      cameraSway: false,
       radialBlur: 0.3,
       future: { a: 1 },
     });
     // Unreadable records are replaced by what this build writes.
-    expect(motionRecord('garbage', { speedEffects: true, fovBoost: 1, plantSway: true })).toEqual({
+    expect(
+      motionRecord('garbage', {
+        speedEffects: true,
+        fovBoost: 1,
+        plantSway: true,
+        cameraSway: true,
+      }),
+    ).toEqual({
       speedEffects: true,
       fovBoost: 1,
       plantSway: true,
+      cameraSway: true,
     });
+  });
+
+  it('camera sway (CHARACTERS.md §5.2): on, off with reduced motion, a stored choice kept, older records default', () => {
+    expect(
+      sanitizeMotion({ speedEffects: true, fovBoost: 1, plantSway: true }, false).cameraSway,
+    ).toBe(true);
+    expect(sanitizeMotion({ speedEffects: true, fovBoost: 1 }, true).cameraSway).toBe(false);
+    expect(sanitizeMotion({ cameraSway: false }, false).cameraSway).toBe(false);
+    expect(sanitizeMotion({ cameraSway: true }, true).cameraSway).toBe(true);
+    expect(sanitizeMotion({ cameraSway: 1 }, false).cameraSway).toBe(true);
   });
 });

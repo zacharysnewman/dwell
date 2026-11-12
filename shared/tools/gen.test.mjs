@@ -281,3 +281,35 @@ test('durability: the stone axe, stone pickaxe and wooden shovel survive 32 hits
   bad((x) => (x.creativeWear = 'no'), /creativeWear/);
   bad((x) => (x.breakSound = 'nope'), /no sound event/);
 });
+
+test("a swing's camera sway (CHARACTERS.md §5.2): the axe's per kind, a fixture tool's by data alone, bad curves fail naming them", () => {
+  const d = validateTools(...fresh());
+  const rs = toolsRust(d);
+  // The stone axe's level sway leans right into the wind-up and turns left through the strike.
+  assert.match(rs, /name: "dwell:stone_axe".*camera_level: SwingCamera \{ keys: &\[CameraKey \{ t: 0\.0, yaw: 0\.0, .*CameraKey \{ t: 1\.0, yaw: 1\.8, pitch: 0\.5, roll: 1\.4/);
+  assert.match(rs, /camera_vertical: SwingCamera \{ keys: &\[.*CameraKey \{ t: 1\.0, yaw: 0\.3, pitch: 2\.2/);
+  // A fixture tool with its own sway by data alone; one without has none (no keys, no kick).
+  const [data, items, blocks] = fresh();
+  items.add('test:maul');
+  items.add('test:club');
+  const keys = [{ t: 0 }, { t: 1.2, pitch: 3, bob: [0, 0.02, 0] }, { t: 3 }];
+  data.tools.push({ name: 'test:maul', kind: 'axe', swingSeconds: 0.45, biteM: 0.3, bindM: 0.1, across: 1, along: 0.2, sharpness: 2, swing: { camera: { vertical: { keys, kick: { pitch: -2, decayS: 0.2 } } } } });
+  data.tools.push({ name: 'test:club', kind: 'axe', swingSeconds: 0.45, biteM: 0.3, bindM: 0.1, across: 1, along: 0.2, sharpness: 2 });
+  const out = toolsRust(validateTools(data, items, blocks));
+  assert.match(out, /name: "test:maul".*camera_level: SwingCamera \{ keys: &\[\], .*camera_vertical: SwingCamera \{ keys: &\[CameraKey \{ t: 0\.0, .*CameraKey \{ t: 1\.2, yaw: 0\.0, pitch: 3\.0, roll: 0\.0, bob: \[0\.0, 0\.02, 0\.0\] \}.*kick: CameraKick \{ offset: CameraOffset \{ yaw: 0\.0, pitch: -2\.0, .*decay_s: 0\.2, miss: 0\.4, bounce: 1\.6/);
+  assert.match(out, /name: "test:club".*camera_level: SwingCamera \{ keys: &\[\], .*camera_vertical: SwingCamera \{ keys: &\[\],/);
+  const bad = (edit, re) => {
+    const [x, i, b] = fresh();
+    edit(x.tools[0].swing.camera);
+    assert.throws(() => validateTools(x, i, b), re);
+  };
+  bad((c) => (c.sideways = {}), /swing\.camera: unknown field sideways/);
+  bad((c) => (c.level.keys[0].yaw = 1), /camera\.level\.keys must start at rest at t 0/);
+  bad((c) => c.level.keys.pop(), /camera\.level\.keys must end at rest at t 3/);
+  bad((c) => (c.level.keys[2].t = 0.5), /camera\.level\.keys\[2\]\.t \(0\.5\) must be after the key before \(1\)/);
+  bad((c) => (c.vertical.keys[1].pitch = 40), /camera\.vertical\.keys\[1\]\.pitch must be a number in \[-10, 10\]/);
+  bad((c) => (c.level.keys[1].bob = [0, 1]), /camera\.level\.keys\[1\]\.bob must be \[right, up, back\] metres/);
+  bad((c) => (c.level.kick.decayS = 0), /camera\.level\.kick\.decayS must be a number in \(0, 1\]/);
+  bad((c) => (c.level.kick.spin = 1), /camera\.level\.kick: unknown field spin/);
+  bad((c) => (c.level.keys = [{ t: 0 }]), /camera\.level\.keys must be a list of at least two keys/);
+});
