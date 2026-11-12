@@ -22,6 +22,9 @@ pub struct RemoteView {
     pub held: u16,
     /// Its last swing (`swing_flags`; v17).
     pub swing: u8,
+    /// Which swing that is (`SwingKind`'s value; 0, plain, from a server or snapshot without
+    /// the kinds).
+    pub swing_kind: u8,
     /// A jump whose snapshot arrived since the previous `sample`: a frame that comes after the
     /// jump's rise (a slow page, a long frame, snapshots read late) still starts the body's jump
     /// (`body_role`).
@@ -84,6 +87,7 @@ fn view(s: &RemotePlayerState) -> RemoteView {
         flags: s.flags,
         held: s.held,
         swing: s.swing,
+        swing_kind: s.swing_kind,
         jumped: false,
     }
 }
@@ -228,10 +232,71 @@ impl RemotePlayers {
     }
 }
 
+/// Asking the server for the remotes' swing kinds (`SwingHello`, WORK_QUEUE item 17): a datagram,
+/// since an older server drops one it can't read, so it is sent on a snapshot and again every
+/// `SWING_HELLO_EVERY_MS` until a snapshot carries the kinds, at most `SWING_HELLO_TRIES` times (an
+/// older server never answers: its players' swings stay break or place).
+#[derive(Clone, Debug, Default)]
+pub struct SwingHello {
+    sent: u32,
+    last_ms: Option<f64>,
+    answered: bool,
+}
+
+pub const SWING_HELLO_EVERY_MS: f64 = 1000.0;
+pub const SWING_HELLO_TRIES: u32 = 10;
+
+impl SwingHello {
+    /// A snapshot arrived at `now_ms`, carrying the kinds or not: whether to send `SwingHello` now.
+    pub fn on_snapshot(&mut self, kinds: bool, now_ms: f64) -> bool {
+        self.answered |= kinds;
+        if self.answered || self.sent >= SWING_HELLO_TRIES {
+            return false;
+        }
+        if self
+            .last_ms
+            .is_some_and(|t| now_ms - t < SWING_HELLO_EVERY_MS)
+        {
+            return false;
+        }
+        self.sent += 1;
+        self.last_ms = Some(now_ms);
+        true
+    }
+
+    /// The server sends the kinds.
+    pub fn answered(&self) -> bool {
+        self.answered
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::assert_close;
+
+    #[test]
+    fn swing_hello_repeats_until_a_snapshot_carries_the_kinds_or_gives_up() {
+        // face-a-only: a message schedule, no world.
+        let mut h = SwingHello::default();
+        assert!(h.on_snapshot(false, 0.0), "the first snapshot asks");
+        assert!(!h.on_snapshot(false, 50.0), "not again within a second");
+        assert!(
+            h.on_snapshot(false, 1000.0),
+            "again a second later (a lost datagram)"
+        );
+        assert!(
+            !h.on_snapshot(true, 2500.0) && h.answered(),
+            "answered: done"
+        );
+        assert!(!h.on_snapshot(false, 9000.0));
+        // An older server never answers: it stops after its tries.
+        let mut old = SwingHello::default();
+        let sent = (0..100)
+            .filter(|i| old.on_snapshot(false, f64::from(*i) * 500.0))
+            .count();
+        assert_eq!(sent as u32, SWING_HELLO_TRIES);
+    }
 
     fn remote(x: f64, flags: u8) -> RemotePlayerState {
         RemotePlayerState {
@@ -244,6 +309,7 @@ mod tests {
             flags,
             held: 0,
             swing: 0,
+            swing_kind: 0,
         }
     }
 

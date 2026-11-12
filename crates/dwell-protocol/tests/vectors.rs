@@ -107,6 +107,31 @@ fn decoded_fields_are_the_vectors_values() {
         (5, true)
     );
     assert_eq!((s.remotes[1].held, s.remotes[1].swing), (0, 0));
+    // Without the kinds (an older server's, or to a client that didn't say `SwingHello`): plain.
+    assert!(!s.swing_kinds && s.remotes.iter().all(|r| r.swing_kind == 0));
+    // WORK_QUEUE item 17: to a client that said it, each remote's swing kind follows.
+    let Some(Message::PhysicsSnapshot(k)) = Message::decode(&get("physics_snapshot_swing_kinds"))
+    else {
+        panic!("physics_snapshot_swing_kinds")
+    };
+    assert!(k.swing_kinds);
+    assert_eq!(
+        (k.remotes[0].swing_kind, k.remotes[1].swing_kind),
+        (SwingKind::ChopLevel as u8, SwingKind::Plain as u8)
+    );
+    assert_eq!(
+        PhysicsSnapshot {
+            swing_kinds: false,
+            remotes: s.remotes.clone(),
+            ..k.clone()
+        },
+        s,
+        "the same snapshot, the kinds after it"
+    );
+    assert_eq!(
+        Message::decode(&get("swing_hello")),
+        Some(Message::SwingHello)
+    );
     // v20: a falling piece's pose (docs/FELLING.md).
     let p = s.pieces[0];
     assert_eq!((p.id, p.position), (7, [10.5, 40.25, -3.5]));

@@ -159,6 +159,7 @@ tsEnum('BlockEditAction', c.blockEditActions);
 tsEnum('RegionEditOp', c.regionEditOps);
 tsEnum('VoxelModificationReason', c.voxelModificationReasons);
 tsEnum('HostState', c.hostStates);
+tsEnum('SwingKind', c.swingKinds);
 const tsFlags = (name, obj) => {
   ts.push('');
   ts.push(`export const ${name} = {`);
@@ -286,6 +287,7 @@ rsEnum('BlockEditAction', c.blockEditActions);
 rsEnum('RegionEditOp', c.regionEditOps);
 rsEnum('VoxelModificationReason', c.voxelModificationReasons);
 rsEnum('HostState', c.hostStates);
+rsEnum('SwingKind', c.swingKinds);
 const rsFlags = (mod, type, obj) => {
   rs.push('');
   rs.push(`pub mod ${mod} {`);

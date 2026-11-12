@@ -912,7 +912,8 @@ tests only); CI fails on stale output. Code names characters, looks, items and r
   sent, still plays it, then the fall or the landing), a landing
   one-shot under 1.5 m/s, slide, sprint, walk, crouch and crouch-walk by speed), each switch
   cross-faded by the new clip's `blend`; gaits play at speed / `cycle`; the `hold` layer while the
-  hand holds something; a break or place swing on the `action` layer when the snapshot's swing
+  hand holds something; a break or place swing, or the axe's level or vertical chop when the
+  snapshot carries its kind (`SwingHello`, §8.3), on the `action` layer when the snapshot's swing
   count steps; the head (60 %), chest (15 %) and held arm (50 %) follow the look's pitch. Your arms
   run the same machine on the arms' roles from the prediction, swinging when an edit is sent.
   Over steps a remote body is drawn at its feet plus the step view's offset (`dwell-game`'s
@@ -1058,7 +1059,9 @@ around each player (out to 3 m plus twice a tick's travel, capped), re-synced in
 an edit or a streamed chunk, and dropped every 64 ticks when more than 2 chunks from every player;
 **[built, 0.49.42]** a chunk's full cubes enter (and leave) the collider a little a tick, those within
 the players' and pieces' reach at once (`TerrainCollision::catch_up`, `COLLISION_CELLS_PER_TICK`;
-PLAYER_CONTROLLER.md §5), so a teleport's buried chunks no longer land on one tick;
+PLAYER_CONTROLLER.md §5), so a teleport's buried chunks no longer land on one tick; the client's
+prediction on a phone takes fewer of the rest a tick (`Players::set_collision_cells_per_tick`,
+`shared/render/streaming.json` `collisionCellsPerTick`; the cells within reach still at once);
 a chunk with no solid cell holds nothing, so open sky costs no collision memory. Cells that collide
 as their full cube go into the `Voxels` collider; **shaped cells** — the generated ramps (below,
 Phase 41) — go into **one triangle mesh per chunk** (Parry `TriMesh`, `FIX_INTERNAL_EDGES`, placed
@@ -3861,6 +3864,7 @@ in the code yet.
 | `SLOW_FRAME_MESHES_MAX` (client, `pool.rs`) | 8× | A slow page keeps more chunk meshes in flight: the usual number × its frame interval / 16.7 ms, at most 8×, queued in the pool and started as workers free between frames (at CI's ~5 fps a few starts a frame left the workers idle and the loading screen waited its 20 s timeout) |
 | `STREAM_MESH_SHARE` (client, `stream_budget.rs`) | 0.4 | The budget's share the light leaves to the mesh starts while chunks wait to be meshed |
 | `LIGHT_SLICE_CELLS` (client, `chunk_stream.rs`) | 1024 | Cells of a chunk's flood light between looks at the clock: ~0.1 ms natively, ~0.5 ms on a phone's CPU; one chunk's light was 15–20 ms of a frame at CPU 6× (BUGS.md #72) |
+| `collisionCellsPerTick` (client prediction, data: `shared/render/streaming.json`) | desktop 8192 (the server's `COLLISION_CELLS_PER_TICK`), phone 1024 | Terrain collider cells a prediction tick puts in outside the player's reach; the cells within reach go in at once, so the player moves the same. The 8192 were 8–10 ms of a tick at CPU 6× (BUGS.md #72) |
 | `uploadBytesPerFrame` (client, data: `shared/render/streaming.json`) | desktop 4 MiB, phone 512 KiB | The chunk mesh bytes one frame uploads (the first mesh always goes; the rest wait in order); a mesh larger than it is written over several frames, this much a frame (`render/staged.rs`). On the bench's phone page at CPU 4× an upload costs ~4 ms a MB and moving brought bursts of 1.8–3.7 MB in a frame (BUGS.md #72) |
 | **LOD (§6.6), Phase 4** | | |
 | `LOD_SECTION_CELLS` | 32 | Cells per LOD section edge (level 0 = a chunk) |
@@ -4075,6 +4079,24 @@ u8   pieceCount                 // [built, protocol v20] the falling pieces (doc
 repeat pieceCount:
   u32 id, i32×3 position (posfix: the piece's reference cell's centre),
   i16×4 rotation (unit quaternion x, y, z, w, each × 32767), f16×3 velocity, f16×3 spin
+optional, only to a client that said SwingHello (below):
+u8   swingKindCount             // = remotePlayerCount
+repeat swingKindCount:
+  u8 swingKind                  // SwingKind of that remote's last swing: 0 Plain (the break or
+                                //   place `swing` says), 1 ChopLevel, 2 ChopVertical; unknown: Plain
+```
+**Swing kinds: `SwingHello` (datagram) [built]** (WORK_QUEUE item 17). The swing byte says
+break or place only; an axe's chop steps it as a break (what a client without the kinds plays) and
+the server keeps which swing it was (`SwingKind`, `shared/protocol/constants.json` `swingKinds`, the
+animator's roles by name: `chop_level`, `chop_vertical`). A client asks for the kinds with a
+`SwingHello` **datagram**: no `Welcome` or `Inventory` flag is free to advertise it, and an older
+server drops a datagram it can't read (a control message it can't read ends the session). The
+client sends it on a snapshot and again each second until a snapshot ends with the kinds, ten tries
+at most (`dwell-game` `remotes::SwingHello`); from then on that client's snapshots carry them, sized
+into the datagram with the remotes. An older client never says it, so it is never sent the trailing
+bytes (it refuses them) and keeps seeing a `break`; an older server never writes them.
+```
+C→S  SwingHello 0x03, datagram: (empty)
 ```
 **Client → Server: `HeldItem` (reliable, `control`) [built, Phase 40 C1; protocol v17]** — `u16 held`
 (as above, the client's block mapped to the server's id): sent when the hand changes (the hotbar's
@@ -4083,7 +4105,9 @@ empty hand) and puts it in every snapshot, so a late joiner sees it at once and 
 costs nothing; 3 bytes a remote player against an event on change, which would need its own state
 sync for joiners (CHARACTERS.md §10 Q9). Swings: the server steps a player's swing count on each
 `BlockEditRequest` (break or place) and `RegionEdit` (place: brush strokes and region tools) it
-receives; the others start the swing when they see the count change.
+receives, and on each axe swing (`ChopAction::Swing` or `Sweep`) it takes when the axe is ready (a
+break, its kind the chop's direction, above); the others start the swing when they see the count
+change.
 Phase 20 adds, for riding Tier 1 bodies (§9.4), a `u32 groundEntityId` to the local and remote
 blocks (positions become body-local when it is non-zero), and the Tier 1 entity list:
 ```

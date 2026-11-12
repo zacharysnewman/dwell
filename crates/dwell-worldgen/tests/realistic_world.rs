@@ -208,7 +208,11 @@ dwell_world::both_faces!(
     /// Hotspot chains: each island stands above the plain map, the older ones farther along the
     /// plate's motion and lower.
     fn hotspot_chains_age_along_the_plates_motion(f: FaceFrame) {
-        let h = realistic();
+        // The landform's lift, with the climate's rain (R3) held off: a young island in the wind's
+        // wet air erodes faster (face B seed 0's keeps 90 of its 420 m), which is the climate's
+        // doing, not the chain's.
+        let mut h = realistic();
+        h.tectonics.climate = 0;
         let mut chains = 0;
         for s in 0..12u64 {
             let seed = face_seed(s, f.face);
@@ -235,7 +239,11 @@ dwell_world::both_faces!(
                     );
                     let v = chain[0];
                     let lift = ground(&map, v.x, v.z) - ground(&plain, v.x, v.z);
-                    assert!(lift > 0.3 * v.height, "seed {s}: {lift:.0} m");
+                    assert!(
+                        lift > 0.3 * v.height,
+                        "seed {s}: {lift:.0} m of {:.0} m",
+                        v.height
+                    );
                 }
                 chains += 1;
             }

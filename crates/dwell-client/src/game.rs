@@ -124,6 +124,11 @@ pub trait Scene: TerrainRenderer {
     fn uploads_waiting(&self) -> bool {
         false
     }
+    /// Terrain collider cells a prediction tick puts in outside the player's reach
+    /// (shared/render/streaming.json `collisionCellsPerTick` by tier; BUGS.md #72).
+    fn collision_cells_per_tick(&self) -> usize {
+        dwell_physics::terrain::COLLISION_CELLS_PER_TICK
+    }
     /// Rewrites chunk `coord`'s heightfield tile alone (none: its water is gone), its meshes kept.
     fn set_water_tile(
         &mut self,
@@ -644,6 +649,8 @@ pub struct Game<S: Scene> {
     burn_until_ms: f64,
     /// Said `SteamHello` (the server has `inventory_flags::STEAM`).
     steam_on: bool,
+    /// Asking for the others' swing kinds (`SwingHello`: their chops by direction).
+    swing_hello: dwell_game::remotes::SwingHello,
     pub inventory_slot: usize,
     /// The creative hotbar's picks (docs/ITEMS.md §6a): its slots' palette items.
     pub creative: dwell_game::creative_hotbar::CreativeHotbar,
@@ -1012,6 +1019,7 @@ impl<S: Scene> Game<S> {
             steam: Default::default(),
             burn_until_ms: 0.0,
             steam_on: false,
+            swing_hello: dwell_game::remotes::SwingHello::default(),
             inventory_slot: 0,
             creative: dwell_game::creative_hotbar::CreativeHotbar::new(
                 &dwell_game::block_interaction::palette(),
@@ -1461,6 +1469,11 @@ impl<S: Scene> Game<S> {
                 }
                 self.last_snapshot_tick = s.server_tick;
                 self.clock.observe(s.server_tick, now_ms);
+                if self.swing_hello.on_snapshot(s.swing_kinds, now_ms) {
+                    self.outbox
+                        .borrow_mut()
+                        .push(Send::Datagram(Message::SwingHello));
+                }
                 // The pieces' poses first: drawn interpolated, and stood in for in the prediction
                 // at their latest carried on to the present, so a replay meets them where the
                 // server had them (docs/FELLING.md §3, BUILT_BODIES.md §6).
@@ -3373,6 +3386,8 @@ impl<S: Scene> Game<S> {
         self.last_frame_ms = Some(now_ms);
         self.accumulator =
             (self.accumulator + elapsed * self.tick_rate).min(MAX_TICKS_PER_FRAME * TICK_MS);
+        let cells = self.scene.borrow().collision_cells_per_tick();
+        self.predictor.set_collision_cells_per_tick(cells);
         let t0 = telemetry::now_ms();
         while self.accumulator >= TICK_MS {
             self.accumulator -= TICK_MS;
@@ -3681,6 +3696,12 @@ impl<S: Scene> Game<S> {
                 if tool.is_some() {
                     use dwell_protocol::swing_flags as sf;
                     v.swing = sf::BREAK | ((now_ms / 800.0) as u64 as u8 & sf::COUNT_MASK);
+                    // The chop your hand would swing, as another player's arrives (`SwingHello`).
+                    v.swing_kind = if self.chop.vertical {
+                        dwell_protocol::SwingKind::ChopVertical
+                    } else {
+                        dwell_protocol::SwingKind::ChopLevel
+                    } as u8;
                 }
                 let held = tool.unwrap_or_else(|| crate::bodies::held_from_wire(v.held, Some));
                 let world = self.streamer.store_mut();
@@ -5174,6 +5195,7 @@ impl Puppets {
                     flags: flags | face_b | grounded,
                     held: self.held,
                     swing: 0,
+                    swing_kind: 0,
                     jumped: false,
                 }
             })

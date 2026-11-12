@@ -114,6 +114,12 @@ impl Server {
             // An aimed swing, and the prototype's chop at the crosshair: the arc's middle.
             _ => Some(t.swing.centre_s()),
         };
+        // The others see the swing start at once, by its direction (WORK_QUEUE item 17); its hit
+        // lands at the contact.
+        let (ChopAction::Swing { vertical, .. } | ChopAction::Sweep { vertical, .. }) = &a else {
+            return;
+        };
+        self.chop_swung(id, *vertical);
         let tick = self.tick;
         let s = self.sessions.get_mut(&id).expect("session");
         s.chop_ready = tick + (t.swing_seconds * f64::from(dwell_protocol::SIM_HZ)) as u32;
@@ -166,6 +172,26 @@ impl Server {
                 } => self.sweep(id, &tool, look.map(f64::from), vertical),
                 _ => {}
             }
+        }
+    }
+
+    /// Steps this player's swing for the others (a chop, `vertical` or level; a break to a client
+    /// that didn't say `SwingHello`) when it may swing now.
+    fn chop_swung(&mut self, id: SessionId, vertical: bool) {
+        let tick = self.tick;
+        if let Some(s) = self.sessions.get_mut(&id)
+            && s.joined()
+            && s.handle.is_some()
+            && tick >= s.chop_ready
+        {
+            s.swung(
+                true,
+                if vertical {
+                    dwell_protocol::SwingKind::ChopVertical
+                } else {
+                    dwell_protocol::SwingKind::ChopLevel
+                },
+            );
         }
     }
 

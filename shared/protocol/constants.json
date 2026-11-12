@@ -97,6 +97,7 @@
   "messageTypes": {
     "PlayerInput": 1,
     "DatagramPing": 2,
+    "SwingHello": 3,
     "DatagramPong": 130,
     "WaterCurrents": 131,
     "StatusRequest": 64,
@@ -225,6 +226,11 @@
     "countMask": 63,
     "break": 64,
     "place": 128
+  },
+  "swingKinds": {
+    "Plain": 0,
+    "ChopLevel": 1,
+    "ChopVertical": 2
   },
   "welcomeFlags": {
     "flight": 1,

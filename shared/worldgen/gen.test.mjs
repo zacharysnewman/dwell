@@ -9,6 +9,8 @@ import {
   hydrologyRust,
   midplaneRust,
   platesRust,
+  climateRust,
+  validateClimate,
   placementsRust,
   rocksRust,
   validateRocks,
@@ -933,4 +935,39 @@ test('grass.json validates, its output is current, and bad entries fail naming t
   // A rule by data alone: another ground and rates.
   const fixture = validateGrass({ ...grass(), on: ['dwell:dirt'], spreadPerDay: 1, reach: 2 }, blocks, decorations);
   assert.match(grassRust(fixture), /on: &\["dwell:dirt"\]/);
+});
+
+const loadClimate = () => JSON.parse(readFileSync(join(here, 'climate.json'), 'utf8'));
+
+test('the checked-in climate is valid and generates the checked-in Rust', () => {
+  const rs = climateRust(validateClimate(loadClimate()));
+  const checkedIn = readFileSync(join(here, '../../crates/dwell-worldgen/src/climate.gen.rs'), 'utf8');
+  assert.equal(rs, checkedIn, 'run `node shared/worldgen/gen.mjs`');
+});
+
+test('a latitude band and a wind cell added by data alone are emitted', () => {
+  const c = loadClimate();
+  c.bands.push({ name: 'polar', weight: 0.5, latitude: [76, 86] });
+  c.winds.push({ name: 'doldrums', latitude: [0, 5], from: 90 });
+  const rs = climateRust(validateClimate(c));
+  assert.match(rs, /Band \{ name: "polar", weight: 0\.5, latitude: \[76\.0, 86\.0\] \}/);
+  assert.match(rs, /WindCell \{ name: "doldrums", latitude: \[0\.0, 5\.0\], from: 90\.0 \}/);
+});
+
+test('a bad climate entry fails naming it', () => {
+  for (const [edit, message] of [
+    [(c) => (c.bands[0].latitude = [40, 30]), /bands\[0\]\.latitude must be \[south, north\]/],
+    [(c) => (c.bands[1].name = c.bands[0].name), /bands\[1\]: subtropical is named twice/],
+    [(c) => (c.bands[0].colour = 'red'), /bands\[0\]: unknown colour/],
+    [(c) => c.seaLevel.reverse(), /seaLevel\[1\]: latitudes must ascend/],
+    [(c) => (c.winds = [{ name: 'westerlies', latitude: [30, 60], from: 240 }]), /bands\[0\] \(subtropical\): no wind cell covers its middle latitude 21/],
+    [(c) => (c.rain.maxCells = 1024), /rain\.maxCells 1024 a side needs more than maxGridBytes/],
+    [(c) => (c.rain.cell = 50), /rain\.cell must be in \[100, 10000\]/],
+    [(c) => (c.discharge = { min: 2, max: 4 }), /discharge must be \[min ≤ 1, max ≥ 1\]/],
+    [(c) => delete c.lapseRate, /the file: missing lapseRate/],
+  ]) {
+    const c = loadClimate();
+    edit(c);
+    assert.throws(() => validateClimate(c), message);
+  }
 });

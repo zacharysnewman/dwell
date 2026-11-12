@@ -5921,6 +5921,9 @@ impl crate::game::Scene for Renderer {
     fn uploads_waiting(&self) -> bool {
         !self.terrain.writes.is_empty()
     }
+    fn collision_cells_per_tick(&self) -> usize {
+        streaming::StreamingBudgets::get().collision_cells(self.phone)
+    }
     fn draws_heightfield(&self) -> bool {
         heightfield_drawn(self.water().tier().heightfield, self.heightfield_override)
     }

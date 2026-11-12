@@ -22,6 +22,7 @@ export const TERRAIN = {
   tectonics: {
     kind: [0, 3, true],
     plates: [0, 1, true],
+    climate: [0, 1, true],
     angle: [-360, 360],
     offset: [-50_000, 50_000],
     width: [{ above: 0 }, 20_000],
