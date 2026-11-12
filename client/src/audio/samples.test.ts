@@ -184,6 +184,21 @@ describe('sound samples: a material by data alone', () => {
     expect(files.every((f) => f.startsWith('grass-step-'))).toBe(true);
   });
 
+  // Owner, 2026-11-12: the "no" sound for clicking when nothing is there was "way to loud and
+  // jarring". The old one (UI_Error_Tone_01, peak -0.5 dBFS, played at gain 0.4) peaked near
+  // -8.5 dBFS; the new soft knock (peak -6.1 dBFS) plays at most ~12 dB below that.
+  it('keeps the deny sound soft: a quiet knock, ~12 dB under the old error tone', () => {
+    const deny = sound('dwell:deny');
+    expect(usesSamples(deny)).toBe(true);
+    expect(deny.samples?.files).toHaveLength(1);
+    expect(deny.samples?.files[0]).toMatch(/^deny-knock-1-[0-9a-f]{8}\.m4a$/);
+    const filePeakDb = -6.1; // the file's measured peak (ffmpeg volumedetect)
+    const oldPeakDb = -0.5 + 20 * Math.log10(0.4);
+    const peakDb = filePeakDb + 20 * Math.log10(sampleGain(deny, {}));
+    expect(peakDb).toBeLessThanOrEqual(oldPeakDb - 11);
+    expect(peakDb).toBeGreaterThan(oldPeakDb - 18); // still heard
+  });
+
   it('scales a sample by its gain, the play and the intensity range', () => {
     const s: SoundDef = { ...sound('dwell:stone_land'), samples: { files: ['x.m4a'], gain: 0.5 } };
     const range = s.intensity?.gain ?? [1, 1];
