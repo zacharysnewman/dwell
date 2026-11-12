@@ -376,6 +376,11 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    almost looked 3D"** — compare the deck as it was before the volumetric work (before 93fd6c26, e.g. at
    122b0f0e) with today's deck term by term (fake relief/normals from the noise, self-shadowing toward the sun,
    rim/silver light, the dark undersides, the sunset ramp) and restore what was lost.
+   Owner, 2026-11-12: **"In terms of color too, the clouds seem gloomy and dark like not-quite storm clouds."** Fair-
+   weather cumulus should read bright white on top and light grey below; only cumulonimbus/precipitation darkens.
+   Likely: the higher view extinction (#790) with the light's multiple scattering too weak (the papers' octave/
+   multi-scatter approximation), ambient dimming with cloud above too strong, and `cloudTypes` darkening on the
+   ordinary types.
    **Built (2026-11-12, cloud, branch `claude/deck-lighting-lp3c01`, CLOUDS.md §10):** the shading code was never changed;
    what changed is which deck shows. Before the volume, desktops drew the deck at `high` (5 octaves and a
    self-shadow sample toward the sun); since, the sky's deck is only Low (phones, `?clouds=low`, and while the
@@ -1373,6 +1378,16 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    to showing the other side as the player flies up out of the hole."**) — past the portal's motes the view flips
    and the player rises out on face B; (5) out on face B, a drone rise back to the edge-on outline. Defaults while
    unanswered: face A golden hour, face B night; clouds on for the far shots, off for the portal.
+   v2 review, owner: **"The camera shouldn't flip on the wide shot, show it's upside down."** — the wide shot of the
+   player coming out on face B keeps face A's up (the camera never takes face B's frame), so face B and the player
+   rising out of its hole read upside down, hanging under the disc. Clouds off in every shot (owner: they "might look
+   weird", confirmed by the v2 comparison).
+   Owner: **"Also it looked like the player flew out of the hole instead of physics carrying it out of the hole. Like
+   was flying."** — no flight in the portal shot: momentum alone carries the player up out of face B's hole (v2
+   turned flight on at the top of the rise). **"Face b should be night."** — keep face B at night.
+   Portal exit (owner's answer, 2026-11-12): **land beside the hole** — today a player rises ~12 m out of the far
+   face's hole, falls back and bounces between the faces forever; the portal gives a small sideways push (or slows
+   the fall-back) so the player arcs out and lands on the far face's ground beside the hole.
    Owner refinement for (4)/(5), 2026-11-12: **"Like a farther out non first person view of the other side."** — after
    the motes, cut to a third-person camera farther out on face B (15–40 m from the portal, looking at the hole) as the
    player flies up out of it, not first person; the jump stays first person on face A.
@@ -1738,7 +1753,30 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    page's core against `parts.mjs` (the Peasant's export byte for byte). Left: the owner repaints the Peasant's face
    and hair with it.
 
+44. **Trees on slopes hang over the edge** (owner 2026-11-12: **"I notice a lot of trees on slopes are hanging out over
+   the edge. Perhaps trees should always have flats under them? Don't limit trees to flats, since they might not
+   spawn on wide sections of terrain? Check implications of this and possible fixes."**). Finding: placements
+   (`placements.rs`) anchor a tree at its anchor column's top + 1 and test the slope only by the height field's
+   gradient over ±2 m (`maxSlopeDeg` up to 44°); the other trunk columns (thick old-growth trunks) and ½ m ramps under
+   the trunk are not levelled, so a trunk's downhill side stands over a ramp or a drop. Options, analysis and the
+   owner's pick follow. Options shown (https://claude.ai/artifact/ChMv9xuaABdEGfzRPVLDM9): today floating, A trunk
+   reaches down, B level a pad, C flare + small fill. Owner: **"For now let's just do level pad, can just be the the
+   tree width, 1m."** — fill the cells under the trunk's footprint only (no ring) up to the trunk's base; a change
+   to the terrain a seed generates, so a new compatibility line (0.55, the owner raises it).
+
+45. **Floating trees drift, leaves let water through** (owner 2026-11-12: **"Also, trees they are floating in water should
+   never settle, it causes them to block up rivers randomly instead of floating downstream. And leaves also should
+   let water flow through freely."**). A body floating in water (a felled trunk, a crown) never settles back into
+   blocks while it floats; it keeps drifting with the current until it beaches on dry ground (then settles as
+   today). Leaf blocks are open to the water grid (water flows through their cells as through air, the leaves
+   kept), in place and on bodies.
+
 ## Future (needs owner answers)
+
+- **Waterlogging** (owner 2026-11-12: "Eventually we'll want to make it so some blocks if they don't move for a little
+  while or 'move enough' they'll get waterlogged, sink to the bottom and then settle."): floating bodies of
+  certain blocks soak up water after resting still for a while or travelling far enough, sink, and settle on the
+  bed — per-block data (soak time, distance).
 
 - **Tall grass hides you** (owner 2026-11-12: "I like the hide mechanic idea, save this for later."): tall grass
   hides a crouched player from animals and NPCs (and deer bed down in it).
