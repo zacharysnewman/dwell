@@ -810,6 +810,15 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    wet), plus a fixed test world and bench spot that stand in the densest forest, so every tree/leaf/impostor change
    is measured there at High on the M1 Air. In progress (cloud).
 
+33. **Licensed music replaces the generated music** (owner 2026-11-12: "I downloaded a big music set as a Unity
+   asset, I'd like the casual game music setup in a prototype and make it play randomly in the game. Probably
+   needs compression. It'll replace the current music which is AI generated."). The pack: *Andrew Sitkov Music*
+   (Unity Asset Store, `~/Library/Unity/Asset Store-5.x/Andrew Sitkov Music/AudioMusic/`; the download was not
+   finished at 23:10, the folder empty). Plan: extract the casual-game tracks from the .unitypackage, compress
+   (AAC/Opus at a music bitrate, loudness-matched), a music list as data (tracks, moods, gain, fade), a prototype
+   page to audition the set, the game's music player shuffling them (no repeats back to back, gaps and fades as
+   data) in place of the current tracks; licence notes as for the Imphenzia samples (AUDIO.md §2b).
+
 ## Done
 
 - **Axe swing directions and animation tools (owner 2026-11-11: "The axe animations are still trash.
