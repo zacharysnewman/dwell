@@ -324,6 +324,21 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    (coverage, cloud type, precipitation), height profiles per cloud type (flat-based cumulus with billowing tops,
    stratus sheets, towering cumulonimbus with anvils), base-shape remapping and edge erosion with curl distortion,
    wind and shear; within the High-on-M1 budget.
+   **Built (2026-11-12, branch `claude/cloud-shapes`, CLOUDS.md §9):** the research (Schneider 2015/2017/2022,
+   Hillaire 2016, Bauer 2019, Häggström 2018) in §9.1; the shape model as data: a weather map from the deck's
+   noise (cover, cloud type, precipitation; `weather`), height profiles per cloud type (`cloudTypes`: stratus,
+   stratocumulus, cumulus, cumulonimbus with an anvil; a new type is a list entry), a Perlin–Worley base (64³)
+   and Worley detail (32³) baked once in the job workers (`Job::CloudNoise`, the deck until whole), the base
+   remapped by the cover, the edges eroded by curl-distorted detail (wispy bases, billowy tops; the core stays),
+   wind shear; the light march on the base shape only. CPU twin and tests (flat base, rounded top, anvil,
+   coverage 0, edge-only erosion, tiling, a fixture type by data, both faces, naga). Cost read from the shader:
+   Medium ≤ 7.4k ALU a texel (was 5.3k), High ≤ 10.5k (was 7.6k).
+   Owner, 2026-11-12 (BUGS.md #90): **"The clouds also look really badly dithered when they overlap? I think
+   mostly when you get to their level? Looks very pixelated."** Asked for in the same work: blue-noise jitter, a
+   depth-aware bilateral upsample, neighbourhood clamping instead of history rejection near the layer, more
+   resolution or steps near or inside the layer by data per tier, a CPU test of a sharp silhouette and stability
+   under the jitter. **Built (same branch, CLOUDS.md §9.6).** Next (local): the in-game look (sun high, low sun,
+   from above, night, through the layer) against the old blobs and the bench before/after; tune by the data.
 14. **Tall grass grows and spreads** (owner 2026-11-11: "I want tall grass to steadily grow and spread. It
    should probably have a max depending on climate/biome."). **Built** (ADR 0075 T3c, docs/ECOLOGY.md §10):
    `shared/worldgen/grass.json` (the rule as data: the block, the ground, the decoration whose climate
