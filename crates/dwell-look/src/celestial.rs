@@ -16,9 +16,10 @@
 //!   data's `moon.start_phase`).
 //! - **Tidally locked** (owner, 2026-11-12): the moon grid's up (face A's) always points at the home
 //!   disc's centre, so home sees face A at every phase; face B is the far side.
-//! - **Phases from geometry, physical** (owner: no dome bias): the moon is a flat disc, so the face
-//!   seen is lit as a whole by n·s — full when the moon is opposite the sun, dark from last quarter
-//!   to first (crescents only in its crater walls, which M-2's baked normals draw).
+//! - **Phases from geometry** on a domed disc (owner, 2026-11-12, changing Q3: "You mentioned a dome
+//!   something, maybe do that"): the flat face's normals blended `moon.domeBias` toward a sphere's,
+//!   so the phases read as crescents, halves and gibbous with the baked craters on top; the lit
+//!   share is that disc's ([`disc_lit`]), full opposite the sun, 0 at new.
 //! - **Moonlight on the ground** is today's moonlight × (`moon.night_floor` + (1 − floor) × the lit
 //!   share × how much of the disc is over the face's horizon): darker than today's 55% floor on a
 //!   moonless night, never black (owner: "A darker floor but a minimum still.").
@@ -52,6 +53,41 @@ fn scale(a: V3, k: f64) -> V3 {
 fn unit(a: V3) -> V3 {
     let l = dot(a, a).sqrt();
     if l > 0.0 { scale(a, 1.0 / l) } else { a }
+}
+
+/// Grid cells a side over the disc for [`disc_lit`]'s average.
+const DISC_CELLS: usize = 24;
+
+/// The lit share of the moon's face seen, by the cosine `cos_a` between its flat normal and the
+/// sun: the disc's mean N·L with each point's normal blended `dome` toward a sphere's
+/// (`moon.domeBias`, the sky's `MOON_DOME`: 0 the flat disc, n·s; 1 a ball, (1 + cos a) / 2), over
+/// the same at full, so a full moon is 1 and a new one 0. The drawn moon (sky.wgsl `dwell_moon`)
+/// blends its normals the same way, so the halo and the moonlight follow what is drawn.
+pub fn disc_lit(cos_a: f64, dome: f64) -> f64 {
+    let c = cos_a.clamp(-1.0, 1.0);
+    let s = (1.0 - c * c).max(0.0).sqrt();
+    let mean = |sun: V3| {
+        let (mut sum, mut n) = (0.0, 0usize);
+        for j in 0..DISC_CELLS {
+            for i in 0..DISC_CELLS {
+                let x = (i as f64 + 0.5) / DISC_CELLS as f64 * 2.0 - 1.0;
+                let y = (j as f64 + 0.5) / DISC_CELLS as f64 * 2.0 - 1.0;
+                let r2 = x * x + y * y;
+                if r2 > 1.0 {
+                    continue;
+                }
+                let ball = [x, y, (1.0 - r2).sqrt()];
+                let nrm = unit(std::array::from_fn(|k| {
+                    dome * ball[k] + (1.0 - dome) * [0.0, 0.0, 1.0][k]
+                }));
+                sum += dot(nrm, sun).max(0.0);
+                n += 1;
+            }
+        }
+        sum / n.max(1) as f64
+    };
+    let full = mean([0.0, 0.0, 1.0]).max(1e-9);
+    (mean([s, 0.0, c]) / full).clamp(0.0, 1.0)
 }
 
 /// What a viewer at home sees of the moon at one moment.
@@ -196,7 +232,7 @@ impl Celestial {
         let phase = -lon / std::f64::consts::TAU;
         MoonView {
             face,
-            lit: dot(normal, sun).max(0.0),
+            lit: disc_lit(dot(normal, sun), self.day.moon.dome_bias),
             phase: phase.rem_euclid(1.0),
             direction,
         }

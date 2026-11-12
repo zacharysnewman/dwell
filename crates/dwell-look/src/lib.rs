@@ -280,6 +280,7 @@ pub fn sky_wgsl_with(moon_ground: &str) -> String {
         ("MOON_RADIUS", d.moon.radius_deg.to_radians()),
         ("MOON_MARIA", d.moon.maria),
         ("MOON_EARTHSHINE", d.moon.earthshine),
+        ("MOON_DOME", d.moon.dome_bias),
         ("MOON_BLOOM", d.moon.bloom),
         ("MOON_BLOOM_K", gauss_k(d.moon.bloom_deg)),
         ("MOON_GLOW", d.moon.glow),

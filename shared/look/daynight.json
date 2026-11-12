@@ -22,7 +22,7 @@
     "glow": 0.3
   },
   "moon": {
-    "$comment": "The disc, its phases (a cycle of cycleDays in-game days; startPhase at day 0: 0 new, 0.5 full), its surface (maria darkness, earthshine on the unlit part) and its cool halo (a bloom and a glow, as the sun's, scaled by each keyframe's moonGlow and the lit share). newMoonLight is the share of the moonlight left at new moon, so every night stays readable. relief scales the slopes of the moon's baked normals (its real terrain, MOON_WORLD.md §5) as the sky draws them: its craters are a few degrees steep, too shallow to see from home at 1:1.",
+    "$comment": "The disc, its phases (a cycle of cycleDays in-game days; startPhase at day 0: 0 new, 0.5 full), its surface (maria darkness, earthshine on the unlit part) and its cool halo (a bloom and a glow, as the sun's, scaled by each keyframe's moonGlow and the lit share). newMoonLight is the share of the moonlight left at new moon, so every night stays readable. relief scales the slopes of the moon's baked normals (its real terrain, MOON_WORLD.md §5) as the sky draws them: its craters are a few degrees steep, too shallow to see from home at 1:1. domeBias blends a sphere's normal into the flat disc's (owner, 2026-11-12: \"You mentioned a dome something, maybe do that\"), so its phases read as crescents, halves and gibbous with the craters on top; the lit share, the halo and the moonlight follow the same blended disc (celestial::disc_lit).",
     "radiusDeg": 1.2,
     "cycleDays": 8,
     "startPhase": 0.5,
@@ -36,6 +36,7 @@
     "glowColor": "#c6d6ff",
     "newMoonLight": 0.55,
     "relief": 8,
+    "domeBias": 0.6,
     "nightFloor": 0.15
   },
   "moonOrbit": {

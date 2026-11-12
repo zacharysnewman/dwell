@@ -67,6 +67,8 @@ pub struct MoonLook {
     pub new_moon_light: f64,
     /// The sky moon's baked normals' slopes × this (render/moon.rs).
     pub relief: f64,
+    /// How much of a sphere's normal the sky moon's disc takes (0 flat, 1 a ball; `celestial::disc_lit`).
+    pub dome_bias: f64,
     /// The celestial model's share of the moonlight on a moonless night (`crate::celestial`; M-2
     /// draws with it in place of `new_moon_light`).
     pub night_floor: f64,
@@ -885,9 +887,10 @@ mod tests {
         // (by the celestial model's geometry, M-4: within the orbit's tilt of the count)
         near((b - a).rem_euclid(1.0), 1.0 / 8.0, 2e-3);
         near(D.state(0.0, None, Some(0.25)).moon_phase, 0.25, 2e-3);
-        // Physical phases on a flat face (owner): full lit at full, dark at quarters and new.
+        // Domed phases (owner, `domeBias`): full lit at full, part-lit at quarters, dark at new.
         assert!(D.state(0.0, None, Some(0.5)).moon_lit > 0.99);
-        assert!(D.state(0.0, None, Some(0.25)).moon_lit < 0.1);
+        let quarter = D.state(0.0, None, Some(0.25)).moon_lit;
+        assert!(quarter > 0.1 && quarter < 0.6, "domed: {quarter}");
         assert_eq!(D.state(0.0, None, Some(0.0)).moon_lit, 0.0);
     }
 

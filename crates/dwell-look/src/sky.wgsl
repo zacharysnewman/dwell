@@ -164,7 +164,11 @@ fn dwell_moon(dir: vec3f, day: DaySky, px: f32) -> vec4f {
         return vec4f(0.0);
     }
     let g = dwell_moon_ground(p / max(r, 1.0), px / MOON_RADIUS);
-    let lit = max(dot(g.normal, dwell_moon_sun(day, x, y)), 0.0);
+    // Domed (`moon.domeBias`, celestial::disc_lit): a sphere's normal blended into the baked
+    // one, so the phases read as crescents with the craters on top.
+    let ball = vec3f(p / max(r, 1.0), sqrt(max(1.0 - r * r, 0.0)));
+    let n = normalize(mix(g.normal, ball, MOON_DOME));
+    let lit = max(dot(n, dwell_moon_sun(day, x, y)), 0.0);
     return vec4f(MOON_COLOR * g.albedo * (lit + MOON_EARTHSHINE), edge);
 }
 
