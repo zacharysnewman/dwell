@@ -313,7 +313,7 @@ spiky wedges.
   hits add flakes; where they overlap the deepest wins (merged scars). The field is 0 at the cell's edge
   (§6.2's fade), so the face stays watertight. Lit flat per triangle, and the scar is fresh rock: the
   vertex colour lifted toward the look's `color` (× 1.4 × colour, by depth share), occluded 0.15 by depth
-  instead of 0.4, `darken` unread. Stone's data: `depth` 0.06 (a few cm), `darken` 0, `grid` 12,
+  instead of 0.4, `darken` unread. Stone's data: `flakes` 1, `size` 0.6, `depth` 0.1 (after the browser check), `darken` 0, `grid` 12,
   `triangles` 512 (one struck face 392 triangles; four still fit at the coarser grid `grid_for` picks).
 - **Pieces:** the rock shard's `shard` look is now an elongated low-poly shard: a triangular waist and
   two off-axis tips, 6 flat triangles, closed all round (it tumbles in the air as every loose item
@@ -327,10 +327,18 @@ spiky wedges.
   inside-the-cell and budget tests now run on stone's spall (both faces); `ground_mesh`
   `the_rock_shard_is_an_elongated_low_poly_shard` (6–10 triangles, ≥ 2.5:1, closed; red on the old
   size); `shared/tools/gen.test.mjs` (a fixture's spall and flakes by data alone, a bad count fails).
-- **Not done:** the browser shots (1/3/5 hits close and from standing height, the burst) were not taken
-  within the session's time box; the look in game is for the owner's review (bench `damage-dents`).
-  Known limit: at grid 12 the stepped inner flakes (a few cm wide) are only a few grid cells, so their
-  walls follow the grid; the first flake of each hit is the one that reads.
+- **Browser check** (2026-11-12, M1 GPU, the warm bench; scenarios in the PR, a flat world's stone floor
+  hit 1/3/4 times by the stone pickaxe, which breaks it on the 5th; before = 0.54.29): first tuned
+  in data to `flakes` 1, `size` 0.6, `depth` 0.1 (the two-flake 0.44/0.06 scar was a hand's width and
+  invisible from standing height). Verdict, honestly: **it does not yet read as shattered stone.** Close
+  up there are a few light flat planes at the strike, but the dark crack overlay (§6.3) dominates the
+  cell; from standing height the mark reads as a dark crack starburst, as before; at a grazing angle
+  barely anything shows (the carve fades to 0 well inside the cell's edge, so nothing shows in the
+  silhouette). The light stone texture leaves the lifted floor little contrast. No flying shard was seen
+  in the burst frames (one small 18 cm drop and the billboard chips). Next levers: weaker or no cracks
+  on spalled faces, a stronger lift or a distinct fresh tint, flakes that reach the cell's edge (break
+  the silhouette; needs the fade relaxed with the neighbour's face kept watertight), and real 3D flying
+  fragments.
 
 ## 7. Pieces (0.52.46)
 

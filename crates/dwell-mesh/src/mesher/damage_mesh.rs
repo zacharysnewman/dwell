@@ -194,7 +194,14 @@ fn flakes(m: &HitMark, index: usize, count: u32, r: f64, depth: f64, c: [f64; 2]
                     .collect(),
             );
             // Deep at the strike, shallower toward the far end (1.45 a out).
-            let near = depth * (0.55 + 0.45 * kf / f64::from(count.max(2) - 1)).min(1.0);
+            // The last (deepest) flake reaches the full depth; a single flake is it.
+            let step = if count == 1 {
+                1.0
+            } else {
+                kf / f64::from(count - 1)
+            };
+            // Behind the strike the floor runs 0.55 a on, deepening ×1.27: the deepest is `depth`.
+            let near = depth * (0.55 + 0.45 * step) / 1.27;
             let far = near * 0.3;
             let g = (near - far) / (1.45 * a);
             Flake {
@@ -946,7 +953,7 @@ mod tests {
             let l = look_of(b).unwrap();
             assert_eq!(l.profile, CarveProfile::Spall, "{b}");
             assert!(l.depth <= 0.1, "{b}: a scar {} m deep", l.depth);
-            assert!(l.flakes >= 2, "{b}: stepped");
+            assert!(l.flakes >= 1, "{b}: flakes");
         }
         let look = look_of("dwell:stone").unwrap();
         let mark = HitMark {
