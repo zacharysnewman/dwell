@@ -211,6 +211,16 @@ impl Session {
         }
     }
 
+    /// Whether the world's mode places saved structures from the player's library
+    /// (`structures`; STRUCTURES.md §9). A server that names no mode plays the default one.
+    pub fn structures(&self) -> bool {
+        use dwell_protocol::modes::Ability;
+        match self.world {
+            Some(w) => w.allows(Ability::Structures),
+            None => dwell_protocol::modes::default_mode().allows(Ability::Structures),
+        }
+    }
+
     /// The player chose Continue in the join prompt.
     pub fn accept_registry(&mut self) {
         if matches!(self.state, SessionState::Confirming { .. })

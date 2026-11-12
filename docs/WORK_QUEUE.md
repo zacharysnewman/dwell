@@ -197,7 +197,16 @@ Last updated: 2026-11-11 (0.52.108).
    still written only when it changed. Next: grazing applied to tall grass as chunks load.
 12. **Players' saved structures as placement sources** (owner 2026-11-11): per player (their library, usable
    in any world they create); placed copies editable, not protected; 32³ for now (may change), or larger
-   structures as a grid of 32³ tiles. Sharing between players: Future.
+   structures as a grid of 32³ tiles. Sharing between players: Future. The owner's words (2026-11-11): "Structures are
+   per player, eventually shareable (add to roadmap). Yes can be edited, not protected. Yes we can keep
+   32^3 for now, though we may change this later. Or save as an array of that size." **Built**
+   (2026-11-12, `claude/saved-structures-library`, STRUCTURES.md §9): the structures store as the player's
+   library (per device); a selection over 32 across / 64 tall saved as one tiled file of 32³ tiles, up to
+   `shared/structures/library.json`'s limits (128 × 64 × 128); the creative inventory's Structures tab
+   places one with the paste ghost (R turns 90°, right click places) as `Paste` region edits of at most
+   32³, which the server validates as any paste; a `structures` mode ability (creative only). Sharing:
+   FUTURE.md. Open: the server can't refuse a structure placement as such outside creative (both
+   capability flag bytes are full; a paste there is paid in items), the anchor, a ghost of the blocks.
 13. **Volumetric clouds** (owner 2026-11-11: "volumetric clouds in the sky. These clouds will likely be
    useful for weather sim, and volcano smoke. So they need to be performant."). **Built (branch
    `claude/volumetric-clouds`, CLOUDS.md §8):** a ray-marched layer in its own reduced-resolution pass

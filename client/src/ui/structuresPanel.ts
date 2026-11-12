@@ -4,14 +4,13 @@
 // (§6.5): the ghost box follows the crosshair and a right click pastes it as region edits.
 import { CELL_HEIGHT } from '../protocol/constants.gen';
 import { StructureStore, type StoredStructure } from '../local/structureStore';
+import { fitsOne, maxSize, withinLimit } from '../local/structureLibrary';
 import {
   boxOf,
   bottomCentre,
   KEPT_ON_SAVE,
-  MAX_EDGE,
-  MAX_HEIGHT,
-  maxEdge,
   parseStructure,
+  readTiled,
   scanBuilt,
   sizeLabel,
   structureFile,
@@ -88,9 +87,10 @@ export function saveBox(
     );
     if (!box) return { error: 'Nothing built near you yet.' };
   }
-  if (box.size.some((n, i) => n > maxEdge(i))) {
+  // Over one file's cap it is saved as tiles, up to the library's limit (STRUCTURES.md §9).
+  if (!withinLimit(box.size) && !fitsOne(box.size)) {
     return {
-      error: `That is ${sizeLabel(box.size)}: a structure is at most ${String(MAX_EDGE)} across and ${String(MAX_HEIGHT)} tall.`,
+      error: `That is ${sizeLabel(box.size)}: a saved structure is at most ${sizeLabel(maxSize())}.`,
     };
   }
   return box;
@@ -115,7 +115,7 @@ export function saveFromWorld(
     }
     anchor = a;
   }
-  const cells = read(box.min, box.size);
+  const cells = readTiled(read, box.min, box.size);
   if (cells.length === 0) return { error: 'Part of that box is not loaded: go closer.' };
   try {
     return {

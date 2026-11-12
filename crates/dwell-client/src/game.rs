@@ -2520,6 +2520,12 @@ impl<S: Scene> Game<S> {
         self.instant_breaks = on;
     }
 
+    /// Whether the world's mode places saved structures (`structures`, creative only for now):
+    /// the region tools load one from the library only then (STRUCTURES.md §9).
+    pub fn set_structures(&mut self, on: bool) {
+        self.region.structures = on;
+    }
+
     /// The hits the server will take to break `block` with what is held now.
     fn hits_to_break(&self, block: &str) -> Option<u32> {
         dwell_protocol::damage::hits_to_break_for(

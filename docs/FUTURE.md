@@ -130,3 +130,11 @@ at a glance. The big map's tiles already reach `shade_grid` (`dwell_game::minima
 one-cell border of their neighbours' cells, so it would be a rule there with its three factors as
 data in `shared/ui/map.json` (beside `heightTint`), "north" taken face-locally (+z, up the screen on
 both faces). Not now: 0.50.61 shows block colours lightly tinted by height (ADR 0068).
+
+## Sharing saved structures between players (owner, 2026-11-11)
+
+"Structures are per player, eventually shareable (add to roadmap)." Today the library is per player
+per device (STRUCTURES.md §9), moved only by export and import. Later: send a structure to another
+player in the same world, a server's shared library, or a published catalogue. Open questions: who
+may publish, size and rate limits on the wire, moderation, and whether a shared structure is
+pinned to a build's block registry (names, as the format already is) or carried with it.

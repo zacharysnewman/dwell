@@ -58,7 +58,7 @@ import { rememberServer } from './ui/recentServers';
 import { prefersTouch, TouchControls } from './ui/touchControls';
 import { Hotbar, type HotbarSlot, type InventoryHud } from './ui/hotbar';
 import { Backpack, backpackKey } from './ui/backpack';
-import { CreativeInventory, loadPicks, savePicks } from './ui/creativeInventory';
+import { CreativeInventory, loadPicks, savePicks, structureEntries } from './ui/creativeInventory';
 import type { BrushPanelState } from './ui/brushPanel';
 import { prefersReducedMotion } from './ui/motionSettings';
 import type { SpyglassHud } from './ui/spyglass';
@@ -1413,6 +1413,7 @@ function play(app: App, joined: Extract<SessionReport, { phase: 'joined' }>): vo
   });
   // The creative hotbar's picks (docs/ITEMS.md §6a), saved per world in this browser.
   const items = app.client.paletteItems();
+  const library = new StructureStore(opfsStructureDir());
   const worldKey = `${String(joined.generatorVersion)}:${String(joined.worldSeed)}`;
   const store = (() => {
     try {
@@ -1438,6 +1439,20 @@ function play(app: App, joined: Extract<SessionReport, { phase: 'joined' }>): vo
     },
     (slot) => {
       app.client.select(slot);
+    },
+    // The Structures tab (STRUCTURES.md §9): the player's library, placed with a ghost to aim.
+    {
+      allowed: () => app.client.structuresAllowed(),
+      list: async () => structureEntries(await library.list()),
+      place: async (file) => {
+        const entry = await library.get(file);
+        if (entry?.status !== 'ok') return `${file} can't be placed by this version.`;
+        const s = entry.structure;
+        const { cells, keep } = clipboardOf(s);
+        const err = app.client.loadStructure(s.size[0], s.size[1], s.size[2], cells, keep, s.name);
+        if (!err) setInventoryOpen(app, false);
+        return err;
+      },
     },
   );
   app.touch?.setOnBag(() => {

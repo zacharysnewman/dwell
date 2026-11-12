@@ -14,6 +14,14 @@ import {
   type ValidStructure,
 } from '../../../shared/structures/format.mjs';
 import { BLOCK_DEFS, STATE_DEFS, stateId } from '../world/blocks';
+import {
+  checkTiled,
+  fitsOne,
+  maxSize,
+  TILES_FIELDS,
+  tiledFrom,
+  withinLimit,
+} from './structureLibrary';
 
 export { MAX_EDGE, MAX_HEIGHT, maxEdge, type ValidStructure };
 
@@ -30,12 +38,19 @@ export const KEPT_ON_SAVE: readonly string[] = ['dwell:air', 'dwell:sandbox_floo
 
 /** The fields this build knows (format.mjs `TOP_LEVEL`); others are a newer build's. */
 export function knownFields(json: StructureJson): StructureJson {
-  return Object.fromEntries(Object.entries(json).filter(([k]) => TOP_LEVEL.includes(k)));
+  const known = fieldsOf(json);
+  return Object.fromEntries(Object.entries(json).filter(([k]) => known.includes(k)));
 }
 
 /** The fields this build doesn't know, kept on every rewrite (the store is append-only). */
 export function unknownFields(json: StructureJson): StructureJson {
-  return Object.fromEntries(Object.entries(json).filter(([k]) => !TOP_LEVEL.includes(k)));
+  const known = fieldsOf(json);
+  return Object.fromEntries(Object.entries(json).filter(([k]) => !known.includes(k)));
+}
+
+/** The known fields of a file of its kind: the library's tiles (structureLibrary.ts) or voxels. */
+function fieldsOf(json: StructureJson): readonly string[] {
+  return json.kind === 'tiles' ? TILES_FIELDS : TOP_LEVEL;
 }
 
 /**
@@ -47,7 +62,10 @@ export function checkStructure(json: unknown, file: string): ValidStructure {
   if (json === null || typeof json !== 'object' || Array.isArray(json)) {
     throw new Error(`${file}: (file): not a JSON object`);
   }
-  return validate(knownFields(json as StructureJson), file, REGISTRY);
+  const known = knownFields(json as StructureJson);
+  // A selection larger than one file, saved as tiles (the player's library, STRUCTURES.md §9).
+  if (known.kind === 'tiles') return checkTiled(known, file, REGISTRY);
+  return validate(known, file, REGISTRY);
 }
 
 /** Parses JSON text and checks it; the parsed object (all fields) and the checked structure. */
@@ -224,8 +242,10 @@ const KEEP = '.';
 /**
  * A structure file from the states of a box (layer order, as `Client.voxels` reads them): states
  * named in `kept` (air, the sandbox floor) become kept cells (`null`, "."), every other state a
- * palette character — its block's initial where free. Throws over the size cap or with more
- * distinct states than palette characters; the result passes `checkStructure`.
+ * palette character — its block's initial where free. A box over one file's cap (32 across, 64
+ * tall) is saved as the library's tiles (`kind: "tiles"`, structureLibrary.ts) up to its limit.
+ * Throws over the limit or with more distinct states than palette characters; the result passes
+ * `checkStructure`.
  */
 export function structureFromVoxels(options: {
   name: string;
@@ -236,9 +256,9 @@ export function structureFromVoxels(options: {
 }): StructureJson {
   const { name, size, cells } = options;
   const [sx, sy, sz] = size;
-  if (size.some((n, i) => !Number.isInteger(n) || n < 1 || n > maxEdge(i))) {
+  if (!withinLimit(size) && !(fitsOne(size) && size.every((n) => Number.isInteger(n) && n >= 1))) {
     throw new Error(
-      `A structure is at most ${String(MAX_EDGE)} blocks across and ${String(MAX_HEIGHT)} tall, not ${sizeLabel(size)}.`,
+      `A saved structure is at most ${sizeLabel(maxSize())} blocks, not ${sizeLabel(size)}.`,
     );
   }
   if (cells.length !== sx * sy * sz) throw new Error('The cells do not fill the box.');
@@ -285,15 +305,47 @@ export function structureFromVoxels(options: {
   }
   const sorted: Record<string, string | null> = anyKept ? { [KEEP]: null } : {};
   for (const c of Object.keys(palette).sort()) sorted[c] = palette[c] ?? null;
+  const anchor = [...(options.anchor ?? bottomCentre(size))] as Vec3;
+  if (!fitsOne(size)) return tiledFrom({ name, size: [...size], anchor, palette: sorted, layers });
   return {
     format: 1,
     name,
     kind: 'voxels',
     size: [...size],
-    anchor: [...(options.anchor ?? bottomCentre(size))],
+    anchor,
     palette: sorted,
     layers,
   };
+}
+
+/**
+ * Reads a box of any size in tiles of at most `tile` a side (`Client.voxels` caps one read) into
+ * one array in layer order; empty if any tile isn't loaded.
+ */
+export function readTiled(read: ReadBox, min: Vec3, size: Vec3, tile = TILE): Uint16Array {
+  const out = new Uint16Array(size[0] * size[1] * size[2]);
+  for (let ty = 0; ty < size[1]; ty += tile) {
+    for (let tz = 0; tz < size[2]; tz += tile) {
+      for (let tx = 0; tx < size[0]; tx += tile) {
+        const ts: Vec3 = [
+          Math.min(tile, size[0] - tx),
+          Math.min(tile, size[1] - ty),
+          Math.min(tile, size[2] - tz),
+        ];
+        const cells = read([min[0] + tx, min[1] + ty, min[2] + tz], ts);
+        if (cells.length !== ts[0] * ts[1] * ts[2]) return new Uint16Array(0);
+        for (let y = 0; y < ts[1]; y++) {
+          for (let z = 0; z < ts[2]; z++) {
+            for (let x = 0; x < ts[0]; x++) {
+              out[((ty + y) * size[2] + (tz + z)) * size[0] + (tx + x)] =
+                cells[(y * ts[2] + z) * ts[0] + x] ?? 0;
+            }
+          }
+        }
+      }
+    }
+  }
+  return out;
 }
 
 // ---- Printing -------------------------------------------------------------------------------------
@@ -338,7 +390,7 @@ function pretty(v: unknown, indent: string, room: number, top = false): string {
  */
 export function structureText(json: StructureJson): string {
   const ordered: StructureJson = {};
-  for (const k of TOP_LEVEL) if (k in json) ordered[k] = json[k];
+  for (const k of fieldsOf(json)) if (k in json) ordered[k] = json[k];
   for (const [k, v] of Object.entries(json)) if (!(k in ordered)) ordered[k] = v;
   return `${pretty(ordered, '', WIDTH, true)}\n`;
 }

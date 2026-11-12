@@ -1,0 +1,7 @@
+{
+  "changes": [
+    "Your saved structures are now a library you can place in any creative world: open the inventory (E) and pick one from the new Structures tab.",
+    "A structure follows your crosshair as a ghost box: R turns it 90°, M mirrors it, right click places it. Placed blocks are ordinary blocks you can edit.",
+    "Selections larger than 32 blocks across can now be saved: they are kept as a grid of 32-block tiles, up to 128 × 64 × 128."
+  ]
+}
