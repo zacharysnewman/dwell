@@ -1061,7 +1061,9 @@ export function validateBiomeMap(bm) {
 
 /**
  * The world knobs Chisel may change (ADR 0074 B4, the archipelago's: the coast's islands, the sea
- * floor's shelf, the inland rise, the hills' height): terrain.json's groups and keys.
+ * floor's shelf, the inland rise, the hills' height): terrain.json's groups and their ranged keys
+ * (Chisel's sliders). The groups are those `dwell_worldgen::config::height_from_json` reads; the
+ * tectonics take every ranged key `TERRAIN` has, so a new key there is a knob by itself.
  */
 export const WORLD_KNOBS = {
   islands: ["amplitude", "wavelength", "octaves", "cap"],
@@ -1071,8 +1073,21 @@ export const WORLD_KNOBS = {
   tectonics: Object.keys(TERRAIN.tectonics),
 };
 
-/** Checks Chisel's world knobs (`{ group: { key: v } }`, `WORLD_KNOBS`'s) by `TERRAIN`'s ranges. */
-export function validateWorldKnobs(w) {
+/**
+ * The knob groups' list keys (not sliders: `TERRAIN_LISTS`', e.g. `tectonics.lavaVents`), each
+ * with its checker: derived from `TERRAIN_LISTS`, so a list key gen.mjs accepts Chisel accepts too.
+ */
+export const WORLD_LISTS = Object.fromEntries(
+  Object.keys(WORLD_KNOBS).map((g) => [g, TERRAIN_LISTS[g] ?? {}]),
+);
+
+/**
+ * Checks Chisel's world knobs (`{ group: { key: v } }`): `WORLD_KNOBS`' keys by `TERRAIN`'s
+ * ranges, `WORLD_LISTS`' by their checkers (as gen.mjs's `checkGroups`), each list seeing its
+ * group's knobs over `base`'s (terrain.json, the build's world: a lava vent's cone counted by the
+ * edit's `hotspotCount`, else the build's).
+ */
+export function validateWorldKnobs(w, base = {}) {
   const fail = (m) => {
     throw new Error(`world: ${m}`);
   };
@@ -1080,13 +1095,18 @@ export function validateWorldKnobs(w) {
     fail("must be an object");
   for (const [g, keys] of Object.entries(w)) {
     if (!(g in WORLD_KNOBS)) fail(`${g} is not a world knob`);
+    const lists = WORLD_LISTS[g];
     for (const [k, v] of Object.entries(keys ?? {})) {
+      if (k in lists) continue;
       if (!WORLD_KNOBS[g].includes(k)) fail(`${g}.${k} is not a world knob`);
       const [min, max, whole] = TERRAIN[g][k];
       const low = typeof min === "object" ? v > min.above : v >= min;
       if (!(isNum(v) && low && v <= max && (!whole || Number.isInteger(v))))
         fail(`${g}.${k} is out of range`);
     }
+    const merged = { ...base[g], ...keys };
+    for (const [k, check] of Object.entries(lists))
+      if (keys?.[k] !== undefined) check(keys[k], merged, (m) => fail(`${g}.${k}${m}`));
   }
   return w;
 }

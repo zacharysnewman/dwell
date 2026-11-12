@@ -979,6 +979,14 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
 
 ## Smaller items, after the queue
 
+- **Chisel's world knobs take every key gen.mjs takes (owner 2026-11-12: "fix a failing test on main": `state.test.ts`
+  "opens the starter world as a valid edit" failed with "tectonics.lavaVents is not a world knob"; "make Chisel
+  accept every key the generator's world config accepts — ideally derived from the same schema … so new keys never
+  break it again"). Done (`claude/chisel-world-knobs`): `validateWorldKnobs` (shared/worldgen/biomes.mjs) takes the
+  knob groups' list keys from `TERRAIN_LISTS` (`WORLD_LISTS`, checked by the same checker gen.mjs uses, over
+  terrain.json's group), as the tectonics' ranged keys already came from `TERRAIN`; a test validates every world
+  file's knob-group overrides as a Chisel edit. Still open on main: `textures.test.ts` "flags colours off the art
+  direction" lists `obsidian.shadow` and `lava.light` off the palette (an art-direction call for the owner).
 - **Chop check (2026-11-12, `claude/chop-check`), items 24–26 seen in Chrome on the GPU** (`fell-tree` and scratch
   scenarios on `?world=flat`):
   - **One swing after the fall wipes the gash (item 24).** At the 11th swing the stump is an upright ramp low at the
