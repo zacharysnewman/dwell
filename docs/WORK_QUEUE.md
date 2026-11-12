@@ -558,6 +558,9 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
     between the worker's mesh and the screen: check the `cracks` stream after the job codec, the
     Unorm8x4 attribute and `crack_shade`'s slot in the browser. Shots: `stone-4-near.png`,
     `stone-zoom-0-2-4.png`, `diff-stone-4.png`, `dirt-sheet.png`.
+    **Fixed (`claude/cracks-and-fell-bugs`, BUGS.md #74):** the game's chunks append their ground items
+    to the opaque mesh after the crack stream was padded, so it fell short and the client dropped it whole;
+    the items now pad it. Seen in the browser after: crack strokes on the struck stone's face and top.
   - **The stone carve reads as dark spiky wedges** (`stone-4-near.png`): the shards' facets
     in shade are near-black blades, sharper than the painterly look; the dirt bowl reads well
     (`dirt-4-low.png`). From above and close the bowl's lit far wall can read as a post
@@ -568,6 +571,10 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
     fall (`fell-probe-sheet.png`, `c-alt-12.png`). The gash itself is pinned natively
     (`felled_from_each_side_…`); the in-game look waits on a reliable fell: a bench step that
     swings at a cell's two bands (as the test does), or a check that the bench's swings land deep.
+    **Fixed (`claude/cracks-and-fell-bugs`, BUGS.md #75):** every swing at one aim landed in the same
+    quarter-metre band and hacked one binding kerf; a swing at the deeper band now lands in the open one,
+    so one aim notches, and the stone axe's `biteM` 0.1 makes it 11 swings (ADR 0067 §2 amended). Bench
+    `fell-tree` chops a column at one aim and shoots the stump from the notch side.
   - **Camera sway works, subtly (item 17):** measured on the bursts, the level chop turns the view
     ~18 px (≈1.3°) right in the wind-up and back left through the strike; the vertical pitches up
     ~16 px in the wind-up. The bursts' ~100 ms frames miss the contact kick. `clip-strip` holds the

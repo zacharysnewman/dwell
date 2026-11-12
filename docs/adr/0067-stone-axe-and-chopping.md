@@ -31,7 +31,7 @@ felling (FELLING.md). Scope: tools and woods are per build; cuts are per world, 
 ## Decision
 
 1. **Tools are data.** `shared/tools/tools.json`'s `tools`: an item name (an inventory item), a
-   `kind` from a fixed vocabulary (`axe`), `swingSeconds` (0.45), `biteM` (0.12: metres a swing
+   `kind` from a fixed vocabulary (`axe`), `swingSeconds` (0.45), `biteM` (0.1 since 2026-11-12, was 0.12: metres a swing
    straight across the grain cuts into open wood), `bindM` (0.05: a kerf this deep past the notch
    halves a swing into it), `across` (1) and `along` (0.15) shares and `sharpness` (2): a swing's
    share is `along + (across − along) |cos θ|^sharpness`, θ the angle between the swing plane's
@@ -52,6 +52,12 @@ felling (FELLING.md). Scope: tools and woods are per build; cuts are per world, 
    With the data: notching fells in **9** swings, hacking one spot in **28** (3.1×), vertical
    swings at a standing trunk take **61** (level and vertical alternated by band). The share of the
    cross-section cut is the most of any two opposite sides together over the cell's size.
+   **Amended 2026-11-12 (BUGS.md #75):** a quarter-metre band is too fine for a player to aim at,
+   so in game every swing at one spot hit the same band and no tree fell. A swing aimed at the band
+   cut deeper than the other now lands in the other (`Cut::open_band`, the head coming in beside
+   its last kerf, in the open wood), so the same aim notches; hacking one kerf no longer happens.
+   With the stone axe's `biteM` 0.1 (was 0.12; the owner's "about 12 good chops", WORK_QUEUE item 7)
+   a standing trunk falls in **11** swings at one aim, as alternating the bands does.
 3. **Aim.** The client casts its view ray into the targeted cell's box: the face it enters and the
    point, sent with the swing. The server checks the point is on that cell (5 cm slack) and within
    the edit reach (+0.75 m), that the cell is a wood and the face a side (end grain: nothing), and
@@ -197,7 +203,7 @@ Still parked (defaults chosen):
 
 4. **Cuts on a felled trunk.** Cuts on cells that fall with a piece are dropped; carry them into the
    piece and back when it settles?
-6. **Numbers.** 9 notching swings, 28 hacking (3.1×; the owner asked 3–4×: a smaller `bindM` raises it), 0.45 s a swing; 0.55 of the cross-section to fell
+6. **Numbers.** 11 swings at one aim with `biteM` 0.1 (2026-11-12, BUGS.md #75: a swing at the deeper band lands in the open one, so hacking one kerf, once 28 swings at 3.1× the notching the owner asked, no longer happens), 0.45 s a swing; 0.55 of the cross-section to fell
    or buck. All data.
 7. **Leaning trunks** (a log at an angle): logs are only ever along x, y or z, so a lean is not
    stored; the share rule handles any angle once a body's cells can be chopped (bodies: next).

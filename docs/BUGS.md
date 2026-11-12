@@ -249,6 +249,33 @@ face, or the placement check against its shape.
 
 ## Fixed
 
+### 75. A tree never falls to a player's swings (fixed after 0.54.25)
+
+Found 2026-11-12 by visual pass 2 (WORK_QUEUE "Smaller items"): a one-cell log column on the flat world, 4 level
+swings aimed high (pitch −3°) cut nothing visible, 4 low (−18°) a kerf, 12 more alternating high and low and 4 vertical
+left a thin kerf and a slit, no notch and no fall (`fell-probe-sheet.png`, `c-alt-12.png`). Native tests felled trees
+because they swung at a cell's two bands in turn. The cause: a standing log's ½ m row has two quarter-metre bands, and
+a player's swings at one aim all land in the same band, hacking one kerf that binds deeper each swing (`bite / (1 +
+kerf / bindM)`): 40 swept level swings at −3° or −18° from 1.5 m felled nothing (−3° and −18° hit different rows, so
+alternating them split the cut over two cells). Fixed: a swing aimed at the band cut deeper than the other lands in the
+other, in the open wood (`dwell_protocol::chopping::Cut::open_band`), so one aim notches; the stone axe's `biteM` 0.12
+→ 0.1 makes it 11 swings (the owner's ~12, WORK_QUEUE item 7). Pinned by `dwell-sim` `tests/chopping.rs`
+`the_same_level_aim_swing_after_swing_fells_a_trunk_in_about_twelve` (both faces; red: no fall in 40) and
+`aiming_at_one_spot_notches_as_alternating_the_bands_does`, and `dwell-protocol`
+`a_swing_at_the_deeper_band_lands_in_the_open_one`. Bench: `fell-tree`.
+
+### 74. Damage cracks never drawn in game (fixed after 0.54.25)
+
+Found 2026-11-12 by visual pass 2: stone after 2 and 4 pickaxe hits and dirt after 2 and 4 shovel hits showed the carve
+but no crack strokes; a pixel diff against the undamaged cell changed only inside the dent (`diff-stone-4.png`,
+`stone-zoom-0-2-4.png`). The native tests passed on `mesh_chunk_damaged`, which meshes no ground items. The game's
+chunks do (`mesh_chunk_trees` with a `GroundJob`): the items were appended to the opaque mesh after the crack stream
+was padded to the cells' vertices, so the stream fell short (712 entries for 1036 vertices in the test) and the client's
+`textured_vertices` dropped a stream of the wrong length whole: no crack in any chunk with a pebble or stick. Fixed:
+`ground_mesh::append` pads the stream over the items, and the client keeps a short stream's entries (0 past them).
+Pinned by `dwell-mesh` `a_chunk_with_ground_items_keeps_its_cracks_for_every_vertex` (both faces; red before) and
+`dwell-client` `terrain_vertices_carry_the_crack_bytes` (a short stream).
+
 ### 52. A felled trunk landing on its chopper can fling them far (fixed after 0.54.15)
 
 Owner, 2026-11-08: "we shouldn't be capping player kick like that" — "the cap is removed". 0.50.37's
