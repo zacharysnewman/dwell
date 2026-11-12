@@ -1351,7 +1351,9 @@ impl CharacterRenderer {
                 Some(hand) => on_skinned_hand(
                     &HeldOnSkin {
                         held: a.held,
-                        rest: arm_transforms(self.character, &a.pose),
+                        // The skinned hand already carries the item's turns (the arm is
+                        // retargeted from the pose with them on): none on top.
+                        rest: posed,
                         posed,
                         frame,
                         seed: 0,

@@ -112,7 +112,10 @@ mod tests {
         for level in 0..model.level_count() {
             let all = model.level(level).indices.len();
             let arm = arm_triangles(model, level, &fp);
-            assert!(!arm.is_empty() && arm.len() % 3 == 0, "level {level}");
+            assert!(
+                !arm.is_empty() && arm.len().is_multiple_of(3),
+                "level {level}"
+            );
             assert!(
                 arm.len() * 5 < all,
                 "level {level}: the arm is a small part of the body"

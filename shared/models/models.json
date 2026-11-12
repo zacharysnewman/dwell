@@ -35,7 +35,14 @@
       },
       "firstPerson": {
         "$comment": "Your first-person arms drawn from this model (docs/CHARACTERS.md §5, §11.10): the triangles whose three vertices each have at least `weight` of their skin weight on `joints` (the right arm from the shoulder down: the cut at the shoulder), skinned by the retarget map from the first-person arms' clips (characters.json `firstPerson`), the arm's shoulder put on the rig's arm bone and the arm scaled so its rest reach (shoulder to hand) is the rig's. Needs `retarget`.",
-        "joints": ["upper_arm.R", "forearm.R", "hand.R", "finger.001.R", "finger.002.R", "thumb.R"],
+        "joints": [
+          "upper_arm.R",
+          "forearm.R",
+          "hand.R",
+          "finger.001.R",
+          "finger.002.R",
+          "thumb.R"
+        ],
         "weight": 0.5
       },
       "retarget": {
