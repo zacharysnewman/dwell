@@ -299,6 +299,55 @@ tree trunks with the leaf cards. What might be dropping frames since the last wh
   404, not looked into), so 0.52.78–0.52.110 are not bisected. **Outstanding:** a real iPhone check on a build with the
   cards off; then, if it is still slow, the arms pass (a separate pass, a store and reload of the frame on a tile GPU)
   and the composite.
+- **Round 3, moving (branch `claude/fps-moving`).** Owner, 2026-11-12, after the cards went off on Low: "I got 60 fps
+  when standing still on Low", so the drops left come while moving. Measured on the bench's `--touch` phone page
+  (393 × 852 at 3×, Low, M-series GPU) with Chrome's CPU throttled 4×, walking, sprinting and flying (level 4) +X for 8 s
+  from the default world's spawn and the starter's (the bench's `phone-moving` scenario). Standing still frame.cpu is
+  ~3.5 ms; moving its p95 is 13–20 ms, and every frame over 16.7 ms is **loading work on the main thread**, never the
+  draw (`draw.render` ~1.4 ms): the worst frames are `mesh_dirty` 12–17 ms (the flood light of an arrived chunk, then
+  a mesh start, each as its kind's "first of the frame" past the 8 ms deadline) plus `jobs.apply` 4–15 ms (2–4
+  finished chunk meshes interleaved and written at once, 1.8–3.7 MB; one near chunk's mesh is 1.2–2 MB). The Chrome
+  trace of the default world's flight (11 s, main thread 6.3 s busy): `padded_box` (copying a chunk's 44 × 64 × 44 sky
+  volume out for its mesh job) 0.99 s, the flood light `LightMap::load` 0.84 s, `interleave` 0.41 s, `writeBuffer`
+  0.28 s, `encode_job` 0.27 s, the minimap (`fillReveal`, `render_disc`, `scan_tops`) ~0.55 s, `LodSystem::update`
+  0.41 s. No long task over 50 ms; LOD section uploads are small (`upload.section` p95 0).
+  **Cuts:** (1) finished chunk meshes upload under a per-frame **byte budget by tier** (data:
+  `shared/render/streaming.json` `uploadBytesPerFrame`, phone 512 KiB, desktop 4 MiB; `dwell-game` `upload_budget.rs`,
+  oldest first, the first of a frame always): test `game_local`
+  `no_frame_uploads_more_chunk_mesh_bytes_than_the_scenes_budget`, red with the budget ignored (55 of 80 frames over
+  256 KiB, up to 4.66 MB), green with it; scheduler tests in `upload_budget.rs`. (2) A late frame runs **one** loading
+  item past its deadline, the light's or a mesh start's in turn (`chunk_stream` `mesh_first`): test
+  `a_late_frame_runs_one_item_past_its_deadline_and_the_light_and_meshing_take_turns`, red on the old rule (a mesh
+  start after the light had passed the deadline), green. (3) `interleave` copies one stream at a time into its column
+  (test `interleave_puts_each_vertex_streams_in_order`). (4) The bench's `record` takes a `budget`
+  (`{"frame.cpu.p95": …}`), failing the scenario when over, and the `phone-moving` scenario sets one.
+  Before and after (CPU 4×, one 8 s run each, ms; "dropped": frame intervals over 20 ms):
+
+  | Route | World | Build | interval p50 / p95 / p99 | dropped (> 20 ms) | frame.cpu p50 / p95 / p99 | frames > 16.7 ms CPU | jobs.apply p95 / max | mesh_dirty p95 / max |
+  | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+  | walk | default | main (0.54.3) | 16.7 / 18.3 / 18.6 | 3 of 477 | 3.6 / 15.8 / 21.2 | 19 | 4.0 / 14.6 | 9.5 / 14.7 |
+  | walk | default | this branch | 16.7 / 18.5 / 18.7 | 0 of 479 | 3.7 / 14.0 / 17.1 | 6 | 3.3 / 6.9 | 8.8 / 12.4 |
+  | walk | starter | main (0.54.3) | 16.7 / 18.6 / 18.7 | 0 of 478 | 3.6 / 12.7 / 18.7 | 14 | 3.1 / 7.1 | 7.9 / 14.8 |
+  | walk | starter | this branch | 16.7 / 18.4 / 18.6 | 1 of 478 | 3.6 / 12.1 / 17.6 | 6 | 2.4 / 5.9 | 8.0 / 13.3 |
+  | sprint | default | main (0.54.3) | 16.7 / 18.6 / 31.5 | 6 of 473 | 8.2 / 16.3 / 21.4 | 22 | 5.0 / 10.9 | 11.1 / 14.7 |
+  | sprint | default | this branch | 16.7 / 18.6 / 18.7 | 2 of 477 | 8.6 / 14.1 / 17.5 | 9 | 4.1 / 7.6 | 8.9 / 13.5 |
+  | sprint | starter | main (0.54.3) | 16.7 / 18.5 / 18.7 | 1 of 479 | 3.7 / 14.1 / 18.7 | 14 | 3.0 / 7.8 | 8.8 / 16.2 |
+  | sprint | starter | this branch | 16.7 / 18.5 / 18.6 | 0 of 478 | 4.0 / 12.5 / 17.3 | 6 | 2.4 / 4.1 | 7.6 / 14.3 |
+  | fly | default | main (0.54.3) | 16.7 / 31.8 / 35.0 | 36 of 579 | 9.6 / 19.7 / 26.0 | 58 | 6.2 / 15.0 | 14.1 / 16.8 |
+  | fly | default | this branch | 16.7 / 18.6 / 33.7 | 23 of 603 | 9.7 / 16.9 / 20.5 | 34 | 4.3 / 8.6 | 11.7 / 14.0 |
+  | fly | starter | main (0.54.3) | 16.7 / 18.5 / 33.4 | 14 of 602 | 3.9 / 14.6 / 20.3 | 21 | 3.1 / 7.6 | 7.8 / 16.7 |
+  | fly | starter | this branch | 16.7 / 18.3 / 32.8 | 8 of 618 | 4.0 / 12.5 / 18.5 | 11 | 2.3 / 4.4 | 7.7 / 13.8 |
+
+  The cuts take the frames over 16.7 ms of CPU from 148 to 72 over the six runs and the flight's dropped frames from
+  36 to 23 (default) and 14 to 8 (starter); `jobs.apply`'s worst from 15.0 to 8.6 ms and `interleave` 0.41 → 0.28 s in
+  the flight's trace. Desktop is unchanged by design (4 MiB a frame is above any burst measured). At CPU 6× (this
+  branch, `phone-moving`, default world) the walk drew 57.3 fps (interval p95 18.7, p99 33.9, max 51 ms) and went over
+  the scenario's 4× budget (`frame.cpu` p95 18.8 against 18.5), which stopped the run there: the budgets are set for 4×.
+  **Outstanding:** a single chunk's light or mesh start is still 5–14 ms at 4× (`mesh_dirty` max 12–14), and one near
+  chunk's upload 5–8 ms (it is over the phone's budget alone): the next cuts are the flood light off the main thread
+  (DEV_TOOLS.md "Flight loading", fix 2), the sky volume's copy (`padded_box`, the largest main-thread cost: copy it in
+  the worker, or ship the chunk and its neighbours once), a chunk's upload split across frames, and the minimap's
+  tile work; then a real iPhone check while moving.
 
 ### 71. "Starting the graphics" takes a long time with no elapsed time shown (fixed after 0.52.101)
 

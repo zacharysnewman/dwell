@@ -7829,6 +7829,142 @@
           "s": 0.3
         }
       ]
+    },
+    {
+      "name": "phone-moving",
+      "notes": "The phone's frame rate while moving (BUGS.md #72, WORK_QUEUE item 16): an iPhone-sized page walking, sprinting, then flying (level 4) +X from the spawn, 8 s each. Run with --touch (the phone tier) and --cpu-throttle 4 (a phone's CPU), at Low by a params config ({\"preset\": \"low\"}; the starter world with {\"worldgen\": \"test:starter\"}). Each record has a budget on the main thread's moving cost: frame.cpu p95, the finished meshes' upload (jobs.apply max, under a frame's byte budget, shared/render/streaming.json) and the loading (mesh_dirty p95); a record over it fails the scenario.",
+      "window": {
+        "width": 393,
+        "height": 852,
+        "pixelRatio": 3
+      },
+      "steps": [
+        {
+          "do": "settle",
+          "maxS": 120
+        },
+        {
+          "do": "look",
+          "yaw": 90,
+          "pitch": 0
+        },
+        {
+          "do": "wait",
+          "s": 1
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "key",
+          "code": "KeyW",
+          "down": true
+        },
+        {
+          "do": "wait",
+          "s": 8
+        },
+        {
+          "do": "key",
+          "code": "KeyW",
+          "down": false
+        },
+        {
+          "do": "record",
+          "name": "walk",
+          "budget": {
+            "frame.cpu.p95": 18.5,
+            "jobs.apply.max": 10,
+            "mesh_dirty.p95": 13
+          }
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "key",
+          "code": "ShiftLeft",
+          "down": true
+        },
+        {
+          "do": "key",
+          "code": "KeyW",
+          "down": true
+        },
+        {
+          "do": "wait",
+          "s": 8
+        },
+        {
+          "do": "key",
+          "code": "KeyW",
+          "down": false
+        },
+        {
+          "do": "key",
+          "code": "ShiftLeft",
+          "down": false
+        },
+        {
+          "do": "record",
+          "name": "sprint",
+          "budget": {
+            "frame.cpu.p95": 18.5,
+            "jobs.apply.max": 10,
+            "mesh_dirty.p95": 13
+          }
+        },
+        {
+          "do": "fly",
+          "on": true
+        },
+        {
+          "do": "hold",
+          "code": "Space",
+          "s": 1.5
+        },
+        {
+          "do": "flySpeed",
+          "level": 4
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "traceStart"
+        },
+        {
+          "do": "key",
+          "code": "KeyW",
+          "down": true
+        },
+        {
+          "do": "wait",
+          "s": 8
+        },
+        {
+          "do": "key",
+          "code": "KeyW",
+          "down": false
+        },
+        {
+          "do": "traceStop",
+          "name": "fly"
+        },
+        {
+          "do": "record",
+          "name": "fly",
+          "budget": {
+            "frame.cpu.p95": 18.5,
+            "jobs.apply.max": 10,
+            "mesh_dirty.p95": 13
+          }
+        },
+        {
+          "do": "shot",
+          "name": "fly-end"
+        }
+      ]
     }
   ]
 }

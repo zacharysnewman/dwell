@@ -168,8 +168,12 @@ export type Step =
   | { do: 'carry'; speed: number; yaw: number; s: number; lift?: number }
   /** Forgets the telemetry so far: the next `record` measures from here. */
   | { do: 'mark' }
-  /** Saves the telemetry, the controller ticks and the game's state under `name`. */
-  | { do: 'record'; name: string }
+  /**
+   * Saves the telemetry, the controller ticks and the game's state under `name`. With a `budget`
+   * (`{"<series>.<stat>": max}`, e.g. `{"frame.cpu.p95": 14}`), a value over its maximum fails the
+   * scenario (`overBudget`; BUGS.md #72's phone budget while moving).
+   */
+  | { do: 'record'; name: string; budget?: Record<string, number> }
   /**
    * Saves a screenshot `<name>.png`. With a placement (`at` [x, y, z], the eye, or `above`
    * [x, z, height], the eye `height` m over the ground there along `face`'s up; `yaw`, `pitch`),
@@ -402,7 +406,7 @@ const STEP_FIELDS: Record<Step['do'], readonly string[]> = {
   give: ['item', 'count'],
   lava: ['op', 'args'],
   mark: [],
-  record: ['name'],
+  record: ['name', 'budget'],
   shot: ['name', ...PLACEMENT_FIELDS, 'quietFrames', 'maxS'],
   spot: ['spot', 'name'],
   traceStart: [],
@@ -647,7 +651,24 @@ export function parseStep(where: string, v: unknown): Step {
       const spot = str(at('spot'), o.spot);
       return { do: d, spot, name: name(at('name'), o.name ?? spot.replace(':', '-')) };
     }
-    case 'record':
+    case 'record': {
+      const n = name(at('name'), o.name);
+      if (o.budget === undefined) return { do: d, name: n };
+      if (typeof o.budget !== 'object' || o.budget === null || Array.isArray(o.budget)) {
+        throw new ViewError(`${at('budget')}: expected {"<series>.<stat>": max}`);
+      }
+      const budget: Record<string, number> = {};
+      for (const [k, v] of Object.entries(o.budget as Record<string, unknown>)) {
+        const stat = k.slice(k.lastIndexOf('.') + 1);
+        if (!k.includes('.') || !BUDGET_STATS.includes(stat as BudgetStat)) {
+          throw new ViewError(
+            `${at('budget')}.${k}: expected "<series>.<stat>" with a stat of ${BUDGET_STATS.join(', ')}`,
+          );
+        }
+        budget[k] = num(`${at('budget')}.${k}`, v, 0, 1e9);
+      }
+      return { do: d, name: n, budget };
+    }
     case 'traceStop':
       return { do: d, name: name(at('name'), o.name) };
     case 'repeat': {
@@ -893,6 +914,30 @@ function parseScenario(where: string, v: unknown): Scenario {
 }
 
 /** The scenarios of a scenarios file (`{ "scenarios": [...] }`), checked; throws ViewError. */
+/** The statistics a `record` budget can bound. */
+export const BUDGET_STATS = ['mean', 'p50', 'p95', 'p99', 'max'] as const;
+type BudgetStat = (typeof BUDGET_STATS)[number];
+
+/**
+ * A record's budget broken: one line per series and statistic over its maximum (a series the
+ * record lacks is reported too, so a renamed series can't pass silently).
+ */
+export function overBudget(
+  frames: Partial<Record<string, Partial<Record<BudgetStat, number>>>>,
+  budget: Record<string, number>,
+): string[] {
+  const out: string[] = [];
+  for (const [k, max] of Object.entries(budget)) {
+    const i = k.lastIndexOf('.');
+    const series = k.slice(0, i);
+    const stat = k.slice(i + 1) as BudgetStat;
+    const v = frames[series]?.[stat];
+    if (v === undefined) out.push(`${k}: not recorded`);
+    else if (v > max) out.push(`${k} ${v.toFixed(2)} over ${String(max)}`);
+  }
+  return out;
+}
+
 export function parseScenarios(json: unknown): Scenario[] {
   const file = obj('scenarios file', json, ['$comment', 'scenarios']);
   if (!Array.isArray(file.scenarios))

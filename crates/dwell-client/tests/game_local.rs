@@ -46,11 +46,21 @@ struct Recorder {
     players: std::collections::HashMap<u32, PlayerView>,
     /// Whether your arms were drawn last frame.
     arms: bool,
+    /// The scene's upload budget a frame (None: unlimited), and the chunk mesh bytes handed to it
+    /// since `frame_bytes` was last cleared, with the count of chunks.
+    upload_budget: Option<u64>,
+    frame_bytes: u64,
+    frame_chunks: usize,
 }
 
 impl TerrainRenderer for Recorder {
     fn set_chunk(&mut self, coord: ChunkCoord, payload: Option<&ChunkMeshes>) {
         self.terrain.set_chunk(coord, payload);
+        if let Some(m) = payload {
+            self.frame_bytes +=
+                (m.opaque.byte_len() + m.transparent.byte_len() + m.cutout.byte_len()) as u64;
+            self.frame_chunks += 1;
+        }
         if payload.is_some() {
             self.chunks.insert(coord);
         } else {
@@ -121,6 +131,9 @@ impl Scene for Recorder {
         self.brush = outline.cloned();
     }
     fn set_debug_lines(&mut self, _lines: Option<&[Line]>) {}
+    fn upload_budget_bytes(&self) -> u64 {
+        self.upload_budget.unwrap_or(u64::MAX)
+    }
     fn stats(&self) -> RenderStats {
         RenderStats::default()
     }
@@ -389,6 +402,50 @@ impl std::fmt::Debug for NoStorage {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str("NoStorage")
     }
+}
+
+/// BUGS.md #72: finished chunk meshes arrive in bursts, and a frame that uploaded them all at once
+/// spent up to 15 ms on it on the phone page (CPU 4×). Under a byte budget no frame hands the
+/// scene more than the budget (one mesh over it alone), and the view still finishes loading.
+// face-a-only: the upload budget counts bytes, whichever face the chunks are on.
+#[test]
+fn no_frame_uploads_more_chunk_mesh_bytes_than_the_scenes_budget() {
+    let mut rig = Rig::new();
+    let budget = 256 * 1024;
+    rig.scene.borrow_mut().upload_budget = Some(budget);
+    let (mut frames, mut over, mut most, mut uploads) = (0, 0, 0u64, 0usize);
+    let mut drained = false;
+    for _ in 0..60 * 40 {
+        {
+            let mut s = rig.scene.borrow_mut();
+            s.frame_bytes = 0;
+            s.frame_chunks = 0;
+        }
+        rig.frame();
+        frames += 1;
+        let s = rig.scene.borrow();
+        if s.frame_chunks > 1 && s.frame_bytes > budget {
+            over += 1;
+        }
+        most = most.max(s.frame_bytes);
+        uploads += s.frame_chunks;
+        drop(s);
+        let g = rig.game.as_ref();
+        if uploads > 0
+            && g.is_some_and(|g| {
+                let t = g.debug_state().terrain;
+                g.debug_state().terrain_ready && t.dirty == 0 && t.meshing == 0
+            })
+        {
+            drained = true;
+            break;
+        }
+    }
+    assert_eq!(
+        over, 0,
+        "{over} of {frames} frames uploaded more than {budget} B of several meshes (most {most} B)"
+    );
+    assert!(drained, "the view finished meshing ({uploads} meshes in {frames} frames)");
 }
 
 #[test]

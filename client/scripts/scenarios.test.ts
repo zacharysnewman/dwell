@@ -5,6 +5,7 @@ import {
   clipStripSheet,
   clipStripTimes,
   parseScenarios,
+  overBudget,
   buildPage,
   scenarioUrl,
   scenarioView,
@@ -529,6 +530,38 @@ describe('clip-strip', () => {
     expect(html.match(/<tr>/g)).toHaveLength(2);
     expect(html).toContain('0.310 s');
     expect(html).toContain('s &lt;1>');
+  });
+});
+
+describe('record budgets', () => {
+  const one = (budget: unknown) =>
+    parseScenarios({
+      scenarios: [{ name: 's', steps: [{ do: 'record', name: 'move', budget }] }],
+    })[0].steps[0];
+
+  it('parses a budget and reports what is over it (BUGS.md #72)', () => {
+    expect(one({ 'frame.cpu.p95': 14, 'jobs.apply.max': 6 })).toEqual({
+      do: 'record',
+      name: 'move',
+      budget: { 'frame.cpu.p95': 14, 'jobs.apply.max': 6 },
+    });
+    const frames = { 'frame.cpu': { p95: 15.7, max: 21 }, 'jobs.apply': { max: 4 } };
+    expect(overBudget(frames, { 'frame.cpu.p95': 14, 'jobs.apply.max': 6 })).toEqual([
+      'frame.cpu.p95 15.70 over 14',
+    ]);
+    expect(overBudget(frames, { 'mesh_dirty.p95': 9 })).toEqual(['mesh_dirty.p95: not recorded']);
+  });
+
+  it('rejects a budget without a known statistic', () => {
+    expect(() => one({ 'frame.cpu': 14 })).toThrow(/stat of mean, p50, p95, p99, max/);
+    expect(() => one([1])).toThrow(/expected/);
+  });
+
+  it('the phone-moving scenario bounds its moving records', () => {
+    const all = parseScenarios(JSON.parse(readFileSync('bench/scenarios.json', 'utf8')));
+    const s = all.find((x) => x.name === 'phone-moving');
+    const budgets = s?.steps.filter((x) => x.do === 'record' && x.budget !== undefined) ?? [];
+    expect(budgets.length).toBe(3);
   });
 });
 

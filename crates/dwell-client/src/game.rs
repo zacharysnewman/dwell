@@ -114,6 +114,11 @@ pub trait Scene: TerrainRenderer {
     fn draws_cards(&self) -> bool {
         true
     }
+    /// How many bytes of finished chunk meshes a frame uploads (shared/render/streaming.json by
+    /// tier; the first mesh of a frame always goes).
+    fn upload_budget_bytes(&self) -> u64 {
+        u64::MAX
+    }
     /// Rewrites chunk `coord`'s heightfield tile alone (none: its water is gone), its meshes kept.
     fn set_water_tile(
         &mut self,
@@ -743,6 +748,9 @@ pub struct Game<S: Scene> {
     pending_lod: Option<LodSettings>,
     /// The latest F4 map (None until one arrives; an empty map without a terrain).
     map: Option<Vec<u8>>,
+    /// Finished chunk meshes waiting for their upload, taken under the frame's byte budget
+    /// (`Scene::upload_budget_bytes`, `dwell_game::upload_budget`; BUGS.md #72).
+    mesh_uploads: dwell_game::upload_budget::UploadQueue<(dwell_game::chunk_stream::Coord, u64, Box<ChunkMeshes>)>,
     /// The revealed big map's finished tiles, not yet taken (`crate::map_reveal::encode_tile`).
     reveal: std::collections::VecDeque<Vec<u8>>,
     /// The explored cells' generated tiles, not yet taken: (face, ti, tk), RGBA (None: no
@@ -925,6 +933,7 @@ impl<S: Scene> Game<S> {
             registry: None,
             pending_lod: None,
             map: None,
+            mesh_uploads: Default::default(),
             reveal: std::collections::VecDeque::new(),
             explore_tiles: std::collections::VecDeque::new(),
             view: None,
@@ -1780,10 +1789,11 @@ impl<S: Scene> Game<S> {
                 (Purpose::Base(c), Output::Chunk { voxels, .. }) => {
                     self.streamer.on_generated_base(c, &voxels)
                 }
-                (Purpose::ChunkMesh(c, token), Output::ChunkMesh(mut m)) => {
-                    let ground = std::mem::take(&mut m.ground);
-                    self.keep_ground_density(c, ground);
-                    self.streamer.on_meshed(c, token, *m)
+                (Purpose::ChunkMesh(c, token), Output::ChunkMesh(m)) => {
+                    let bytes = (m.opaque.byte_len()
+                        + m.transparent.byte_len()
+                        + m.cutout.byte_len()) as u64;
+                    self.mesh_uploads.push((c, token, m), bytes);
                 }
                 (Purpose::Verify, Output::Chunk { hash, voxels }) => {
                     let hash = self
@@ -1882,6 +1892,19 @@ impl<S: Scene> Game<S> {
                 _ => {}
             }
         }
+        self.upload_meshes();
+    }
+
+    /// Hands this frame's share of the finished chunk meshes to the scene: oldest first, as many
+    /// as fit the scene's byte budget (the first always); the rest wait for the next frame.
+    fn upload_meshes(&mut self) {
+        let budget = self.scene.borrow().upload_budget_bytes();
+        for (c, token, mut m) in self.mesh_uploads.take(budget) {
+            let ground = std::mem::take(&mut m.ground);
+            self.keep_ground_density(c, ground);
+            self.streamer.on_meshed(c, token, *m);
+        }
+        telemetry::add("upload.waiting", self.mesh_uploads.len() as f64);
     }
 
     pub fn debug_state(&self) -> DebugState {

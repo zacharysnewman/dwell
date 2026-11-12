@@ -40,6 +40,7 @@ import {
   clipStripSheet,
   clipStripTimes,
   swingClip,
+  overBudget,
   type Scenario,
   type Step,
   type Vec3,
@@ -427,7 +428,7 @@ async function serverSamples(run: Run, name: string, seconds: number): Promise<v
   );
 }
 
-async function record(run: Run, name: string): Promise<void> {
+async function record(run: Run, name: string): Promise<Telemetry> {
   const { page } = run;
   const data = await call<{
     telemetry: Telemetry;
@@ -448,6 +449,7 @@ async function record(run: Run, name: string): Promise<void> {
   );
   run.records[name] = { ...data, longTasks, seconds: (data.now - run.markMs) / 1000 };
   summarise(name, data.telemetry, longTasks, (data.now - run.markMs) / 1000);
+  return data.telemetry;
 }
 
 const f = (v: number, digits = 2): string => v.toFixed(v < 10 ? digits : 1);
@@ -903,8 +905,15 @@ async function step(run: Run, s: Step): Promise<void> {
       await call(page, 'd.telemetryReset()');
       run.markMs = await page.evaluate<number>('performance.now()');
       return;
-    case 'record':
-      return record(run, s.name);
+    case 'record': {
+      const t = await record(run, s.name);
+      const over = s.budget ? overBudget(t.frames, s.budget) : [];
+      if (over.length > 0) {
+        for (const o of over) console.log(`    OVER BUDGET [${s.name}] ${o}`);
+        throw new Error(`record ${s.name} over its budget: ${over.join('; ')}`);
+      }
+      return;
+    }
     case 'shot':
       if (s.place) await placedShot(run, s.name, s.place, s.quietFrames, s.maxS);
       else await page.screenshot({ path: join(run.dir, `${s.name}.png`) });

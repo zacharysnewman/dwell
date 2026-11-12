@@ -32,6 +32,7 @@ pub mod seam;
 pub mod shaders;
 pub mod shadows;
 pub mod skinned;
+pub mod streaming;
 pub mod timing;
 pub mod upscale;
 pub mod water;
@@ -498,14 +499,25 @@ fn merge_ranges(ranges: Vec<std::ops::Range<u32>>) -> Vec<std::ops::Range<u32>> 
 
 /// Streams of `n` floats per vertex, interleaved vertex by vertex (in the pipelines' attribute
 /// order, `vertex_layout`).
+///
+/// One stream at a time into its column of the vertex (BUGS.md #72: vertex by vertex, a small
+/// copy per stream, it was 411 ms of the main thread in an 11 s flight on the phone page).
 fn interleave(streams: &[(&[f32], usize)]) -> Vec<f32> {
     let count = streams.first().map_or(0, |(s, n)| s.len() / n);
     let stride: usize = streams.iter().map(|(_, n)| n).sum();
-    let mut out = Vec::with_capacity(count * stride);
-    for v in 0..count {
-        for (s, n) in streams {
-            out.extend_from_slice(&s[v * n..(v + 1) * n]);
+    let mut out = vec![0.0; count * stride];
+    if stride == 0 {
+        return out;
+    }
+    let mut offset = 0;
+    for &(s, n) in streams {
+        for (dst, src) in out
+            .chunks_exact_mut(stride)
+            .zip(s[..count * n].chunks_exact(n))
+        {
+            dst[offset..offset + n].copy_from_slice(src);
         }
+        offset += n;
     }
     out
 }
@@ -5791,6 +5803,9 @@ impl crate::game::Scene for Renderer {
     fn draws_cards(&self) -> bool {
         cards_for(self.adapter, self.phone, self.cards_override)
     }
+    fn upload_budget_bytes(&self) -> u64 {
+        streaming::StreamingBudgets::get().upload_bytes(self.phone)
+    }
     fn draws_heightfield(&self) -> bool {
         heightfield_drawn(self.water().tier().heightfield, self.heightfield_override)
     }
@@ -5910,6 +5925,20 @@ impl crate::game::Scene for Renderer {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn interleave_puts_each_vertex_streams_in_order() {
+        // face-a-only: vertex layout, no up or down.
+        let p = [0.0, 1.0, 2.0, 10.0, 11.0, 12.0];
+        let uv = [3.0, 4.0, 13.0, 14.0];
+        let l = [5.0, 15.0, 99.0]; // a longer stream: its extra is left out
+        assert_eq!(
+            super::interleave(&[(&p, 3), (&uv, 2), (&l, 1)]),
+            vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0]
+        );
+        assert!(super::interleave(&[]).is_empty());
+        assert!(super::interleave(&[(&[], 3)]).is_empty());
+    }
 
     #[test]
     fn the_far_pass_keeps_terrain_drawn_over_the_default_top_from_above_it() {

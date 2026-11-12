@@ -1,0 +1,7 @@
+{
+  "$comment": "Per-frame streaming budgets by device tier (docs/ARCHITECTURE.md §7.4, docs/BUGS.md #72; loaded by dwell-client render/streaming.rs). `uploadBytesPerFrame`: how many bytes of finished chunk meshes one frame uploads (the first mesh of a frame always goes; the rest wait, in arrival order, dwell-game upload_budget.rs). A phone page (the shell's prefersTouch) takes `phone`, every other page `desktop`. Measured on the bench's --touch page at Low with Chrome's CPU throttled 4x: a mesh upload costs ~4 ms a MB there, and moving brought 0.1-0.3 MB a frame on average but bursts of 1.8-3.7 MB (jobs.apply up to 15 ms).",
+  "uploadBytesPerFrame": {
+    "desktop": 4194304,
+    "phone": 524288
+  }
+}
