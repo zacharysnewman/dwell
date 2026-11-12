@@ -1399,6 +1399,13 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
 
 ## Done
 
+- **dwell-mesh's face-B parity test green (owner's brief 2026-11-12: "a_chunk_meshes_the_same_face_local_on_either_face::b
+  fails on main (\"cutout plants\"), reported by two sessions … fix the cause at the source so face B's plants are face
+  A's mirror … keep the density setting's behaviour"):** BUGS.md #97. Not the Tall grass density (6578783: cleared,
+  the test failed before it, and `plant_kept` hashes world cells only for a 0–100 % thinning); a leaf card's packed
+  normal drifted a grid step on face B's mirror. The packing's grid is now even, so face B's cards are face A's
+  mirror to the bit.
+
 - **Main's tests green again (owner 2026-11-12: "make main's tests green again (tests/fixes only)"):**
   four stale expectations, no code bugs. `checks.ts`'s areas lacked `shared/look/bloom.mjs` (render) and
   `src/theater/` (ui); the textures test's known palette deviations gained obsidian's near-black shadow
