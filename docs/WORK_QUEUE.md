@@ -48,7 +48,8 @@ the two"** — palm fronds as leaf blocks vs frond cards side by side: built in 
 Still open:
 1. **Pick a haze setting** (item 29), once the ground-level and hilltop shots (clouds off) are taken. Default:
    today's fog.
-2. **The in-game Chisel editor and the textures tab extras** (Phase 56 B7/B6's outstanding parts). The owner
+2. ~~**The in-game Chisel editor and the textures tab extras**~~ — **approved (owner, 2026-11-12: "these all seem
+   solid yes"); now item 34.** (Phase 56 B7/B6's outstanding parts.) The owner
    asked what the scope is: *Chisel* is the separate worldgen page (`chisel.html`: biome sliders, a live preview,
    Export). The "in-game editor" would open those sliders inside a running world and regenerate the terrain
    around you as you tune. The "textures tab extras" would let Chisel's Textures tab add new materials and blocks
@@ -819,6 +820,19 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    (AAC/Opus at a music bitrate, loudness-matched), a music list as data (tracks, moods, gain, fade), a prototype
    page to audition the set, the game's music player shuffling them (no repeats back to back, gaps and fades as
    data) in place of the current tracks; licence notes as for the Imphenzia samples (AUDIO.md §2b).
+
+34. **The in-game Chisel editor and the Textures tab extras** (owner 2026-11-12: "these all seem solid yes"): open
+   Chisel's biome sliders inside a running world with the terrain around the player regenerating as they tune
+   (Phase 56 B7); the Textures tab adding new materials and blocks by data, editing water and sky colours, and
+   painting item and model textures (B6's rest). Queued.
+35. **Swords as weapons** (owner 2026-11-12: "we'll want to bring in the swords from the model pack we got the
+   tools from as weapons."). Answers: animals only for now (no PvP); a timed swing arc like the axe that hits what
+   it crosses at contact, with damage, knockback and durability per sword as data (reusing the swing and
+   clip_probe systems); in the creative inventory now, adventure recipes later. The models from the owner's
+   *3D Low Poly Tools Weapons Containers* pack (NexusArcadeStudios), as the tools were. Queued.
+36. **A showcase video of the deer and wolves** (owner 2026-11-12: "have you observed the animals simulation? Make
+   some clips of the deer/wolves behavior, really showcase it and try to get good angles. Keep it under 2 minutes
+   of video. Splice it together into a single video."). Queued (local, after item 30).
 
 ## Done
 
