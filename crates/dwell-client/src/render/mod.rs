@@ -2668,6 +2668,11 @@ impl Renderer {
         self.characters
             .set_model_detail(&self.device, &self.queue, level);
     }
+    /// Your first-person arms from the rigid parts instead of the player model (`?fparms=rigid`, a
+    /// dev switch; docs/CHARACTERS.md §11.10).
+    pub fn set_rigid_arms(&mut self, rigid: bool) {
+        self.characters.rigid_arms = rigid;
+    }
     /// The Light shafts setting (Off, Low, High; ADR 0064).
     pub fn set_shafts(&mut self, quality: ShaftQuality) {
         self.shafts = quality;

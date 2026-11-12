@@ -961,6 +961,9 @@ async function start(): Promise<App | null> {
     client.setAntialias(antialiasMode(aa.mode).fxaa, aa.anisotropy);
     // The skinned models' detail level (ADR 0070 §10); ?modeldetail=<level id> overrides it.
     client.setModelDetail(new URLSearchParams(location.search).get('modeldetail') ?? s.modelDetail);
+    // Your first-person arms from the player model; ?fparms=rigid draws the old rigid arms (a dev
+    // switch for comparison, docs/CHARACTERS.md §11.10).
+    client.setRigidArms(new URLSearchParams(location.search).get('fparms') === 'rigid');
     // ?chop=v2: the chopping prototype's crosshair aim (docs/WORK_QUEUE.md item 7; the local
     // server's half rides the world's start, net/connect.ts).
     client.setChopAim(/[?&]chop=v2(&|$)/.test(location.search));

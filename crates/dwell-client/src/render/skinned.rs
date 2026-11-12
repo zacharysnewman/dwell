@@ -319,6 +319,73 @@ pub struct SkinnedRenderer {
     last_s: Option<f64>,
     /// The Model detail setting's level (`dwell_models::DETAIL_LEVELS`), every mesh drawn at it.
     level: usize,
+    /// Your first-person arms' triangles (the player model's `firstPerson`, over its vertices) and
+    /// their count; None: the player model draws no arms.
+    arms_index: Option<(wgpu::Buffer, u32)>,
+    /// This frame's arms instance, when drawn.
+    arms: Option<u32>,
+}
+
+/// Your first-person arms to draw from the player model (docs/CHARACTERS.md §11.10).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SkinnedArms {
+    /// View space (+x left, +y up, +z ahead) to eye-relative world space
+    /// (`characters::arms_frame`).
+    pub frame: Affine,
+    /// The first-person clips' pose, the held item's turns on.
+    pub pose: dwell_characters::anim::Pose,
+    pub light: [f32; 2],
+}
+
+/// The arms' index buffer at `level` (None: the model draws no arms).
+fn arms_index(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    data: &ModelData,
+    model: &Model,
+    level: usize,
+) -> Option<(wgpu::Buffer, u32)> {
+    let fp = data.first_person?;
+    let tris = dwell_models::first_person::arm_triangles(model, level, &fp);
+    let bytes: Vec<u8> = tris.iter().flat_map(|i| i.to_le_bytes()).collect();
+    let b = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("skinned arms indices"),
+        size: (bytes.len() as u64).max(4).next_multiple_of(4),
+        usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    queue.write_buffer(&b, 0, &bytes);
+    Some((b, tris.len() as u32))
+}
+
+/// An affine frame as a 4 × 4 (columns).
+pub fn mat4(a: &Affine) -> Mat4 {
+    [
+        [a.m[0][0], a.m[0][1], a.m[0][2], 0.0],
+        [a.m[1][0], a.m[1][1], a.m[1][2], 0.0],
+        [a.m[2][0], a.m[2][1], a.m[2][2], 0.0],
+        [a.t[0], a.t[1], a.t[2], 1.0],
+    ]
+}
+
+/// The arms' joints (each joint's matrix to eye-relative world space) and the rig's hand bone's
+/// frame on the model's hand joint (where the held item is drawn), from `arms`' pose.
+pub fn arms_joints(
+    data: &ModelData,
+    model: &Model,
+    arms: &SkinnedArms,
+) -> Option<(Vec<Mat4>, Option<Affine>)> {
+    let (globals, place) =
+        dwell_models::first_person::pose(model, data, dwell_characters::player(), &arms.pose)?;
+    let place = mm::mul(&mat4(&arms.frame), &place);
+    let hand = hand_frame(data, model, &globals, &place);
+    let joints = model
+        .skin
+        .iter()
+        .zip(&model.inverse_bind)
+        .map(|(&j, ib)| mm::mul(&place, &mm::mul(&globals[j], ib)))
+        .collect();
+    Some((joints, hand))
 }
 
 fn instance_buffer(device: &wgpu::Device, capacity: u64) -> wgpu::Buffer {
@@ -516,6 +583,7 @@ impl SkinnedRenderer {
         };
         let level = dwell_models::DETAIL_DEFAULT;
         let player = upload(device, queue, data, model, level);
+        let arms_index = arms_index(device, queue, data, model, level);
         let capacity = 4;
         let instances = instance_buffer(device, capacity);
         let group = bind_group(device, &layout, &instances);
@@ -531,6 +599,8 @@ impl SkinnedRenderer {
             draws: Vec::new(),
             last_s: None,
             level,
+            arms_index,
+            arms: None,
         }
     }
 
@@ -544,6 +614,8 @@ impl SkinnedRenderer {
         for m in &mut self.meshes {
             *m = upload(device, queue, m.data, m.model, level);
         }
+        let (data, model) = (self.meshes[0].data, self.meshes[0].model);
+        self.arms_index = arms_index(device, queue, data, model, level);
     }
 
     /// The level drawn (`set_level`'s).
@@ -560,8 +632,9 @@ impl SkinnedRenderer {
     }
 
     /// This frame's bodies (`now_s`: the frame's clock, seconds): advances each one's clip player
-    /// by its role and writes its joints. Returns each body's [`hand_frame`] (None where it is not
-    /// drawn or holds nothing), in `bodies`' order.
+    /// by its role and writes its joints, and your first-person arms' (`arms`, from the player
+    /// model). Returns each body's [`hand_frame`] (None where it is not drawn or holds nothing), in
+    /// `bodies`' order, and the arms' hand (None: no arms drawn, or they hold nothing).
     #[allow(clippy::too_many_arguments)]
     pub fn prepare(
         &mut self,
@@ -571,8 +644,9 @@ impl SkinnedRenderer {
         passes: &[(f64, f64)],
         cast_m: f64,
         bodies: &[SkinnedDraw],
+        arms: Option<&SkinnedArms>,
         now_s: f64,
-    ) -> Vec<Option<Affine>> {
+    ) -> (Vec<Option<Affine>>, Option<Affine>) {
         let dt = self
             .last_s
             .map_or(0.0, |l| (now_s - l).clamp(0.0, 0.25) as f32);
@@ -646,6 +720,21 @@ impl SkinnedRenderer {
                 cast_only: d.cast_only,
             });
         }
+        self.arms = None;
+        let mut arms_hand = None;
+        if let (Some(a), Some(_)) = (arms, &self.arms_index)
+            && let Some((joints, hand)) =
+                arms_joints(self.meshes[0].data, self.meshes[0].model, a)
+        {
+            let at = floats.len();
+            floats.resize(at + INSTANCE_FLOATS, 0.0);
+            for (k, j) in joints.iter().take(MAX_JOINTS).enumerate() {
+                floats[at + k * 12..at + k * 12 + 12].copy_from_slice(&rows(j));
+            }
+            floats[at + JOINT_FLOATS..at + JOINT_FLOATS + 2].copy_from_slice(&a.light);
+            self.arms = Some((at / INSTANCE_FLOATS) as u32);
+            arms_hand = hand;
+        }
         let count = (floats.len() / INSTANCE_FLOATS) as u64;
         if count > self.capacity {
             self.capacity = count.next_power_of_two();
@@ -656,7 +745,26 @@ impl SkinnedRenderer {
         if !floats.is_empty() {
             queue.write_buffer(&self.instances, 0, bytemuck::cast_slice(&floats));
         }
-        hands
+        (hands, arms_hand)
+    }
+
+    /// Whether your arms are drawn from the player model this frame.
+    pub fn has_arms(&self) -> bool {
+        self.arms.is_some()
+    }
+
+    /// Draws your first-person arms (group 0 bound to the arms' frame, in the arms pass).
+    pub fn draw_arms(&self, pass: &mut wgpu::RenderPass<'_>, calls: &mut u32, tris: &mut u64) {
+        let (Some(instance), Some((index, count))) = (self.arms, &self.arms_index) else {
+            return;
+        };
+        pass.set_pipeline(&self.pipeline);
+        pass.set_bind_group(1, &self.group, &[instance * INSTANCE_BYTES as u32]);
+        pass.set_vertex_buffer(0, self.meshes[0].vertex.slice(..));
+        pass.set_index_buffer(index.slice(..), wgpu::IndexFormat::Uint32);
+        pass.draw_indexed(0..*count, 0, 0..1);
+        *calls += 1;
+        *tris += u64::from(*count / 3);
     }
 
     /// Where the model holds an item (models.json `hand`).
