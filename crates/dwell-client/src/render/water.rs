@@ -11,7 +11,7 @@ use dwell_look::water_tiers::{WATER_TIERS, WaterTier, tier_bits};
 use dwell_look::{hex, srgb_to_linear};
 
 /// vec4s per fluid in the buffer (`Fluid` in the WGSL).
-pub const FLUID_VEC4S: usize = 17;
+pub const FLUID_VEC4S: usize = 19;
 /// Bytes per fluid.
 pub const FLUID_STRIDE: u64 = (FLUID_VEC4S * 16) as u64;
 
@@ -291,7 +291,23 @@ pub fn pack_fluids(fluids: &[FluidInfo]) -> Vec<f32> {
             u.underside_sun_power as f32,
             u.underside_cell_scale as f32,
         ]);
-        out.extend_from_slice(&[u.window_cells as f32, u.window_bodies as f32, 0.0, 0.0]);
+        out.extend_from_slice(&[
+            u.window_cells as f32,
+            u.window_bodies as f32,
+            u.window_sun_glow as f32,
+            u.window_sun_power as f32,
+        ]);
+        // The underwater colour grade (WATER_RENDERING.md §18): the fog's colour (linear) and its
+        // share; the in-scatter's brightness, the mirror's, the floor light's absorption share and
+        // the window rim's glow.
+        let fog = linear_rgb(u.tone_fog_color);
+        out.extend_from_slice(&[fog[0], fog[1], fog[2], u.tone_fog_share as f32]);
+        out.extend_from_slice(&[
+            u.tone_brightness as f32,
+            u.tone_mirror as f32,
+            u.tone_floor_light as f32,
+            u.window_rim_glow as f32,
+        ]);
     }
     if out.is_empty() {
         // A storage binding can't be empty: one zero fluid that nothing indexes.
@@ -1111,6 +1127,20 @@ mod tests {
             ];
             assert_eq!(v[60..64], under.map(|x| x as f32));
             assert_eq!(v[64..66], [u.window_cells as f32, u.window_bodies as f32]);
+            assert_eq!(
+                v[66..68],
+                [u.window_sun_glow as f32, u.window_sun_power as f32]
+            );
+            // The colour grade (WATER_RENDERING.md §18).
+            let fog = linear_rgb(u.tone_fog_color);
+            assert_eq!(v[68..72], [fog[0], fog[1], fog[2], u.tone_fog_share as f32]);
+            let lift = [
+                u.tone_brightness,
+                u.tone_mirror,
+                u.tone_floor_light,
+                u.window_rim_glow,
+            ];
+            assert_eq!(v[72..76], lift.map(|x| x as f32));
         }
         // A fluid with no look of its own takes the default's (fog from the eye, the registry's rates).
         assert_eq!(underwater_look("test:oil"), &DEFAULT_UNDERWATER);

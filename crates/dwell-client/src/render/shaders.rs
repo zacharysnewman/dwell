@@ -189,9 +189,16 @@ struct Fluid {
     // cells, dark gaps), y the sun patch's strength, z its tightness (a power), w the cells'
     // scale against the floor's caustics (a whole number, so the pattern still wraps)
     underside: vec4f,
-    // Snell's window seen from below (WATER_RENDERING.md §16): x the share of the underside's
-    // cells over the sky in it, y the sun's and moon's discs' strength in it; zw spare
+    // Snell's window seen from below (WATER_RENDERING.md §16, §18): x the share of the underside's
+    // cells over the sky in it, y the sun's and moon's discs' strength in it, z the sun's glow in
+    // it (× the sun's light), w that glow's tightness (a power)
     window: vec4f,
+    // The underwater colour grade (WATER_RENDERING.md §18): rgb the colour the fog's in-scatter
+    // is pulled toward (linear), a by how much (0: the fluid's scatter)
+    tone: vec4f,
+    // x the in-scatter's brightness (×), y the mirror's outside the window (×), z the share of the
+    // absorption the light down to the floor takes, w the window rim's glow (× the zenith's light)
+    lift: vec4f,
 };
 @group(0) @binding(4) var<storage, read> fluids: array<Fluid>;
 // The water's tiles (render/water_tiles.rs): gradient noise and its derivatives over NOISE_TILE
@@ -539,10 +546,12 @@ fn schlick(cos: f32, f0: f32) -> f32 {
 // `dist` metres of the fluid, Beer–Lambert absorption of what is behind and the fluid's in-scatter,
 // lit as the face's up is.
 // The underwater look's fog: none over its clear distance, then its rates × its density.
+// The in-scatter is graded by the look's `tone` (WATER_RENDERING.md §18): its colour pulled toward
+// `tone.rgb` and brightened by `lift.x` (a fluid without a look: as before).
 fn underwater(lin: vec3f, dist: f32, f: Fluid) -> vec3f {
     let d = max(dist - f.under.y, 0.0) * f.under.z;
     let t = exp(-(f.absorption.rgb + f.extra.w) * d);
-    let inscatter = lambert(f.scatter.rgb, face_up(frame.eye.y), frame.eye.x);
+    let inscatter = lambert(mix(f.scatter.rgb, f.tone.rgb, f.tone.a), face_up(frame.eye.y), frame.eye.x) * f.lift.x;
     return lin * t + inscatter * (1.0 - t);
 }
 
@@ -2055,7 +2064,14 @@ fn composite_underwater(p: vec2i, ray: vec3f, c: vec4f) -> vec3f {
         let look = underside_look(hit, dir, fp, f, fluid);
         let light = look.x * (1.0 + look.y);
         // The mirror: the water's in-scatter, textured.
-        let mirror = moonlit(display(underwater(underwater(vec3f(0.0), 1e6, f) * light, to_surface, f)));
+        // Brighter by the look's `lift.y`, and round the window's rim a soft glow of the sky's light
+        // straight up (`lift.w`), so the ceiling reads as lit water, not a dark lid (§18).
+        let up_n = face_up(frame.eye.y);
+        let zen = sky_radiance(up_n);
+        let crit = sqrt(max(1.0 - 1.0 / (ior * ior), 0.0));
+        let near_rim = smoothstep(crit * 0.55, crit, rise) * f.lift.w;
+        let ceiling = underwater(vec3f(0.0), 1e6, f) * light * f.lift.y + zen * near_rim * 0.35;
+        let mirror = moonlit(display(underwater(ceiling, to_surface, f)));
         if (leaves) {
             // Out through the window: the sky, under the window's glow (shafts.json `window`: a
             // bright white-cyan, strongest at its middle), with the patch's light round the sun;
@@ -2082,7 +2098,14 @@ fn composite_underwater(p: vec2i, ray: vec3f, c: vec4f) -> vec3f {
             // The sky through the window, waved by the underside's cells at the look's share. The
             // sun patch is the mirror's (the sun's own disc is in the window's sky), so it does not
             // wash the sky with the water's colour.
-            let window = display(underwater(sky_in * mix(1.0, look.x, f.window.x), to_surface, f));
+            // The sun's blown-out glow round its image (`window.z`, `window.w`; §18): the sun's light,
+            // brightest at the image and soft round it, so the window's sun reads as the reference's
+            // white disc with light radiating from it; gone at night with the sun.
+            let sun = frame.day.sun.xyz;
+            let sun_lit = select(frame.day.sun_b.rgb, frame.day.sun_a.rgb, frame.eye.y > 0.0);
+            let glow = sun_lit * f.window.z * pow(max(dot(dir, sun_through(sun, ior)), 0.0), max(f.window.w, 1.0))
+                * own(sun, frame.eye.y);
+            let window = display(underwater(sky_in * mix(1.0, look.x, f.window.x) + glow, to_surface, f));
             back = mix(mirror, window, inside);
         } else {
             back = mirror;
@@ -2104,7 +2127,8 @@ fn composite_underwater(p: vec2i, ray: vec3f, c: vec4f) -> vec3f {
         let rel = ray * depth;
         let under = face_y(frame.eye.y, frame.water.z) - face_y(frame.eye.y, frame.eye.x + rel.y);
         // Lit by light that came down through the fluid, focused into caustics.
-        lit *= exp(-f.absorption.rgb * max(under, 0.0))
+        // The absorption's share `lift.z` (§18): lower, the floor keeps more of its colour.
+        lit *= exp(-f.absorption.rgb * f.lift.z * max(under, 0.0))
             * caustic_light(frame.wrap.xy + rel.xz, under, frame.eye.x + rel.y, pixel_m(p, ray, depth), UNDERWATER_CAUSTICS, f, fluid);
     }
     let shown = moonlit(display(underwater(lit, min(dist, to_surface), f)));
