@@ -396,16 +396,16 @@ fn a_felled_trunk_falling_on_the_chopper_does_not_fling_them_b() {
 }
 
 dwell_world::both_faces!(
-    fn hacking_one_spot_takes_three_to_four_times_the_swings_of_notching(f: FaceFrame) {
+    fn aiming_at_one_spot_notches_as_alternating_the_bands_does(f: FaceFrame) {
+        // BUGS.md #75: a swing at a band cut deeper than the other lands beside it, in the open
+        // wood, so the same aim notches (before: it hacked one kerf, 28 swings to the notching's 9,
+        // and in the browser no fall in 24).
         let mut fx = scene(f, "creative", true);
         let notch = swings_to_fell(&mut fx, f, false, 20, |i| i % 2).expect("notched");
         let mut fx = scene(f, "creative", true);
-        let hack = swings_to_fell(&mut fx, f, false, 60, |_| 0).expect("hacked");
-        let ratio = hack as f64 / notch as f64;
-        assert!(
-            (3.0..=4.0).contains(&ratio),
-            "{hack} vs {notch}: {ratio:.2}"
-        );
+        let one = swings_to_fell(&mut fx, f, false, 20, |_| 0).expect("one aim");
+        assert_eq!(one, notch);
+        assert!((10..=13).contains(&notch), "about twelve: {notch}");
     }
 );
 
@@ -1036,10 +1036,12 @@ dwell_world::both_faces!(
 
 dwell_world::both_faces!(
     fn chop2_off_the_old_chopping_is_unchanged(f: FaceFrame) {
-        // Without the switch twelve chops in one spot don't fell it (hacking: ~4× notching).
+        // Without the switch a chop opens a kerf (the old model), not the prototype's notch.
         const { assert!(!dwell_protocol::chopping::CHOP2_DEFAULT, "off by default") };
         let mut fx = scene(f, "adventure", true);
-        assert_eq!(swings_to_fell(&mut fx, f, false, 13, |_| 0), None);
+        at_trunk(&mut fx, f, 0, false);
+        let cut = fx.server.cut_of(f.cell([3, AT, 0])).expect("cut");
+        assert!(cut.kerf[0][0] > 0.0 && cut.notch[0] == 0.0, "{cut:?}");
     }
 );
 
@@ -1288,5 +1290,35 @@ dwell_world::both_faces!(
         let k = swinger(&snaps[&2], kinds.player_id, plain.player_id);
         assert_eq!(count(k), (start + 3) & swing_flags::COUNT_MASK);
         assert_eq!(k.swing_kind, SwingKind::Plain as u8);
+    }
+);
+
+/// Level swings swept as a player swings them (`ChopAction::Sweep`), standing 1.5 m from the
+/// trunk and looking at it `pitch_deg` below level (from the eye's own height), until a trunk
+/// cell is felled (at most `limit`); the count.
+fn sweeps_to_fell(f: FaceFrame, pitch_deg: f64, limit: usize) -> Option<usize> {
+    let mut fx = near(f, "adventure");
+    let p = pitch_deg.to_radians();
+    for i in 0..limit {
+        sweep(&mut fx, f, [p.cos(), -p.sin(), 0.0], false);
+        if (BASE..BASE + 10).any(|r| cell_is(&mut fx, f, [3, r, 0]) != log(f, "y")) {
+            return Some(i + 1);
+        }
+    }
+    None
+}
+
+dwell_world::both_faces!(
+    /// A player chopping a trunk as one does, the same aim swing after swing (BUGS.md #75), fells
+    /// it in about the stone axe's dozen chops (the owner, WORK_QUEUE item 7): the swing comes in
+    /// where its side is open, so one aim notches. Red before: the aim's band was hacked alone.
+    fn the_same_level_aim_swing_after_swing_fells_a_trunk_in_about_twelve(f: FaceFrame) {
+        for pitch in [3.0, 18.0] {
+            let n = sweeps_to_fell(f, pitch, 40);
+            assert!(
+                n.is_some_and(|n| (9..=14).contains(&n)),
+                "aimed {pitch} degrees down: {n:?} swings"
+            );
+        }
     }
 );

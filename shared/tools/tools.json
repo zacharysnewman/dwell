@@ -10,7 +10,7 @@
       "name": "dwell:stone_axe",
       "kind": "axe",
       "swingSeconds": 0.45,
-      "biteM": 0.12,
+      "biteM": 0.1,
       "bindM": 0.05,
       "across": 1,
       "along": 0.15,
