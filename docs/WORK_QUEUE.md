@@ -1019,7 +1019,8 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    the server streams chunks and LOD around it, spawns and simulates creatures and NPCs near it, and runs the near
    ecology and water there — so a shot can be far from the player's body; in adventure the world stays centred on
    the body and the camera only sees what's already loaded near the player (no scouting). The server accepts the
-   viewpoint only where the world's mode allows it.
+   viewpoint only where the world's mode allows it. Owner: **"Still want theater mode for adventure, just without
+   camera-relative sim."** — theater mode itself stays available in every mode; only the camera viewpoint is creative-only.
 
 ## Done
 
