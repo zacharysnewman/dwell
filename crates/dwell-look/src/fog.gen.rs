@@ -4,9 +4,9 @@ use crate::fog::FogSettings;
 
 /// The height fog every client draws (shared/look/fog.json).
 pub const FOG: FogSettings = FogSettings {
-    distance_m: 16000.0,
+    distance_m: 6000.0,
     density: 0.95,
-    height_m: 1800.0,
+    height_m: 1000.0,
     air_elevation_deg: 0.0,
     sun_tint: 0.0,
     warm: [1.08, 1.0, 0.86],

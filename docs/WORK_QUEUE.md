@@ -294,6 +294,16 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    Owner, 2026-11-12, again: **"Also the volumetric clouds still look bad no proper lighting or shading?"** In progress
    (cloud): a light march toward the sun for self-shadowing, darker bases, sky-coloured ambient, silver lining —
    matched against the old 2D deck; then the in-game look and cost (local).
+   **Built (2026-11-12, branch `claude/cloud-lighting`, CLOUDS.md §8.8):** the volume lit as data: Medium takes 4
+   light samples toward the sun (High 6; growing steps, stopping where the path leaves the layer; the cause was
+   Medium taking none), Beer with a multiple-scattering floor and a powder term, a dual-lobe Henyey–Greenstein
+   phase (the silver lining toward the sun), the sky's light from above and a darker warm ground bounce from
+   below dimmed by the cloud over and under each sample (read free from its own noise): bases ~0.45, tops ~0.95
+   in the deck's palette; night and sunset tints kept; the light samples reuse the sample's warp (half the old
+   cost each). A CPU twin with tests (top brighter than base, deeper darker, phase toward the sun, tier caps from
+   data, both faces). Read from the shader: Medium ≤ ~5.3k ALU a texel (was 2.6k), High ≤ 7.6k (was 4.8k).
+   Next (local): the in-game look side by side with the old deck (sun high, low sun, from above, night) and the
+   bench before/after at the §8.3 views; tune by the data.
 14. **Tall grass grows and spreads** (owner 2026-11-11: "I want tall grass to steadily grow and spread. It
    should probably have a max depending on climate/biome."). **Built** (ADR 0075 T3c, docs/ECOLOGY.md §10):
    `shared/worldgen/grass.json` (the rule as data: the block, the ground, the decoration whose climate
@@ -786,6 +796,8 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    the mixed-forest valley at 25 m looking east at the hills and the cones (noon), 300 m over the steppe across
    the ranges toward the tall cone 14 km off (noon), and the tall cone from ~8 km at ground level (noon and
    16:48). **Waiting on the owner:** pick A–D (or a value between); its numbers move to the top of fog.json.
+   **Owner, 2026-11-12: "Yeah let's go with D on haze."** Done: fog.json's half distance 6 km (was 16 km) and scale
+   height 1 km (was 1.8 km), density 0.95; the pinned fog values updated.
 30. **Desktop frame rate on the M1 and hidden graphics settings (P0)** (owner 2026-11-12: "It seems like we're
    hiding some performance settings. I don't see 'tree' options in our settings for graphics. I think cards are
    killing my m1 mac too." / "Running 26fps." / "GPU at 31ms"). The desktop default preset is High (leaf cards
@@ -838,6 +850,13 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    the clouds' pass). Next (local): measure each new switch's GPU cost on the M1 at High (forest-perf) and decide
    which presets should cut them (Low and Mobile are the candidates for tall grass, far trees and distant
    shadows); chamfered leaves have no switch (the mesh shape, not a per-pixel cost).
+   Owner, 2026-11-12: **"It would be sweet if we could see in realtime on graphics menu exactly or approximately what %
+   of performance is being used by each setting."** Plan: the renderer's GPU pass timings (the `gpu.*` telemetry,
+   timestamp queries where the browser allows them) mapped to the settings that drive each pass (data: setting →
+   passes), shown live beside each setting as ms and % of the frame budget (16.7 ms at 60 fps); settings without
+   their own pass (e.g. tall grass, cards inside the terrain pass) estimated by a quick on/off A/B when the menu
+   opens, labelled "≈"; a total bar; works without timestamp queries by falling back to the A/B estimate. Queued
+   (local, after the setting-for-everything work lands).
 31. **Far trees as multi-angle impostors** (owner 2026-11-12: "billboards (maybe from above billboards too,
    possibly a few different angles so we can switch between them like old Mario kart did with carts, and some
    trees too)" and "The farther distant thoughts on billboards are because our low LOD trees look pretty bad and
@@ -1016,6 +1035,9 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    remap now takes six pairs (`MAX_REMAP` 6). Seen in a group shot of eight villagers: each hat's colour
    is now its own, separate from the hair. The hat's band keeps the pack's orange triangle pattern.
 
+   Owner, 2026-11-12: **"Villagers should be able to hurt players."** A villager's sword strike that connects on a
+   player damages them (through the damage rules: a new cause, knockback, the player's raised guard blocks it by the
+   same angle rule); modes without player damage (creative) are unaffected. In progress (cloud).
 39. **Livelier animals** (owner 2026-11-12, after the video had no chase or fleeing — on day one every pack is
    kilometres from any herd and players can't scare deer): chose **deer flee from players** (they notice a player
    within a distance by data, closer when crouching, and run off; wolves keep their distance unless hungry),
@@ -1061,6 +1083,9 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    that work today; 14 and 15 after item 39 and the swords/NPC work land; 5 after the moon trip is playable):
    Owner, 2026-11-12: **"Preferably some of each recording should be gameplay, player perspective."** — every
    video mixes cinematic shots with first-person gameplay (the arms and held item, actually playing).
+   **Owner, 2026-11-12: "Start on oldest features first for showcasing."** Order: the oldest features first — the
+   bifacial world (16), water and underwater (7, 17), rivers to the sea (18), day to night (3), building (13), dynamite
+   (12), the world's scale (20), biomes (6), then the newer ones. Recorded with theater mode, 9:16, no text.
    1. Volcano and lava — the summit lava lake at night with bloom, crust plates and orange seams, steam where lava
       meets water, a lava river cooling from bright to dark.
    2. Rainier-style peak — a drone rise up the cone past snow lines, cleavers and the glacier cap, ranges fading
@@ -1121,6 +1146,12 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    name `camera` was taken) and the record skill. Not yet run in a browser (cloud session, no GPU). Next, locally:
    T-2 the mode and editor, T-3 recording; then T-4 the creative viewpoint (designed in THEATER_MODE.md §7: the
    `theaterViewpoint` ability, server-checked) and T-5 the MCP server.
+   **T-2 and T-3 built (2026-11-12, `client/src/theater/`):** F9 / Settings → Theater / the right stick press / a
+   touch button toggle it (key and tunables in `shared/theater/theater.json`); the free camera (`theaterFly`, both
+   faces); the HUD switch with an audit test; the toolbar's Presets, Keyframes (timeline, save/load, export/import)
+   and Record (9:16 or 16:9, 720–1440p, 24/30/60 fps, MP4 or WebM download) panels; `__dwell.theaterMode`.
+   Outstanding: the host's `theaterGuests` world setting (protocol), following a creature by id, the offline
+   frame-exact recording mode, a playtest on a phone.
    Owner, 2026-11-12: **"For players to use it would be cool if it had an MCP server so they could use an LLM agent to
    handle the recording complexities, not sure if that would help us at all but it's a to have."** A nice-to-have,
    after the in-game tools: an MCP server exposing theater mode's operations (find subjects, set time of day,
