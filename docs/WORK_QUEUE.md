@@ -1970,6 +1970,16 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    (`take.test.mjs`, in CI): the manifest validates, shot selection and the cache, and the generated plan equals v4's
    hand-written one. Not yet run against the real browser (the first use is the v5 re-record, on the Mac).
 
+51. **Big worlds keep their mountains and rivers** (owner 2026-11-12: "any idea why 10x worlds are super flat with
+   massive rivers and lakes? And no mountains? Are they just stretching out the noise or something like that?" →
+   explained: the whole-map grids keep ~1 M cells, so a 10× cell is 1 km; ranges narrower than a few cells vanish,
+   rivers are carved a cell wide, the lake fill is per cell, the island tunables don't scale; BUGS #77. Owner:
+   **"Yes feel free to add the big terrain fix to the queue."**). Plan (BIG_MAP.md §5): (1) quick — features in
+   metres, not cells (range widths, river widths by discharge, lake fill per metre), the island shape and the number
+   of ranges scaled with the radius, so bigger islands get more mountains, not flatter ones; (2) the regional 100 m
+   maps on demand around the player (25.6 km squares, seams agreed). Changes big worlds' terrain: the 0.56 line
+   (the owner raises it), 1× unchanged.
+
 ## Future (needs owner answers)
 
 - **Waterlogging** (owner 2026-11-12: "Eventually we'll want to make it so some blocks if they don't move for a little
