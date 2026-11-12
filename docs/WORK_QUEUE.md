@@ -1612,6 +1612,15 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
 - **Chisel:** biome decorations and spacing per biome; players' saved structures as placement sources;
   the in-game editor and a biome choice in the New world form.
 
+43. **Model part painter** (owner 2026-11-12, after bug #96, villagers' faces and hair taking clothes/hat colours:
+   **"You should have tooling for debugging this and setting up a model so it can be retextured."**). Answers: a
+   **standalone prototype page** (docs/prototypes, published like the Character Lab); parts **painted per vertex,
+   saved as data** (a part map per model: each vertex → part — skin, hair, shirt, trousers, hat, eyes, …; seeded
+   from the skin weights and colours, corrected by hand with a brush). The page shows the model with its parts in
+   distinct colours (front/side/back, rotate), paints vertices into parts, previews the creature's colour variants
+   (creatures.json `colours`), and exports the part map file the game reads (the recolour by part, not by colour).
+   Order: bug #96's fix lands the part map format and the game reading it; then the page.
+
 ## Future (needs owner answers)
 
 - **Tall grass hides you** (owner 2026-11-12: "I like the hide mechanic idea, save this for later."): tall grass
