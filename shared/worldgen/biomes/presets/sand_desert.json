@@ -4,9 +4,13 @@
   "description": "Hot and dry: dunes of sand to the horizon, rock only on the steepest faces.",
   "where": {
     "weight": 1,
-    "temperature": {
-      "min": 0.6,
-      "blend": 0.1
+    "celsius": {
+      "min": 14,
+      "blend": 2
+    },
+    "rain": {
+      "max": 250,
+      "blend": 75
     },
     "wetness": {
       "max": 0.25,

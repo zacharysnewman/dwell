@@ -1718,6 +1718,7 @@ fn the_default_biome_takes_only_the_weight_left() {
         wetness: 0.0,
         elevation: 50.0,
         coast: 500.0,
+        ..Geography::default()
     };
     let w = fallback_weights(&set, &hot_dry);
     assert_eq!(

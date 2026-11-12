@@ -33,6 +33,8 @@ pub struct Band {
     pub weight: f64,
     /// Degrees north at the map's south and north edges.
     pub latitude: [f64; 2],
+    /// The annual rain (mm) where the march rains its flat rate (flat land by the sea; R4).
+    pub rain_mm: f64,
 }
 
 /// A prevailing wind cell (`climate.json` `winds`): the latitudes it covers and the compass bearing
@@ -56,6 +58,17 @@ pub struct RainRules {
     pub lee_dry: f64,
 }
 
+/// How the biomes read the rain (`climate.json` `biomes`, R4).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct BiomeRain {
+    /// The most annual rain (mm) a column reads.
+    pub max_rain_mm: f64,
+    /// The annual rain (mm) that is fully wet for the 0..1 wetness.
+    pub wet_mm: f64,
+    /// The rain's share of the wetness (the rest the rivers' and lakes').
+    pub moisture_share: f64,
+}
+
 /// The climate's rules (`climate.json`).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ClimateRules {
@@ -71,6 +84,7 @@ pub struct ClimateRules {
     pub max_grid_bytes: usize,
     /// The discharge's rain factor is kept within [min, max].
     pub discharge: [f64; 2],
+    pub biomes: BiomeRain,
 }
 
 mod table {
@@ -244,6 +258,7 @@ impl Climate {
             rain,
             mean_land,
             discharge: self.rules.discharge,
+            flat: (r.base_rain * 2.0 * g.cell / 1000.0).clamp(0.0, 1.0),
         }
     }
 }
@@ -314,6 +329,8 @@ pub struct RainGrid {
     /// The mean rain over the grid's land cells.
     pub mean_land: f64,
     discharge: [f64; 2],
+    /// The march's flat rate per cell (the rain over the sea and flat land at full moisture).
+    pub flat: f64,
 }
 
 impl RainGrid {
@@ -343,6 +360,17 @@ impl RainGrid {
     /// The bytes it holds.
     pub fn bytes(&self) -> usize {
         crate::vec_bytes(&self.rain)
+    }
+}
+
+impl Climate {
+    /// The annual rain (mm) at face-local (x, z) on `rain` (R4, Whittaker-style): the band's
+    /// `rainMm` × the march's rain over its flat rate, within [0, `biomes.maxRainMm`].
+    pub fn rain_mm(&self, rain: &RainGrid, x: f64, z: f64) -> f64 {
+        if rain.flat <= 1e-12 {
+            return 0.0;
+        }
+        (self.band().rain_mm * rain.at(x, z) / rain.flat).clamp(0.0, self.rules.biomes.max_rain_mm)
     }
 }
 
@@ -416,6 +444,7 @@ mod tests {
             name: "polar",
             weight: 1.0,
             latitude: [75.0, 85.0],
+            rain_mm: 200.0,
         }];
         let rules = ClimateRules {
             bands: &BANDS,

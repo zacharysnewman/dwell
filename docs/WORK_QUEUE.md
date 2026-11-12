@@ -259,8 +259,15 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    mountains on a coarse grid (≥ 500 m, ≤ 400 a side, under 1 MiB), its rain feeding the rivers' discharge
    where `tectonics.climate` is 1 (only `realistic.json`); windward sides of the seeds' main ranges ≥ 3× wetter
    than their lees, both faces; default and starter goldens unchanged. The Chisel plates, latitude and wind
-   overlays moved to R4. Next: R4 (biomes by climate); q2's bands (R3 offers three, as data), q6 and q8 still
-   open. q5 (2026-11-11): no new rock blocks
+   overlays moved to R4. R4 built (2026-11-12): biomes chosen by climate alone (Whittaker-style): the presets'
+   `where` in °C (`celsius`) and annual rain in mm (`rain`), read from the climate (the rain re-marched over
+   the eroded map, `climate.json` `bands[].rainMm` and `biomes`); `realistic.json` lists the default and all
+   14 presets by bare name, no per-world tuning; the starter keeps its 0..1 tuning (its edit byte-identical)
+   and the default its goldens; `tests/realistic_biomes.rs` on both faces: no dry biome where the rain is a
+   wet coast's or on the main range's wet windward side, no forest above the tree line (−1.5 °C) and tundra
+   there, a colder band more boreal/tundra on the same ground. The Chisel overlays moved to R5. Next: R5
+   (geology and materials); q2's bands (R3 offers three, as data), q6, q8 and q9 (R4: presets for the cold
+   desert and tropical rainforest the default now takes) still open. q5 (2026-11-11): no new rock blocks
    for now; R5 uses today's blocks (stone, basalt, sandstone, red sandstone, sand, dirt) named in data, so
    new ones can replace them later.
 

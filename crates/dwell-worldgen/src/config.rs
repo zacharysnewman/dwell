@@ -104,6 +104,8 @@ pub fn biome_from_json(v: &Value) -> Result<Biome, String> {
         wetness: range(w, "wetness").map_err(at)?,
         elevation: range(w, "elevation").map_err(at)?,
         coast: range(w, "coast").map_err(at)?,
+        celsius: range(w, "celsius").map_err(at)?,
+        rain: range(w, "rain").map_err(at)?,
     };
     let bands = v
         .get("bands")

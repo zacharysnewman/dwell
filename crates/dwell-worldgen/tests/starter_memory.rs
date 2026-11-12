@@ -105,10 +105,20 @@ fn the_starter_worlds_terrain_is_unchanged() {
         for z in (-r..=r).step_by(128) {
             for x in (-r..=r).step_by(128) {
                 let (xi, zi) = (i64::from(x), i64::from(z));
-                fnv(
-                    &mut h,
-                    format!("{:?}", g.biome_geography(xi, zi)).as_bytes(),
-                );
+                // The geography's own fields, as the pin has always hashed them (R4's `celsius` and
+                // `rain` follow from them in a world without a climate, as the starter is: its °C by
+                // vegetation.json, no rain).
+                let geo = match g.biome_geography(xi, zi) {
+                    Some(g) => {
+                        assert!(g.rain.is_none(), "the starter has no climate");
+                        format!(
+                            "Some(Geography {{ temperature: {:?}, wetness: {:?}, elevation: {:?}, coast: {:?} }})",
+                            g.temperature, g.wetness, g.elevation, g.coast
+                        )
+                    }
+                    None => "None".to_string(),
+                };
+                fnv(&mut h, geo.as_bytes());
                 fnv(&mut h, format!("{:?}", g.biome_rainfall(xi, zi)).as_bytes());
                 let e = g.erosion_at(xi, zi);
                 eroded += u32::from(e.is_some());

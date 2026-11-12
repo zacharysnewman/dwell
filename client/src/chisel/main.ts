@@ -87,6 +87,8 @@ const WHERE_SPAN: Record<string, [number, number, number]> = {
   wetness: [0, 1, 0.01],
   elevation: [0, 3000, 10],
   coast: [0, 10000, 50],
+  celsius: [-30, 35, 0.5],
+  rain: [0, 4500, 50],
 };
 const BAND_BLOCKS = ['ground', 'under', 'rock', 'shoreBlock'] as const;
 

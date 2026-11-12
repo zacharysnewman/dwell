@@ -160,7 +160,9 @@ test('a bad biome or world terrain fails with the key and the problem', () => {
     [(b) => (b.bands[0].roughness = 1), /bands\[0\]: unknown roughness/],
     [(b) => (b.bands = []), /bands must be a list of elevation bands/],
     [(b) => (b.where.weight = 0), /where\.weight must be in \(0, 1000\]/],
-    [(b) => (b.where.rain = { min: 0, blend: 0 }), /where: unknown rain/],
+    [(b) => (b.where.snowfall = { min: 0, blend: 0 }), /where: unknown snowfall/],
+    [(b) => (b.where.celsius = { min: 20, max: 10, blend: 1 }), /where\.celsius\.max must be greater/],
+    [(b) => (b.where.rain = { max: 500 }), /where\.rain\.blend must be/],
     [(b) => (b.where.wetness = { min: 0.5, max: 0.2, blend: 0 }), /where\.wetness\.max must be greater/],
     [(b) => (b.where.coast = { blend: 1 }), /where\.coast needs a min or a max/],
     [(b) => (b.where.elevation = { min: 0 }), /where\.elevation\.blend must be/],
@@ -947,10 +949,10 @@ test('the checked-in climate is valid and generates the checked-in Rust', () => 
 
 test('a latitude band and a wind cell added by data alone are emitted', () => {
   const c = loadClimate();
-  c.bands.push({ name: 'polar', weight: 0.5, latitude: [76, 86] });
+  c.bands.push({ name: 'polar', weight: 0.5, latitude: [76, 86], rainMm: 200 });
   c.winds.push({ name: 'doldrums', latitude: [0, 5], from: 90 });
   const rs = climateRust(validateClimate(c));
-  assert.match(rs, /Band \{ name: "polar", weight: 0\.5, latitude: \[76\.0, 86\.0\] \}/);
+  assert.match(rs, /Band \{ name: "polar", weight: 0\.5, latitude: \[76\.0, 86\.0\], rain_mm: 200\.0 \}/);
   assert.match(rs, /WindCell \{ name: "doldrums", latitude: \[0\.0, 5\.0\], from: 90\.0 \}/);
 });
 
@@ -965,6 +967,9 @@ test('a bad climate entry fails naming it', () => {
     [(c) => (c.rain.cell = 50), /rain\.cell must be in \[100, 10000\]/],
     [(c) => (c.discharge = { min: 2, max: 4 }), /discharge must be \[min ≤ 1, max ≥ 1\]/],
     [(c) => delete c.lapseRate, /the file: missing lapseRate/],
+    [(c) => delete c.bands[0].rainMm, /bands\[0\]: missing rainMm/],
+    [(c) => (c.biomes.wetMm = 0), /biomes\.wetMm must be in \[1, 50000\]/],
+    [(c) => (c.biomes.moistureShare = 2), /biomes\.moistureShare must be in \[0, 1\]/],
   ]) {
     const c = loadClimate();
     edit(c);
