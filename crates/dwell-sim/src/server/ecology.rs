@@ -70,6 +70,9 @@ pub struct Ecology {
     pub enabled: bool,
     /// Dev (`animalsIgnorePlayers`, docs/DEV_TOOLS.md): the near animals see no player.
     pub ignore_players: bool,
+    /// Dev (`animalPose`): every near animal is sent in this pose (its index in
+    /// `CREATURE_POSES`), whatever its idle, to judge a pose by eye.
+    pub force_pose: Option<u8>,
     pub speed: f64,
     /// Where the islands come from: a test's, or the world maps of this seed (None: no map).
     given: Option<Arc<[Island; 2]>>,
@@ -152,6 +155,7 @@ impl Ecology {
             written: None,
             writes: 0,
             ignore_players: false,
+            force_pose: None,
         }
     }
 
@@ -389,6 +393,12 @@ impl Server {
             .as_mut()
             .ok_or_else(|| "the ecology is not running".to_owned())?;
         Ok(faces[k].push(s, local[0] + offset_m, local[2], size.max(1.0), 0.0, 1.0))
+    }
+
+    /// Dev tools (`animalPose`): every near animal sent in pose `pose` (`CREATURE_POSES`), or as
+    /// it idles (None).
+    pub fn force_animal_pose(&mut self, pose: Option<u8>) {
+        self.ecology.force_pose = pose;
     }
 
     /// Dev tools (`animalsIgnorePlayers`): the near animals see no player while `on`.

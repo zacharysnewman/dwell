@@ -46,10 +46,15 @@ impl Server {
         let mut out = Vec::new();
         for g in &self.ecology.near.groups {
             for m in &g.members {
-                let pose = dwell_ecology::IdlePose::ALL
-                    .iter()
-                    .position(|&p| p == m.pose)
-                    .unwrap_or(0);
+                let pose = self.ecology.force_pose.map_or_else(
+                    || {
+                        dwell_ecology::IdlePose::ALL
+                            .iter()
+                            .position(|&p| p == m.pose)
+                            .unwrap_or(0)
+                    },
+                    usize::from,
+                );
                 if pose != 0 {
                     out.push(CreaturePoseNet {
                         id: m.creature,

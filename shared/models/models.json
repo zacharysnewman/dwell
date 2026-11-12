@@ -103,9 +103,9 @@
       "fallback": "idle",
       "poseBlendS": 0.6,
       "poses": {
-        "$comment": "Idle poses as joint turns on the idle clip (WORK_QUEUE item 39; degrees, Euler XYZ in each joint's frame): first guesses tuned by eye.",
-        "graze": { "spine.006": [35, 0, 0], "spine.007": [30, 0, 0], "spine.008": [20, 0, 0], "scull": [15, 0, 0] },
-        "lookUp": { "spine.007": [-15, 0, 0], "scull": [-15, 12, 0] },
+        "$comment": "Idle poses as joint turns on the idle clip (WORK_QUEUE item 39; degrees, Euler XYZ in each joint's frame). Seen in game with `__dwell.animalPose` (2026-11-12): +x on the neck joints raises the head, so graze is negative and lookUp positive.",
+        "graze": { "spine.006": [-30, 0, 0], "spine.007": [-30, 0, 0], "spine.008": [-20, 0, 0], "scull": [-15, 0, 0] },
+        "lookUp": { "spine.007": [12, 0, 0], "scull": [10, 12, 0] },
         "earFlick": { "ear.L": [0, 0, 35], "ear.R": [0, 0, -10] }
       },
       "roles": {
@@ -132,9 +132,9 @@
       "fallback": "idle",
       "poseBlendS": 0.6,
       "poses": {
-        "$comment": "Idle poses as joint turns on the idle clip (WORK_QUEUE item 39; degrees, Euler XYZ in each joint's frame): first guesses tuned by eye.",
-        "graze": { "spine.006": [35, 0, 0], "spine.007": [30, 0, 0], "spine.008": [20, 0, 0], "scull": [15, 0, 0] },
-        "lookUp": { "spine.007": [-15, 0, 0], "scull": [-15, 12, 0] },
+        "$comment": "Idle poses as joint turns on the idle clip (WORK_QUEUE item 39; degrees, Euler XYZ in each joint's frame). Seen in game with `__dwell.animalPose` (2026-11-12): +x on the neck joints raises the head, so graze is negative and lookUp positive.",
+        "graze": { "spine.006": [-30, 0, 0], "spine.007": [-30, 0, 0], "spine.008": [-20, 0, 0], "scull": [-15, 0, 0] },
+        "lookUp": { "spine.007": [12, 0, 0], "scull": [10, 12, 0] },
         "earFlick": { "ear.L": [0, 0, 35], "ear.R": [0, 0, -10] }
       },
       "roles": {
@@ -229,9 +229,9 @@
       "fallback": "idle",
       "poseBlendS": 0.8,
       "poses": {
-        "$comment": "Idle poses as joint turns on the idle clip (WORK_QUEUE item 39; degrees, Euler XYZ in each joint's frame): first guesses tuned by eye.",
-        "sit": { "spine": [-30, 0, 0], "thigh.L": [-60, 0, 0], "thigh.R": [-60, 0, 0], "shin.L": [70, 0, 0], "shin.R": [70, 0, 0], "spine.007": [-15, 0, 0] },
-        "lie": { "thigh.L": [-80, 0, 0], "thigh.R": [-80, 0, 0], "shin.L": [110, 0, 0], "shin.R": [110, 0, 0], "front_thigh.L": [-80, 0, 0], "front_thigh.R": [-80, 0, 0], "front_shin.L": [100, 0, 0], "front_shin.R": [100, 0, 0], "spine.007": [20, 0, 0] },
+        "$comment": "Idle poses as joint turns on the idle clip (WORK_QUEUE item 39; degrees, Euler XYZ in each joint's frame). Seen in game with `__dwell.animalPose` (2026-11-12): +x on the neck joints raises the head, so graze is negative and lookUp positive.",
+        "sit": { "spine": [30, 0, 0], "thigh.L": [-60, 0, 0], "thigh.R": [-60, 0, 0], "shin.L": [70, 0, 0], "shin.R": [70, 0, 0], "spine.007": [-15, 0, 0] },
+        "lie": { "thigh.L": [-80, 0, 0], "thigh.R": [-80, 0, 0], "shin.L": [110, 0, 0], "shin.R": [110, 0, 0], "front_thigh.L": [-80, 0, 0], "front_thigh.R": [-80, 0, 0], "front_shin.L": [100, 0, 0], "front_shin.R": [100, 0, 0], "spine.007": [-10, 0, 0] },
         "earFlick": { "ear.L": [0, 0, 30] }
       },
       "roles": {

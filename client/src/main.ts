@@ -314,6 +314,9 @@ interface DwellDebug {
   animalsIgnorePlayers(on: boolean): Promise<string | null>;
   /** Every NPC turns on the local player as if struck (a duel without the first blow; local). */
   npcsFight(): Promise<string | null>;
+  /** Every near animal drawn in pose `pose` (`stand`, `graze`, `lookUp`, `earFlick`, `sit`, `lie`;
+   * null: as it idles), to judge a pose by eye (a local world). */
+  animalPose(pose: string | null): Promise<string | null>;
   /**
    * The run-time cloud plumes (docs/CLOUDS.md §8.7; JSON back): `list`; `add` [name, x, y, z,
    * radius?, height?, density?, riseMps?] a steam plume based at a world point; `near` [name, dx,
@@ -1340,6 +1343,10 @@ async function start(): Promise<App | null> {
     waterReport: (x, y, z, radius) =>
       app.loopback?.waterReport([x, y, z], radius ?? WATER_REPORT_RADIUS) ?? Promise.resolve(null),
     lava: (op, args) => app.loopback?.lavaDev(op ?? 'report', args ?? []) ?? Promise.resolve(null),
+    animalPose: (pose) =>
+      app.loopback?.lavaDev('animalPose', [
+        pose === null ? -1 : ['stand', 'graze', 'lookUp', 'earFlick', 'sit', 'lie'].indexOf(pose),
+      ]) ?? Promise.resolve(null),
     npcsFight: () => app.loopback?.lavaDev('npcsFight', []) ?? Promise.resolve(null),
     animalsIgnorePlayers: (on) =>
       app.loopback?.lavaDev('animalsIgnorePlayers', [on ? 1 : 0]) ?? Promise.resolve(null),

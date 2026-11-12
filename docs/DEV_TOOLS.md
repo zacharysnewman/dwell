@@ -436,6 +436,10 @@ the `goto` step.
   `size` (5) put `offset` m (12) along +x from the local player as a far record, which the near
   ecology brings in as animals at once (a local world; CHARACTERS.md §11.11). `spawnNpcs(n,
   radius?, variant?)` does the same for villagers.
+- `__dwell.animalsIgnorePlayers(on)`: the near animals see no player (no fleeing or avoiding), for
+  filming their idles up close; `__dwell.animalPose(name | null)` draws every near animal in one pose
+  (`graze`, `lookUp`, `sit`, …) to judge it by eye; `__dwell.npcsFight()` turns every NPC on the local
+  player as if struck (local worlds).
 - `__dwell.camera()`: the placed camera (`placeCamera`, `goto`) or null; `view()` is the player's
   look, not a placed camera's.
 

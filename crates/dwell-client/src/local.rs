@@ -487,6 +487,14 @@ impl LocalCore {
                     .count();
                 format!(r#"{{"fighting":{n}}}"#)
             }
+            ("animalPose", [pose]) => {
+                // Every near animal drawn in pose `pose` (CREATURE_POSES' index; -1: as it
+                // idles), to judge a pose by eye (DEV_TOOLS.md).
+                let p = (*pose >= 0.0 && *pose < dwell_protocol::CREATURE_POSES.len() as f64)
+                    .then_some(*pose as u8);
+                self.server.force_animal_pose(p);
+                format!(r#"{{"pose":{p:?}}}"#)
+            }
             ("animalsIgnorePlayers", [on]) => {
                 // The near animals see no player (filming their idles up close; DEV_TOOLS.md).
                 self.server.set_animals_ignore_players(*on != 0.0);

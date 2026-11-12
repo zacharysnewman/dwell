@@ -843,7 +843,11 @@ by default) and a combat hook; the combat AI waits for the sword mechanic.
   raised guards arrive as `Swordplay` guards (`Game::remote_guards`) and are drawn by the same roles
   (`swordplay::guard_role` from the weapon in hand: `Bodies::guards` for players, `NpcLook::guard`
   for NPCs, laid over `npc_rig_pose` before the item's turns). The clash's sparks and sound play at
-  the clash's point (`Game::on_clash`). The raise clips are first guesses checked by eye.
+  the clash's point (`Game::on_clash`). The level raise is fitted with `clip_probe --fit`; the probe
+  poses a guard role through `MoveInput::guard`, as the game does. An NPC's own swing reaches clients
+  with the `npcs.swings` capability: its NPC part's pose is 3 (level) or 4 (vertical) while it swings
+  (`NPC_STRIKE_POSES`), and the client plays the rig's `chop_level` or `chop_vertical` for it
+  (`creatures::npc_role`).
 - **Hints**: the line shown while a tool is held is its kind's (shared/tools `hints`: `{ <kind>:
   { level, vertical } }`, every kind a tool uses needs one; `dwell_protocol::chopping::hint`).
 - **Client** (`dwell-client` `creatures.rs`): `CreatureView::npc` holds the NPC's colours (from its
