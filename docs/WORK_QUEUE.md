@@ -821,6 +821,12 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    wondering if the new trees and volumetric clouds are at fault!"** Next (local, after theater mode's UI): measure
    flying at High (sky and cloud pass cost at altitude, tree meshing/uploads while streaming, the clouds' volume
    pass vs the deck), cut what's large.
+   Owner, 2026-11-12: **"Ensure all of our graphics have settings in our graphics menu."** Every visual feature gets a
+   Graphics setting (with preset values), not only the ones with a renderer tier function: tall grass density, far
+   trees / impostors, leaf cards and chamfer, hit shards and particles, far herds, distant shadows (its own),
+   volumetric clouds and plumes, lava crust/glow, bloom, haze extras, water tiers, light shafts, reflections, view
+   distance; the audit test widened from `render/*_for` to every per-feature switch the renderer and mesher read.
+   In progress (cloud).
 31. **Far trees as multi-angle impostors** (owner 2026-11-12: "billboards (maybe from above billboards too,
    possibly a few different angles so we can switch between them like old Mario kart did with carts, and some
    trees too)" and "The farther distant thoughts on billboards are because our low LOD trees look pretty bad and
