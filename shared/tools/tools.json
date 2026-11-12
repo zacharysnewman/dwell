@@ -18,8 +18,8 @@
       "held": "stone_axe",
       "heldVertical": "stone_axe_vertical",
       "swing": {
-        "windupS": 0.12,
-        "activeS": 0.14,
+        "windupS": 0.3,
+        "activeS": 0.12,
         "hitStopS": 0.08,
         "recoverHitS": 0.22,
         "recoverMissS": 0.36,
@@ -48,8 +48,8 @@
       "held": "stone_axe",
       "heldVertical": "stone_axe_vertical",
       "swing": {
-        "windupS": 0.12,
-        "activeS": 0.14,
+        "windupS": 0.3,
+        "activeS": 0.12,
         "hitStopS": 0.08,
         "recoverHitS": 0.22,
         "recoverMissS": 0.36,

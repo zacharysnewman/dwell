@@ -512,11 +512,44 @@ place and body place, then the **phases** — from the tool's `swing` timings fo
 **contact**: where the head is at the arc's middle step (a centred hit), which should be the
 crosshair. The SVG draws each view as a panel: every point's path with a dot per sample, a time label
 every fifth, arrows along the travel, the phases coloured (amber wind-up, red strike, blue recovery),
-the contact circled, the screen's edge dashed in `fp`. Saved before/after sheets of the 2026-11-11 fix:
-`docs/clip_probe/`.
+the contact circled, the screen's edge dashed in `fp`; the sheet is square (five views: three by two)
+so `qlmanage -t -s 1600 -o DIR sheet.svg` makes a PNG with every panel. Saved sheets of the 2026-11-11
+fixes: `docs/clip_probe/` (`*_before`/`*_after`: the directions; `*_arms`: the arm-driven refit).
+
+**Orientation** (owner, 2026-11-11: "Ensure your tooling helps you tell rotation too"): each sample
+also carries how things are turned (`Sample::orient`, `clip_probe::Orient`): the blade's edge facing
+(`edge_points`: from the `axe_lashing` out through the `axe_blade`) and the handle's axis (grip to
+head), each arm bone's (`arm_r`, `forearm_r`, `hand_r`) local axes in the player's frame and its
+angular speed, the hand's roll about its own long axis against the forearm (a wrist flip shows as a
+jump), and the angle between the edge's facing and the edge's motion (under 90° the edge leads). The
+table adds the columns `edge∠motion`, `hand roll` and `spin arm,fore,hand °/s`; the SVG draws, every
+third sample in every view, the handle (a grey line, grip to head) and the edge's facing (a dark red
+arrow from the edge), and every sixth each arm bone's axes as a small tripod (x red, y green, z blue).
+
+**Fitting keys** (`--fit`, repeatable): instead of probing, fit a key for the clip at time `t` that
+puts the grip and the tool head at given places and, optionally, turns the blade's edge (`axe_blade`
+from `axe_lashing`) toward a direction (the strike's way, so the edge leads):
+
+```sh
+cargo run -p dwell-client --example clip_probe -- chop_level \
+  --fit 0.3/0.55,-0.25,0.25/0.95,0,0.35/-1,0,0.5 --fit 0.355/0.2,-0.25,0.42/0,-0.02,0.75/-1,0,0
+cargo run -p dwell-client --example clip_probe -- chop_level --body --fit 0.3/0.35,1.25,-0.05/0.65,1.5,-0.35
+```
+
+Places are the player's frame (right, up, ahead of the eye) for first person, the body's (right, up,
+ahead of the feet) with `--body`. The blade term uses the same edge facing the probe reports (`edge_points`). It runs coordinate
+descent on the game's own posing (`clip_probe::fit`:
+the arm, elbow and wrist turns within the rig's limits, plus the arms' root offset, kept small, or the
+body's chest twist), each key starting from the one before, and prints the keys as the clip's JSON with
+the reached grip, head and blade on stderr. A key far from the one before can land in another pose;
+fit it alone (from the hold) if it does.
 
 Tests over it (`clip_probe::chop_swing_tests`) pin the axe: the level strike right → left on screen,
-the vertical one top → bottom (monotonic through the strike), the head on the crosshair at contact and
+the vertical one top → bottom (monotonic through the strike), the level one level (its up/down under
+0.3 of its travel across), the hands travelling at least 0.4 of the head's path through the strike,
+a 0.25–0.35 s wind-up drawing the head 0.45 m and the hands 0.35 m back, the edge facing within
+50° of its motion through the strike (red on the 0.52.11x clips: 64°), no wrist flip (the hand's
+roll under 2000°/s between samples and within 120° over the swing), the head on the crosshair at contact and
 the peak speed inside the strike, the wind-up the other way, the recovery back to rest, nothing behind
 the eye; in the world on both faces (`both_faces!`) along the view's left and down at any heading; and
 on the body (third person) across from its right to its left, or down, in front of it. A new swing

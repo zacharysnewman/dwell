@@ -260,6 +260,15 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    shoulder); the SVG's side panel is cut off. Left: an arm-driven swing (hands travel the arc, a real wind-up),
    a probe test for hand travel, `clip-strip` run in the browser (local), remote players' chop direction (a
    protocol change).
+   Owner, 2026-11-11: "Ensure your tooling helps you tell rotation too."
+   **Status (swing-arms):** built: `clip_probe --fit` (keys fitted to grip, head and blade-facing targets,
+   first person and body), the arm-driven clips (hands ≥ 40% of the head's travel; a 0.3 s wind-up,
+   `windupS` 0.3, `activeS` 0.12; the level strike level through the crosshair; the edge leading), the
+   probe's orientation (blade facing vs motion, handle, arm bones' axes, hand roll, angular speeds; drawn
+   as glyphs on the square SVG) with edge-facing and wrist-flip tests, `clip-strip` run in Chrome for both
+   chops (its vertical strip now holds the vertical grip). Left: the owner's look review (the first-person
+   wind-up leaves the screen, the third-person body turns only at the chest), remote players' chop
+   direction (a protocol change).
 18. **Digging marks that look carved** (owner 2026-11-11: "the 'chunks' of dirt aren't at all what we
    discussed. It should be like a normal map change (do we support normal/bump maps)? It's completely flat
    should look like mesh deformation (preferably without actually doing it for performance)"; "That part was

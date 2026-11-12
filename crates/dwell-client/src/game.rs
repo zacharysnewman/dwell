@@ -1083,6 +1083,11 @@ impl<S: Scene> Game<S> {
     /// body (puppets included), or releases it (none): the bench's `clip-strip` (DEV_TOOLS.md).
     pub fn hold_swing(&mut self, held: Option<(bool, f64)>) {
         use dwell_characters::animator::Swing;
+        // The hand takes that swing's hold (the vertical swing's grip differs), as a toggle would:
+        // without it the vertical clip played on the level hold, its head off the crosshair.
+        if let Some((vertical, _)) = held {
+            self.chop.vertical = vertical;
+        }
         self.bodies.hold_swing(held.map(|(vertical, t)| {
             let s = if vertical {
                 Swing::ChopVertical
