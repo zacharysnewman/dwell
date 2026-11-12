@@ -204,7 +204,11 @@ The arms are a **separate view** of the same character, as first-person games do
   accessories and held item on them) from the same composed model as the full body, with the same
   materials and shading. Nothing is duplicated, so the arms match the body exactly; parts marked
   `"view": "arms"` add close-up detail (knuckles) the body doesn't need, and `"view": "body"` parts
-  are left out. A test pins that every body part on the chain is in the arms view.
+  are left out. A test pins that every body part on the chain is in the arms view. The upper arm's
+  sleeve (`upper_arm`, `sleeve_hem`) is `"view": "body"`: the level chop lifts the shoulder in front
+  of the eye, where the sleeve showed as a blob at the bottom of the screen, so the arms view draws the
+  chain from the elbow down (a `clip_probe` test pins that no upper-arm part is on screen and the
+  elbow's end stays off it through the swings).
 - **Its own camera and pass.** The chain's first bone is placed at `anchor` in view space, not on
   the chest; there is no head or torso in the view at all, so nothing clips the camera. The arms are
   drawn after the world over a cleared depth buffer, with their own FOV (`fov`, 62°) and near plane

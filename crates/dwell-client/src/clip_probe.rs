@@ -1268,6 +1268,59 @@ mod chop_swing_tests {
     }
 
     #[test]
+    fn no_sleeve_shows_at_the_bottom_of_the_screen_through_a_swing() {
+        // face-a-only: the first-person screen is view space, the same on both faces. WORK_QUEUE
+        // item 17's "blue sleeve blob": the level chop lifts the shoulder in front of the eye from
+        // the contact through the follow-through, and the swing arm's tunic sleeve (`upper_arm_r`,
+        // `sleeve_hem_r`) showed as a blob at the bottom right (visual pass 2's `level-sheet.png`
+        // at 0.446 s; the off arm isn't drawn in first person). The arms view draws the chain from
+        // the elbow down: no part on the upper arm is on screen in any look, and the forearm's
+        // elbow end (where the hidden sleeve would join it) stays below or past the screen's edge.
+        let ch = player();
+        let fp = ch.first_person.expect("first person");
+        let tan = (fp.fov.to_radians() / 2.0).tan();
+        let aspect = 16.0 / 9.0;
+        let (arm, fore) = (ch.bone("arm_r").unwrap(), ch.bone("forearm_r").unwrap());
+        // `inset`: how far inside the edge counts (the elbow's rounded end may graze a corner for
+        // a frame as the vertical strike starts, at 0.32 s: NDC 1.0, -0.95).
+        let on_screen = |v: [f32; 3], inset: f32| {
+            let z = v[2];
+            let edge = 1.0 - inset;
+            z > 0.05 && (-v[0] / (z * tan * aspect)).abs() < edge && (v[1] / (z * tan)).abs() < edge
+        };
+        for look in ch.looks {
+            let m = mesh::build(look.parts, View::Arms, fp.bones);
+            for role in ["idle", "break", "place", "chop_level", "chop_vertical"] {
+                let held = held_for(Some("dwell:stone_axe"), role);
+                let clip = resolve(role).map(|(_, c)| c.duration).unwrap_or(1.0);
+                let n = 157;
+                for i in 0..n {
+                    let t = clip * i as f32 / (n - 1) as f32;
+                    let b = arms_bones(role, held, t);
+                    for (k, q) in m.positions.iter().enumerate() {
+                        let bone = usize::from(m.bones[k]);
+                        let near_elbow = bone == fore && q[1] > -0.05;
+                        if bone != arm && !near_elbow {
+                            continue;
+                        }
+                        let v = b[bone].apply(*q);
+                        assert!(
+                            !on_screen(v, if bone == arm { 0.0 } else { 0.1 }),
+                            "{}: {role} at {t:.3} s draws the {} at {v:?} on screen",
+                            look.name,
+                            if bone == arm {
+                                "upper arm (sleeve)"
+                            } else {
+                                "elbow's end"
+                            },
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
     fn the_vertical_chop_strikes_top_to_bottom_across_the_screen() {
         // face-a-only: view space, as above.
         let r = run("chop_vertical");
