@@ -593,7 +593,9 @@ impl Client {
         if s.game.is_none() {
             s.start_game();
         }
-        // A still hold on the view in Place mode places and builds on (docs/ITEMS.md §5).
+        // A still hold on the view in Place mode places and builds on (docs/ITEMS.md §5); in
+        // Break mode with a tool that keeps swinging, it swings on (WORK_QUEUE item 17).
+        s.touch.hold_breaks = s.game.as_ref().is_some_and(|g| g.use_repeats());
         if let Some(e) = s.touch.hold_due(now_ms) {
             s.on_touch_event(e, now_ms);
         }
@@ -884,6 +886,7 @@ impl Client {
             yaw_deg: yaw,
             pitch_deg: pitch,
             fov_deg: None,
+            up: None,
         }));
         let o = Object::new();
         set(
@@ -1081,6 +1084,7 @@ impl Client {
         // A button released while the window was away sends no mouseup here.
         if let Some(g) = &mut s.game {
             g.release_place(Holder::Mouse);
+            g.release_use(Holder::Mouse);
         }
     }
     /// Presses or releases a key programmatically (tests and automation).
@@ -1098,6 +1102,7 @@ impl Client {
         s.input.pointer_locked = locked;
         if !locked && let Some(g) = &mut s.game {
             g.release_place(Holder::Mouse);
+            g.release_use(Holder::Mouse);
         }
     }
     #[wasm_bindgen(js_name = mouseMove)]
@@ -1126,14 +1131,18 @@ impl Client {
             s.edit_held(action, Holder::Mouse, now_ms);
         }
     }
-    /// A `mouseup`: letting go of Place stops building on (docs/ITEMS.md §5).
+    /// A `mouseup`: letting go of Place stops building on (docs/ITEMS.md §5), of Break a held
+    /// tool's swinging on (WORK_QUEUE item 17).
     #[wasm_bindgen(js_name = mouseUp)]
     pub fn mouse_up(&self, button: i16) {
         let mut s = self.inner.borrow_mut();
-        if s.input.mouse_down(button) == Some(EditAction::Place)
-            && let Some(g) = &mut s.game
-        {
-            g.release_place(Holder::Mouse);
+        let action = s.input.mouse_down(button);
+        if let Some(g) = &mut s.game {
+            match action {
+                Some(EditAction::Place) => g.release_place(Holder::Mouse),
+                Some(EditAction::Break) => g.release_use(Holder::Mouse),
+                None => {}
+            }
         }
     }
     /// The build mode's label (`Line`, `Flat`; data), for the HUD and the touch Build button.
@@ -1194,7 +1203,7 @@ impl Client {
         for a in actions {
             match a {
                 A::Break => {
-                    s.edit(EditAction::Break, now_ms);
+                    s.edit_held(EditAction::Break, Holder::Gamepad, now_ms);
                 }
                 A::Place => {
                     s.edit_held(EditAction::Place, Holder::Gamepad, now_ms);
@@ -1238,6 +1247,12 @@ impl Client {
             && let Some(g) = &mut s.game
         {
             g.release_place(Holder::Gamepad);
+        }
+        // Break let go (or a menu opened): a held tool stops swinging on.
+        if (!playing || !s.input.gamepad.down(A::Break))
+            && let Some(g) = &mut s.game
+        {
+            g.release_use(Holder::Gamepad);
         }
         shell
     }
@@ -1291,6 +1306,7 @@ impl Client {
             yaw_deg: yaw,
             pitch_deg: pitch,
             fov_deg: None,
+            up: None,
         }));
         true
     }
@@ -1392,6 +1408,13 @@ impl Client {
             .iter()
             .filter_map(|(k, v)| Some((k.clone(), v.as_f64()?)))
             .collect();
+        // `up` ("a", "b" or "auto") is the one parameter that isn't a number.
+        let up = match params.get("up") {
+            None => None,
+            Some(u) => {
+                dwell_theater::path::parse_up(u, "params.up").map_err(|e| JsValue::from_str(&e))?
+            }
+        };
         let subject_v: serde_json::Value = serde_json::from_str(if subject_json.is_empty() {
             "null"
         } else {
@@ -1412,8 +1435,7 @@ impl Client {
         // From the placed view, or the player's eyes.
         let camera = match g.view() {
             Some(v) => {
-                let f = dwell_world::FaceFrame::at_height(v.eye[1]);
-                dwell_theater::Pose::new(v.eye, f.look(v.yaw_deg, v.pitch_deg))
+                dwell_theater::Pose::new(v.eye, v.face().look(v.yaw_deg, v.pitch_deg)).with_up(v.up)
             }
             None => {
                 let eye = g.position();
@@ -1422,7 +1444,14 @@ impl Client {
             }
         };
         let path = preset
-            .expand(&dwell_theater::Context { subject, camera }, &overrides)
+            .expand(
+                &dwell_theater::Context {
+                    subject,
+                    camera,
+                    up,
+                },
+                &overrides,
+            )
             .map_err(|e| JsValue::from_str(&e))?;
         Ok(path.to_json().to_string())
     }
@@ -1445,6 +1474,7 @@ impl Client {
             yaw_deg: look.0,
             pitch_deg: look.1,
             fov_deg: None,
+            up: None,
         });
         let next = crate::game::fly_step(v, forward, right, up, yaw, pitch);
         g.set_view(Some(next));
@@ -1455,6 +1485,29 @@ impl Client {
             next.yaw_deg,
             next.pitch_deg,
         ]
+    }
+    /// Theater mode's held up (docs/THEATER_MODE.md §3.1): the placed view (from the player's
+    /// eyes the first time) keeps `up`'s face's up wherever it flies (`"a"`, `"b"`), or the face
+    /// it is over (`"auto"`); the look is kept. The keyframe editor's Up sets it, so the looks it
+    /// keys are in that frame.
+    #[wasm_bindgen(js_name = theaterUp)]
+    pub fn theater_up(&self, up: &str) -> Result<(), JsValue> {
+        let up = dwell_theater::path::parse_up(&serde_json::json!(up), "up")
+            .map_err(|e| JsValue::from_str(&e))?;
+        let mut s = self.inner.borrow_mut();
+        let look = (s.input.look.yaw, s.input.look.pitch);
+        let Some(g) = &mut s.game else {
+            return Ok(());
+        };
+        let v = g.view().unwrap_or(crate::game::ViewOverride {
+            eye: g.position(),
+            yaw_deg: look.0,
+            pitch_deg: look.1,
+            fov_deg: None,
+            up: None,
+        });
+        g.set_view(Some(v.with_up(up)));
+        Ok(())
     }
     #[wasm_bindgen(js_name = releaseCamera)]
     pub fn release_camera(&self) {
@@ -1963,6 +2016,16 @@ impl Client {
             .borrow_mut()
             .set_cloud_coverage(coverage);
     }
+    /// The volume's view opacity over the data's (`?cloudExtinction=`, a dev A/B knob; 0: the
+    /// data's `volume.extinction`; docs/CLOUDS.md §9.8).
+    #[wasm_bindgen(js_name = setCloudExtinction)]
+    pub fn set_cloud_extinction(&self, extinction: f64) {
+        self.inner
+            .borrow()
+            .renderer
+            .borrow_mut()
+            .set_cloud_extinction(extinction);
+    }
     /// The Shadows setting (0 Off, 1 Low, 2 High; DAY_NIGHT.md §10). A CPU adapter draws Low at
     /// most.
     #[wasm_bindgen(js_name = setShadows)]
@@ -2199,6 +2262,21 @@ impl Client {
             .renderer
             .borrow_mut()
             .set_cards_override(on);
+    }
+    /// `?impostors=0|1` (docs/DEV_TOOLS.md): 0 draws the far trees as the LOD sections' tree
+    /// cells (`lod_trees.rs`, before the impostors); 1 or anything else the impostors.
+    #[wasm_bindgen(js_name = setImpostors)]
+    pub fn set_impostors(&self, mode: i32) {
+        let on = match mode {
+            0 => Some(false),
+            1 => Some(true),
+            _ => None,
+        };
+        self.inner
+            .borrow()
+            .renderer
+            .borrow_mut()
+            .set_impostors_override(on);
     }
     /// The ink outline's mode by name (`shared/look/outline.json`; docs/ART_DIRECTION.md §7), as
     /// `?outline=` takes it; `off` or an unknown name turns it off. True when a mode is on.
@@ -3190,11 +3268,17 @@ impl Inner {
                 self.edit(action, now_ms);
             }
             TouchEvent::Hold => {
-                self.edit_held(EditAction::Place, Holder::Touch, now_ms);
+                // Place mode builds on; Break mode keeps a held tool swinging (WORK_QUEUE item 17).
+                let action = self
+                    .game
+                    .as_ref()
+                    .map_or(EditAction::Break, |g| g.interaction.touch_action);
+                self.edit_held(action, Holder::Touch, now_ms);
             }
             TouchEvent::HoldEnd => {
                 if let Some(g) = &mut self.game {
                     g.release_place(Holder::Touch);
+                    g.release_use(Holder::Touch);
                 }
             }
             TouchEvent::BuildMode => self.cycle_build_mode(),

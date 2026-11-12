@@ -2,6 +2,303 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.54.199",
+      "changes": [
+        "Theater mode: a camera path can keep one face's up across the world's middle"
+      ]
+    },
+    {
+      "version": "0.54.198",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.197",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.196",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.195",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.194",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.193",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.192",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.191",
+      "changes": [
+        "Behind the scenes: the showcase recording tools can now slow down, grade and hard-cut parts of a take."
+      ]
+    },
+    {
+      "version": "0.54.190",
+      "changes": [
+        "Behind the scenes: tool links"
+      ]
+    },
+    {
+      "version": "0.54.189",
+      "changes": [
+        "Behind the scenes: a model part painter tool"
+      ]
+    },
+    {
+      "version": "0.54.188",
+      "changes": [
+        "The axe's notch now grows with every swing: each chop carves its fair share, so half the log is cut away by the time the tree falls.",
+        "The notch keeps its V shape as it grows, deepening and widening until it opens into the gash the tree falls from."
+      ]
+    },
+    {
+      "version": "0.54.187",
+      "changes": [
+        "Behind the scenes: cloud research notes"
+      ]
+    },
+    {
+      "version": "0.54.186",
+      "changes": [
+        "Behind the scenes: bug notes"
+      ]
+    },
+    {
+      "version": "0.54.185",
+      "changes": [
+        "Behind the scenes: bug notes"
+      ]
+    },
+    {
+      "version": "0.54.184",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.183",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.182",
+      "changes": [
+        "Theater mode and placed cameras now show your own character when they look at you."
+      ]
+    },
+    {
+      "version": "0.54.181",
+      "changes": [
+        "Far ground no longer has holes under distant trees: no more sky showing through the forest from high up"
+      ]
+    },
+    {
+      "version": "0.54.180",
+      "changes": [
+        "Villagers' faces are their skin colour again, not jet black",
+        "A villager's hair, skin and hat each take their own colour: no more yellow fringes or clothes-coloured heads",
+        "Characters and animals draw in their true palette colours (they were drawn too dark)",
+        "Behind the scenes: models have part maps (which part each vertex is), with a tool that renders them"
+      ]
+    },
+    {
+      "version": "0.54.179",
+      "changes": [
+        "Trees and ground in front of the clouds no longer show a dithered pattern of the clouds behind them",
+        "Light shafts are smooth instead of a fine crosshatch"
+      ]
+    },
+    {
+      "version": "0.54.178",
+      "changes": [
+        "Behind the scenes: a both-faces fix for leaf cards"
+      ]
+    },
+    {
+      "version": "0.54.177",
+      "changes": [
+        "Behind the scenes: bug notes"
+      ]
+    },
+    {
+      "version": "0.54.176",
+      "changes": [
+        "Low clouds (the 2D deck) have their old lighting back: sun-facing edges lit, undersides shaded"
+      ]
+    },
+    {
+      "version": "0.54.175",
+      "changes": [
+        "Far trees are now drawn as impostors baked from the real trees, so forests reach the horizon with their crowns, lit by the sun and fog like the near trees.",
+        "Near trees hand over to the far ones from 48 m with a dithered fade, and leaves past it no longer cost their geometry: the forest's edge draws faster at High.",
+        "Dev: ?impostors=0 draws the old far trees for comparison."
+      ]
+    },
+    {
+      "version": "0.54.174",
+      "changes": [
+        "Behind the scenes: bug notes"
+      ]
+    },
+    {
+      "version": "0.54.173",
+      "changes": [
+        "Each tool hit carves a real bite out of a block: half the block over the hits it takes to break",
+        "The shards, clods and wood chips a hit throws off add up to that bite; metal tools take bigger bites"
+      ]
+    },
+    {
+      "version": "0.54.172",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.171",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.170",
+      "changes": [
+        "Behind the scenes: bug notes"
+      ]
+    },
+    {
+      "version": "0.54.169",
+      "changes": [
+        "Looking down or sliding, your own legs, boots and tunic are now the same character model others see and your shadow casts",
+        "Behind the scenes: ?fparms=rigid shows the old first-person arms and body together for comparison"
+      ]
+    },
+    {
+      "version": "0.54.168",
+      "changes": [
+        "Behind the scenes: test fixes"
+      ]
+    },
+    {
+      "version": "0.54.167",
+      "changes": [
+        "Volumetric clouds glow warm at sunrise and sunset like the old flat clouds: warm tops, peach-pink bases, far clouds fading into the horizon",
+        "Volumetric clouds hide the clouds behind them instead of showing them through, while sunlight still shines through their edges"
+      ]
+    },
+    {
+      "version": "0.54.166",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.165",
+      "changes": [
+        "Jumping into a tree's leaves no longer rubber-bands you: you fall through them smoothly"
+      ]
+    },
+    {
+      "version": "0.54.164",
+      "changes": [
+        "Behind the scenes: bug notes"
+      ]
+    },
+    {
+      "version": "0.54.163",
+      "changes": [
+        "Behind the scenes: the forest frame-rate bench now checks the GPU frame budget, and the far-tree impostors know which trees to draw (not drawn yet)"
+      ]
+    },
+    {
+      "version": "0.54.162",
+      "changes": [
+        "Behind the scenes: bug notes"
+      ]
+    },
+    {
+      "version": "0.54.161",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.160",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.159",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.158",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.157",
+      "changes": [
+        "Hold the use button to keep swinging an axe, sword, pickaxe or shovel: each swing hits whatever you aim at then, until you let go.",
+        "An axe or sword swing that hits something no longer plays its animation twice: it pulls straight back to rest."
+      ]
+    },
+    {
+      "version": "0.54.156",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.155",
+      "changes": [
+        "Behind the scenes: the native perf harness builds again"
+      ]
+    },
+    {
+      "version": "0.54.154",
+      "changes": [
+        "Bigger worlds (up to 10×) now shape their world map in seconds instead of minutes, and no longer run out of memory starting up.",
+        "The loading screen shows each step of the world map as it's shaped, like \"rivers (5/6), face 1 of 2\", with the bar moving through it.",
+        "If a world's server stops (for example, out of memory), the game now says so instead of only \"Could not connect\"."
+      ]
+    },
+    {
+      "version": "0.54.153",
+      "changes": [
+        "Volumetric clouds take real cloud shapes: flat bases, billowing rounded tops, wispy undersides, leaning in the wind.",
+        "Cloud types by weather: thin stratus sheets, stratocumulus, cumulus and the odd towering cumulonimbus with an anvil.",
+        "Clouds no longer look dithered or pixelated when you fly up to them: smoother sampling, steadier frames and more detail near the cloud layer."
+      ]
+    },
+    {
       "version": "0.54.152",
       "changes": [
         "Forests run much faster: tall grass past its fade-out distance is no longer drawn at all",

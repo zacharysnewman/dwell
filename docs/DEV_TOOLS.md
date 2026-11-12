@@ -1148,8 +1148,24 @@ npm run bench -- --warm --compare forest-perf   # a configuration against the ba
 Numbers (2026-11-12, M1 Air, `--unthrottled`, `gpu.frame` p50 / p95 ms), before → after tall grass past
 its fade was dropped in the vertex stage: inside 17.0 / 18.8 → 14.7 / 15.4, edge 25.2 / 26.4 → 24.3 / 25.7,
 above 14.6 / 15.8 → 14.5 / 15.8. `forest-edge-ablate` splits the edge's frame by switching each suspect off
-for 4 s (cutout meshes −14.8 ms, sun shadows −3.3, full detail 192 → 96 m −1.8): the leaf cards and grass
-within their fades are the edge's cost.
+for 4 s (cutout meshes −14.8 ms, sun shadows −3.3, full detail 192 → 96 m −1.8).
+
+**The cutout's split** (2026-11-12, same machine, `--compare` with the configurations `cards-off` (`?cards=0`)
+and `grass-off` (`?tallgrass=0`, the Tall grass share as a dev override), `gpu.frame` p50 ms, base → off): leaf
+cards inside 14.3 → 13.8, edge 23.8 → 23.3, above 14.1 → 13.8; tall grass inside 14.3 → 13.0, edge 23.8 → 23.2,
+above 14.1 → 13.8. Neither is the edge's cost: the cutout **leaf blocks** themselves are (the `grass` view
+switch hides every cutout mesh, leaves included). The edge's near pass is bound by its **geometry**, not its
+pixels: at render scale 1 (`scale-full`, four times High's pixels) `gpu.near` p50 went only 21.1 → 24.8. A
+depth prepass for the cutout (an alpha-tested depth-only draw, then the colour on equal depth, shading each
+sample once) was built and measured and made it worse, every spot +6–8 ms (edge 31.4, inside 20.2, above 18.4):
+drawing the leaves' geometry twice costs more than the overdraw it saves. Not adopted. The levers left are
+fewer leaf triangles past the near trees (impostors from nearer than 96 m, or a plainer leaf mesh with
+distance). `forest-edge` is the edge alone (6 s) for quick A/Bs.
+
+**Far tree impostors** (2026-11-12, WORK_QUEUE item 31): the configuration `impostors-off` (`?impostors=0`)
+draws the far trees as before (the LOD sections' tree cells, near leaves to the full-detail distance); `npm run
+bench -- --warm --compare --configs impostors-off forest-perf` is the before/after. `gpu.frame` p95, off → on (48 m
+hand-over): inside 15.5 → 15.5, edge 25.8 → 23.4, above 15.6 → 12.3. Telemetry: `impostor.ktris`.
 
 Cloud sessions have no GPU: there it is not run; `cargo test --release -p dwell-worldgen --test forest_world`
 checks the world (every column old-growth, the density in range on both faces, deterministic), and its
@@ -1718,6 +1734,14 @@ shading off, to attribute `gpu.*.water` and `gpu.frame` to them; a `--compare` c
 `params` (`{ "name": "no-caustics", "params": { "waterdbg": "caustics" } }`), and a
 scenario's `water` step switches it mid-run. On a GPU shared with other processes, compare a pass's `min` (in
 every summary) rather than its p50. WATER_RENDERING.md §8 ("Cost") has the method and the numbers.
+
+## The clouds' view opacity (`?cloudExtinction=`)
+
+`?cloudExtinction=0.05` sets the volumetric clouds' view opacity (per m at density 1) over the data's
+`volume.extinction` (0.03), for an A/B of how much a cloud hides the ones behind it (0.006 was the old value);
+`__dwell.cloudExtinction(x)` changes it mid-run (0 or none: the data's). The light through the clouds keeps
+`volume.lightExtinction` whatever it is (CLOUDS.md §9.8). A `--compare` configuration can set it with
+`params` (`{ "name": "opaque", "params": { "cloudExtinction": "0.05" } }`).
 
 ## The leaf cards (`?cards=`)
 

@@ -13,6 +13,10 @@
 //!   and no per-pixel cost beyond the rigid characters' (no CPU-adapter tier needed).
 //! - **Shadows**: the bodies cast into the shadow maps as the rigid characters do; your own body
 //!   (`cast_only`, the shadow you see in first person) casts into the nearest cascade only.
+//! - **Your own body** (§5.1, §11.12): in first person the same model, posed as your shadow is,
+//!   drawn by a second index buffer that leaves out its head and arms (models.json
+//!   `firstPerson.body`, by skin weight), moved back from the eye as the rigid body was
+//!   ([`own_joints`]); fragments inside the near margin are discarded (the instance's `light.z`).
 //! - **Held items** (§11.5): [`hand_frame`] gives the characters rig's hand bone's frame on the
 //!   model's hand joint (`hand` in models.json) this frame; the rigid renderer draws the item there.
 
@@ -66,7 +70,7 @@ pub struct SkinnedDraw {
     /// The held item's name (characters.json `items`): the hand's grip (models.json `grips`).
     pub grip: Option<&'static str>,
     /// Its colour remap's shader rows (an NPC's colours: [`remap_floats`] of
-    /// [`dwell_models::colour_remap`]); [`NO_REMAP`]: as modelled.
+    /// [`dwell_models::part_remap`]); [`NO_REMAP`]: as modelled.
     pub remap: [f32; REMAP_FLOATS],
     /// Its idle pose by name (an animal's `graze`, `lie`, ...: models.json `poses`, WORK_QUEUE
     /// item 39), blended in over the model's `pose_blend_s`; None: its clips as they are.
@@ -89,11 +93,12 @@ pub fn blend_pose(
     }
 }
 
-/// A body's remap rows for the shader (`REMAP_FLOATS` floats): per pair the model's base and
-/// the base in its place, w 1 where used, 0 past the last pair.
-pub fn remap_floats(remap: &[([f32; 3], [f32; 3])]) -> [f32; REMAP_FLOATS] {
+/// A body's remap rows for the shader (`REMAP_FLOATS` floats): per part slot (part `k + 1`) the
+/// model's base and the base in its place (sRGB 0..1), w 1 where used, 0 where not.
+pub fn remap_floats(remap: &[Option<([f32; 3], [f32; 3])>]) -> [f32; REMAP_FLOATS] {
     let mut out = [0.0; REMAP_FLOATS];
-    for (k, (from, to)) in remap.iter().take(dwell_models::MAX_REMAP).enumerate() {
+    for (k, pair) in remap.iter().take(dwell_models::MAX_REMAP).enumerate() {
+        let Some((from, to)) = pair else { continue };
         out[k * 8..k * 8 + 3].copy_from_slice(from);
         out[k * 8 + 3] = 1.0;
         out[k * 8 + 4..k * 8 + 7].copy_from_slice(to);
@@ -178,21 +183,18 @@ pub fn body_matrix(d: &SkinnedDraw, data: &ModelData, eye: V3) -> Mat4 {
     mm::mul(&p, &mm::trs([0.0; 3], turn, [data.scale; 3]))
 }
 
-/// The interleaved vertices of a model's detail level `level` (ADR 0070 §10) and its indices.
-pub fn vertex_bytes(model: &Model, level: usize) -> (Vec<u8>, Vec<u8>) {
+/// The interleaved vertices of a model's detail level `level` (ADR 0070 §10) and its indices:
+/// each vertex's colour as sRGB bytes (the GLB's is linear; BUGS.md #96) and its part number
+/// (`parts`, its model's part map at that level; empty: none) in the colour's alpha byte.
+pub fn vertex_bytes(model: &Model, level: usize, parts: &[u8]) -> (Vec<u8>, Vec<u8>) {
     let m = model.level(level);
     let mut v = Vec::with_capacity(m.positions.len() * VERTEX_BYTES);
     for i in 0..m.positions.len() {
         for f in m.positions[i].iter().chain(&m.normals[i]) {
             v.extend(f.to_le_bytes());
         }
-        let c = m.colors[i];
-        v.extend([
-            (c[0] * 255.0).round() as u8,
-            (c[1] * 255.0).round() as u8,
-            (c[2] * 255.0).round() as u8,
-            255,
-        ]);
+        let c = m.colors[i].map(|c| (dwell_models::linear_to_srgb(c) * 255.0).round() as u8);
+        v.extend([c[0], c[1], c[2], parts.get(i).copied().unwrap_or(0)]);
         v.extend(m.joints[i]);
         v.extend(m.weights[i].map(|w| (w * 255.0).round() as u8));
     }
@@ -209,10 +211,12 @@ pub const WGSL: &str = r"
 struct SkinInstance {
     // Each joint's 3 × 4 matrix to eye-relative world space, as three rows.
     joints: array<vec4f, JOINT_ROWS>,
-    // x sky, y block level / 15 (docs/DAY_NIGHT.md §11).
+    // x sky, y block level / 15 (docs/DAY_NIGHT.md §11); z the near margin your own body's
+    // fragments are discarded within (m from the eye; 0 for every other body).
     light: vec4f,
-    // The body's colour remap (an NPC's colours, docs/CHARACTERS.md §11.11): pairs of rows, the
-    // model's ramp base and the base drawn in its place (sRGB 0..1); w 1 where the pair is used.
+    // The body's colour remap by part (an NPC's colours, docs/CHARACTERS.md §11.11): a pair of
+    // rows a part (part k + 1 at rows 2k, 2k + 1), the model's ramp base and the base drawn in its
+    // place (sRGB 0..1); w 1 where the part is remapped.
     remap: array<vec4f, REMAP_ROWS>,
 };
 @group(1) @binding(0) var<uniform> skin: SkinInstance;
@@ -236,16 +240,21 @@ fn joint_apply(j: u32, p: vec3f, w: f32) -> vec3f {
     return vec3f(dot(skin.joints[j * 3u], q), dot(skin.joints[j * 3u + 1u], q), dot(skin.joints[j * 3u + 2u], q));
 }
 
-// A vertex's palette colour after the body's remap: a face carrying one of the pairs' ramp bases
-// (within a byte and a half) takes the pair's other base.
-fn remap_colour(c: vec3f) -> vec3f {
-    for (var k = 0u; k < REMAP_ROWS; k += 2u) {
-        let was = skin.remap[k];
-        if (was.w > 0.5 && all(abs(c - was.rgb) < vec3f(1.5 / 255.0))) {
-            return skin.remap[k + 1u].rgb;
-        }
+// A vertex's palette colour (sRGB 0..1) after the body's remap, by its part (the colour's alpha
+// byte: 0 none, k part k): a remapped part's vertex takes the new base at its shade of the old
+// (luminance over the old base's). dwell_models::recolour mirrors it.
+fn remap_colour(c: vec4f) -> vec3f {
+    let part = u32(round(c.a * 255.0));
+    if (part == 0u || part * 2u > REMAP_ROWS) {
+        return c.rgb;
     }
-    return c;
+    let was = skin.remap[part * 2u - 2u];
+    if (was.w < 0.5) {
+        return c.rgb;
+    }
+    let luma = vec3f(0.2126, 0.7152, 0.0722);
+    let shade = dot(c.rgb, luma) / max(dot(was.rgb, luma), 1e-3);
+    return min(skin.remap[part * 2u - 1u].rgb * shade, vec3f(1.0));
 }
 
 @vertex
@@ -264,7 +273,7 @@ fn skinned_vs(v: SkinnedIn) -> SkinnedOut {
     o.normal = n;
     o.clip = frame.view_proj * vec4f(p, 1.0);
     // The palette colour (remapped for this body), sRGB bytes to linear.
-    o.color = pow(remap_colour(v.color.rgb), vec3f(2.2));
+    o.color = pow(remap_colour(v.color), vec3f(2.2));
     return o;
 }
 
@@ -285,6 +294,10 @@ struct Key2 {
 
 @fragment
 fn skinned_fs(i: SkinnedOut, @builtin(front_facing) front: bool) -> SceneOut {
+    // Your own body's safety net: nothing within the near margin of the eye (0 for every other).
+    if (dot(i.rel, i.rel) < skin.light.z * skin.light.z) {
+        discard;
+    }
     let n = normalize(select(-i.normal, i.normal, front));
     let frag_y = frame.eye.x + i.rel.y;
     var light = terrain_light(1.0, skin.light.xy);
@@ -329,6 +342,8 @@ struct Draw {
     casts: bool,
     /// Your own body: into the nearest cascade only (as the rigid `cast_only`).
     cast_only: bool,
+    /// Your own body in first person: drawn by the body's index buffer (`own_index`).
+    own: bool,
 }
 
 /// A model's mesh on the GPU.
@@ -347,7 +362,8 @@ fn upload(
     model: &'static Model,
     level: usize,
 ) -> Mesh {
-    let (v, i) = vertex_bytes(model, level);
+    let parts = data.parts.map_or_else(Vec::new, |p| p.level(level));
+    let (v, i) = vertex_bytes(model, level, &parts);
     let buffer = |usage, bytes: &[u8], label| {
         let b = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some(label),
@@ -389,6 +405,78 @@ pub struct SkinnedRenderer {
     arms_index: Option<(wgpu::Buffer, u32)>,
     /// This frame's arms instance, when drawn.
     arms: Option<u32>,
+    /// Your own body's triangles in first person (the player model's `firstPerson.body`), their
+    /// count and the vertices they use (skinned on the CPU to keep them clear of the eye); None:
+    /// the player model draws no body.
+    own_index: Option<(wgpu::Buffer, u32, Vec<u32>)>,
+}
+
+/// Your own body to draw in first person from the player model (docs/CHARACTERS.md §5.1, §11.12).
+#[derive(Clone, Copy, Debug)]
+pub struct SkinnedOwn {
+    /// The body as your shadow is drawn (its feet, yaw, face, light and rig pose).
+    pub draw: SkinnedDraw,
+    /// The camera's look (eye-relative world space).
+    pub forward: V3,
+    /// How it is kept clear of the eye (characters.json `firstPerson.body`).
+    pub body: dwell_characters::FirstPersonBody,
+    /// Bit per scene pass it is drawn in.
+    pub passes: u8,
+}
+
+/// The player model's own-body triangles at `level` and the vertices they use (None: it draws
+/// none).
+pub fn own_body_mesh(
+    data: &ModelData,
+    model: &Model,
+    level: usize,
+) -> Option<(Vec<u32>, Vec<u32>)> {
+    let fp = data.first_person?;
+    data.retarget?;
+    let tris = dwell_models::first_person::body_triangles(model, level, &fp);
+    if tris.is_empty() {
+        return None;
+    }
+    let verts = dwell_models::first_person::vertices_of(&tris);
+    Some((tris, verts))
+}
+
+/// Your own body's joints in first person (each skin joint's matrix to eye-relative world space)
+/// and how far back it was moved: the model posed by the rig's pose (as your shadow), its place
+/// (`place_frame`) moved back along its own −z by `own::shift_points` over its kept vertices
+/// `verts` at `level`, in the body's frame (so the same on both faces). None: no retarget map or
+/// no rig pose.
+pub fn own_joints(
+    data: &ModelData,
+    model: &Model,
+    level: usize,
+    verts: &[u32],
+    own: &SkinnedOwn,
+    eye: V3,
+) -> Option<(Vec<Mat4>, f32)> {
+    let map = data.retarget?;
+    let pose = own.draw.rig_pose?;
+    let local =
+        dwell_models::retarget::pose_from(model, data, &map, dwell_characters::player(), &pose);
+    let globals = anim::globals(model, &local);
+    let to_body = mm::trs(
+        [0.0; 3],
+        mm::axis_angle([0.0, 1.0, 0.0], data.yaw),
+        [data.scale; 3],
+    );
+    let in_body: Vec<Mat4> = model
+        .skin
+        .iter()
+        .zip(&model.inverse_bind)
+        .map(|(&j, ib)| mm::mul(&to_body, &mm::mul(&globals[j], ib)))
+        .collect();
+    let points = dwell_models::first_person::skin_points(model, level, &in_body, verts);
+    let d = &own.draw;
+    let frame = place_frame(d.feet, d.yaw, d.face, d.dead, eye);
+    let (eye_local, pitch) = super::characters::eye_in(&frame, own.forward);
+    let s = dwell_characters::own::shift_points(&own.body, points, eye_local, pitch);
+    let placed = mat4(&frame.then(&Affine::translation([0.0, 0.0, -s])));
+    Some((in_body.iter().map(|j| mm::mul(&placed, j)).collect(), s))
 }
 
 /// Your first-person arms to draw from the player model (docs/CHARACTERS.md §11.10).
@@ -423,6 +511,26 @@ fn arms_index(
     });
     queue.write_buffer(&b, 0, &bytes);
     Some((b, tris.len() as u32))
+}
+
+/// Your own body's index buffer at `level`, its count and vertices (None: the model draws none).
+fn own_index(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    data: &ModelData,
+    model: &Model,
+    level: usize,
+) -> Option<(wgpu::Buffer, u32, Vec<u32>)> {
+    let (tris, verts) = own_body_mesh(data, model, level)?;
+    let bytes: Vec<u8> = tris.iter().flat_map(|i| i.to_le_bytes()).collect();
+    let b = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("skinned own body indices"),
+        size: (bytes.len() as u64).max(4).next_multiple_of(4),
+        usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    queue.write_buffer(&b, 0, &bytes);
+    Some((b, tris.len() as u32, verts))
 }
 
 /// An affine frame as a 4 × 4 (columns).
@@ -656,6 +764,7 @@ impl SkinnedRenderer {
         let level = dwell_models::DETAIL_DEFAULT;
         let player = upload(device, queue, data, model, level);
         let arms_index = arms_index(device, queue, data, model, level);
+        let own_index = own_index(device, queue, data, model, level);
         let capacity = 4;
         let instances = instance_buffer(device, capacity);
         let group = bind_group(device, &layout, &instances);
@@ -674,6 +783,7 @@ impl SkinnedRenderer {
             level,
             arms_index,
             arms: None,
+            own_index,
         }
     }
 
@@ -689,6 +799,12 @@ impl SkinnedRenderer {
         }
         let (data, model) = (self.meshes[0].data, self.meshes[0].model);
         self.arms_index = arms_index(device, queue, data, model, level);
+        self.own_index = own_index(device, queue, data, model, level);
+    }
+
+    /// Whether the player model draws your own body in first person.
+    pub fn has_own_body(&self) -> bool {
+        self.own_index.is_some()
     }
 
     /// The level drawn (`set_level`'s).
@@ -717,6 +833,7 @@ impl SkinnedRenderer {
         passes: &[(f64, f64)],
         cast_m: f64,
         bodies: &[SkinnedDraw],
+        own: Option<&SkinnedOwn>,
         arms: Option<&SkinnedArms>,
         now_s: f64,
     ) -> (Vec<Option<Affine>>, Option<Affine>) {
@@ -806,6 +923,39 @@ impl SkinnedRenderer {
                 passes: mask,
                 casts,
                 cast_only: d.cast_only,
+                own: false,
+            });
+        }
+        // Your own body in first person (§11.12): its joints, the near margin in `light.z`.
+        if let (Some(o), Some((_, _, verts))) = (own, &self.own_index)
+            && o.passes != 0
+            && let Some((joints, _)) = own_joints(
+                self.meshes[0].data,
+                self.meshes[0].model,
+                self.level,
+                verts,
+                o,
+                eye,
+            )
+        {
+            let at = floats.len();
+            floats.resize(at + INSTANCE_FLOATS, 0.0);
+            for (k, j) in joints.iter().take(MAX_JOINTS).enumerate() {
+                floats[at + k * 12..at + k * 12 + 12].copy_from_slice(&rows(j));
+            }
+            let near = super::characters::own_discard_m(&o.body);
+            floats[at + JOINT_FLOATS..at + JOINT_FLOATS + 3].copy_from_slice(&[
+                o.draw.light[0],
+                o.draw.light[1],
+                near,
+            ]);
+            self.draws.push(Draw {
+                instance: (at / INSTANCE_FLOATS) as u32,
+                mesh: 0,
+                passes: o.passes,
+                casts: false,
+                cast_only: false,
+                own: true,
             });
         }
         self.arms = None;
@@ -872,11 +1022,15 @@ impl SkinnedRenderer {
     fn draw(&self, pass: &mut wgpu::RenderPass<'_>, d: &Draw, calls: &mut u32, tris: &mut u64) {
         pass.set_bind_group(1, &self.group, &[d.instance * INSTANCE_BYTES as u32]);
         let m = &self.meshes[d.mesh];
+        let (index, count) = match (&self.own_index, d.own) {
+            (Some((b, n, _)), true) => (b, *n),
+            _ => (&m.index, m.count),
+        };
         pass.set_vertex_buffer(0, m.vertex.slice(..));
-        pass.set_index_buffer(m.index.slice(..), wgpu::IndexFormat::Uint32);
-        pass.draw_indexed(0..m.count, 0, 0..1);
+        pass.set_index_buffer(index.slice(..), wgpu::IndexFormat::Uint32);
+        pass.draw_indexed(0..count, 0, 0..1);
         *calls += 1;
-        *tris += u64::from(m.count / 3);
+        *tris += u64::from(count / 3);
     }
 
     /// Draws the bodies of scene pass `i`; whether any were (group 1 is then the skinned group's).
@@ -1152,13 +1306,13 @@ mod tests {
     #[test]
     fn the_vertex_bytes_carry_colours_joints_and_weights() {
         let (_, model) = dwell_models::player();
-        let (v, i) = vertex_bytes(model, 0);
+        let (v, i) = vertex_bytes(model, 0, &[]);
         assert_eq!(v.len(), model.positions.len() * VERTEX_BYTES);
         assert_eq!(i.len(), model.indices.len() * 4);
         // Each Model detail level its own mesh, fewer triangles a level (ADR 0070 §10).
         let mut last = i.len();
         for k in 1..dwell_models::DETAIL_LEVELS.len() {
-            let (v, i) = vertex_bytes(model, k);
+            let (v, i) = vertex_bytes(model, k, &[]);
             assert_eq!(v.len(), model.level(k).positions.len() * VERTEX_BYTES);
             assert!(i.len() < last, "level {k}");
             last = i.len();
@@ -1301,6 +1455,151 @@ mod tests {
         for item in ["block", "torch"] {
             assert!(data.grip(item).is_none(), "{item} is held in the open hand");
             assert!(tips_from_handle(item) > 0.06, "the open hand is open");
+        }
+    }
+}
+
+#[cfg(test)]
+mod villager_colour_tests {
+    use super::*;
+    use dwell_sim::creatures::{Table, npc_colours};
+
+    /// A palette ramp's base, sRGB 0..1.
+    fn base(ramp: &str) -> [f32; 3] {
+        let c = dwell_models::ramp_base(ramp).unwrap();
+        [16, 8, 0].map(|s| ((c >> s) & 0xff) as f32 / 255.0)
+    }
+
+    #[test]
+    fn every_villager_variant_draws_its_face_in_its_skin_and_its_hair_in_its_hair() {
+        // both-faces: model space at rest, before the body's face frame (the colour of a vertex
+        // does not depend on the face). BUGS.md #96 (owner, 2026-11-12): "Why do all the villagers
+        // look like their faces are jet black? Not even matching the rest of their skin color?",
+        // then "their hair and faces are really crazy looking … some of the clothes and hat
+        // vertices are being assigned incorrectly". Two causes: the GLB's colours are linear and
+        // the shader read them as sRGB (skin_deep drew at a tenth of its brightness: black), and
+        // the recolour went by colour, so the hat's repaint by height had caught the hair's fringe
+        // and the neck's skin_tan kept its colour. Each vertex is found by position (its head
+        // joints' weight, the front of the face, the back of the head), at every detail level.
+        let (data, model) = dwell_models::model("peasant").unwrap();
+        let parts = data.parts.expect("the Peasant has a part map");
+        let def = Table::SHIPPED.npc("dwell:villager").unwrap();
+        let joint = |name: &str| {
+            model
+                .skin
+                .iter()
+                .position(|&n| model.nodes[n].name == name)
+                .unwrap() as u8
+        };
+        let head = [joint("spine.005"), joint("spine.006")];
+        let hat = parts.number("hat").unwrap();
+        let clothes = [
+            parts.number("shirt").unwrap(),
+            parts.number("trousers").unwrap(),
+        ];
+        for level in 0..dwell_models::DETAIL_LEVELS.len() {
+            let m = model.level(level);
+            let (v, _) = vertex_bytes(model, level, &parts.level(level));
+            let colour = |i: usize| {
+                let c = &v[i * VERTEX_BYTES + 24..i * VERTEX_BYTES + 28];
+                ([c[0], c[1], c[2]].map(|b| f32::from(b) / 255.0), c[3])
+            };
+            let on_head = |i: usize| {
+                (0..4)
+                    .filter(|&k| head.contains(&m.joints[i][k]))
+                    .map(|k| m.weights[i][k])
+                    .sum::<f32>()
+                    >= 0.5
+            };
+            let n = m.positions.len();
+            // The face: the head's front at nose height, near the middle (within 3 cm of the
+            // frontmost there); the hair: the back of the head above the neck, inside the brim.
+            let band = |i: usize| {
+                let p = m.positions[i];
+                on_head(i) && (1.36..1.46).contains(&p[1]) && p[0].abs() < 0.08
+            };
+            let front = (0..n)
+                .filter(|&i| band(i))
+                .map(|i| m.positions[i][2])
+                .fold(f32::MIN, f32::max);
+            let face: Vec<usize> = (0..n)
+                .filter(|&i| band(i) && m.positions[i][2] > front - 0.03)
+                .collect();
+            let back: Vec<usize> = (0..n)
+                .filter(|&i| {
+                    let p = m.positions[i];
+                    on_head(i)
+                        && (1.38..1.46).contains(&p[1])
+                        && p[0].abs() < 0.12
+                        && (-0.2..-0.09).contains(&p[2])
+                })
+                .collect();
+            assert!(
+                face.len() >= 3 && back.len() >= 3,
+                "level {level}: {} face, {} hair",
+                face.len(),
+                back.len()
+            );
+            for i in 0..n {
+                let (_, part) = colour(i);
+                if on_head(i) {
+                    assert!(
+                        !clothes.contains(&part),
+                        "level {level}: head vertex {i} is clothes"
+                    );
+                }
+                if part == hat {
+                    assert!(
+                        m.positions[i][1] >= 1.44,
+                        "level {level}: hat vertex {i} below the brim"
+                    );
+                }
+            }
+            for variant in 0..64u32 {
+                let colours = npc_colours(def, variant.wrapping_mul(0x9e37_79b9));
+                let to = |p: &str| colours.iter().find(|c| c.0 == p).unwrap().2;
+                let remap = dwell_models::part_remap(Some(&parts), &colours);
+                // What the shader draws: the recolour, then the sRGB bytes to linear.
+                let drawn = |i: usize| {
+                    let (c, part) = colour(i);
+                    dwell_models::recolour(c, part, &remap).map(|c| c.powf(2.2))
+                };
+                // The face: the skin's ramp at the vertex's shade of the model's (its nose and
+                // cheeks a little darker), drawn as bright as the ramp is, never black.
+                let skin = base(to("skin"));
+                let want = dwell_models::luma(skin.map(|c| c.powf(2.2)));
+                let mut lit = 0.0;
+                for &i in &face {
+                    let (c, part) = colour(i);
+                    let d = dwell_models::recolour(c, part, &remap);
+                    let r = [0, 1, 2].map(|k| d[k] / skin[k]);
+                    assert!(
+                        r.iter().all(|x| (x - r[0]).abs() < 0.05) && (0.6..1.1).contains(&r[0]),
+                        "level {level} variant {variant}: face vertex {i} draws {d:?}, not its skin {} {skin:?}",
+                        to("skin")
+                    );
+                    lit += dwell_models::luma(drawn(i)) / face.len() as f32;
+                }
+                assert!(
+                    lit > 0.7 * want,
+                    "level {level} variant {variant}: the face draws at {lit}, its skin {} at {want}",
+                    to("skin")
+                );
+                // The hair: the hair's ramp at the vertex's shade (the colour over the ramp's
+                // base the same in every channel).
+                let hair = base(to("hair"));
+                for &i in &back {
+                    let (c, _) = colour(i);
+                    let d = dwell_models::recolour(c, colour(i).1, &remap);
+                    let r = [0, 1, 2].map(|k| d[k] / hair[k].max(1e-3));
+                    assert!(
+                        r.iter()
+                            .all(|x| (x - r[0]).abs() < 0.05 || d.iter().any(|&c| c >= 1.0)),
+                        "level {level} variant {variant}: hair vertex {i} draws {d:?}, not its hair {}",
+                        to("hair")
+                    );
+                }
+            }
         }
     }
 }

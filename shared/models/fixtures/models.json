@@ -14,6 +14,7 @@
       "poses": { "lie": { "tip": [90, 0, 0] } },
       "poseBlendS": 1,
       "glb": "two_bone.glb",
+      "parts": "parts/two_bone.json",
       "scale": 1,
       "yaw": 0,
       "remap": {},
@@ -31,6 +32,11 @@
           "hips": { "joint": "root" },
           "arm_r": { "joint": "tip", "rest": [0, 0, 180] }
         }
+      },
+      "firstPerson": {
+        "joints": ["tip"],
+        "weight": 0.5,
+        "body": { "hide": [], "weight": 0.5 }
       },
       "roles": {
         "idle": { "clip": "rest" },

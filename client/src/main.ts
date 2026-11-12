@@ -1,3 +1,4 @@
+import { mapProgress } from './ui/mapProgress';
 import { buildInfo, channelOf, formatBuildInfo, recordedVersion } from './buildInfo';
 import { worldChoice } from './ui/worldChoices';
 import { skyOptions } from './ui/sky';
@@ -341,6 +342,11 @@ interface DwellDebug {
    * radius?, height?, density?, riseMps?] a steam plume based at a world point; `near` [name, dx,
    * dz] one under the eye; `move` [name, x, y, z]; `remove` [name]; `clear`.
    */
+  /**
+   * The volumetric clouds' view opacity (per m at density 1; `?cloudExtinction=`) over the data's
+   * `volume.extinction`, live, for an A/B (0.006 / 0.03 / 0.05); 0 or none: the data's.
+   */
+  cloudExtinction(extinction?: number): void;
   plume(
     op?: 'list' | 'add' | 'near' | 'move' | 'remove' | 'clear',
     args?: [string?, ...number[]],
@@ -861,11 +867,20 @@ function mapDeps(): MapDeps {
       worldMapKeys(seed, worldgen || undefined, radiusScale === 1 ? undefined : radiusScale),
     build: workerBuilder(makeJobWorker),
     store: typeof indexedDB === 'undefined' ? null : new IndexedDbMapStore(),
-    onProgress: (ready, needed) => {
+    onProgress: (ready, needed, faces) => {
       const stages = bootLoading?.stages;
       const now = performance.now();
-      stages?.progress('worldMap', ready, needed, now);
+      // Inside each face's build too (BUGS.md #91): its step, and the bar moving with it.
+      const p = mapProgress(faces);
+      stages?.progress('worldMap', Math.max(ready, p.done), needed, now, p.detail);
       if (ready >= needed) stages?.end('worldMap', now);
+    },
+    onFailed: (message) => {
+      const stages = bootLoading?.stages;
+      const now = performance.now();
+      console.warn(`Dwell: a world map could not be shaped (${message})`);
+      stages?.progress('worldMap', 0, null, now, `failed (${message})`);
+      stages?.end('worldMap', now);
     },
   };
   return maps;
@@ -1042,6 +1057,10 @@ async function start(): Promise<App | null> {
     // ?waterdbg=caustics,foam,… turns pieces of the water's shading off (a dev tool, DEV_TOOLS.md).
     const waterDebug = new URLSearchParams(location.search).get('waterdbg');
     if (waterDebug) client.setWaterDebug(waterDebug);
+    // ?cloudExtinction=0.03 sets the volumetric clouds' view opacity over the data's, for an A/B of
+    // how much a cloud hides the ones behind it (a dev tool, DEV_TOOLS.md; docs/CLOUDS.md §9.8).
+    const cloudExtinction = Number(new URLSearchParams(location.search).get('cloudExtinction'));
+    if (cloudExtinction > 0) client.setCloudExtinction(cloudExtinction);
     // ?heightfield=1|0 forces the near water's GPU heightfield on or off (a dev tool, DEV_TOOLS.md).
     const heightfield = new URLSearchParams(location.search).get('heightfield');
     if (heightfield === '1' || heightfield === '0') client.setHeightfield(Number(heightfield));
@@ -1080,7 +1099,15 @@ async function start(): Promise<App | null> {
     client.setShowArms(s.showArms);
     client.setDetail(s.detail.distanceM, s.detail.pixelError, s.detail.memoryMb);
     // The features with no tier of their own before WORK_QUEUE item 30 (ui/featureSettings.ts).
-    client.setTerrainDetail(s.features.tallGrass, s.features.farTrees);
+    // ?tallgrass=0..1 overrides the Tall grass share (a dev tool for the bench, DEV_TOOLS.md).
+    const tallGrassQ = Number(new URLSearchParams(location.search).get('tallgrass') ?? NaN);
+    const tallGrass = Number.isFinite(tallGrassQ)
+      ? Math.min(1, Math.max(0, tallGrassQ))
+      : s.features.tallGrass;
+    client.setTerrainDetail(tallGrass, s.features.farTrees);
+    // ?impostors=0 draws the far trees as the LOD sections' tree cells, as before the impostors.
+    const impostorsQ = new URLSearchParams(location.search).get('impostors');
+    client.setImpostors(impostorsQ === '0' ? 0 : impostorsQ === '1' ? 1 : -1);
     client.setDistantShadows(s.features.distantShadows);
     client.setEffects(s.features.hitShards, s.features.particles, s.features.farHerds);
     reportSettings = {
@@ -1438,6 +1465,7 @@ async function start(): Promise<App | null> {
       Promise.resolve(null),
     spawnNpcs: (n, radius, variant) =>
       app.loopback?.lavaDev('spawnNpcs', [n, radius ?? 3, variant ?? 0]) ?? Promise.resolve(null),
+    cloudExtinction: (extinction) => client.setCloudExtinction(extinction ?? 0),
     plume: (op, args) => {
       const [name, ...nums] = args ?? [];
       return client.plumeDev(op ?? 'list', name ?? '', Float64Array.from(nums));

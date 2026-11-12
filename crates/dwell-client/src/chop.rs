@@ -108,6 +108,26 @@ pub struct SwingRun {
     pub cleared_shown: bool,
 }
 
+/// How the arms' swing clip (the action layer) is driven for a swing this frame.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum ArmsDrive {
+    /// Held at clip time `t` (s), laid over the arms' pose at `weight` (1: the clip's pose).
+    At { t: f64, weight: f64 },
+    /// The swing is over: its clip stops (BUGS.md #93: let go, it played on from where it was
+    /// held, a second swing).
+    Release,
+}
+
+impl ArmsDrive {
+    /// Drives the arms' animator `a` so.
+    pub fn apply(self, a: &mut dwell_characters::animator::Animator) {
+        match self {
+            ArmsDrive::At { t, weight } => a.drive_action_weighted(t as f32, weight as f32),
+            ArmsDrive::Release => a.stop_action(),
+        }
+    }
+}
+
 /// Smooth 0..1.
 fn ease(u: f64) -> f64 {
     let u = u.clamp(0.0, 1.0);
@@ -171,21 +191,42 @@ impl SwingRun {
         self.hit
     }
 
+    /// How the arms' swing clip is driven `now_ms` into this swing (`Bodies::drive_arms`, each
+    /// frame the swing is under way and the frame it ends).
+    pub fn arms(&self, now_ms: f64) -> ArmsDrive {
+        if self.done(now_ms) {
+            return ArmsDrive::Release;
+        }
+        let t = self.elapsed(now_ms);
+        ArmsDrive::At {
+            t: self.clip_time(t),
+            weight: self.clip_weight(t),
+        }
+    }
+
+    /// How much of the swing clip's pose the arms show `t` s in: all of it, except a hit's
+    /// pull-out, which fades the held contact pose to the arms' rest over `recoverHitS` (straight
+    /// back, not the wind-up played backwards: BUGS.md #93, a vertical hit went back up over the
+    /// shoulder and down again, a second stroke).
+    pub fn clip_weight(&self, t: f64) -> f64 {
+        let s = &self.tool.swing;
+        match self.impact_s() {
+            Some(at) if t >= at + s.hit_stop_s => {
+                let u = ((t - at - s.hit_stop_s) / s.recover_hit_s.max(1e-6)).clamp(0.0, 1.0);
+                1.0 - ease(u)
+            }
+            _ => 1.0,
+        }
+    }
+
     /// Where in the arms' swing clip (whose length is a miss's: wind-up, arc, follow-through,
-    /// recovery) the arms are `t` s in: a hit holds the impact's pose through the hit-stop, then
-    /// plays the clip back from it to the rest (the axe pulled out of the cut, or bounced back).
+    /// recovery) the arms are `t` s in: a hit holds the impact's pose from contact on, through
+    /// the hit-stop and the pull-out ([`clip_weight`](Self::clip_weight) fades it to rest).
     pub fn clip_time(&self, t: f64) -> f64 {
         let s = &self.tool.swing;
-        let Some(at) = self.impact_s() else {
-            return t.min(s.miss_length());
-        };
-        if t < at {
-            t
-        } else if t < at + s.hit_stop_s {
-            at
-        } else {
-            let u = ((t - at - s.hit_stop_s) / s.recover_hit_s.max(1e-6)).clamp(0.0, 1.0);
-            at * (1.0 - ease(u))
+        match self.impact_s() {
+            None => t.min(s.miss_length()),
+            Some(at) => t.min(at),
         }
     }
 
@@ -563,8 +604,13 @@ mod tests {
         assert_eq!(hit.clip_time(at + 0.5 * s.hit_stop_s), at);
         assert_eq!(hit.clip_time(at + 0.99 * s.hit_stop_s), at);
         // Then back out to the rest; the miss runs on through its follow-through.
-        assert!(hit.clip_time(at + s.hit_stop_s + 0.5 * s.recover_hit_s) < at);
-        assert!(hit.clip_time(hit.length()) < 1e-9);
+        // The pull-out holds the contact's pose and fades it to rest (BUGS.md #93).
+        assert_eq!(hit.clip_time(at + s.hit_stop_s + 0.5 * s.recover_hit_s), at);
+        assert_eq!(hit.clip_weight(at + 0.99 * s.hit_stop_s), 1.0);
+        let w = hit.clip_weight(at + s.hit_stop_s + 0.5 * s.recover_hit_s);
+        assert!(w > 0.0 && w < 1.0, "{w}");
+        assert!(hit.clip_weight(hit.length()) < 1e-9);
+        assert_eq!(miss.clip_weight(miss.length() - 1e-3), 1.0);
         assert!(miss.clip_time(at + s.hit_stop_s) > at + s.hit_stop_s - 1e-9);
         assert!(hit.length() < miss.length(), "a miss recovers longer");
         // The impact fires once, at its moment.

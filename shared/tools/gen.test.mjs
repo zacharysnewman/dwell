@@ -55,7 +55,7 @@ test("the axe's held item, the log's chips and its breakWith reach the Rust tabl
   const d = validateTools(...fresh());
   const rs = toolsRust(d);
   assert.match(rs, /name: "dwell:stone_axe", kind: ToolKind::Axe, held: Some\("stone_axe"\)/);
-  assert.match(rs, /block: "dwell:log", .*chips: Chips \{ count: 7, shards: 0, color: \[217, 179, 122\]/);
+  assert.match(rs, /block: "dwell:log", .*chips: Chips \{ count: 7, shards: 3, piece: "dwell:wood", color: \[217, 179, 122\]/);
   assert.match(rs, /\("dwell:log", ToolKind::Axe\),/);
 });
 
@@ -112,15 +112,15 @@ test('breaking: the right tool class per material and a speed per tier reach the
   const speed = (i) => d.breaking.tools.find((t) => t.item === i).speed;
   assert.ok(speed('dwell:metal_pickaxe') > speed('dwell:stone_pickaxe') && speed('dwell:stone_pickaxe') > 1);
   // Owner, 2026-11-12: metal tools "break double sized bigger chunks off and reach 50% broken
-  // faster": twice the stone tier's speed and chunk.
+  // faster": twice the stone tier's speed (the bigger chunks follow from the fewer hits: the bite rule).
   const of = (i) => d.breaking.tools.find((t) => t.item === i);
   for (const [metal, stone] of [['dwell:metal_pickaxe', 'dwell:stone_pickaxe'], ['dwell:metal_shovel', 'dwell:wooden_shovel'], ['dwell:metal_axe', 'dwell:stone_axe']]) {
     assert.equal(of(metal).speed, 2 * of(stone).speed, metal);
-    assert.equal(of(metal).chunk, 2 * of(stone).chunk, metal);
+    assert.equal(of(metal).chunk, undefined, metal);
   }
   const rs = toolsRust(d);
   assert.match(rs, /\("dwell:stone", "pickaxe"\)/);
-  assert.match(rs, /BreakTool \{ item: "dwell:metal_shovel", class: "shovel", tier: "metal", speed: 3\.0, chunk: 2\.0, contact_s: 0\.26 \}/);
+  assert.match(rs, /BreakTool \{ item: "dwell:metal_shovel", class: "shovel", tier: "metal", speed: 3\.0, contact_s: 0\.26, repeat_s: Some\(0\.5\) \}/);
 });
 
 test('breaking: a fixture tool class and tier by data alone, and bad entries fail naming them', () => {
@@ -130,10 +130,10 @@ test('breaking: a fixture tool class and tier by data alone, and bad entries fai
   data.breaking.tiers.bronze = 2;
   data.breaking.classes.trowel = ['test:clay'];
   data.breaking.tools.push({ item: 'test:trowel', class: 'trowel', tier: 'bronze', contactS: 0.4 });
-  assert.match(toolsRust(validateTools(data, items, blocks)), /BreakTool \{ item: "test:trowel", class: "trowel", tier: "bronze", speed: 2\.0, chunk: 1\.0, contact_s: 0\.4 \}/);
-  // A tier's chunk by data alone (the object form).
-  data.breaking.tiers.bronze = { speed: 2, chunk: 1.5 };
-  assert.match(toolsRust(validateTools(data, items, blocks)), /tier: "bronze", speed: 2\.0, chunk: 1\.5, contact_s: 0\.4 \}/);
+  assert.match(toolsRust(validateTools(data, items, blocks)), /BreakTool \{ item: "test:trowel", class: "trowel", tier: "bronze", speed: 2\.0, contact_s: 0\.4, repeat_s: None \}/);
+  // A tier's speed by data alone (the object form); a hit's piece size is the bite rule's, not a tier's.
+  data.breaking.tiers.bronze = { speed: 2 };
+  assert.match(toolsRust(validateTools(data, items, blocks)), /tier: "bronze", speed: 2\.0, contact_s: 0\.4, repeat_s: None \}/);
   const bad = (edit, re) => {
     const [d, i, b] = fresh();
     edit(d.breaking);
@@ -146,7 +146,7 @@ test('breaking: a fixture tool class and tier by data alone, and bad entries fai
   bad((b) => b.classes.axe.push('dwell:nope'), /breaking\.classes\.axe: no block "dwell:nope"/);
   bad((b) => (b.tiers.stone = 0), /breaking\.tiers\.stone is a speed above 0/);
   bad((b) => (b.tiers.stone = { speed: 0 }), /breaking\.tiers\.stone is a speed above 0/);
-  bad((b) => (b.tiers.metal.chunk = 9), /breaking\.tiers\.metal\.chunk is a size multiple in \[0\.25, 4\]/);
+  bad((b) => (b.tiers.metal.chunk = 2), /breaking\.tiers\.metal/);
   bad((b) => (b.tiers.metal.size = 2), /breaking\.tiers\.metal/);
   bad((b) => b.tools.push({ ...b.tools[0] }), /dwell:stone_axe is listed twice/);
   bad((b) => (b.tools[0].contactS = -1), /breaking\.tools\[0\]: contactS is seconds in \[0, 2\]/);
@@ -154,7 +154,7 @@ test('breaking: a fixture tool class and tier by data alone, and bad entries fai
 
 test("a wood's cut look (its carved faces, ADR 0067 §11) is validated and reaches the Rust table", () => {
   const rs = toolsRust(validateTools(...fresh()));
-  assert.match(rs, /block: "dwell:log", .*cut: CutLook \{ tile: Some\("logCut"\), tint: \[255, 226, 184\], open: 2\.5, kerf_width_m: 0\.035, bite: BiteLook \{ width_m: 0\.14, ends_m: 0\.03, step: 0\.6 \}, cracks: Some\(Cracks \{ tiles: &\["crackWood1", "crackWood2", "crackWood3", "crackWood4"\], stages: &\[0\.15, 0\.4, 0\.65, 0\.85\], strength: 0\.85, span: 1\.5 \}\) \}/);
+  assert.match(rs, /block: "dwell:log", .*cut: CutLook \{ tile: Some\("logCut"\), tint: \[255, 226, 184\], open: 2\.5, kerf_width_m: 0\.035, bite: BiteLook \{ width_m: 0\.14, ends_m: 0\.03, step: 0\.6, band_m: 0\.25, depth_per_mouth: 2\.0, width_per_depth: 1\.0 \}, cracks: Some\(Cracks \{ tiles: &\["crackWood1", "crackWood2", "crackWood3", "crackWood4"\], stages: &\[0\.15, 0\.4, 0\.65, 0\.85\], strength: 0\.85, span: 1\.5 \}\) \}/);
   const bad = (edit, re) => {
     const [data, items, blocks] = fresh();
     edit(data);
@@ -167,7 +167,7 @@ test("a wood's cut look (its carved faces, ADR 0067 §11) is validated and reach
   // Without a cut look: the defaults (the end-grain tile, untinted).
   const [data, items, blocks] = fresh();
   delete data.woods[0].cut;
-  assert.match(toolsRust(validateTools(data, items, blocks)), /cut: CutLook \{ tile: None, tint: \[255, 255, 255\], open: 2\.5, kerf_width_m: 0\.03, bite: BiteLook \{ width_m: 0\.14, ends_m: 0\.03, step: 0\.6 \}, cracks: None \}/);
+  assert.match(toolsRust(validateTools(data, items, blocks)), /cut: CutLook \{ tile: None, tint: \[255, 255, 255\], open: 2\.5, kerf_width_m: 0\.03, bite: BiteLook \{ width_m: 0\.14, ends_m: 0\.03, step: 0\.6, band_m: 0\.25, depth_per_mouth: 2\.0, width_per_depth: 1\.0 \}, cracks: None \}/);
 });
 
 test("a wood's bites and their cracks (WORK_QUEUE item 26) are data: validated, a fixture wood's by data alone", () => {
@@ -178,11 +178,11 @@ test("a wood's bites and their cracks (WORK_QUEUE item 26) are data: validated, 
     block: 'test:post',
     fellWedge: 'test:post_ramp',
     leaves: { block: null },
-    cut: { open: 3, bite: { widthM: 0.2, endsM: 0.05, step: 0.5 }, cracks: { set: 'stone', stages: [0.1, 0.3, 0.5, 0.7], strength: 0.4 } },
+    cut: { open: 3, bite: { widthM: 0.2, endsM: 0.05, step: 0.5, bandM: 0.3, depthPerMouth: 3 }, cracks: { set: 'stone', stages: [0.1, 0.3, 0.5, 0.7], strength: 0.4 } },
   });
   assert.match(
     toolsRust(validateTools(data, items, blocks)),
-    /block: "test:post", .*bite: BiteLook \{ width_m: 0\.2, ends_m: 0\.05, step: 0\.5 \}, cracks: Some\(Cracks \{ tiles: &\["crackStone1", "crackStone2", "crackStone3", "crackStone4"\], stages: &\[0\.1, 0\.3, 0\.5, 0\.7\], strength: 0\.4, span: 1\.5 \}\) \}/,
+    /block: "test:post", .*bite: BiteLook \{ width_m: 0\.2, ends_m: 0\.05, step: 0\.5, band_m: 0\.3, depth_per_mouth: 3\.0, width_per_depth: 1\.0 \}, cracks: Some\(Cracks \{ tiles: &\["crackStone1", "crackStone2", "crackStone3", "crackStone4"\], stages: &\[0\.1, 0\.3, 0\.5, 0\.7\], strength: 0\.4, span: 1\.5 \}\) \}/,
   );
   const bad = (edit, re) => {
     const data = loadTools();
@@ -192,6 +192,8 @@ test("a wood's bites and their cracks (WORK_QUEUE item 26) are data: validated, 
   bad((c) => (c.bite.widthM = 2), /woods\.dwell:log\.cut\.bite\.widthM must be a number in \[0\.02, 1\]/);
   bad((c) => (c.bite.endsM = 0.1), /woods\.dwell:log\.cut\.bite\.endsM must be a number in \[0, 0\.07\]/);
   bad((c) => (c.bite.step = 0), /woods\.dwell:log\.cut\.bite\.step must be a number in \[0\.1, 1\]/);
+  bad((c) => (c.bite.depthPerMouth = 0.1), /woods\.dwell:log\.cut\.bite\.depthPerMouth must be a number in \[0\.5, 8\]/);
+  bad((c) => (c.bite.bandM = 0), /woods\.dwell:log\.cut\.bite\.bandM must be a number in \[0\.02, 1\]/);
   bad((c) => (c.bite.depth = 1), /cut\.bite: unknown field depth/);
   bad((c) => (c.bite = 3), /woods\.dwell:log\.cut\.bite must be an object/);
   bad((c) => (c.cracks.set = 'bark'), /woods\.dwell:log\.cut\.cracks\.set must be a crack set/);
@@ -202,12 +204,12 @@ test("the axe clears leaves, not the stump's wood ramp (chopped); a fixture tool
   const d = validateTools(...fresh());
   const axe = d.tools.find((t) => t.name === 'dwell:stone_axe');
   assert.deepEqual(axe.clears, ['dwell:leaves', 'dwell:snowy_leaves']);
-  assert.match(toolsRust(d), /rustle: Some\("axe_rustle"\), rustle_leaves: 5 \}, clears: &\["dwell:leaves", "dwell:snowy_leaves"\], chop2_bite: [\d.]+, weapon: None \}/);
+  assert.match(toolsRust(d), /rustle: Some\("axe_rustle"\), rustle_leaves: 5 \}, clears: &\["dwell:leaves", "dwell:snowy_leaves"\], chop2_bite: [\d.]+, weapon: None, repeat_on_hold: true \}/);
   const [data, items, blocks] = fresh();
   items.add('test:sickle');
   data.tools.push({ name: 'test:sickle', kind: 'axe', swingSeconds: 0.3, biteM: 0.1, bindM: 0.1, across: 1, along: 0.3, sharpness: 1, clears: ['dwell:tall_grass'] });
   const rs = toolsRust(validateTools(data, items, blocks));
-  assert.match(rs, /name: "test:sickle".*rustle: None, rustle_leaves: 4 \}, clears: &\["dwell:tall_grass"\], chop2_bite: [\d.]+, weapon: None \}/);
+  assert.match(rs, /name: "test:sickle".*rustle: None, rustle_leaves: 4 \}, clears: &\["dwell:tall_grass"\], chop2_bite: [\d.]+, weapon: None, repeat_on_hold: false \}/);
   const bad = (edit, re) => {
     const [data, items, blocks] = fresh();
     edit(data);
@@ -254,12 +256,14 @@ test('a fixture wood with its own fell wedge by data alone; a bad wedge fails na
 test("block damage: the data's hits reach Rust and TS; a fixture block by data alone; bad entries fail naming them", () => {
   const [data, items, blocks] = fresh();
   const d = validateTools(data, items, blocks);
-  assert.match(toolsRust(d), /BlockDamageDef \{ block: "dwell:stone", default: None, tools: &\[\("pickaxe", 7\)\], look: Some\(DamageLook \{ kind: DamageLookKind::Shards,/);
+  // The bite rule's volume from the shape (BLOCK_DAMAGE.md §10): a stored ramp is half a cell.
+  assert.match(toolsRust(d), /BlockDamageDef \{ block: "dwell:stone_ramp", volume: 0\.5,/);
+  assert.match(toolsRust(d), /BlockDamageDef \{ block: "dwell:stone", volume: 1\.0, default: None, tools: &\[\("pickaxe", 7\)\], look: Some\(DamageLook \{ kind: DamageLookKind::Shards,/);
   assert.match(toolsTs(d), /\{ block: 'dwell:dirt', default: 11, tools: \{ shovel: 7 \} \},/);
   blocks.set('test:clay', { damage: { default: 9, shovel: 4, 'dwell:metal_shovel': 1 } });
   assert.match(
     toolsRust(validateTools(data, items, blocks)),
-    /BlockDamageDef \{ block: "test:clay", default: Some\(9\), tools: &\[\("shovel", 4\), \("dwell:metal_shovel", 1\)\], look: None, chips: None \},/,
+    /BlockDamageDef \{ block: "test:clay", volume: 1\.0, default: Some\(9\), tools: &\[\("shovel", 4\), \("dwell:metal_shovel", 1\)\], look: None, chips: None \},/,
   );
   const bad = (damage, re) => {
     blocks.set('test:clay', { damage });
@@ -314,7 +318,7 @@ test("block damage: the data's hits reach Rust and TS; a fixture block by data a
   blocks.set('test:clay', { damage: { default: 3, chips: { count: 5, color: '#806040', speed: 1.5, size: 0.05 } } });
   assert.match(
     toolsRust(validateTools(data, items, blocks)),
-    /block: "test:clay", .*chips: Some\(Chips \{ count: 5, shards: 0, color: \[128, 96, 64\], speed: 1\.5, size: 0\.05 \}\)/,
+    /block: "test:clay", .*chips: Some\(Chips \{ count: 5, shards: 0, piece: "dwell:rock_shard", color: \[128, 96, 64\], speed: 1\.5, size: 0\.05 \}\)/,
   );
   bad({ default: 3, chips: { count: 5, color: 'brown' } }, /test:clay\.damage\.chips\.color must be #rrggbb/);
   bad({ default: 3, chips: { count: 99 } }, /test:clay\.damage\.chips\.count must be a whole number/);
@@ -462,4 +466,31 @@ test('each tool kind has its own hint, as data; a kind without one fails', () =>
   assert.match(rs, /\(ToolKind::Axe, "Axe: level swing/);
   delete data.hints.weapon;
   assert.throws(() => validateTools(data, items, blocks), /hints\.weapon is required/);
+});
+
+test('hold to keep swinging (WORK_QUEUE item 17): the axes, sword, pickaxes and shovels repeat; a fixture by data alone; bad entries fail naming them', () => {
+  const d = validateTools(...fresh());
+  const rs = toolsRust(d);
+  for (const n of ['dwell:stone_axe', 'dwell:metal_axe', 'dwell:sword']) assert.match(rs, new RegExp(`name: "${n}", kind: ToolKind::\\w+, .*repeat_on_hold: true \\},`));
+  for (const n of ['dwell:stone_pickaxe', 'dwell:metal_pickaxe', 'dwell:wooden_shovel', 'dwell:metal_shovel']) assert.match(rs, new RegExp(`item: "${n}", .*contact_s: 0\\.26, repeat_s: Some\\(0\\.5\\) \\}`));
+  // A chopping tool's break-table entry never repeats as a break (its swing does).
+  assert.match(rs, /item: "dwell:stone_axe", .*repeat_s: None \}/);
+  // By data alone: a tool that does not repeat, and a break tool with its own period.
+  const [data, items, blocks] = fresh();
+  items.add('test:flint_axe');
+  items.add('test:trowel');
+  data.tools.push({ name: 'test:flint_axe', kind: 'axe', swingSeconds: 0.3, biteM: 0.2, bindM: 0.1, across: 1, along: 0.3, sharpness: 1 });
+  data.breaking.tools.push({ item: 'test:trowel', class: 'shovel', tier: 'stone', contactS: 0.2, repeatOnHold: true, repeatS: 0.7 });
+  const fx = toolsRust(validateTools(data, items, blocks));
+  assert.match(fx, /name: "test:flint_axe", kind: ToolKind::Axe, .*repeat_on_hold: false \},/);
+  assert.match(fx, /item: "test:trowel", .*contact_s: 0\.2, repeat_s: Some\(0\.7\) \}/);
+  const bad = (edit, re) => {
+    const [d2, i2, b2] = fresh();
+    edit(d2);
+    assert.throws(() => validateTools(d2, i2, b2), re);
+  };
+  bad((d2) => (d2.tools[0].repeatOnHold = 'yes'), /tools\.dwell:stone_axe\.repeatOnHold must be true or false/);
+  bad((d2) => (d2.breaking.tools[2].repeatS = 0.1), /breaking\.tools\[2\]: repeatS is seconds in \[max\(contactS, 0\.1\), 5\]/);
+  bad((d2) => (delete d2.breaking.tools[2].repeatOnHold), /breaking\.tools\[2\]: repeatS without repeatOnHold/);
+  bad((d2) => (d2.breaking.tools[0].repeatOnHold = true), /breaking\.tools: dwell:stone_axe swings as a tool \(tools\.dwell:stone_axe\); its repeatOnHold goes there/);
 });

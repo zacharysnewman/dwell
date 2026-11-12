@@ -332,6 +332,26 @@ pub fn encode_job(id: u32, job: &Job) -> Vec<u8> {
             w.u8(6);
             w.bytes(payload);
         }
+        Job::CloudNoise {
+            detail,
+            size,
+            z0,
+            z1,
+        } => {
+            w.u8(8);
+            w.u8(u8::from(*detail));
+            [*size, *z0, *z1].into_iter().for_each(|v| w.u32(v));
+        }
+        Job::ImpostorBake { layer, px } => {
+            w.u8(9);
+            w.u32(*layer);
+            w.u32(*px);
+        }
+        Job::FarTrees { face, x0, z0, size } => {
+            w.u8(10);
+            w.u8(*face);
+            [*x0, *z0, *size].into_iter().for_each(|v| w.i32(v));
+        }
         Job::LodMap {
             face,
             heights,
@@ -470,6 +490,22 @@ pub fn decode_job(bytes: &[u8]) -> Result<(u32, Job), DecodeError> {
             w: r.i32()?,
             h: r.i32()?,
         },
+        8 => Job::CloudNoise {
+            detail: r.u8()? == 1,
+            size: r.u32()?,
+            z0: r.u32()?,
+            z1: r.u32()?,
+        },
+        9 => Job::ImpostorBake {
+            layer: r.u32()?,
+            px: r.u32()?,
+        },
+        10 => Job::FarTrees {
+            face: r.u8()?,
+            x0: r.i32()?,
+            z0: r.i32()?,
+            size: r.i32()?,
+        },
         _ => return Err(DecodeError),
     };
     Ok((id, job))
@@ -549,6 +585,32 @@ pub fn encode_output(id: u32, out: &Output) -> Vec<u8> {
                     w.bytes(b);
                 }
                 None => w.u8(0),
+            }
+        }
+        Output::CloudNoise(b) => {
+            w.u8(9);
+            w.bytes(b);
+        }
+        Output::Impostor {
+            centre_y,
+            radius,
+            albedo,
+            normal_depth,
+        } => {
+            w.u8(10);
+            w.u32(centre_y.to_bits());
+            w.u32(radius.to_bits());
+            w.bytes(albedo);
+            w.bytes(normal_depth);
+        }
+        Output::FarTrees(trees) => {
+            w.u8(11);
+            w.u32(trees.len() as u32);
+            for t in trees {
+                t.anchor.into_iter().for_each(|v| w.i32(v));
+                w.u32(u32::from(t.species));
+                w.u32(t.seed);
+                w.u32(t.stage);
             }
         }
     }
@@ -632,6 +694,26 @@ pub fn decode_output(bytes: &[u8]) -> Result<(u32, Output), DecodeError> {
         6 => Output::Failed(String::from_utf8_lossy(&r.bytes()?).into_owned()),
         7 => Output::Done,
         8 => Output::LodMap(if r.u8()? == 1 { Some(r.bytes()?) } else { None }),
+        9 => Output::CloudNoise(r.bytes()?),
+        10 => Output::Impostor {
+            centre_y: f32::from_bits(r.u32()?),
+            radius: f32::from_bits(r.u32()?),
+            albedo: r.bytes()?,
+            normal_depth: r.bytes()?,
+        },
+        11 => {
+            let n = r.u32()? as usize;
+            let mut trees = Vec::with_capacity(n.min(1 << 16));
+            for _ in 0..n {
+                trees.push(dwell_worldgen::impostor::FarTree {
+                    anchor: [r.i32()?, r.i32()?, r.i32()?],
+                    species: r.u32()? as u16,
+                    seed: r.u32()?,
+                    stage: r.u32()?,
+                });
+            }
+            Output::FarTrees(trees)
+        }
         _ => return Err(DecodeError),
     };
     Ok((id, out))
@@ -711,6 +793,19 @@ mod tests {
                 w: 5,
                 h: 2,
             },
+            Job::CloudNoise {
+                detail: true,
+                size: 16,
+                z0: 3,
+                z1: 9,
+            },
+            Job::ImpostorBake { layer: 17, px: 64 },
+            Job::FarTrees {
+                face: 1,
+                x0: -128,
+                z0: 64,
+                size: 64,
+            },
         ];
         let mut jobs = jobs.to_vec();
         jobs.push(Job::MeshChunk {
@@ -782,6 +877,31 @@ mod tests {
         assert_eq!(
             decode_output(&encode_output(3, &failed)).unwrap(),
             (3, failed)
+        );
+        let noise = Output::CloudNoise(vec![1, 2, 3, 250]);
+        assert_eq!(
+            decode_output(&encode_output(5, &noise)).unwrap(),
+            (5, noise)
+        );
+        let baked = Output::Impostor {
+            centre_y: 6.25,
+            radius: 7.5,
+            albedo: vec![9, 8, 7, 255],
+            normal_depth: vec![128, 255, 128, 3],
+        };
+        assert_eq!(
+            decode_output(&encode_output(6, &baked)).unwrap(),
+            (6, baked)
+        );
+        let trees = Output::FarTrees(vec![dwell_worldgen::impostor::FarTree {
+            anchor: [-5, 130, 77],
+            species: 2,
+            seed: 0xdead_beef,
+            stage: 6,
+        }]);
+        assert_eq!(
+            decode_output(&encode_output(7, &trees)).unwrap(),
+            (7, trees)
         );
     }
 

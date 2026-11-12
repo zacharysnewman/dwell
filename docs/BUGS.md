@@ -6,15 +6,75 @@ pins it.
 
 ## Open
 
-### 93. Vertical swings (axe, sword, …) play twice for one swing
+### 101. Clouds draw in the void beyond the world's rim, under a far camera
 
-Owner, 2026-11-12: "For vertical swings on axe, sword, etc, it sort of double swings." One vertical swing shows two
-down-strokes (or a stroke, a snap back and a second stroke). Suspects: the vertical clip's keyframes loop or include a
-second stroke; the swing restarted by a second trigger (the click and the hit event, or the server's echo of the
-swing re-starting the local one); the level/vertical choice flipping mid-swing. Check with `clip_probe` and the
-swing's trace, both faces.
+Found 2026-11-12 recording the bifacial showcase (seed 7, a theater camera 140 km from the centre, 11 km up,
+looking at the disc, time 0.29). With clouds on, a cloud layer fills the void below the camera out there, where
+there is no world: on **Low** (the 2D deck) a flat sheet of hard-edged white blotches from the frame's bottom to the
+horizon; on **High** (volumetric) rows of tall, thin grey spires with noisy, jagged edges — "crazy triangles" from a
+distance — standing in front of the stars. Neither tier draws anything visible over the island itself from there.
+At 120 km out and 3 km up the camera sits inside the layer and the frame is a wall of grey smears. The clouds seem
+to be a layer around the camera, not clipped to the disc (or to its face's sky). Off, the frame is clean. Expected:
+no clouds beyond the rim (a cloud field bounded by the disc, fading out at the edge). Stills: the bifacial v2
+deliverables (`outline_clouds_off/low/high.png`). Showcase work uses clouds off meanwhile.
 
-### 91. A 10× world sits for minutes on "Shaping the world map… 0/2" with no sign of progress
+### 102. A bright horizontal band in face B's sky seen from beyond the rim
+
+Found 2026-11-12 with #101's camera, clouds off: a soft white-grey band a few degrees wide crosses the whole frame
+below the disc (in face B's half of the sky, between the disc and the stars), and stays there while the camera
+pushes in, orbits and rises; from under face B it shows below the disc the same way. It reads as a glow stripe
+that isn't anything in the world: likely face B's sky horizon/haze glow drawn at its own horizon for a camera far
+outside the disc. Cosmetic; it shows in every far shot of the outline.
+
+### 100. Volumetric clouds look like "crazy triangles"
+
+Owner, 2026-11-12: "the clouds look ridiculous at least the volumetric ones. Look like crazy triangles. Find a
+white paper on clouds." Since the shape model (#775) and the view-opacity change (#790). Suspects: the noise baked
+at 64³ (base) / 32³ (detail) sampled with too large a world scale, so tiling and the noise's lattice show as
+straight-edged facets; the coverage remap cutting value noise into hard polygons (a remap without enough softness
+at the new, higher view extinction 0.03 /m, which turns soft gradients into hard silhouettes); the weather map's
+cells (from the deck's noise) visible as shapes; nearest-texel sampling of the 3D textures instead of trilinear.
+Reference: Schneider, "The Real-time Volumetric Cloudscapes of Horizon Zero Dawn" (SIGGRAPH 2015) and "Nubis
+Cubed" (2023).
+Owner, more precisely: "The more recent volumetric shape change for the clouds make them look like 3 sided
+pyramids." A cut that rises with height through a field with linear (or triangular-lattice / simplex) interpolation
+makes cones whose sides are the interpolation's facets: the cloud-type tower ("cloud cores tower above their edges",
+weather `type` from the deck's noise) with a height cut on a linearly interpolated coverage gives a pyramid per cell;
+3 sides suggests a triangular lattice (simplex-style) or the weather texture sampled as triangles. Fix: smooth
+(cubic/Hermite) interpolation or Perlin-Worley for coverage/type, a rounded height profile (the papers' gradient
+times a remap, not a linear cut), erosion to break the silhouette.
+
+### 97. Light shafts draw a pixelated dither pattern
+
+Owner, 2026-11-12 (screenshot: low sun behind clouds, a tree in front): "Volumetric lighting also has some weird
+dithering where the light shafts look pixelated. Not sure if this is a bug, a blending problem, or something else."
+A fine diagonal crosshatch covers the trees, ground and sky around the sun, strongest in the shafts behind the tree.
+Suspects: the light-shaft pass marches at reduced resolution with a per-pixel dither (interleaved gradient or a
+Bayer pattern) and is composited without a blur, temporal accumulation or a depth-aware upsample, so the dither
+pattern itself shows; or its accumulation's history is rejected every frame. Fix like #90's clouds: blue-noise
+jitter, temporal accumulation with a clamped history, a depth-aware (bilateral) blur/upsample.
+Owner, 2026-11-12 (later): "Oh that dithering is definitely cloud related." So the volumetric clouds' composite over
+the scene is the first suspect (the pattern covers trees and ground in front of the clouds), the shafts second.
+**Fixed in code (2026-11-12, branch `claude/shaft-dither`), the in-game look left for a local check:**
+- **Clouds (the cause the owner saw):** the composite's depth-aware upsample (`upsampled_clouds`) normalised its weights,
+  so where none of a pixel's four ½- or ¼-resolution texels matched its scene, the fallback's tiny weights became the
+  whole cloud of their marches. Among leaves every texel holds a gap of sky, so its march runs past the leaves to the
+  sky's reach and none matches a leaf pixel: the cloud *behind* the tree drew *over* it, in the texel grid's and the
+  gaps' pattern, jittered frame to frame. Now a fallback texel whose first cloud is past the pixel's scene lends its
+  weight with no cloud (`dwell_cloud_upsample_split`, twin `upsample_cover`; CLOUDS.md §9.6).
+  Test `a_canopy_with_sky_in_every_texel_draws_no_cloud_from_behind_it` (dwell-look `clouds`): failed on main ("a leaf
+  pixel drew 1 of the cloud behind it"), passes now.
+- **Shafts:** their per-texel jitter was a static interleaved gradient (a diagonal pattern) composited with one
+  bilinear tap. Now a 3 × 3 tile of the step's nine strata (`shaft_jitter`, `SHAFT_TILE`) and a 3 × 3 box of bilinear
+  taps in the composite (`shaft_blur`, `SHAFT_BLUR`): nine times the steps where the scene is smooth, no history (the
+  shafts are a screen-space blur toward the light, the same in front of a silhouette as beside it, so no depth test).
+  Cost: 8 more bilinear taps a pixel in the composite, only while shafts draw; the pass is unchanged. Test
+  `the_composited_shafts_behind_a_tree_show_no_dither_pattern` (dwell-look `shafts`): the dither seen (the composite
+  less the same composite of the converged glow) behind a fixture tree failed at the raw pass's on main and is now
+  under a quarter of it; dwell-client pins the shader to the twins.
+Move to Fixed once the owner's look at a low sun behind clouds and a tree confirms it.
+
+### 91. A 10× world sits for minutes on "Shaping the world map… 0/2" with no sign of progress (fixed natively after 0.54.143; the owner's browser check outstanding)
 
 Owner, 2026-11-12 (M4 Max MacBook Pro): "I tried to start a 10x world … And it's up to 3 minutes so far on 'Shaping the
 world map...' 0/2. Doesn't indicate well what it's doing." At 10× the world map runs at a 1 km cell (about 1 M cells
@@ -34,6 +94,26 @@ Then: "Oh I see, 'Could not connect to 10x...'" — the empty sky is the join fa
 "Could not connect to …" status), not missing terrain: the in-browser server either died (memory, #76) or didn't
 answer within the client's connect timeouts (`transport.rs` CONNECT_TIMEOUT_MS 8 s, `peer.ts` 20 s) while still busy.
 
+**Cause and fix (2026-11-12, measured natively, BIG_MAP.md §3.1).** Two steps of a face's map grew with the
+radius, not the cell count: the uplift measured every land cell against every segment of every range (300 ranges at
+10×: 17 s), and the channels' index listed each ~1 km river segment in thousands of 64 m squares (21 s and a **12.4 GB**
+index). One 10× face took 43.7 s natively (1×: 1.9 s) and a native 10× server 114 s at a 12.4 GB peak. In the browser
+that is past the 4 GB of WebAssembly memory: the map workers never finished (so the stage stayed at 0/2: no face's
+event was lost, none arrived), the local server built its own maps inside its "Finding a place to stand" stage (the spawn search itself is
+at most 1.2 s natively at every size) and its worker died, and the page said "Could not
+connect" over an empty sky. The local world has no connect timeout (the loopback waits for the worker's `ready`), so
+no timeout was to blame. Now: the spines are indexed by where they reach and the channels' square follows the cell
+(both exact: the 1× goldens are unchanged); a 10× face is 3.1 s and a 10× server starts in 6.2 s at 484 MB.
+`dwell-worldgen/tests/map_build_budget.rs` pins the op counts per cell at 1× and 10× on both faces (red on the old code:
+21 322 segment tests a land cell at 10× against 208 at 1×). The map builder reports its steps (`progress.rs`, the labels
+`loading.json` `mapSteps`) through the map worker to the stage ("Shaping the world map — rivers (5/6), face 1 of 2", the
+bar moving inside each face; `ui/mapProgress.ts`, Vitest in `mapProgress.test.ts` and `worldMaps.test.ts`); a failed map
+build ends the stage saying so; a dying local world worker says it ran out of memory (`workerFailure`,
+`loopback.test.ts`) and closes the session with why, also once playing. `tests/world_size.rs`
+`a_10x_world_s_spawn_stands_on_its_ground` (both faces) checks the 10× spawn is on the disc with its feet on solid
+ground. Not checked here (no GPU in the cloud session): the 10× world in the browser, walking there, and its memory
+(#76); the 10× channel index still holds ~16 M entries.
+
 ### 90. Volumetric clouds look badly dithered and pixelated where they overlap, mostly at cloud level
 
 Owner, 2026-11-12: "The clouds also look really badly dithered when they overlap? I think mostly when you get to their
@@ -42,6 +122,13 @@ accumulation; near or inside the layer the reprojection fails (the camera moves 
 fast), so the history is rejected and the raw jittered low-res result shows, then a plain upsample makes it blocky.
 Fixes to weigh: blue-noise jitter, a depth-aware (bilateral) upsample, neighbourhood clamping instead of history
 rejection, more steps or full resolution when the eye is in or near the layer.
+**Fixed in code (2026-11-12, branch `claude/cloud-shapes`, CLOUDS.md §9.6), the look to check locally:** the jitter
+is a baked blue-noise tile; a resolve pass clamps the history into the texel's 3 × 3 neighbourhood (matching scene
+only) instead of dropping it as the eye moves; near or in the layer a tier takes its `nearSteps`/`nearDivisor`
+(Medium ½ and 14 steps, High 24 steps); the composite keeps §8.9's depth-aware upsample. Tests (`dwell-look`
+`shape_tests`): the resolve's variance under the jitter sequence with the eye moving is under a quarter of the raw
+march's (the old pass showed the raw march there), stale history is clamped, a silhouette stays sharp, the near tier
+comes from the data. Move to Fixed once the owner's look at cloud level confirms it.
 
 ### 89. Sub-60 fps flying at High on the owner's M1 MacBook Air (measured; partial)
 
@@ -420,6 +507,125 @@ a bank). Calm pools and falls (drops of more than a row) are unchanged. Test: dw
 sand and sand ramps: one surface over every column, continuous across every column edge, no vertical water face above
 the lowest surface, no crease T-junctions; red on main, 152 sample points under two or three surfaces, then green).
 Left local: the owner's spot in the browser (seed 950418385, feet (1061.8, 79.6, 12359.4)).
+
+### 99. A placed camera on the player shows no player (fixed after 0.54.181)
+
+Found recording showcase video 1 (the bifacial world, 2026-11-12): theater mode's `track` / `orbit` on `"player"`, and
+any `placeCamera` view, drew an empty sky where the player was. A placed camera hid the first-person body (neck down)
+and drew nothing in its place, so the record skill's third-person shots of the player could not be made. Fixed: from
+a placed camera your whole body is drawn as others see it, lit like a remote player (`game.rs` `own_body_draw`, test
+`a_placed_camera_draws_your_whole_body`, red on the old rule, then green).
+
+### 95. Far trees seen from above have holes through to the sky below (fixed after 0.54.175)
+
+Owner, 2026-11-12 (screenshot at night, looking straight down from high up): "looking down at trees from high up,
+where you can first make out individual trees, they seem to have visible holes through them into the ground (sky on
+the other side). This is most obvious at night, so the day sky shines through the ground." In the shot each far
+tree (the LOD's crownless trees: dark crosses and squares on the grass) shows bright light-blue pixels at its
+centre — through the tree and the ground under it, the other face's (day) sky shows. Suspects: the LOD terrain
+leaves a hole (or an unfilled cell) under each far tree's trunk/column (the tree cells cut from the LOD's ground and
+not filled), or T-junction cracks where the far tree's mesh meets the LOD ground; at that distance the gap is a
+pixel or two and the sky behind the disc shows through.
+
+Looked at 2026-11-12 (impostors session, not fixed): with the impostors on (`claude/impostors-gpu`) the LOD sections
+mesh **no** tree cells (`mesh_section_trees(…, false)`). The section's surface pass draws a column's top cell only
+(`lod_mesher.rs` ~l. 499 skips tree cells above the surface, `special.y`); where a column's top is a tree cell (a
+trunk, a crown) the ground cell under it is not the column's top and gets no top face, so without the tree cells
+there is a hole in the ground the size of the trunk's column — the likely cause, and with impostors the holes show
+between the far trees from above. Fix: the generator's "ground without trees" for the section's surface (proposal
+I-4), with a watertightness test (every column of a forest section has a top face at its ground).
+
+Fixed 2026-11-12 (`claude/far-ground-holes`): the cause was as suspected, and it held with the trees drawn too.
+The section's ground pass took a tree cell as solid: the log over a trunk's ground cell hid that cell's top, and
+with the surface data the column's topmost solid cell was the tree's, so its ground found no surface. The tree
+pass draws a log as an octagon (its corners open) and a leaf chamfered, so even with Far trees on the sky showed
+through beside each trunk; with them off (the impostors) the whole trunk column was a hole. Now
+`mesh_section_above` meshes the ground from the section's cells with the tree cells cleared (the tree pass still
+draws them, over the ground); the near chunks are unchanged. Test `lod_mesher_tests.rs` `far_ground_under_trees`
+(crowned and crownless trees, on the section's edge and corner too, with and without surface data, trees on and
+off: every column's top covered at the ground's height, and trees off meshes exactly as the treeless ground, so no
+seam a neighbour section's LOD meets changes), on both faces: red (holes at every trunk) → green. Not checked:
+the in-game look from high up at night (local, a GPU).
+
+### 98. `dwell-mesh`'s face-parity test fails on face B at a leaf card's packed normal (fixed after 0.54.173)
+
+Owner's brief, 2026-11-12: "`cargo test -p dwell-mesh` a_chunk_meshes_the_same_face_local_on_either_face::b fails on
+main (\"cutout plants\"), reported by two sessions." Suspected: 6578783's Tall grass density (a per-cell hash not
+face-local) or the faded-plant drop. Cause: neither; the test fails the same at e9b27e2, before 6578783. The
+differing value is a leaf card's `plants.y`, its plane normal octahedral-packed (#78's far-side cull, `card_speed`).
+Two parts: the test's `local_mesh` turned positions and normals face-local but not the packed normal; and the
+packing's 2047-step grid is odd, so the octahedral fold falls between grid points and face B's mirror (unpack, flip
+y, re-pack in `flip_arrays_y`) drifted a step from face A's (-786733 vs -786734). Fixed: the grid is 2048 steps
+(`leaves::CARD_GRID`, radix 2049, the WGSL `card_normal` with it), the square's folded edges and corners packed one
+way, and `local_mesh` un-flips the packed normal. Tests: the parity test (red → green), and
+`a_leaf_cards_packed_normal_flips_exactly` (red on the old grid: a flip and back changed the bits).
+
+### 96. Villagers' faces are jet black, not their skin colour (fixed after 0.54.171)
+
+Owner, 2026-11-12: "Why do all the villagers look like their faces are jet black? Not even matching the rest of
+their skin color?" Then: "Oh maybe not all of them, but their hair and faces are really crazy looking." and "I think
+some of the clothes and hat vertices are being assigned incorrectly (like they should be face and hair)." And: "You
+should have tooling for debugging this and setting up a model so it can be retextured" (WORK_QUEUE item 43).
+- **Cause:** two. (1) The GLBs' vertex colours are linear (glTF `COLOR_0`) and the skinned shader read them as sRGB
+  bytes, decoding them a second time: every skinned model drew darker than its palette and the dark ramps near
+  black — a skin_deep villager's face at a sixteenth of its brightness, skin_brown at a third. Your own body and the
+  other players drew darker too, but in skin_fair it reads as skin. (2) The villager's colour parts recoloured by
+  colour, not by part: the hat's repaint by height (hair_brown → wool_yellow above 1.4 m and out past 16 cm) had
+  caught the hair's fringe, so the fringe took the hat's colour; the neck (skin_tan) and the hair's shading
+  (skin_brown, soil) kept the model's colours whatever the variant.
+- **Fix:** the vertices carry sRGB bytes (`skinned::vertex_bytes` through `dwell_models::linear_to_srgb`), and a
+  **part map** per model (`shared/models/parts/peasant.json`, `shared/models/parts.mjs`: a part a vertex, seeded
+  from the mesh: the hat and the hair are islands of their own, the skin, shirt and trousers by colour on the body)
+  is what an NPC's colours recolour (each vertex's part in its colour's alpha byte; the part's new ramp at the
+  vertex's shade). The repaint is by part now, and gives the fringe its hair_brown back. `parts.mjs --render` draws
+  a part map to PNGs, `--stats` counts it.
+- **Tests:** `every_villager_variant_draws_its_face_in_its_skin_and_its_hair_in_its_hair` (dwell-client,
+  render/skinned.rs): at every detail level and 64 variants, by position, the face draws the variant's skin as
+  bright as its ramp, the back of the head its hair, no head vertex is clothes, the hat is only its brim and crown.
+  The same check run on main's pipeline (colour-matched remap, linear bytes) failed: a skin_deep face drew at
+  luminance 0.0044 against the ramp's 0.071, and 5 fringe vertices carried the hat's wool_yellow at detail 1. Also
+  gen.test.mjs (the part map's checks, the fixture's part map by data alone, the repaint by part, the Peasant's
+  islands) and dwell-models' `a_part_map_is_added_by_data_alone`.
+
+### 94. Jumping into a tree's leaves rubber-bands you toward the ground until you back out (fixed after 0.54.14x)
+
+Owner, 2026-11-12: "A bug I just found seems to be a mismatch between server and client for leaves collision.
+Jumping into the leaves of a tree makes you rubberband falling to the ground endlessly until you back out of the
+leaves." Suspects: the client's predicted controller and the server's disagree about leaves — one treats leaf cells
+as solid (or as a climbable/slowing medium) and the other as passable, so every snapshot corrects the predicted
+position and prediction falls again; candidates: leaves' collision shape or `solid` flag read from different data
+(block registry vs the mesher's leaf cards / leaf density), trees composed at chunk load on one side only
+(TREE_GROWTH layer, tombstones/growers) so the server or client has no leaf blocks there, or leaves' `flooded`/state
+aliasing differing across the registry sync.
+Cause: not the collision or the leaf cells — both sides built the same crown voxel for voxel, and both controllers pass
+through leaves (`passable`). The server alone also runs the buried-player lift (`server/buried.rs`, BUGS #82), which
+read any `solid` full cell as ground to be lifted out of: leaves are `solid` (and `passable`), so a player whose centre
+entered a crown was teleported to the crown's top every tick while the client's prediction fell through it — each
+snapshot pulled the prediction back up and it fell again, until the player left the leaves. Fixed: the lift asks
+`dwell_blocks::collision_class`, the terrain collision's own test, so a passable block buries no one. Tests:
+`netcode` `jumping_into_a_trees_leaves_is_predicted_exactly_without_latency` (the real server and a predicting
+client on a flat world with a pine, walking and jumping in and out of the crown: 10 replays of 1–3 m on the unfixed
+code → 0, every acknowledged position exact) and `buried` `a_player_inside_leaves_is_not_buried_and_falls_through_them`
+(both faces: held at the crown's top 4.6 m up on the unfixed code → falls to the stone).
+
+### 93. Vertical swings (axe, sword, …) play twice for one swing (fixed after 0.54.14x; the look in game left local)
+
+Owner, 2026-11-12: "For vertical swings on axe, sword, etc, it sort of double swings." One vertical swing shows two
+down-strokes (or a stroke, a snap back and a second stroke). Suspects: the vertical clip's keyframes loop or include a
+second stroke; the swing restarted by a second trigger (the click and the hit event, or the server's echo of the
+swing re-starting the local one); the level/vertical choice flipping mid-swing. Check with `clip_probe` and the
+swing's trace, both faces.
+Owner, 2026-11-12, clarifying: **"The animation double swings"**: the vertical swing's animation itself (the arms and
+tool show two strokes per swing), not two hits.
+Cause (`clip_probe`, a swing played frame by frame through the arms' animator as `game.rs` drives it): the miss's clip
+has one stroke; a **hit** drew three. After the hit-stop the pull-out played the clip backwards from contact to its start,
+so the head went back up over the shoulder (screen y +3.3) and came down to rest again, and when the swing ended the
+clip was let go at that start (`drive_action(None)`) and ran on by itself: the whole swing a second time. The level
+swing did the same, reading as a pull back and a second chop. Fixed: the contact's pose is held and faded straight
+back to the arms' rest over `recoverHitS` (`SwingRun::clip_weight`, `Animator::drive_action_weighted`), and an ended
+swing stops its clip (`ArmsDrive::Release` → `Animator::stop_action`). Test: `clip_probe`
+`one_swing_draws_one_stroke_hit_or_miss` (vertical and level, a hit at the arc's middle, an early hit and a miss: one
+stroke, back at rest), red on the unfixed code (vertical hit: 3 down-strokes) → green.
 
 ### 88. Volumetric clouds z-fight against tall terrain (fixed after 0.54.135; the browser check left local)
 

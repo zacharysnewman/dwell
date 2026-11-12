@@ -253,8 +253,11 @@ and chain; the rigid parts below are drawn only with the dev switch `?fparms=rig
   same parts, another `pose`), so toggling the swing changes the grip (0.50.39). The blade faces away
   from the eye in both holds and leads the head through each swing (`tests/axe.rs`; it was held
   backwards before). The clips are timed to a miss (0.62 s: wind-up, arc, follow-through,
-  recovery); a hit drives them (`Animator::drive_action`): held through the hit-stop, then played
-  back to the rest.
+  recovery); a hit drives them (`Animator::drive_action_weighted`): held at contact through the
+  hit-stop, then the held pose faded straight back to the arms' rest over `recoverHitS`, and the clip
+  stopped at the swing's end (`Animator::stop_action`). Before 0.54.x a hit played the clip backwards
+  to its start (a vertical swing's head back up over the shoulder and down again) and let it run on
+  from there, a second swing (BUGS.md #93; `clip_probe` `one_swing_draws_one_stroke_hit_or_miss`).
 
 **The sword (WORK_QUEUE item 35).** A `weapon` tool swings through the same arms clips as the axe
 (`chop_level` right to left, `chop_vertical` top to bottom, fitted with `clip_probe --fit`), so its
@@ -266,7 +269,7 @@ its own (`fp_slash_level`, `fp_slash_vertical` and the bodies', the blade's edge
 single sword's grip is measured from the FBX (ITEMS.md §1a′); and the block's raised pose (§ ARCHITECTURE.md
 "Weapons": a player's raised block turns an NPC's strike across its blade; one past it hurts).
 
-### 5.1 Your own body in first person **[built, C1b]**
+### 5.1 Your own body in first person **[built, C1b; drawn from the Peasant since 0.54, §11.12]**
 
 The owner (2026-10-21): "I want to see legs in first person, particularly when sliding." The
 answers (question tool):
@@ -279,6 +282,11 @@ answers (question tool):
 - **The constraint** (verbatim): "The main thing to watch out for with full body draw is not
   clipping the camera into the player model." No body geometry may come inside the camera's near
   plane or fill the view, in any clip or pose, looking fully down or up, on both faces.
+
+Since 0.54 the body drawn is the **Peasant's** skinned mesh (§11.12): what it leaves out is cut by
+skin weight (`models.json` `firstPerson.body`), and where it stands is this section's placement, the
+same data (`back`, `lookDown`, `clear`, `near`) over its skinned vertices. The rigid body described
+here is drawn only with `?fparms=rigid` (with the rigid arms, for comparison).
 
 **The design** (data: `firstPerson.body` in `characters.json`; code: `dwell-characters` `own.rs`,
 `render/characters.rs` `own_frame`):
@@ -667,8 +675,8 @@ characters' ramp from the vertex's palette colour, the same lights and shadow ma
   light rides the same frame. A model with no `hand` (the animals) holds nothing.
 - **Your shadow** (the `cast_only` body) is the Peasant, into the nearest cascade only, with your
   held item in its hand: your shadow is what others see.
-- **Still rigid**: your **own body** seen in first person (§5.1). Your first-person arms are the
-  Peasant's since 0.54 (§11.10).
+- **Your own body** seen in first person (§5.1) and your first-person arms are the Peasant's
+  since 0.54 (§11.12, §11.10): nothing of the player is drawn rigid except under `?fparms=rigid`.
 
 ### 11.6 The animals in the world (phase 3, ADR 0073)
 
@@ -794,9 +802,9 @@ model?" Your arm on screen is the Peasant's own right arm, the same sleeve, cuff
   joints through `arms_frame`; the held item on the Peasant's hand by `models.json` `hand`, as on
   another player's body (§11.5). Since 0.54 the item is put on the skinned hand as it is, in first
   and third person: the hand already carries the item's turns from the retarget (they were applied
-  twice before, the axe 50° off the rig's hand; `another_players_item_is_turned_once_on_the_skinned_hand`). `?fparms=rigid` (`setRigidArms`) draws the old rigid arms instead,
-  a dev switch for comparison; the rigid arms' parts stay in `characters.json` for it and for your
-  own body (§5.1).
+  twice before, the axe 50° off the rig's hand; `another_players_item_is_turned_once_on_the_skinned_hand`). `?fparms=rigid` (`setRigidArms`) draws the old rigid arms and the old rigid
+  body (§5.1) together instead, a dev switch for comparison; the rigid parts stay in
+  `characters.json` for it.
 
 ### 11.11 Wandering NPCs (WORK_QUEUE item 38, 2026-11-12)
 
@@ -849,13 +857,29 @@ by default) and a combat hook; the combat AI waits for the sword mechanic.
   with the `npcs.swings` capability: its NPC part's pose is 3 (level) or 4 (vertical) while it swings
   (`NPC_STRIKE_POSES`), and the client plays the rig's `chop_level` or `chop_vertical` for it
   (`creatures::npc_role`).
-- **Repaint** (models.json `repaint`, shared/models/coat.mjs `applyRepaint`): one part of a model's
-  mesh is given a palette ramp of its own, so that an NPC colour part can recolour it alone. Each
-  vertex coloured with a stop of `from` at least `minY` up, and either `beyond` out from the up axis or
-  `above` up, takes the same stop of `to`. The Peasant's hat is hair_brown in the pack, so it becomes
-  `wool_yellow`, and the villager's `hat` part recolours it (owner, 2026-11-12: "Hat gets its own
-  colours"). `import.mjs --coat` applies it to the checked-in GLB, with no packs needed, and gen.mjs
-  fails when the GLB isn't repainted.
+- **Part maps** (BUGS.md #96, WORK_QUEUE item 43; `shared/models/parts.mjs`, models.json `parts`): which
+  part each vertex of a model's full mesh (`detail_0`) belongs to, a file a model
+  (`shared/models/parts/peasant.json`: `parts` the names, at most 6; `vertices` one character a vertex,
+  `0` none, `k` the k-th part; `seed` the rules that made the first painting). The vertices are the
+  source of truth; the Model Part Painter (`docs/prototypes/model-part-painter.html`, item 43) paints
+  them by hand. `--seed` paints from rules (the
+  vertex's mesh island nearest a point, its colour's nearest palette ramp, its skin weight on joints,
+  its height; the first rule matching wins): the Peasant's hat and hair are islands of their own, the
+  skin (`skin_fair`, `skin_tan`), shirt (`wool_green`, `leaf`) and trousers (`flint`) by colour on the
+  body; the boots, belt and collar are no part and keep their colours. Each lower detail level takes
+  its parts from the full mesh (a triangle votes with its corners and centre, each the part of the
+  nearest full-mesh vertex of its colour). `gen.mjs` checks the file (names, every vertex a known part,
+  as many as the mesh has, every NPC colour part a part of its model) and writes each level's parts
+  into the model's table (`ModelData::parts`, `dwell_models::Parts`). `--render` draws the part map to
+  front, side and back PNGs (a colour a part) for checking it without the game; `--stats` counts the
+  vertices of each part at each level.
+- **Repaint** (models.json `repaint`, shared/models/coat.mjs `applyRepaint`): a part of a model's mesh
+  given a palette ramp of its own: each vertex of `part` coloured with a stop of `from` takes the same
+  stop of `to`. The Peasant's hat is hair_brown in the pack, so it becomes `wool_yellow` (owner,
+  2026-11-12: "Hat gets its own colours"); the hair's fringe, caught by the first repaint (by height,
+  to 0.54.171), takes `hair_brown` back. `import.mjs --coat` applies it to the checked-in GLB with no
+  packs needed (re-seeding the part map if a re-import changed the mesh), and gen.mjs fails when the
+  GLB isn't repainted.
 - **Idle poses' `$drop`** (§11.6, models.json `poses`): metres the whole body is lowered while posed, for
   a sitting or lying animal, since joint turns can't bring the hips down. It is blended in with the
   pose (`Grip::drop`, render/skinned.rs). The wolf's skeleton: `spine.004` is the hips, `spine`…`spine.003`
@@ -866,11 +890,15 @@ by default) and a combat hook; the combat AI waits for the sword mechanic.
   kind's data and variant) and held item; its role is its speed's while moving, else `look` or `sit`
   (the Peasant has neither clip yet, so they play its fallback, idle).
 - **Drawn** (2026-11-12): `render::characters::creature_draw` turns a creature into its skinned draw
-  and what its hand shows. An NPC's colours become a **remap** (`dwell_models::colour_remap`: per
-  part the model ramp's base and the picked ramp's base, by name from `RAMP_BASES`, which
-  `shared/models/gen.mjs` writes from `shared/textures/palette.json`; at most `MAX_REMAP` 4), sent per
-  body in the skinned instance block after the light (`remap` rows); the vertex shader swaps a face
-  whose colour is a pair's base (within 1.5/255) for the other. Its `held` item is drawn as a player's
+  and what its hand shows. An NPC's colours become a **remap by part** (`dwell_models::part_remap`:
+  per part of its model's part map, the model ramp's base and the picked ramp's base, sRGB, by name
+  from `RAMP_BASES`, which `shared/models/gen.mjs` writes from `shared/textures/palette.json`; at most
+  `MAX_REMAP` 6 parts), sent per body in the skinned instance block after the light (`remap` rows, a
+  pair a part). Each vertex carries its part in its colour's alpha byte (`skinned::vertex_bytes`), and
+  the vertex shader gives a remapped part's vertex the new base at its shade of the old (luminance over
+  the old base's; `dwell_models::recolour` mirrors it), so the Peasant's skin_tan neck and the hair's
+  shading follow the variant too. To 0.54.171 the remap matched colours, so whatever shared a
+  ramp with a part took its colour (BUGS.md #96). Its `held` item is drawn as a player's
   is, on the Peasant's `hand.R` (§11.5), in the item's tool's level hold (`sword`), the fist closed
   on it (`grips`). Animals, and NPCs from servers without the NPC part, draw as modelled.
   `an_npc_is_drawn_in_its_variants_colours_with_its_sword_in_its_fist` pins it (both faces).
@@ -879,11 +907,15 @@ by default) and a combat hook; the combat AI waits for the sword mechanic.
   characters rig's clip for its role (`npc_rig_pose`: idle, walk, sprint; a role the rig has no clip
   for, `look` and `sit`, plays idle), looped at a phase of its own, its held item's hold on top, so the
   sword sits in its fist as in a player's.
-- **The remap matches linear colours** (round 2 fix): the GLBs' `COLOR_0` is linear (glTF), so the
-  remap compares the ramp bases through the sRGB curve (`dwell_models::srgb_to_linear`); in sRGB it
-  matched no vertex and every villager drew alike. Seen in game (5 spawned villagers): shirts,
-  trousers and skin vary; the `hair` part's `hair_brown` is mostly the **hat** (its 942 vertices), so
-  hats take hair colours: the part→ramp guess needs the owner's call (a hat part of its own).
+- **The vertices carry sRGB colours** (BUGS.md #96): the GLBs' `COLOR_0` is linear (glTF), and the
+  skinned shader reads its vertex colour as sRGB bytes; to 0.54.171 the linear values went in
+  as they were, so every skinned model drew darker than its palette and the dark ramps near black
+  (a skin_deep villager's face at a sixteenth of its brightness: "jet black"). `vertex_bytes` now
+  encodes them through the sRGB curve (`dwell_models::linear_to_srgb`), so a model draws its palette's
+  colours. `every_villager_variant_draws_its_face_in_its_skin_and_its_hair_in_its_hair` (render/skinned.rs)
+  pins it: at every detail level and 64 variants, the face (the head's front at nose height) draws the
+  variant's skin at its shade and as bright as the ramp, the back of the head its hair, no head vertex
+  is clothes and the hat is only its brim and crown.
 - **Dev**: `__dwell.spawnHerd(kind, size?, offset?)` (a local world) puts a far record of a deer
   herd (`'deer'`) or a wolf pack (`'wolf'`) of `size` head (5) `offset` m (12) along +x from the
   player, fed and rested; the near ecology brings it in as individuals on its next tick, posed by
@@ -893,3 +925,33 @@ by default) and a combat hook; the combat AI waits for the sword mechanic.
 - **Not yet**: sit and look-around clips (the rig has none); the NPC's raised guard and swings drawn
   from the server's fight (item 35).
 
+### 11.12 Your own body from the Peasant (0.54, WORK_QUEUE item 37)
+
+The owner (2026-11-12): "Im noticing my hands look like the new model, but my legs/body doesn't?
+What's up with that?" Looking down or sliding you now see the Peasant's own trousers, boots and
+tunic, the body others see and your shadow casts.
+
+- **Data**: `models.json` `firstPerson.body`: `hide` (skin joints: the Peasant's neck and head
+  `spine.004`–`spine.006`, so its hat and hair, and the left arm `upper_arm.L` down: the owner's
+  "never two pairs") and `weight` (0.5). The generator fails on an unknown joint, one listed twice
+  (the arm's `firstPerson.joints` are hidden already) or a weight outside (0, 1]; the fixture's
+  two-joint model draws a body by data alone (`a_fixture_models_body_is_cut_by_data_alone`).
+- **The mesh** (`dwell_models::first_person::body_triangles`, at load and on a detail change): the
+  body mesh less every triangle with a vertex that has at least `weight` of its skin weight on
+  `hide` or on the first-person arm's joints: a third index buffer over the body's vertices, the
+  arms view's arm and it sharing no triangle (the head and hat are 40 % of the Peasant).
+- **The pose**: the rig's pose your shadow plays (the same clips, times, swings and held-item
+  turns, through the retarget map, §11.9); no grip and no held item (the arms view holds it).
+- **Where it stands**: as the rigid body did (§5.1): on your feet, turned to your yaw, moved back
+  along its own −z by `own::shift_points` (`back`, `lookDown`, `clear`) over its kept vertices
+  skinned on the CPU in the body's frame (`skinned::own_joints`), so the same on both faces;
+  fragments within `near` past the near plane discarded (the instance's `light.z`).
+- **Tests** (`render::characters` `own_body`, `both_faces!`): the §5.1 sweep (every clip and swing,
+  the pitch −90°…90°, the eye a step low and easing out of a crouch) at every detail level: no
+  triangle within 0.13 m of the eye (the nearest 0.166 m), at most 21 % of the screen covered
+  (crouch-walking, looking straight up), the feet in view looking down; the lowest vertex within
+  8 cm of the ground under the eye and of the rigid body's, standing, walking, crouched and sliding
+  (`your_skinned_bodys_feet_are_the_rigs_height_below_the_eye`).
+- **Differs from the rigid body**: the Peasant's legs are shorter than the rig's, so sliding its
+  feet reach less far ahead and come into view from 30° down (the rigid legs' from 15°). The in-game
+  look is to be checked on a GPU.

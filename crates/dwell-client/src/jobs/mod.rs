@@ -74,6 +74,25 @@ pub enum Job {
         w: i32,
         h: i32,
     },
+    /// A slab of the clouds' shape noise (docs/CLOUDS.md §9.3, `dwell_look::cloud_noise`): the
+    /// detail texture's (else the base's) slices `z0..z1` at `size`³.
+    CloudNoise {
+        detail: bool,
+        size: u32,
+        z0: u32,
+        z1: u32,
+    },
+    /// One baked far tree of the impostors' atlas (`dwell_worldgen::impostor::Config::bake_layer`,
+    /// docs/proposals/TREE_IMPOSTORS.md): array layer `layer` at `px` texels a view.
+    ImpostorBake { layer: u32, px: u32 },
+    /// The species trees anchored in the square `x0..x0 + size` × `z0..z0 + size` of face `face`
+    /// (0 A, 1 B), face-local (`TerrainGenerator::far_trees`): a tile of far tree impostors.
+    FarTrees {
+        face: u8,
+        x0: i32,
+        z0: i32,
+        size: i32,
+    },
     /// The block states the main thread registered at run time (synced from a server, ADR 0038),
     /// as `dwell_blocks::sync::extension_payload`: a worker adds them to its own table, so mesh
     /// jobs naming synced ids read the same rows. Sent to every worker ([`crate::pool::Jobs::broadcast`]).
@@ -121,6 +140,18 @@ pub enum Output {
     Map(Option<Vec<u8>>),
     /// A colour map strip's rgba8 sRGB texels, rows of x; `None` without a terrain.
     LodMap(Option<Vec<u8>>),
+    /// A cloud-noise slab's RGBA8 texels (x, then y, then z).
+    CloudNoise(Vec<u8>),
+    /// A baked impostor layer: the bounding sphere's centre height over the foot and radius (m),
+    /// the albedo and the normal + depth atlases (RGBA8 rows); empty past the layers.
+    Impostor {
+        centre_y: f32,
+        radius: f32,
+        albedo: Vec<u8>,
+        normal_depth: Vec<u8>,
+    },
+    /// A tile's far trees (`dwell_worldgen::impostor::FarTree`); empty without a terrain.
+    FarTrees(Vec<dwell_worldgen::impostor::FarTree>),
     ChunkMesh(Box<ChunkMeshes>),
     SectionMesh(Box<SectionMeshes>),
     Failed(String),
@@ -257,6 +288,54 @@ impl Runner {
                 }
                 Output::Map(Some(out))
             }
+            Job::CloudNoise {
+                detail,
+                size,
+                z0,
+                z1,
+            } => {
+                // A size the data allows (a power of two the generator checked), else nothing.
+                if !size.is_power_of_two() || !(8..=256).contains(&size) || z1 <= z0 {
+                    return Output::CloudNoise(Vec::new());
+                }
+                let slab = if detail {
+                    dwell_look::cloud_noise::bake_detail_slab(size, z0, z1)
+                } else {
+                    dwell_look::cloud_noise::bake_base_slab(size, z0, z1)
+                };
+                Output::CloudNoise(slab.into_iter().flatten().collect())
+            }
+            Job::ImpostorBake { layer, px } => {
+                let config = dwell_worldgen::impostor::Config::get();
+                match config.bake_layer(layer, px.clamp(4, 256)) {
+                    Some(b) => Output::Impostor {
+                        centre_y: b.centre[1],
+                        radius: b.radius,
+                        albedo: b.albedo.into_iter().flatten().collect(),
+                        normal_depth: b.normal_depth.into_iter().flatten().collect(),
+                    },
+                    None => Output::Impostor {
+                        centre_y: 0.0,
+                        radius: 0.0,
+                        albedo: Vec::new(),
+                        normal_depth: Vec::new(),
+                    },
+                }
+            }
+            Job::FarTrees { face, x0, z0, size } => match &self.terrain {
+                Some(t) if size > 0 => {
+                    let face = if face == 1 {
+                        dwell_world::Face::B
+                    } else {
+                        dwell_world::Face::A
+                    };
+                    Output::FarTrees(
+                        t.local(face)
+                            .far_trees((x0, z0), (x0 + size - 1, z0 + size - 1)),
+                    )
+                }
+                _ => Output::FarTrees(Vec::new()),
+            },
             Job::LodMap {
                 face,
                 heights,

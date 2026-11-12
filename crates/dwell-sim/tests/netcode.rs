@@ -1703,3 +1703,46 @@ fn pushing_a_floating_raft_is_predicted_without_snaps_at_150_ms_rtt() {
     let off = percentile(errs.iter().map(|e| e.abs()).collect(), 0.95);
     assert!(off < 0.03, "the stand-in off by {off} m (p95)");
 }
+
+// --- leaves (BUGS.md #94) ------------------------------------------------------------------------
+
+/// The flat world with a pine (`shared/structures/pine_tree.json`: leaves from 1 m up) at x 6.
+fn tree_generator() -> ChunkGenerator {
+    let pine = load("dwell:pine_tree").expect("the pine structure");
+    with_structure(
+        flat_generator(),
+        Arc::new(pine.place([6, dwell_world::FLAT_TOP_Y, 0], 0)),
+    )
+}
+
+/// BUGS.md #94: jumping into a tree's crown rubber-banded the player toward the ground. The server
+/// and the client's prediction must agree there: no replays, each acknowledged position exact.
+// face-a-only: the netcode sim joins on face A; buried.rs pins the server's side on both faces.
+#[test]
+fn jumping_into_a_trees_leaves_is_predicted_exactly_without_latency() {
+    let mut sim = NetSim::with_world(LinkConditions::default(), tree_generator(), [2.5, G, 0.5]);
+    let c = sim.join(
+        Some(Box::new(|tick, c| {
+            // Into the crown and back out, jumping all the while.
+            let x = if (tick / 120) % 2 == 0 { 6.5 } else { 2.5 };
+            let mut i = steer_to(c, x, 0.5, false);
+            i.jump = tick % 30 < 20;
+            i
+        })),
+        true,
+    );
+    let mut top = 0.0f32;
+    for _ in 0..ticks(8.0) {
+        sim.step(1);
+        top = top.max(sim.clients[c].position().y);
+    }
+    let c = &sim.clients[c];
+    assert!(top > G as f32 + 0.5, "jumped: {top}");
+    assert!(
+        c.predictor.stats().snapshots > 100,
+        "{:?}",
+        c.predictor.stats()
+    );
+    assert_eq!(c.predictor.stats().replays, 0, "{:?}", c.predictor.stats());
+    assert!(percentile(c.ack_errors.clone(), 1.0) < 0.001);
+}

@@ -54,8 +54,9 @@ defaults were chosen and are open to change (§6):
     the day sky's ambient, the moon's and the night sky's ambient lights.
   - Day or night by the sun's height over the face (the cycle has one time of day all round the
     sky; before it, a turned sky could be night on one side and day on the other).
-  - Self-shadow (High): `lit = exp(−absorption × (0.35·d + d'))`, with `d'` the density
-    `shadowStepM` toward the light. Low uses `0.6·d` alone.
+  - Self-shadow: `lit = exp(−absorption × (0.35·d + d'))`, with `d'` the density
+    `shadowStepM` toward the light at `shadowOctaves` (Medium, High) or `lowShadowOctaves` (Low)
+    octaves; with 0 of them, `0.6·d` alone (Low until 2026-11-12, §10).
   - A silver lining brightens thin cloud near the light. A low sun warms the lit parts toward
     `sunset`.
   - Distant cloud mixes toward the clear sky behind it, which already carries the horizon haze.
@@ -205,12 +206,10 @@ amendment records the decision. Built in two rounds the same day: the march and 
   (the composite puts the scene in front, §8.6). The steps are spread evenly over the ray's span
   inside the layer, offset per pixel and frame (`cloud_jitter`), and the march stops once the cloud
   is 98 % opaque. With no light samples, a step's own density stands for the light's path.
-- **Density** (`dwell_cloud_density`): the deck's own noise is the weather map (the same noise point,
-  wind and coverage, so the volume's clouds sit where the deck's would, and a weather system drives
-  both with one coverage); for the march's budget it takes a one-octave warp and two octaves. The
-  coverage's cut rises with height (`topFloor`), so each cloud narrows into a rounded top over a
-  flat base and the densest clouds are the tallest. 3D value noise of `detailCellM` cells erodes it
-  (`detailErosion`; it tiles with the deck: `scaleM` is a whole multiple of it).
+- **Density:** the shape model of §9 (since 2026-11-12): the deck's noise as the weather map (cover, cloud
+  type, precipitation), height profiles per cloud type, a baked Perlin–Worley base shape eroded by baked
+  Worley detail. Until then it was the deck's coverage cut rising with height and eroded by 3D value
+  noise, which read as white blobs (the owner).
 - **Extra sources: plumes,** at run time (§8.7): vertical columns (steam over lava, a volcano's ash,
   a smoke stack) the game adds, moves and removes, marched apart from the layer. `clouds.json`'s
   `plumes` are the list's defaults (empty as shipped).
@@ -311,8 +310,8 @@ Screenshots (bench shots, judged honestly):
 - **Accumulation.** The step offset turns each frame (interleaved gradient noise plus a golden-ratio
   step over 16 frames). Each texel blends its new march with the last frame's buffer, reprojected by
   direction through the last frame's camera (`CloudPrev`: right, up, forward, tangents). Clouds are
-  far, so direction is enough; where they are near, the eye's move over the cloud's distance hands
-  the texel over to the new frame. The history starts over with new buffers, the first frame, or a
+  far, so direction is enough; since §9.6 a resolve pass after the march clamps the history into its
+  neighbourhood instead of handing a texel near the eye to its raw march. The history starts over with new buffers, the first frame, or a
   move over `CLOUD_HISTORY_JUMP_M` (200 m) in a frame (`cloud_prev_block`, tested). The pass then
   copies its buffer into the history for the next frame.
 - **Depth-aware upsample.** The composite weighs the four texels round the pixel by their scene
@@ -478,3 +477,300 @@ fixture slope 4 km out, 1.7 km up, inside the layer): no sample past the scene a
 any of the jitter's 16 frames; a cloud round the rock draws its part in front, with the cut the same on every
 frame (red before: 0 to 0.79 over the sequence); at a silhouette a rock pixel takes the rock's texel and a sky
 pixel the sky's; both faces; the twins validate with naga. `dwell-client` `shaders.rs` pins the wiring.
+
+## 9. Cloud shape (2026-11-12)
+
+The owner (WORK_QUEUE item 13): "The clouds have lighting but they don't follow cloud shapes at all, do some
+research into cloud simulation. They look like white blobs." And earlier: "useful for weather sim, and volcano
+smoke. So they need to be performant." The budget: High at 60 fps on an M1 MacBook Air; Low and phones keep the
+deck.
+
+### 9.1 What makes clouds read as clouds (research)
+
+From the production talks (no web access in the session that wrote this; summarised from the talks themselves):
+
+- **Schneider & Vos, "The Real-time Volumetric Cloudscapes of Horizon Zero Dawn" (SIGGRAPH 2015 Advances;
+  GPU Pro 7, "Real-Time Volumetric Cloudscapes").** The model nearly every real-time sky since uses. A
+  **weather map** (2D, per column: coverage, precipitation, cloud type) says where clouds are and what kind;
+  a **height gradient per cloud type** (stratus thin and low, cumulus tall, cumulonimbus towering) says how
+  each fills the layer; the **base shape** is a 128³ tiling 3D texture of **Perlin–Worley** noise (Perlin
+  dilated by inverted Worley: billowy, connected blobs, which plain fBm isn't) plus three Worley octaves
+  combined as an fBm; it is **remapped** by the coverage (`remap(base, 1 − coverage, 1, 0, 1) × coverage`),
+  so low coverage keeps only the densest cores and the cloud shrinks to rounded cores rather than fading;
+  a 32³ **Worley detail** texture **erodes only the edges** by a second remap (`remap(base,
+  detail × k, 1, 0, 1)`: where the base is 1, the core, nothing is lost), its fBm **inverted with height**:
+  wispy streaks at the base, billows at the top; a 2D **curl noise** distorts the detail's point (turbulent
+  wisps). **Wind** moves the layer and **pushes the tops downwind** (shear, a leaning cloud); the light march
+  samples the cheap base shape only (detail is invisible in the light's few samples); Beer–powder lighting.
+  Rendered at ¼ resolution over 16 frames with temporal reprojection.
+- **Schneider, "Nubis: Authoring Real-Time Volumetric Cloudscapes with the Decima Engine" (SIGGRAPH 2017
+  Advances).** The production follow-up: the **anvil** (`coverage` raised toward the top by an anvil bias,
+  so a cumulonimbus spreads), height gradients authored per type and mixed by the weather map's type value,
+  adaptive march steps (long in empty air, short in cloud), and the cost per pixel kept low by sampling the
+  detail only where the base shape has density. **"Nubis³: Methods (and madness) to model and render
+  immersive real-time voxel-based clouds" (SIGGRAPH 2022 Advances, Forbidden West)**: flying *through*
+  clouds made the 2D-weather-map model's thin parts read badly up close, so the shapes moved to authored
+  voxel clouds (a signed-distance field plus density) with the same noise erosion; and the near clouds got
+  more samples than the far ones. We keep the 2015/2017 procedural model (a weather system and smoke will
+  drive it at run time; no authored voxels) and take the near-cloud lesson (§9.6).
+- **Hillaire, "Physically Based Sky, Atmosphere and Cloud Rendering in Frostbite" (SIGGRAPH 2016 Physically
+  Based Shading course).** The same density model (weather texture, height profiles by type, Perlin–Worley
+  base and Worley erosion), with energy-conserving integration of the march, a dual-lobe phase, and the
+  multiple-scattering approximation (octaves of wider, weaker Beer); what §8.8's lighting already follows.
+- **Bauer, "Creating the Atmospheric World of Red Dead Redemption 2: A Complete and Integrated Solution"
+  (SIGGRAPH 2019 Advances).** The weather drives everything: cloud types and coverage come from the weather
+  system's state, with the same base-and-erosion density, the clouds' shadows and the fog from it; the
+  lesson for us is the weather map as the one input a weather sim writes (`weather` in §9.2).
+- **Häggström, "Real-time rendering of volumetric clouds" (Master's thesis, Umeå University, 2018).** A
+  reimplementation of the Schneider model with its costs measured: the noise bake, the textures' sizes,
+  temporal reprojection's ghosting and how a neighbourhood clamp keeps it stable; confirms the 128³/32³
+  sizes as plenty and that the light march needs no detail.
+
+What we adopt, by part: the weather map (from our deck noise, so the volume's clouds still sit where the
+deck's would and one coverage drives both), cloud types with height profiles and an anvil as data, the
+Perlin–Worley base remapped by the cover, remap erosion by Worley detail inverted with height, curl
+distortion, wind shear, the light march on the base shape only, blue-noise jitter and a clamped history
+(§9.6). Not adopted (yet): authored voxel clouds (Nubis³), adaptive steps, the clouds' shadows on the ground.
+
+### 9.2 The weather map and the cloud types (data)
+
+- **Weather** (`clouds.json` `weather`, `cloud_weather`, twin `weather`): per column, from the deck's own
+  stretched noise `n` (two octaves, warped: the march's budget) and the global coverage (the uniform a weather
+  system sets): **cover** `smoothstep(1 − coverage, 1 − coverage + form.coverageSoftness, n)` (0 with no
+  coverage: no cloud at all); **type** along the types' axis `type + typeFromCoverage × (n − (1 −
+  coverage)) + typeVariation × (2v − 1)` (`v` a second value noise one deck cell across), so a cloud's core
+  towers over its edges and some clouds over others; **precipitation** (thicker, darker bases: each type's
+  `darkening`). Today type and precipitation are the data's; a weather system will write them (§9.7).
+- **Cloud types** (`cloudTypes`, an ordered list; `cloud_type_profile` is generated from it, twin
+  `type_profile`): each a place on the type axis (`at`), a height profile as two spans in shares of the layer
+  (`base`: the fade-in from its floor, short, so a **flat base**; `top`: the fade-out, long, so the noise's
+  weaker parts end lower and the **top is rounded**), an `anvil`, a `density` and a rain `darkening`;
+  between two types every field is mixed. Shipped (the layer is 1350–4500 m, 3150 m deep):
+
+| Type | at | base | top | anvil | density |
+|---|---|---|---|---|---|
+| stratus | 0 | 0–0.02 | 0.04–0.10 (≤ 315 m thick) | 0 | 0.6 |
+| stratocumulus | 0.3 | 0–0.03 | 0.08–0.20 | 0 | 0.8 |
+| cumulus | 0.6 | 0–0.04 | 0.15–0.42 (≤ 1.3 km) | 0 | 1.0 |
+| cumulonimbus | 1.0 | 0–0.03 | 0.82–0.97 (≈ 3 km) | 0.8 | 1.4 |
+
+  With the shipped weather (`type` 0.42, `typeFromCoverage` 0.9, `typeVariation` 0.18) most clouds are
+  stratocumulus to cumulus, their cores cumulus, the densest towering toward cumulonimbus. A new type is a list
+  entry (the generator checks the order, spans and names; a test adds a fixture tower by data alone).
+
+### 9.3 The shape
+
+- **The noise, baked once** (`dwell_look::cloud_noise`): the **base** texture `form.baseSize`³ (64³) RGBA8 —
+  R a Perlin–Worley (three Perlin octaves 4 cells across dilated by the Worley fBm: `remap(perlin, 0, 1,
+  worley, 1)`), G, B, A Worley fBm (⅝, ¼, ⅛ of three octaves) 4, 8 and 16 cells across — repeating every
+  `form.baseTileM` (4096 m); the **detail** texture `form.detailSize`³ (32³) — R a Worley fBm 4 cells across,
+  G, B the curl across of a Perlin field (the wisps' distortion, sampled every `curlTileM`, 2048 m), A a 32²
+  **blue-noise** tile (void-and-cluster; the march's jitter, §9.6) — repeating every `detailTileM` (512 m).
+  Every lattice is periodic over its texture, so both tile in all three axes; each tile divides `shape.wrapM`,
+  so the shader's wrapped coordinates have no seam. Sampled trilinearly with a repeating sampler
+  (`Noise3::sample` is its CPU twin).
+- **Base shape** (`cloud_base_shape`, twin `base_shape`): `base = remap(R, −(1 − fbm(G, B, A)), 1, 0, 1)`
+  times the column's type's height gradient, then `remap(·, 1 − cover, 1, 0, 1) × cover` with the cover
+  raised toward a cumulonimbus's top by its anvil (`cover^(1 − ½ anvil)` over the top fade's start).
+- **Detail** (`cloud_detail_fbm`, `cloud_erode`; twins `ShapeNoise::detail_at`, `erode`): the detail's point
+  moved by the curl up to `form.curlM` (90 m, most at the floor) and drifting with the wind's evolve offset;
+  its fBm `hf` below `form.wispHeight` (12 % of the layer), `1 − hf` above (wispy bases, billowy tops), takes
+  away `remap(d, m × detailErosion, 1, 0, 1)`: only where the base is under 1 — the core stays.
+- **Wind and shear:** the layer drifts with the deck's wind (as before); the shape point leans downwind by
+  `form.shear` (0.25 m per m up: a tower's top 750 m over), and the detail drifts against the base.
+- **The march** (`cloud_layer_march`): a step with no cover or under the profile takes no texture fetch;
+  a cloudy step takes the base (one fetch), the detail (two: curl and fBm), the type's profile (one more
+  value-noise look-up); the light samples take the deck's noise (cover only), one base fetch each and **no
+  detail**; the ambient's cloud above and below comes from the column's profile at no cost
+  (`column_cover_m`).
+
+### 9.4 Bake cost and memory
+
+Measured natively (release, one thread, `cargo test -p dwell-look --release -- --ignored bake_cost`):
+
+| Texture | Bake | Memory |
+|---|---|---|
+| base 64³ (shipped) | 346 ms | 1 MiB |
+| base 128³ (Schneider's size; not shipped) | 2.5 s | 8 MiB |
+| detail 32³ | 25 ms | 128 KiB |
+
+So the bake runs in the job workers, never on the main thread: when a volume tier first draws (none on Low,
+Off or the CPU adapter, so phones and CI bake nothing), the game sends `Job::CloudNoise` slabs of 4 slices
+(16 base jobs of ~22 ms, 8 detail jobs) and writes each slab into its texture as it returns; until both are
+whole the frame draws the deck (Low), so the volume appears a moment after the world, with no hitch. The WASM
+bake is slower than native (an estimate of ~2×: ~45 ms a slab on a worker); 64³ at 64 m a texel over a
+4 km tile is plenty for the base shape, which the detail sharpens.
+
+### 9.5 Cost per texel (read from the shader)
+
+§8.7's counting (a 2D value-noise look-up ~45 ALU, a trilinear 3D fetch ~20 ALU of filtering plus its memory):
+
+| Sample | Before (§8.8) | After |
+|---|---|---|
+| empty step (no cover) | ~180 (warp, weather) | ~180 (the same) |
+| cloudy step | ~280 + light | ~400 (+ type look-up, profile, 3 fetches, remaps) + light |
+| one light sample | ~90 | ~145 (weather cover + a base fetch) |
+| Medium texel, 10 steps, 4 light (empty – cloudy) | 1.8k – 5.3k | 1.8k – 7.4k |
+| High texel, 16 steps, 6 light | 2.9k – 7.6k | 2.9k – 10.5k |
+| resolve (§9.6), per texel | — | 9 + 9 loads, ~90 |
+
+At 1280 × 720 that is at most ~0.43 G ALU a frame on Medium (¼) and ~2.4 G on High (½), from above with
+the whole screen cloudy; the M1's ~2.6 TFLOPS takes High's worst case in ~1 ms. Near the layer (§9.6) Medium
+marches at ½ with 14 steps (~2.3 G at worst) and High at ½ with 24 (~3.6 G). The GPU timings at §8.3's views,
+at a mountain in the layer and flying through the layer are for a local `npm run bench -- --warm`, before and
+after; tune by the data (`tiers`, `form.baseSize`, the profiles) if High over the M1's budget.
+
+### 9.6 Dither at cloud level (BUGS.md #90)
+
+The owner: "The clouds also look really badly dithered when they overlap? I think mostly when you get to their
+level? Looks very pixelated." The cause: near the clouds the eye's move over their distance (the parallax)
+handed every texel to its raw jittered march (§8.6's rule), so the march's dither showed at ¼ resolution,
+its interleaved-gradient jitter clumping. Now:
+
+- **Blue-noise jitter** (`cloud_jitter`: the detail texture's blue-noise tile, `dwell_cloud_blue`, turned
+  by the golden ratio each frame): neighbouring texels' steps far apart, the error high-frequency.
+- **A resolve pass** (`clouds_resolve_fs`, twins `neighbourhood_box`, `resolve`): the march writes its raw
+  result; the resolve reprojects the history as before but **clamps** it into the box (mean ±
+  `HISTORY_CLAMP` 1.5 deviations) of this frame's 3 × 3 neighbours whose scene matched the texel's (so the
+  box doesn't mix a peak with the sky), and blends by the tier's `historyBlend` — never dropping the history
+  for parallax.
+- **More near the layer** (`tiers.*.nearSteps`, `nearDivisor`, `volume.nearM` 600 m; `near_layer` with a
+  band so hovering at the edge doesn't swap buffers): Medium ¼ → ½ and 10 → 14 steps, High 16 → 24 steps.
+- **The upsample** stays the depth-aware one of §8.9 (bilinear shares × each texel's match to the pixel's
+  scene), which keeps a silhouette sharp.
+- **No cloud from behind a near pixel** (BUGS.md #97, `dwell_cloud_upsample_split`, `upsample_cover`):
+  where none of a pixel's four texels matched its scene (leaves with sky in every texel), the fallback's
+  small weights were normalised to the whole cloud of the texels' marches, which ran past the leaves to the
+  sky: the cloud behind the tree drew over it, in the texel grid's and the gaps' pattern under the jitter.
+  A fallback texel whose first cloud (the second target's z) is past the pixel's scene (beyond its band,
+  soft to twice it) now lends its weight with no cloud. Matched texels are unchanged.
+
+### 9.7 Checks and what's left
+
+Tests (`crates/dwell-look/src/clouds.rs` `shape_tests`, `cloud_noise.rs`): a cumulus is flat-based (near its
+widest just over its base) and rounded at its top (narrowing to under half near it); a cumulonimbus's anvil is
+wider than its trunk and towers where a cumulus has ended; coverage 0 is no cloud; the detail only takes away
+and a core (base 1) keeps its density, wispy at the base and billowy at the top; the noise tiles seamlessly
+in every axis and the shape repeats a tile over; a fixture cloud type by data alone shapes the clouds and the
+generated shader, which validates with naga; both faces; the near tier from the data; the blue noise spreads
+its values and the resolve is stable under the jitter as the eye moves (variance under a quarter of the raw
+march's), clamps stale history and the upsample keeps a silhouette sharp. `clouds.test.mjs`: the new entries'
+checks. `dwell-client`: the codec carries the new job, the shaders' wiring.
+
+Left: the in-game look (sun high, low sun, from above, night, flying through the layer) and the GPU cost
+(local bench, §9.5); the weather map's type and precipitation as run-time uniforms for a weather system; the
+clouds' shadows on the ground; adaptive steps; plumes taking the base noise for their billows.
+
+### 9.8 The low sun's tint and the view's opacity (2026-11-12, WORK_QUEUE item 13)
+
+The owner: "they don't look pretty and tinted during sunrise and sunset like our old 2D clouds", and on
+opacity: "light should still go through the clouds, but what is looking bad is the clouds behind the one in
+front and you usually can't see other separate clouds blocked behind ones in front of you".
+
+**What the deck tints at a low sun, and what the volume did.** Every term of the 2D deck (`dwell_cloud_layer`)
+that warms a cloud at a low sun:
+
+| Term | The deck | The volume before | Now |
+|---|---|---|---|
+| The sun's colour by elevation | `light.sunlit` × the hue of the day/night's `sunLight` (`#ff9a5c` at sunrise) | the same, the lit colour | the same |
+| The golden-hour ramp | `low` = `light.sunWarmth` × (1 − smoothstep(0.02, 0.4, sun's sine)): all of it up to ~1°, none from ~24° | the same ramp, on the lit colour only | one function for both (`cloud_low_sun`, `low_sun`) |
+| The warm tint | the **whole** colour toward `light.sunset` × mix(0.75, 1, lit) by `low` × lit: shaded sides warm at 0.75 | only the sun's light toward `sunset`; the shade (the sky's light and the ground's bounce) untinted | the shade too, toward `sunset` × 0.75 (the deck's shaded side) by `low` × `volume.sunsetShade` (1.5, the mix capped at 1) |
+| The sky's colour | the shade colour × half the hue of the hemisphere sky (`hemiSky`, a cool lavender at sunrise) | the same | the same, then warmed as above |
+| The horizon colour by distance | `mix(col, sky behind, 0.85 × smoothstep(0, deck.fadeEndM, distance))` | the same expression, by the first cloud's distance | one function for both (`cloud_far_haze`, `far_haze`): far clouds fade into the horizon and the low sun's band |
+| Tone mapping | both composite in display colour, the same path | — | no change needed |
+
+So the tint was lost in the ambient, not in the sun's colour or the tone mapping: a volume sample's light is
+mostly the sky's (the CPU twin: at 3° the sun reaches a lit top through ~1.5 km of cloud, so the sky's light,
+cool lavender, is ~70 % of it), where the deck's is 50–90 % the sun's hue. The lit side read warm in hue but
+grey: its warmth (red over blue) 1.38 against the deck's 1.73 at a lit 0.7 side; its base 1.14, near white.
+Now (`day_shading`, the shader's `cloud_shading`): the lit side 1.69 (within 8 % of the deck's), the base 1.51
+(peach-pink); at noon the ramp is 0 and the shading is exactly what it was.
+
+**The view's opacity, apart from the light's.** Before, the light march's Beer took `volume.extinction` too
+(`tau = light.absorption × volume.extinction × od`), so a more opaque view would also have darkened the light
+through the cloud. Now: `volume.extinction` (0.03 /m, was 0.006) is the view ray's alone, `volume.lightExtinction`
+(0.006, the old value) the light's path (lit edges, the silver lining, the glow: unchanged), and
+`volume.plumeExtinction` (0.006) the plumes' view (unchanged). For the owner's A/B, `?cloudExtinction=0.006`
+(or `0.05`) overrides the view's live, through the clouds pass's uniform (`CloudPrev.tan.z`; 0 the data's),
+and `__dwell.cloudExtinction(x)` changes it mid-run.
+
+**What it does (CPU twin).** An eroded mid cloud (density 0.25) at High's and the near tier's ~300 m steps:
+at 0.006 a ray takes 7 samples through a 2 km bank and still sees ~4 % of what is behind (a cloud behind 400 m
+of it shows at 55 %); at 0.03 and at 0.05 two samples end the march (that cloud behind at 5 % and 0.7 %). A dense core at
+Medium's ~900 m steps was one sample before and is still. A thin eroded edge (density 0.05 over 50 m) still
+lets 93 % through, so the edges stay soft. **Cost** (§9.5's counting, ~1 k ALU a cloudy Medium sample with its
+4 light samples): a cloudy texel that met mid-density cloud ends up to 5 samples sooner, up to ~−5 k of
+Medium's 7.4 k worst case and of High's 10.5 k (about −40 % to −65 %); empty texels are unchanged. Measured cost (`gpu.clouds`) is
+for the local bench, before and after.
+
+Tests (`volume_tests`): at a sun 3° up (from the day/night data) the volume's lit side has the deck's tint
+within 8 % and its base warms (both failed with the old shading: red → green, the lit side 20 % short); noon
+is unchanged and differs from sunrise; `sunWarmth` 0 is no tint; the haze and the ramp are one function each
+on the deck and the volume; the light's Beer takes `lightExtinction` and the view the run-time value (the
+data's by default), the plumes theirs; a sample's light doesn't move with the view's opacity; the early exit
+at 0.006 / 0.03 / 0.05; both faces (the tint from the sun's face-local up part). `clouds.test.mjs`: the new
+entries' ranges.
+
+Left (local, no GPU in the cloud session): the look at sunrise and sunset against `?clouds=` the deck, and the
+A/B of `?cloudExtinction=0.006` / `0.03` / `0.05` with `gpu.clouds`; tune by `volume.sunsetShade`,
+`light.sunWarmth` and `volume.extinction`.
+
+## 10. The deck's lighting, then and now (2026-11-12, WORK_QUEUE item 13)
+
+Owner: "our new 2D clouds seem to have lost most of their lighting from the original too … They almost looked
+3D." The deck as it was before the volumetric work (`76e4e772`, the parent of `93fd6c26`) against today's, term by
+term. The shading code (`dwell_cloud_layer`) is the same function: the lighting rework (`857f4a86`) left the
+deck alone and the golden-hour change (`5c27c068`) only moved its low-sun ramp and far haze into shared
+functions (`cloud_low_sun`, `cloud_far_haze`, the same numbers). What changed is **which deck players see**:
+before, the Medium, High and Ultra presets drew the deck at the setting `high` (5 octaves and the self-shadow
+sample) and only phones drew `low`; since the volume, the deck in the sky is only Low (phones, the Mobile preset,
+`?clouds=low`, and every tier while the volume's noise bakes), which never took the sample. So the deck people
+compared was the old phone deck.
+
+| Term | Old desktop deck (`high`, before 93fd6c26) | Deck until this change (Low) | Now |
+|---|---|---|---|
+| Relief / normal from the noise gradient | none (the relief came from the sample below) | none | none: the sample does it |
+| Self-shadow sample toward the sun | yes: `d'` `shadowStepM` (320 m) toward the light's horizontal part, all 5 octaves | **no** | yes on every tier: Low at `lowShadowOctaves` 2, Medium and High (reflections, Snell's window) at `shadowOctaves` 5 |
+| Thickness darkening (undersides) | `exp(−1.1 × (0.35·d + d'))`: a core's own density counted ~1.35× | `exp(−1.1 × 0.6·d)`: cores ~0.52 lit, grey-white | as old (Low's cores 0.26 lit at noon) |
+| Rim / silver lining toward the sun | `silverLining` × (view·light)^`silverPower` × (1 − d)² | same | same |
+| Ambient / sky colour | `shade` × half the day sky's hue; `sunlit` × the sun's | same | same |
+| Edge softness | `edgeSoftness` 0.16, contrast 1.9 | same | same |
+| Sunset ramp | `sunWarmth` up to ~24°, the lit part toward `sunset`, shade at 0.75 of it | same (shared with the volume since 5c27c068) | same |
+| Far haze | 0.85 toward the clear sky by the fade end | same (shared) | same |
+| Octaves | 5 | 3 (`lowOctaves`) | 3 on Low (detail, not relief: kept for the phones' cost) |
+| From above | the sample skipped, `topLight` | same | same |
+
+**Restored.** The self-shadow sample is data: `light.shadowOctaves` (Medium and High) and
+`light.lowShadowOctaves` (Low), each at most its tier's octaves (the generator checks; `cloud_cfg.z` carries the
+count, 0 none; the reflections take the sky's count when their tier's shadow bit is set). Low's sample is
+coarser than the shape (2 of 3 octaves): the big shapes cast the shading, the fine ones don't matter to it.
+
+**Cost (value-noise evaluations a deck pixel, each four hashes and a quintic blend).** Low: 7 → 9 (the warp's
+two 2-octave fields, 3 shape octaves, +2 for the sample; +29 %). The old desktop deck was 14. Medium and High
+draw the deck only in reflections and Snell's window, where the reflection tier's shadow bit already gates the
+sample: 9 → 14 there when it is set.
+
+**CPU reference** (`cargo run -p dwell-look --release --example deck_lighting -- <dir>`): an 8 × 8-cell patch
+(~8 km) from below, straight up, at a 70° and a 5° sun, written as PNGs, with `deck_relief`'s measures (mean
+light share of sun-facing edges, far edges, cores with density ≥ 0.85, thin edges ≤ 0.35):
+
+| Deck | Sun | Noises | Sun side | Far side | Relief | Cores | Thin |
+|---|---|---|---|---|---|---|---|
+| Low before | 70° | 7 | 0.734 | 0.723 | +0.010 | 0.521 | 0.926 |
+| Low before | 5° | 7 | 0.734 | 0.723 | +0.010 | 0.521 | 0.926 |
+| Old desktop (= Medium/High now) | 70° | 14 | 0.687 | 0.427 | +0.260 | 0.286 | 0.780 |
+| Old desktop | 5° | 14 | 0.672 | 0.517 | +0.155 | 0.382 | 0.733 |
+| Low restored | 70° | 9 | 0.611 | 0.412 | +0.199 | 0.264 | 0.733 |
+| Low restored | 5° | 9 | 0.659 | 0.450 | +0.209 | 0.350 | 0.708 |
+
+In the images the old and restored decks have warm, bright edges on the sun's side and greyer interiors and far
+edges at 5°, and blue-grey cores under white rims at noon; Low before is one flat tone (white at noon, flat
+orange at 5°). Before, Low's light share was a function of the density alone, so the two sides measured the same.
+
+Tests (`deck_relief_tests`, both faces, face-local parity): Low's sun-facing edges at least 0.12 brighter than
+its far edges at 5°, its cores at most 0.4 lit and 0.3 below its thin edges at 70° (both red before: +0.010, cores
+0.521); every tier that draws the deck takes the sample and Low keeps ≥ 70 % of the old relief; the sample off
+by data is flat again. `clouds.test.mjs`: the new entries' bounds.
+
+Left (local, a GPU): the deck in game at `?clouds=low` against the old screenshots (sun high, low sun, from
+above, night) and `gpu.composite` on Low before and after; tune by `lowShadowOctaves` and `shadowStepM`.

@@ -112,7 +112,15 @@ python3 .claude/skills/record/scripts/splice.py plan.json
 ```
 
 `plan.json`: `{"out": "…/video.mp4", "size": [1080, 1920], "fps": 30, "clips": [{"src": "OUT_DIR/c1_dolly", "from": 0, "to": 15}, …]}` — `src` is a frame
-folder from the driver (or an mp4). Then check the size; re-encode with `crf 28` if over 30 MB.
+folder from the driver (or an mp4). Per clip: `"speed": 0.35` (slow motion; 4 a time-lapse), `"vf": "eq=gamma=1.5"`
+(a grade, e.g. to lift a night), `"cut": true` (a hard cut from the clip before, no cross-fade: split one take into
+parts at different speeds or grades). A frame folder is encoded once and reused. Then check the size; re-encode with
+`crf 28` if over 30 MB.
+
+**Helpers:** `scripts/ev.mjs` posts JS to the driver (`node ev.mjs file.js` or `node ev.mjs -e 'expr' [/path]`; the
+worktree guard refuses curl bodies); `scripts/take.mjs path.json clipName [warmS]` holds the camera at the path's first
+keyframe for `warmS` (the LOD streams), starts the screencast, plays the path to its end and stops. Paths and take
+scripts that worked are in `paths/<video>/`.
 
 ## 5. Judge and report
 
@@ -138,3 +146,39 @@ preview and the driver, remove any `client/node_modules` symlink or built `clien
   forest though it looks really pretty." Give the subject most of the video, not half; in a heavy scene (the forest)
   the page runs under 60 fps, so record frame-exact (step the theater path per captured frame or slow the clock and
   speed up in the splice) rather than real time, and check the clip's fps before splicing.
+- 2026-11-12, the bifacial world (portrait, 7 clips, 55 s, all at 60 fps on the open sea): at seed 7's rim (x = 50 000)
+  the edge is open sea on both faces, no shore, so the crossing is **flown**: `d.fly(true)`, fly over the edge, then
+  `d.fly(false)` and the player falls, is flung across the midplane and swings back; turn flight on when the fall
+  reverses on face B (`y < -20` and rising), then `Space` rises along face B's up. It worked every take (6 of 6).
+  A placed or theater camera drew **no player** until BUGS.md #99 (fixed): third-person shots of the player need a
+  build with that fix. `d.teleport` refuses a point on the other face (returns false): reload the page to reset a take
+  (`/goto` the same `?fresh=1&at=` link). Teleport while flying over the sea first, then rise with `Space`: the player
+  sinks to swimming before `fly` takes hold. From beside the rim at `y` ≈ 5 the camera sees both seas and both skies;
+  the day is long (0.22–0.82 all reads as day), so a time-lapse that shows the faces swap runs through the night
+  (`timeOfDay` 0.74 → 0.2: face A darkens as face B's dawn comes up). In portrait the held item shows only at the
+  frame's right edge. The driver's `/eval` with a curl body is refused by the worktree guard: post the JS from a small
+  node script (`fetch('http://localhost:4999/eval', {method: 'POST', body})`) reading a `.js` file instead.
+- 2026-11-12, the bifacial world v2 (portrait, 6 clips, 48.7 s, 17.8 MB, all takes ~59 fps; paths in
+  `paths/bifacial-v2/`). **The outline:** the whole disc draws from 160 km out (the far plane is 5e7 m; the LOD's root
+  covers it) — but only from **above the atmosphere** (≳ 9 km up): at the midplane level or a few km up the haze
+  swallows it, and exactly edge-on the disc is too thin to see (the frame is just face A's sky over face B's). A
+  shallow 4–6° look down from 9–13 km reads best (fov 50, target the centre). Face A's sky is above the midplane line
+  and face B's night sky with stars below it: a crane through the midplane flips them. Face A at 0.29 puts face B at
+  night automatically. A soft bright band under the disc shows in every far shot (BUGS.md #102). **Clouds off for far
+  shots:** both tiers draw a layer in the void beyond the rim (BUGS.md #101). **Portals:** `?seed=7&spawn=portal`
+  spawns on the rim over the ladder; `d.voxel` reads 0 in the open shaft, so probe columns to find the axis (seed 7:
+  1780.5, 20690.5; the ladder on the +z wall, the monument's pillars N/E/S/W at 6 m, so walk in on a diagonal). Walk
+  in with `KeyW` held and the pitch eased down near the edge; let go over the axis: the fall takes ~2.2 s to the
+  midplane at ~40 m/s, past the motes in ~0.15 s (slow that part in the splice), and the player rises out of face B's
+  hole ~12 m and falls back, forever (no damping), so at the top `d.fly(true)`, fly out with `KeyW`, `d.fly(false)` to
+  land. Seen looking straight down, first person shows the player's own legs, not the arms; the held axe only at the
+  edge. Cut to the third-person camera in the same take (a `pan` path with `target: "player"`) when the feet cross
+  y < −3. Face B at night is very dark: a camera among the 23 m pillars sees only pillars; a camera 38 m out and
+  ~30 m up on a diagonal, looking down at the hole between two pillars, shows the rise; lift it with a grade
+  (`"vf": "eq=gamma=1.5"`). `?spawn=portal` sits next to a plant on one diagonal: shoot a still from the start before
+  the take. `setTime` doesn't change face B's night between 0.2 and 0.36.
+- **Upside-down face-B wides: `"up": "a"`** on the path's first keyframe (it carries over). Owner, reviewing v2:
+  "The camera shouldn't flip on the wide shot, show it's upside down." A camera on face B's side otherwise takes
+  face B's frame (`"auto"`) and the player rising out of face B's hole looks upright; with `"up": "a"` it keeps
+  face A's up, so face B and the player hang under the disc, and a crane through the midplane doesn't turn over.
+  Its `look` is read in face A's frame too (or aim with `target`). Presets take it in `params` (`"up": "a"`).

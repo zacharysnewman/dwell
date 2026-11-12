@@ -725,6 +725,90 @@ fn march(
     }
 }
 
+/// The seed variant `v` of every species and stage is baked from: a fixed spread, so the variants
+/// differ (a tree's own seed only picks one, [`Config::baked_for`]).
+pub fn variant_seed(v: u32) -> u32 {
+    v.wrapping_mul(0x9E37_79B9).wrapping_add(0x7F4A_7C15)
+}
+
+/// A species tree in a far tree list (proposal I-2): what an impostor instance is built from. Its
+/// anchor is face-local (the voxel above the ground it stands on); `species` indexes
+/// [`crate::species::SPECIES`]; `seed` and `stage` are the placement's (ADR 0079), so the near
+/// tree and its impostor are the same tree.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct FarTree {
+    pub anchor: [i32; 3],
+    pub species: u16,
+    pub seed: u32,
+    pub stage: u32,
+}
+
+/// One impostor to draw (proposal §6, 16 bytes on the GPU): the face-local foot of the tree
+/// (the anchor's column centre at the anchor's floor), the baked tree's array layer, and its turn
+/// in quarter turns from its seed (so 4 variants × 4 turns read as 16 trees).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Instance {
+    pub foot: [f32; 3],
+    pub layer: u32,
+    pub quarter_turns: u32,
+}
+
+impl Config {
+    /// How many baked trees a species holds (its array layers): stages × variants.
+    pub fn layers_per_species(&self) -> u32 {
+        self.stages.len() as u32 * self.variants
+    }
+
+    /// The array layer of a tree of `species` (index), `seed` and growth `stage`: the species'
+    /// block of layers, then the nearest baked stage, then the seed's variant
+    /// ([`Config::baked_for`]).
+    pub fn layer(&self, species: u16, seed: u32, stage: u32) -> u32 {
+        let (slot, variant) = self.baked_for(seed, stage);
+        u32::from(species) * self.layers_per_species() + slot as u32 * self.variants + variant
+    }
+
+    /// How many baked trees the atlas holds: every species' [`Config::layers_per_species`].
+    pub fn layer_count(&self) -> u32 {
+        crate::species::SPECIES.len() as u32 * self.layers_per_species()
+    }
+
+    /// What array layer `layer` holds: (species index, the growth stage baked, the seed baked),
+    /// the inverse of [`Config::layer`]'s blocks (the stage clamped to the species' last; variant
+    /// `v` baked from seed `v`'s [`variant_seed`]). `None` past [`Config::layer_count`].
+    pub fn layer_tree(&self, layer: u32) -> Option<(u16, u32, u32)> {
+        let per = self.layers_per_species();
+        let species = crate::species::SPECIES.get((layer / per.max(1)) as usize)?;
+        let within = layer % per;
+        let (slot, variant) = (within / self.variants, within % self.variants);
+        let stage = self.stages[slot as usize].min(species.stages.saturating_sub(1));
+        Some(((layer / per) as u16, stage, variant_seed(variant)))
+    }
+
+    /// Bakes array layer `layer` at `px` texels a view (the drawer's bake job; `None` past the
+    /// layers).
+    pub fn bake_layer(&self, layer: u32, px: u32) -> Option<Impostor> {
+        let (species, stage, seed) = self.layer_tree(layer)?;
+        let sp = &crate::species::SPECIES[species as usize];
+        Some(bake(sp, seed, stage, self, px))
+    }
+
+    /// The instances of `trees` (a section's list), in the list's order.
+    pub fn instances(&self, trees: &[FarTree]) -> Vec<Instance> {
+        trees
+            .iter()
+            .map(|t| Instance {
+                foot: [
+                    t.anchor[0] as f32 + 0.5,
+                    t.anchor[1] as f32 * dwell_world::CELL_H as f32,
+                    t.anchor[2] as f32 + 0.5,
+                ],
+                layer: self.layer(t.species, t.seed, t.stage),
+                quarter_turns: (t.seed >> 7).wrapping_mul(0x2545_F491) >> 30,
+            })
+            .collect()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     // face-a-only: the bake is face-local (+y up, no world position); the drawer crosses faces.
@@ -735,6 +819,35 @@ mod tests {
         let mut c = Config::get().clone();
         c.view_px = [32, 16, 8];
         c
+    }
+
+    #[test]
+    fn every_layer_names_the_tree_its_instances_draw() {
+        // face-a-only: data only.
+        let c = small();
+        assert_eq!(
+            c.layer_count(),
+            SPECIES.len() as u32 * c.layers_per_species()
+        );
+        for species in 0..SPECIES.len() as u16 {
+            for seed in [1u32, 77, 4096, 123_456] {
+                for stage in 0..8 {
+                    let layer = c.layer(species, seed, stage);
+                    let (s, baked_stage, _) = c.layer_tree(layer).expect("in range");
+                    assert_eq!(s, species);
+                    let (slot, _) = c.baked_for(seed, stage);
+                    let last = SPECIES[species as usize].stages.saturating_sub(1);
+                    assert_eq!(baked_stage, c.stages[slot].min(last));
+                }
+            }
+        }
+        assert_eq!(c.layer_tree(c.layer_count()), None);
+        let one = c.bake_layer(0, 8).expect("layer 0");
+        assert_eq!(one.px, 8);
+        assert!(
+            one.albedo.iter().any(|t| t[3] == 255),
+            "a tree, not an empty atlas"
+        );
     }
 
     #[test]
@@ -750,6 +863,38 @@ mod tests {
         }
         assert_eq!(c.leaf, palette("leaf.base").unwrap());
         assert!(c.canopy_blend > 0.0, "leaves.json's canopyBlend is read");
+    }
+
+    #[test]
+    fn each_species_stage_and_variant_has_its_own_layer() {
+        // face-a-only: data only.
+        let c = Config::get();
+        let mut seen = std::collections::HashSet::new();
+        for species in 0..3u16 {
+            for &stage in &c.stages {
+                for seed in 0..64u32 {
+                    let l = c.layer(species, seed, stage);
+                    assert!(l < 3 * c.layers_per_species());
+                    assert_eq!(l / c.layers_per_species(), u32::from(species));
+                    seen.insert(l);
+                }
+            }
+        }
+        assert_eq!(
+            seen.len() as u32,
+            3 * c.layers_per_species(),
+            "every layer is used"
+        );
+        let t = FarTree {
+            anchor: [4, 20, -9],
+            species: 1,
+            seed: 77,
+            stage: 5,
+        };
+        let i = c.instances(&[t])[0];
+        assert_eq!(i.foot, [4.5, 10.0, -8.5]);
+        assert_eq!(i.layer, c.layer(1, 77, 5));
+        assert!(i.quarter_turns < 4);
     }
 
     #[test]
@@ -973,7 +1118,12 @@ mod tests {
         let on = c.far("on").expect("the `on` tier");
         assert!(on.impostor && on.from > 0.0 && on.fade > 0.0, "{on:?}");
         assert!(!c.far("off").expect("the `off` tier").impostor);
-        let bad = IMPOSTORS_JSON.replace("\"fadeM\": 24", "\"fadeM\": -1");
+        let fade = format!("\"fadeM\": {}", on.fade);
+        assert!(
+            IMPOSTORS_JSON.contains(&fade),
+            "the `on` tier's fade as written"
+        );
+        let bad = IMPOSTORS_JSON.replace(&fade, "\"fadeM\": -1");
         let e = Config::parse(&bad).unwrap_err();
         assert!(e.contains("far.tiers.on.fadeM"), "{e}");
         let bad = IMPOSTORS_JSON.replace("\"draw\": \"none\"", "\"draw\": \"blob\"");

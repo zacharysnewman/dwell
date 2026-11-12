@@ -52,6 +52,8 @@ const SCHEMA = {
     nightShade: "color",
     absorption: [0, 20],
     shadowStepM: [0, 1e5],
+    shadowOctaves: ["count", 0, MAX_OCTAVES],
+    lowShadowOctaves: ["count", 0, MAX_OCTAVES],
     silverLining: [0, 4],
     silverPower: [1, 512],
     sunWarmth: [0, 1],
@@ -60,10 +62,10 @@ const SCHEMA = {
   volume: {
     baseM: [10, 1e5],
     topM: [20, 1e5],
-    topFloor: [0.05, 1],
-    detailCellM: [8, 1e5],
-    detailErosion: [0, 1],
     extinction: [0, 1],
+    lightExtinction: [0, 1],
+    plumeExtinction: [0, 1],
+    sunsetShade: [0, 4],
     lightStepM: [1, 1e4],
     lightStepGrowth: [1, 4],
     multiScatter: [0, 1],
@@ -81,7 +83,42 @@ const SCHEMA = {
     depthBand: [0.001, 0.5],
     depthBandRange: [0, 1],
     plumeBillow: [0, 1],
+    nearM: [0, 1e5],
   },
+  form: {
+    baseSize: ["count", 16, 256],
+    detailSize: ["count", 8, 128],
+    baseTileM: [64, 1e6],
+    detailTileM: [16, 1e6],
+    curlTileM: [16, 1e6],
+    curlM: [0, 1e4],
+    detailErosion: [0, 0.95],
+    wispHeight: [0.001, 1],
+    shear: [0, 4],
+    coverageSoftness: [0.01, 1],
+  },
+  weather: {
+    type: [0, 1],
+    typeVariation: [0, 1],
+    typeFromCoverage: [0, 4],
+    precipitation: [0, 1],
+  },
+};
+
+/** The most cloud types (the shader's profile chain is generated from them). */
+export const MAX_CLOUD_TYPES = 8;
+/** A cloud type (docs/CLOUDS.md §9.2): where it sits along the weather map's type axis (0-1), its
+ * height profile in the layer (base: the fade-in's span from the layer's floor, top: the fade-out's;
+ * shares of the layer's depth), how much its top spreads into an anvil, its density and how much
+ * precipitation darkens it. */
+const CLOUD_TYPE = {
+  name: "name",
+  at: [0, 1],
+  base: "span",
+  top: "span",
+  anvil: [0, 1],
+  density: [0.05, 4],
+  darkening: [0, 1],
 };
 
 /** The most march steps and light samples a tier may take (the shader's loop bounds). */
@@ -97,6 +134,8 @@ const TIER = {
   divisor: ["count", 1, 4],
   historyBlend: [0.02, 1],
   plumeSteps: ["count", 0, MAX_PLUME_STEPS],
+  nearSteps: ["count", 0, MAX_STEPS],
+  nearDivisor: ["count", 1, 4],
 };
 /** A plume's look: a column of cloud (steam, smoke, volcano ash) rising at riseMps. */
 const PLUME_LOOK = {
@@ -123,7 +162,10 @@ const SOURCES = ["lavaVent"];
 /** The most plume slots the run-time list may have (the uniform's size). */
 export const MAX_PLUME_SLOTS = 32;
 
-const snake = (s) => s.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
+const snake = (s) => {
+  const r = s.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
+  return r === "type" ? "r#type" : r;
+};
 const fail = (m) => {
   throw new Error(`clouds.json: ${m}`);
 };
@@ -142,6 +184,20 @@ function checkValue(where, v, spec) {
   if (spec === "name") {
     if (typeof v !== "string" || !/^[a-z0-9_:-]+$/.test(v))
       fail(`${where} must be a name [a-z0-9_:-], got ${JSON.stringify(v)}`);
+    return;
+  }
+  if (spec === "span") {
+    if (
+      !Array.isArray(v) ||
+      v.length !== 2 ||
+      !v.every((x) => typeof x === "number" && Number.isFinite(x)) ||
+      v[0] < 0 ||
+      v[1] > 1 ||
+      v[1] <= v[0]
+    )
+      fail(
+        `${where} must be [from, to] with 0 <= from < to <= 1, got ${JSON.stringify(v)}`,
+      );
     return;
   }
   if (spec === "color") {
@@ -167,6 +223,7 @@ export function validateClouds(data, atmosphere = loadAtmosphere()) {
   checkKeys("(root)", data, [
     ...Object.keys(SCHEMA),
     "tiers",
+    "cloudTypes",
     "plumeSlots",
     "sources",
     "plumes",
@@ -184,6 +241,39 @@ export function validateClouds(data, atmosphere = loadAtmosphere()) {
     for (const [k, spec] of Object.entries(TIER))
       checkValue(`tiers.${tier}.${k}`, data.tiers[tier][k], spec);
   }
+  for (const tier of TIERS) {
+    const t = data.tiers[tier];
+    if (t.nearSteps < t.steps)
+      fail(`tiers.${tier}.nearSteps must be at least its steps`);
+    if (t.nearDivisor > t.divisor)
+      fail(`tiers.${tier}.nearDivisor must not exceed its divisor`);
+    if (t.steps === 0 && t.nearSteps !== 0)
+      fail(
+        `tiers.${tier}.nearSteps must be 0 on a tier with no steps (the 2D deck)`,
+      );
+  }
+  const types = data.cloudTypes;
+  if (
+    !Array.isArray(types) ||
+    types.length < 1 ||
+    types.length > MAX_CLOUD_TYPES
+  )
+    fail(`cloudTypes must be a list of 1 to ${MAX_CLOUD_TYPES} types`);
+  const typeNames = new Set();
+  types.forEach((c, i) => {
+    checkKeys(`cloudTypes[${i}]`, c, Object.keys(CLOUD_TYPE));
+    for (const [k, spec] of Object.entries(CLOUD_TYPE))
+      checkValue(`cloudTypes[${i}].${k}`, c[k], spec);
+    if (c.top[0] < c.base[1])
+      fail(`cloudTypes[${i}].top must start at or above the end of its base`);
+    if (i > 0 && c.at <= types[i - 1].at)
+      fail(
+        `cloudTypes[${i}].at must be greater than the type before's (the type axis is ordered)`,
+      );
+    if (typeNames.has(c.name))
+      fail(`cloudTypes[${i}].name ${c.name} is used twice`);
+    typeNames.add(c.name);
+  });
   // A lower setting never takes more light samples than a higher one (the cost is ordered).
   for (let i = 1; i < TIERS.length; i++) {
     const [hi, lo] = [TIERS[i - 1], TIERS[i]];
@@ -223,15 +313,14 @@ export function validateClouds(data, atmosphere = loadAtmosphere()) {
   data.plumes.forEach((p, i) => under(`plumes[${i}].topM`, p.topM));
   for (const src of SOURCES)
     under(`sources.${src}.heightM`, data.sources[src].heightM);
-  if (!Number.isInteger(shape.scaleM / volume.detailCellM)) {
-    fail(
-      "shape.scaleM must be a whole multiple of volume.detailCellM (the detail noise tiles with the deck)",
-    );
-  }
   if (deck.fadeEndM <= deck.fadeStartM)
     fail("deck.fadeEndM must be greater than deck.fadeStartM");
   if (shape.lowOctaves > shape.octaves)
     fail("shape.lowOctaves must not exceed shape.octaves");
+  if (data.light.shadowOctaves > shape.octaves)
+    fail("light.shadowOctaves must not exceed shape.octaves");
+  if (data.light.lowShadowOctaves > shape.lowOctaves)
+    fail("light.lowShadowOctaves must not exceed shape.lowOctaves");
   // The noise repeats every wrapM: a whole number of its largest cells, so it tiles without a seam.
   const cells = shape.wrapM / shape.scaleM;
   if (!Number.isInteger(cells))
@@ -240,6 +329,18 @@ export function validateClouds(data, atmosphere = loadAtmosphere()) {
     fail(
       "shape.wrapM must be at least 4 × shape.scaleM (the noise would repeat in view)",
     );
+  const { form } = data;
+  for (const k of ["baseSize", "detailSize"]) {
+    if ((form[k] & (form[k] - 1)) !== 0)
+      fail(`form.${k} must be a power of two`);
+  }
+  // The 3D noise tiles with the deck's period, so it has no seam where the shader wraps.
+  for (const k of ["baseTileM", "detailTileM", "curlTileM"]) {
+    if (!Number.isInteger(shape.wrapM / form[k]))
+      fail(
+        `shape.wrapM must be a whole multiple of form.${k} (the noise tiles with the deck)`,
+      );
+  }
   return data;
 }
 
@@ -264,6 +365,8 @@ export function cloudsRust(data) {
       wind: "WindTunables",
       light: "CloudLight",
       volume: "VolumeTunables",
+      form: "FormTunables",
+      weather: "WeatherTunables",
     }[section];
     rs.push(`    ${section}: ${type} {`);
     for (const [k, spec] of Object.entries(fields)) {
@@ -289,10 +392,27 @@ export function cloudsRust(data) {
       `            divisor: ${t.divisor},`,
       `            history_blend: ${rf(t.historyBlend)},`,
       `            plume_steps: ${t.plumeSteps},`,
+      `            near_steps: ${t.nearSteps},`,
+      `            near_divisor: ${t.nearDivisor},`,
       "        },",
     );
   }
   rs.push("    },");
+  rs.push("    cloud_types: &[");
+  for (const c of data.cloudTypes) {
+    rs.push(
+      "        CloudType {",
+      `            name: ${JSON.stringify(c.name)},`,
+      `            at: ${rf(c.at)},`,
+      `            base: [${c.base.map(rf).join(", ")}],`,
+      `            top: [${c.top.map(rf).join(", ")}],`,
+      `            anvil: ${rf(c.anvil)},`,
+      `            density: ${rf(c.density)},`,
+      `            darkening: ${rf(c.darkening)},`,
+      "        },",
+    );
+  }
+  rs.push("    ],");
   rs.push(`    plume_slots: ${data.plumeSlots},`);
   rs.push("    sources: PlumeSources {");
   for (const src of SOURCES) {

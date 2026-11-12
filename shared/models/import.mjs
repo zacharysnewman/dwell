@@ -28,6 +28,13 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { applyCoat, applyRepaint } from "./coat.mjs";
 import { paletteStops, resolveColor } from "./gen.mjs";
+import {
+  allLevelParts,
+  readMesh,
+  rows,
+  seedParts,
+  validateParts,
+} from "./parts.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..", "..");
@@ -86,9 +93,23 @@ const stops = paletteStops(palette, data.palette?.exclude ?? []).map((s) => [
 function coat(name) {
   const m = data.models[name];
   const path = join(here, m.glb);
-  // Its `repaint` first (a part given a ramp of its own; shared/models/coat.mjs).
+  // Its `repaint` first (a part given a ramp of its own; shared/models/coat.mjs), by its part map
+  // (shared/models/parts.mjs), seeded again if the mesh no longer matches it (a re-import).
   if (m?.repaint) {
-    writeFileSync(path, applyRepaint(readFileSync(path), m.repaint, palette));
+    const bytes = readFileSync(path);
+    const partsPath = join(here, m.parts);
+    const file = JSON.parse(readFileSync(partsPath, "utf8"));
+    const base = readMesh(bytes, "detail_0");
+    let vertices;
+    try {
+      vertices = Uint8Array.from(validateParts(file, m.parts, base.count), Number);
+    } catch {
+      vertices = seedParts(base, file, palette, data.palette?.exclude ?? []);
+      writeFileSync(partsPath, `${JSON.stringify({ ...file, vertices: rows(vertices) }, null, 2)}\n`);
+      console.log("SEEDED", partsPath, "(check it: node shared/models/parts.mjs --render)");
+    }
+    const parts = { names: file.parts, levels: allLevelParts(bytes, vertices) };
+    writeFileSync(path, applyRepaint(bytes, m.repaint, palette, parts));
     console.log("REPAINT", path);
   }
   if (!m?.coat) return;

@@ -16,7 +16,7 @@ use dwell_blocks::{
 };
 use dwell_protocol::CHUNK_SIZE;
 use dwell_protocol::chopping::Cut;
-use dwell_protocol::damage::DamageView;
+use dwell_protocol::damage::{DamageView, HitMark};
 use dwell_world::FaceFrame;
 use dwell_world::tree_tint::TreeTint;
 
@@ -1043,7 +1043,9 @@ fn carved_voxel(b: &mut Builder, cells: &Cells<'_>, k: &Kind, cell: [i32; 3], cu
     // Each hit's bite where it struck (WORK_QUEUE item 26); a cut without bites (an older server's
     // or save's) as before: the notch across the side, the kerfs as slits.
     let faces = if cut.has_bites() {
-        carve::carve_bites(grain, cut, &look, outline.as_deref())
+        // Grown by the bite rule (WORK_QUEUE item 18): its share of the swings to fell.
+        let progress = wood.map_or(cut.cross(grain), |w| cut.progress(w, grain));
+        carve::carve_bites(grain, cut, &look, outline.as_deref(), progress)
     } else {
         carve::carve_in(grain, cut, &look, outline.as_deref())
     };
@@ -2491,8 +2493,19 @@ fn mesh_cells(
             .filter(|m| usize::from(m.face) == sf.face)
             .collect();
         let fraction = f64::from(view.fraction) / 255.0;
+        // The bite rule (BLOCK_DAMAGE.md §10): the cell's carved volume, k bites after k hits,
+        // shared over its struck faces by their marks' bites.
+        let block = kinds.of(*state).style.block;
+        let weight = |ms: &mut dyn Iterator<Item = &HitMark>| ms.map(HitMark::scale).sum::<f64>();
+        let all = weight(&mut view.marks.iter());
+        let share = if all > 0.0 {
+            weight(&mut marks.iter().copied()) / all
+        } else {
+            0.0
+        };
+        let target = dwell_protocol::damage::carved_m3(block, fraction) * share;
         let carve =
-            (!marks.is_empty()).then(|| damage_mesh::carve_of(sf.face, &marks, &look, fraction));
+            (!marks.is_empty()).then(|| damage_mesh::carve_for(sf.face, &marks, &look, target));
         let crack = damage_mesh::CrackLayer::of(&look, view, sf.cell)
             .map(|c| c.for_face(sf.face, &view.marks));
         damage_mesh::carve_face(

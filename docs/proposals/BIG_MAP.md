@@ -87,6 +87,43 @@ world takes about **30 s on the M1 and 1–2 minutes on a phone** to create, bef
 grows the same way. Chunk generation stays flat (the lake index of 0.51.21); this run did not time
 it at 10× area (the build-volume sphere was not scaled, so the spawn's chunks generated empty).
 
+### 3.1 Named sizes, measured (BUGS.md #91, 2026-11-12)
+
+Each named size's map has today's ~1 M cells (its cell × the scale), so a face should cost about
+the same at every size. It did not: a 10× world sat for minutes on "Shaping the world map" in the
+owner's browser, and natively **one 10× face took 43.7 s** (1×: 1.9 s) and a **10× server 114 s at
+a 12.4 GB peak** — past a browser's 4 GB of WebAssembly memory, so the map workers never finished
+(0/2) and the local server's worker died ("Could not connect"). Two steps grew with the radius:
+
+- **The uplift** (17.4 s): `uplift_count` gives a 10× world 300 ranges, and every land cell measured
+  its distance to every segment of every range (~21 000 segment tests a cell; 1×: ~200). Now an
+  index of the spines by where they reach (`SpineIndex`, 8 km squares; a spine reaches at most
+  `max(width, apron.width)` m, beyond which its strength is exactly 0): ~570 a cell, the same
+  strengths exactly.
+- **The channels' index** (21 s, and the 12 GB): 64 m squares under a 10× map's ~1 km segments and
+  their km-wide valleys listed each segment in ~6 000 squares. The square is now 64 m × the scale
+  (`Channels::bucket`; the query measures each listed segment's reach itself, so only the candidate
+  lists change): ~90 entries a segment (1×: ~10; a 10× map's rivers are wider and 8× as many).
+
+`cargo run --release -p dwell-worldgen --example world_size -- <size>` in this cloud container (4
+cores), a cold map cache, after the fix. One face's map by step (the builder's progress), then
+both faces' maps with the terrain, the spawn search, and a native server's start to listening:
+
+| Size | base | uplift | erosion | lakes | rivers | shores | **one face** | both faces | spawn | server (peak) |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 1× | 0.38 | 0.21 | 1.11 | 0.19 | 0.03 | 0.01 | **1.95 s** | 2.2 s | 0.7 s | 3.6 s (195 MB) |
+| 2× | 0.36 | 0.46 | 1.19 | 0.22 | 0.04 | 0.05 | **2.32 s** | 2.4 s | 1.2 s | |
+| 4× | 0.31 | 0.60 | 1.22 | 0.21 | 0.04 | 0.10 | **2.48 s** | 2.7 s | 0.0 s | |
+| 8× | 0.32 | 0.57 | 1.42 | 0.24 | 0.05 | 0.38 | **2.98 s** | 2.8 s | 0.0 s | |
+| 10× | 0.38 | 0.63 | 1.34 | 0.28 | 0.04 | 0.44 | **3.11 s** | 3.1 s | 0.0 s | 6.2 s (484 MB) |
+| 10× before | 0.30 | 17.39 | 1.31 | 0.30 | 0.05 | 24.14 | **43.68 s** | | | 114 s (12.4 GB) |
+
+`tests/map_build_budget.rs` pins it by op counts per cell (both faces): the uplift's segment tests
+a land cell and the channel index's entries a segment at 10× within a small factor of 1×'s. Left:
+the 10× channel index still holds ~16 M entries (1×: ~0.24 M), part of the page's memory (#76); the
+WASM build is 2–3× slower than native a thread, so a 10× map is ~8 s a face in the browser, both
+faces at once.
+
 ## 4. What breaks
 
 - **f32 precision.** An f32's step at 50 km is 3.9 mm, at 158 km 1.6 cm, at 500 km 3.1 cm. It does

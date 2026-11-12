@@ -20,6 +20,7 @@ pub mod fxaa;
 pub mod geometry;
 pub mod glitter;
 pub mod heightfield;
+pub mod impostors;
 pub mod lights;
 pub mod lod_map;
 pub mod lod_shadows;
@@ -157,6 +158,116 @@ pub fn clouds_for(device_type: wgpu::DeviceType, quality: CloudQuality) -> Cloud
     } else {
         quality
     }
+}
+
+/// The clouds' baked shape noise on the GPU (docs/CLOUDS.md §9.3): the base and detail 3D textures
+/// at the data's sizes (`form.baseSize`, `form.detailSize`; RGBA8), made empty at start and filled
+/// slab by slab from the job workers' bakes (`Job::CloudNoise`), and their repeating trilinear
+/// sampler. The volume draws once every slab of both has arrived.
+pub struct CloudNoise {
+    base: (wgpu::Texture, wgpu::TextureView),
+    detail: (wgpu::Texture, wgpu::TextureView),
+    sampler: wgpu::Sampler,
+    /// The slices of each texture written so far (base, detail).
+    written: [u32; 2],
+    /// The bake was handed to the game (`Renderer::take_cloud_noise_request`).
+    requested: bool,
+}
+
+impl CloudNoise {
+    fn new(device: &wgpu::Device, t: &dwell_look::clouds::CloudTunables) -> Self {
+        let make = |label, size: u32| {
+            let texture = device.create_texture(&wgpu::TextureDescriptor {
+                label: Some(label),
+                size: wgpu::Extent3d {
+                    width: size,
+                    height: size,
+                    depth_or_array_layers: size,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D3,
+                format: wgpu::TextureFormat::Rgba8Unorm,
+                usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+                view_formats: &[],
+            });
+            let view = texture.create_view(&Default::default());
+            (texture, view)
+        };
+        let repeat = wgpu::AddressMode::Repeat;
+        Self {
+            base: make("cloud base noise", t.form.base_size),
+            detail: make("cloud detail noise", t.form.detail_size),
+            sampler: device.create_sampler(&wgpu::SamplerDescriptor {
+                label: Some("cloud noise"),
+                address_mode_u: repeat,
+                address_mode_v: repeat,
+                address_mode_w: repeat,
+                mag_filter: wgpu::FilterMode::Linear,
+                min_filter: wgpu::FilterMode::Linear,
+                ..Default::default()
+            }),
+            written: [0, 0],
+            requested: false,
+        }
+    }
+
+    /// Both textures are whole.
+    fn ready(&self) -> bool {
+        self.written[0] >= self.base.0.size().depth_or_array_layers
+            && self.written[1] >= self.detail.0.size().depth_or_array_layers
+    }
+
+    fn write(&mut self, queue: &wgpu::Queue, detail: bool, z0: u32, texels: &[u8]) {
+        let (tex, k) = if detail {
+            (&self.detail.0, 1)
+        } else {
+            (&self.base.0, 0)
+        };
+        let n = tex.size().width;
+        let slices = (texels.len() / (4 * (n * n) as usize)) as u32;
+        if slices == 0 || z0 + slices > n {
+            return;
+        }
+        queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: tex,
+                mip_level: 0,
+                origin: wgpu::Origin3d { x: 0, y: 0, z: z0 },
+                aspect: wgpu::TextureAspect::All,
+            },
+            texels,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(4 * n),
+                rows_per_image: Some(n),
+            },
+            wgpu::Extent3d {
+                width: n,
+                height: n,
+                depth_or_array_layers: slices,
+            },
+        );
+        self.written[k] += slices;
+    }
+}
+
+/// The clouds' shape-noise bake as worker jobs (`Job::CloudNoise`): (detail, z0, z1) slabs of at
+/// most `slices` slices each, the base's then the detail's.
+pub fn cloud_noise_slabs(
+    t: &dwell_look::clouds::CloudTunables,
+    slices: u32,
+) -> Vec<(bool, u32, u32)> {
+    let mut out = Vec::new();
+    for (detail, size) in [(false, t.form.base_size), (true, t.form.detail_size)] {
+        let mut z = 0;
+        while z < size {
+            let z1 = (z + slices.max(1)).min(size);
+            out.push((detail, z, z1));
+            z = z1;
+        }
+    }
+    out
 }
 
 /// The volumetric clouds' buffer size for a drawing buffer of `size` at `tier` (its resolution
@@ -477,7 +588,7 @@ const STRIDES: [u64; 6] = [
     4 * (3 + 3 + 3 + 2 + 4 + 4 + 1 + 1 + 2), // Cutout: the terrain's, plant (sway, wind speed, fade), bare, light, flood
 ];
 
-fn floats(v: &[f32]) -> &[u8] {
+pub(crate) fn floats(v: &[f32]) -> &[u8] {
     bytemuck_cast(v)
 }
 fn u32s(v: &[u32]) -> &[u8] {
@@ -1335,6 +1446,13 @@ pub struct Renderer {
     /// The volumetric clouds pass (docs/CLOUDS.md §8.6): its group layout, uniform, pipeline, the
     /// last frame's camera (right, up, forward, tangents; the eye) and the frame count (jitter).
     cloud_layout: wgpu::BindGroupLayout,
+    /// The clouds' march group's layout and the baked shape noise (docs/CLOUDS.md §9.3).
+    cloud_march_layout: wgpu::BindGroupLayout,
+    cloud_noise: CloudNoise,
+    /// The resolve (BUGS.md #90): this frame's march with the clamped history.
+    cloud_resolve_pipeline: pipeline::Lazy,
+    /// Whether the eye was near the cloud layer last frame (`near_layer`'s band).
+    cloud_near: std::cell::Cell<bool>,
     cloud_prev_buffer: wgpu::Buffer,
     /// The run-time plumes' uniform (docs/CLOUDS.md §8.7), written each frame from `plumes`.
     cloud_plume_buffer: wgpu::Buffer,
@@ -1477,8 +1595,15 @@ pub struct Renderer {
     cards_override: Option<bool>,
     /// Graphics → Tall grass, percent of cross plants meshed (`plant_percent_of`).
     plant_percent: u8,
-    /// Graphics → Far trees: LOD sections mesh their trees.
+    /// Graphics → Far trees: far trees drawn (as impostors, else the LOD sections' tree cells).
     far_trees: bool,
+    /// `?impostors=0|1` (a dev switch): 0 draws the far trees as the LOD sections' tree cells
+    /// (`lod_trees.rs`) as before the impostors; `None` the impostors.
+    impostors_override: Option<bool>,
+    /// The far trees' impostors (render/impostors.rs), made when first drawn, and what they are
+    /// made from: the scene's module and its frame layout.
+    impostors: Option<impostors::Impostors>,
+    impostor_parts: (wgpu::ShaderModule, wgpu::BindGroupLayout),
     /// Graphics → Distant shadows (`lod_shadows::lod_shadows_for`).
     distant_shadows: bool,
     /// The water's flow shown (flow.rs `FLOW_RIPPLES`, `FLOW_FOAM`; the Water flow settings).
@@ -1503,6 +1628,9 @@ pub struct Renderer {
     /// The adapter's kind (`clouds_for`): a CPU adapter draws no clouds.
     adapter: wgpu::DeviceType,
     cloud_coverage: f64,
+    /// The view ray's cloud opacity over the data's (`?cloudExtinction=`, a dev A/B knob; 0: the
+    /// data's `volume.extinction`).
+    cloud_extinction: f64,
     cloud_seconds: f64,
     stats: RenderStats,
 }
@@ -1605,6 +1733,7 @@ impl Renderer {
             label: Some("frame"),
             entries: &frame_entries,
         });
+        let impostor_parts = (module.clone(), frame_layout.clone());
         let draw_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("draw"),
             entries: &[wgpu::BindGroupLayoutEntry {
@@ -2070,6 +2199,8 @@ impl Renderer {
         // The volumetric clouds pass (docs/CLOUDS.md §8.6): the march into the clouds buffer and
         // its distances, at the tier's reduced size, over the last frame's (group 3).
         let cloud_layout = frame::cloud_history_layout(&device);
+        let cloud_march_layout = frame::cloud_march_layout(&device);
+        let cloud_noise = CloudNoise::new(&device, &CLOUDS);
         let cloud_prev_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("cloud history"),
             size: frame::CLOUD_PREV_BYTES,
@@ -2088,7 +2219,7 @@ impl Renderer {
                 Some(&frame_layout),
                 Some(&draw_layout),
                 Some(&scene_read_layout),
-                Some(&cloud_layout),
+                Some(&cloud_march_layout),
             ],
             immediate_size: 0,
         });
@@ -2112,6 +2243,46 @@ impl Renderer {
                             entry_point: Some("clouds_fs"),
                             compilation_options: Default::default(),
                             targets: &[Some(frame::CLOUDS.into()), Some(frame::CLOUD_DIST.into())],
+                        }),
+                        primitive: Default::default(),
+                        depth_stencil: None,
+                        multisample: Default::default(),
+                        multiview_mask: None,
+                        cache: None,
+                    },
+                )
+            })
+        };
+        let cloud_resolve_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("clouds resolve"),
+            bind_group_layouts: &[
+                Some(&frame_layout),
+                Some(&draw_layout),
+                Some(&scene_read_layout),
+                Some(&cloud_layout),
+            ],
+            immediate_size: 0,
+        });
+        let cloud_resolve_pipeline = {
+            let (device, module, layout) =
+                (device.clone(), module.clone(), cloud_resolve_layout.clone());
+            pipeline::Lazy::new(move || {
+                crate::render::pipeline::create(
+                    &device,
+                    &wgpu::RenderPipelineDescriptor {
+                        label: Some("clouds resolve"),
+                        layout: Some(&layout),
+                        vertex: wgpu::VertexState {
+                            module: &module,
+                            entry_point: Some("sky_vs"),
+                            compilation_options: Default::default(),
+                            buffers: &[],
+                        },
+                        fragment: Some(wgpu::FragmentState {
+                            module: &module,
+                            entry_point: Some("clouds_resolve_fs"),
+                            compilation_options: Default::default(),
+                            targets: &[Some(frame::CLOUDS.into())],
                         }),
                         primitive: Default::default(),
                         depth_stencil: None,
@@ -2312,6 +2483,9 @@ impl Renderer {
             cards_override: None,
             plant_percent: 100,
             far_trees: true,
+            impostors_override: None,
+            impostors: None,
+            impostor_parts,
             distant_shadows: true,
             flow_switches: 0,
             water_tiles,
@@ -2331,6 +2505,10 @@ impl Renderer {
             bloom_layout,
             bloom_pipelines,
             cloud_layout,
+            cloud_march_layout,
+            cloud_noise,
+            cloud_resolve_pipeline,
+            cloud_near: std::cell::Cell::new(false),
             cloud_prev_buffer,
             cloud_plume_buffer,
             plumes: dwell_look::plumes::PlumeList::new(&CLOUDS),
@@ -2340,6 +2518,7 @@ impl Renderer {
             warmup: pipeline::Warmup::default(),
             adapter: wgpu::DeviceType::Other,
             cloud_coverage: CLOUDS.shape.coverage,
+            cloud_extinction: 0.0,
             cloud_seconds: 0.0,
             stats: RenderStats::default(),
         }
@@ -2668,7 +2847,30 @@ impl Renderer {
     /// The volumetric clouds' tier this frame draws (`clouds_for`, then the data's `tiers`); none
     /// for the 2D deck or no clouds.
     fn cloud_tier(&self) -> Option<dwell_look::clouds::VolumeTier> {
-        Some(clouds_for(self.adapter, self.clouds).volume(&CLOUDS)).filter(|t| t.steps > 0)
+        Some(self.clouds_now().volume(&CLOUDS))
+            .filter(|t| t.steps > 0)
+            .map(|t| t.at(self.cloud_near.get()))
+    }
+    /// The Clouds setting this frame draws (`clouds_for`): the 2D deck (Low) while a volume tier's
+    /// shape noise is still baking (docs/CLOUDS.md §9.4).
+    fn clouds_now(&self) -> CloudQuality {
+        let q = clouds_for(self.adapter, self.clouds);
+        if q.volume(&CLOUDS).steps > 0 && !self.cloud_noise.ready() {
+            CloudQuality::Low
+        } else {
+            q
+        }
+    }
+    /// Whether the clouds' shape noise is wanted and not yet asked for: the game then bakes it in
+    /// its job workers ([`Self::cloud_noise_slab`]). Asking marks it asked.
+    pub fn take_cloud_noise_request(&mut self) -> bool {
+        let wanted = clouds_for(self.adapter, self.clouds).volume(&CLOUDS).steps > 0;
+        wanted && !std::mem::replace(&mut self.cloud_noise.requested, true)
+    }
+    /// A baked slab of the clouds' shape noise (`detail`: the detail texture, else the base; slices
+    /// `z0..`) into its texture; the volume draws once both are whole.
+    pub fn cloud_noise_slab(&mut self, detail: bool, z0: u32, texels: &[u8]) {
+        self.cloud_noise.write(&self.queue, detail, z0, texels);
     }
     /// The clouds pass's uniform (`CloudPrev`) for this frame's camera `view` (right, up, forward,
     /// tangents) and eye, and the tier's history blend: the last frame's camera, the share of the
@@ -2679,7 +2881,12 @@ impl Renderer {
         let prev = self.cloud_prev.replace(Some((view, eye)));
         let n = self.cloud_frames.get().wrapping_add(1);
         self.cloud_frames.set(n);
-        cloud_prev_block(prev, view, eye, blend, n)
+        let mut block = cloud_prev_block(prev, view, eye, blend, n);
+        // The pass's divisor: the scene span's footprint per texel (cloud_scene_span).
+        block[4][3] = self.cloud_tier().map_or(1, |t| t.divisor) as f32;
+        // The view's opacity override (0: the data's; `?cloudExtinction=`).
+        block[3][2] = self.cloud_extinction as f32;
+        block
     }
     /// The Model detail setting (ADR 0070 §10): every skinned model at `level`
     /// (`dwell_models::DETAIL_LEVELS`).
@@ -2716,6 +2923,16 @@ impl Renderer {
     /// to set.
     pub fn set_cloud_coverage(&mut self, coverage: f64) {
         self.cloud_coverage = coverage.clamp(0.0, 1.0);
+    }
+    /// The view ray's cloud opacity (per m at density 1) over the data's `volume.extinction`, for
+    /// an A/B of how much a cloud hides the ones behind it (`?cloudExtinction=`; 0 or less: the
+    /// data's). The light's path keeps `volume.lightExtinction` whatever this is.
+    pub fn set_cloud_extinction(&mut self, extinction: f64) {
+        self.cloud_extinction = if extinction.is_finite() {
+            extinction.clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
     }
     /// The clouds' clock (s): world time where there is one, so clients roughly agree.
     pub fn set_cloud_time(&mut self, seconds: f64) {
@@ -2889,6 +3106,7 @@ impl Renderer {
         }
         if self.cloud_tier().is_some() {
             set.push(&self.clouds_pipeline);
+            set.push(&self.cloud_resolve_pipeline);
         }
         if self.shaft_tier().is_some() {
             set.push(&self.shafts_pipeline);
@@ -2930,6 +3148,50 @@ impl Renderer {
     pub fn set_terrain_detail(&mut self, tall_grass: f64, far_trees: bool) {
         self.plant_percent = plant_percent_of(tall_grass);
         self.far_trees = far_trees;
+    }
+    /// `?impostors=0|1`: 0 draws the far trees as the LOD sections' tree cells (as before).
+    pub fn set_impostors_override(&mut self, on: Option<bool>) {
+        self.impostors_override = on;
+    }
+    /// The far trees' hand-over now (`impostors.json` `far.tiers` by the Far trees setting):
+    /// `None` when the far trees are the LOD sections' (`?impostors=0`).
+    fn far_tier(&self) -> Option<dwell_worldgen::impostor::Far> {
+        if self.impostors_override == Some(false) {
+            return None;
+        }
+        let c = dwell_worldgen::impostor::Config::get();
+        c.far(if self.far_trees { "on" } else { "off" })
+    }
+    /// The far trees' impostors when they draw, made on first use (the atlas at this device's
+    /// tier: phone, CPU adapter or desktop texels).
+    fn impostors_mut(&mut self) -> Option<&mut impostors::Impostors> {
+        let far = self.far_tier().filter(|f| f.impostor);
+        if far.is_none() {
+            if let Some(i) = &mut self.impostors {
+                i.far = None;
+            }
+            return None;
+        }
+        if self.impostors.is_none() {
+            let tier = if is_cpu(self.adapter) {
+                dwell_worldgen::impostor::Tier::Cpu
+            } else if self.phone {
+                dwell_worldgen::impostor::Tier::Phone
+            } else {
+                dwell_worldgen::impostor::Tier::Desktop
+            };
+            self.impostors = Some(impostors::Impostors::new(
+                &self.device,
+                &self.impostor_parts.0,
+                &self.impostor_parts.1,
+                &self.draw_layout,
+                self.samples,
+                tier,
+            ));
+        }
+        let i = self.impostors.as_mut()?;
+        i.far = far;
+        Some(i)
     }
     /// Graphics → Distant shadows: the distant terrain's sun shadows (`lod_shadows_for`), at
     /// the Shadows setting's tier when on.
@@ -3259,14 +3521,18 @@ impl Renderer {
             self.eye[0].rem_euclid(WIND_PERIOD) as f32,
             self.eye[2].rem_euclid(WIND_PERIOD) as f32,
         ]);
-        let clouds = cloud_uniforms(
+        let mut clouds = cloud_uniforms(
             &CLOUDS,
             self.eye,
             self.face,
             self.cloud_seconds,
-            clouds_for(self.adapter, self.clouds),
+            self.clouds_now(),
             self.cloud_coverage,
         );
+        // Near or in the layer the tier's near steps (BUGS.md #90).
+        if let Some(t) = self.cloud_tier() {
+            clouds[2][3] = t.steps as f32 + t.light_steps as f32 / 8.0;
+        }
         put(&clouds[0]);
         put(&clouds[1]);
         put(&clouds[2]);
@@ -3276,7 +3542,7 @@ impl Renderer {
             self.eye,
             self.face.other(),
             self.cloud_seconds,
-            clouds_for(self.adapter, self.clouds),
+            self.clouds_now(),
             self.cloud_coverage,
         );
         put(&other[0]);
@@ -3300,7 +3566,7 @@ impl Renderer {
             &REFLECTIONS,
             self.water().index(),
             self.clouds.octaves(&CLOUDS),
-            self.clouds.self_shadow(),
+            self.clouds.self_shadow(&CLOUDS),
             self.phone,
         ) {
             put(&v);
@@ -3308,6 +3574,9 @@ impl Renderer {
         for v in lean_uniforms(self.tree_lean, self.eye) {
             put(&v);
         }
+        put(&impostors::far_uniform(
+            self.impostors.as_ref().and_then(|i| i.far),
+        ));
         let pixel_angle = 2.0 * tan_y / f64::from(self.size.1.max(1));
         let mut day =
             self.day_in_air()
@@ -3516,6 +3785,8 @@ impl Renderer {
             u8::from(view.holds_box(origin, size, passes[0].0, passes[0].1))
                 | u8::from(view.holds_box(origin, size, passes[1].0, passes[1].1)) << 1
         };
+        // Past the far trees' hand-over and the plants' fades a chunk's cutout draws nothing.
+        let cutout_reach = impostors::cutout_reach(self.impostors.as_ref().and_then(|i| i.far));
         for (&coord, c) in &self.terrain.chunks {
             let fade = chunk_fade(coord).filter(|f| !f.is_hidden());
             let passes = if fade.is_some() {
@@ -3546,7 +3817,18 @@ impl Renderer {
                     mesh: DrawMesh::Chunk(coord, Part::Opaque),
                 });
             }
-            if c.cutout.is_some() && self.cutout_shown {
+            let cutout_near = cutout_reach.is_none_or(|reach| {
+                let r = self.rel(c.origin);
+                let d2: f64 = (0..3)
+                    .map(|k| {
+                        let lo = f64::from(r[k]);
+                        let d = (-lo).clamp(0.0, CHUNK_EXTENT_M[k]) + lo;
+                        d * d
+                    })
+                    .sum();
+                d2 <= f64::from(reach) * f64::from(reach)
+            });
+            if c.cutout.is_some() && self.cutout_shown && cutout_near {
                 out.push(DrawItem {
                     kind: Kind::Cutout,
                     water: false,
@@ -3890,6 +4172,13 @@ impl Renderer {
     /// The frame's targets, made again when the size changes or the water starts or stops
     /// reading the scene.
     fn ensure_targets(&mut self) {
+        // Near or in the cloud layer, a tier marches with its near steps and divisor (BUGS.md #90).
+        let eye_h = self.face.y(self.eye[1]) - dwell_protocol::world::SEA_LEVEL_M;
+        self.cloud_near.set(dwell_look::clouds::near_layer(
+            &CLOUDS.volume,
+            eye_h,
+            self.cloud_near.get(),
+        ));
         // The under-water copy only where the water reads the scene (Medium and High).
         let under = self.water().reads_scene();
         // The shafts' buffer at the tier's size (1 × 1 with none).
@@ -3926,6 +4215,12 @@ impl Renderer {
                 cloud_layout: &self.cloud_layout,
                 cloud_prev: &self.cloud_prev_buffer,
                 cloud_plumes: &self.cloud_plume_buffer,
+                cloud_march_layout: &self.cloud_march_layout,
+                cloud_noise: (
+                    &self.cloud_noise.base.1,
+                    &self.cloud_noise.detail.1,
+                    &self.cloud_noise.sampler,
+                ),
                 bloom,
                 bloom_layout: &self.bloom_layout,
             },
@@ -4307,8 +4602,15 @@ impl Renderer {
                 self.timer.as_ref().and_then(|t| t.writes(query)),
             );
         }
+        // The far trees' impostors: their uniform, layers and instances for this frame.
+        let (device, queue, eye, face) =
+            (self.device.clone(), self.queue.clone(), self.eye, self.face);
+        if let Some(imp) = self.impostors_mut() {
+            imp.prepare(&device, &queue, eye, face);
+        }
         let arena = self.arena.borrow();
         let (mut calls, mut triangles) = (0u32, 0u64);
+        let mut impostor_triangles = 0u64;
         let scene_passes = passes.len();
         let targets = self.targets.as_ref().expect("ensure_targets made them");
         let t0 = crate::telemetry::now_ms();
@@ -4448,6 +4750,12 @@ impl Renderer {
                 {
                     pass.set_bind_group(1, &self.draw_group, &[]);
                 }
+                // The far trees' impostors, with the opaque draws (render/impostors.rs).
+                if let Some(imp) = &self.impostors {
+                    let n = triangles;
+                    imp.draw(&mut pass, &mut calls, &mut triangles);
+                    impostor_triangles += triangles - n;
+                }
                 self.record(
                     &mut pass,
                     &opaque[solid..],
@@ -4543,7 +4851,7 @@ impl Renderer {
                 self.eye,
                 self.face,
                 self.cloud_seconds,
-                clouds_for(self.adapter, self.clouds),
+                self.clouds_now(),
             );
             self.queue
                 .write_buffer(&self.cloud_plume_buffer, 0, floats(&plumes));
@@ -4557,7 +4865,7 @@ impl Renderer {
                     label: Some("clouds"),
                     color_attachments: &[
                         Some(wgpu::RenderPassColorAttachment {
-                            view: &targets.clouds.1,
+                            view: &targets.cloud_raw.1,
                             depth_slice: None,
                             resolve_target: None,
                             ops: clear,
@@ -4575,8 +4883,28 @@ impl Renderer {
                 pass.set_bind_group(0, &self.frame_groups[scene_passes - 1], &[]);
                 pass.set_bind_group(1, &self.draw_group, &[]);
                 pass.set_bind_group(2, &targets.scene_read, &[]);
-                pass.set_bind_group(3, &targets.cloud_group, &[]);
+                pass.set_bind_group(3, &targets.cloud_march_group, &[]);
                 pass.set_pipeline(&self.clouds_pipeline);
+                pass.draw(0..3, 0..1);
+                calls += 1;
+            }
+            // The resolve (BUGS.md #90): the raw march with the history, clamped to its neighbours.
+            {
+                let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("clouds resolve"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: &targets.clouds.1,
+                        depth_slice: None,
+                        resolve_target: None,
+                        ops: clear,
+                    })],
+                    ..Default::default()
+                });
+                pass.set_bind_group(0, &self.frame_groups[scene_passes - 1], &[]);
+                pass.set_bind_group(1, &self.draw_group, &[]);
+                pass.set_bind_group(2, &targets.scene_read, &[]);
+                pass.set_bind_group(3, &targets.cloud_group, &[]);
+                pass.set_pipeline(&self.cloud_resolve_pipeline);
                 pass.draw(0..3, 0..1);
                 calls += 1;
             }
@@ -4755,6 +5083,7 @@ impl Renderer {
         crate::telemetry::add("draw.raster", cpu);
         self.stats.calls = calls;
         self.stats.triangles = triangles;
+        crate::telemetry::sample("impostor.ktris", impostor_triangles as f64 / 1000.0);
     }
 
     /// Records `draws` (taking draw-buffer slots from `first_slot`) into a pass; fluids with the
@@ -5858,7 +6187,8 @@ pub(crate) const FRAME_FLOATS: usize = 16
     + DAY_SKY_FLOATS;
 
 /// Floats of the tree lean's vec4s (`lean_uniforms`), just before the day/night block.
-pub(crate) const LEAN_FLOATS: usize = 3 * 4;
+/// With the far trees' hand-over after them (`far_trees`, render/impostors.rs).
+pub(crate) const LEAN_FLOATS: usize = 4 * 4;
 
 /// The atlas and its mipmaps, each with its side in texels: down to the level where a tile's gutter
 /// is one texel wide. Filtering a smaller level at a tile's edge would reach past the gutter into
@@ -6031,7 +6361,55 @@ impl crate::game::Scene for Renderer {
         self.plant_percent
     }
     fn draws_far_trees(&self) -> bool {
-        self.far_trees
+        // The impostors draw the far trees: the LOD sections mesh only their ground.
+        self.far_trees && self.far_tier().is_none()
+    }
+    fn far_tree_reach(&mut self) -> Option<f32> {
+        self.impostors_mut()
+            .and_then(|i| i.far)
+            .map(|f| impostors::reach(&f))
+    }
+    fn impostor_bakes(&mut self) -> Option<(u32, u32)> {
+        let i = self.impostors_mut()?;
+        if i.requested {
+            return None;
+        }
+        i.requested = true;
+        Some((
+            dwell_worldgen::impostor::Config::get().layer_count(),
+            i.px(),
+        ))
+    }
+    fn impostor_layer(
+        &mut self,
+        layer: u32,
+        centre_y: f32,
+        radius: f32,
+        albedo: &[u8],
+        normal_depth: &[u8],
+    ) {
+        let queue = self.queue.clone();
+        if let Some(i) = self.impostors.as_mut() {
+            i.upload_layer(&queue, layer, centre_y, radius, albedo, normal_depth);
+        }
+    }
+    fn far_tree_tile_held(&self, key: (u8, i32, i32)) -> bool {
+        self.impostors.as_ref().is_some_and(|i| i.has_tile(&key))
+    }
+    fn far_tree_tile(&mut self, key: (u8, i32, i32), trees: &[dwell_worldgen::impostor::FarTree]) {
+        if let Some(i) = self.impostors.as_mut() {
+            let face = if key.0 == 1 {
+                FaceFrame::B
+            } else {
+                FaceFrame::A
+            };
+            i.set_tile(face, key.1, key.2, trees);
+        }
+    }
+    fn retain_far_tree_tiles(&mut self, keep: &dyn Fn(&(u8, i32, i32)) -> bool) {
+        if let Some(i) = self.impostors.as_mut() {
+            i.retain_tiles(keep);
+        }
     }
     fn upload_budget_bytes(&self) -> u64 {
         streaming::StreamingBudgets::get().upload_bytes(self.phone)
@@ -6060,6 +6438,12 @@ impl crate::game::Scene for Renderer {
     }
     fn set_lod_map(&mut self, map: Option<&crate::lod_map::LodMap>) {
         self.lod_map = map.filter(|_| self.lod_map_supported()).cloned();
+    }
+    fn take_cloud_noise_request(&mut self) -> bool {
+        Renderer::take_cloud_noise_request(self)
+    }
+    fn cloud_noise_slab(&mut self, detail: bool, z0: u32, texels: &[u8]) {
+        Renderer::cloud_noise_slab(self, detail, z0, texels);
     }
     fn lod_map_tile(&mut self, ring: usize, rect: crate::lod_map::Rect, rgba: &[u8]) {
         if !self.lod_map_supported() {
@@ -6515,7 +6899,14 @@ mod tests {
         // had no such switches, every plant and far tree was meshed whatever the settings).
         use crate::game::Scene;
         let mut r = noop_renderer();
-        assert_eq!((r.plant_percent(), r.draws_far_trees()), (100, true));
+        // The impostors draw the far trees (render/impostors.rs): the sections mesh their ground.
+        assert_eq!((r.plant_percent(), r.draws_far_trees()), (100, false));
+        r.set_impostors_override(Some(false));
+        assert!(
+            r.draws_far_trees(),
+            "?impostors=0: the sections' tree cells"
+        );
+        r.set_impostors_override(None);
         r.set_terrain_detail(0.4, false);
         assert_eq!((r.plant_percent(), r.draws_far_trees()), (40, false));
         r.set_terrain_detail(f64::NAN, true);
@@ -7507,6 +7898,8 @@ mod tests {
             divisor,
             history_blend: 0.2,
             plume_steps: 8,
+            near_steps: 24,
+            near_divisor: 1,
         };
         assert_eq!(cloud_buffer_size((1280, 720), Some(tier(2))), (640, 360));
         assert_eq!(cloud_buffer_size((1281, 721), Some(tier(4))), (321, 181));

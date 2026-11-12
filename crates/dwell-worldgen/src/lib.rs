@@ -24,6 +24,7 @@ pub mod placements;
 pub mod plate_tectonics;
 pub mod plates;
 pub mod portals;
+pub mod progress;
 pub mod ramps;
 pub mod species;
 pub mod tectonics;

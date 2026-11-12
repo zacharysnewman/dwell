@@ -65,6 +65,9 @@ pub struct CloudLight {
     pub night_shade: Rgb,
     pub absorption: f64,
     pub shadow_step_m: f64,
+    /// The deck's self-shadow sample's octaves on Medium and High, and on Low (0: none).
+    pub shadow_octaves: u32,
+    pub low_shadow_octaves: u32,
     pub silver_lining: f64,
     pub silver_power: f64,
     pub sun_warmth: f64,
@@ -76,10 +79,18 @@ pub struct CloudLight {
 pub struct VolumeTunables {
     pub base_m: f64,
     pub top_m: f64,
-    pub top_floor: f64,
-    pub detail_cell_m: f64,
-    pub detail_erosion: f64,
+    /// The view ray's opacity: the light lost per metre at density 1 along the view (what hides a
+    /// cloud behind another). The renderer can override it at run time (`?cloudExtinction=`).
     pub extinction: f64,
+    /// The same along the light's path toward the sun or moon (× `light.absorption`): separate,
+    /// so a more opaque view leaves the light through the cloud as it is.
+    pub light_extinction: f64,
+    /// A plume's view opacity.
+    pub plume_extinction: f64,
+    /// How much a low sun's warm tint also takes the shade colour (the sky's light and the
+    /// ground's bounce), toward the deck's shaded side: × the low sun's ramp (`light.sunWarmth` at
+    /// most), the mix capped at 1. 0: only the sun's light warms.
+    pub sunset_shade: f64,
     /// The first light sample's length toward the sun or moon (m); each next is
     /// `light_step_growth` times the last.
     pub light_step_m: f64,
@@ -111,6 +122,55 @@ pub struct VolumeTunables {
     pub depth_band_range: f64,
     /// How much rising 3D noise breaks a plume's density up (0: smooth).
     pub plume_billow: f64,
+    /// Within this of the layer (or in it) a tier marches with its near steps and divisor
+    /// (BUGS.md #90).
+    pub near_m: f64,
+}
+
+/// The clouds' shape (`form`, docs/CLOUDS.md §9): the baked noise's sizes and tiles, and how the
+/// detail erodes the base shape.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct FormTunables {
+    /// The base and detail textures' sides (texels; powers of two).
+    pub base_size: u32,
+    pub detail_size: u32,
+    /// How far each texture (and the curl's field) repeats, m; each divides `shape.wrap_m`.
+    pub base_tile_m: f64,
+    pub detail_tile_m: f64,
+    pub curl_tile_m: f64,
+    /// How far the curl moves the detail's point at the layer's floor (m; none at its top).
+    pub curl_m: f64,
+    /// How much of the base shape's density the detail may take away (only where it is below 1).
+    pub detail_erosion: f64,
+    /// Below this share of the layer the detail is wispy (its fBm), above it billowy (inverted).
+    pub wisp_height: f64,
+    /// How far the shape leans downwind per metre up (m/m).
+    pub shear: f64,
+    /// The weather map's cover rises from 0 to 1 over this much of the deck's noise past the cut.
+    pub coverage_softness: f64,
+}
+
+/// The weather map's data (`weather`, §9.2): the cloud type along the type axis and the rain.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct WeatherTunables {
+    pub r#type: f64,
+    pub type_variation: f64,
+    pub type_from_coverage: f64,
+    pub precipitation: f64,
+}
+
+/// A cloud type (`cloudTypes`, §9.2): its place along the weather map's type axis and its height
+/// profile in the layer (`base`: the fade-in from the floor, `top`: the fade-out; shares of the
+/// layer's depth), its anvil (how much its top spreads), density and how much rain darkens it.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct CloudType {
+    pub name: &'static str,
+    pub at: f64,
+    pub base: [f64; 2],
+    pub top: [f64; 2],
+    pub anvil: f64,
+    pub density: f64,
+    pub darkening: f64,
 }
 
 /// One Clouds setting value's march (`tiers`): steps per pixel (0: the 2D deck), light samples
@@ -124,6 +184,33 @@ pub struct VolumeTier {
     pub history_blend: f64,
     /// The samples through each plume a ray crosses (0: no plumes; §8.7).
     pub plume_steps: u32,
+    /// The steps and divisor while the eye is near or in the layer (BUGS.md #90).
+    pub near_steps: u32,
+    pub near_divisor: u32,
+}
+
+impl VolumeTier {
+    /// This tier as drawn with the eye `near` the layer ([`near_layer`]): its near steps and
+    /// divisor.
+    pub fn at(self, near: bool) -> Self {
+        if near {
+            Self {
+                steps: self.near_steps,
+                divisor: self.near_divisor,
+                ..self
+            }
+        } else {
+            self
+        }
+    }
+}
+
+/// Whether an eye `eye_h` above sea level (face-local) is near the layer: within `near_m` of it or
+/// in it, with a band of half `near_m` more to leave it (`was`: last frame's), so hovering at the
+/// edge doesn't switch the buffers every frame.
+pub fn near_layer(v: &VolumeTunables, eye_h: f64, was: bool) -> bool {
+    let off = (v.base_m - eye_h).max(eye_h - v.top_m).max(0.0);
+    off < if was { 1.5 * v.near_m } else { v.near_m }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -177,7 +264,11 @@ pub struct CloudTunables {
     pub wind: WindTunables,
     pub light: CloudLight,
     pub volume: VolumeTunables,
+    pub form: FormTunables,
+    pub weather: WeatherTunables,
     pub tiers: VolumeTiers,
+    /// The cloud types along the weather map's type axis, in order (§9.2).
+    pub cloud_types: &'static [CloudType],
     /// How many plumes the run-time list holds (the plume uniform's slots).
     pub plume_slots: u32,
     pub sources: PlumeSources,
@@ -224,8 +315,20 @@ impl CloudQuality {
             Self::Medium | Self::High => t.shape.octaves,
         }
     }
-    pub fn self_shadow(self) -> bool {
-        self == Self::High
+    /// Whether the deck takes its self-shadow sample toward the light ([`Self::shadow_octaves`]).
+    pub fn self_shadow(self, t: &CloudTunables) -> bool {
+        self.shadow_octaves(t) > 0
+    }
+    /// The octaves of the deck's self-shadow sample toward the light (0: none): `light.lowShadowOctaves`
+    /// on Low, `light.shadowOctaves` on Medium and High (the deck they draw in reflections and Snell's
+    /// window), at most the tier's own octaves (docs/CLOUDS.md §10).
+    pub fn shadow_octaves(self, t: &CloudTunables) -> u32 {
+        let n = match self {
+            Self::Off => 0,
+            Self::Low => t.light.low_shadow_octaves,
+            Self::Medium | Self::High => t.light.shadow_octaves,
+        };
+        n.min(self.octaves(t))
     }
     /// The volumetric march this setting draws (`tiers`; Off: none). Zero steps: the 2D deck.
     pub fn volume(self, t: &CloudTunables) -> VolumeTier {
@@ -236,6 +339,8 @@ impl CloudQuality {
                 divisor: 1,
                 history_blend: 1.0,
                 plume_steps: 0,
+                near_steps: 0,
+                near_divisor: 1,
             },
             Self::Low => t.tiers.low,
             Self::Medium => t.tiers.medium,
@@ -369,7 +474,7 @@ pub fn cloud_uniforms(
         [
             coverage.clamp(0.0, 1.0) as f32,
             quality.octaves(t) as f32,
-            if quality.self_shadow() { 1.0 } else { 0.0 },
+            quality.shadow_octaves(t) as f32,
             height as f32,
         ],
         [
@@ -473,35 +578,217 @@ pub fn volume_stretch(n: f64) -> f64 {
     ((n - 0.5) * CONTRAST + 0.5).clamp(0.0, 1.0)
 }
 
-/// The coverage's cut `y` of the way up the layer (0 its base, 1 its top): rising with height
-/// (rounded tops over flat bases), lifted near the base. `cloud_vol_shape`'s.
-pub fn volume_cut(t: &CloudTunables, y: f64, coverage: f64) -> f64 {
-    1.0 - coverage + (1.0 - t.volume.top_floor) * y * y + 0.15 * (1.0 - smoothstep(0.0, 0.12, y))
+// ----- The shape model (docs/CLOUDS.md §9), on the CPU: the shader's twin -----
+
+/// `x` mapped from `lo..hi` onto `a..b` (Schneider's remap; not clamped).
+pub fn remap(x: f64, lo: f64, hi: f64, a: f64, b: f64) -> f64 {
+    a + (x - lo) * (b - a) / (hi - lo)
 }
 
-/// The layer's density before the detail's erosion, for stretched weather noise `n` at `y` up the
-/// layer (`cloud_vol_shape`); none outside it.
-pub fn volume_shape(t: &CloudTunables, n: f64, y: f64, coverage: f64) -> f64 {
-    if y <= 0.0 || y >= 1.0 || coverage <= 0.0 {
+/// A column's cloud-type profile: the fade-in and fade-out spans (shares of the layer's depth),
+/// the anvil, density and rain darkening, mixed between the two types either side of `k` along
+/// the type axis (`cloud_type_profile`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Profile {
+    pub base: [f64; 2],
+    pub top: [f64; 2],
+    pub anvil: f64,
+    pub density: f64,
+    pub darkening: f64,
+}
+
+fn profile_of(c: &CloudType) -> Profile {
+    Profile {
+        base: c.base,
+        top: c.top,
+        anvil: c.anvil,
+        density: c.density,
+        darkening: c.darkening,
+    }
+}
+
+/// The profile at `k` along the type axis: the types' own at their `at`, mixed linearly between
+/// (so stratus thickens into stratocumulus and on), clamped to the first and last.
+pub fn type_profile(types: &[CloudType], k: f64) -> Profile {
+    let first = &types[0];
+    if k <= first.at {
+        return profile_of(first);
+    }
+    for w in types.windows(2) {
+        let (a, b) = (&w[0], &w[1]);
+        if k <= b.at {
+            let f = (k - a.at) / (b.at - a.at);
+            let m = |x: f64, y: f64| x + (y - x) * f;
+            return Profile {
+                base: [m(a.base[0], b.base[0]), m(a.base[1], b.base[1])],
+                top: [m(a.top[0], b.top[0]), m(a.top[1], b.top[1])],
+                anvil: m(a.anvil, b.anvil),
+                density: m(a.density, b.density),
+                darkening: m(a.darkening, b.darkening),
+            };
+        }
+    }
+    profile_of(types.last().unwrap())
+}
+
+/// The profile's height gradient `y` up the layer (0 floor, 1 top): faded in over its base span
+/// (a short one: a flat base) and out over its top span (a long one: the base noise's weaker parts
+/// end lower, so the top is rounded). `cloud_height_gradient`.
+pub fn height_gradient(p: &Profile, y: f64) -> f64 {
+    if y <= 0.0 || y >= 1.0 {
         return 0.0;
     }
-    let cut = volume_cut(t, y, coverage);
-    smoothstep(cut, cut + t.shape.edge_softness, n)
+    smoothstep(p.base[0], p.base[1], y) * (1.0 - smoothstep(p.top[0], p.top[1], y))
 }
 
-/// How far up the layer (0–1) the cloud over a column of stretched weather noise `n` reaches:
-/// where the rising cut passes the middle of its soft edge, the base's lift aside
-/// (`cloud_vol_top`). Read at no cost from the sample's own noise: no lookups.
-pub fn volume_column_top(t: &CloudTunables, n: f64, coverage: f64) -> f64 {
-    let k = n - 0.5 * t.shape.edge_softness - (1.0 - coverage);
-    (k.max(0.0) / (1.0 - t.volume.top_floor)).sqrt().min(1.0)
+/// The weather map at a column (§9.2): `cover` (0–1), `kind` (along the type axis) and the rain.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Weather {
+    pub cover: f64,
+    pub kind: f64,
+    pub precipitation: f64,
 }
 
-/// The cloud above and below a sample `y` up a column whose cloud reaches `top`, in metres of
-/// density 1 (half density on average): what dims the sky's light and the ground's bounce.
-pub fn volume_cover_m(t: &CloudTunables, y: f64, top: f64) -> (f64, f64) {
+/// The weather at a column of stretched deck noise `n` ([`volume_stretch`]) and second noise `v`
+/// (0–1) under the global `coverage`: cover the deck's own cut, softened; the type rises with how
+/// far the column is past the cut (a cloud's core towers over its edges) and varies with `v`.
+/// `cloud_weather`.
+pub fn weather(t: &CloudTunables, n: f64, v: f64, coverage: f64) -> Weather {
+    let w = &t.weather;
+    let cut = 1.0 - coverage;
+    let cover = if coverage <= 0.0 {
+        0.0
+    } else {
+        smoothstep(cut, cut + t.form.coverage_softness, n)
+    };
+    Weather {
+        cover,
+        kind: (w.r#type + w.type_from_coverage * (n - cut) + w.type_variation * (2.0 * v - 1.0))
+            .clamp(0.0, 1.0),
+        precipitation: w.precipitation,
+    }
+}
+
+/// The cover at `y` up the layer with the profile's anvil: from its top fade's start upward the
+/// cover is raised (`cover^(1 − ½ anvil)`), so a cumulonimbus's top spreads wider than its trunk.
+pub fn anvil_cover(p: &Profile, y: f64, cover: f64) -> f64 {
+    if p.anvil <= 0.0 || cover <= 0.0 {
+        return cover;
+    }
+    let k = smoothstep(p.top[0] - 0.15, p.top[0], y);
+    cover.powf(1.0 - 0.5 * p.anvil * k)
+}
+
+/// The base shape's density (§9.3) from the base texture's sample `b` (RGBA: Perlin–Worley, Worley
+/// fBm ×3) `y` up the layer: the Perlin–Worley dilated by the Worley fBm
+/// (`remap(R, −(1 − fbm), 1, 0, 1)`), times the profile's gradient, cut by the column's cover
+/// (`remap(·, 1 − cover, 1, 0, 1) × cover`), so no cover is no cloud. `cloud_base_shape`.
+pub fn base_shape(b: [f64; 4], y: f64, w: &Weather, p: &Profile) -> f64 {
+    let g = height_gradient(p, y);
+    let cover = anvil_cover(p, y, w.cover);
+    if g <= 0.0 || cover <= 0.0 {
+        return 0.0;
+    }
+    let fbm = 0.625 * b[1] + 0.25 * b[2] + 0.125 * b[3];
+    let base = remap(b[0], fbm - 1.0, 1.0, 0.0, 1.0).clamp(0.0, 1.0);
+    (remap(base * g, 1.0 - cover, 1.0, 0.0, 1.0).max(0.0) * cover).min(1.0)
+}
+
+/// The detail's erosion of base density `d` (§9.3) by the detail fBm `hf` (0–1, its inverted
+/// Worley: round billows) `y` up the layer: below `wisp_height` the fBm itself takes away (wispy
+/// bases), above it its inverse (the gaps between billows: billowy tops); by `detail_erosion` at
+/// most and only where `d` is under 1, so the core stays. `cloud_erode`.
+pub fn erode(t: &CloudTunables, d: f64, hf: f64, y: f64) -> f64 {
+    if d <= 0.0 {
+        return 0.0;
+    }
+    let m = hf + (1.0 - 2.0 * hf) * smoothstep(0.0, t.form.wisp_height, y);
+    remap(d, m * t.form.detail_erosion, 1.0, 0.0, 1.0).clamp(0.0, 1.0)
+}
+
+/// The density's scale for the profile and the rain at `y` (thicker, darker rain bases).
+pub fn density_scale(p: &Profile, w: &Weather, y: f64) -> f64 {
+    p.density * (1.0 + w.precipitation * p.darkening * (1.0 - y))
+}
+
+/// The shape point (m, face-local: x, height, z) of a point `x, z` metres across (in the noise's
+/// wrapped frame) at height `h`: leaned downwind by `form.shear` per metre over the layer's floor.
+/// `cloud_shape_point`.
+pub fn shape_point(t: &CloudTunables, x: f64, h: f64, z: f64) -> [f64; 3] {
+    let [dx, dz] = heading(t.wind.direction_deg);
+    let lean = t.form.shear * (h - t.volume.base_m);
+    [x + dx * lean, h, z + dz * lean]
+}
+
+/// The baked noise (`crate::cloud_noise`) and the sampling the shader does with it.
+pub struct ShapeNoise {
+    pub base: crate::cloud_noise::Noise3,
+    pub detail: crate::cloud_noise::Noise3,
+}
+
+impl ShapeNoise {
+    /// The textures at the data's sizes (or `size_override`'s smaller ones, for quick tests).
+    pub fn bake(t: &CloudTunables, size_override: Option<(u32, u32)>) -> Self {
+        let (b, d) = size_override.unwrap_or((t.form.base_size, t.form.detail_size));
+        Self {
+            base: crate::cloud_noise::bake_base(b),
+            detail: crate::cloud_noise::bake_detail(d),
+        }
+    }
+
+    /// The base texture's sample at shape point `pm`.
+    pub fn base_at(&self, t: &CloudTunables, pm: [f64; 3]) -> [f64; 4] {
+        self.base.sample(pm.map(|c| c / t.form.base_tile_m))
+    }
+
+    /// The detail fBm at shape point `pm`, `y` up the layer, with the detail's drift `drift` (m
+    /// across): its point moved first by the curl (most at the floor). `cloud_detail_fbm`.
+    pub fn detail_at(&self, t: &CloudTunables, pm: [f64; 3], y: f64, drift: [f64; 2]) -> f64 {
+        let c = self.detail.sample(pm.map(|c| c / t.form.curl_tile_m));
+        let k = t.form.curl_m * (1.0 - y.clamp(0.0, 1.0));
+        let p = [
+            pm[0] + (2.0 * c[1] - 1.0) * k + drift[0],
+            pm[1],
+            pm[2] + (2.0 * c[2] - 1.0) * k + drift[1],
+        ];
+        self.detail.sample(p.map(|c| c / t.form.detail_tile_m))[0]
+    }
+
+    /// The whole density at shape point `pm` (`y` up the layer) under weather `w`: the base shape
+    /// eroded by the detail, scaled by the profile and the rain. `with_detail` false: the light
+    /// samples' cheap base shape alone.
+    pub fn density(
+        &self,
+        t: &CloudTunables,
+        pm: [f64; 3],
+        y: f64,
+        w: &Weather,
+        drift: [f64; 2],
+        with_detail: bool,
+    ) -> f64 {
+        let p = type_profile(t.cloud_types, w.kind);
+        let d = base_shape(self.base_at(t, pm), y, w, &p);
+        if d <= 0.0 {
+            return 0.0;
+        }
+        let d = if with_detail {
+            erode(t, d, self.detail_at(t, pm, y, drift), y)
+        } else {
+            d
+        };
+        d * density_scale(&p, w, y)
+    }
+}
+
+/// The cloud above and below a sample `y` up a column of cover `cover` whose profile ends at
+/// `p.top[1]`, in metres of density 1 (half its cover on average): what dims the sky's light and
+/// the ground's bounce (read from the profile at no cost: no lookups).
+pub fn column_cover_m(t: &CloudTunables, p: &Profile, y: f64, cover: f64) -> (f64, f64) {
     let h = t.volume.top_m - t.volume.base_m;
-    (0.5 * (top - y).max(0.0) * h, 0.5 * y.max(0.0) * h)
+    (
+        0.5 * cover * (p.top[1] - y).max(0.0) * h,
+        0.5 * cover * y.clamp(0.0, p.top[1]) * h,
+    )
 }
 
 /// The light samples toward the sun or moon: each one's midpoint along the way and its length
@@ -520,28 +807,25 @@ pub fn light_samples(t: &CloudTunables, steps: u32) -> Vec<(f64, f64)> {
 
 /// The optical depth toward the light (m of density 1) from a sample `y` up the layer of density
 /// `d`, with the light's face-local up part `light_rise`: half a light step of its own, then the
-/// tier's `steps` light samples, each the layer's density there (`n_toward(s)`: the stretched
-/// weather noise `s` metres toward the light), stopping where the path leaves the layer. With no
-/// samples, the cloud above (`top`, [`volume_column_top`]) along the light's slant stands for the
-/// path. `cloud_layer_march`'s light march is the twin.
-#[allow(clippy::too_many_arguments)]
+/// tier's `steps` light samples, each the base shape's density `toward(s)` metres toward the light
+/// (no detail: the cheap shape), stopping where the path leaves the layer. With no samples, the
+/// cloud above (`above_m`, [`column_cover_m`]) along the light's slant stands for the path.
+/// `cloud_layer_march`'s light march is the twin.
 pub fn light_depth(
     t: &CloudTunables,
     steps: u32,
     y: f64,
     d: f64,
-    top: f64,
+    above_m: f64,
     light_rise: f64,
-    coverage: f64,
-    n_toward: impl Fn(f64) -> f64,
+    toward: impl Fn(f64) -> f64,
 ) -> f64 {
     let h = t.volume.top_m - t.volume.base_m;
     let mut od = 0.5 * t.volume.light_step_m * d;
     if steps == 0 {
-        let (above, _) = volume_cover_m(t, y, top);
         return od
             + if light_rise > 0.0 {
-                above / light_rise.max(0.3)
+                above_m / light_rise.max(0.3)
             } else {
                 h
             };
@@ -551,7 +835,7 @@ pub fn light_depth(
         if yl <= 0.0 || yl >= 1.0 {
             break;
         }
-        od += len * volume_shape(t, n_toward(mid), yl, coverage);
+        od += len * toward(mid);
     }
     od
 }
@@ -586,7 +870,7 @@ pub struct SampleLight {
 /// by the cloud above, the bounce from below by the cloud below.
 pub fn sample_light(t: &CloudTunables, od: f64, c: f64, above_m: f64, below_m: f64) -> SampleLight {
     let v = &t.volume;
-    let tau = t.light.absorption * v.extinction * od;
+    let tau = t.light.absorption * v.light_extinction * od;
     let beer = (-tau).exp().max(v.multi_scatter * (-0.25 * tau).exp());
     let powder = 1.0 - v.powder * (0.5 - 0.5 * c) * (-2.0 * tau).exp();
     SampleLight {
@@ -604,6 +888,231 @@ pub fn sample_colour(t: &CloudTunables, l: SampleLight, lit: Rgb, shade: Rgb) ->
     [0, 1, 2].map(|i| shade[i] * (l.sky + l.bounce * tint[i]) + lit[i] * l.sun)
 }
 
+// ----- The low sun's tint (WORK_QUEUE item 13: the deck's golden hour on the volume) -----
+
+/// The deck's share of the shade colour a shaded side takes of the sunset tint
+/// (`dwell_cloud_layer`'s `CLOUD_SUNSET * mix(0.75, 1.0, lit)` at no light).
+pub const SUNSET_SHADE: f64 = 0.75;
+
+/// How much a sun `sun_up` (its face-local up part, the elevation's sine) warms the clouds: the
+/// deck's ramp, all of `light.sunWarmth` up to ~1° and none from ~24° (`cloud_low_sun`).
+pub fn low_sun(t: &CloudTunables, sun_up: f64) -> f64 {
+    (1.0 - smoothstep(0.02, 0.4, sun_up)) * t.light.sun_warmth
+}
+
+/// A light's hue for display (`cloud_hue`): its linear colour scaled to a brightest channel of 1,
+/// encoded with gamma 2.2.
+pub fn light_hue(linear: Rgb) -> Rgb {
+    let m = linear[0].max(linear[1]).max(linear[2]).max(1e-4);
+    linear.map(|c| (c / m).powf(1.0 / 2.2))
+}
+
+fn mix3(a: Rgb, b: Rgb, k: f64) -> Rgb {
+    [0, 1, 2].map(|i| a[i] + (b[i] - a[i]) * k)
+}
+
+/// The day's lit and shade colours a march's samples take (`cloud_shading`'s day part) for a sun
+/// `sun_up` of hue `sun_hue` and the sky's light of hue `ambient_hue` ([`light_hue`]): the lit
+/// colour mixed toward the sunset tint by [`low_sun`], as the deck's; the shade toward the deck's
+/// shaded side of it (`SUNSET_SHADE` of it) by `low_sun` × `volume.sunsetShade` (at most 1), so
+/// bases and
+/// shaded sides warm at sunrise and sunset too (before, only the sun's light did, and at a low sun
+/// it reaches little of a cloud: the ambient's white took over).
+pub fn day_shading(t: &CloudTunables, sun_up: f64, sun_hue: Rgb, ambient_hue: Rgb) -> (Rgb, Rgb) {
+    let l = &t.light;
+    let low = low_sun(t, sun_up);
+    let lit = mix3([0, 1, 2].map(|i| l.sunlit[i] * sun_hue[i]), l.sunset, low);
+    let shade = [0, 1, 2].map(|i| l.shade[i] * (0.5 + 0.5 * ambient_hue[i]));
+    let warm = l.sunset.map(|c| c * SUNSET_SHADE);
+    (
+        lit,
+        mix3(shade, warm, (low * t.volume.sunset_shade).min(1.0)),
+    )
+}
+
+/// The 2D deck's day colour (`dwell_cloud_layer`) at a light share `lit` (0 shaded, 1 in full
+/// light), seen from below: the reference the volume's tint is matched against.
+pub fn deck_day_colour(
+    t: &CloudTunables,
+    lit: f64,
+    sun_up: f64,
+    sun_hue: Rgb,
+    ambient_hue: Rgb,
+) -> Rgb {
+    let l = &t.light;
+    let shade = [0, 1, 2].map(|i| l.shade[i] * (0.5 + 0.5 * ambient_hue[i]));
+    let sun = [0, 1, 2].map(|i| l.sunlit[i] * sun_hue[i]);
+    let day = mix3(shade, sun, lit);
+    let warm = l
+        .sunset
+        .map(|c| c * (SUNSET_SHADE + (1.0 - SUNSET_SHADE) * lit));
+    mix3(day, warm, low_sun(t, sun_up) * lit)
+}
+
+/// One point of the 2D deck as `dwell_cloud_layer` shades it by day from below (the CPU twin, for
+/// the relief tests and the reference renders, docs/CLOUDS.md §10): no band, no far haze, no
+/// footprint fade.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct DeckShade {
+    /// The cloud's density (0–1; the layer's cover is it × `shape.opacity`).
+    pub density: f64,
+    /// The light share (0 shaded, 1 in full light): Beer over the cloud's own thickness and, with
+    /// a self-shadow sample, the cloud a `light.shadowStepM` step toward the light.
+    pub lit: f64,
+    /// The colour (sRGB), the silver lining included.
+    pub colour: Rgb,
+}
+
+/// The deck at noise point `p` (cells, as [`density`]'s) under the light `light` (a unit world
+/// direction toward the sun, above face `face`), seen along the unit world ray `view`, at
+/// `octaves` with a self-shadow sample of `shadow_octaves` (0: none; [`CloudQuality::shadow_octaves`]).
+#[allow(clippy::too_many_arguments)]
+pub fn deck_shade(
+    t: &CloudTunables,
+    p: [f64; 2],
+    warp_off: [f64; 2],
+    light: [f64; 3],
+    face: FaceFrame,
+    view: [f64; 3],
+    octaves: u32,
+    shadow_octaves: u32,
+    coverage: f64,
+    sun_hue: Rgb,
+    ambient_hue: Rgb,
+) -> DeckShade {
+    let none = DeckShade {
+        density: 0.0,
+        lit: 1.0,
+        colour: [0.0; 3],
+    };
+    if octaves == 0 {
+        return none;
+    }
+    let pw = warped(t, p, warp_off);
+    let d = shape(t, fbm(t, pw, octaves), coverage);
+    if d <= 0.0 {
+        return none;
+    }
+    let l = face.vector(light);
+    let occl = if shadow_octaves > 0 {
+        let step = t.light.shadow_step_m / t.shape.scale_m;
+        let q = [pw[0] + l[0] * step, pw[1] + l[2] * step];
+        0.35 * d + shape(t, fbm(t, q, shadow_octaves), coverage)
+    } else {
+        0.6 * d
+    };
+    let lit = (-t.light.absorption * occl).exp();
+    let mut col = deck_day_colour(t, lit, l[1], sun_hue, ambient_hue);
+    let toward = (view[0] * light[0] + view[1] * light[1] + view[2] * light[2]).max(0.0);
+    let rim = t.light.silver_lining * toward.powf(t.light.silver_power) * (1.0 - d) * (1.0 - d);
+    let glow = DAY_NIGHT.brightest().glow;
+    for (c, g) in col.iter_mut().zip(glow) {
+        *c += rim * g;
+    }
+    DeckShade {
+        density: d,
+        lit,
+        colour: col,
+    }
+}
+
+/// The deck's relief over a fixed noise patch ([`deck_relief`]): mean light shares (0–1).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct DeckRelief {
+    /// Cloud edges facing the sun (the density falls toward it).
+    pub sun_side: f64,
+    /// Cloud edges facing away from it.
+    pub far_side: f64,
+    /// The thick cores (density ≥ 0.85): the undersides.
+    pub core: f64,
+    /// The thin edges (density ≤ 0.35).
+    pub thin: f64,
+}
+
+/// [`deck_shade`]'s light share over the patch of 8 × 8 noise cells at the origin (`n`² samples,
+/// the data's coverage, no warp drift), seen from below straight up, the sun `light` (a unit
+/// face-local direction toward it) given to face `face`: the sun-facing edges against the far
+/// edges, and the cores against the thin edges. The tests' and the reference renders' measure.
+pub fn deck_relief(
+    t: &CloudTunables,
+    octaves: u32,
+    shadow_octaves: u32,
+    light: [f64; 3],
+    face: FaceFrame,
+    n: usize,
+) -> DeckRelief {
+    let cov = t.shape.coverage;
+    let world = face.vector(light);
+    let up = face.vector([0.0, 1.0, 0.0]);
+    let horiz = {
+        let m = light[0].hypot(light[2]).max(1e-9);
+        [light[0] / m, light[2] / m]
+    };
+    let h = 1.0 / 32.0;
+    let dens = |p: [f64; 2]| density(t, p, [0.0; 2], octaves, cov);
+    let (mut sums, mut counts) = ([0.0; 4], [0usize; 4]);
+    for j in 0..n {
+        for i in 0..n {
+            let p = [8.0 * i as f64 / n as f64, 8.0 * j as f64 / n as f64];
+            let s = deck_shade(
+                t,
+                p,
+                [0.0; 2],
+                world,
+                face,
+                up,
+                octaves,
+                shadow_octaves,
+                cov,
+                [1.0; 3],
+                [1.0; 3],
+            );
+            let d = s.density;
+            if d <= 0.0 {
+                continue;
+            }
+            let g = [
+                (dens([p[0] + h, p[1]]) - dens([p[0] - h, p[1]])) / (2.0 * h),
+                (dens([p[0], p[1] + h]) - dens([p[0], p[1] - h])) / (2.0 * h),
+            ];
+            let along = g[0] * horiz[0] + g[1] * horiz[1];
+            let mut add = |k: usize| {
+                sums[k] += s.lit;
+                counts[k] += 1;
+            };
+            if (0.15..0.85).contains(&d) && along < -0.5 {
+                add(0);
+            }
+            if (0.15..0.85).contains(&d) && along > 0.5 {
+                add(1);
+            }
+            if d >= 0.85 {
+                add(2);
+            }
+            if d <= 0.35 {
+                add(3);
+            }
+        }
+    }
+    let m = |k: usize| sums[k] / counts[k].max(1) as f64;
+    DeckRelief {
+        sun_side: m(0),
+        far_side: m(1),
+        core: m(2),
+        thin: m(3),
+    }
+}
+
+/// How much far cloud takes the sky behind it (`cloud_far_haze`), at most.
+pub const FAR_HAZE: f64 = 0.85;
+
+/// Far cloud hazed toward the sky behind it, `clear` (near the horizon, the horizon's colour and
+/// the low sun's band), by its distance `first_m` over the deck's fade end `fade_end_m`: the deck
+/// and the volume both (`cloud_far_haze`).
+pub fn far_haze(col: Rgb, clear: Rgb, first_m: f64, fade_end_m: f64) -> Rgb {
+    mix3(col, clear, FAR_HAZE * smoothstep(0.0, fade_end_m, first_m))
+}
+
 /// The march's colour with its brightest parts (a silver lining's) rolled off toward a little over
 /// white rather than clipped: `dwell_cloud_march`'s last step.
 pub fn soft_clip(c: Rgb) -> Rgb {
@@ -614,13 +1123,15 @@ pub fn soft_clip(c: Rgb) -> Rgb {
 
 // ----- The march against the scene (BUGS.md #88, docs/CLOUDS.md §8.9) -----
 
-/// The clouds pass's per-pixel step offset (`cloud_jitter` in the client's shader): interleaved
-/// gradient noise at pixel `p`, turned each frame by a golden-ratio step over 16 frames.
-pub fn cloud_jitter(p: [i32; 2], frame: u32) -> f64 {
+/// The clouds pass's per-pixel step offset (`cloud_jitter` in the client's shader): the blue-noise
+/// tile's value at pixel `p` ([`crate::cloud_noise::blue_noise`], the detail texture's alpha: `tile`
+/// of `size`²), turned each frame by a golden-ratio step over 16 frames (BUGS.md #90: before, an
+/// interleaved gradient noise, whose clumps showed as dither where the history was dropped).
+pub fn cloud_jitter(tile: &[u8], size: u32, p: [i32; 2], frame: u32) -> f64 {
     let fract = |x: f64| x - x.floor();
-    let (x, y) = (f64::from(p[0]), f64::from(p[1]));
-    let ign = fract(52.9829189 * fract(0.06711056 * x + 0.00583715 * y));
-    fract(ign + f64::from(frame % 16) * 0.618034)
+    let m = size as i32 - 1;
+    let blue = f64::from(tile[((p[1] & m) * size as i32 + (p[0] & m)) as usize]) / 255.0;
+    fract(blue + f64::from(frame % 16) * 0.618034)
 }
 
 /// The span (t0, t1) of a ray in the layer, out to `max_t` and the march's reach (m along the ray;
@@ -705,18 +1216,65 @@ pub fn upsample_band(v: &VolumeTunables, e: f64, rec: [f64; 2]) -> f64 {
 /// The composite's cloud cover at a pixel whose scene is `e` m along its ray (`reach`: the sky)
 /// from the four nearest texels, each (its cover, its `texel_depth`, its bilinear weight):
 /// `upsampled_clouds`'s twin.
+/// Each texel's `rec` is its `texel_depth` and the distance to its march's first cloud
+/// (`f64::INFINITY`: none), as the clouds pass's second target holds them.
 /// Where no texel's march ended at the pixel's scene (a sub-texel spire), the nearest match leads
-/// by `UPSAMPLE_FALLBACK`'s share: still a function of depths alone, so it doesn't flicker.
-pub fn upsample_cover(v: &VolumeTunables, e: f64, texels: &[(f64, [f64; 2], f64)]) -> f64 {
+/// by `UPSAMPLE_FALLBACK`'s share: still a function of depths alone, so it doesn't flicker. Such a
+/// fallback texel whose first cloud is past the pixel's scene (its band beyond, soft to twice it)
+/// lends its weight with no cloud (BUGS.md #97): leaves with sky in every texel took the cloud
+/// behind them, the fallback's share normalised to all of it.
+pub fn upsample_cover(v: &VolumeTunables, e: f64, texels: &[(f64, [f64; 3], f64)]) -> f64 {
     let (mut sum, mut weight) = (0.0, 0.0);
     for &(cover, rec, bilinear) in texels {
-        let band = upsample_band(v, e, rec);
-        let w = bilinear
-            * (upsample_weight(v, e, rec) + UPSAMPLE_FALLBACK / (1.0 + (rec[1] - e).abs() / band));
-        sum += w * cover;
-        weight += w;
+        let depth = [rec[0], rec[1]];
+        let band = upsample_band(v, e, depth);
+        let matched = bilinear * upsample_weight(v, e, depth);
+        let fallback = bilinear * UPSAMPLE_FALLBACK / (1.0 + (rec[1] - e).abs() / band);
+        let in_front = 1.0 - smoothstep(band, 2.0 * band, rec[2] - e);
+        sum += (matched + fallback * in_front) * cover;
+        weight += matched + fallback;
     }
     if weight > 0.0 { sum / weight } else { 0.0 }
+}
+
+/// How many standard deviations of a texel's neighbourhood its history may stray ([`resolve`],
+/// `CLOUD_HISTORY_CLAMP`).
+pub const HISTORY_CLAMP: f64 = 1.5;
+
+/// The clouds' resolve (BUGS.md #90, `clouds_resolve_fs`): the box a texel's history is clamped to,
+/// from this frame's march at it and its 3 × 3 neighbours whose scene matched its own (`samples`,
+/// premultiplied colour and cover): each channel's mean ± `gamma` standard deviations, widened to
+/// take the texel's own sample.
+pub fn neighbourhood_box(own: [f64; 4], samples: &[[f64; 4]], gamma: f64) -> ([f64; 4], [f64; 4]) {
+    let n = samples.len().max(1) as f64;
+    let mut lo = [0.0; 4];
+    let mut hi = [0.0; 4];
+    for c in 0..4 {
+        let m1 = samples.iter().map(|s| s[c]).sum::<f64>() / n;
+        let m2 = samples.iter().map(|s| s[c] * s[c]).sum::<f64>() / n;
+        let sd = (m2 - m1 * m1).max(0.0).sqrt();
+        lo[c] = (m1 - gamma * sd).min(own[c]);
+        hi[c] = (m1 + gamma * sd).max(own[c]);
+    }
+    (lo, hi)
+}
+
+/// The resolved texel: the history (`matched`: how much of it is this texel's, 0–1) clamped into
+/// this frame's neighbourhood `bx` ([`neighbourhood_box`]) and blended with the new march `cur` by
+/// the tier's `blend`. Clamped, not dropped, as the eye moves through the layer: before, a moving
+/// eye near the clouds handed each texel to its raw jittered march (the dither of BUGS.md #90).
+pub fn resolve(
+    cur: [f64; 4],
+    bx: ([f64; 4], [f64; 4]),
+    hist: [f64; 4],
+    matched: f64,
+    blend: f64,
+) -> [f64; 4] {
+    let w = 1.0 + (blend - 1.0) * matched;
+    std::array::from_fn(|c| {
+        let h = hist[c].clamp(bx.0[c], bx.1[c]);
+        h + (cur[c] - h) * w
+    })
 }
 
 /// The most a tier's `divisor` may be (`clouds.mjs`'s bound): the clouds pass reads at most its
@@ -797,24 +1355,43 @@ pub fn cloud_wgsl(t: &CloudTunables) -> String {
         format!("const CLOUD_SILVER_POWER: f32 = {};", f(l.silver_power)),
         format!("const CLOUD_SUN_WARMTH: f32 = {};", f(l.sun_warmth)),
         format!("const CLOUD_TWILIGHT: f32 = {};", f(TWILIGHT)),
+        format!("const CLOUD_SUNSET_SHADE: f32 = {};", f(SUNSET_SHADE)),
+        format!("const CLOUD_FAR_HAZE: f32 = {};", f(FAR_HAZE)),
     ];
     let v = &t.volume;
-    let detail = (s.scale_m / v.detail_cell_m).round();
+    let fm = &t.form;
+    let w = &t.weather;
+    let [sx, sz] = heading(t.wind.direction_deg).map(|c| c * fm.shear);
     let volume = [
         format!("const CLOUD_MAX_STEPS: i32 = {MAX_STEPS};"),
         format!("const CLOUD_MAX_LIGHT_STEPS: i32 = {MAX_LIGHT_STEPS};"),
         format!("const CLOUD_WRAP: f32 = {};", f(s.wrap_m)),
         format!("const CLOUD_VOL_BASE: f32 = {};", f(v.base_m)),
         format!("const CLOUD_VOL_TOP: f32 = {};", f(v.top_m)),
-        format!("const CLOUD_VOL_TOP_FLOOR: f32 = {};", f(v.top_floor)),
-        format!("const CLOUD_VOL_DETAIL: f32 = {};", f(detail)),
-        format!(
-            "const CLOUD_VOL_PERIOD: i32 = {};",
-            period(t) * detail as i64
-        ),
-        format!("const CLOUD_VOL_CELL: f32 = {};", f(v.detail_cell_m)),
-        format!("const CLOUD_VOL_EROSION: f32 = {};", f(v.detail_erosion)),
+        format!("const CLOUD_VOL_PERIOD: i32 = {PLUME_NOISE_PERIOD};"),
+        format!("const CLOUD_BASE_TILE: f32 = {};", f(fm.base_tile_m)),
+        format!("const CLOUD_DETAIL_TILE: f32 = {};", f(fm.detail_tile_m)),
+        format!("const CLOUD_CURL_TILE: f32 = {};", f(fm.curl_tile_m)),
+        format!("const CLOUD_CURL_M: f32 = {};", f(fm.curl_m)),
+        format!("const CLOUD_EROSION: f32 = {};", f(fm.detail_erosion)),
+        format!("const CLOUD_WISP: f32 = {};", f(fm.wisp_height)),
+        format!("const CLOUD_SHEAR: vec2f = vec2f({}, {});", f(sx), f(sz)),
+        format!("const CLOUD_COVER_SOFT: f32 = {};", f(fm.coverage_softness)),
+        format!("const CLOUD_TYPE_BASE: f32 = {};", f(w.r#type)),
+        format!("const CLOUD_TYPE_VAR: f32 = {};", f(w.type_variation)),
+        format!("const CLOUD_TYPE_COVER: f32 = {};", f(w.type_from_coverage)),
+        format!("const CLOUD_PRECIP: f32 = {};", f(w.precipitation)),
+        format!("const CLOUD_DETAIL_SIZE: i32 = {};", fm.detail_size),
         format!("const CLOUD_VOL_EXTINCTION: f32 = {};", f(v.extinction)),
+        format!(
+            "const CLOUD_VOL_LIGHT_EXTINCTION: f32 = {};",
+            f(v.light_extinction)
+        ),
+        format!(
+            "const CLOUD_PLUME_EXTINCTION: f32 = {};",
+            f(v.plume_extinction)
+        ),
+        format!("const CLOUD_VOL_SUNSET_SHADE: f32 = {};", f(v.sunset_shade)),
         format!("const CLOUD_VOL_H: f32 = {};", f(v.top_m - v.base_m)),
         format!("const CLOUD_VOL_LIGHT_STEP: f32 = {};", f(v.light_step_m)),
         format!(
@@ -859,10 +1436,60 @@ pub fn cloud_wgsl(t: &CloudTunables) -> String {
         format!("const CLOUD_PLUME_SLOTS: u32 = {}u;", t.plume_slots),
     ];
     format!(
-        "{}\n{CLOUD_FNS}\n{}\n{VOLUME_FNS}",
+        "{}\n{CLOUD_FNS}\n{}\n{VOLUME_FNS}\n{}",
         consts.join("\n"),
         volume.join("\n"),
+        type_profile_wgsl(t.cloud_types),
     )
+}
+
+/// The plume billows' value-noise period (cells; plumes' noise needn't tile with anything).
+const PLUME_NOISE_PERIOD: i32 = 4096;
+
+/// The most cloud types (`clouds.mjs`'s MAX_CLOUD_TYPES; the generated chain's length).
+pub const MAX_CLOUD_TYPES: usize = 8;
+
+fn profile_wgsl(c: &CloudType) -> String {
+    format!(
+        "CloudProfile(vec4f({}, {}, {}, {}), {}, {}, {})",
+        f(c.base[0]),
+        f(c.base[1]),
+        f(c.top[0]),
+        f(c.top[1]),
+        f(c.anvil),
+        f(c.density),
+        f(c.darkening)
+    )
+}
+
+/// `cloud_type_profile(k)` generated from the data's types ([`type_profile`]'s twin): each type's
+/// profile at its `at`, mixed between neighbours, clamped to the first and last.
+fn type_profile_wgsl(types: &[CloudType]) -> String {
+    let mut s = String::from(
+        "// The cloud type's profile at `k` along the type axis (generated from clouds.json's cloudTypes:\n\
+         // type_profile's twin).\nfn cloud_type_profile(k: f32) -> CloudProfile {\n",
+    );
+    let first = &types[0];
+    s += &format!(
+        "\tif (k <= {}) {{\n\t\treturn {};\n\t}}\n",
+        f(first.at),
+        profile_wgsl(first)
+    );
+    for (i, w) in types.windows(2).enumerate() {
+        let (a, b) = (&w[0], &w[1]);
+        s += &format!(
+            "\tif (k <= {}) {{\n\t\treturn cloud_profile_mix({}, {}, (k - {}) / {}); // {} → {} ({i})\n\t}}\n",
+            f(b.at),
+            profile_wgsl(a),
+            profile_wgsl(b),
+            f(a.at),
+            f(b.at - a.at),
+            a.name,
+            b.name
+        );
+    }
+    s += &format!("\treturn {};\n}}\n", profile_wgsl(types.last().unwrap()));
+    s
 }
 
 /// The volume's march (`dwell_cloud_march`, the layer then the run-time plumes) with the plume
@@ -870,9 +1497,17 @@ pub fn cloud_wgsl(t: &CloudTunables) -> String {
 /// `binding`: for the module that runs the clouds pass (the client's, group 3), with
 /// [`cloud_wgsl`]'s functions and constants beside it. Apart from [`cloud_wgsl`] so the modules
 /// that only draw the deck need no plume binding.
-pub fn cloud_march_wgsl(group: u32, binding: u32) -> String {
+///
+/// The baked shape noise (`crate::cloud_noise`, §9.3) is declared at `noise`, `noise + 1` (the base
+/// and detail `texture_3d<f32>`) and `noise + 2` (their repeating, filtering sampler).
+pub fn cloud_march_wgsl(group: u32, binding: u32, noise: u32) -> String {
     format!(
-        "{MARCH_FNS}\n@group({group}) @binding({binding}) var<uniform> cloud_plume_list: CloudPlumes;\n"
+        "{MARCH_FNS}\n@group({group}) @binding({binding}) var<uniform> cloud_plume_list: CloudPlumes;\n\
+         @group({group}) @binding({noise}) var cloud_base_noise: texture_3d<f32>;\n\
+         @group({group}) @binding({}) var cloud_detail_noise: texture_3d<f32>;\n\
+         @group({group}) @binding({}) var cloud_noise_sampler: sampler;\n",
+        noise + 1,
+        noise + 2
     )
 }
 
@@ -969,39 +1604,77 @@ fn cloud_vol_warp(q: vec2f, warp_off: vec2f) -> vec2f {
 	return CLOUD_WARP * (vec2f(cloud_value(w0), cloud_value(w0 + vec2f(5.2, 1.3))) - 0.5);
 }
 
-// The density before the detail for weather noise `n`, `y` (0-1) up the layer (volume_shape): the
-// coverage's cut rises with height, so each cloud narrows upward into a rounded top (a dome over a
-// flat base) instead of a straight-walled column; the densest reach highest.
-fn cloud_vol_shape(n: f32, y: f32, coverage: f32) -> f32 {
-	if (y <= 0.0 || y >= 1.0 || coverage <= 0.0) {
+// A column's cloud-type profile (docs/CLOUDS.md §9.2; Profile): fade = the base's fade-in span and
+// the top's fade-out span (shares of the layer), then the anvil, density and rain darkening.
+struct CloudProfile {
+	fade: vec4f,
+	anvil: f32,
+	density: f32,
+	darkening: f32,
+};
+
+fn cloud_profile_mix(a: CloudProfile, b: CloudProfile, f: f32) -> CloudProfile {
+	return CloudProfile(mix(a.fade, b.fade, f), mix(a.anvil, b.anvil, f), mix(a.density, b.density, f), mix(a.darkening, b.darkening, f));
+}
+
+// The weather map's cover alone (the light samples'), from the stretched deck noise `n`.
+fn cloud_cover(n: f32, coverage: f32) -> f32 {
+	let cut = 1.0 - coverage;
+	return select(smoothstep(cut, cut + CLOUD_COVER_SOFT, n), 0.0, coverage <= 0.0);
+}
+
+// The weather map at a column (weather): x its cover, y its type along the type axis, from the
+// column's stretched deck noise `n`, the warped point `wq` (the type's second noise) and the coverage.
+fn cloud_weather(n: f32, wq: vec2f, coverage: f32) -> vec2f {
+	let cut = 1.0 - coverage;
+	let cover = cloud_cover(n, coverage);
+	let v = cloud_value(wq + vec2f(17.3, 41.9));
+	let kind = clamp(CLOUD_TYPE_BASE + CLOUD_TYPE_COVER * (n - cut) + CLOUD_TYPE_VAR * (2.0 * v - 1.0), 0.0, 1.0);
+	return vec2f(cover, kind);
+}
+
+// The profile's height gradient `y` up the layer (height_gradient): a short fade-in (flat bases), a
+// long fade-out (rounded tops).
+fn cloud_height_gradient(p: CloudProfile, y: f32) -> f32 {
+	if (y <= 0.0 || y >= 1.0) {
 		return 0.0;
 	}
-	let cut = 1.0 - coverage + (1.0 - CLOUD_VOL_TOP_FLOOR) * y * y + 0.15 * (1.0 - smoothstep(0.0, 0.12, y));
-	return smoothstep(cut, cut + CLOUD_SOFTNESS, n);
+	return smoothstep(p.fade.x, p.fade.y, y) * (1.0 - smoothstep(p.fade.z, p.fade.w, y));
 }
 
-// How far up the layer the cloud over this column reaches (volume_column_top), from its own noise.
-fn cloud_vol_top(n: f32, coverage: f32) -> f32 {
-	let k = n - 0.5 * CLOUD_SOFTNESS - (1.0 - coverage);
-	return min(sqrt(max(k, 0.0) / (1.0 - CLOUD_VOL_TOP_FLOOR)), 1.0);
-}
-
-// The 3D detail's erosion of density `d` at the noise point `q`, height `h` (the view samples only).
-fn cloud_vol_detail(d: f32, q: vec2f, h: f32) -> f32 {
-	let m = cloud_value3(vec3f(q.x * CLOUD_VOL_DETAIL, h / CLOUD_VOL_CELL, q.y * CLOUD_VOL_DETAIL));
-	return clamp((d - CLOUD_VOL_EROSION * (1.0 - m)) / max(1.0 - CLOUD_VOL_EROSION, 0.05), 0.0, 1.0);
-}
-
-// The volume's density (0-1) at the noise point `q` (cells), face-local height `h` (m): the deck's
-// noise as the weather map, cut higher with height, eroded by the 3D detail (`detail`). The march
-// takes these parts apart to reuse them; the plumes are marched apart (dwell_cloud_plumes, §8.7).
-fn dwell_cloud_density(q: vec2f, h: f32, coverage: f32, warp_off: vec2f, detail: bool) -> f32 {
-	let y = (h - CLOUD_VOL_BASE) / CLOUD_VOL_H;
-	var d = cloud_vol_shape(cloud_vol_n(q + cloud_vol_warp(q, warp_off)), y, coverage);
-	if (detail && d > 0.0) {
-		d = cloud_vol_detail(d, q, h);
+// The base shape (base_shape) from the base texture's sample `b`: the Perlin-Worley dilated by the
+// Worley fBm, times the gradient `g`, cut by the cover (raised toward the top by the anvil).
+fn cloud_base_shape(b: vec4f, y: f32, cover_in: f32, p: CloudProfile, g: f32) -> f32 {
+	var cover = cover_in;
+	if (p.anvil > 0.0 && cover > 0.0) {
+		cover = pow(cover, 1.0 - 0.5 * p.anvil * smoothstep(p.fade.z - 0.15, p.fade.z, y));
 	}
-	return d;
+	if (g <= 0.0 || cover <= 0.0) {
+		return 0.0;
+	}
+	let fbm = dot(b.yzw, vec3f(0.625, 0.25, 0.125));
+	let base = clamp((b.x - (fbm - 1.0)) / (2.0 - fbm), 0.0, 1.0);
+	return min(max((base * g - (1.0 - cover)) / max(cover, 1e-4), 0.0) * cover, 1.0);
+}
+
+// The detail's erosion (erode): the fBm below CLOUD_WISP (wispy bases), its inverse above (billowy
+// tops); only where the base is under 1, so the core stays.
+fn cloud_erode(d: f32, hf: f32, y: f32) -> f32 {
+	let m = mix(hf, 1.0 - hf, smoothstep(0.0, CLOUD_WISP, y));
+	let e = m * CLOUD_EROSION;
+	return clamp((d - e) / (1.0 - e), 0.0, 1.0);
+}
+
+// The profile's and the rain's density scale `y` up the layer (density_scale).
+fn cloud_density_scale(p: CloudProfile, y: f32) -> f32 {
+	return p.density * (1.0 + CLOUD_PRECIP * p.darkening * (1.0 - y));
+}
+
+// The shape point (m: across, height, across) of noise point `q` (cells) at height `h`, leaned
+// downwind (shape_point).
+fn cloud_shape_point(q: vec2f, h: f32) -> vec3f {
+	let a = q * CLOUD_SCALE + CLOUD_SHEAR * (h - CLOUD_VOL_BASE);
+	return vec3f(a.x, h, a.y);
 }
 
 // Henyey-Greenstein's phase, scaled so even scattering is 1 (henyey_greenstein).
@@ -1018,6 +1691,25 @@ fn cloud_phase(c: f32) -> f32 {
 ";
 
 const MARCH_FNS: &str = r"
+// The base texture at shape point `pm` (m): Perlin-Worley and three Worley fBm octaves.
+fn cloud_base_at(pm: vec3f) -> vec4f {
+	return textureSampleLevel(cloud_base_noise, cloud_noise_sampler, pm / CLOUD_BASE_TILE, 0.0);
+}
+
+// The detail fBm at shape point `pm`, `y` up the layer, drifted by `drift` (m): its point moved
+// first by the curl, most at the floor (ShapeNoise::detail_at).
+fn cloud_detail_fbm(pm: vec3f, y: f32, drift: vec2f) -> f32 {
+	let c = textureSampleLevel(cloud_detail_noise, cloud_noise_sampler, pm / CLOUD_CURL_TILE, 0.0).yz * 2.0 - 1.0;
+	let o = c * CLOUD_CURL_M * (1.0 - clamp(y, 0.0, 1.0)) + drift;
+	return textureSampleLevel(cloud_detail_noise, cloud_noise_sampler, (pm + vec3f(o.x, 0.0, o.y)) / CLOUD_DETAIL_TILE, 0.0).x;
+}
+
+// The blue-noise tile (the detail texture's alpha, the same in every slice) at pixel `p`: the
+// march's per-pixel step offset before the frame's turn (cloud_jitter; BUGS.md #90).
+fn dwell_cloud_blue(p: vec2i) -> f32 {
+	return textureLoad(cloud_detail_noise, vec3i(p & vec2i(CLOUD_DETAIL_SIZE - 1), 0), 0).w;
+}
+
 // The march's layer (colour not yet hazed) and the distance (m) along the ray to the first cloud
 // it met (-1: none).
 struct CloudMarch {
@@ -1041,9 +1733,11 @@ fn cloud_shading(face: f32, lights: CloudLighting) -> CloudShading {
 	let sun_up = dot(lights.sun, up);
 	let light = select(lights.moon, lights.sun, sun_up >= dot(lights.moon, up));
 	let dayness = smoothstep(-CLOUD_TWILIGHT, CLOUD_TWILIGHT, dot(up, lights.day_pole));
-	let low = (1.0 - smoothstep(0.02, 0.4, sun_up)) * CLOUD_SUN_WARMTH;
+	// The low sun's tint (day_shading): the sun's light toward the sunset colour as the deck's, and
+	// the shade (the sky's light, the ground's bounce) toward the deck's shaded side of it.
+	let low = cloud_low_sun(sun_up);
 	let day_lit = mix(CLOUD_SUNLIT * cloud_hue(lights.sun_color), CLOUD_SUNSET, low);
-	let day_shade = CLOUD_SHADE * mix(vec3f(1.0), cloud_hue(lights.day_ambient), 0.5);
+	let day_shade = mix(CLOUD_SHADE * mix(vec3f(1.0), cloud_hue(lights.day_ambient), 0.5), CLOUD_SUNSET * CLOUD_SUNSET_SHADE, min(low * CLOUD_VOL_SUNSET_SHADE, 1.0));
 	let night_lit = CLOUD_NIGHT_LIT * cloud_hue(lights.moon_color);
 	let night_shade = CLOUD_NIGHT_SHADE * mix(vec3f(1.0), cloud_hue(lights.night_ambient), 0.5);
 	return CloudShading(mix(night_lit, day_lit, dayness), mix(night_shade, day_shade, dayness), light, dot(light, up), dayness);
@@ -1061,7 +1755,7 @@ fn cloud_ray_light(dir: vec3f, sh: CloudShading) -> vec2f {
 // cloud_ray_light), plus the sky's light from above dimmed by the cloud `above` (m) and the
 // ground's darker bounce from below dimmed by the cloud `below`: bases darker than tops.
 fn cloud_vol_light(sh: CloudShading, od: f32, above: f32, below: f32, ray: vec2f) -> vec3f {
-	let tau = CLOUD_ABSORPTION * CLOUD_VOL_EXTINCTION * od;
+	let tau = CLOUD_ABSORPTION * CLOUD_VOL_LIGHT_EXTINCTION * od;
 	let beer = max(exp(-tau), CLOUD_VOL_MULTI * exp(-0.25 * tau));
 	let powder = 1.0 - ray.y * exp(-2.0 * tau);
 	let sun = CLOUD_VOL_SUN * beer * powder * ray.x;
@@ -1073,7 +1767,7 @@ fn cloud_vol_light(sh: CloudShading, od: f32, above: f32, below: f32, ray: vec2f
 // an eye `eye_h` above sea level, in front-to-back colour (rgb, not divided by cover) and
 // transmittance (a), and the first cloud's distance. Early-outs: no coverage, or a ray that never
 // crosses the layer inside the reach, takes no samples.
-fn cloud_layer_march(dir: vec3f, rise: f32, eye_h: f32, max_t: f32, jitter: f32, offsets: vec4f, cfg: vec4f, steps: i32, light_steps: i32, sh: CloudShading) -> CloudMarch {
+fn cloud_layer_march(dir: vec3f, rise: f32, eye_h: f32, max_t: f32, jitter: f32, offsets: vec4f, cfg: vec4f, steps: i32, light_steps: i32, sh: CloudShading, extinction: f32) -> CloudMarch {
 	let none = CloudMarch(vec4f(0.0, 0.0, 0.0, 1.0), -1.0);
 	if (cfg.x <= 0.0) {
 		return none;
@@ -1105,26 +1799,38 @@ fn cloud_layer_march(dir: vec3f, rise: f32, eye_h: f32, max_t: f32, jitter: f32,
 		let h = eye_h + rise * t;
 		let y = (h - CLOUD_VOL_BASE) / CLOUD_VOL_H;
 		let q = offsets.xy + rel / CLOUD_SCALE;
-		// The warp and the weather noise once per sample; the light samples reuse the warp.
+		// The warp and the weather noise once per sample; the light samples reuse the warp and the
+		// column's profile.
 		let wq = q + cloud_vol_warp(q, offsets.zw);
 		let n = cloud_vol_n(wq);
-		var d = cloud_vol_shape(n, y, cfg.x);
+		let wm = cloud_weather(n, wq, cfg.x);
+		if (wm.x <= 0.001) {
+			continue;
+		}
+		let prof = cloud_type_profile(wm.y);
+		let g = cloud_height_gradient(prof, y);
+		if (g <= 0.001) {
+			continue;
+		}
+		let pm = cloud_shape_point(q, h);
+		var d = cloud_base_shape(cloud_base_at(pm), y, wm.x, prof, g);
 		if (d <= 0.001) {
 			continue;
 		}
-		d = cloud_vol_detail(d, q, h);
+		// The detail erodes the edges (two fetches: the curl, then the fBm); the core stays.
+		d = cloud_erode(d, cloud_detail_fbm(pm, y, offsets.zw * CLOUD_SCALE), y) * cloud_density_scale(prof, y);
 		if (d <= 0.001) {
 			continue;
 		}
 		if (first < 0.0) {
 			first = t;
 		}
-		// The cloud above and below in this column, from its own noise (no lookups).
-		let top = cloud_vol_top(n, cfg.x);
-		let above = 0.5 * max(top - y, 0.0) * CLOUD_VOL_H;
-		let below = 0.5 * y * CLOUD_VOL_H;
-		// The light march (light_depth): growing steps toward the light, stopping where the path
-		// leaves the layer; with none, the cloud above along the light's slant.
+		// The cloud above and below in this column, from its profile (column_cover_m; no lookups).
+		let above = 0.5 * wm.x * max(prof.fade.w - y, 0.0) * CLOUD_VOL_H;
+		let below = 0.5 * wm.x * clamp(y, 0.0, prof.fade.w) * CLOUD_VOL_H;
+		// The light march (light_depth): growing steps toward the light through the cheap base shape
+		// (no detail), stopping where the path leaves the layer; with none, the cloud above along the
+		// light's slant.
 		var od = 0.5 * CLOUD_VOL_LIGHT_STEP * d;
 		if (light_steps <= 0) {
 			od += select(CLOUD_VOL_H, above / max(sh.light_rise, 0.3), sh.light_rise > 0.0);
@@ -1140,12 +1846,16 @@ fn cloud_layer_march(dir: vec3f, rise: f32, eye_h: f32, max_t: f32, jitter: f32,
 			if (yl <= 0.0 || yl >= 1.0) {
 				break;
 			}
-			od += len * cloud_vol_shape(cloud_vol_n(wq + sh.light.xz * (mid / CLOUD_SCALE)), yl, cfg.x);
+			let cl = cloud_cover(cloud_vol_n(wq + sh.light.xz * (mid / CLOUD_SCALE)), cfg.x);
+			let pl = pm + vec3f(sh.light.x, sh.light_rise, sh.light.z) * mid;
+			od += len * cloud_base_shape(cloud_base_at(pl), yl, cl, prof, cloud_height_gradient(prof, yl)) * cloud_density_scale(prof, yl);
 			at += len;
 			len *= CLOUD_VOL_LIGHT_GROWTH;
 		}
 		let col = cloud_vol_light(sh, od, above, below, ray);
-		let a = 1.0 - exp(-CLOUD_VOL_EXTINCTION * d * dt);
+		// The view's opacity (volume.extinction or the run-time override): what hides a cloud
+		// behind another; the light's path above has its own (lightExtinction).
+		let a = 1.0 - exp(-extinction * d * dt);
 		energy += trans * a * col;
 		trans *= 1.0 - a;
 	}
@@ -1260,7 +1970,7 @@ fn dwell_cloud_plumes(layer: CloudMarch, dir: vec3f, rise: f32, eye_h: f32, max_
 			}
 			// Its own thickness toward the light (its radius), the column over and under the sample.
 			let col = p.color.rgb * cloud_vol_light(sh, d * p.at.z, 0.5 * d * (p.span.y - h), 0.5 * d * (h - p.span.x), ray);
-			let a = 1.0 - exp(-CLOUD_VOL_EXTINCTION * d * dt);
+			let a = 1.0 - exp(-CLOUD_PLUME_EXTINCTION * d * dt);
 			energy += trans * a * col;
 			trans *= 1.0 - a;
 		}
@@ -1294,6 +2004,21 @@ fn dwell_cloud_upsample_weight(e: f32, rec: vec2f) -> f32 {
 	return 1.0 - smoothstep(band, 2.0 * band, miss) + CLOUD_UPSAMPLE_FALLBACK / (1.0 + miss / band);
 }
 
+// A texel's part in the composite's upsample at a pixel whose scene is `e` m along its ray, for
+// the clouds pass's record `dist` (the scene span xy, the first cloud z; 65000: none): x the
+// weight (dwell_cloud_upsample_weight's), y the share of it that takes the texel's cloud. A
+// fallback texel (no match) whose first cloud is past the pixel's scene lends its weight with no
+// cloud (upsample_cover's twin, BUGS.md #97: leaves with sky in every texel drew the cloud behind).
+fn dwell_cloud_upsample_split(e: f32, dist: vec3f) -> vec2f {
+	let rec = dist.xy;
+	let band = max(max(min(rec.y - rec.x, CLOUD_VOL_DEPTH_BAND_RANGE * e), CLOUD_VOL_DEPTH_BAND * e), 1.0);
+	let miss = abs(rec.y - e);
+	let matched = 1.0 - smoothstep(band, 2.0 * band, miss);
+	let fallback = CLOUD_UPSAMPLE_FALLBACK / (1.0 + miss / band);
+	let in_front = 1.0 - smoothstep(band, 2.0 * band, dist.z - e);
+	return vec2f(matched + fallback, matched + fallback * in_front);
+}
+
 // The volumetric clouds along the unit ray `dir` out to `max_t` (m): the layer, then the run-time
 // plumes, with the distance to the first cloud (the reduced-resolution pass keeps it, so the
 // composite can put the scene in front of clouds behind it). `jitter` (0-1, per pixel) offsets the
@@ -1302,7 +2027,7 @@ fn dwell_cloud_upsample_weight(e: f32, rec: vec2f) -> f32 {
 // samples, a powder term, a dual-lobe phase (the silver lining toward the light), the sky's light
 // from above and the ground's darker bounce from below, dimmed by the cloud over and under. The
 // layer is colour (rgb, not hazed: dwell_cloud_hazed) and cover (a).
-fn dwell_cloud_march(dir: vec3f, face: f32, max_t: f32, jitter: f32, offsets: vec4f, cfg: vec4f, inside: vec4f, lights: CloudLighting) -> CloudMarch {
+fn dwell_cloud_march(dir: vec3f, face: f32, max_t: f32, jitter: f32, offsets: vec4f, cfg: vec4f, inside: vec4f, lights: CloudLighting, extinction: f32) -> CloudMarch {
 	let none = CloudMarch(vec4f(0.0), -1.0);
 	let steps = i32(floor(inside.w));
 	let light_steps = i32(round(fract(inside.w) * 8.0));
@@ -1312,7 +2037,7 @@ fn dwell_cloud_march(dir: vec3f, face: f32, max_t: f32, jitter: f32, offsets: ve
 	let eye_h = CLOUD_ALTITUDE - cfg.w;
 	let rise = face_rise(face, dir);
 	let sh = cloud_shading(face, lights);
-	let layer = cloud_layer_march(dir, rise, eye_h, max_t, jitter, offsets, cfg, steps, light_steps, sh);
+	let layer = cloud_layer_march(dir, rise, eye_h, max_t, jitter, offsets, cfg, steps, light_steps, sh, select(CLOUD_VOL_EXTINCTION, extinction, extinction > 0.0));
 	let m = dwell_cloud_plumes(layer, dir, rise, eye_h, max_t, jitter, sh);
 	let trans = m.layer.a;
 	let cover = 1.0 - trans;
@@ -1335,12 +2060,23 @@ fn dwell_cloud_hazed(m: CloudMarch, clear: vec3f, cfg: vec4f) -> vec4f {
 		return vec4f(0.0);
 	}
 	let fade = dwell_cloud_fade(cfg.w);
-	let col = mix(m.layer.rgb, clear, 0.85 * smoothstep(0.0, fade.y, m.first));
+	let col = cloud_far_haze(m.layer.rgb, clear, m.first, fade.y);
 	return vec4f(col, m.layer.a * CLOUD_OPACITY * (1.0 - smoothstep(fade.x, fade.y, m.first)));
 }
 ";
 
 const CLOUD_FNS: &str = r"
+// How much a sun `sun_up` above the face warms the clouds (low_sun): the deck's and the volume's.
+fn cloud_low_sun(sun_up: f32) -> f32 {
+	return (1.0 - smoothstep(0.02, 0.4, sun_up)) * CLOUD_SUN_WARMTH;
+}
+
+// Far cloud hazed toward the sky behind it (far_haze): near the horizon its colour and the low
+// sun's band, so far clouds fade into the horizon on the deck and the volume alike.
+fn cloud_far_haze(col: vec3f, clear: vec3f, dist: f32, fade_end: f32) -> vec3f {
+	return mix(col, clear, CLOUD_FAR_HAZE * smoothstep(0.0, fade_end, dist));
+}
+
 fn cloud_hash(c: vec2i) -> f32 {
 	let w = vec2u(((c % CLOUD_PERIOD) + CLOUD_PERIOD) % CLOUD_PERIOD);
 	var h = (w.x * 0x8da6b343u) ^ (w.y * 0xd8163841u);
@@ -1504,13 +2240,15 @@ fn dwell_cloud_layer(clear: vec3f, dir: vec3f, face: f32, deck: vec4f, fw: f32, 
 	// The light: the sun or the moon, whichever is above this face.
 	let sun_up = dot(sun, up);
 	let light = select(moon, sun, sun_up >= dot(moon, up));
-	// Self-shadow (High): the density a step toward the light, plus the cloud's own thickness. Not
+	// Self-shadow (cfg.z: the sample's octaves, 0 none; light.shadowOctaves / lowShadowOctaves): the
+	// density a step toward the light, plus the cloud's own thickness, so sun-facing edges are lit,
+	// far edges and thick undersides shaded (what made the deck read 3D, docs/CLOUDS.md §10). Not
 	// from above: the sunlit top barely shows it (topLight), so the second sample is skipped there.
 	let from_above = cfg.w < 0.0;
 	var occl = 0.6 * d;
 	if (cfg.z > 0.0 && !from_above && !band) {
 		let toward = light.xz * CLOUD_SHADOW_STEP;
-		occl = 0.35 * d + cloud_shape(cloud_fbm(p + toward, octaves, fw), cfg.x);
+		occl = 0.35 * d + cloud_shape(cloud_fbm(p + toward, min(i32(cfg.z), octaves), fw), cfg.x);
 	}
 	// Seen from above, the deck's sunlit top: the light reaches it through less cloud.
 	let lit = exp(-CLOUD_ABSORPTION * occl * select(1.0, 1.0 - CLOUD_TOP_LIGHT, from_above && dot(light, up) > 0.0));
@@ -1518,8 +2256,8 @@ fn dwell_cloud_layer(clear: vec3f, dir: vec3f, face: f32, deck: vec4f, fw: f32, 
 	// sky), by the day pole's height: the sun's.
 	let dayness = smoothstep(-CLOUD_TWILIGHT, CLOUD_TWILIGHT, dot(up, day_pole));
 	var day = mix(CLOUD_SHADE * mix(vec3f(1.0), cloud_hue(lights.day_ambient), 0.5), CLOUD_SUNLIT * cloud_hue(lights.sun_color), lit);
-	let low = (1.0 - smoothstep(0.02, 0.4, sun_up)) * CLOUD_SUN_WARMTH;
-	day = mix(day, CLOUD_SUNSET * mix(0.75, 1.0, lit), low * lit);
+	let low = cloud_low_sun(sun_up);
+	day = mix(day, CLOUD_SUNSET * mix(CLOUD_SUNSET_SHADE, 1.0, lit), low * lit);
 	let night = mix(CLOUD_NIGHT_SHADE * mix(vec3f(1.0), cloud_hue(lights.night_ambient), 0.5), CLOUD_NIGHT_LIT * cloud_hue(lights.moon_color), lit);
 	var col = mix(night, day, dayness);
 	// From above the tops are white in full light: the light's tint shows half as much (a low or
@@ -1532,7 +2270,7 @@ fn dwell_cloud_layer(clear: vec3f, dir: vec3f, face: f32, deck: vec4f, fw: f32, 
 	let rim = CLOUD_SILVER * pow(toward_light, CLOUD_SILVER_POWER) * (1.0 - d) * (1.0 - d);
 	col += rim * mix(CLOUD_MOON_GLOW * 0.5, CLOUD_SUN_GLOW, dayness);
 	// Far cloud takes the sky's haze behind it.
-	col = mix(col, clear, 0.85 * smoothstep(0.0, dwell_cloud_fade(cfg.w).y, deck.z));
+	col = cloud_far_haze(col, clear, deck.z, dwell_cloud_fade(cfg.w).y);
 	// From above the deck is seen through its whole depth: denser, and solid sooner at its edges.
 	let cover = select(d, sqrt(d), from_above);
 	return vec4f(col, cover * CLOUD_OPACITY * weight);
@@ -1866,8 +2604,12 @@ mod tests {
         assert_eq!(u(CloudQuality::Off)[1], 0.0);
         assert_eq!(u(CloudQuality::Low)[1], CLOUDS.shape.low_octaves as f32);
         assert_eq!(u(CloudQuality::High)[1], CLOUDS.shape.octaves as f32);
-        assert_eq!(u(CloudQuality::Low)[2], 0.0);
-        assert_eq!(u(CloudQuality::High)[2], 1.0);
+        assert_eq!(u(CloudQuality::Off)[2], 0.0);
+        assert_eq!(
+            u(CloudQuality::Low)[2],
+            CLOUDS.light.low_shadow_octaves as f32
+        );
+        assert_eq!(u(CloudQuality::High)[2], CLOUDS.light.shadow_octaves as f32);
         assert_eq!(u(CloudQuality::High)[0], 0.4);
         const { assert!(CLOUDS.shape.low_octaves < CLOUDS.shape.octaves) };
         for (name, q) in [
@@ -1958,7 +2700,7 @@ mod volume_tests {
         let src = format!(
             "{}{src}{}",
             dwell_world::FaceFrame::wgsl(),
-            cloud_march_wgsl(0, 0)
+            cloud_march_wgsl(0, 0, 1)
         );
         let module = naga::front::wgsl::parse_str(&src).expect("WGSL parses");
         naga::valid::Validator::new(
@@ -2017,7 +2759,7 @@ mod volume_tests {
 
     #[test]
     fn the_volume_shader_is_valid_wgsl_and_marches_plumes_apart_from_the_layer() {
-        let src = cloud_wgsl(&CLOUDS) + &cloud_march_wgsl(0, 0);
+        let src = cloud_wgsl(&CLOUDS) + &cloud_march_wgsl(0, 0, 1);
         validate(&cloud_wgsl(&CLOUDS));
         validate(&cloud_wgsl(&CloudTunables {
             plume_slots: MAX_PLUME_SLOTS,
@@ -2031,7 +2773,7 @@ mod volume_tests {
             let b = src[a..].find("\n}\n").unwrap();
             src[a..a + b].to_owned()
         };
-        assert!(!body("dwell_cloud_density").contains("plume"));
+        assert!(!body("cloud_layer_march").contains("plume"));
         assert!(body("dwell_cloud_march").contains("dwell_cloud_plumes("));
         // Early-outs: no coverage and no plume crossed take no samples.
         assert!(body("cloud_layer_march").contains("if (cfg.x <= 0.0)"));
@@ -2043,33 +2785,58 @@ mod volume_tests {
         0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]
     }
 
-    /// A sample `y` up a broad cloud (the same weather noise `n` all round) in the day's colours,
-    /// lit from a light whose face-local up part is `rise`, seen at `c` from it, with `steps` light
-    /// samples.
-    fn lit_sample(t: &CloudTunables, n: f64, y: f64, rise: f64, c: f64, steps: u32) -> Rgb {
-        let cov = t.shape.coverage;
-        let d = volume_shape(t, n, y, cov);
-        let top = volume_column_top(t, n, cov);
-        let od = light_depth(t, steps, y, d, top, rise, cov, |_| n);
-        let (above, below) = volume_cover_m(t, y, top);
+    /// A broad cumulus (full cover, the same base noise all round): its profile and weather.
+    fn broad() -> (Profile, Weather) {
+        let w = Weather {
+            cover: 1.0,
+            kind: CLOUDS.cloud_types[2].at,
+            precipitation: 0.0,
+        };
+        (type_profile(CLOUDS.cloud_types, w.kind), w)
+    }
+    const B: [f64; 4] = [0.8, 0.5, 0.5, 0.5];
+
+    /// The broad cloud's base-shape density `y` up the layer (the light samples' shape).
+    fn broad_density(y: f64) -> f64 {
+        let (p, w) = broad();
+        base_shape(B, y, &w, &p) * density_scale(&p, &w, y)
+    }
+
+    /// A sample `y` up the broad cloud in the day's colours, lit from a light whose face-local up
+    /// part is `rise`, seen at `c` from it, with `steps` light samples.
+    fn lit_sample(t: &CloudTunables, y: f64, rise: f64, c: f64, steps: u32) -> Rgb {
+        let (p, w) = broad();
+        let h = t.volume.top_m - t.volume.base_m;
+        let d = broad_density(y);
+        let (above, below) = column_cover_m(t, &p, y, w.cover);
+        let od = light_depth(t, steps, y, d, above, rise, |s| {
+            broad_density(y + rise * s / h)
+        });
         let l = sample_light(t, od, c, above, below);
         soft_clip(sample_colour(t, l, t.light.sunlit, t.light.shade))
     }
 
+    /// The broad cloud's top: where its density last passes a tenth.
+    fn broad_top() -> f64 {
+        (0..1000)
+            .map(|i| f64::from(i) / 1000.0)
+            .filter(|&y| broad_density(y) > 0.1)
+            .fold(0.0, f64::max)
+    }
+
     #[test]
     fn a_clouds_sun_facing_top_is_brighter_than_its_shaded_base() {
-        let n = 0.95;
-        let top = volume_column_top(&CLOUDS, n, CLOUDS.shape.coverage);
-        assert!(top > 0.5, "a broad cloud reaches high: {top}");
+        let top = broad_top();
+        assert!(top > 0.15, "a cumulus reaches up: {top}");
         for steps in [
             0,
             CLOUDS.tiers.medium.light_steps,
             CLOUDS.tiers.high.light_steps,
         ] {
-            let at = |y| lum(lit_sample(&CLOUDS, n, y, 1.0, 0.0, steps));
-            let (hi, lo) = (at(top - 0.04), at(0.08));
+            let at = |y| lum(lit_sample(&CLOUDS, y, 1.0, 0.0, steps));
+            let (hi, lo) = (at(top - 0.01), at(0.04));
             assert!(
-                hi > 1.5 * lo,
+                hi > 1.4 * lo,
                 "{steps} light samples: top {hi:.3}, base {lo:.3}"
             );
             // The base reads as shade, not as a hole: the sky's and the ground's light reach it.
@@ -2082,26 +2849,28 @@ mod volume_tests {
 
     #[test]
     fn the_light_march_darkens_samples_deeper_from_the_sun() {
-        let (n, cov) = (0.95, CLOUDS.shape.coverage);
-        let top = volume_column_top(&CLOUDS, n, cov);
+        let top = broad_top();
+        let (p, w) = broad();
+        let h = CLOUDS.volume.top_m - CLOUDS.volume.base_m;
         let steps = CLOUDS.tiers.medium.light_steps;
         let mut last = (0.0, f64::INFINITY);
-        for i in 0..8 {
+        for i in 0..6 {
             // From just under the top down toward the base, the sun overhead.
-            let y = top - 0.04 - f64::from(i) * (top - 0.15) / 7.0;
-            let d = volume_shape(&CLOUDS, n, y, cov);
-            let od = light_depth(&CLOUDS, steps, y, d, top, 1.0, cov, |_| n);
-            let b = lum(lit_sample(&CLOUDS, n, y, 1.0, 0.0, steps));
+            let y = top - 0.01 - f64::from(i) * (top - 0.06) / 5.0;
+            let d = broad_density(y);
+            let (above, _) = column_cover_m(&CLOUDS, &p, y, w.cover);
+            let od = light_depth(&CLOUDS, steps, y, d, above, 1.0, |s| {
+                broad_density(y + s / h)
+            });
+            let b = lum(lit_sample(&CLOUDS, y, 1.0, 0.0, steps));
             assert!(od > last.0, "deeper, more cloud toward the sun at y {y:.2}");
             assert!(b < last.1, "deeper, darker at y {y:.2}: {b:.3}");
             last = (od, b);
         }
         // A light step's sample counts only cloud: the same sample under clear sky toward the sun
         // (a lone puff) is lit by its own half step alone.
-        let d = volume_shape(&CLOUDS, n, 0.3, cov);
-        let lone = light_depth(&CLOUDS, steps, 0.3, d, top, 1.0, cov, |s| {
-            if s < 1.0 { n } else { 0.0 }
-        });
+        let d = broad_density(0.1);
+        let lone = light_depth(&CLOUDS, steps, 0.1, d, 0.0, 1.0, |_| 0.0);
         assert!((lone - 0.5 * CLOUDS.volume.light_step_m * d).abs() < 1e-9);
     }
 
@@ -2146,10 +2915,16 @@ mod volume_tests {
         for tier in [t.high, t.medium] {
             let s = light_samples(&CLOUDS, tier.light_steps);
             assert_eq!(s.len() as u32, tier.light_steps);
-            // Growing steps: Medium's few reach through the layer's depth.
+            // Growing steps: Medium's few reach through a cumulus's depth (a tower's top is lit
+            // past them as clear).
             let reach: f64 = s.iter().map(|(_, len)| len).sum();
+            let cumulus = CLOUDS
+                .cloud_types
+                .iter()
+                .find(|c| c.name == "cumulus")
+                .unwrap();
             assert!(
-                reach >= CLOUDS.volume.top_m - CLOUDS.volume.base_m,
+                reach >= cumulus.top[1] * (CLOUDS.volume.top_m - CLOUDS.volume.base_m),
                 "{reach}"
             );
         }
@@ -2182,7 +2957,7 @@ mod volume_tests {
 
     #[test]
     fn the_march_reuses_its_noise_and_the_shader_lights_by_the_data() {
-        let src = cloud_wgsl(&CLOUDS) + &cloud_march_wgsl(0, 0);
+        let src = cloud_wgsl(&CLOUDS) + &cloud_march_wgsl(0, 0, 1);
         let body = |name: &str| {
             let a = src.find(&format!("fn {name}(")).unwrap();
             let b = src[a..].find("\n}\n").unwrap();
@@ -2204,6 +2979,239 @@ mod volume_tests {
         assert!(body("cloud_shading").contains("let up = face_up(face);"));
     }
 
+    // ----- The low sun's tint (WORK_QUEUE item 13) -----
+
+    /// The sun's face-local up part at `solar_deg` and the day's sun and sky-light hues there, as
+    /// the renderer hands them to the clouds (`DayNight::pack`'s sun light and hemisphere sky).
+    fn day_at(solar_deg: f64) -> (f64, Rgb, Rgb) {
+        let s = DAY_NIGHT.sample(solar_deg);
+        let lin = |c: Rgb| c.map(crate::srgb_to_linear);
+        (
+            DAY_NIGHT.sun_direction(solar_deg)[1],
+            light_hue(lin(s.sun_light)),
+            light_hue(lin(s.hemi_sky)),
+        )
+    }
+
+    /// The morning's solar angle where the sun stands `deg` over the horizon.
+    fn solar_at_elevation(deg: f64) -> f64 {
+        let want = deg.to_radians().sin();
+        let (mut lo, mut hi) = (0.0, 90.0);
+        for _ in 0..60 {
+            let mid = 0.5 * (lo + hi);
+            if DAY_NIGHT.sun_direction(mid)[1] < want {
+                lo = mid;
+            } else {
+                hi = mid;
+            }
+        }
+        0.5 * (lo + hi)
+    }
+
+    /// A colour's chromaticity (its channels over their sum): the tint, whatever the brightness.
+    fn chroma(c: Rgb) -> Rgb {
+        let s = (c[0] + c[1] + c[2]).max(1e-9);
+        c.map(|x| x / s)
+    }
+
+    fn chroma_gap(a: Rgb, b: Rgb) -> f64 {
+        let (a, b) = (chroma(a), chroma(b));
+        (0..3).map(|i| (a[i] - b[i]).abs()).fold(0.0, f64::max)
+    }
+
+    /// A sample `y` up the broad cloud in the colours `shading` (lit, shade), lit from a light
+    /// whose face-local up part is `rise`, seen at `c` from it, with `steps` light samples.
+    fn tinted_sample(
+        t: &CloudTunables,
+        y: f64,
+        rise: f64,
+        c: f64,
+        steps: u32,
+        shading: (Rgb, Rgb),
+    ) -> Rgb {
+        let (p, w) = broad();
+        let h = t.volume.top_m - t.volume.base_m;
+        let d = broad_density(y);
+        let (above, below) = column_cover_m(t, &p, y, w.cover);
+        let od = light_depth(t, steps, y, d, above, rise, |s| {
+            broad_density(y + rise * s / h)
+        });
+        let l = sample_light(t, od, c, above, below);
+        soft_clip(sample_colour(t, l, shading.0, shading.1))
+    }
+
+    /// The volume's shading before the low sun's tint took its shade (the lit colour only).
+    fn untinted(t: &CloudTunables, sun_up: f64, sun: Rgb, sky: Rgb) -> (Rgb, Rgb) {
+        day_shading(
+            &CloudTunables {
+                volume: VolumeTunables {
+                    sunset_shade: 0.0,
+                    ..t.volume
+                },
+                ..*t
+            },
+            sun_up,
+            sun,
+            sky,
+        )
+    }
+
+    #[test]
+    fn at_sunrise_the_volume_takes_the_decks_golden_tint_and_at_noon_it_is_unchanged() {
+        let steps = CLOUDS.tiers.medium.light_steps;
+        let top = broad_top();
+        let (low_up, low_sun_hue, low_sky) = day_at(solar_at_elevation(3.0));
+        assert!((low_up - 3f64.to_radians().sin()).abs() < 1e-6);
+        let low = day_shading(&CLOUDS, low_up, low_sun_hue, low_sky);
+        // The lit side: just under the top, seen side-on, the sun 3° up.
+        let lit_side = tinted_sample(&CLOUDS, top - 0.01, low_up, 0.0, steps, low);
+        let base = tinted_sample(&CLOUDS, 0.04, low_up, 0.0, steps, low);
+        // The deck's tint at its half-to-mostly lit sides (lit 0.7), its warmth (red over blue):
+        // the volume's lit side within 8 % of it; before (the shade untinted: the cool sky light
+        // took over at a low sun, ~70 % of a sample's light) it was 20 % short.
+        let warmth = |c: Rgb| c[0] / c[2];
+        let deck = deck_day_colour(&CLOUDS, 0.7, low_up, low_sun_hue, low_sky);
+        let near = |c: Rgb| (warmth(c) / warmth(deck) - 1.0).abs();
+        assert!(
+            near(lit_side) < 0.08,
+            "the lit side {lit_side:.3?} has the deck's tint {deck:.3?}"
+        );
+        assert!(chroma_gap(lit_side, deck) < 0.02);
+        assert!(warmth(lit_side) > 1.5, "{lit_side:.3?}");
+        // The base picks up the low sun's warmth too (the deck's shaded side's).
+        assert!(warmth(base) > 1.4, "the base warms too: {base:.3?}");
+        let old = untinted(&CLOUDS, low_up, low_sun_hue, low_sky);
+        let before = tinted_sample(&CLOUDS, top - 0.01, low_up, 0.0, steps, old);
+        let before_base = tinted_sample(&CLOUDS, 0.04, low_up, 0.0, steps, old);
+        assert!(near(before) > 0.15, "before: {before:.3?}");
+        assert!(warmth(before_base) < 1.2, "before: {before_base:.3?}");
+        // Noon: the tint is gone (the low sun's ramp is 0) and the look is what it was.
+        let (noon_up, noon_sun, noon_sky) = day_at(90.0);
+        assert!(noon_up > 0.5);
+        assert_eq!(low_sun(&CLOUDS, noon_up), 0.0);
+        let noon = day_shading(&CLOUDS, noon_up, noon_sun, noon_sky);
+        assert_eq!(noon, untinted(&CLOUDS, noon_up, noon_sun, noon_sky));
+        let noon_side = tinted_sample(&CLOUDS, top - 0.01, noon_up, 0.0, steps, noon);
+        assert!(
+            chroma_gap(lit_side, noon_side) > 0.04,
+            "sunrise {lit_side:.3?} vs noon {noon_side:.3?}"
+        );
+        // By data: no sunsetShade is the old shade; no sunWarmth no tint at all.
+        let cold = CloudTunables {
+            light: CloudLight {
+                sun_warmth: 0.0,
+                ..CLOUDS.light
+            },
+            ..CLOUDS
+        };
+        assert_eq!(low_sun(&cold, low_up), 0.0);
+    }
+
+    #[test]
+    fn far_clouds_fade_into_the_horizon_on_the_deck_and_the_volume_alike() {
+        let (up, sun, sky) = day_at(solar_at_elevation(3.0));
+        let (lit, _) = day_shading(&CLOUDS, up, sun, sky);
+        // A pale warm horizon behind the cloud.
+        let clear = [0.9, 0.7, 0.6];
+        let end = CLOUDS.deck.fade_end_m;
+        assert_eq!(far_haze(lit, clear, 0.0, end), lit);
+        let far = far_haze(lit, clear, end, end);
+        assert!(chroma_gap(far, clear) < chroma_gap(lit, clear) * (1.0 - FAR_HAZE) + 1e-9);
+        // One function hazes both (the shader's twin).
+        let src = cloud_wgsl(&CLOUDS) + &cloud_march_wgsl(0, 0, 1);
+        assert_eq!(
+            src.matches("cloud_far_haze(").count(),
+            3,
+            "defined once, used twice"
+        );
+        assert_eq!(
+            src.matches("cloud_low_sun(").count(),
+            3,
+            "the deck and the volume's ramp"
+        );
+        assert!(src.contains("min(low * CLOUD_VOL_SUNSET_SHADE, 1.0)"));
+    }
+
+    #[test]
+    fn the_view_opacity_is_the_views_and_the_light_keeps_its_own() {
+        let src = cloud_wgsl(&CLOUDS) + &cloud_march_wgsl(0, 0, 1);
+        let body = |name: &str| {
+            let a = src.find(&format!("fn {name}(")).unwrap();
+            let b = src[a..].find("\n}\n").unwrap();
+            src[a..a + b].to_owned()
+        };
+        // The light's Beer takes lightExtinction, never the view's.
+        let light = body("cloud_vol_light");
+        assert!(light.contains("CLOUD_VOL_LIGHT_EXTINCTION"));
+        assert!(!light.contains("CLOUD_VOL_EXTINCTION "));
+        // The layer's view takes the run-time value (the data's when none is set).
+        assert!(body("cloud_layer_march").contains("exp(-extinction * d * dt)"));
+        assert!(
+            body("dwell_cloud_march")
+                .contains("select(CLOUD_VOL_EXTINCTION, extinction, extinction > 0.0)")
+        );
+        assert!(body("dwell_cloud_plumes").contains("CLOUD_PLUME_EXTINCTION"));
+        // On the CPU: a sample's light doesn't move when only the view's opacity does.
+        let opaque = CloudTunables {
+            volume: VolumeTunables {
+                extinction: 0.05,
+                ..CLOUDS.volume
+            },
+            ..CLOUDS
+        };
+        assert_eq!(
+            sample_light(&CLOUDS, 300.0, 0.2, 100.0, 50.0),
+            sample_light(&opaque, 300.0, 0.2, 100.0, 50.0)
+        );
+        // The shipped view is more opaque than the light (the owner's A/B: a cloud hides the
+        // ones behind it; light still goes through).
+        const { assert!(CLOUDS.volume.extinction > CLOUDS.volume.light_extinction) };
+    }
+
+    /// The view samples a march through `cloud_m` of cloud of density `d`, `dt` apart, takes
+    /// before it is 98 % opaque (the march's early exit), at the view opacity `extinction`.
+    fn samples_to_opaque(extinction: f64, d: f64, dt: f64, cloud_m: f64) -> u32 {
+        let (mut trans, mut n) = (1.0, 0);
+        while trans >= 0.02 && f64::from(n) * dt < cloud_m {
+            trans *= (-extinction * d * dt).exp();
+            n += 1;
+        }
+        n
+    }
+
+    #[test]
+    fn a_more_opaque_view_hides_the_clouds_behind_and_stops_the_march_sooner() {
+        // An eroded mid cloud (density 0.25: where a dense core isn't) through a 2 km bank, at
+        // High's and the near tier's ~300 m steps: at 0.006 it never hid what was behind (7
+        // samples, ~4 % still through); at 0.03 and 0.05 two samples end the march.
+        let n = [0.006, 0.03, 0.05].map(|e| samples_to_opaque(e, 0.25, 300.0, 2000.0));
+        assert_eq!(n[0], 7, "{n:?}");
+        assert_eq!([n[1], n[2]], [2, 2], "{n:?}");
+        // A dense core at Medium's ~900 m steps is one sample either way.
+        assert_eq!(samples_to_opaque(0.006, 1.0, 900.0, 2000.0), 1);
+        // What is left of a cloud behind 400 m of that mid cloud.
+        let behind = |e: f64| (-e * 0.25 * 400.0).exp();
+        assert!(behind(0.006) > 0.5, "{:.3}", behind(0.006));
+        assert!(behind(CLOUDS.volume.extinction) < 0.1);
+        // A thin eroded edge still lets the view through (density 0.05 over 50 m): soft edges.
+        assert!((-CLOUDS.volume.extinction * 0.05 * 50.0).exp() > 0.9);
+    }
+
+    dwell_world::both_faces!(
+        fn the_low_suns_tint_is_face_local_so_both_faces_warm_alike(f: FaceFrame) {
+            // A sun 3° over the face, in the world through the face's frame.
+            let (up, sun, sky) = day_at(solar_at_elevation(3.0));
+            let local = [(1.0 - up * up).sqrt(), up, 0.0];
+            let rise = f.vector(f.vector(local))[1];
+            let a = day_shading(&CLOUDS, up, sun, sky);
+            let here = day_shading(&CLOUDS, rise, sun, sky);
+            for i in 0..3 {
+                assert!((a.0[i] - here.0[i]).abs() < 1e-9 && (a.1[i] - here.1[i]).abs() < 1e-9);
+            }
+            assert!(here.1[0] > here.1[2], "the shade warms on face {f:?}");
+        }
+    );
+
     dwell_world::both_faces!(
         fn the_light_is_face_local_so_both_faces_shade_alike(f: FaceFrame) {
             // The sun up and a little across the face, in the world through the face's frame; the
@@ -2213,11 +3221,11 @@ mod volume_tests {
             let world = f.vector(local.map(|c| c / len));
             let rise = f.vector(world)[1];
             let steps = CLOUDS.tiers.medium.light_steps;
-            let top = volume_column_top(&CLOUDS, 0.95, CLOUDS.shape.coverage);
-            let a = lit_sample(&CLOUDS, 0.95, top - 0.04, 0.9 / len, 0.0, steps);
-            let here = lit_sample(&CLOUDS, 0.95, top - 0.04, rise, 0.0, steps);
+            let top = broad_top();
+            let a = lit_sample(&CLOUDS, top - 0.01, 0.9 / len, 0.0, steps);
+            let here = lit_sample(&CLOUDS, top - 0.01, rise, 0.0, steps);
             assert!((lum(a) - lum(here)).abs() < 1e-9);
-            assert!(lum(here) > 1.5 * lum(lit_sample(&CLOUDS, 0.95, 0.08, rise, 0.0, steps)));
+            assert!(lum(here) > 1.4 * lum(lit_sample(&CLOUDS, 0.04, rise, 0.0, steps)));
         }
     );
 }
@@ -2258,17 +3266,26 @@ mod depth_tests {
         p: [i32; 2],
         frame: u32,
         cloud: (f64, f64),
-    ) -> (f64, [f64; 2], Vec<f64>) {
+    ) -> (f64, [f64; 3], Vec<f64>) {
         let reach = V.max_distance_m;
         let r = scene_range(scene, reach);
+        let [near, far] = texel_depth(r);
         let steps = CLOUDS.tiers.medium.steps;
-        let jitter = cloud_jitter(p, frame);
+        let jitter = cloud_jitter(&BLUE, 16, p, frame);
         let Some(span) = layer_span(&V, rise, EYE_H, march_end(r, reach)) else {
-            return (0.0, texel_depth(r), vec![]);
+            return (0.0, [near, far, f64::INFINITY], vec![]);
         };
-        let (cover, _) = fixture_march(span, jitter, steps, cloud);
-        (cover, texel_depth(r), march_samples(span, jitter, steps))
+        let (cover, first) = fixture_march(span, jitter, steps, cloud);
+        let first = if first < 0.0 { f64::INFINITY } else { first };
+        (
+            cover,
+            [near, far, first],
+            march_samples(span, jitter, steps),
+        )
     }
+
+    static BLUE: std::sync::LazyLock<Vec<u8>> =
+        std::sync::LazyLock::new(|| crate::cloud_noise::blue_noise(16));
 
     /// The rock 4 km out, inside the layer (1.7 km up), its slope across the texel 3.99–4.01 km.
     const ROCK: [f64; 4] = [3990.0, 4000.0, 4005.0, 4010.0];
@@ -2307,7 +3324,7 @@ mod depth_tests {
         for frame in 0..16 {
             let (cover, rec, _) = texel(&ROCK, RISE, [7, 3], frame, cloud);
             for e in ROCK {
-                let w = upsample_weight(&V, e, rec);
+                let w = upsample_weight(&V, e, [rec[0], rec[1]]);
                 seen.push(w);
                 assert!(cover > 0.0, "frame {frame}: the cloud in front is gone");
             }
@@ -2344,6 +3361,75 @@ mod depth_tests {
         assert!((open - (0.25 * sky.0 + 0.75 * edge.0)).abs() < 1e-9);
     }
 
+    /// The composite's cloud at each full-resolution pixel of a `w` × `w` scene (`depths`, row by row,
+    /// 0: sky) on `frame`, its clouds pass at ½ resolution (High's divisor 2): every pixel's four
+    /// texels by their bilinear shares, as `upsampled_clouds` takes them.
+    fn composite_cover(depths: &[f64], w: usize, frame: u32, cloud: (f64, f64)) -> Vec<f64> {
+        let reach = V.max_distance_m;
+        let tw = w / 2;
+        let texels: Vec<_> = (0..tw * tw)
+            .map(|i| {
+                let (tx, ty) = (i % tw, i / tw);
+                let foot: Vec<f64> = (0..4)
+                    .map(|k| depths[(2 * ty + k / 2) * w + 2 * tx + k % 2])
+                    .collect();
+                texel(&foot, RISE, [tx as i32, ty as i32], frame, cloud)
+            })
+            .collect();
+        (0..w * w)
+            .map(|i| {
+                let (x, y) = (i % w, i / w);
+                let at = |v: usize| (v as f64 + 0.5) / 2.0 - 0.5;
+                let (fx, fy) = (at(x), at(y));
+                let (bx, by) = (fx.floor(), fy.floor());
+                let taps: Vec<_> = (0..4)
+                    .map(|k| {
+                        let (ox, oy) = ((k % 2) as f64, (k / 2) as f64);
+                        let cx = (bx + ox).clamp(0.0, (tw - 1) as f64) as usize;
+                        let cy = (by + oy).clamp(0.0, (tw - 1) as f64) as usize;
+                        let sx = if ox > 0.0 { fx - bx } else { 1.0 - (fx - bx) };
+                        let sy = if oy > 0.0 { fy - by } else { 1.0 - (fy - by) };
+                        let t = &texels[cy * tw + cx];
+                        (t.0, t.1, sx * sy)
+                    })
+                    .collect();
+                let d = depths[i];
+                upsample_cover(&V, if d > 0.0 { d.min(reach) } else { reach }, &taps)
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_canopy_with_sky_in_every_texel_draws_no_cloud_from_behind_it() {
+        // BUGS.md #97 (owner: "definitely cloud related"): leaves 12 m out with a gap of sky in
+        // every ½-resolution texel, a cloud 3.5–9 km behind them (in the layer). Every texel's march runs to the
+        // sky's reach, so none matches a leaf pixel; the composite's fallback weights, normalised,
+        // handed the leaves the jittered cloud behind them, in a pattern of the texel grid and the
+        // gaps. A leaf pixel shows no cloud on any frame; the gaps show the cloud.
+        let w = 16;
+        let depths: Vec<f64> = (0..w * w)
+            .map(|i| if (i % w + i / w) % 3 == 0 { 0.0 } else { 12.0 })
+            .collect();
+        let cloud = (3500.0, 9000.0);
+        let mut worst: f64 = 0.0;
+        let mut gap: f64 = 1.0;
+        for frame in 0..16 {
+            let cover = composite_cover(&depths, w, frame, cloud);
+            for (i, c) in cover.iter().enumerate() {
+                if depths[i] > 0.0 {
+                    worst = worst.max(*c);
+                } else {
+                    gap = gap.min(*c);
+                }
+            }
+        }
+        assert!(
+            worst < 1e-3,
+            "a leaf pixel drew {worst} of the cloud behind it"
+        );
+        assert!(gap > 0.5, "the sky in the gaps lost its cloud: {gap}");
+    }
+
     #[test]
     fn the_shader_twins_are_valid_and_every_tier_fits_the_depth_taps() {
         for t in [CLOUDS.tiers.high, CLOUDS.tiers.medium, CLOUDS.tiers.low] {
@@ -2353,7 +3439,7 @@ mod depth_tests {
             "{}{}{}",
             dwell_world::FaceFrame::wgsl(),
             cloud_wgsl(&CLOUDS),
-            cloud_march_wgsl(0, 0)
+            cloud_march_wgsl(0, 0, 1)
         );
         let module = naga::front::wgsl::parse_str(&src).expect("WGSL parses");
         naga::valid::Validator::new(
@@ -2363,6 +3449,7 @@ mod depth_tests {
         .validate(&module)
         .expect("WGSL validates");
         assert!(src.contains("fn dwell_cloud_upsample_weight(e: f32, rec: vec2f) -> f32"));
+        assert!(src.contains("fn dwell_cloud_upsample_split(e: f32, dist: vec3f) -> vec2f"));
         assert!(src.contains(&format!(
             "const CLOUD_VOL_DEPTH_BAND: f32 = {};",
             f(V.depth_band)
@@ -2380,4 +3467,534 @@ mod depth_tests {
             }
         }
     );
+}
+
+#[cfg(test)]
+mod shape_tests {
+    //! docs/CLOUDS.md §9: the shape model on the CPU over the baked noise (small sizes, quick).
+    use super::*;
+    use std::sync::LazyLock;
+
+    static NOISE: LazyLock<ShapeNoise> =
+        LazyLock::new(|| ShapeNoise::bake(&CLOUDS, Some((32, 16))));
+    const H: f64 = CLOUDS.volume.top_m - CLOUDS.volume.base_m;
+
+    fn kind(name: &str) -> f64 {
+        CLOUDS
+            .cloud_types
+            .iter()
+            .find(|c| c.name == name)
+            .unwrap()
+            .at
+    }
+
+    /// The density `y` up the layer at x, z (m) in a round cloud of radius 1.5 km about the origin
+    /// (its cover falling from 1 at the centre to 0 at the rim) of type `k`.
+    fn round_cloud(t: &CloudTunables, k: f64, x: f64, z: f64, y: f64, detail: bool) -> f64 {
+        let r = (x * x + z * z).sqrt();
+        let w = Weather {
+            cover: (1.0 - r / 1500.0).clamp(0.0, 1.0),
+            kind: k,
+            precipitation: 0.0,
+        };
+        let h = t.volume.base_m + y * H;
+        NOISE.density(t, shape_point(t, x, h, z), y, &w, [0.0, 0.0], detail)
+    }
+
+    /// The share of the cloud's footprint that has cloud `y` up (a horizontal slice's width).
+    fn width(t: &CloudTunables, k: f64, y: f64) -> f64 {
+        let mut n = 0;
+        let mut hit = 0;
+        for i in -40..=40 {
+            for j in -40..=40 {
+                let (x, z) = (f64::from(i) * 37.0, f64::from(j) * 37.0);
+                if x * x + z * z > 1500.0 * 1500.0 {
+                    continue;
+                }
+                n += 1;
+                if round_cloud(t, k, x, z, y, true) > 0.05 {
+                    hit += 1;
+                }
+            }
+        }
+        f64::from(hit) / f64::from(n)
+    }
+
+    #[test]
+    fn a_cumulus_is_flat_based_and_rounded_at_its_top() {
+        let k = kind("cumulus");
+        let ys: Vec<f64> = (1..60).map(|i| f64::from(i) * 0.008).collect();
+        let w: Vec<f64> = ys.iter().map(|&y| width(&CLOUDS, k, y)).collect();
+        let (imax, max) = w
+            .iter()
+            .copied()
+            .enumerate()
+            .fold((0, 0.0), |a, (i, v)| if v > a.1 { (i, v) } else { a });
+        assert!(max > 0.2, "the cloud has a body: {max:.2}");
+        let p = type_profile(CLOUDS.cloud_types, k);
+        // Flat base: the cloud is near its widest just over the base's short fade-in, and its
+        // widest is low in the cloud.
+        let just_over = ys.iter().position(|&y| y >= p.base[1] + 0.01).unwrap();
+        assert!(
+            w[just_over] > 0.75 * max,
+            "base {:.2} of {max:.2}",
+            w[just_over]
+        );
+        assert!(ys[imax] < 0.5 * p.top[1], "widest at y {:.2}", ys[imax]);
+        // Rounded top: above the widest it narrows (to under half near the top), never widening
+        // by more than the noise's few percent.
+        let top = ys
+            .iter()
+            .zip(&w)
+            .filter(|(_, v)| **v > 0.0)
+            .map(|(y, _)| *y)
+            .fold(0.0, f64::max);
+        assert!(top > p.top[0] && top <= p.top[1], "top {top:.2}");
+        for i in imax + 1..w.len() {
+            assert!(
+                w[i] <= w[i - 1] + 0.05 * max,
+                "y {:.2}: {:.2} after {:.2}",
+                ys[i],
+                w[i],
+                w[i - 1]
+            );
+        }
+        let near_top = ys.iter().position(|&y| y >= 0.85 * top).unwrap();
+        assert!(
+            w[near_top] < 0.5 * max,
+            "near the top {:.2} of {max:.2}",
+            w[near_top]
+        );
+    }
+
+    #[test]
+    fn a_cumulonimbus_spreads_into_an_anvil() {
+        let k = kind("cumulonimbus");
+        let p = type_profile(CLOUDS.cloud_types, k);
+        let (trunk, anvil) = (
+            width(&CLOUDS, k, 0.5 * p.top[0]),
+            width(&CLOUDS, k, p.top[0] + 0.02),
+        );
+        assert!(anvil > trunk, "anvil {anvil:.2} over trunk {trunk:.2}");
+        // And it towers where a cumulus has long ended.
+        assert!(width(&CLOUDS, k, 0.7) > 0.05);
+        assert_eq!(width(&CLOUDS, kind("cumulus"), 0.7), 0.0);
+    }
+
+    #[test]
+    fn no_coverage_is_no_cloud() {
+        for i in 0..200 {
+            let n = f64::from(i) / 199.0;
+            let w = weather(&CLOUDS, n, 0.5, 0.0);
+            assert_eq!(w.cover, 0.0);
+            for y in [0.02, 0.1, 0.3, 0.8] {
+                let pm = shape_point(
+                    &CLOUDS,
+                    f64::from(i) * 91.0,
+                    CLOUDS.volume.base_m + y * H,
+                    17.0,
+                );
+                assert_eq!(NOISE.density(&CLOUDS, pm, y, &w, [0.0, 0.0], true), 0.0);
+            }
+        }
+        // Under the cut at the shipped coverage, none either; past it, cover rises to 1.
+        let cut = 1.0 - CLOUDS.shape.coverage;
+        assert_eq!(
+            weather(&CLOUDS, cut - 0.01, 0.5, CLOUDS.shape.coverage).cover,
+            0.0
+        );
+        assert_eq!(
+            weather(
+                &CLOUDS,
+                cut + CLOUDS.form.coverage_softness,
+                0.5,
+                CLOUDS.shape.coverage
+            )
+            .cover,
+            1.0
+        );
+    }
+
+    #[test]
+    fn the_detail_only_erodes_the_edges_and_the_core_stays() {
+        let mut eroded = 0;
+        for i in 0..400 {
+            let x = f64::from(i % 20) * 61.0 - 600.0;
+            let z = f64::from(i / 20) * 61.0 - 600.0;
+            let y = 0.02 + f64::from(i % 7) * 0.03;
+            let base = round_cloud(&CLOUDS, kind("cumulus"), x, z, y, false);
+            let full = round_cloud(&CLOUDS, kind("cumulus"), x, z, y, true);
+            assert!(full <= base + 1e-12, "the detail only takes away");
+            if base > 0.0 && full < base {
+                eroded += 1;
+            }
+        }
+        assert!(eroded > 20, "edges eroded: {eroded}");
+        // A core (base shape 1) keeps its density whatever the detail says, wispy or billowy.
+        for hf in [0.0, 0.3, 0.7, 1.0] {
+            for y in [0.01, 0.5] {
+                assert_eq!(erode(&CLOUDS, 1.0, hf, y), 1.0);
+                assert!(erode(&CLOUDS, 0.3, hf, y) <= 0.3);
+            }
+        }
+        // Wispy bases, billowy tops: at the base the fBm's peaks erode most, at the top its gaps.
+        assert!(erode(&CLOUDS, 0.5, 1.0, 0.0) < erode(&CLOUDS, 0.5, 0.0, 0.0));
+        assert!(erode(&CLOUDS, 0.5, 0.0, 0.9) < erode(&CLOUDS, 0.5, 1.0, 0.9));
+    }
+
+    #[test]
+    fn the_shape_tiles_with_its_textures() {
+        // A whole base tile over (every tile divides it) is the same cloud: no seam where the
+        // shader's coordinates wrap.
+        let tile = CLOUDS.form.base_tile_m;
+        for t in [CLOUDS.form.detail_tile_m, CLOUDS.form.curl_tile_m] {
+            assert_eq!((tile / t).fract(), 0.0);
+        }
+        assert_eq!((CLOUDS.shape.wrap_m / tile).fract(), 0.0);
+        let w = Weather {
+            cover: 0.8,
+            kind: kind("cumulus"),
+            precipitation: 0.0,
+        };
+        for i in 0..50 {
+            let pm = [
+                f64::from(i) * 83.0,
+                CLOUDS.volume.base_m + 300.0,
+                f64::from(i) * 41.0,
+            ];
+            let a = NOISE.density(&CLOUDS, pm, 0.1, &w, [5.0, 9.0], true);
+            let b = NOISE.density(
+                &CLOUDS,
+                [pm[0] + tile, pm[1], pm[2] - 2.0 * tile],
+                0.1,
+                &w,
+                [5.0, 9.0],
+                true,
+            );
+            assert!((a - b).abs() < 1e-9, "{a} {b}");
+        }
+    }
+
+    /// A fixture cloud type (a tower), added by data alone.
+    const TOWER: CloudType = CloudType {
+        name: "test:tower",
+        at: 1.0,
+        base: [0.0, 0.05],
+        top: [0.9, 1.0],
+        anvil: 0.0,
+        density: 2.0,
+        darkening: 0.5,
+    };
+    const WITH_TOWER: CloudTunables = CloudTunables {
+        cloud_types: &[
+            CloudType { at: 0.0, ..TOWER },
+            CloudType {
+                name: "test:puff",
+                at: 0.5,
+                top: [0.05, 0.1],
+                ..TOWER
+            },
+            TOWER,
+        ],
+        ..CLOUDS
+    };
+
+    #[test]
+    fn a_fixture_cloud_type_by_data_alone_shapes_the_clouds_and_the_shader() {
+        let b = [0.8, 0.5, 0.5, 0.5];
+        let w = Weather {
+            cover: 1.0,
+            kind: 1.0,
+            precipitation: 0.0,
+        };
+        let p = type_profile(WITH_TOWER.cloud_types, 1.0);
+        assert_eq!(p.top, TOWER.top);
+        assert!(
+            base_shape(b, 0.85, &w, &p) > 0.5,
+            "the tower reaches 85 % up"
+        );
+        let shipped = type_profile(CLOUDS.cloud_types, kind("cumulus"));
+        assert_eq!(base_shape(b, 0.85, &w, &shipped), 0.0);
+        // Between types the profile is mixed: halfway from the puff to the tower.
+        let mid = type_profile(WITH_TOWER.cloud_types, 0.75);
+        assert!((mid.top[1] - 0.55).abs() < 1e-9);
+        // The shader's chain is generated from the data and validates.
+        let src = cloud_wgsl(&WITH_TOWER);
+        assert!(src.contains("test:puff → test:tower"));
+        assert!(src.contains(&format!("return {};", profile_wgsl(&TOWER))));
+        let full = format!(
+            "{}{src}{}",
+            dwell_world::FaceFrame::wgsl(),
+            cloud_march_wgsl(0, 0, 1)
+        );
+        let module = naga::front::wgsl::parse_str(&full).expect("WGSL parses");
+        naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .expect("WGSL validates");
+        // One type alone works too.
+        let one = cloud_wgsl(&CloudTunables {
+            cloud_types: &[TOWER],
+            ..CLOUDS
+        });
+        assert!(one.contains("fn cloud_type_profile("));
+    }
+
+    #[test]
+    fn the_march_samples_the_textures_and_the_light_takes_the_cheap_base_shape() {
+        let src = cloud_wgsl(&CLOUDS) + &cloud_march_wgsl(0, 0, 1);
+        let a = src.find("fn cloud_layer_march(").unwrap();
+        let body = &src[a..a + src[a..].find("\n}\n").unwrap()];
+        // Per view sample: one base fetch and the detail (curl + fBm); per light sample, one base
+        // fetch and no detail.
+        assert_eq!(body.matches("cloud_base_at(").count(), 2);
+        assert_eq!(body.matches("cloud_detail_fbm(").count(), 1);
+        let light = &body[body.find("for (var j = 0;").unwrap()..];
+        assert!(!light.contains("cloud_detail_fbm(") && !light.contains("cloud_erode("));
+        // The deck-only part declares no texture: the modules that only draw the deck bind none.
+        assert!(!cloud_wgsl(&CLOUDS).contains("texture_3d"));
+    }
+
+    dwell_world::both_faces!(
+        fn the_shape_is_face_local_so_both_faces_have_the_same_clouds(f: FaceFrame) {
+            // An eye 300 m up on the face: its height over the face's sea level is the same on
+            // both, so a sample the same face-local way along the ray is the same cloud's.
+            let local = [120.0, dwell_protocol::world::SEA_LEVEL_M + 300.0, -40.0];
+            let world = f.point(local);
+            let u = cloud_uniforms(&CLOUDS, world, f, 0.0, CloudQuality::Medium, 0.5);
+            let a = cloud_uniforms(&CLOUDS, local, FaceFrame::A, 0.0, CloudQuality::Medium, 0.5);
+            assert_eq!(
+                u[1][3], a[1][3],
+                "the deck's height over the eye is face-local"
+            );
+            let eye_h = CLOUDS.deck.altitude_m - f64::from(u[1][3]);
+            let h = eye_h + 1500.0;
+            let y = (h - CLOUDS.volume.base_m) / H;
+            let w = Weather {
+                cover: 0.9,
+                kind: kind("cumulus"),
+                precipitation: 0.0,
+            };
+            let d = NOISE.density(
+                &CLOUDS,
+                shape_point(&CLOUDS, 300.0, h, 200.0),
+                y,
+                &w,
+                [0.0, 0.0],
+                true,
+            );
+            let ea = CLOUDS.deck.altitude_m - f64::from(a[1][3]) + 1500.0;
+            let da = NOISE.density(
+                &CLOUDS,
+                shape_point(&CLOUDS, 300.0, ea, 200.0),
+                y,
+                &w,
+                [0.0, 0.0],
+                true,
+            );
+            assert_eq!(d, da);
+        }
+    );
+
+    // ----- BUGS.md #90: dither and pixelation at cloud level -----
+
+    #[test]
+    fn near_the_layer_a_tier_takes_its_near_steps_and_resolution() {
+        let v = &CLOUDS.volume;
+        let m = CLOUDS.tiers.medium;
+        assert!(near_layer(v, v.base_m + 10.0, false), "inside");
+        assert!(
+            near_layer(v, v.base_m - 0.9 * v.near_m, false),
+            "just under"
+        );
+        assert!(!near_layer(v, v.base_m - 1.2 * v.near_m, false));
+        assert!(
+            near_layer(v, v.base_m - 1.2 * v.near_m, true),
+            "the band to leave it"
+        );
+        assert!(!near_layer(v, v.top_m + 2.0 * v.near_m, true));
+        let near = m.at(true);
+        assert_eq!((near.steps, near.divisor), (m.near_steps, m.near_divisor));
+        assert!(near.steps > m.steps && near.divisor < m.divisor);
+        assert_eq!(m.at(false), m);
+    }
+
+    #[test]
+    fn the_jitter_is_blue_noise_and_the_resolve_is_stable_under_it_as_the_eye_moves() {
+        let blue = crate::cloud_noise::blue_noise(16);
+        // A fixture texel: a cloud edge it marches with few steps, so its raw cover depends on
+        // where the jittered steps land; the eye moving through the layer each frame (where the
+        // old pass dropped the history: the raw march showed).
+        let march = |jitter: f64| {
+            let steps = 4;
+            let mut trans: f64 = 1.0;
+            for i in 0..steps {
+                let t = (f64::from(i) + jitter) / f64::from(steps);
+                if (0.3..0.68).contains(&t) {
+                    trans *= (-1.4_f64).exp();
+                }
+            }
+            1.0 - trans
+        };
+        // A row of 8 texels and their neighbours; frames 16..80 after a warm-up.
+        let (mut raw_var, mut res_var) = (0.0, 0.0);
+        for x in 0..8 {
+            let mut hist = [0.0; 4];
+            let (mut raw, mut res) = (vec![], vec![]);
+            for frame in 0..80u32 {
+                let at = |dx: i32, dy: i32| {
+                    let c = march(cloud_jitter(&blue, 16, [x + dx, 3 + dy], frame));
+                    [c, c, c, c]
+                };
+                let own = at(0, 0);
+                let nb: Vec<[f64; 4]> = (-1..=1)
+                    .flat_map(|dy| (-1..=1).map(move |dx| (dx, dy)))
+                    .map(|(dx, dy)| at(dx, dy))
+                    .collect();
+                let bx = neighbourhood_box(own, &nb, HISTORY_CLAMP);
+                hist = resolve(own, bx, hist, 1.0, CLOUDS.tiers.medium.history_blend);
+                if frame >= 16 {
+                    raw.push(own[3]);
+                    res.push(hist[3]);
+                }
+            }
+            let var = |v: &[f64]| {
+                let m = v.iter().sum::<f64>() / v.len() as f64;
+                v.iter().map(|x| (x - m).powi(2)).sum::<f64>() / v.len() as f64
+            };
+            raw_var += var(&raw);
+            res_var += var(&res);
+        }
+        assert!(
+            raw_var > 0.01,
+            "the fixture's raw march flickers: {raw_var:.4}"
+        );
+        assert!(
+            res_var < 0.25 * raw_var,
+            "resolved {res_var:.4} vs raw {raw_var:.4}"
+        );
+        // Neighbouring texels' jitter is far apart (blue): over the 16-frame cycle every texel
+        // takes 16 distinct offsets spread over 0–1.
+        let mut seen: Vec<f64> = (0..16)
+            .map(|f| cloud_jitter(&blue, 16, [2, 5], f))
+            .collect();
+        seen.sort_by(f64::total_cmp);
+        assert!(seen.windows(2).all(|w| w[1] - w[0] > 0.01));
+    }
+
+    #[test]
+    fn the_resolve_clamps_stale_history_and_the_upsample_keeps_a_silhouette_sharp() {
+        // History from before the eye moved (a cloud now gone) is clamped into this frame's
+        // neighbourhood instead of ghosting, and kept when it agrees.
+        let clear = [[0.0; 4]; 9];
+        let bx = neighbourhood_box([0.0; 4], &clear, 1.5);
+        assert_eq!(resolve([0.0; 4], bx, [0.8; 4], 1.0, 0.2), [0.0; 4]);
+        let cloudy = [[0.5; 4]; 9];
+        let bx = neighbourhood_box([0.5; 4], &cloudy, 1.5);
+        assert_eq!(resolve([0.5; 4], bx, [0.5; 4], 1.0, 0.2), [0.5; 4]);
+        // The composite's depth-aware upsample at a silhouette (a peak 4 km out against the sky):
+        // the rock pixel takes only the rock texels' cloud and the sky pixel only the sky's, each
+        // within 1 % of its side's, whatever the bilinear shares say.
+        let v = &CLOUDS.volume;
+        let reach = v.max_distance_m;
+        // Both texels' first cloud 3.6 km out, in front of the rock.
+        let rock = [4000.0, 4010.0, 3600.0];
+        let sky = [reach, reach, 3600.0];
+        for share in [0.1, 0.5, 0.9] {
+            let texels = [(0.2, rock, share), (0.9, sky, 1.0 - share)];
+            assert!((upsample_cover(v, 4005.0, &texels) - 0.2).abs() < 0.01);
+            assert!((upsample_cover(v, reach, &texels) - 0.9).abs() < 0.01);
+        }
+    }
+}
+
+/// The 2D deck's relief (WORK_QUEUE item 13, docs/CLOUDS.md §10): the old deck's self-shadow
+/// sample toward the sun, which made it read 3D, restored on every tier that draws it.
+#[cfg(test)]
+mod deck_relief_tests {
+    use super::*;
+
+    /// A sun `deg` over the face along +X, face-local.
+    fn sun_at(deg: f64) -> [f64; 3] {
+        let r = deg.to_radians();
+        [r.cos(), r.sin(), 0.0]
+    }
+
+    fn relief(t: &CloudTunables, q: CloudQuality, deg: f64, f: FaceFrame) -> DeckRelief {
+        deck_relief(t, q.octaves(t), q.shadow_octaves(t), sun_at(deg), f, 96)
+    }
+
+    dwell_world::both_faces!(
+        /// At a low sun the deck's sun-facing edges are lit and its far edges shaded, on Low (the
+        /// deck players see on phones and while the volume's noise bakes) as on the old desktop
+        /// deck. Red before: Low took no sample toward the sun, so both sides were the same.
+        fn the_low_decks_sun_facing_side_is_brighter_than_its_far_side(f: FaceFrame) {
+            let r = relief(&CLOUDS, CloudQuality::Low, 5.0, f);
+            assert!(
+                r.sun_side - r.far_side >= 0.12,
+                "sun side {:.3} vs far side {:.3}",
+                r.sun_side,
+                r.far_side
+            );
+            // Face-local: the same relief on both faces.
+            assert_eq!(r, relief(&CLOUDS, CloudQuality::Low, 5.0, FaceFrame::A));
+        }
+    );
+
+    dwell_world::both_faces!(
+        /// The thick cores (the undersides seen from below) are dark against the thin edges at noon:
+        /// the self-shadow sample adds the cloud's thickness again. Red before on Low (0.6 × the
+        /// density alone: grey-white throughout).
+        fn the_low_decks_undersides_are_darker_than_its_thin_edges(f: FaceFrame) {
+            let r = relief(&CLOUDS, CloudQuality::Low, 70.0, f);
+            assert!(r.core <= 0.4, "cores {:.3}", r.core);
+            assert!(
+                r.thin - r.core >= 0.3,
+                "thin {:.3} vs cores {:.3}",
+                r.thin,
+                r.core
+            );
+            assert_eq!(r, relief(&CLOUDS, CloudQuality::Low, 70.0, FaceFrame::A));
+        }
+    );
+
+    /// Every tier that draws the deck (Low in the sky, Medium and High in reflections and Snell's
+    /// window) takes the sample; the old desktop deck (all octaves, a full sample) is Medium's and
+    /// High's.
+    // face-a-only: the tiers' sample counts are face-free; the relief on both faces is pinned above.
+    #[test]
+    fn every_tier_drawing_the_deck_takes_the_self_shadow_sample() {
+        assert_eq!(CloudQuality::Off.shadow_octaves(&CLOUDS), 0);
+        for q in [CloudQuality::Low, CloudQuality::Medium, CloudQuality::High] {
+            assert!(q.shadow_octaves(&CLOUDS) > 0, "{q:?}");
+            assert!(q.shadow_octaves(&CLOUDS) <= q.octaves(&CLOUDS), "{q:?}");
+            let u = cloud_uniforms(&CLOUDS, [0.0; 3], FaceFrame::A, 0.0, q, 0.4)[1];
+            assert_eq!(u[2], q.shadow_octaves(&CLOUDS) as f32, "{q:?}");
+        }
+        let old = relief(&CLOUDS, CloudQuality::Medium, 5.0, FaceFrame::A);
+        let low = relief(&CLOUDS, CloudQuality::Low, 5.0, FaceFrame::A);
+        // Low's coarser sample keeps most of the old deck's relief.
+        assert!(
+            low.sun_side - low.far_side >= 0.7 * (old.sun_side - old.far_side),
+            "low {low:.3?} vs old {old:.3?}"
+        );
+    }
+
+    /// The sample is data: no octaves for it, no relief (the deck before the restore).
+    // face-a-only: a data switch; the relief on both faces is pinned above.
+    #[test]
+    fn the_self_shadow_sample_is_data() {
+        let flat = CloudTunables {
+            light: CloudLight {
+                low_shadow_octaves: 0,
+                ..CLOUDS.light
+            },
+            ..CLOUDS
+        };
+        assert_eq!(CloudQuality::Low.shadow_octaves(&flat), 0);
+        let r = relief(&flat, CloudQuality::Low, 5.0, FaceFrame::A);
+        assert!((r.sun_side - r.far_side).abs() < 0.05, "{r:.3?}");
+    }
 }

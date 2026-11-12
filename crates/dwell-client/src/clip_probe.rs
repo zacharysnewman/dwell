@@ -1725,4 +1725,116 @@ mod chop_swing_tests {
         // A clip that is not a chop has none.
         assert!(run("break").samples.iter().all(|s| s.camera.is_none()));
     }
+
+    /// The tool head's first-person screen place (NDC x, y) each frame (60 fps) of one swing of
+    /// the stone axe played through the arms' animator as the game drives it
+    /// (`crate::chop::SwingRun::arms` applied each frame, `game.rs` `update_swing_run`), its path
+    /// meeting something at arc step `hit` (none: a miss), from its start to 1 s past its end.
+    fn played(role: &str, hit: Option<u32>) -> Vec<[f32; 2]> {
+        let ch = player();
+        let fp = ch.first_person.expect("first person");
+        let tan = (f64::from(fp.fov).to_radians() / 2.0).tan() as f32;
+        let tool = dwell_protocol::chopping::tool("dwell:stone_axe").expect("the axe");
+        let vertical = role == "chop_vertical";
+        let held = held_for(Some("dwell:stone_axe"), role);
+        let (bone, q) = local_point(held, Point::ToolHead).expect("a head");
+        let impact = hit.map(|step| crate::chop::Impact {
+            cell: [0, 0, 0],
+            face: 0,
+            point: [0.0; 3],
+            step,
+            wood: true,
+        });
+        let mut run = crate::chop::SwingRun::new(tool, vertical, 0.0, impact);
+        let input = MoveInput {
+            holding: true,
+            ..Default::default()
+        };
+        let mut a = Animator::new(&TABLES, ch, Space::Arms);
+        a.update(&input, 0.0);
+        a.swing(swing_of(role).unwrap());
+        let dt = 1.0 / 60.0;
+        let frames = ((run.length() + 1.0) / dt) as usize;
+        let mut live = true;
+        (0..frames)
+            .map(|i| {
+                let now_ms = i as f64 * dt * 1000.0;
+                if live {
+                    let d = run.arms(now_ms);
+                    d.apply(&mut a);
+                    live = d != crate::chop::ArmsDrive::Release;
+                    let _ = run.take_impact(now_ms);
+                }
+                let pose = a.update(&input, dt as f32);
+                let hold = held.item().and_then(|(n, _)| ch.item(n));
+                let v = arm_transforms(ch, &with_item(&pose, hold))[bone].apply(q);
+                let z = v[2].max(1e-3);
+                [-v[0] / (z * tan * 16.0 / 9.0), v[1] / (z * tan)]
+            })
+            .collect()
+    }
+
+    /// The strokes along one screen axis (`axis` 0 x, 1 y) going the strike's way (`sign` −1:
+    /// toward −): each stretch moving that way by more than `min` NDC in all, a stroke.
+    fn strokes(path: &[[f32; 2]], axis: usize, sign: f32, min: f32) -> Vec<(usize, f32)> {
+        let mut out = Vec::new();
+        let (mut from, mut run) = (0, 0.0f32);
+        for (i, w) in path.windows(2).enumerate() {
+            let d = (w[1][axis] - w[0][axis]) * sign;
+            if d > 1e-4 {
+                if run == 0.0 {
+                    from = i;
+                }
+                run += d;
+            } else if d < -1e-4 || i + 2 == path.len() {
+                if run > min {
+                    out.push((from, run));
+                }
+                run = 0.0;
+            }
+        }
+        if run > min {
+            out.push((from, run));
+        }
+        out
+    }
+
+    // BUGS.md #93 (owner, 2026-11-12: "For vertical swings on axe, sword, etc, it sort of double
+    // swings"; "The animation double swings"): one vertical swing must draw one down-stroke, a hit
+    // (the head stopped in the wood: the hit-stop, the pull-out) as well as a miss, and nothing
+    // after it ends. Before the fix a hit's pull-out played the clip backwards from contact to its
+    // start (the head back up over the shoulder and down again), and at its end the arms' clip was
+    // let go at that start and played on by itself: the whole swing a second time.
+    // face-a-only: the first-person screen (view space; the arms never depend on the face).
+    #[test]
+    fn one_swing_draws_one_stroke_hit_or_miss() {
+        let mid = swing_def(Some("dwell:stone_axe"), "chop_vertical")
+            .map(|s| s.samples / 2)
+            .unwrap();
+        for hit in [None, Some(mid), Some(2)] {
+            let v = played("chop_vertical", hit);
+            let downs = strokes(&v, 1, -1.0, 0.8);
+            assert_eq!(
+                downs.len(),
+                1,
+                "vertical, hit {hit:?}: one down-stroke, got {downs:?}\n{v:?}"
+            );
+            // And it ends at rest (the clip's first key, the idle arms' sway aside) and stays there.
+            let rest = v[0];
+            for p in &v[v.len() - 20..] {
+                assert!(
+                    (p[0] - rest[0]).abs() < 0.2 && (p[1] - rest[1]).abs() < 0.2,
+                    "vertical, hit {hit:?}: back at rest {rest:?} after the swing, at {p:?}"
+                );
+            }
+            // Level swings: one right → left stroke too.
+            let l = played("chop_level", hit);
+            let lefts = strokes(&l, 0, -1.0, 0.8);
+            assert_eq!(
+                lefts.len(),
+                1,
+                "level, hit {hit:?}: one right → left stroke, got {lefts:?}\n{l:?}"
+            );
+        }
+    }
 }

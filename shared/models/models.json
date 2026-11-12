@@ -18,8 +18,10 @@
   "models": {
     "peasant": {
       "glb": "glb/peasant.glb",
+      "parts": "parts/peasant.json",
       "repaint": [
-        { "$comment": "The hat (owner, 2026-11-12: \"Hat gets its own colours\"): the pack paints it with the hair's colour; its brim (out past the head) and crown (above the hair) take wool_yellow, a ramp of their own, which the villager's `hat` colour part recolours.", "from": "hair_brown", "to": "wool_yellow", "minY": 1.4, "beyond": 0.16, "above": 1.6 }
+        { "$comment": "The hat (owner, 2026-11-12: \"Hat gets its own colours\"): the pack paints it with the hair's colour; the hat part (parts/peasant.json: its crown and brim) takes wool_yellow, a ramp of its own, which the villager's `hat` colour part recolours.", "from": "hair_brown", "to": "wool_yellow", "part": "hat" },
+        { "$comment": "BUGS.md #96: the hat's repaint by height (to 0.54.171) caught the hair's fringe; the hair part takes its own ramp back.", "from": "wool_yellow", "to": "hair_brown", "part": "hair" }
       ],
       "source": {
         "pack": "Stylized_NPC_-_Peasant_Nolant_DEMO",
@@ -47,7 +49,22 @@
           "thumb.R"
         ],
         "weight": 0.5,
-        "turn": [40, 0, 0]
+        "turn": [40, 0, 0],
+        "body": {
+          "$comment": "Your own body seen in first person (docs/CHARACTERS.md §5.1, §11.12): this model's mesh, posed by the same clips as your shadow, less every triangle with a vertex that has at least `weight` of its skin weight on `hide` (the neck and head, so the hat and hair; the left arm: the owner's 'never two pairs') or on the arm above (`joints`, drawn by the arms view). Placed as the rigid body was (characters.json `firstPerson.body`: back, lookDown, clear, near).",
+          "hide": [
+            "spine.004",
+            "spine.005",
+            "spine.006",
+            "upper_arm.L",
+            "forearm.L",
+            "hand.L",
+            "finger.001.L",
+            "finger.002.L",
+            "thumb.L"
+          ],
+          "weight": 0.5
+        }
       },
       "grips": {
         "$comment": "How the hand closes on what it holds (docs/CHARACTERS.md §11.10): `poses` turn skin joints (degrees, Euler XYZ, on top of each joint's own turn: the fingers bend about their z), `items` names the pose each held item (shared/characters/characters.json `items`) takes; an item not listed is held in the open hand (a block or a torch on the palm). Fitted so the curled fingertips close round the handle's line (props.json `hand`, a test in render/skinned.rs).",

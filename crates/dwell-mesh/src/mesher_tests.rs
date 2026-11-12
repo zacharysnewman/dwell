@@ -1422,6 +1422,13 @@ fn local_mesh(f: FaceFrame, mut m: MeshArrays) -> MeshArrays {
         for v in m.normals.iter_mut().skip(1).step_by(3) {
             *v = -*v;
         }
+        // A leaf card's packed plane normal (`leaves::card_speed`, negative) is a normal too.
+        for speed in m.plants.iter_mut().skip(1).step_by(4) {
+            if *speed < 0.0 {
+                let n = leaves::card_normal_of(*speed);
+                *speed = leaves::card_speed([n[0], -n[1], n[2]]);
+            }
+        }
         for t in m.indices.chunks_exact_mut(3) {
             t.swap(1, 2);
         }
@@ -2164,9 +2171,13 @@ dwell_world::both_faces!(
 
 dwell_world::both_faces!(
     /// The axe's bites (WORK_QUEUE item 26): one hit on a standing trunk's −x side, struck 0.45 m
-    /// along z (on the octagon's flat face) in the face-locally lower band, is carved as a head-sized V there, not a slit across
-    /// the side (red before: the kerf's fresh wood ran from z 0 to 1), and the cell carries the
-    /// wood's cracks while its neighbours don't.
+    /// along z (on the octagon's flat face), is carved as a V centred there, not a slit across
+    /// the side (red before item 26: the kerf's fresh wood ran from z 0 to 1), grown by the bite
+    /// rule (WORK_QUEUE item 18: its first of the swings to fell's share of half the log, so wider
+    /// and deeper than the head), its mouth in the notch's band round the row's middle and its two
+    /// faces both turned out of the notch: the lower one facing face-local up, the upper one
+    /// down (the gash's ramps' short sides at the cut); and the cell carries the wood's cracks
+    /// while its neighbours don't.
     fn a_bitten_log_is_carved_where_it_was_struck_and_cracks(f: FaceFrame) {
         let log = require("dwell:log");
         let wood = dwell_protocol::chopping::wood("dwell:log").unwrap();
@@ -2182,24 +2193,47 @@ dwell_world::both_faces!(
             .filter(|t| t.2)
             .collect();
         assert!(!fresh.is_empty(), "fresh-wood faces");
-        let half = 0.5 * wood.cut.bite.width_m;
-        let lower = |y: f64| {
-            if f.is_b() {
-                y >= 11.5 - 1e-6
-            } else {
-                y <= 11.5 + 1e-6
-            }
-        };
-        for (p, _, _) in &fresh {
+        let deep = fresh
+            .iter()
+            .flat_map(|t| t.0.iter())
+            .fold(0.0f64, |a, q| a.max(q[0] - 5.0));
+        let b = wood.cut.bite;
+        assert!(
+            deep > 0.2 && deep < 0.6,
+            "the first swing's share of the rule: {deep}"
+        );
+        let half = 0.5 * (deep * b.width_per_depth).max(b.width_m) + 1e-4;
+        let (mut zlo, mut zhi) = (f64::INFINITY, f64::NEG_INFINITY);
+        for (p, n, _) in &fresh {
             for q in p {
+                zlo = zlo.min(q[2]);
+                zhi = zhi.max(q[2]);
                 assert!(
-                    q[2] >= 5.45 - half - 1e-5 && q[2] <= 5.45 + half + 1e-5,
-                    "inside the head's width round the hit: {q:?}"
+                    (q[2] - 5.45).abs() <= half,
+                    "inside the grown bite round the hit: {q:?}"
                 );
-                assert!(lower(q[1]), "in the band struck: {q:?}");
-                assert!(q[0] >= 5.0 - 1e-6 && q[0] <= 5.0 + 0.1 + 1e-5, "{q:?}");
+                assert!(
+                    (q[1] - 11.5).abs() <= 0.5 * b.band_m / dwell_world::CELL_H + 1e-4,
+                    "in the notch's band: {q:?}"
+                );
+                assert!(q[0] >= 5.0 - 1e-6 && q[0] <= 5.0 + deep + 1e-5, "{q:?}");
+            }
+            // Face-local: the row's lower half's face looks up and out of the notch (−x), the
+            // upper half's down and out.
+            let mid = (p[0][1] + p[1][1] + p[2][1]) / 3.0;
+            let below = if f.is_b() { mid > 11.5 } else { mid < 11.5 };
+            let up = if f.is_b() { -n[1] } else { n[1] };
+            if (mid - 11.5).abs() > 1e-3 && n[0] < -0.05 {
+                assert!(
+                    if below { up > 0.05 } else { up < -0.05 },
+                    "the V's faces turn out of the notch: {p:?} {n:?}"
+                );
             }
         }
+        assert!(
+            ((zlo + zhi) * 0.5 - 5.45).abs() < 0.03,
+            "centred where it struck: {zlo}..{zhi}"
+        );
         // Its cracks: the cut cell's vertices carry the wood's first crack tile, the logs above
         // and below none.
         assert_eq!(
@@ -2584,9 +2618,47 @@ dwell_world::both_faces!(
             with.positions.len() / 3,
             without.positions.len() / 3 + carded.len()
         );
-        assert!(without.plants.iter().all(|&v| v == 0.0));
+        // Its faces are a tree's leaves (`TREE_LEAF_FADE`): no sway, handed over to the far
+        // trees' impostors by the frame's distances (WORK_QUEUE item 31).
+        assert!(!without.plants.is_empty());
+        for v in without.plants.chunks(4) {
+            assert_eq!(v, [0.0, 0.0, crate::TREE_LEAF_FADE, crate::TREE_LEAF_FADE]);
+        }
+        let faces = (0..with.positions.len() / 3).filter(|&i| with.plants[i * 4 + 3] < 0.0);
+        assert_eq!(faces.count(), without.positions.len() / 3);
     }
 );
+
+/// Face B's mirror re-packs a leaf card's packed normal y-flipped (`flip_arrays_y`); turning it
+/// back must give face A's bits, or a face-B card's normal drifts a grid step from its mirror's
+/// (`a_chunk_meshes_the_same_face_local_on_either_face`). Red before: on the odd 2047-step grid
+/// the octahedral fold falls between grid points.
+#[test]
+fn a_leaf_cards_packed_normal_flips_exactly() {
+    // both-faces: the packing's own y flip, the mirror between the faces.
+    let flip = |p: f32| {
+        let n = leaves::card_normal_of(p);
+        leaves::card_speed([n[0], -n[1], n[2]])
+    };
+    let mut checked = 0;
+    for i in 0..64 {
+        for j in 0..32 {
+            let (a, b) = (
+                f64::from(i) / 64.0 * std::f64::consts::TAU,
+                f64::from(j) / 31.0 * std::f64::consts::PI,
+            );
+            let n = [b.sin() * a.cos(), b.cos(), b.sin() * a.sin()];
+            let p = leaves::card_speed(n);
+            assert!(
+                p < 0.0 && (-p) < (1 << 24) as f32,
+                "{p} marks a card, exactly"
+            );
+            assert_eq!(flip(flip(p)), p, "{n:?} packs {p}, and back through a flip");
+            checked += 1;
+        }
+    }
+    assert_eq!(checked, 64 * 32);
+}
 
 dwell_world::both_faces!(
     /// BUGS.md #78: each leaf card carries its plane's normal packed in `plants.y` (negative: a
@@ -2817,7 +2889,7 @@ fn a_bitten_logs_cracks_show_on_the_bark_round_the_bites() {
                 if px[0] >= 200 {
                     continue;
                 }
-                if crate::carve::depth_at(1, &cut, &look, 0, t, u) > 1e-9 {
+                if crate::carve::depth_at(1, &cut, &look, cut.progress(wood, 1), 0, t, u) > 1e-9 {
                     in_cut += 1;
                 } else {
                     on_bark += 1;

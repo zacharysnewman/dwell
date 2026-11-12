@@ -907,7 +907,7 @@ async function step(run: Run, s: Step): Promise<void> {
       return;
     case 'record': {
       const t = await record(run, s.name);
-      const over = s.budget ? overBudget(t.frames, s.budget) : [];
+      const over = s.budget ? overBudget(t.frames, s.budget, t.samples) : [];
       if (over.length > 0) {
         const tag = s.reportOnly ? 'OVER BUDGET (report only)' : 'OVER BUDGET';
         for (const o of over) console.log(`    ${tag} [${s.name}] ${o}`);

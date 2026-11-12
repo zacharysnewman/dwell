@@ -12,6 +12,9 @@ use std::collections::HashMap;
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct BlockDamageDef {
     pub block: &'static str,
+    /// Its volume as a share of a cell's ([`CELL_M3`]; generated from its shape: a full block 1, a
+    /// stored ramp ½), for the bite rule ([`bite_m3_in`]).
+    pub volume: f64,
     /// With bare hands or a tool not listed; none: it can't be broken so.
     pub default: Option<u32>,
     /// Per tool class (`pickaxe`, …) or item (`dwell:metal_pickaxe`), an item's over its class's.
@@ -144,21 +147,73 @@ pub fn hits_to_break(block: &str, held: Option<&str>) -> Option<u32> {
     hits_to_break_in(BLOCK_DAMAGE, BREAK_TOOLS, block, held)
 }
 
-/// How big a piece a hit holding `held` takes off, in [`HitMark::chunk`]'s sixteenths (16: ×1),
-/// from `tools`: a breaking tool's tier `chunk` (metal 2: 32; owner, 2026-11-12, metal tools "break
-/// double sized bigger chunks off"), else ×1 (a hand, a block, any other item).
-pub fn hit_chunk_in(tools: &[BreakTool], held: Option<&str>) -> u8 {
-    held.and_then(|h| tools.iter().find(|t| t.item == h))
-        .map_or(HitMark::ONE, |t| {
-            (t.chunk * f64::from(HitMark::ONE))
-                .round()
-                .clamp(1.0, 255.0) as u8
-        })
+/// A cell's volume (m³): 1 × ½ × 1 m (`dwell_world::CELL_H`; a dwell-mesh test pins the two).
+pub const CELL_M3: f64 = 0.5;
+/// The share of a block's volume carved away and flown off when it breaks (owner, 2026-11-12: "the
+/// chunks that fly off and show chunked off the blocks should be equivalent to 50% of the block's
+/// volume / number of swings required to break it").
+pub const BROKEN_AT: f64 = 0.5;
+
+/// The bite rule (WORK_QUEUE item 18, BLOCK_DAMAGE.md §10): the volume (m³) one hit on a block of
+/// `volume` m³ carves away and throws off, when it takes `hits` to break: [`BROKEN_AT`] × the
+/// volume ÷ the hits, so the hits before the break total half the block. Every bite in the game is
+/// this: the carve, the flying pieces, the axe's chips.
+pub fn bite_m3(volume_m3: f64, hits: u32) -> f64 {
+    BROKEN_AT * volume_m3 / f64::from(hits.max(1))
 }
 
-/// [`hit_chunk_in`] over the build's data.
-pub fn hit_chunk(held: Option<&str>) -> u8 {
-    hit_chunk_in(BREAK_TOOLS, held)
+/// A block's volume (m³) from its damage data's shape share; a block without `damage`: a cell.
+pub fn volume_m3_in(damage: &[BlockDamageDef], block: &str) -> f64 {
+    damage
+        .iter()
+        .find(|d| d.block == block)
+        .map_or(1.0, |d| d.volume)
+        * CELL_M3
+}
+
+/// [`volume_m3_in`] over the build's data.
+pub fn volume_m3(block: &str) -> f64 {
+    volume_m3_in(BLOCK_DAMAGE, block)
+}
+
+/// The volume (m³) carved out of a cell of `block` at damage `fraction` (0–1, the hits taken over
+/// the hits to break): `fraction` × [`BROKEN_AT`] × its volume, so k hits of n have carved k bites
+/// whatever the tool, half the block at the break.
+pub fn carved_m3(block: &str, fraction: f64) -> f64 {
+    fraction.clamp(0.0, 1.0) * BROKEN_AT * volume_m3(block)
+}
+
+/// The bite (m³) a hit on `block` holding `held` takes ([`bite_m3`] over the block's volume and its
+/// hits to break with that, [`hits_to_break_in`]): none when it can't be broken so. A metal tool's
+/// fewer hits give bigger bites by themselves.
+pub fn bite_m3_in(
+    damage: &[BlockDamageDef],
+    tools: &[BreakTool],
+    block: &str,
+    held: Option<&str>,
+) -> Option<f64> {
+    let n = hits_to_break_in(damage, tools, block, held)?;
+    Some(bite_m3(volume_m3_in(damage, block), n))
+}
+
+/// [`bite_m3_in`] over the build's data.
+pub fn bite_m3_of(block: &str, held: Option<&str>) -> Option<f64> {
+    bite_m3_in(BLOCK_DAMAGE, BREAK_TOOLS, block, held)
+}
+
+/// A bite (m³) as a mark's [`HitMark::chunk`]: sixteenths of [`HitMark::UNIT_M3`] (the bite of a
+/// full block that takes 8 hits), at least 1. The mark's carve is sized by the cell's damage
+/// fraction (the rule); the chunk weighs its marks against each other (a metal hit's bigger).
+pub fn chunk_of_bite(bite_m3: f64) -> u8 {
+    (bite_m3 / HitMark::UNIT_M3 * f64::from(HitMark::ONE))
+        .round()
+        .clamp(1.0, 255.0) as u8
+}
+
+/// The mark chunk of a hit on `block` holding `held` ([`chunk_of_bite`] of [`bite_m3_of`]; a block
+/// it can't break: ×1).
+pub fn hit_chunk(block: &str, held: Option<&str>) -> u8 {
+    bite_m3_of(block, held).map_or(HitMark::ONE, chunk_of_bite)
 }
 
 /// Whether `held` is a breaking tool (one of `tools.json`'s, the pickaxes, shovels and axes): an
@@ -237,8 +292,10 @@ pub struct HitMark {
 }
 
 impl HitMark {
-    /// A ×1 piece (a stone tool's, a hand's; an older save's or server's mark).
+    /// A ×1 piece ([`HitMark::UNIT_M3`]; an older save's or server's mark reads so).
     pub const ONE: u8 = 16;
+    /// A ×1 mark's bite (m³): a full block's that takes 8 hits ([`bite_m3`]).
+    pub const UNIT_M3: f64 = BROKEN_AT * CELL_M3 / 8.0;
 
     /// A ×1 mark at `point` on `face`.
     pub fn at(face: u8, point: [u8; 3]) -> HitMark {
@@ -546,6 +603,7 @@ mod tests {
     fn a_fixture_block_and_tool_by_data_alone() {
         let damage = [BlockDamageDef {
             block: "test:clay",
+            volume: 1.0,
             default: Some(9),
             tools: &[("trowel", 6), ("test:golden_trowel", 1)],
             look: None,
@@ -557,16 +615,16 @@ mod tests {
                 class: "trowel",
                 tier: "stone",
                 speed: 2.0,
-                chunk: 1.0,
                 contact_s: 0.0,
+                repeat_s: None,
             },
             BreakTool {
                 item: "test:golden_trowel",
                 class: "trowel",
                 tier: "metal",
                 speed: 2.5,
-                chunk: 2.0,
                 contact_s: 0.0,
+                repeat_s: None,
             },
         ];
         let h = |held| hits_to_break_in(&damage, &tools, "test:clay", held);
@@ -600,13 +658,6 @@ mod tests {
         // broken faster, which is when the blocks break. Also have double durability."
         for (m, s) in metal_and_stone() {
             assert_eq!(m.speed, 2.0 * s.speed, "{}", m.item);
-            assert_eq!(
-                hit_chunk(Some(m.item)),
-                2 * hit_chunk(Some(s.item)),
-                "{}: a chunk twice the size",
-                m.item
-            );
-            assert_eq!(hit_chunk(Some(s.item)), HitMark::ONE, "{}", s.item);
             let wear = crate::chopping::durability;
             assert_eq!(
                 wear(m.item),
@@ -636,23 +687,71 @@ mod tests {
                 }
             }
         }
-        // A hand or a block takes a ×1 piece.
-        assert_eq!(hit_chunk(None), HitMark::ONE);
-        assert_eq!(hit_chunk(Some("dwell:dirt")), HitMark::ONE);
+    }
+
+    /// The bite rule (owner, 2026-11-12: "the chunks that fly off and show chunked off the blocks
+    /// should be equivalent to 50% of the block's volume / number of swings required to break
+    /// it"): k hits total k × 0.5 × V ÷ n, half the block at the break.
+    #[test]
+    fn a_bite_is_half_the_blocks_volume_over_its_hits() {
+        let cases = [
+            ("dwell:dirt", Some("dwell:wooden_shovel"), 5),
+            ("dwell:dirt", None, 11),
+            ("dwell:stone", Some("dwell:stone_pickaxe"), 5),
+            ("dwell:stone", Some("dwell:metal_pickaxe"), 3),
+            ("dwell:sand", Some("dwell:metal_shovel"), 3),
+        ];
+        for (block, held, n) in cases {
+            assert_eq!(hits_to_break(block, held), Some(n), "{block} {held:?}");
+            let bite = bite_m3_of(block, held).expect("breakable");
+            assert!(
+                (bite - 0.5 * CELL_M3 / f64::from(n)).abs() < 1e-12,
+                "{block}: {bite}"
+            );
+            assert!(
+                (f64::from(n) * bite - 0.5 * CELL_M3).abs() < 1e-12,
+                "half at the break"
+            );
+        }
+        // A ramp is half a cell: half the bite.
+        let ramp = bite_m3_of("dwell:stone_ramp", Some("dwell:stone_pickaxe")).unwrap();
+        let full = bite_m3_of("dwell:stone", Some("dwell:stone_pickaxe")).unwrap();
+        assert!((ramp - 0.5 * full).abs() < 1e-12, "{ramp} {full}");
+        // What can't be broken has no bite.
+        assert_eq!(bite_m3_of("dwell:stone", None), None);
+        // The mark's chunk is the bite: a metal pickaxe's 5/3 of the stone one's on stone.
+        assert_eq!(hit_chunk("dwell:stone", Some("dwell:stone_pickaxe")), 26);
+        assert_eq!(hit_chunk("dwell:stone", Some("dwell:metal_pickaxe")), 43);
+        assert_eq!(hit_chunk("dwell:stone", None), HitMark::ONE);
     }
 
     #[test]
-    fn a_fixture_tiers_chunk_by_data_alone() {
-        let tools = [BreakTool {
-            item: "test:trowel",
-            class: "trowel",
-            tier: "bronze",
-            speed: 2.0,
-            chunk: 1.5,
-            contact_s: 0.0,
+    fn a_tool_taking_half_the_hits_bites_twice_as_much_and_a_fixture_block_by_data_alone() {
+        let damage = [BlockDamageDef {
+            block: "test:clay",
+            volume: 0.5,
+            default: None,
+            tools: &[("trowel", 8)],
+            look: None,
+            chips: None,
         }];
-        assert_eq!(hit_chunk_in(&tools, Some("test:trowel")), 24);
-        assert_eq!(hit_chunk_in(&tools, Some("test:stick")), HitMark::ONE);
+        let trowel = |item, speed| BreakTool {
+            item,
+            class: "trowel",
+            tier: "t",
+            speed,
+            contact_s: 0.0,
+            repeat_s: None,
+        };
+        let tools = [trowel("test:wood", 1.0), trowel("test:metal", 2.0)];
+        let b = |held| bite_m3_in(&damage, &tools, "test:clay", held);
+        let (w, m) = (
+            b(Some("test:wood")).unwrap(),
+            b(Some("test:metal")).unwrap(),
+        );
+        assert!((w - 0.5 * 0.5 * CELL_M3 / 8.0).abs() < 1e-12, "{w}");
+        assert!((m - 2.0 * w).abs() < 1e-12, "metal twice: {m} {w}");
+        assert_eq!(b(None), None);
         assert_eq!(
             HitMark {
                 chunk: 24,
