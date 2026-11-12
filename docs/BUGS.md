@@ -6,6 +6,15 @@ pins it.
 
 ## Open
 
+### 106. Trees look like sticks
+
+Owner, 2026-11-12 (on a release after the blocked stretch, ~60 versions newer than the last they played): "What
+happened to the trees, they just look like sticks?" Suspects, all from today: the far-tree impostors (#797) — the
+near crowns fade out from 48 m and hand over to the impostors, but the trunks don't (they show under them), so if
+the impostors don't draw (atlas bake not finished/failed, the Far trees tier, a CPU adapter, a shader error) or draw
+too faint, every tree past ~48 m is a bare trunk; the faded-plant drop (#773/#784) dropping whole cutout chunks;
+the leaf-card face-B packed-normal change (#799).
+
 ### 104. Swimming underwater sounds like swimming at the surface; underwater sound isn't muffled
 
 Owner, 2026-11-12: "swimming underwater sounds like swimming on the water surface, when underwater sounds should be
