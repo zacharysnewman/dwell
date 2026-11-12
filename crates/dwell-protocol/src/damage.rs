@@ -38,8 +38,11 @@ pub enum DamageLookKind {
 pub enum CarveProfile {
     /// A smooth bowl (soils' scoops), lit by smooth normals.
     Bowl,
-    /// Angular facets round an off-centre apex (stone's shards), each lit flat.
+    /// Angular facets round an off-centre apex, each lit flat.
     Facets,
+    /// Spalled flakes (stone, WORK_QUEUE item 18: "stone doesn't dent, it shatters"): each hit
+    /// chips out a few flat, shallow, elongated scars, stepped, lit flat and lighter (fresh rock).
+    Spall,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -66,6 +69,9 @@ pub struct DamageLook {
     pub profile: CarveProfile,
     /// A facet profile's facets round its apex (data `facets`, 3–8; default 5).
     pub facets: u32,
+    /// A spall profile's flat chip-outs per hit, each smaller and deeper inside the last (data
+    /// `flakes`, 1–4; default 2).
+    pub flakes: u32,
     /// The dent's grid per side at most (data `grid`, 2–16; default 8).
     pub grid: u32,
     /// The cell's triangle budget for its carved faces (data `triangles`, 128–2048; default 256): the grid is
