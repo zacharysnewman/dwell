@@ -534,8 +534,10 @@ dwell_world::both_faces!(
             )
         };
         assert!(
-            m.groups.windows(2).all(|w| key(&w[0]).0 < key(&w[1]).0
-                || (key(&w[0]).0 == key(&w[1]).0 && key(&w[0]).1 <= key(&w[1]).1)),
+            m.groups.windows(2).all(|w| {
+                let (a, b) = (key(&w[0]), key(&w[1]));
+                (!a.0 && b.0) || (a.0 == b.0 && a.1 <= b.1)
+            }),
             "nearest first"
         );
         // What it holds: the server's far groups, each on its face, face-local.
