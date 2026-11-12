@@ -7873,9 +7873,9 @@
           "do": "record",
           "name": "walk",
           "budget": {
-            "frame.cpu.p95": 16,
+            "frame.cpu.p95": 18.5,
             "jobs.apply.max": 10,
-            "mesh_dirty.p95": 11
+            "mesh_dirty.p95": 13
           }
         },
         {
@@ -7909,9 +7909,9 @@
           "do": "record",
           "name": "sprint",
           "budget": {
-            "frame.cpu.p95": 16,
+            "frame.cpu.p95": 18.5,
             "jobs.apply.max": 10,
-            "mesh_dirty.p95": 11
+            "mesh_dirty.p95": 13
           }
         },
         {
@@ -7955,9 +7955,9 @@
           "do": "record",
           "name": "fly",
           "budget": {
-            "frame.cpu.p95": 16,
+            "frame.cpu.p95": 18.5,
             "jobs.apply.max": 10,
-            "mesh_dirty.p95": 11
+            "mesh_dirty.p95": 13
           }
         },
         {

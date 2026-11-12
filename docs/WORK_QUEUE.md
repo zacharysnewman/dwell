@@ -249,6 +249,11 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    Low."** So standing still is fixed; the drops left are while moving: next, a moving scenario on the `--touch`
    page with the CPU throttled (chunk streaming, meshing, uploads, LOD refinement, the minimap), per-frame
    main-thread work and upload sizes.
+   **Status (fps-moving):** measured (BUGS.md #72 round 3: the frames missed while moving are all
+   main-thread loading work, `mesh_dirty` and `jobs.apply`); built: a per-frame mesh upload byte budget by tier
+   (`shared/render/streaming.json`), one loading item past the deadline a frame, a faster `interleave`, bench record
+   budgets and the `phone-moving` scenario. Left: the flood light off the main thread, the sky volume's copy
+   (`padded_box`), a chunk's upload split across frames, the minimap's tiles; a real iPhone check while moving.
 17. **Axe swing directions and animation tools** (owner 2026-11-11: "The axe animations are still trash. They
    don't swing in the right direction at all. Make yourself some tools to properly observe animations, movement
    directions, positions over time, etc. Should swing right to left for horizontal and up to down for vertical";
