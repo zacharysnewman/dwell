@@ -273,9 +273,9 @@ starts in the moon's frame with its gravity, and the home world streams in only 
 ## 12. Open questions for the owner
 
 **Answered (owner, 2026-11-12):** Q2 **tidally locked** (home always sees face A; face B is the far side);
-Q3 **keep it physical** (no dome bias: the flat disc dims as a whole, crescents only in crater walls); Q4
+Q3 **keep it physical** at first, then (after M-4 showed half the month dark) **"You mentioned a dome something, maybe do that"**: blend a dome normal (`domeBias`); Q4
 **"A darker floor but a minimum still."** (new-moon nights darker than today's floor, but never black); Q7
-**about 1–1.5 minutes** to the moon (a faster far-flight speed away from ground). Still open: Q1, Q5, Q6, Q8
+**about 1–1.5 minutes** to the moon (a faster far-flight speed away from ground). Q5's month: "Not sure" (kept at 8 days; a fractional month recommended). Still open: Q1, Q6, Q8
 (the proposal's defaults until answered: darker maria by albedo, an 8-day month at 5°, home gravity until
 captured, 12.5 km at ~597 km).
 

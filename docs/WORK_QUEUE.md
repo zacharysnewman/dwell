@@ -550,6 +550,11 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    (`moon.nightFloor` 0.15 + the rest × lit × over the horizon), the halo today's × lit (what M-2 needs for
    "the moon should look bright"); the month's start an optional world setting (`MOON_PHASE` 0x84, absent =
    the data's). Not drawn yet (M-2).
+   Owner, 2026-11-12, after M-4 showed physical phases leave the flat disc dark from last to first quarter: **"You
+   mentioned a dome something, maybe do that"** — so the drawn moon blends a dome normal (`domeBias`) for familiar
+   crescents and light through more of the month (this replaces the earlier "keep it physical"). On the whole-day
+   8-day month (full moon always at face A's midnight; face B sees it ~92% lit): **"Not sure"** — kept at 8 days
+   for now, open; a fractional month (e.g. 8.25 days) is the recommended alternative, one number in data.
 
 ## Done
 
