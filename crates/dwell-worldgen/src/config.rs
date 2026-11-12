@@ -395,6 +395,7 @@ pub fn height_from_json(v: &Value) -> Result<HeightField, String> {
         };
         whole(&mut k.kind, "kind");
         whole(&mut k.plates, "plates");
+        whole(&mut k.climate, "climate");
         whole(&mut k.arc_count, "arcCount");
         whole(&mut k.hotspot_count, "hotspotCount");
         whole(&mut k.ridge_count, "ridgeCount");
@@ -458,6 +459,7 @@ pub fn height_from_json(v: &Value) -> Result<HeightField, String> {
         }
         if !(k.kind <= 3
             && k.plates <= 1
+            && k.climate <= 1
             && k.arc_count <= 32
             && k.hotspot_count <= 32
             && k.width > 0.0

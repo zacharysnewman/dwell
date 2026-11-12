@@ -7,6 +7,7 @@ pub mod arches;
 pub mod base;
 pub mod bifacial;
 pub mod biomemap;
+pub mod climate;
 pub mod config;
 pub mod decorations;
 pub mod geology;
