@@ -299,6 +299,15 @@ interface DwellDebug {
    */
   lava(op?: 'report' | 'rate' | 'vent' | 'ventNear', args?: number[]): Promise<string | null>;
   /**
+   * The run-time cloud plumes (docs/CLOUDS.md §8.7; JSON back): `list`; `add` [name, x, y, z,
+   * radius?, height?, density?, riseMps?] a steam plume based at a world point; `near` [name, dx,
+   * dz] one under the eye; `move` [name, x, y, z]; `remove` [name]; `clear`.
+   */
+  plume(
+    op?: 'list' | 'add' | 'near' | 'move' | 'remove' | 'clear',
+    args?: [string?, ...number[]],
+  ): string;
+  /**
    * The water quality (as the settings menu sets it, not stored) and/or its cost-isolation
    * switches (`?waterdbg=` names, comma-separated; "" for none); null leaves either as it is.
    * `phone` draws the phone's reflection tiers (or a desktop's) whatever the device is.
@@ -1278,6 +1287,10 @@ async function start(): Promise<App | null> {
     waterReport: (x, y, z, radius) =>
       app.loopback?.waterReport([x, y, z], radius ?? WATER_REPORT_RADIUS) ?? Promise.resolve(null),
     lava: (op, args) => app.loopback?.lavaDev(op ?? 'report', args ?? []) ?? Promise.resolve(null),
+    plume: (op, args) => {
+      const [name, ...nums] = args ?? [];
+      return client.plumeDev(op ?? 'list', name ?? '', Float64Array.from(nums as number[]));
+    },
     die: () => {
       app.loopback?.postToWorker({ t: 'kill' });
       return app.loopback !== null;

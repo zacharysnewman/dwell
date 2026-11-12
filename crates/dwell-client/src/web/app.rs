@@ -1776,6 +1776,16 @@ impl Client {
             .borrow_mut()
             .set_bloom(BloomQuality::from_name(quality).unwrap_or(BloomQuality::High));
     }
+    /// The run-time plumes' dev tools (`__dwell.plume`, docs/CLOUDS.md §8.7;
+    /// `dwell_look::plumes::dev`): `list`, `add` [x, y, z, radius?, height?, density?, riseMps?],
+    /// `near` [dx, dz], `move` [x, y, z], `remove`, `clear`; JSON back.
+    #[wasm_bindgen(js_name = plumeDev)]
+    pub fn plume_dev(&self, op: &str, name: &str, args: Vec<f64>) -> String {
+        let inner = self.inner.borrow();
+        let mut r = inner.renderer.borrow_mut();
+        let eye = r.eye_position();
+        dwell_look::plumes::dev(&mut r.plumes, op, name, &args, eye)
+    }
     /// The clouds' coverage, 0 (clear) to 1 (overcast): for a weather system, or by hand.
     #[wasm_bindgen(js_name = setCloudCoverage)]
     pub fn set_cloud_coverage(&self, coverage: f64) {
@@ -3134,6 +3144,9 @@ impl Inner {
         game.debug_visible = self.debug_visible;
         game.set_capabilities(region_edits, brushes);
         game.set_world(generator_version, world_seed, world_size);
+        game.vent_plumes = crate::vent_plumes::VentPlumes::from_worldgen(
+            self.session.as_ref().map_or("", |s| s.worldgen_config()),
+        );
         game.day_override = self.options.day;
         if let Some(w) = self.session.as_ref().and_then(|s| s.world_settings()) {
             game.set_world_clock(w.clock);

@@ -44,7 +44,7 @@
     "topLight": 0.9
   },
   "volume": {
-    "$comment": "The volumetric layer (docs/CLOUDS.md §8): ray-marched between baseM and topM above sea level on the viewer's face, when the Clouds setting's tier has steps (tiers). Density: the deck's 2D shape as a weather map (the coverage) its coverage cut rising with height (rounded tops over flat bases; topFloor: how far up the layer a cloud of the cutoff's density reaches, the densest the top), eroded by 3D value noise of detailCellM cells (scaleM must be a whole multiple of it) by detailErosion, plus the plumes. extinction: the light lost per metre at density 1. lightStepM: the spacing of the light samples toward the sun or moon. powder: the dark-edge (powder) term's strength. ambient: how lit the shade is (0: the shade colour, 1: fully lit). maxDistanceM: the march's reach along the ray (the deck's fade still hazes it).",
+    "$comment": "The volumetric layer (docs/CLOUDS.md §8): ray-marched between baseM and topM above sea level on the viewer's face, when the Clouds setting's tier has steps (tiers). Density: the deck's 2D shape as a weather map (the coverage) its coverage cut rising with height (rounded tops over flat bases; topFloor: how far up the layer a cloud of the cutoff's density reaches, the densest the top), eroded by 3D value noise of detailCellM cells (scaleM must be a whole multiple of it) by detailErosion. extinction: the light lost per metre at density 1. lightStepM: the spacing of the light samples toward the sun or moon. powder: the dark-edge (powder) term's strength. ambient: how lit the shade is (0: the shade colour, 1: fully lit). maxDistanceM: the march's reach along the ray (the deck's fade still hazes it). plumeBillow: how much rising 3D noise (cells the plume's own width, scrolled up at its riseMps) breaks a plume's density up (0: smooth).",
     "baseM": 1350,
     "topM": 2700,
     "topFloor": 0.4,
@@ -54,27 +54,43 @@
     "lightStepM": 160,
     "powder": 0.3,
     "ambient": 0.2,
-    "maxDistanceM": 22000
+    "maxDistanceM": 22000,
+    "plumeBillow": 0.6
   },
   "tiers": {
-    "$comment": "Per Clouds setting value: the march's steps per pixel (0: the 2D deck, as before), the light samples per step (0-4), the march's resolution divisor (1 full, 2 half, 4 quarter: the march draws into a buffer that size, accumulated over frames and upsampled by the composite) and how much of each new frame goes into the accumulated picture (historyBlend: lower is smoother, slower to follow). The CPU adapter draws no clouds (clouds_for).",
+    "$comment": "Per Clouds setting value: the march's steps per pixel (0: the 2D deck, as before), the light samples per step (0-4), the march's resolution divisor (1 full, 2 half, 4 quarter: the march draws into a buffer that size, accumulated over frames and upsampled by the composite) and how much of each new frame goes into the accumulated picture (historyBlend: lower is smoother, slower to follow). The CPU adapter draws no clouds (clouds_for). plumeSteps: the samples through each plume the ray crosses (0: no plumes; docs/CLOUDS.md §8.7).",
     "high": {
       "steps": 16,
       "lightSteps": 1,
       "divisor": 2,
-      "historyBlend": 0.2
+      "historyBlend": 0.2,
+      "plumeSteps": 8
     },
     "medium": {
       "steps": 10,
       "lightSteps": 0,
       "divisor": 4,
-      "historyBlend": 0.2
+      "historyBlend": 0.2,
+      "plumeSteps": 6
     },
     "low": {
       "steps": 0,
       "lightSteps": 0,
       "divisor": 1,
-      "historyBlend": 1
+      "historyBlend": 1,
+      "plumeSteps": 0
+    }
+  },
+  "plumeSlots": 8,
+  "sources": {
+    "$comment": "Run-time plume sources (docs/CLOUDS.md §8.7), each the look of the plumes a game system adds: lavaVent the faint steam over a lava vent's active lake (over its molten surface, radiusM wide at its base widening by spread, heightM tall, rising at riseMps; removed when its lava is gone).",
+    "lavaVent": {
+      "radiusM": 14,
+      "spread": 2.5,
+      "heightM": 180,
+      "density": 0.35,
+      "color": "#e8e6e2",
+      "riseMps": 3
     }
   },
   "plumes": []

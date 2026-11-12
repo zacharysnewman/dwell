@@ -218,7 +218,15 @@ Last updated: 2026-11-11 (0.52.108).
    desktop default, Low the 2D deck); plumes with a colour by data; the cheap deck kept for Snell's
    window and reflections. Bench from above: High +1.5 ms (budget 1.5), Medium +0.9 ms (budget 0.8).
    Next: trace the clouds pass's fixed cost; plumes as run-time uniforms for a volcano or weather
-   system.
+   system. **Built (2026-11-12, CLOUDS.md §8.7):** plumes as a run-time list by name
+   (`dwell_look::plumes`, `plumeSlots` 8 as data) packed each frame into one uniform and marched apart
+   from the layer over each crossed plume's own span (`plumeSteps` per tier: High 8, Medium 6, none on
+   Low/Off/CPU), so a plume is a buffer write, not a pipeline; the first source a faint steam plume
+   over each world lava vent's top molten cell (`sources.lavaVent`, both faces); `__dwell.plume(op,
+   args)`. The pass's cost read from the shader: the march's arithmetic is ~0.15 G ALU a frame on
+   Medium, so the measured 0.8–0.9 ms is the pass's fixed part; cut the sky per texel, the plumes in
+   every layer step and the layer's samples with no coverage. Left: timing those cuts and tracing the
+   pass's start and history copy on a GPU (local bench).
 
 Cloud sessions: logic-only items can run as `claude --cloud` sessions in parallel (verified 2026-11-11).
 
@@ -501,6 +509,35 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    system: a voxel grid with its own transform (position, orientation, its own up/gravity), like the built
    bodies and physics pieces (docs/BUILT_BODIES.md) — the home world being the one at rest — so moons, ships
    and other buildable surfaces share one frame abstraction, one streamer, one mesher and one collider.
+   Owner, 2026-11-12: **"Could we make it so you can fly to the moon, when you get close enough you begin
+   following its position, locked to it, gravity shifts to align like the underside of the bifacial world.
+   Gravity is lower on the moon."** So travel is by flight: past a capture distance (data) the player's frame
+   switches to the moon's grid (moving with it, locked to its position and orientation), gravity turns to the
+   moon's local down the way crossing to face B turns it, and the moon's gravity is weaker (data per grid).
+   Leaving the capture distance hands the player back to the home frame.
+   Owner, 2026-11-12: **"The earth should use the same normal map kinda technique when far enough away, when on
+   the moon."** So the far view is symmetric: any grid seen from far enough (the home world from the moon, the
+   moon from home) is drawn as a disc with a normal map and albedo baked from its real terrain, lit by the sun;
+   one far-body renderer for every grid.
+   Owner, 2026-11-12: **"Add a moon starting spawn too side A and B."** A world can start the player on the moon,
+   on face A or face B, as well as at home (a spawn choice, with the moon's own spawn search per face).
+   Owner, 2026-11-12: **"We may need to consider a new model for the sun, world, and moon positions in order to get
+   moon phases."** (Earlier the answer was to keep today's motion; now phases are wanted, from real geometry.) So
+   design a sky model as data: the sun, the home disc and the moon as bodies with positions and orbits, the moon's
+   lit half facing the sun so its phase follows from where it is; today's day length, both faces' days and
+   nights, the moon's size in the sky and its light kept; moonlight scaled by the phase.
+   **M-1 built 2026-11-12** (branch `claude/moon-world-design-build-8k9duh`): `shared/worldgen/grids.json`
+   (home and moon), the `cratered` generator on both faces (`dwell-worldgen` `grids.rs`: craters by size
+   class, maria, ridges), `dwell:moon_dust`, the generic far-body bake (normal/height + albedo RGBA per
+   face, 256²: ~0.1 s, 512 KiB a face), the moon spawn search; 20 tests on both faces. Not in the game yet
+   (M-2 draws it in the sky). Open questions in MOON_WORLD.md §12; the owner's lines above are folded in (§2 grids, §5 far body, §6 sky model, §7 travel, §8 moon spawn).
+   Design: docs/proposals/MOON_WORLD.md; M-1 built (grids.json, the moon's cratered generator on both faces, the
+   generic far-body bake, `dwell:moon_dust`). Owner's answers to §12 (2026-11-12): tidally locked; physical phases
+   (no dome bias); "A darker floor but a minimum still." for new-moon nights; ~1–1.5 minutes to fly there.
+   Owner, 2026-11-12: **"If not already planned we want the same moon shine/glow effects we already had. So the
+   moon should look bright."** The far-body moon (M-2) keeps today's halo/glow and brightness: the baked normals
+   and albedo shape its surface, but its lit part is as bright as today's moon (exposure-independent emissive-like
+   brightness and the same glow around it), scaled by the phase's lit share (physical phases).
 
 ## Done
 
