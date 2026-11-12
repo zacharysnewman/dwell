@@ -186,11 +186,18 @@ fn dwell_moon(dir: vec3f, day: DaySky, px: f32) -> vec4f {
     // Domed (`moon.domeBias`, celestial::disc_lit): the disc's shape a sphere's to that strength,
     // tilted by the baked ground's slopes, so the phases read as crescents with the craters on
     // top (a crescent's lit arc along the limb, its crater walls catching the light).
+    // Lit as celestial::moon_shade: Lambert blended `MOON_LUNAR` (`moon.lunarLambert`) toward
+    // Lommel-Seeliger, so the full moon is lit evenly to its edge (a Lambert ball's bright part
+    // ends at 0.87 of its radius) and the phases darken only past the terminator.
     let ball = vec3f(p / max(r, 1.0), sqrt(max(1.0 - r * r, 0.0)));
     let shape = normalize(mix(vec3f(0.0, 0.0, 1.0), ball, MOON_DOME));
     let slope = g.normal.xy / max(g.normal.z, 0.2);
     let n = normalize(shape + vec3f(slope, 0.0));
-    let lit = max(dot(n, dwell_moon_sun(day, x, y)), 0.0);
+    let sun = dwell_moon_sun(day, x, y);
+    let mu0 = max(dot(n, sun), 0.0);
+    let f = 2.0 * mu0 / max(max(dot(shape, sun), 0.0) + max(shape.z, 0.0), 0.05);
+    let seeliger = select(f, 2.0 - 1.0 / f, f > 1.0);
+    let lit = mix(mu0, seeliger, MOON_LUNAR);
     return vec4f(MOON_COLOR * g.albedo * (lit + MOON_EARTHSHINE), edge);
 }
 

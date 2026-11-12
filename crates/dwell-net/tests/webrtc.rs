@@ -172,6 +172,7 @@ fn checkerboard_chunk() -> Vec<u8> {
         coord: [3, -1, 7],
         revision: 1,
         voxels,
+        grid: 0,
     })
     .encode()
 }
@@ -200,6 +201,7 @@ fn messages_over_64_kib_cross_every_reliable_webrtc_channel_intact() {
         .collect();
     let small = Message::ChunkUnload(dwell_protocol::ChunkUnload {
         coords: vec![[1, 2, 3]],
+        grid: 0,
     })
     .encode();
     // (net channel, data channel index): control, world, lod.

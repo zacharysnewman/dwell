@@ -552,6 +552,12 @@ pub fn is_light_source(m: StateId) -> bool {
 }
 
 impl VoxelWorld {
+    /// Whether the world's air test says chunk `c` is all air (never generated nor stored), as a
+    /// streamer sends it; false without a test.
+    pub fn is_air_chunk(&self, c: ChunkCoord) -> bool {
+        self.air.as_ref().is_some_and(|air| air(c))
+    }
+
     pub fn new(generator: ChunkGenerator, air: Option<AirChunkTest>) -> Self {
         Self {
             generator: Some(generator),

@@ -467,9 +467,10 @@ malformed = {
     "!unknown_type": bytes([0xEE]),
     "!truncated_ping": vectors["ping"][:-1],
     "!trailing_byte": vectors["welcome"] + b"\x00",
-    # The swing kinds' count must be the remotes' (2), and nothing may follow them.
+    # The swing kinds' count must be the remotes' (2), and nothing may follow them but the grid
+    # (`grid.frames`: a byte, 0 home, then nothing).
     "!swing_kinds_count": SNAPSHOT + struct.pack("<BB", 1, SK["ChopLevel"]),
-    "!swing_kinds_trailing": SNAPSHOT + struct.pack("<BBBB", 2, 1, 0, 0),
+    "!swing_kinds_trailing": SNAPSHOT + struct.pack("<BBBBB", 2, 1, 0, 0, 0),
     "!bad_utf8": struct.pack("<BH", T["ClientHello"], 1)
     + struct.pack("<H", 2) + b"\xC3\x28" + PK + s("Zack"),
     "!name_too_long": struct.pack("<BH", T["ClientHello"], 1)

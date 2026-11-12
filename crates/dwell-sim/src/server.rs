@@ -47,6 +47,8 @@ pub use ecology::{
 };
 pub use grass::{Grass, GrassEnvelope};
 mod grass;
+mod grids;
+pub use grids::{GridSlot, Grids};
 mod ground;
 mod growth;
 mod items;
@@ -675,6 +677,10 @@ struct Session {
     /// The capabilities its client said it has (`Capabilities`, ARCHITECTURE.md §8.3); empty for a
     /// client that never sent the message (an older build).
     capabilities: dwell_protocol::capabilities::Capabilities,
+    /// While on another grid (MOON_WORLD.md §7.2): its slot and handle there (`handle` is `None`
+    /// then), and that grid's chunks its client has.
+    away: Option<grids::Away>,
+    grid_streamed: HashSet<ChunkCoord>,
     /// The tool it holds (item name, the hold's plane), from `ChopAction::Held`; having sent one,
     /// it understands `HeldTools` (ADR 0067).
     held_tool: Option<(String, bool)>,
@@ -743,6 +749,8 @@ impl Session {
             ecology_hello: false,
             steam_hello: false,
             capabilities: Default::default(),
+            away: None,
+            grid_streamed: HashSet::default(),
             held_tool: None,
             primed: false,
             low_water: usize::MAX,
@@ -977,9 +985,11 @@ pub struct Server {
     /// (local mode, tests) do not serve them.
     own_blocks: Vec<dwell_blocks::StateId>,
     view_offsets: Vec<ChunkCoord>, // chunks in view relative to the center, nearest first
+    /// The other grids' spaces (the moon's; MOON_WORLD.md §7.2).
+    grids: grids::Grids,
     prefetch_offsets: Vec<ChunkCoord>, // generated ahead around each player
-    preload_offsets: Vec<ChunkCoord>, // the respawn preload's ring (§6.3), nearest first
-    explicit_wanted: Vec<ChunkCoord>, // full-mode chunks to generate for streaming
+    preload_offsets: Vec<ChunkCoord>,  // the respawn preload's ring (§6.3), nearest first
+    explicit_wanted: Vec<ChunkCoord>,  // full-mode chunks to generate for streaming
     // Persistence: chunks in the world file (revision saved), modified chunks not saved yet, saves
     // in flight (their chunk revisions), and players who left since the last save.
     saved: Arc<Mutex<HashMap<ChunkCoord, u32>>>,
@@ -1171,6 +1181,7 @@ impl Server {
             registry: (0, Default::default(), 0),
             own_blocks: Vec::new(),
             view_offsets: Vec::new(),
+            grids: grids::Grids::empty(),
             prefetch_offsets: cube_offsets(PREFETCH_CHUNKS),
             preload_offsets: Vec::new(),
             explicit_wanted: Vec::new(),
@@ -1282,6 +1293,13 @@ impl Server {
         // The respawn preload's ring: the same sphere, of its own radius (at most the view's).
         server.set_respawn_preload(server.config.respawn_preload_radius_chunks);
         server.share_grass_with_ecology();
+        // The other grids (the moon), their edited chunks from the world file.
+        server.grids = grids::Grids::new(
+            server.config.world_seed,
+            dwell_world::WorldBounds::of(server.config.world_size).radius() as f64,
+            server.settings.moon_phase.map(f64::from),
+            server.config.store.as_ref().map(|s| s.db().as_ref()),
+        );
         server
     }
 
@@ -1296,6 +1314,8 @@ impl Server {
     }
 
     fn remove_session(&mut self, id: SessionId) {
+        // A player on another grid leaves from home, at its world position (its record's).
+        self.bring_home(id);
         let Some(s) = self.sessions.remove(&id) else {
             return;
         };
@@ -1653,6 +1673,19 @@ impl Server {
                     0
                 };
             }
+            // On another grid: the edit is that grid's (MOON_WORLD.md §7.2), applied at once.
+            Message::BlockEditRequest(edit) if s.away.is_some() => {
+                s.swung(edit.action == BlockEditAction::Break, SwingKind::Plain);
+                s.edit_seq += 1;
+                let n = s.edit_seq;
+                if !self.apply_grid_edit(id, &edit) {
+                    self.sessions
+                        .get_mut(&id)
+                        .expect("session")
+                        .edit_refused
+                        .push(n);
+                }
+            }
             Message::BlockEditRequest(edit) => {
                 s.swung(edit.action == BlockEditAction::Break, SwingKind::Plain);
                 s.edit_seq += 1;
@@ -1885,11 +1918,14 @@ impl Server {
         self.spawn_queued();
         self.phase_ms[1] += watch.lap_ms();
 
+        // Travel between the grids (MOON_WORLD.md §7.2): captures, releases, far flight.
+        self.travel_players();
+
         // 2. One input per player per tick, in sequence order (§9.3). Starved: repeat the last one.
         for s in self.sessions.values_mut() {
-            let Some(h) = s.handle.filter(|_| s.joined()) else {
+            if !s.joined() || (s.handle.is_none() && s.away.is_none()) {
                 continue;
-            };
+            }
             // Input latency: when the queue stayed above MAX_BUFFERED_INPUTS a whole window, the
             // excess the window never drained is skipped.
             s.low_water = s.low_water.min(s.inputs.len());
@@ -1926,7 +1962,14 @@ impl Server {
                     s.stats.ticks_starved += 1;
                 }
             }
-            self.players.set_input(h, s.last_input);
+            match (s.handle, s.away) {
+                (Some(h), _) => self.players.set_input(h, s.last_input),
+                (None, Some(a)) => self.grids.slots[a.slot]
+                    .space
+                    .players
+                    .set_input(a.handle, s.last_input),
+                _ => {}
+            }
         }
 
         // 3. Controller pipeline (PLAYER_CONTROLLER.md §4), then its server-side consequences. The
@@ -1978,6 +2021,8 @@ impl Server {
         self.felling.float(&mut self.world, &mut self.physics);
         self.phase_ms[5] += watch.lap_ms();
         self.physics.step(1.0 / f64::from(SIM_HZ));
+        // The other grids' spaces, their players and physics.
+        self.grids.step(1.0 / f64::from(SIM_HZ));
         self.phase_ms[6] += watch.lap_ms();
         self.rejoin_apart();
         self.tick += 1;
@@ -2005,7 +2050,7 @@ impl Server {
             let Some(s) = self.sessions.get(&id) else {
                 continue;
             };
-            if !s.joined() || s.handle.is_some() || self.tick < s.respawn_tick {
+            if !s.joined() || s.handle.is_some() || s.away.is_some() || self.tick < s.respawn_tick {
                 continue;
             }
             self.spawn_player(id, None);
@@ -2034,6 +2079,7 @@ impl Server {
         for &id in &ids {
             if self.sessions.contains_key(&id) {
                 self.stream_chunks(id);
+                self.stream_grid_chunks(id);
             }
         }
         self.phase_ms[10] += watch.lap_ms();
@@ -2108,7 +2154,8 @@ impl Server {
     }
 
     fn view_center(&self, s: &Session) -> Option<ChunkCoord> {
-        if !s.joined() {
+        // On another grid the home view waits (that grid streams instead; `stream_grid_chunks`).
+        if !s.joined() || s.away.is_some() {
             return None;
         }
         Some(match s.handle {
@@ -2327,6 +2374,7 @@ impl Server {
             for part in unload.chunks(0xFFFF) {
                 let m = Message::ChunkUnload(ChunkUnload {
                     coords: part.iter().map(|c| c.to_array()).collect(),
+                    grid: 0,
                 });
                 self.send_reliable(id, &m, Channel::World);
             }
@@ -2523,6 +2571,7 @@ impl Server {
             coord: c.to_array(),
             revision: 0,
             voxels: Vec::new(),
+            grid: 0,
         };
         if !modified && self.is_air(c) {
             m.form = ChunkForm::Air; // nothing to generate or store, in either mode
@@ -4220,6 +4269,7 @@ impl Server {
                 r.state = PlayerState::from_u8(c.state as u8).unwrap_or(PlayerState::Idle);
                 r.flags = player_flags_of(c, false);
             }
+            self.away_remote(s, &mut r);
             views.push(r);
         }
         let mut out = Vec::new();
@@ -4241,6 +4291,15 @@ impl Server {
                 l.state = PlayerState::from_u8(c.state as u8).unwrap_or(PlayerState::Idle);
                 l.controller = to_net(c, |g| self.player_id_of_body(g));
             }
+            // The player's grid (`grid.frames` only; MOON_WORLD.md §7.2).
+            let mut grid = s
+                .capabilities
+                .has(dwell_protocol::capability_names::GRID_FRAMES)
+                .then(GridView::default);
+            if let Some((away, view)) = self.away_local(s) {
+                l = away;
+                grid = view;
+            }
             let mut snap = PhysicsSnapshot {
                 server_tick: self.tick,
                 ack_input_seq: s.last_processed_seq,
@@ -4248,6 +4307,7 @@ impl Server {
                 remotes: Vec::new(),
                 pieces: Vec::new(),
                 swing_kinds: s.swing_hello,
+                grid,
             };
             // Remote players, nearest first, as many as fit in one datagram.
             let distance = |r: &RemotePlayerState| {
@@ -4709,6 +4769,7 @@ impl Server {
             });
             revisions.push((c, chunk.revision()));
         }
+        batch.grid_chunks = self.grid_chunks_to_save();
         batch.players = std::mem::take(&mut self.departed);
         batch.inventories = std::mem::take(&mut self.departed_inventories);
         for s in self

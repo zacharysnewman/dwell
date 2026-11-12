@@ -1020,6 +1020,14 @@ rules that spawn the species' creatures are left out (`Creatures::reserved`).
 `grass_growth` world table (the switch, each chunk's last day; on for new worlds only). The ecology's
 island forage is scaled by the same climate share.
 
+**Other grids on the server** (MOON_WORLD.md §7.2, M-7b) **[in progress: server and wire built]**:
+`dwell-sim` `server/grids.rs` holds a space per grid with its own generator (the moon's: its voxels in
+its local frame, physics, players) beside the home world, carries fliers into it inside its
+`captureM` and home past × `releaseFactor` (`travel::carry`, nothing jumps), streams its chunks to an
+away `grid.frames` client and applies an away player's edits to it. Its edited chunks are saved in the
+optional `grid_chunks` world table ((grid name, cx, cy, cz) → (revision, chunk blob); additive). The
+client's side (predicting and drawing another grid) is outstanding.
+
 ### 6.1 Grid & chunks **[in progress]**
 
 > **Prototype content.** Every material that exists today — its name, look, and role (the
@@ -3007,7 +3015,7 @@ chunks), keeps the last selection (`LodSystem::update`; ~1 ms a frame standing s
   follow from the geometry, the same from either home face; moonlight = today's × (`moon.nightFloor`
   0.15 + the rest × lit share × the disc's share over the face's horizon); the halo is today's × the
   lit share. The month's start is the world's (`WorldSettings` optional tag `MOON_PHASE` 0x84; absent,
-  `moon.startPhase`). Since M-2 the sky draws the moon from the celestial model and its baked terrain (M-2): its direction `Celestial::view`'s, its face A (tidally locked) baked once at the join (`dwell-worldgen` `bake_far`, 256², `render/moon.rs`), packed with mips into one storage buffer (frame group binding 20: the composite already binds WebGPU's 16 sampled textures), each texel lit as N·L of its baked normal (slopes × `moon.relief` 8) by the real sun direction, its albedo the bake's over its brightest (so the lit part is today's `moon.color`); halo × the lit share; moonlight `nightFloor` + the rest × lit share. A CPU adapter packs no normals (a flat disc by the albedo). Same angular size (1.2°) and glow constants. Owner, 2026-11-12, changing Q3: "You mentioned a dome something, maybe do that": `moon.domeBias` (1: a ball) shapes the disc as a sphere, its normals tilted by the baked slopes (polish round: a 0.6 mix left a 135° crescent nearly invisible), so phases read as crescents, halves and gibbous with the craters on top, and the lit share (`celestial::disc_lit`, the mean N·L of that domed disc over full's) drives the halo and the moonlight: one model for the drawn moon and its light.
+  `moon.startPhase`). Since M-2 the sky draws the moon from the celestial model and its baked terrain (M-2): its direction `Celestial::view`'s, its face A (tidally locked) baked once at the join (`dwell-worldgen` `bake_far`, 256², `render/moon.rs`), packed with mips into one storage buffer (frame group binding 20: the composite already binds WebGPU's 16 sampled textures), each texel lit as N·L of its baked normal (slopes × `moon.relief` 8) by the real sun direction, its albedo the bake's over its brightest (so the lit part is today's `moon.color`); halo × the lit share; moonlight `nightFloor` + the rest × lit share. A CPU adapter packs no normals (a flat disc by the albedo). Same angular size (1.2°) and glow constants. Owner, 2026-11-12, changing Q3: "You mentioned a dome something, maybe do that": `moon.domeBias` (1: a ball) shapes the disc as a sphere, its normals tilted by the baked slopes (polish round: a 0.6 mix left a 135° crescent nearly invisible), so phases read as crescents, halves and gibbous with the craters on top, and the lit share (`celestial::disc_lit`, the mean N·L of that domed disc over full's) drives the halo and the moonlight: one model for the drawn moon and its light. The disc reflects by Lommel-Seeliger (`moon.lunarLambert` 1, `celestial::moon_shade`), so the full moon is lit evenly to its edge (a Lambert ball's bright part ended at 0.87 of its radius).
 - **Clouds [built, Phase 31]** ([ADR 0034](./adr/0034-sky-clouds.md), [`CLOUDS.md`](./CLOUDS.md)): a
   2D cloud layer drawn as part of the sky in the composite pass (not volumetric, no geometry). A thin
   deck lies `altitudeM` above the viewer's own face's sea level, on a sphere about a centre
@@ -4404,7 +4412,13 @@ and the TS constants. A feature adds an entry and checks it by name. The exchang
    server). A name a build doesn't know (a newer build's, a mod's) is kept and matches nothing.
 
 Existing flags and hellos stay as they are. The first capability is `structures.place` (a saved
-structure's placement as `RegionEdit`'s `Structure` op, below).
+structure's placement as `RegionEdit`'s `Structure` op, below). The second is `grid.frames`
+(MOON_WORLD.md §7.2): `PhysicsSnapshot` ends with the local player's grid (a byte, its index in
+`grids.json`, 0 home; off home the grid's frame, origin f64 × 3 and rotation f64 × 4, and `local` in
+the grid's space), and `ChunkData`/`ChunkUnload` end with their grid's byte when not home (a trailing
+0 is malformed). The server lists it; this build's client doesn't say it yet
+(`capabilities::CLIENT_PENDING`: its predictor and renderer don't follow another grid), so a player
+off home is sent its world position, as an older client is.
 ```
 S→C  WorldSettings field 0x85 (optional): u8 count (≤ 64), each str name (≤ 48 bytes, no repeat)
 C→S  Capabilities 0x69, control: the same form — the client's capabilities, once after Welcome,

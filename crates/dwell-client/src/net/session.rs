@@ -278,7 +278,7 @@ impl Session {
         // older one, which would end the session on the unknown message, never does.
         if self.server_capabilities.is_some() {
             self.send(&Message::Capabilities(
-                dwell_protocol::capabilities::Capabilities::this_build(),
+                dwell_protocol::capabilities::Capabilities::this_client(),
             ));
         }
         // A server that keeps inventories (ADR 0066) sends them once told this client understands.
@@ -973,6 +973,7 @@ mod tests {
             Channel::World,
             &Message::ChunkUnload(ChunkUnload {
                 coords: vec![[1, 2, 3]],
+                grid: 0,
             })
             .encode(),
             1000.0,
@@ -982,6 +983,7 @@ mod tests {
             coord: [4, 5, 6],
             revision: 0,
             voxels: Vec::new(),
+            grid: 0,
         };
         s.on_reliable(Channel::World, &Message::ChunkData(chunk).encode(), 1000.0);
         let got: Vec<MessageType> = std::iter::from_fn(|| s.next_game())
@@ -1106,6 +1108,7 @@ mod tests {
             coord: [0, 0, 0],
             revision: 1,
             voxels,
+            grid: 0,
         };
         s.on_reliable(Channel::World, &Message::ChunkData(chunk).encode(), 1000.0);
         let modification = Message::VoxelModification(VoxelModification {
@@ -1154,6 +1157,7 @@ mod tests {
             coord: [0, 0, 0],
             revision: 3,
             voxels: vec![p.id_end() as u16; CHUNK_VOLUME],
+            grid: 0,
         };
         s.on_reliable(Channel::World, &Message::ChunkData(bad).encode(), 1000.0);
         assert!(matches!(s.state(), SessionState::Closed { .. }));
@@ -1400,12 +1404,12 @@ mod tests {
         // This build's server: the answer is this build's, and the capability is on.
         assert_eq!(
             announced(Some(Capabilities::this_build())),
-            (true, Some(Capabilities::this_build()))
+            (true, Some(Capabilities::this_client()))
         );
         // A server that names others (a newer build's, a mod's) but not this one: answered, off.
         assert_eq!(
             announced(Some(Capabilities::of(["mymod:wet"]))),
-            (false, Some(Capabilities::this_build()))
+            (false, Some(Capabilities::this_client()))
         );
         // A name this build doesn't have is never on, whatever the server says.
         let (_, mut s) = setup();

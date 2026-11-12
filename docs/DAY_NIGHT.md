@@ -69,7 +69,12 @@ whose path would turn back). The sky draws the **moon where the celestial model 
 world's M-2), its disc a flat face of the moon's real terrain lit by the sun (BIFACIAL_WORLD.md §6):
 full when opposite the sun; shaped as a sphere (`moon.domeBias` 1) with its normals tilted by the baked slopes, so the phases
 read as crescents, halves and gibbous with the craters on top, and the halo and the moonlight follow
-that disc's lit share (`celestial::disc_lit`). The stars are fixed to the sky, which turns about the path's axis
+that disc's lit share (`celestial::disc_lit`). It reflects by the regolith's law, not Lambert's
+(`moon.lunarLambert` 1, `celestial::moon_shade`: Lommel-Seeliger, 2μ₀/(μ₀ + μ), eased past 1): a Lambert
+ball darkens toward its limb even at full, its bright part ending at 0.87 of its radius, so the full moon
+read smaller than the old flat disc (owner, 2026-11-12: "The moon looks smaller I think compared to the
+old moon?"); now the full moon is lit evenly to its edge (×8: 91 px against the old 92 px, the Lambert
+ball 76 px) and the phases still darken only past the terminator. The stars are fixed to the sky, which turns about the path's axis
 by the solar angle.
 
 **Face B** shares the sky. The sun is over face B exactly when it is under face A, so face B's
