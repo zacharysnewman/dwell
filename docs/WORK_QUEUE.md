@@ -517,6 +517,11 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    one far-body renderer for every grid.
    Owner, 2026-11-12: **"Add a moon starting spawn too side A and B."** A world can start the player on the moon,
    on face A or face B, as well as at home (a spawn choice, with the moon's own spawn search per face).
+   Owner, 2026-11-12: **"We may need to consider a new model for the sun, world, and moon positions in order to get
+   moon phases."** (Earlier the answer was to keep today's motion; now phases are wanted, from real geometry.) So
+   design a sky model as data: the sun, the home disc and the moon as bodies with positions and orbits, the moon's
+   lit half facing the sun so its phase follows from where it is; today's day length, both faces' days and
+   nights, the moon's size in the sky and its light kept; moonlight scaled by the phase.
 
 ## Done
 
