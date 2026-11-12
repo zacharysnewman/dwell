@@ -6,14 +6,6 @@ pins it.
 
 ## Open
 
-### 93. Vertical swings (axe, sword, …) play twice for one swing
-
-Owner, 2026-11-12: "For vertical swings on axe, sword, etc, it sort of double swings." One vertical swing shows two
-down-strokes (or a stroke, a snap back and a second stroke). Suspects: the vertical clip's keyframes loop or include a
-second stroke; the swing restarted by a second trigger (the click and the hit event, or the server's echo of the
-swing re-starting the local one); the level/vertical choice flipping mid-swing. Check with `clip_probe` and the
-swing's trace, both faces.
-
 ### 92. Downhill water shows edge triangles and thin lines at its ½ m level steps
 
 Owner, 2026-11-12 (screenshot + block dump): "I'm seeing some edge triangles and thin lines at slope transitions on
@@ -429,6 +421,25 @@ face, or the placement check against its shape.
 
 
 ## Fixed
+
+### 93. Vertical swings (axe, sword, …) play twice for one swing (fixed after 0.54.14x; the look in game left local)
+
+Owner, 2026-11-12: "For vertical swings on axe, sword, etc, it sort of double swings." One vertical swing shows two
+down-strokes (or a stroke, a snap back and a second stroke). Suspects: the vertical clip's keyframes loop or include a
+second stroke; the swing restarted by a second trigger (the click and the hit event, or the server's echo of the
+swing re-starting the local one); the level/vertical choice flipping mid-swing. Check with `clip_probe` and the
+swing's trace, both faces.
+Owner, 2026-11-12, clarifying: **"The animation double swings"**: the vertical swing's animation itself (the arms and
+tool show two strokes per swing), not two hits.
+Cause (`clip_probe`, a swing played frame by frame through the arms' animator as `game.rs` drives it): the miss's clip
+has one stroke; a **hit** drew three. After the hit-stop the pull-out played the clip backwards from contact to its start,
+so the head went back up over the shoulder (screen y +3.3) and came down to rest again, and when the swing ended the
+clip was let go at that start (`drive_action(None)`) and ran on by itself: the whole swing a second time. The level
+swing did the same, reading as a pull back and a second chop. Fixed: the contact's pose is held and faded straight
+back to the arms' rest over `recoverHitS` (`SwingRun::clip_weight`, `Animator::drive_action_weighted`), and an ended
+swing stops its clip (`ArmsDrive::Release` → `Animator::stop_action`). Test: `clip_probe`
+`one_swing_draws_one_stroke_hit_or_miss` (vertical and level, a hit at the arc's middle, an early hit and a miss: one
+stroke, back at rest), red on the unfixed code (vertical hit: 3 down-strokes) → green.
 
 ### 88. Volumetric clouds z-fight against tall terrain (fixed after 0.54.135; the browser check left local)
 

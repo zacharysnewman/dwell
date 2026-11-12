@@ -454,6 +454,9 @@ impl GuardDef {
 pub struct ToolDef {
     pub name: &'static str,
     pub kind: ToolKind,
+    /// Holding the use button keeps swinging it (`repeatOnHold`): a new full swing as soon as the
+    /// last is over (`Chopping::ready`), until let go.
+    pub repeat_on_hold: bool,
     /// The item a hand shows holding it (`shared/characters/characters.json`'s `items`).
     pub held: Option<&'static str>,
     /// The least time between two swings.
@@ -614,6 +617,8 @@ pub struct BreakTool {
     /// When its swing's head meets the block (s after the click; `contactS`, 0: at once): a hit
     /// with it lands then (WORK_QUEUE item 25).
     pub contact_s: f64,
+    /// Held, the break repeats this often (s; `repeatOnHold` and `repeatS`); none: one per press.
+    pub repeat_s: Option<f64>,
 }
 
 /// When a break made holding `held` lands (s after the click), in `tools`: its `contact_s`, else at
@@ -1228,6 +1233,7 @@ mod tests {
             speed: 2.0,
             chunk: 1.0,
             contact_s: 0.4,
+            repeat_s: None,
         }];
         assert_eq!(
             break_speed_in(&classes, &tools, "test:clay", Some("test:trowel")),
@@ -1250,6 +1256,7 @@ mod tests {
             speed: 2.0,
             chunk: 1.0,
             contact_s: 0.4,
+            repeat_s: None,
         }];
         assert_eq!(break_contact_s_in(&tools, Some("test:trowel")), 0.4);
         assert_eq!(break_contact_s_in(&tools, None), 0.0);

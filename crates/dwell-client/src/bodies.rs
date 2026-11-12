@@ -419,10 +419,10 @@ impl Bodies {
         self.arms.swing(s);
     }
 
-    /// Your arms' swing held at clip time `t` (a melee swing's hit-stop and pull-back), or left to
-    /// play (none).
-    pub fn drive_arms(&mut self, t: Option<f64>) {
-        self.arms.drive_action(t.map(|t| t as f32));
+    /// Your arms' swing driven by a melee swing under way (its hit-stop and pull-back,
+    /// crate::chop::SwingRun::arms), or let go.
+    pub fn drive_arms(&mut self, d: crate::chop::ArmsDrive) {
+        d.apply(&mut self.arms);
     }
 
     /// Every remote body's roles, by player id (tests: `__dwell.state().bodies`).

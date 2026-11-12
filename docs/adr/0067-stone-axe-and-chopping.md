@@ -257,7 +257,8 @@ weighty first-person physical swings (the mechanics only). Built:
   stone post on the path takes the hit; free swings and stone do nothing and spend the swing (both
   faces). A sweep hit's face is converted to the chopping wire's `axis × 2 + positive` (`SwingHit::axis_face`; red → green in the browser and `tests/chopping.rs`: the notch went on the far side).
 - **The feel** (`chop.rs` `SwingRun`, tested): the arms' clip (timed to a miss) is held at the
-  impact for the hit-stop and played back to the rest after a hit, runs through its follow-through
+  impact for the hit-stop and faded from there to the rest after a hit (BUGS.md #93: no longer played
+  back through the wind-up), runs through its follow-through
   on a miss; the camera winds back, sweeps, jolts against the swing at a hit (harder off stone);
   the impact shows chips, the hit's sound by the cut (`sounds`: bark thud, wood chunk, creaks from
   40%), shakes leaves from the tree's leaf blocks (`leaves`), or clanks off stone (no effect).

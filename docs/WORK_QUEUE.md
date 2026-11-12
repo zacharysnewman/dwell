@@ -542,6 +542,14 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    Owner, 2026-11-12: **"I wanted you to be able to hold the key down for tools like the axe."** Holding the use
    button keeps swinging a tool (axe, pick, shovel, sword) at its swing rate until released, each swing hitting
    what is targeted then; data per tool (`repeatOnHold`). Also bug #93: vertical swings play twice.
+   Owner, 2026-11-12, on #93: **"The animation double swings"** (the clip itself, not two hits).
+   **Status (swings-hold):** built: #93 fixed (a hit's pull-out played the clip backwards over the shoulder and
+   then let it run on, a second swing; now the contact pose fades to rest and the clip stops at the swing's end;
+   `clip_probe` stroke-count test red → green); hold to keep swinging (ITEMS.md "Hold to keep swinging"): per-tool
+   `repeatOnHold` (both axes and the sword in `tools`, the pickaxes and shovels with `repeatS` in
+   `breaking.tools`), validated in the generator with a fixture by data alone, each repeat a whole new swing sent
+   as a click's (others see each by its swing count; wear on a hit only), mouse, controller and touch (a still
+   hold in Break mode with such a tool). Left: the feel in game (no GPU in the cloud).
 18. **Digging marks that look carved** (owner 2026-11-11: "the 'chunks' of dirt aren't at all what we
    discussed. It should be like a normal map change (do we support normal/bump maps)? It's completely flat
    should look like mesh deformation (preferably without actually doing it for performance)"; "That part was
