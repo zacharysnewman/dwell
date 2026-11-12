@@ -861,7 +861,8 @@ by default) and a combat hook; the combat AI waits for the sword mechanic.
   part each vertex of a model's full mesh (`detail_0`) belongs to, a file a model
   (`shared/models/parts/peasant.json`: `parts` the names, at most 6; `vertices` one character a vertex,
   `0` none, `k` the k-th part; `seed` the rules that made the first painting). The vertices are the
-  source of truth; a prototype page will paint them by hand (item 43). `--seed` paints from rules (the
+  source of truth; the Model Part Painter (`docs/prototypes/model-part-painter.html`, item 43) paints
+  them by hand. `--seed` paints from rules (the
   vertex's mesh island nearest a point, its colour's nearest palette ramp, its skin weight on joints,
   its height; the first rule matching wins): the Peasant's hat and hair are islands of their own, the
   skin (`skin_fair`, `skin_tan`), shirt (`wool_green`, `leaf`) and trousers (`flint`) by colour on the
