@@ -20,6 +20,7 @@ pub mod fxaa;
 pub mod geometry;
 pub mod glitter;
 pub mod heightfield;
+pub mod impostors;
 pub mod lights;
 pub mod lod_map;
 pub mod lod_shadows;
@@ -587,7 +588,7 @@ const STRIDES: [u64; 6] = [
     4 * (3 + 3 + 3 + 2 + 4 + 4 + 1 + 1 + 2), // Cutout: the terrain's, plant (sway, wind speed, fade), bare, light, flood
 ];
 
-fn floats(v: &[f32]) -> &[u8] {
+pub(crate) fn floats(v: &[f32]) -> &[u8] {
     bytemuck_cast(v)
 }
 fn u32s(v: &[u32]) -> &[u8] {
@@ -1594,8 +1595,15 @@ pub struct Renderer {
     cards_override: Option<bool>,
     /// Graphics → Tall grass, percent of cross plants meshed (`plant_percent_of`).
     plant_percent: u8,
-    /// Graphics → Far trees: LOD sections mesh their trees.
+    /// Graphics → Far trees: far trees drawn (as impostors, else the LOD sections' tree cells).
     far_trees: bool,
+    /// `?impostors=0|1` (a dev switch): 0 draws the far trees as the LOD sections' tree cells
+    /// (`lod_trees.rs`) as before the impostors; `None` the impostors.
+    impostors_override: Option<bool>,
+    /// The far trees' impostors (render/impostors.rs), made when first drawn, and what they are
+    /// made from: the scene's module and its frame layout.
+    impostors: Option<impostors::Impostors>,
+    impostor_parts: (wgpu::ShaderModule, wgpu::BindGroupLayout),
     /// Graphics → Distant shadows (`lod_shadows::lod_shadows_for`).
     distant_shadows: bool,
     /// The water's flow shown (flow.rs `FLOW_RIPPLES`, `FLOW_FOAM`; the Water flow settings).
@@ -1725,6 +1733,7 @@ impl Renderer {
             label: Some("frame"),
             entries: &frame_entries,
         });
+        let impostor_parts = (module.clone(), frame_layout.clone());
         let draw_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("draw"),
             entries: &[wgpu::BindGroupLayoutEntry {
@@ -2474,6 +2483,9 @@ impl Renderer {
             cards_override: None,
             plant_percent: 100,
             far_trees: true,
+            impostors_override: None,
+            impostors: None,
+            impostor_parts,
             distant_shadows: true,
             flow_switches: 0,
             water_tiles,
@@ -3137,6 +3149,50 @@ impl Renderer {
         self.plant_percent = plant_percent_of(tall_grass);
         self.far_trees = far_trees;
     }
+    /// `?impostors=0|1`: 0 draws the far trees as the LOD sections' tree cells (as before).
+    pub fn set_impostors_override(&mut self, on: Option<bool>) {
+        self.impostors_override = on;
+    }
+    /// The far trees' hand-over now (`impostors.json` `far.tiers` by the Far trees setting):
+    /// `None` when the far trees are the LOD sections' (`?impostors=0`).
+    fn far_tier(&self) -> Option<dwell_worldgen::impostor::Far> {
+        if self.impostors_override == Some(false) {
+            return None;
+        }
+        let c = dwell_worldgen::impostor::Config::get();
+        c.far(if self.far_trees { "on" } else { "off" })
+    }
+    /// The far trees' impostors when they draw, made on first use (the atlas at this device's
+    /// tier: phone, CPU adapter or desktop texels).
+    fn impostors_mut(&mut self) -> Option<&mut impostors::Impostors> {
+        let far = self.far_tier().filter(|f| f.impostor);
+        if far.is_none() {
+            if let Some(i) = &mut self.impostors {
+                i.far = None;
+            }
+            return None;
+        }
+        if self.impostors.is_none() {
+            let tier = if is_cpu(self.adapter) {
+                dwell_worldgen::impostor::Tier::Cpu
+            } else if self.phone {
+                dwell_worldgen::impostor::Tier::Phone
+            } else {
+                dwell_worldgen::impostor::Tier::Desktop
+            };
+            self.impostors = Some(impostors::Impostors::new(
+                &self.device,
+                &self.impostor_parts.0,
+                &self.impostor_parts.1,
+                &self.draw_layout,
+                self.samples,
+                tier,
+            ));
+        }
+        let i = self.impostors.as_mut()?;
+        i.far = far;
+        Some(i)
+    }
     /// Graphics → Distant shadows: the distant terrain's sun shadows (`lod_shadows_for`), at
     /// the Shadows setting's tier when on.
     pub fn set_distant_shadows(&mut self, on: bool) {
@@ -3510,7 +3566,7 @@ impl Renderer {
             &REFLECTIONS,
             self.water().index(),
             self.clouds.octaves(&CLOUDS),
-            self.clouds.self_shadow(),
+            self.clouds.self_shadow(&CLOUDS),
             self.phone,
         ) {
             put(&v);
@@ -3518,6 +3574,9 @@ impl Renderer {
         for v in lean_uniforms(self.tree_lean, self.eye) {
             put(&v);
         }
+        put(&impostors::far_uniform(
+            self.impostors.as_ref().and_then(|i| i.far),
+        ));
         let pixel_angle = 2.0 * tan_y / f64::from(self.size.1.max(1));
         let mut day =
             self.day_in_air()
@@ -3726,6 +3785,8 @@ impl Renderer {
             u8::from(view.holds_box(origin, size, passes[0].0, passes[0].1))
                 | u8::from(view.holds_box(origin, size, passes[1].0, passes[1].1)) << 1
         };
+        // Past the far trees' hand-over and the plants' fades a chunk's cutout draws nothing.
+        let cutout_reach = impostors::cutout_reach(self.impostors.as_ref().and_then(|i| i.far));
         for (&coord, c) in &self.terrain.chunks {
             let fade = chunk_fade(coord).filter(|f| !f.is_hidden());
             let passes = if fade.is_some() {
@@ -3756,7 +3817,18 @@ impl Renderer {
                     mesh: DrawMesh::Chunk(coord, Part::Opaque),
                 });
             }
-            if c.cutout.is_some() && self.cutout_shown {
+            let cutout_near = cutout_reach.is_none_or(|reach| {
+                let r = self.rel(c.origin);
+                let d2: f64 = (0..3)
+                    .map(|k| {
+                        let lo = f64::from(r[k]);
+                        let d = (-lo).clamp(0.0, CHUNK_EXTENT_M[k]) + lo;
+                        d * d
+                    })
+                    .sum();
+                d2 <= f64::from(reach) * f64::from(reach)
+            });
+            if c.cutout.is_some() && self.cutout_shown && cutout_near {
                 out.push(DrawItem {
                     kind: Kind::Cutout,
                     water: false,
@@ -4530,8 +4602,15 @@ impl Renderer {
                 self.timer.as_ref().and_then(|t| t.writes(query)),
             );
         }
+        // The far trees' impostors: their uniform, layers and instances for this frame.
+        let (device, queue, eye, face) =
+            (self.device.clone(), self.queue.clone(), self.eye, self.face);
+        if let Some(imp) = self.impostors_mut() {
+            imp.prepare(&device, &queue, eye, face);
+        }
         let arena = self.arena.borrow();
         let (mut calls, mut triangles) = (0u32, 0u64);
+        let mut impostor_triangles = 0u64;
         let scene_passes = passes.len();
         let targets = self.targets.as_ref().expect("ensure_targets made them");
         let t0 = crate::telemetry::now_ms();
@@ -4670,6 +4749,12 @@ impl Renderer {
                     .draw_bodies(&mut pass, i, &mut calls, &mut triangles)
                 {
                     pass.set_bind_group(1, &self.draw_group, &[]);
+                }
+                // The far trees' impostors, with the opaque draws (render/impostors.rs).
+                if let Some(imp) = &self.impostors {
+                    let n = triangles;
+                    imp.draw(&mut pass, &mut calls, &mut triangles);
+                    impostor_triangles += triangles - n;
                 }
                 self.record(
                     &mut pass,
@@ -4998,6 +5083,7 @@ impl Renderer {
         crate::telemetry::add("draw.raster", cpu);
         self.stats.calls = calls;
         self.stats.triangles = triangles;
+        crate::telemetry::sample("impostor.ktris", impostor_triangles as f64 / 1000.0);
     }
 
     /// Records `draws` (taking draw-buffer slots from `first_slot`) into a pass; fluids with the
@@ -6101,7 +6187,8 @@ pub(crate) const FRAME_FLOATS: usize = 16
     + DAY_SKY_FLOATS;
 
 /// Floats of the tree lean's vec4s (`lean_uniforms`), just before the day/night block.
-pub(crate) const LEAN_FLOATS: usize = 3 * 4;
+/// With the far trees' hand-over after them (`far_trees`, render/impostors.rs).
+pub(crate) const LEAN_FLOATS: usize = 4 * 4;
 
 /// The atlas and its mipmaps, each with its side in texels: down to the level where a tile's gutter
 /// is one texel wide. Filtering a smaller level at a tile's edge would reach past the gutter into
@@ -6274,7 +6361,55 @@ impl crate::game::Scene for Renderer {
         self.plant_percent
     }
     fn draws_far_trees(&self) -> bool {
-        self.far_trees
+        // The impostors draw the far trees: the LOD sections mesh only their ground.
+        self.far_trees && self.far_tier().is_none()
+    }
+    fn far_tree_reach(&mut self) -> Option<f32> {
+        self.impostors_mut()
+            .and_then(|i| i.far)
+            .map(|f| impostors::reach(&f))
+    }
+    fn impostor_bakes(&mut self) -> Option<(u32, u32)> {
+        let i = self.impostors_mut()?;
+        if i.requested {
+            return None;
+        }
+        i.requested = true;
+        Some((
+            dwell_worldgen::impostor::Config::get().layer_count(),
+            i.px(),
+        ))
+    }
+    fn impostor_layer(
+        &mut self,
+        layer: u32,
+        centre_y: f32,
+        radius: f32,
+        albedo: &[u8],
+        normal_depth: &[u8],
+    ) {
+        let queue = self.queue.clone();
+        if let Some(i) = self.impostors.as_mut() {
+            i.upload_layer(&queue, layer, centre_y, radius, albedo, normal_depth);
+        }
+    }
+    fn far_tree_tile_held(&self, key: (u8, i32, i32)) -> bool {
+        self.impostors.as_ref().is_some_and(|i| i.has_tile(&key))
+    }
+    fn far_tree_tile(&mut self, key: (u8, i32, i32), trees: &[dwell_worldgen::impostor::FarTree]) {
+        if let Some(i) = self.impostors.as_mut() {
+            let face = if key.0 == 1 {
+                FaceFrame::B
+            } else {
+                FaceFrame::A
+            };
+            i.set_tile(face, key.1, key.2, trees);
+        }
+    }
+    fn retain_far_tree_tiles(&mut self, keep: &dyn Fn(&(u8, i32, i32)) -> bool) {
+        if let Some(i) = self.impostors.as_mut() {
+            i.retain_tiles(keep);
+        }
     }
     fn upload_budget_bytes(&self) -> u64 {
         streaming::StreamingBudgets::get().upload_bytes(self.phone)
@@ -6764,7 +6899,14 @@ mod tests {
         // had no such switches, every plant and far tree was meshed whatever the settings).
         use crate::game::Scene;
         let mut r = noop_renderer();
-        assert_eq!((r.plant_percent(), r.draws_far_trees()), (100, true));
+        // The impostors draw the far trees (render/impostors.rs): the sections mesh their ground.
+        assert_eq!((r.plant_percent(), r.draws_far_trees()), (100, false));
+        r.set_impostors_override(Some(false));
+        assert!(
+            r.draws_far_trees(),
+            "?impostors=0: the sections' tree cells"
+        );
+        r.set_impostors_override(None);
         r.set_terrain_detail(0.4, false);
         assert_eq!((r.plant_percent(), r.draws_far_trees()), (40, false));
         r.set_terrain_detail(f64::NAN, true);

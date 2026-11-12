@@ -46,6 +46,11 @@ mod flood_tests;
 pub mod heightfield;
 mod lod_mesher;
 mod lod_trees;
+
+/// A tree's leaf face in a chunk's cutout mesh carries this as its `plants` fade start and end
+/// (a plant's are ≥ 0): the shader fades it out by the frame's far trees hand-over instead of a
+/// fixed distance, the impostors taking over (docs/proposals/TREE_IMPOSTORS.md §5).
+pub const TREE_LEAF_FADE: f32 = -1.0;
 mod mesher;
 mod sky;
 mod style;

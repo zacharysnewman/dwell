@@ -2918,7 +2918,7 @@ impl Server {
                     let state = self.world.get_voxel_if_loaded(outcome.cell);
                     let block = dwell_blocks::block_of(state).name;
                     let held = held_break_item(s, uses_items);
-                    let chunk = dwell_protocol::damage::hit_chunk(held);
+                    let chunk = dwell_protocol::damage::hit_chunk(block, held);
                     let need = if self.config.one_hit_breaks {
                         Some(1)
                     } else {

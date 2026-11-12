@@ -1162,6 +1162,11 @@ drawing the leaves' geometry twice costs more than the overdraw it saves. Not ad
 fewer leaf triangles past the near trees (impostors from nearer than 96 m, or a plainer leaf mesh with
 distance). `forest-edge` is the edge alone (6 s) for quick A/Bs.
 
+**Far tree impostors** (2026-11-12, WORK_QUEUE item 31): the configuration `impostors-off` (`?impostors=0`)
+draws the far trees as before (the LOD sections' tree cells, near leaves to the full-detail distance); `npm run
+bench -- --warm --compare --configs impostors-off forest-perf` is the before/after. `gpu.frame` p95, off → on (48 m
+hand-over): inside 15.5 → 15.5, edge 25.8 → 23.4, above 15.6 → 12.3. Telemetry: `impostor.ktris`.
+
 Cloud sessions have no GPU: there it is not run; `cargo test --release -p dwell-worldgen --test forest_world`
 checks the world (every column old-growth, the density in range on both faces, deterministic), and its
 ignored `spots` test prints the places the spots stand at.

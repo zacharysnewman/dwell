@@ -2579,7 +2579,14 @@ dwell_world::both_faces!(
             with.positions.len() / 3,
             without.positions.len() / 3 + carded.len()
         );
-        assert!(without.plants.iter().all(|&v| v == 0.0));
+        // Its faces are a tree's leaves (`TREE_LEAF_FADE`): no sway, handed over to the far
+        // trees' impostors by the frame's distances (WORK_QUEUE item 31).
+        assert!(!without.plants.is_empty());
+        for v in without.plants.chunks(4) {
+            assert_eq!(v, [0.0, 0.0, crate::TREE_LEAF_FADE, crate::TREE_LEAF_FADE]);
+        }
+        let faces = (0..with.positions.len() / 3).filter(|&i| with.plants[i * 4 + 3] < 0.0);
+        assert_eq!(faces.count(), without.positions.len() / 3);
     }
 );
 

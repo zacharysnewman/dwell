@@ -2,6 +2,39 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.54.176",
+      "changes": [
+        "Low clouds (the 2D deck) have their old lighting back: sun-facing edges lit, undersides shaded"
+      ]
+    },
+    {
+      "version": "0.54.175",
+      "changes": [
+        "Far trees are now drawn as impostors baked from the real trees, so forests reach the horizon with their crowns, lit by the sun and fog like the near trees.",
+        "Near trees hand over to the far ones from 48 m with a dithered fade, and leaves past it no longer cost their geometry: the forest's edge draws faster at High.",
+        "Dev: ?impostors=0 draws the old far trees for comparison."
+      ]
+    },
+    {
+      "version": "0.54.174",
+      "changes": [
+        "Behind the scenes: bug notes"
+      ]
+    },
+    {
+      "version": "0.54.173",
+      "changes": [
+        "Each tool hit carves a real bite out of a block: half the block over the hits it takes to break",
+        "The shards, clods and wood chips a hit throws off add up to that bite; metal tools take bigger bites"
+      ]
+    },
+    {
+      "version": "0.54.172",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
       "version": "0.54.171",
       "changes": [
         "Behind the scenes: work queue notes"

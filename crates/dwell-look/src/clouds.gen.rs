@@ -38,6 +38,8 @@ pub const CLOUDS: CloudTunables = CloudTunables {
         night_shade: [0.227451, 0.243137, 0.298039],
         absorption: 1.1,
         shadow_step_m: 320.0,
+        shadow_octaves: 5,
+        low_shadow_octaves: 2,
         silver_lining: 0.9,
         silver_power: 8.0,
         sun_warmth: 0.4,

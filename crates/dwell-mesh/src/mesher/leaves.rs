@@ -433,8 +433,12 @@ pub(super) fn leaf_voxel(
     let list = pieces(ex, leafy, nb_ex, LEAVES.chamfer);
     // The tree owning the cell tints it (ADR 0079); a placed leaf keeps its colour.
     let tint = cells.tint(cell);
+    let first = b.vertex_count() as usize;
     for piece in list {
         emit(b, cells, crowns, k, (cell, ex), &piece, tint);
+    }
+    if k.style.render == dwell_blocks::RenderMode::Cutout {
+        mark_tree_leaves(b, first);
     }
     if with_cards && k.style.render == dwell_blocks::RenderMode::Cutout {
         let world: [i64; 3] =
@@ -465,6 +469,23 @@ pub(super) fn leaf_voxel(
         });
         let list = cards(open, world, &LEAVES.cards, at, blocked);
         emit_cards(b, cells, k, cell, &list, tint);
+    }
+}
+
+/// Marks the leaf faces from vertex `first` on as a tree's ([`crate::TREE_LEAF_FADE`] in their
+/// `plants` fade): the shader hands them over to the far trees' impostors by the frame's far
+/// trees distances (WORK_QUEUE item 31), dropping them whole past the hand-over.
+fn mark_tree_leaves(b: &mut Builder, first: usize) {
+    let end = b.vertex_count() as usize;
+    if end == first {
+        return;
+    }
+    b.m.plants.resize(first * 4, 0.0);
+    b.m.bare.resize(first, 0.0);
+    for _ in first..end {
+        b.m.plants
+            .extend([0.0, 0.0, crate::TREE_LEAF_FADE, crate::TREE_LEAF_FADE]);
+        b.m.bare.push(0.0);
     }
 }
 

@@ -97,6 +97,9 @@ const UNACKED_HOLD: u32 = MAX_TICKS_PER_FRAME as u32 + 30;
 const REGION_SELECTION_COLOR: u32 = 0xffffff;
 const REGION_GHOST_COLOR: u32 = 0x6fd3ff;
 
+/// Far trees tiles in flight at once (`Game::update_far_trees`).
+const FAR_TREE_JOBS: usize = 4;
+
 /// The whole cell, as an outline box.
 pub const FULL_CELL: ([f32; 3], [f32; 3]) = ([0.0; 3], [1.0; 3]);
 
@@ -146,6 +149,30 @@ pub trait Scene: TerrainRenderer {
     fn draws_far_trees(&self) -> bool {
         true
     }
+    /// How far (m) the far trees' impostors draw (render/impostors.rs): the game keeps their tiles
+    /// within it. `None` when they don't draw.
+    fn far_tree_reach(&mut self) -> Option<f32> {
+        None
+    }
+    /// Once, when the impostors first draw: (layers, texels a view) to bake in the workers.
+    fn impostor_bakes(&mut self) -> Option<(u32, u32)> {
+        None
+    }
+    /// A baked impostor layer (`Job::ImpostorBake`'s output).
+    fn impostor_layer(&mut self, _layer: u32, _centre_y: f32, _radius: f32, _a: &[u8], _n: &[u8]) {}
+    /// Whether far trees tile (face, i, k) is held.
+    fn far_tree_tile_held(&self, _key: (u8, i32, i32)) -> bool {
+        false
+    }
+    /// A far trees tile's trees (`Job::FarTrees`'s output).
+    fn far_tree_tile(
+        &mut self,
+        _key: (u8, i32, i32),
+        _trees: &[dwell_worldgen::impostor::FarTree],
+    ) {
+    }
+    /// Drops the far trees tiles `keep` doesn't hold.
+    fn retain_far_tree_tiles(&mut self, _keep: &dyn Fn(&(u8, i32, i32)) -> bool) {}
     /// How many bytes of finished chunk meshes a frame uploads (shared/render/streaming.json by
     /// tier; the first mesh of a frame always goes).
     fn upload_budget_bytes(&self) -> u64 {
@@ -855,6 +882,8 @@ pub struct Game<S: Scene> {
     lod: Option<LodSystem>,
     /// The LOD colour map's rings (`?lodmap=on`), once turned on.
     lod_map: Option<crate::lod_map::LodMap>,
+    /// Far trees tiles asked of the workers and not back yet (render/impostors.rs).
+    far_tree_jobs: std::collections::HashSet<(u8, i32, i32)>,
     lod_map_on: bool,
     /// The drawing's size in CSS pixels, for LOD selection.
     pub viewport_css: (f64, f64),
@@ -1073,6 +1102,7 @@ impl<S: Scene> Game<S> {
             lod: None,
             unloads: Default::default(),
             lod_map: None,
+            far_tree_jobs: Default::default(),
             lod_map_on: false,
             viewport_css: (1280.0, 720.0),
             debug_note: String::new(),
@@ -1869,7 +1899,9 @@ impl<S: Scene> Game<S> {
                     let at = point_in_cell(cell, mark.point);
                     self.sounds
                         .push(SoundEvent::new(SoundKind::Hit, block, 1.0, Some(at)));
-                    self.hit_chips(block, cell, at, now_ms);
+                    // The mark's chunk is its bite (BLOCK_DAMAGE.md §10).
+                    let bite = mark.scale() * dwell_protocol::damage::HitMark::UNIT_M3;
+                    self.hit_chips(block, cell, at, bite, now_ms);
                 }
                 // Drawn on the struck faces (docs/BLOCK_DAMAGE.md): each changed cell's chunk again.
                 for cell in &d.gone {
@@ -2110,6 +2142,29 @@ impl<S: Scene> Game<S> {
                         ),
                         _ => String::new(),
                     };
+                }
+                (
+                    Purpose::ImpostorBake(layer),
+                    Output::Impostor {
+                        centre_y,
+                        radius,
+                        albedo,
+                        normal_depth,
+                    },
+                ) => self.scene.borrow_mut().impostor_layer(
+                    layer,
+                    centre_y,
+                    radius,
+                    &albedo,
+                    &normal_depth,
+                ),
+                (Purpose::FarTrees(face, i, k), out) => {
+                    self.far_tree_jobs.remove(&(face, i, k));
+                    let trees = match out {
+                        Output::FarTrees(t) => t,
+                        _ => Vec::new(),
+                    };
+                    self.scene.borrow_mut().far_tree_tile((face, i, k), &trees);
                 }
                 (Purpose::CloudNoise(detail, z0), Output::CloudNoise(texels)) => {
                     self.scene
@@ -2354,7 +2409,8 @@ impl<S: Scene> Game<S> {
                             // Its chips; the server's echo of the hit is not shown again.
                             self.remote_hits.own_hit(target.cell, now_ms);
                             if let Some(at) = at {
-                                self.hit_chips(block, target.cell, at, now_ms);
+                                let bite = self.own_bite_m3(block);
+                                self.hit_chips(block, target.cell, at, bite, now_ms);
                             }
                         }
                     }
@@ -3343,7 +3399,8 @@ impl<S: Scene> Game<S> {
             self.sounds
                 .push(SoundEvent::new(SoundKind::Hit, h.block, 1.0, h.at));
             if let Some(at) = h.at {
-                self.hit_chips(h.block, h.cell, at, now_ms);
+                let bite = self.own_bite_m3(h.block);
+                self.hit_chips(h.block, h.cell, at, bite, now_ms);
             }
         }
     }
@@ -3505,7 +3562,14 @@ impl<S: Scene> Game<S> {
 
     /// A hit's chips out of `cell` (the block `block`) at the struck point `at` (world), when its
     /// data has `damage.chips` (docs/BLOCK_DAMAGE.md §6).
-    fn hit_chips(&mut self, block: StateId, cell: [i32; 3], at: [f64; 3], now_ms: f64) {
+    fn hit_chips(
+        &mut self,
+        block: StateId,
+        cell: [i32; 3],
+        at: [f64; 3],
+        bite_m3: f64,
+        now_ms: f64,
+    ) {
         if dwell_blocks::try_info(block).is_none() {
             return;
         }
@@ -3516,13 +3580,20 @@ impl<S: Scene> Game<S> {
             let ids = self.hit_shards.burst(name, n, at, now_ms / 1000.0);
             if !ids.is_empty() {
                 let face = dwell_world::FaceFrame::at_height(at[1]);
-                let meshes = crate::hit_shards::fragment_meshes(face);
+                let meshes = crate::hit_shards::fragment_meshes(name, bite_m3, face);
                 let mut scene = self.scene.borrow_mut();
                 for id in ids {
                     scene.set_piece(id, meshes.as_ref().map(|(m, r)| (m.as_slice(), *r)));
                 }
             }
         }
+    }
+
+    /// The bite (m³) of the player's own hit on `block` with the tool held (the bite rule,
+    /// BLOCK_DAMAGE.md §10); none breakable: none.
+    fn own_bite_m3(&self, block: StateId) -> f64 {
+        let name = dwell_blocks::block_of(block).name;
+        dwell_protocol::damage::bite_m3_of(name, self.held_break_item()).unwrap_or(0.0)
     }
 
     /// A swing's chips out of `face` at `point` of the wood `block` (the server cuts; these show).
@@ -3540,6 +3611,28 @@ impl<S: Scene> Game<S> {
                 self.view_dir,
                 now_ms / 1000.0,
             );
+            // The chop's wood pieces, together its bite (BLOCK_DAMAGE.md §10): the held axe's,
+            // else the stone axe's.
+            let w = &dwell_protocol::chopping::WOODS[wood];
+            let axe = self
+                .held_break_item()
+                .and_then(dwell_protocol::chopping::tool)
+                .filter(|t| t.weapon.is_none())
+                .or_else(|| dwell_protocol::chopping::tool("dwell:stone_axe"));
+            if let Some(axe) = axe {
+                let at = point.map(f64::from);
+                let n = crate::chips::struck_normal(dwell_world::cell_of_pos(at), at);
+                let bite = dwell_protocol::chopping::chop_bite_m3(axe, w);
+                let ids = self.hit_shards.burst(name, n, at, now_ms / 1000.0);
+                if !ids.is_empty() {
+                    let f = dwell_world::FaceFrame::at_height(at[1]);
+                    let meshes = crate::hit_shards::fragment_meshes(name, bite, f);
+                    let mut scene = self.scene.borrow_mut();
+                    for id in ids {
+                        scene.set_piece(id, meshes.as_ref().map(|(m, r)| (m.as_slice(), *r)));
+                    }
+                }
+            }
         }
     }
 
@@ -4757,6 +4850,7 @@ impl<S: Scene> Game<S> {
         }
         self.update_lod_map(position);
         self.update_cloud_noise();
+        self.update_far_trees(position);
     }
 
     /// The clouds' shape noise (docs/CLOUDS.md §9.4): when a volume tier first wants it, its bake
@@ -4781,6 +4875,58 @@ impl<S: Scene> Game<S> {
                     size,
                     z0,
                     z1,
+                },
+            );
+        }
+    }
+
+    /// The far trees' impostors (render/impostors.rs): once, the atlas's bakes; then the tiles of
+    /// far trees within the tier's reach of the eye (`position`, world) on its face, asked of the
+    /// workers a few at a time, nearest first, and those out of reach dropped.
+    fn update_far_trees(&mut self, position: [f64; 3]) {
+        let mut scene = self.scene.borrow_mut();
+        let Some(reach) = scene.far_tree_reach() else {
+            return;
+        };
+        let mut pool = self.pool.borrow_mut();
+        if let Some((layers, px)) = scene.impostor_bakes() {
+            for layer in 0..layers {
+                pool.submit(
+                    Purpose::ImpostorBake(layer),
+                    crate::jobs::Job::ImpostorBake { layer, px },
+                );
+            }
+        }
+        let face = FaceFrame::at_height(position[1]);
+        let local = face.point(position);
+        let bit = u8::from(face.is_b());
+        let mut want = crate::render::impostors::tiles_within([local[0], local[2]], reach);
+        let keep: std::collections::HashSet<(u8, i32, i32)> =
+            want.iter().map(|&(i, k)| (bit, i, k)).collect();
+        scene.retain_far_tree_tiles(&|t| keep.contains(t));
+        let t = f64::from(crate::render::impostors::TILE_M);
+        let d2 = |&(i, k): &(i32, i32)| {
+            let dx = (f64::from(i) + 0.5) * t - local[0];
+            let dz = (f64::from(k) + 0.5) * t - local[2];
+            dx * dx + dz * dz
+        };
+        want.sort_by(|a, b| d2(a).total_cmp(&d2(b)));
+        for (i, k) in want {
+            if self.far_tree_jobs.len() >= FAR_TREE_JOBS {
+                break;
+            }
+            let key = (bit, i, k);
+            if scene.far_tree_tile_held(key) || !self.far_tree_jobs.insert(key) {
+                continue;
+            }
+            let size = crate::render::impostors::TILE_M;
+            pool.submit(
+                Purpose::FarTrees(bit, i, k),
+                crate::jobs::Job::FarTrees {
+                    face: bit,
+                    x0: i * size,
+                    z0: k * size,
+                    size,
                 },
             );
         }

@@ -35,8 +35,10 @@ test("a tunable changed by data changes the output", () => {
   const d = data();
   d.shape.coverage = 0.8;
   d.light.shade = "#102030";
+  d.light.lowShadowOctaves = 1;
   const rs = cloudsRust(validateClouds(d));
   assert.match(rs, /coverage: 0\.8,/);
+  assert.match(rs, /low_shadow_octaves: 1,/);
   assert.match(rs, /shade: \[0\.062745, 0\.12549, 0\.188235\],/);
   assert.notEqual(rs, cloudsRust(validateClouds(data())));
 });
@@ -56,6 +58,14 @@ test("bad entries fail with their path named", () => {
       /shape\.octaves must be a number in \[1, 8\]/,
     ],
     [(d) => (d.shape.lowOctaves = 6), /lowOctaves must not exceed/],
+    [
+      (d) => (d.light.shadowOctaves = 6),
+      /light\.shadowOctaves must not exceed shape\.octaves/,
+    ],
+    [
+      (d) => (d.light.lowShadowOctaves = 4),
+      /light\.lowShadowOctaves must not exceed shape\.lowOctaves/,
+    ],
     [(d) => (d.shape.wrapM = 100000), /whole multiple of shape\.scaleM/],
     [(d) => (d.shape.wrapM = 2 * d.shape.scaleM), /at least 4 × shape\.scaleM/],
     [(d) => (d.deck.fadeEndM = 10), /fadeEndM must be greater/],

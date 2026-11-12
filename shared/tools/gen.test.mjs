@@ -55,7 +55,7 @@ test("the axe's held item, the log's chips and its breakWith reach the Rust tabl
   const d = validateTools(...fresh());
   const rs = toolsRust(d);
   assert.match(rs, /name: "dwell:stone_axe", kind: ToolKind::Axe, held: Some\("stone_axe"\)/);
-  assert.match(rs, /block: "dwell:log", .*chips: Chips \{ count: 7, shards: 0, color: \[217, 179, 122\]/);
+  assert.match(rs, /block: "dwell:log", .*chips: Chips \{ count: 7, shards: 3, piece: "dwell:wood", color: \[217, 179, 122\]/);
   assert.match(rs, /\("dwell:log", ToolKind::Axe\),/);
 });
 
@@ -112,15 +112,15 @@ test('breaking: the right tool class per material and a speed per tier reach the
   const speed = (i) => d.breaking.tools.find((t) => t.item === i).speed;
   assert.ok(speed('dwell:metal_pickaxe') > speed('dwell:stone_pickaxe') && speed('dwell:stone_pickaxe') > 1);
   // Owner, 2026-11-12: metal tools "break double sized bigger chunks off and reach 50% broken
-  // faster": twice the stone tier's speed and chunk.
+  // faster": twice the stone tier's speed (the bigger chunks follow from the fewer hits: the bite rule).
   const of = (i) => d.breaking.tools.find((t) => t.item === i);
   for (const [metal, stone] of [['dwell:metal_pickaxe', 'dwell:stone_pickaxe'], ['dwell:metal_shovel', 'dwell:wooden_shovel'], ['dwell:metal_axe', 'dwell:stone_axe']]) {
     assert.equal(of(metal).speed, 2 * of(stone).speed, metal);
-    assert.equal(of(metal).chunk, 2 * of(stone).chunk, metal);
+    assert.equal(of(metal).chunk, undefined, metal);
   }
   const rs = toolsRust(d);
   assert.match(rs, /\("dwell:stone", "pickaxe"\)/);
-  assert.match(rs, /BreakTool \{ item: "dwell:metal_shovel", class: "shovel", tier: "metal", speed: 3\.0, chunk: 2\.0, contact_s: 0\.26, repeat_s: Some\(0\.5\) \}/);
+  assert.match(rs, /BreakTool \{ item: "dwell:metal_shovel", class: "shovel", tier: "metal", speed: 3\.0, contact_s: 0\.26, repeat_s: Some\(0\.5\) \}/);
 });
 
 test('breaking: a fixture tool class and tier by data alone, and bad entries fail naming them', () => {
@@ -130,10 +130,10 @@ test('breaking: a fixture tool class and tier by data alone, and bad entries fai
   data.breaking.tiers.bronze = 2;
   data.breaking.classes.trowel = ['test:clay'];
   data.breaking.tools.push({ item: 'test:trowel', class: 'trowel', tier: 'bronze', contactS: 0.4 });
-  assert.match(toolsRust(validateTools(data, items, blocks)), /BreakTool \{ item: "test:trowel", class: "trowel", tier: "bronze", speed: 2\.0, chunk: 1\.0, contact_s: 0\.4, repeat_s: None \}/);
-  // A tier's chunk by data alone (the object form).
-  data.breaking.tiers.bronze = { speed: 2, chunk: 1.5 };
-  assert.match(toolsRust(validateTools(data, items, blocks)), /tier: "bronze", speed: 2\.0, chunk: 1\.5, contact_s: 0\.4, repeat_s: None \}/);
+  assert.match(toolsRust(validateTools(data, items, blocks)), /BreakTool \{ item: "test:trowel", class: "trowel", tier: "bronze", speed: 2\.0, contact_s: 0\.4, repeat_s: None \}/);
+  // A tier's speed by data alone (the object form); a hit's piece size is the bite rule's, not a tier's.
+  data.breaking.tiers.bronze = { speed: 2 };
+  assert.match(toolsRust(validateTools(data, items, blocks)), /tier: "bronze", speed: 2\.0, contact_s: 0\.4, repeat_s: None \}/);
   const bad = (edit, re) => {
     const [d, i, b] = fresh();
     edit(d.breaking);
@@ -146,7 +146,7 @@ test('breaking: a fixture tool class and tier by data alone, and bad entries fai
   bad((b) => b.classes.axe.push('dwell:nope'), /breaking\.classes\.axe: no block "dwell:nope"/);
   bad((b) => (b.tiers.stone = 0), /breaking\.tiers\.stone is a speed above 0/);
   bad((b) => (b.tiers.stone = { speed: 0 }), /breaking\.tiers\.stone is a speed above 0/);
-  bad((b) => (b.tiers.metal.chunk = 9), /breaking\.tiers\.metal\.chunk is a size multiple in \[0\.25, 4\]/);
+  bad((b) => (b.tiers.metal.chunk = 2), /breaking\.tiers\.metal/);
   bad((b) => (b.tiers.metal.size = 2), /breaking\.tiers\.metal/);
   bad((b) => b.tools.push({ ...b.tools[0] }), /dwell:stone_axe is listed twice/);
   bad((b) => (b.tools[0].contactS = -1), /breaking\.tools\[0\]: contactS is seconds in \[0, 2\]/);
@@ -254,12 +254,14 @@ test('a fixture wood with its own fell wedge by data alone; a bad wedge fails na
 test("block damage: the data's hits reach Rust and TS; a fixture block by data alone; bad entries fail naming them", () => {
   const [data, items, blocks] = fresh();
   const d = validateTools(data, items, blocks);
-  assert.match(toolsRust(d), /BlockDamageDef \{ block: "dwell:stone", default: None, tools: &\[\("pickaxe", 7\)\], look: Some\(DamageLook \{ kind: DamageLookKind::Shards,/);
+  // The bite rule's volume from the shape (BLOCK_DAMAGE.md §10): a stored ramp is half a cell.
+  assert.match(toolsRust(d), /BlockDamageDef \{ block: "dwell:stone_ramp", volume: 0\.5,/);
+  assert.match(toolsRust(d), /BlockDamageDef \{ block: "dwell:stone", volume: 1\.0, default: None, tools: &\[\("pickaxe", 7\)\], look: Some\(DamageLook \{ kind: DamageLookKind::Shards,/);
   assert.match(toolsTs(d), /\{ block: 'dwell:dirt', default: 11, tools: \{ shovel: 7 \} \},/);
   blocks.set('test:clay', { damage: { default: 9, shovel: 4, 'dwell:metal_shovel': 1 } });
   assert.match(
     toolsRust(validateTools(data, items, blocks)),
-    /BlockDamageDef \{ block: "test:clay", default: Some\(9\), tools: &\[\("shovel", 4\), \("dwell:metal_shovel", 1\)\], look: None, chips: None \},/,
+    /BlockDamageDef \{ block: "test:clay", volume: 1\.0, default: Some\(9\), tools: &\[\("shovel", 4\), \("dwell:metal_shovel", 1\)\], look: None, chips: None \},/,
   );
   const bad = (damage, re) => {
     blocks.set('test:clay', { damage });
@@ -314,7 +316,7 @@ test("block damage: the data's hits reach Rust and TS; a fixture block by data a
   blocks.set('test:clay', { damage: { default: 3, chips: { count: 5, color: '#806040', speed: 1.5, size: 0.05 } } });
   assert.match(
     toolsRust(validateTools(data, items, blocks)),
-    /block: "test:clay", .*chips: Some\(Chips \{ count: 5, shards: 0, color: \[128, 96, 64\], speed: 1\.5, size: 0\.05 \}\)/,
+    /block: "test:clay", .*chips: Some\(Chips \{ count: 5, shards: 0, piece: "dwell:rock_shard", color: \[128, 96, 64\], speed: 1\.5, size: 0\.05 \}\)/,
   );
   bad({ default: 3, chips: { count: 5, color: 'brown' } }, /test:clay\.damage\.chips\.color must be #rrggbb/);
   bad({ default: 3, chips: { count: 99 } }, /test:clay\.damage\.chips\.count must be a whole number/);

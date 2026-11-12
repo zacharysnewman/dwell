@@ -1105,6 +1105,9 @@ async function start(): Promise<App | null> {
       ? Math.min(1, Math.max(0, tallGrassQ))
       : s.features.tallGrass;
     client.setTerrainDetail(tallGrass, s.features.farTrees);
+    // ?impostors=0 draws the far trees as the LOD sections' tree cells, as before the impostors.
+    const impostorsQ = new URLSearchParams(location.search).get('impostors');
+    client.setImpostors(impostorsQ === '0' ? 0 : impostorsQ === '1' ? 1 : -1);
     client.setDistantShadows(s.features.distantShadows);
     client.setEffects(s.features.hitShards, s.features.particles, s.features.farHerds);
     reportSettings = {

@@ -6,6 +6,16 @@ pins it.
 
 ## Open
 
+### 97. Light shafts draw a pixelated dither pattern
+
+Owner, 2026-11-12 (screenshot: low sun behind clouds, a tree in front): "Volumetric lighting also has some weird
+dithering where the light shafts look pixelated. Not sure if this is a bug, a blending problem, or something else."
+A fine diagonal crosshatch covers the trees, ground and sky around the sun, strongest in the shafts behind the tree.
+Suspects: the light-shaft pass marches at reduced resolution with a per-pixel dither (interleaved gradient or a
+Bayer pattern) and is composited without a blur, temporal accumulation or a depth-aware upsample, so the dither
+pattern itself shows; or its accumulation's history is rejected every frame. Fix like #90's clouds: blue-noise
+jitter, temporal accumulation with a clamped history, a depth-aware (bilateral) blur/upsample.
+
 ### 95. Far trees seen from above have holes through to the sky below
 
 Owner, 2026-11-12 (screenshot at night, looking straight down from high up): "looking down at trees from high up,
@@ -16,6 +26,14 @@ centre — through the tree and the ground under it, the other face's (day) sky 
 leaves a hole (or an unfilled cell) under each far tree's trunk/column (the tree cells cut from the LOD's ground and
 not filled), or T-junction cracks where the far tree's mesh meets the LOD ground; at that distance the gap is a
 pixel or two and the sky behind the disc shows through.
+
+Looked at 2026-11-12 (impostors session, not fixed): with the impostors on (`claude/impostors-gpu`) the LOD sections
+mesh **no** tree cells (`mesh_section_trees(…, false)`). The section's surface pass draws a column's top cell only
+(`lod_mesher.rs` ~l. 499 skips tree cells above the surface, `special.y`); where a column's top is a tree cell (a
+trunk, a crown) the ground cell under it is not the column's top and gets no top face, so without the tree cells
+there is a hole in the ground the size of the trunk's column — the likely cause, and with impostors the holes show
+between the far trees from above. Fix: the generator's "ground without trees" for the section's surface (proposal
+I-4), with a watertightness test (every column of a forest section has a top face at its ground).
 
 ### 92. Downhill water shows edge triangles and thin lines at its ½ m level steps
 
