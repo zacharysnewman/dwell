@@ -1,0 +1,6 @@
+{
+  "changes": [
+    "New world → More options has a World size on desktop: make a world 2×, 4×, 8× or 10× as wide as today's (an early test of bigger maps; a bigger world takes longer to create).",
+    "A bigger world keeps its size when you reopen it, and its map and distant terrain reach its whole disc."
+  ]
+}

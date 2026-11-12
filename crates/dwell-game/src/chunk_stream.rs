@@ -14,7 +14,7 @@ use dwell_world::hash::{HashMap, HashSet};
 use dwell_protocol::{CHUNK_SIZE, CHUNK_VOLUME, ChunkChanges, ChunkData, ChunkForm};
 use dwell_world::edit::apply_chunk_changes;
 use dwell_world::{
-    BUILD_VOLUME, Chunk, ChunkCoord, Face, VoxelWorld, face_of_chunk_y, local_index,
+    BUILD_VOLUME, BuildVolume, Chunk, ChunkCoord, Face, VoxelWorld, face_of_chunk_y, local_index,
 };
 pub use dwell_world::{MAX_CHUNK_Y, MIN_CHUNK_Y};
 
@@ -615,6 +615,9 @@ pub struct ChunkStreamer<S, G, M: Mesher, V> {
     view: V,
     /// Asks the server to send chunks again (ChunkResync).
     resync: ResyncFn,
+    /// The world's build volume (BIG_MAP.md M2b: its size's, `set_volume`): chunks wholly outside
+    /// it are never streamed and count as loaded.
+    volume: BuildVolume,
     /// Loaded chunks and their revisions (Air chunks: revision 0).
     loaded: HashMap<Coord, u32>,
     /// Loaded chunks the server sent as Air: known empty, never generated or stored.
@@ -711,6 +714,7 @@ where
             unlit: Default::default(),
             unlit_set: HashSet::default(),
             drawn_revision: 0,
+            volume: BUILD_VOLUME,
             light_cost: ItemCost::default(),
             mesh_cost: ItemCost::default(),
             mesh_first: false,
@@ -901,6 +905,12 @@ where
         }
     }
 
+    /// The world's build volume (`WorldBounds::volume`, from its size; a 1× world's is the
+    /// build's, the default).
+    pub fn set_volume(&mut self, volume: BuildVolume) {
+        self.volume = volume;
+    }
+
     pub fn is_loaded(&self, coord: Coord) -> bool {
         self.loaded.contains_key(&coord)
     }
@@ -915,7 +925,7 @@ where
             for z in lo[2]..=hi[2] {
                 for x in lo[0]..=hi[0] {
                     if !self.is_loaded([x, y, z])
-                        && BUILD_VOLUME.chunk_may_hold(ChunkCoord::new(x, y, z))
+                        && self.volume.chunk_may_hold(ChunkCoord::new(x, y, z))
                     {
                         return false;
                     }
@@ -951,7 +961,7 @@ where
             for z in cz - 1..=cz + 1 {
                 for x in cx - 1..=cx + 1 {
                     if !self.loaded.contains_key(&[x, y, z])
-                        && BUILD_VOLUME.chunk_may_hold(ChunkCoord::new(x, y, z))
+                        && self.volume.chunk_may_hold(ChunkCoord::new(x, y, z))
                     {
                         return false;
                     }
@@ -975,7 +985,7 @@ where
         for o in offsets {
             let k = [c.x + o[0], c.y + o[1], c.z + o[2]];
             if !(MIN_CHUNK_Y..=MAX_CHUNK_Y).contains(&k[1])
-                || !BUILD_VOLUME.chunk_may_hold(ChunkCoord::from_array(k))
+                || !self.volume.chunk_may_hold(ChunkCoord::from_array(k))
             {
                 continue;
             }
@@ -1404,7 +1414,7 @@ where
         let dirty = self.dirty.contains(&coord);
         let in_volume = |c: Coord| {
             (MIN_CHUNK_Y..=MAX_CHUNK_Y).contains(&c[1])
-                && BUILD_VOLUME.chunk_may_hold(ChunkCoord::from_array(c))
+                && self.volume.chunk_may_hold(ChunkCoord::from_array(c))
         };
         let neighbours = NEIGHBOURS.iter().map(|d| add(coord, *d));
         ChunkStatus {

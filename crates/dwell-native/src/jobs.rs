@@ -25,7 +25,11 @@ pub struct ThreadJobs {
 }
 
 impl ThreadJobs {
-    pub fn new(generators: usize, meshers: usize, world: (u32, u64)) -> Self {
+    pub fn new(
+        generators: usize,
+        meshers: usize,
+        world: (u32, u64, dwell_protocol::world_size::WorldSize),
+    ) -> Self {
         let (done_tx, done) = channel::<Vec<u8>>();
         let mut slots: [Vec<Slot>; 2] = Default::default();
         for (kind, count) in [(0usize, generators.max(1)), (1, meshers.max(1))] {
@@ -36,7 +40,7 @@ impl ThreadJobs {
                     .name(format!("{}-{i}", if kind == 0 { "gen" } else { "mesh" }))
                     .spawn(move || {
                         let runner = if kind == 0 {
-                            Runner::world(world.0, world.1)
+                            Runner::world_sized(world.0, world.1, world.2, None)
                         } else {
                             Runner::mesher()
                         };

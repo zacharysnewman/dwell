@@ -182,13 +182,18 @@ impl Rig {
     }
 
     fn with_seed(generator: u32, seed: u64) -> Self {
-        let mut core = LocalCore::create(
+        let core = LocalCore::create(
             seed,
             generator,
             None::<NoStorage>,
             Box::new(SeededEntropy(1)),
         )
         .unwrap();
+        Self::with_core(generator, seed, core)
+    }
+
+    /// A rig over a local core made by the test (a sized or saved world).
+    fn with_core(generator: u32, seed: u64, mut core: LocalCore) -> Self {
         core.connected(LOCAL_SESSION, TransportKind::Loopback, [0; 32]);
         let key = SigningKey::from_bytes(&[5; 32]);
         let mut session = Session::new([0; 32], key.verifying_key().to_bytes(), "Me", "t", 1000.0);
@@ -329,7 +334,10 @@ impl Rig {
                 ..
             } = self.session.state().clone()
         {
-            let mut jobs = InlineJobs::new(Runner::world(self.generator, self.seed));
+            // As the web app does: the workers and the game at the world's size (BIG_MAP.md M2b).
+            let size = self.session.world_size();
+            let mut jobs =
+                InlineJobs::new(Runner::world_sized(self.generator, self.seed, size, None));
             jobs.per_poll = self.jobs_per_poll;
             let pool = Pool::new(Box::new(jobs));
             let c = ChunkCoord::from_array(verification_chunk);
@@ -342,6 +350,9 @@ impl Rig {
             );
             game.set_registry(self.session.mapping().cloned());
             game.set_loading_screen(self.loading_screen);
+            if !size.is_default() {
+                game.set_world(self.generator, self.seed, size);
+            }
             self.game = Some(game);
         }
         let Some(game) = &mut self.game else { return };
@@ -3078,4 +3089,126 @@ fn a_pickaxe_hit_marks_the_stone_at_its_contact_not_on_the_click() {
     assert!(heard, "the hit sounds at contact");
     assert!(rig.now >= click + contact, "marked at contact");
     assert_eq!(host_voxel(&mut rig, p), stone, "one hit of five: it stands");
+}
+
+/// A local world as the browser's worker opens it at `size` (BIG_MAP.md M2b): the page's maps for
+/// that size installed first (`buildWorldMap` with the scale), its jobs in the server-jobs worker.
+fn sized_core(
+    file: dwell_storage::BytesFile,
+    size: dwell_protocol::world_size::WorldSize,
+) -> LocalCore {
+    LocalCore::create_tuned(
+        dwell_world::Face::A,
+        false,
+        None,
+        false,
+        false,
+        SEED,
+        GENERATOR_TERRAIN,
+        Some(file),
+        Box::new(SeededEntropy(1)),
+        dwell_sim::water::host::Placement::Inline,
+        true,
+        // As `LocalWorld::new` does with the page's `radiusScale`.
+        |c| c.world_size = size,
+    )
+    .unwrap()
+}
+
+#[test]
+fn a_local_world_created_at_2x_saves_and_reopens_at_2x_and_its_client_follows_the_size() {
+    // both-faces: the maps of both faces are built and installed, the size is the world's.
+    use dwell_protocol::world_size::WorldSize;
+    let two = WorldSize::named("2x").unwrap();
+    // The page's maps for a 2× world (`worldMapKeys` and `buildWorldMap` with the scale): keyed
+    // apart from the seed's 1× maps, and built over the 2× disc.
+    let keys = dwell_client::local::world_map_keys(SEED, "", two);
+    let plain = dwell_client::local::world_map_keys(SEED, "", WorldSize::DEFAULT);
+    assert_eq!(plain.len(), 2);
+    for (k, p) in keys.iter().zip(&plain) {
+        assert_eq!(*k, format!("{p}-x2"), "a 2× world's map keys are its own");
+    }
+    for f in [dwell_world::Face::A, dwell_world::Face::B] {
+        let seed = dwell_worldgen::bifacial::face_seed(SEED, f);
+        let bytes = dwell_worldgen::config::worldgen_map_bytes_sized(seed, "", two).unwrap();
+        assert_eq!(dwell_worldgen::worldmap::install(&bytes), Ok(seed));
+        assert!(dwell_worldgen::worldmap::cache::is_ready_sized(seed, two));
+    }
+
+    // Created at 2×: its settings say so, and the file keeps it.
+    let file = dwell_storage::BytesFile::default();
+    let mut core = sized_core(file.clone(), two);
+    assert!(core.persisted);
+    assert_eq!(core.world_size(), two);
+    core.advance(1.0 / 60.0);
+    assert!(core.save());
+    drop(core);
+    // Reopened as the page opens a saved world, whatever size it passes: the file's own.
+    let mut reopened = sized_core(
+        dwell_storage::BytesFile::new(file.bytes()),
+        WorldSize::DEFAULT,
+    );
+    assert_eq!(reopened.world_size(), two, "a saved 2× world reopens at 2×");
+    assert_eq!(
+        reopened.server().bounds().radius(),
+        2 * i64::from(dwell_world::WORLD_RADIUS)
+    );
+
+    // Its client learns the size at the join (`WORLD_SIZE`) and follows it: the bounds, the
+    // streamer's volume, the LOD's rim and the big map's levels.
+    let mut rig = Rig::with_core(GENERATOR_TERRAIN, SEED, reopened);
+    assert!(
+        rig.run_until(60 * 30, |r| r.game.is_some()),
+        "the client joins the 2× world"
+    );
+    assert_eq!(rig.session.world_size(), two);
+    let g = rig.game.as_ref().unwrap();
+    assert_eq!(g.world_bounds(), dwell_world::WorldBounds::of(two));
+    assert_eq!(
+        g.big_map_levels(),
+        dwell_game::minimap::MAP.big_map_levels_sized(two)
+    );
+    assert_ne!(
+        g.big_map_levels(),
+        dwell_game::minimap::MAP.big_map_levels.to_vec(),
+        "a 2× world's big map has its own coarse levels"
+    );
+    assert!(dwell_client::map_reveal::is_level_sized(
+        g.big_map_levels()[2].0 as i32,
+        &dwell_game::minimap::MAP,
+        two
+    ));
+    assert!(
+        rig.run_until(60 * 30, |r| r
+            .game
+            .as_ref()
+            .is_some_and(|g| g.debug_state().terrain_ready)),
+        "the terrain round the spawn arrives in a 2× world"
+    );
+}
+
+#[test]
+fn a_world_saved_without_a_size_opens_at_1x_and_its_client_too() {
+    // face-a-only: the size is the world's, not a face's; the default world's maps are 1×'s.
+    use dwell_protocol::world_size::WorldSize;
+    install_maps_as_the_worker_does(SEED);
+    let file = dwell_storage::BytesFile::default();
+    let mut core = sized_core(file.clone(), WorldSize::DEFAULT);
+    core.advance(1.0 / 60.0);
+    assert!(core.save());
+    drop(core);
+    let reopened = sized_core(
+        dwell_storage::BytesFile::new(file.bytes()),
+        WorldSize::DEFAULT,
+    );
+    assert_eq!(reopened.world_size(), WorldSize::DEFAULT);
+    let mut rig = Rig::with_core(GENERATOR_TERRAIN, SEED, reopened);
+    assert!(rig.run_until(60 * 30, |r| r.game.is_some()));
+    assert_eq!(rig.session.world_size(), WorldSize::DEFAULT);
+    let g = rig.game.as_ref().unwrap();
+    assert_eq!(g.world_bounds(), dwell_world::WorldBounds::DEFAULT);
+    assert_eq!(
+        g.big_map_levels(),
+        dwell_game::minimap::MAP.big_map_levels.to_vec()
+    );
 }

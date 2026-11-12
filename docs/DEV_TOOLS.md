@@ -324,6 +324,11 @@ the owner's dam site; then `__dwell.fly(true)`, `__dwell.tool('cornerA@…')`, `
 `placeCamera` set the scene up. `?new=1&seed=<n>&name=<name>` instead adds a new world to the
 menu's list and opens it.
 
+**A bigger world** (BIG_MAP.md M2b): `?size=2x` (any size of `constants.json` `worldSizes`: `2x`,
+`4x`, `8x`, `10x`; with `seed=`, `spawn=`, `at=`, `fresh=1` as above, alone seed 0) opens a terrain world
+of that size, its own world file (`local-g8-s<seed>-x2`), created at it and saved with it; the flat and
+sandbox worlds are 1× only. New world → More options' **World size** (desktop pages) makes one in the menu.
+
 **Play a test world** (0.52.27): `?worldgen=test:tall_peak` (any fixture world's name,
 `shared/worldgen/worlds/*.json`; with `seed=`, `fresh=1`, `at=` as above, alone seed 0) opens a
 terrain world on the fixture's ground, its own world file and record (`test-<name>-s<seed>`, never the

@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { GENERATORS, parseLocalWorld, spawnOptions } from './world';
+import {
+  GENERATORS,
+  parseLocalWorld,
+  sizeOptions,
+  sizeScale,
+  spawnOptions,
+  WORLD_SIZES,
+} from './world';
 
 describe('local world options', () => {
   it('starts at a point given by ?at=x,y,z (docs/DEV_TOOLS.md)', () => {
@@ -16,6 +23,48 @@ describe('local world options', () => {
     expect(parseLocalWorld('?world=flat&mode=adventure').mode).toBe('adventure');
     expect(parseLocalWorld('?at=1,2,3&mode=adventure').mode).toBe('adventure');
     expect(parseLocalWorld('?mode=survival').mode).toBeUndefined();
+  });
+
+  it('makes a bigger terrain world by ?size=2x, its own world file (BIG_MAP.md M2b)', () => {
+    expect(parseLocalWorld('?seed=5&size=2x')).toEqual({
+      worldSeed: 5,
+      generatorVersion: GENERATORS.terrain,
+      file: 'local-g8-s5-x2',
+      radiusScale: 2,
+    });
+    expect(parseLocalWorld('?size=10x').radiusScale).toBe(10);
+    // Today's size and an unknown one are the plain link's world.
+    expect(parseLocalWorld('?seed=5&size=1x')).toEqual({
+      worldSeed: 5,
+      generatorVersion: GENERATORS.terrain,
+    });
+    expect(parseLocalWorld('?seed=5&size=3x').radiusScale).toBeUndefined();
+    // The flat and sandbox worlds are 1× only.
+    expect(parseLocalWorld('?world=flat&size=2x')).toEqual({
+      worldSeed: 0,
+      generatorVersion: GENERATORS.flat,
+    });
+    // With a spawn or a point: the sized world's own file.
+    expect(parseLocalWorld('?seed=5&size=2x&spawn=b')).toMatchObject({
+      file: 'local-g8-s5-faceb-x2',
+      radiusScale: 2,
+      spawnFaceB: true,
+    });
+    expect(parseLocalWorld('?seed=5&size=4x&at=1,2,3')).toMatchObject({
+      file: 'local-g8-s5-x4',
+      radiusScale: 4,
+      spawnAt: [1, 2, 3],
+    });
+  });
+
+  it("names the sizes of the data, today's first", () => {
+    expect(WORLD_SIZES[0]).toEqual({ name: '1x', radiusScale: 1 });
+    expect(sizeScale('8x')).toBe(8);
+    expect(sizeScale('nope')).toBeNull();
+    expect(sizeOptions(1)).toEqual({});
+    expect(sizeOptions(undefined)).toEqual({});
+    expect(sizeOptions(3)).toEqual({});
+    expect(sizeOptions(2)).toEqual({ radiusScale: 2 });
   });
 
   it('defaults to procedural terrain with seed 0', () => {

@@ -233,6 +233,7 @@ async function start(
   mode?: string,
   growth?: number,
   chop2 = false,
+  radiusScale?: number,
 ): Promise<void> {
   // The world file (§6.4): the chosen world's (by default one per generator and seed), in OPFS.
   // Without it the world lives in memory only (no OPFS, or the world is open in another tab).
@@ -274,12 +275,15 @@ async function start(
       mode,
       growth,
       chop2,
+      radiusScale,
     );
     stage('spawn', 'end');
     jobs?.postMessage({
       t: 'init',
       generatorVersion: core.generatorVersion,
       worldSeed: core.worldSeed,
+      // The world's size (BIG_MAP.md M2b): a saved world's own, read from its file.
+      radiusScale: core.radiusScale,
     });
   } catch (err) {
     scope.postMessage({
@@ -365,6 +369,7 @@ scope.onmessage = (e) => {
       msg.mode,
       msg.growth,
       msg.chop2,
+      msg.radiusScale,
     );
   else handle(msg);
 };

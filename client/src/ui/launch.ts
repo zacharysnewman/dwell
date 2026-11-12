@@ -28,6 +28,8 @@ export type Launch =
       mode: string;
       /** An offered world file's name (`&worldgen=`, ui/worldChoices.ts), or ''. */
       worldgen: string;
+      /** A bigger world's size by name (`&size=2x`, BIG_MAP.md M2b), or '' (today's). */
+      size: string;
     }
   /** A world regenerated from its seed by the build that opens it (`?regenerate=<world id>`). */
   | { kind: 'regenerate'; id: string }
@@ -53,6 +55,8 @@ const ROUTE_PARAMS = [
   'regenerate',
   // A test world's or an offered world file's worldgen (`?worldgen=`, the New world form's World).
   'worldgen',
+  // A bigger world's size (`?size=2x`, BIG_MAP.md M2b: a link's world or the New world form's).
+  'size',
   // A message for the menu (the launcher's): why it came up instead of a game.
   'say',
   // Play advanced's overrides (ui/playAdvanced.ts): one-off, so they never ride into the next route.
@@ -82,15 +86,22 @@ export function launchOf(search: string): Launch {
       spawn: params.get('spawn') ?? '',
       mode: params.get('mode') ?? '',
       worldgen: params.get('worldgen') ?? '',
+      size: params.get('size') ?? '',
     };
   }
   const regenerate = params.get('regenerate');
   if (regenerate) return { kind: 'regenerate', id: regenerate };
   const play = params.get('play');
   if (play) return { kind: 'play', id: play };
-  // A world link; the dev spawn and test-world links (`?spawn=portal`, `?worldgen=`) alone open
-  // one too (seed 0).
-  if (params.has('world') || params.has('seed') || params.has('spawn') || params.has('worldgen'))
+  // A world link; the dev spawn, test-world and size links (`?spawn=portal`, `?worldgen=`,
+  // `?size=2x`) alone open one too (seed 0).
+  if (
+    params.has('world') ||
+    params.has('seed') ||
+    params.has('spawn') ||
+    params.has('worldgen') ||
+    params.has('size')
+  )
     return { kind: 'link' };
   return { kind: 'menu' };
 }

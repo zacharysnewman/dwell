@@ -7,7 +7,8 @@
 import { ServerJobs, installWorldMap, loadWasm } from '../engine/wasm';
 
 type Start = { t: 'start'; maps?: Uint8Array[] };
-type Init = { t: 'init'; generatorVersion: number; worldSeed: bigint };
+/** `radiusScale`: the world's size (BIG_MAP.md M2b; absent or 1: today's). */
+type Init = { t: 'init'; generatorVersion: number; worldSeed: bigint; radiusScale?: number };
 
 interface WorkerScope {
   postMessage(message: ArrayBuffer, transfer?: Transferable[]): void;
@@ -45,7 +46,7 @@ scope.onmessage = (e) => {
     return;
   }
   void (ready ?? loadWasm()).then(() => {
-    const w = new ServerJobs(msg.generatorVersion, msg.worldSeed);
+    const w = new ServerJobs(msg.generatorVersion, msg.worldSeed, msg.radiusScale);
     runner = w;
     for (const job of queued.splice(0)) run(w, job);
   });

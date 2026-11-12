@@ -28,12 +28,14 @@ function deps(store: MapStore | null): MapDeps & { builds: string[]; progress: n
   return {
     builds,
     progress,
-    keys: (seed, worldgen) => [
-      `fp-a-${seed.toString()}${worldgen}`,
-      `fp-b-${seed.toString()}${worldgen}`,
-    ],
-    build: (seed, face, worldgen) => {
-      builds.push(`${seed.toString()}/${String(face)}${worldgen}`);
+    keys: (seed, worldgen, scale) => {
+      const x = scale === 1 ? '' : `-x${String(scale)}`;
+      return [`fp-a-${seed.toString()}${worldgen}${x}`, `fp-b-${seed.toString()}${worldgen}${x}`];
+    },
+    build: (seed, face, worldgen, scale) => {
+      builds.push(
+        `${seed.toString()}/${String(face)}${worldgen}${scale === 1 ? '' : `x${String(scale)}`}`,
+      );
       return Promise.resolve(new Uint8Array([Number(seed % 256n), face]));
     },
     store,
@@ -108,11 +110,32 @@ describe('world maps (ADR 0049)', () => {
     const d = deps(null);
     let fail = true;
     const build = d.build.bind(d);
-    d.build = (seed, face, worldgen) =>
-      fail ? Promise.reject(new Error('no worker')) : build(seed, face, worldgen);
+    d.build = (seed, face, worldgen, scale) =>
+      fail ? Promise.reject(new Error('no worker')) : build(seed, face, worldgen, scale);
     await expect(worldMaps(5n, GENERATOR_TERRAIN, d)).rejects.toThrow('no worker');
     fail = false;
     expect(await worldMaps(5n, GENERATOR_TERRAIN, d)).toHaveLength(2);
+  });
+
+  it("builds and keeps a bigger world's maps apart from the seed's 1× maps (BIG_MAP.md M2b)", async () => {
+    const store = new MemoryStore();
+    const d = deps(store);
+    await worldMaps(4n, GENERATOR_TERRAIN, d);
+    // A 2× world of the same seed: its own keys and builds, never the 1× maps.
+    expect(await worldMaps(4n, GENERATOR_TERRAIN, d, '', 2)).toHaveLength(2);
+    expect(d.builds).toEqual(['4/0', '4/1', '4/0x2', '4/1x2']);
+    expect([...store.entries.keys()].sort()).toEqual([
+      'fp-a-4',
+      'fp-a-4-x2',
+      'fp-b-4',
+      'fp-b-4-x2',
+    ]);
+    // Asked again (the client's join at the same size): the same maps, nothing built.
+    await worldMaps(4n, GENERATOR_TERRAIN, d, '', 2);
+    // Today's size by its scale or by default is one and the same; a bad scale is today's.
+    await worldMaps(4n, GENERATOR_TERRAIN, d, '', 1);
+    await worldMaps(4n, GENERATOR_TERRAIN, d, '', 0);
+    expect(d.builds).toHaveLength(4);
   });
 
   it('drops the least recently used maps past the limit', () => {

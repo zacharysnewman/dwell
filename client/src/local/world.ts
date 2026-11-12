@@ -1,6 +1,7 @@
 // Which world local mode generates (ARCHITECTURE.md §6.3): `?world=terrain|flat|sandbox` picks
 // the generator (procedural terrain by default) and `?seed=N` the world seed.
 
+import { WorldSizes } from '../protocol/constants.gen';
 import { isGameMode } from '../ui/modes';
 
 /**
@@ -54,6 +55,35 @@ export interface LocalWorld {
   upgrade?: boolean;
   /** A new world's game mode by name (ADR 0065, the New world form's Mode); a saved world keeps its own. */
   mode?: string;
+  /**
+   * A bigger world's size (docs/proposals/BIG_MAP.md M2b: the New world form's World size, the dev
+   * link `?size=2x`), as its radius scale; absent: today's (1×). A new world is created at it and
+   * saves it in its settings; a saved world keeps its own. Its maps are built at it too.
+   */
+  radiusScale?: number;
+}
+
+/**
+ * The named world sizes (shared/protocol/constants.json `worldSizes`, BIG_MAP.md): name and radius
+ * scale, today's (1×) first.
+ */
+export const WORLD_SIZES: readonly { name: string; radiusScale: number }[] = WorldSizes.sizes;
+
+/** The radius scale of the size named `name` (`2x`), or null for none of `worldSizes`. */
+export function sizeScale(name: string | null | undefined): number | null {
+  return WORLD_SIZES.find((s) => s.name === name)?.radiusScale ?? null;
+}
+
+/** `{ radiusScale }` for a bigger world's scale, nothing for today's (so 1× options are as before). */
+export function sizeOptions(
+  radiusScale: number | null | undefined,
+): Pick<LocalWorld, 'radiusScale'> {
+  return radiusScale !== null &&
+    radiusScale !== undefined &&
+    radiusScale !== 1 &&
+    WORLD_SIZES.some((s) => s.radiusScale === radiusScale)
+    ? { radiusScale }
+    : {};
 }
 
 /** The spawns a world can start at (`?spawn=`, a new world's Spawn): "" is face A's usual one. */
@@ -91,12 +121,20 @@ export function parseLocalWorld(search: string): LocalWorld {
   // `?mode=adventure`: the world's game mode (a link's test world; ADR 0065, 0066).
   const m = params.get('mode');
   const mode = m !== null && isGameMode(m) ? { mode: m } : {};
+  // `?size=2x` (BIG_MAP.md M2b): a bigger terrain world, its own world file (`<name>-x2`) so the
+  // seed's 1× world is untouched; the flat and sandbox worlds are 1× only.
+  const sized =
+    generatorVersion === GENERATORS.terrain ? sizeOptions(sizeScale(params.get('size'))) : {};
+  const suffix = sized.radiusScale ? `-x${String(sized.radiusScale)}` : '';
+  const sizedFile = suffix
+    ? { file: `${localWorldName(generatorVersion, worldSeed)}${suffix}` }
+    : {};
   const at = parseAt(params.get('at'));
-  if (at) return { worldSeed, generatorVersion, spawnAt: at, ...mode };
+  if (at) return { worldSeed, generatorVersion, ...sizedFile, spawnAt: at, ...mode, ...sized };
   const spawn = params.get('spawn');
   if (spawn !== '' && isSpawn(spawn)) {
     // Each spawn is its own world file, so the others are untouched.
-    const file = `${localWorldName(generatorVersion, worldSeed)}-${spawn === 'b' ? 'faceb' : spawn}`;
+    const file = `${localWorldName(generatorVersion, worldSeed)}-${spawn === 'b' ? 'faceb' : spawn}${suffix}`;
     return {
       worldSeed,
       generatorVersion,
@@ -104,7 +142,8 @@ export function parseLocalWorld(search: string): LocalWorld {
       ...spawnOptions(spawn),
       spawnOnOpen: true,
       ...mode,
+      ...sized,
     };
   }
-  return { worldSeed, generatorVersion, ...mode };
+  return { worldSeed, generatorVersion, ...sizedFile, ...mode, ...sized };
 }

@@ -286,36 +286,40 @@ pub fn set_world_file_version(bytes: Vec<u8>, version: &str) -> Result<Vec<u8>, 
 /// and each face's seed, so a map kept by another build is never read.
 #[wasm_bindgen(js_name = worldMapKeys)]
 /// A test world's worldgen config (`worldgen`, `chisel::worldgen_height`) keys its maps apart.
-pub fn world_map_keys(world_seed: u64, worldgen: Option<String>) -> Vec<String> {
-    let config = worldgen.unwrap_or_default();
-    [dwell_world::Face::A, dwell_world::Face::B]
-        .into_iter()
-        .map(|f| {
-            crate::chisel::worldgen_map_key(
-                dwell_worldgen::bifacial::face_seed(world_seed, f),
-                &config,
-            )
-        })
-        .collect()
+/// A bigger world's (`radius_scale`, BIG_MAP.md M2b: its `WorldSettings` size) keys its maps apart
+/// too; none or 1 is today's key.
+pub fn world_map_keys(
+    world_seed: u64,
+    worldgen: Option<String>,
+    radius_scale: Option<u32>,
+) -> Vec<String> {
+    crate::local::world_map_keys(
+        world_seed,
+        &worldgen.unwrap_or_default(),
+        dwell_protocol::world_size::WorldSize::playable(radius_scale),
+    )
 }
 
 /// Computes face `face`'s (0: A, 1: B) world map of a terrain world and returns its bytes (a
 /// builder worker's job: ~1.3 s).
 #[wasm_bindgen(js_name = buildWorldMap)]
 /// A test world's (`worldgen`) is built over its height field; throws when the config is bad.
+/// A bigger world's map (`radius_scale`, BIG_MAP.md M2b) is built over its own disc.
 pub fn build_world_map(
     world_seed: u64,
     face: u8,
     worldgen: Option<String>,
+    radius_scale: Option<u32>,
 ) -> Result<Vec<u8>, JsError> {
     let face = if face == 1 {
         dwell_world::Face::B
     } else {
         dwell_world::Face::A
     };
-    crate::chisel::worldgen_map_bytes(
+    dwell_worldgen::config::worldgen_map_bytes_sized(
         dwell_worldgen::bifacial::face_seed(world_seed, face),
         &worldgen.unwrap_or_default(),
+        dwell_protocol::world_size::WorldSize::playable(radius_scale),
     )
     .map_err(|e| JsError::new(&e))
 }
