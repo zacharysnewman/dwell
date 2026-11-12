@@ -171,6 +171,12 @@ export class AudioEngine {
     fn(this.volumes);
   }
 
+  /** The eye under a fluid's surface or not (§3a): the world's buses muffle or open. */
+  setUnderwater(under: boolean): void {
+    const { ctx, mixer } = this;
+    if (ctx && mixer) mixer.setUnderwater(under, ctx.currentTime);
+  }
+
   /** The camera: position, forward and up (unit vectors). */
   setListener(position: Vec3, forward: Vec3, up: Vec3): void {
     this.listener = position;
@@ -391,7 +397,14 @@ function playSample(
   src.playbackRate.value = sample.rate;
   const level = ctx.createGain();
   level.gain.value = gain;
-  src.connect(level);
+  if (sample.lowpassHz !== undefined) {
+    // The data's low-pass on the recording (a calm stroke: its highs cut).
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = sample.lowpassHz;
+    src.connect(lp);
+    lp.connect(level);
+  } else src.connect(level);
   if (pan !== undefined && typeof ctx.createStereoPanner === 'function') {
     const p = ctx.createStereoPanner();
     p.pan.value = pan;

@@ -1607,7 +1607,7 @@ impl Client {
 
     /// The game's sound events since the last call (docs/AUDIO.md §5): 7 numbers each (kind,
     /// block state, intensity, x, y, z, flags), for the shell's audio (`client/src/audio`).
-    /// The listener's surroundings for the ambience beds (docs/AUDIO.md §2c): 9 numbers in
+    /// The listener's surroundings for the ambience beds (docs/AUDIO.md §2c): 10 numbers in
     /// `dwell_game::ambience::INPUTS` order; empty before the game runs.
     pub fn ambience(&self) -> Vec<f64> {
         self.inner
@@ -1615,6 +1615,16 @@ impl Client {
             .game
             .as_ref()
             .map_or_else(Vec::new, |g| g.ambience().to_vec())
+    }
+
+    /// Whether the eye is under a fluid's surface (docs/AUDIO.md §3a): the shell muffles the
+    /// world's buses. False before the game runs.
+    pub fn underwater(&self) -> bool {
+        self.inner
+            .borrow()
+            .game
+            .as_ref()
+            .is_some_and(|g| g.underwater())
     }
 
     #[wasm_bindgen(js_name = takeSounds)]
@@ -2180,6 +2190,32 @@ impl Client {
         set(&o, "day", m.day);
         set(&o, "groups", groups);
         o.into()
+    }
+    /// The finder (WORK_QUEUE item 46; DEV_TOOLS.md `herds`): the far herds and packs on the
+    /// player's face from the last `ecology`, of `species` (empty: any), nearest first: `[{ id,
+    /// species, x, z, size, distance, bearing }]` (face-local metres; bearing the yaw facing it).
+    #[wasm_bindgen(js_name = herds)]
+    pub fn herds(&self, species: String) -> JsValue {
+        let s = self.inner.borrow();
+        let Some(g) = s.game.as_ref() else {
+            return Array::new().into();
+        };
+        let want = (!species.is_empty()).then_some(species.as_str());
+        g.find_herds(want)
+            .into_iter()
+            .map(|h| {
+                let o = Object::new();
+                set(&o, "id", h.id);
+                set(&o, "species", h.species.as_str());
+                set(&o, "x", h.x);
+                set(&o, "z", h.z);
+                set(&o, "size", h.size);
+                set(&o, "distance", h.distance);
+                set(&o, "bearing", h.bearing_deg);
+                JsValue::from(o)
+            })
+            .collect::<Array>()
+            .into()
     }
     #[wasm_bindgen(js_name = blasts)]
     pub fn blasts(&self) -> Vec<f64> {
@@ -3439,6 +3475,19 @@ impl Inner {
         game.debug_visible = self.debug_visible;
         game.set_capabilities(region_edits, brushes);
         game.set_world(generator_version, world_seed, world_size);
+        // The far herds' ground past the loaded chunks (WORK_QUEUE item 46), only once this
+        // instance holds the world's maps (never computed on the page's thread).
+        if !maps.is_empty() {
+            game.far_terrain = dwell_worldgen::BifacialTerrain::for_generator_sized(
+                generator_version,
+                world_seed,
+                world_size,
+            )
+            .map(std::sync::Arc::new);
+        }
+        self.renderer
+            .borrow_mut()
+            .set_world_radius(world_size.world_radius_m() as f64);
         // The moon in the sky from its real terrain (MOON_WORLD.md §5, M-2): its face A baked once
         // at the join (~0.1 s natively at 256²), every world its own moon.
         if let Some(bake) = crate::render::moon::bake_for(world_seed) {

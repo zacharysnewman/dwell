@@ -111,6 +111,10 @@ export interface SamplesDef {
   gain?: number;
   /** ± semitones per play. */
   pitch?: number;
+  /** Semitones every play is moved by (a lower, softer take of the same recordings). */
+  shift?: number;
+  /** A low-pass on every play (Hz): the recordings' highs cut (a calm stroke, not a splash). */
+  lowpassHz?: number;
   /**
    * The share sent to the room (default 0: dry). Recordings carry their own room in them, so the
    * sound's `reverb` (for its procedural layers) would add a second, echoey room on top (owner,
@@ -133,7 +137,8 @@ export type SetEvent =
   | 'burn'
   | 'explode'
   | 'impact'
-  | 'brush';
+  | 'brush'
+  | 'swim_under';
 /** An event's part in a continuous sound: start the mover's voice, update it, stop it. */
 export type LoopPart = 'start' | 'update' | 'stop';
 export type Gait = 'walk' | 'run' | 'crouch' | 'climb' | 'swim';
@@ -188,6 +193,23 @@ export interface AmbienceDef {
   beds: Record<string, BedDef>;
 }
 
+/** A bus of the mixer (AUDIO.md §3). */
+export type Bus = 'effects' | 'ambience' | 'ui' | 'music';
+
+/** The underwater muffle (AUDIO.md §3a): the buses it filters, the filter and level under water. */
+export interface UnderwaterDef {
+  buses: Bus[];
+  /** The low-pass's cutoff with the eye under water (Hz). */
+  lowpassHz: number;
+  q: number;
+  /** The filtered buses' level under water (1 in air). */
+  gain: number;
+  /** The glide at the surface crossing (s). */
+  easeS: number;
+  /** The filter's cutoff in air (Hz): open, transparent. */
+  openHz: number;
+}
+
 export type ControlSounds = string[] | { silent: string };
 
 export interface SoundData {
@@ -204,6 +226,7 @@ export interface SoundData {
   controls: Record<string, ControlSounds>;
   ambient: AmbientDef;
   ambience: AmbienceDef;
+  underwater: UnderwaterDef;
   /** Each creature model's sounds (AUDIO.md §2d), in the Rust game's order. */
   creatures: {
     radiusM: number;

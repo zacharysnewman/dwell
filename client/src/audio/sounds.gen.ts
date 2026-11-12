@@ -21,8 +21,8 @@ export const SOUND_DATA: SoundData = {
       "gain": 0.6
     },
     "swim": {
-      "stride": 2.4,
-      "gain": 0.7
+      "stride": 3,
+      "gain": 0.45
     }
   },
   "events": [
@@ -287,6 +287,11 @@ export const SOUND_DATA: SoundData = {
     {
       "name": "sizzle",
       "sound": "dwell:sizzle"
+    },
+    {
+      "name": "swim_under",
+      "set": "swim_under",
+      "fallback": false
     }
   ],
   "sets": {
@@ -387,6 +392,7 @@ export const SOUND_DATA: SoundData = {
       "enter": "dwell:water_enter",
       "exit": "dwell:water_exit",
       "swim": "dwell:water_swim",
+      "swim_under": "dwell:water_swim_under",
       "impact": "dwell:water_enter"
     }
   },
@@ -760,8 +766,32 @@ export const SOUND_DATA: SoundData = {
             "full": 1.5
           }
         ]
+      },
+      "dwell:underwater": {
+        "files": [
+          "sea-loop-1-e54ebb50.m4a"
+        ],
+        "gain": 0.2,
+        "when": [
+          {
+            "input": "underwater",
+            "from": 0,
+            "full": 1
+          }
+        ]
       }
     }
+  },
+  "underwater": {
+    "buses": [
+      "effects",
+      "ambience"
+    ],
+    "lowpassHz": 800,
+    "q": 0.7,
+    "gain": 0.6,
+    "easeS": 0.25,
+    "openHz": 20000
   },
   "creatures": {
     "radiusM": 32,
@@ -3127,10 +3157,12 @@ export const SOUND_DATA: SoundData = {
           "water-swim-3-de4830e5.m4a",
           "water-swim-4-7c526fff.m4a"
         ],
-        "gain": 0.6,
-        "pitch": 1
+        "gain": 0.32,
+        "pitch": 1.5,
+        "shift": -2,
+        "lowpassHz": 2500
       },
-      "gain": 1.16,
+      "gain": 0.7,
       "reverb": 0.099,
       "variation": {
         "pitch": 2,
@@ -3171,29 +3203,62 @@ export const SOUND_DATA: SoundData = {
             "attack": 0.05,
             "decay": 0.25
           }
+        }
+      ]
+    },
+    "dwell:water_swim_under": {
+      "samples": {
+        "files": [
+          "water-swim-1-334e94c3.m4a",
+          "water-swim-2-f40c6768.m4a",
+          "water-swim-3-de4830e5.m4a",
+          "water-swim-4-7c526fff.m4a"
+        ],
+        "gain": 0.4,
+        "pitch": 1.5,
+        "shift": -12,
+        "lowpassHz": 600
+      },
+      "gain": 0.6,
+      "reverb": 0.15,
+      "variation": {
+        "pitch": 2,
+        "gain": 1.5,
+        "cutoff": 0.2,
+        "time": 0.15
+      },
+      "layers": [
+        {
+          "source": "noise",
+          "color": "brown",
+          "gain": 0.5,
+          "filters": [
+            {
+              "type": "lowpass",
+              "freq": 300
+            }
+          ],
+          "env": {
+            "attack": 0.12,
+            "hold": 0.1,
+            "decay": 0.45
+          }
         },
         {
-          "source": "osc",
-          "wave": "sine",
-          "freq": 420,
-          "to": 1000,
-          "gain": 0.1,
-          "at": 0.08,
+          "source": "noise",
+          "color": "pink",
+          "gain": 0.2,
+          "filters": [
+            {
+              "type": "bandpass",
+              "freq": 180,
+              "q": 1,
+              "to": 360
+            }
+          ],
           "env": {
-            "attack": 0.002,
-            "decay": 0.04
-          },
-          "grains": {
-            "count": [
-              3,
-              6
-            ],
-            "spread": 0.3,
-            "gain": [
-              0.3,
-              1
-            ],
-            "pitch": 7
+            "attack": 0.1,
+            "decay": 0.4
           }
         }
       ]

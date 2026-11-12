@@ -81,13 +81,27 @@ pub struct MoverSample {
 pub const IMPACT_PROBE_M: f64 = 0.06;
 
 /// The blocks a mover's sounds read round a body (`MoverSample`'s `ground`, `body`, `walls`,
-/// `ceiling`).
+/// `ceiling`), and the block at its head line (`head`: how deep another player swims).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Surroundings {
     pub ground: StateId,
     pub body: StateId,
     pub walls: [StateId; 4],
     pub ceiling: StateId,
+    /// At [`head_fraction`] of the body's height (the line drowning counts the head under at).
+    pub head: StateId,
+}
+
+/// The share of the body under water at which its head is under (the vitals' `headFraction`,
+/// shared/vitals/vitals.json: the same line drowning counts from). A swim stroke with the head
+/// under plays the set's `swim_under` (BUGS.md #104).
+pub fn head_fraction() -> f64 {
+    f64::from(dwell_protocol::vitals::VITALS.head_fraction)
+}
+
+/// Whether a swimmer's head is under water (its stroke the deep, soft `swim_under`).
+pub fn head_under(s: &MoverSample) -> bool {
+    s.submerged >= head_fraction()
 }
 
 impl Surroundings {
@@ -121,6 +135,20 @@ impl Surroundings {
                 at(0.0, mid, -side),
             ],
             ceiling: at(0.0, height + IMPACT_PROBE_M, 0.0),
+            head: at(0.0, head_fraction() * height, 0.0),
+        }
+    }
+
+    /// How much of the body is under water, read from these blocks (another player, whose
+    /// controller's share we don't have): all of it with the head line wet, afloat (the
+    /// controller's `float_fraction`, 0.7) with only the body wet, else none.
+    pub fn submerged(&self) -> f64 {
+        if liquid(self.head) {
+            1.0
+        } else if liquid(self.body) {
+            0.7
+        } else {
+            0.0
         }
     }
 }
@@ -496,6 +524,12 @@ impl MoverSounds {
                     d[1].abs() + horizontal,
                     SoundKind::Climb,
                     if s.body != 0 { s.body } else { surface },
+                ),
+                // The head under: the soft, deep stroke; at the surface, the calm splash.
+                Gait::Swim if head_under(s) => (
+                    horizontal + d[1].abs(),
+                    SoundKind::SwimUnder,
+                    self.last_water,
                 ),
                 Gait::Swim => (horizontal + d[1].abs(), SoundKind::Swim, self.last_water),
                 _ => (horizontal, SoundKind::Step, surface),
@@ -1834,6 +1868,116 @@ mod tests {
         let mut out = Vec::new();
         m.update(&s, None, &mut out);
         assert!(kinds(&out).contains(&SoundKind::Exit));
+    }
+
+    dwell_world::both_faces!(
+        /// BUGS.md #104 (owner, 2026-11-12: "swimming underwater sounds like swimming on the water
+        /// surface"): a stroke with the head under plays the set's soft, deep `swim_under`; afloat
+        /// at the surface (the controller's rest share, 0.7) the calm `swim`. Red before: every
+        /// stroke was `Swim` whatever the depth.
+        fn a_swim_stroke_is_chosen_by_how_deep_the_head_is(f: FaceFrame) {
+            let water = require("dwell:water");
+            let strokes = |submerged: f64| {
+                let mut m = MoverSounds::new();
+                let mut s = MoverSample {
+                    feet: f.point([0.0, 10.0, 0.0]),
+                    face: f,
+                    grounded: false,
+                    body: water,
+                    ground: 0,
+                    submerged,
+                    ..standing()
+                };
+                m.update(&s, None, &mut Vec::new());
+                let mut out = Vec::new();
+                s.state = PlayerState::Swimming;
+                s.velocity = f.vector([3.0, 0.0, 0.0]);
+                for _ in 0..600 {
+                    s.feet = std::array::from_fn(|k| s.feet[k] + s.velocity[k] * DT);
+                    m.update(&s, None, &mut out);
+                }
+                let swim = out.iter().filter(|e| e.kind == SoundKind::Swim).count();
+                let under = out
+                    .iter()
+                    .filter(|e| e.kind == SoundKind::SwimUnder)
+                    .count();
+                assert!(out.iter().all(|e| !matches!(
+                    e.kind,
+                    SoundKind::Swim | SoundKind::SwimUnder
+                ) || e.block == water));
+                (swim, under)
+            };
+            let (surface, deep) = (strokes(0.7), strokes(1.0));
+            assert!(
+                surface.0 > 0 && surface.1 == 0,
+                "at the surface: {surface:?}"
+            );
+            assert!(deep.0 == 0 && deep.1 > 0, "head under: {deep:?}");
+            assert_eq!(
+                surface.0, deep.1,
+                "the same strokes, only the sound differs"
+            );
+            // Just under the head line, and just over it.
+            assert!(strokes(head_fraction()).1 > 0);
+            assert!(strokes(head_fraction() - 0.01).1 == 0);
+        }
+    );
+
+    dwell_world::both_faces!(
+        /// Another player's depth is read from the blocks round it (`Surroundings::submerged`):
+        /// water to its chest is afloat (a surface stroke), water over its head line is under.
+        fn another_swimmers_depth_is_read_at_its_head_line(f: FaceFrame) {
+            let water = require("dwell:water");
+            // Water from face-local y 9.0 up to `top`; the body's feet at 10.0, 1.8 m tall.
+            let read = |top: f64| {
+                Surroundings::read(f.point([0.5, 10.0, 0.5]), f, 0.3, 1.8, |c| {
+                    let y = f.y(dwell_world::centre_of_cell(c)[1]);
+                    if (9.0..top).contains(&y) { water } else { 0 }
+                })
+                .submerged()
+            };
+            assert_eq!(read(10.0), 0.0, "dry");
+            assert_eq!(read(11.0), 0.7, "chest deep: afloat");
+            assert_eq!(read(12.5), 1.0, "over the head line");
+        }
+    );
+
+    /// BUGS.md #104 (owner, 2026-11-12: "Swimming in the surface is too loud and high ... like a
+    /// kid learning to swim splashing"): at the swim speed (3 m/s) a stroke sounds once a stroke
+    /// of the data's stride — about once a second, never two within most of a second — not every
+    /// tick. Red before: the 2.4 m stride gave a stroke every 0.8 s.
+    #[test]
+    fn surface_strokes_sound_once_a_stroke_about_once_a_second() {
+        let water = require("dwell:water");
+        let mut m = MoverSounds::new();
+        let mut s = MoverSample {
+            grounded: false,
+            body: water,
+            ground: 0,
+            submerged: 0.7,
+            ..standing()
+        };
+        m.update(&s, None, &mut Vec::new());
+        s.state = PlayerState::Swimming;
+        s.velocity = [3.0, 0.0, 0.0];
+        let mut at = Vec::new();
+        for i in 0..(20.0 / DT) as usize {
+            s.feet[0] += 3.0 * DT;
+            let mut out = Vec::new();
+            m.update(&s, None, &mut out);
+            at.extend(
+                out.iter()
+                    .filter(|e| e.kind == SoundKind::Swim)
+                    .map(|_| i as f64 * DT),
+            );
+        }
+        assert!(
+            (19..=21).contains(&at.len()),
+            "{} strokes in 20 s",
+            at.len()
+        );
+        let closest = at.windows(2).map(|w| w[1] - w[0]).fold(f64::MAX, f64::min);
+        assert!(closest >= 0.95, "strokes {closest} s apart");
     }
 
     #[test]

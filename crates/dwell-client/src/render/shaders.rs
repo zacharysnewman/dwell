@@ -51,6 +51,10 @@ struct Frame {
     // none), y the samples toward each, z the reach, w the decay; per light its NDC point, depth
     // along the view (m) and halo radius (half screen heights), then its glow (sRGB × weight).
     torch_shafts: array<vec4f, 9>,
+    // The clouds' edge round the disc's axis (dwell-look `cloud_disc`; BUGS.md #101): xy the eye's
+    // world x and z (m from the axis), z the edge's radius (the world's plus the margin), w the fade
+    // inside it. The decks and the volume are only over the disc.
+    cloud_disc: vec4f,
     // x eye height (world y), y face (±1), z exposure (× the eye's adaptation's), w the eye's face's
     // fog density (× its time of day's; the other face's is day.other_stars.y)
     eye: vec4f,
@@ -1445,8 +1449,8 @@ struct Decks {
 fn composited_decks(ndc: vec2f) -> Decks {
     let dir = normalize(view_ray(ndc));
     let face = frame.eye.y;
-    let deck = dwell_cloud_deck(dir, face, frame.clouds, frame.cloud_cfg.w);
-    let deck_o = dwell_cloud_deck(dir, -face, frame.clouds_o, frame.cloud_cfg_o.w);
+    let deck = dwell_cloud_deck(dir, face, frame.clouds, frame.cloud_cfg.w, frame.cloud_disc);
+    let deck_o = dwell_cloud_deck(dir, -face, frame.clouds_o, frame.cloud_cfg_o.w, frame.cloud_disc);
     return Decks(deck, max(fwidth(deck.x), fwidth(deck.y)), deck_o, max(fwidth(deck_o.x), fwidth(deck_o.y)));
 }
 
@@ -1593,7 +1597,7 @@ fn clouds_fs(i: SkyOut) -> CloudOut {
     let dir = normalize(ray);
     let p = vec2i(i.clip.xy);
     let rec = cloud_scene_span(p, length(ray));
-    let m = dwell_cloud_march(dir, frame.eye.y, dwell_cloud_march_end(rec), cloud_jitter(p, u32(cloud_prev.params.y)), frame.clouds, frame.cloud_cfg, frame.cloud_inside, cloud_lighting(), cloud_prev.tan.z);
+    let m = dwell_cloud_march(dir, frame.eye.y, dwell_cloud_march_end(rec), cloud_jitter(p, u32(cloud_prev.params.y)), frame.clouds, frame.cloud_cfg, frame.cloud_inside, cloud_lighting(), cloud_prev.tan.z, frame.cloud_disc);
     // The sky behind is worked out only where there is cloud to haze toward it (§8.7's cut).
     var layer = vec4f(0.0);
     if (m.first >= 0.0) {
@@ -2005,8 +2009,8 @@ fn water_exit(dir: vec3f, n: vec3f, ior: f32) -> vec3f {
 // looking up from just above it).
 fn window_sky(out: vec3f, out_px: vec3f, bodies: f32) -> vec3f {
     let face = frame.eye.y;
-    let deck = dwell_cloud_deck(out, face, frame.clouds, frame.cloud_cfg.w);
-    let next = dwell_cloud_deck(out_px, face, frame.clouds, frame.cloud_cfg.w);
+    let deck = dwell_cloud_deck(out, face, frame.clouds, frame.cloud_cfg.w, frame.cloud_disc);
+    let next = dwell_cloud_deck(out_px, face, frame.clouds, frame.cloud_cfg.w, frame.cloud_disc);
     let fw = max(abs(next.x - deck.x), abs(next.y - deck.y));
     return sky_above_with_clouds(out, sky(out), deck, fw, bodies);
 }
@@ -2150,7 +2154,7 @@ fn shafts_cloud(ndc: vec2f) -> f32 {
     if (octaves <= 0) {
         return 0.0;
     }
-    let deck = dwell_cloud_deck(normalize(view_ray(ndc)), frame.eye.y, frame.clouds, frame.cloud_cfg.w);
+    let deck = dwell_cloud_deck(normalize(view_ray(ndc)), frame.eye.y, frame.clouds, frame.cloud_cfg.w, frame.cloud_disc);
     if (deck.w <= 0.0) {
         return max(-deck.w, 0.0) * frame.cloud_cfg.x;
     }
@@ -2900,7 +2904,7 @@ fn reflected_env(r: vec3f, rel: vec3f, fw: f32, clouds: f32) -> vec3f {
         // point under it.
         let height = frame.cloud_cfg.w - face_rise(face, rel);
         let offsets = vec4f(frame.clouds.xy + rel.xz / CLOUD_SCALE, frame.clouds.zw);
-        let deck = dwell_cloud_deck(r, face, offsets, height);
+        let deck = dwell_cloud_deck(r, face, offsets, height, vec4f(frame.cloud_disc.xy + rel.xz, frame.cloud_disc.zw));
         let cfg = vec4f(frame.cloud_cfg.x, octaves, select(0.0, frame.cloud_cfg.z, (reflect_bits() & 1u) != 0u), height);
         c = mix(under, dwell_clouds(under, clear, r, face, deck, fw, offsets, cfg, cloud_lighting()), clouds);
     }
@@ -2917,7 +2921,7 @@ fn reflected_deck_fw(rel: vec3f) -> f32 {
     let d = normalize(rel);
     let r = vec3f(d.x, abs(d.y) * up, d.z);
     let height = frame.cloud_cfg.w - face_rise(frame.eye.y, rel);
-    let deck = dwell_cloud_deck(r, frame.eye.y, vec4f(frame.clouds.xy + rel.xz / CLOUD_SCALE, frame.clouds.zw), height);
+    let deck = dwell_cloud_deck(r, frame.eye.y, vec4f(frame.clouds.xy + rel.xz / CLOUD_SCALE, frame.clouds.zw), height, vec4f(frame.cloud_disc.xy + rel.xz, frame.cloud_disc.zw));
     return max(fwidth(deck.x), fwidth(deck.y));
 }
 

@@ -54,10 +54,11 @@ pub enum SoundKind {
     StickSnap = 47,
     SteamHiss = 48,
     Sizzle = 49,
+    SwimUnder = 50,
 }
 
 impl SoundKind {
-    pub const ALL: [SoundKind; 50] = [
+    pub const ALL: [SoundKind; 51] = [
         SoundKind::Step,
         SoundKind::Climb,
         SoundKind::Land,
@@ -108,6 +109,7 @@ impl SoundKind {
         SoundKind::StickSnap,
         SoundKind::SteamHiss,
         SoundKind::Sizzle,
+        SoundKind::SwimUnder,
     ];
 
     /// The event's name in the data.
@@ -163,6 +165,7 @@ impl SoundKind {
             SoundKind::StickSnap => "stick_snap",
             SoundKind::SteamHiss => "steam_hiss",
             SoundKind::Sizzle => "sizzle",
+            SoundKind::SwimUnder => "swim_under",
         }
     }
 
@@ -219,6 +222,7 @@ impl SoundKind {
             SoundKind::StickSnap => None,
             SoundKind::SteamHiss => None,
             SoundKind::Sizzle => None,
+            SoundKind::SwimUnder => None,
         }
     }
 }
@@ -242,7 +246,7 @@ impl Gait {
             Gait::Run => 2.8,
             Gait::Crouch => 1.1,
             Gait::Climb => 0.75,
-            Gait::Swim => 2.4,
+            Gait::Swim => 3.0,
         }
     }
 }

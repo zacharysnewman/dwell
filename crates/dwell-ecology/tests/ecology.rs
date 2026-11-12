@@ -899,3 +899,133 @@ fn a_fed_pack_and_one_without_roam_dont_head_for_the_herd() {
     assert_eq!(eco.groups[1].activity, Activity::Roaming);
     assert!(eco.groups[1].x > before + 300.0, "toward the hares");
 }
+
+dwell_world::both_faces!(
+    /// WORK_QUEUE item 46 (owner: "Even more animals. What's a reasonable amount for a real world
+    /// this size?"): a seed-1 face starts at the data's densities (deer a km² of grazing land, wolves
+    /// a km² of land), stays balanced over two simulated years (no collapse, no explosion), and its
+    /// step and record stay small.
+    fn a_seed_1_face_at_real_densities_stays_balanced_and_cheap(f: dwell_world::FaceFrame) {
+        let map =
+            dwell_worldgen::worldmap::for_seed(dwell_worldgen::bifacial::face_seed(1, f.face));
+        let isl = Island::from_world_map(&map, &DATA);
+        let cell_km2 = isl.cell * isl.cell / 1e6;
+        let pasture = isl.grazing_max.iter().filter(|&&g| g > 0.0).count() as f64 * cell_km2;
+        let land = isl.cells() as f64 * cell_km2;
+        let mut eco = Ecosystem::new(&isl, &DATA, 1);
+        let (d, w) = (&DATA.species[deer()], &DATA.species[wolf()]);
+        assert_eq!(eco.group_count(deer()), d.start_groups_on(pasture));
+        assert_eq!(eco.group_count(wolf()), w.start_groups_on(land));
+        let start = (eco.population(deer()), eco.population(wolf()));
+        println!(
+            "face {:?}: {land:.0} km² land, {pasture:.0} km² grazing; start {} herds ({:.0} deer), {} packs ({:.0} wolves); capacity {:.0} deer, {:.0} wolves",
+            f.face,
+            eco.group_count(deer()),
+            start.0,
+            eco.group_count(wolf()),
+            start.1,
+            isl.carrying_capacity(&DATA, deer()),
+            isl.carrying_capacity(&DATA, wolf()),
+        );
+        let mut worst = 0.0f64;
+        for day in 0..730 {
+            let t = std::time::Instant::now();
+            step(&isl, &DATA, &mut eco, 1.0);
+            worst = worst.max(t.elapsed().as_secs_f64() * 1e3);
+            if day % 73 == 72 {
+                println!(
+                    "  day {}: {} herds {:.0} deer, {} packs {:.0} wolves",
+                    day + 1,
+                    eco.group_count(deer()),
+                    eco.population(deer()),
+                    eco.group_count(wolf()),
+                    eco.population(wolf())
+                );
+            }
+            assert!(
+                eco.population(deer()) > 0.5 * start.0,
+                "deer collapsed on day {day}"
+            );
+            assert!(eco.population(wolf()) > 0.0, "wolves died out on day {day}");
+            assert_groups_in_bounds(&eco, &DATA);
+        }
+        let t = std::time::Instant::now();
+        step(&isl, &DATA, &mut eco, 5.0);
+        let big = t.elapsed().as_secs_f64() * 1e3;
+        let bytes = eco.to_bytes(&isl, &DATA).len();
+        println!("  worst day step {worst:.2} ms, a 5-day step {big:.2} ms, record {bytes} bytes");
+        // No explosion: a herd's cap times the most herds bounds the deer; the wolves stay at real
+        // densities (WORK_QUEUE item 46: ~1 per 60 km², 4–8 packs).
+        assert!(eco.population(deer()) <= d.group.cap * d.group.max_groups as f64);
+        assert!(eco.group_count(wolf()) <= w.group.max_groups);
+        assert!(
+            bytes <= 200 << 10,
+            "the record after two years: {bytes} bytes"
+        );
+    }
+);
+
+#[test]
+fn a_start_is_the_ranges_area_times_its_density() {
+    // both-faces: no face (a sampled island). WORK_QUEUE item 46: the start counts are a density
+    // over the species' range (a grazer's grazing land, a hunter's land), not fixed counts.
+    let big = |n: usize, data: &Data| {
+        let x0 = -(n as f64 - 1.0) * data.island.cell_m / 2.0;
+        Island::from_ground(data, n, x0, |x, _| {
+            if x > 0.0 {
+                // A crag-free half and a half no ground fits (land without forage).
+                Ground::Land {
+                    height_m: 20.0,
+                    slope_deg: 2.0,
+                }
+            } else {
+                Ground::Land {
+                    height_m: 1.0e6,
+                    slope_deg: 2.0,
+                }
+            }
+        })
+    };
+    let isl = big(100, &DATA);
+    let km2 = |cells: usize| cells as f64 * isl.cell * isl.cell / 1e6;
+    let pasture = km2(isl.grazing_max.iter().filter(|&&g| g > 0.0).count());
+    let land = km2(isl.cells());
+    assert!(pasture < land, "half the land grazes");
+    let eco = Ecosystem::new(&isl, &DATA, 5);
+    let (d, w) = (&DATA.species[deer()], &DATA.species[wolf()]);
+    let want = |sp: &dwell_ecology::SpeciesDef, km2: f64| {
+        ((km2 * sp.start_per_km2 / sp.start_size).round() as usize)
+            .clamp(sp.start_min_groups, sp.group.max_groups)
+    };
+    assert_eq!(eco.group_count(deer()), want(d, pasture));
+    assert_eq!(eco.group_count(wolf()), want(w, land));
+    for g in eco.groups.iter().filter(|g| g.species == deer()) {
+        let c = isl.cell_at(g.x, g.z).expect("on the land");
+        assert!(isl.grazing_max[c] > 0.0, "a herd starts on grazing land");
+    }
+    // A fixture density by data alone: twice the deer, twice the herds; and a fixed count.
+    static SPECIES: std::sync::LazyLock<Vec<dwell_ecology::SpeciesDef>> =
+        std::sync::LazyLock::new(|| {
+            let mut s = DATA.species.to_vec();
+            s[0].start_per_km2 *= 2.0;
+            s[0].group.max_groups = 100_000;
+            s[1].start_per_km2 = 0.0;
+            s[1].start_groups = 3;
+            s
+        });
+    let data = Data {
+        species: &SPECIES,
+        ..DATA
+    };
+    let eco = Ecosystem::new(&isl, &data, 5);
+    assert_eq!(
+        eco.group_count(deer()),
+        (pasture * 2.0 * d.start_per_km2 / d.start_size).round() as usize
+    );
+    assert_eq!(eco.group_count(wolf()), 3, "a fixed count");
+    // A small island still has the fewest the data asks for.
+    let tiny = big(4, &DATA);
+    let eco = Ecosystem::new(&tiny, &DATA, 5);
+    assert_eq!(eco.group_count(deer()), d.start_min_groups);
+    assert_eq!(eco.group_count(wolf()), w.start_min_groups);
+}

@@ -43,6 +43,14 @@ test('a fixture species is added by data alone', () => {
   assert.equal(validateEcology(d).species[2].diet.graze.perHeadPerDay, 0.2);
 });
 
+test('a start is a fixed count or a density per km² of the range (WORK_QUEUE item 46)', () => {
+  const d = data();
+  const rs = ecologyRust(validateEcology(d), 'x');
+  assert.match(rs, /start_groups: 0,\n\s+start_per_km2: 3\.0,\n\s+start_min_groups: 2,\n\s+start_size: 10\.0,/);
+  d.species[0].start = { groups: 5, size: 6 };
+  assert.match(ecologyRust(validateEcology(d), 'x'), /start_groups: 5,\n\s+start_per_km2: 0\.0,\n\s+start_min_groups: 1,/);
+});
+
 test('bad entries fail with a message naming them', () => {
   const bad = (edit, re) => {
     const d = data();
@@ -57,7 +65,11 @@ test('bad entries fail with a message naming them', () => {
   bad((d) => (d.grazing.grounds[0].refuge = 2), /grazing\.grounds\.meadow\.refuge must be a number in \[0, 1\]/);
   bad((d) => delete d.species[1].diet.prey.halfSaturationHead, /species\.dwell:wolf\.diet\.prey\.halfSaturationHead must be a number/);
   bad((d) => (d.species[0].start.size = 40), /species\.dwell:deer\.start\.size/);
-  bad((d) => (d.species[0].start.groups = 99), /species\.dwell:deer\.start\.groups/);
+  bad((d) => (d.species[0].start = { groups: 9999, size: 6 }), /species\.dwell:deer\.start\.groups/);
+  bad((d) => (d.species[0].start.groups = 4), /species\.dwell:deer\.start must give exactly one of groups and perKm2/);
+  bad((d) => (d.species[0].start.perKm2 = 0), /species\.dwell:deer\.start\.perKm2/);
+  bad((d) => (d.species[0].start.minGroups = 1.5), /species\.dwell:deer\.start\.minGroups/);
+  bad((d) => (d.species[0].far.minPx = -1), /species\.dwell:deer\.far\.minPx/);
   bad((d) => (d.species[0].flee.from = ['dwell:bear']), /species\.dwell:deer\.flee\.from\[0\]: "dwell:bear" is not a species/);
   bad((d) => (d.species[1].diet.prey.species = ['dwell:wolf']), /a species cannot hunt itself/);
   bad((d) => (d.species[0].diet = { graze: { perHeadPerDay: 1 }, prey: {} }), /diet must name exactly one/);
@@ -86,7 +98,7 @@ test('bad entries fail with a message naming them', () => {
 test("a species' far look (how clients draw a far herd) is data, validated, and reaches the client", () => {
   const d = data();
   const rs = farLooksRust(validateEcology(d), 'x');
-  assert.match(rs, /FarLook \{ species: "dwell:deer", color: \[154, 107, 69\], size_m: 1\.3, fade_start_m: 450\.0, fade_end_m: 700\.0 \}/);
+  assert.match(rs, /FarLook \{ species: "dwell:deer", color: \[154, 107, 69\], size_m: 1\.3, fade_start_m: 1800\.0, fade_end_m: 2500\.0, min_px: 3\.0 \}/);
   // A fixture species' look by data alone.
   d.species.push({ ...d.species[0], name: 'test:elk', far: { color: '#102030', sizeM: 2, fadeStartM: 10, fadeEndM: 20 } });
   delete d.species[2].flee;

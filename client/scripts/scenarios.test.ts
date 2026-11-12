@@ -164,6 +164,16 @@ describe('scenarios', () => {
     ).toThrow(/s/);
   });
 
+  it('finds the nearest herd (the finder, WORK_QUEUE item 46)', () => {
+    const [s] = parseScenarios(
+      file([{ name: 'h', steps: [{ do: 'herd' }, { do: 'herd', kind: 'wolf', back: 60 }] }]),
+    );
+    expect(s.steps).toEqual([{ do: 'herd' }, { do: 'herd', kind: 'wolf', back: 60 }]);
+    expect(() =>
+      parseScenarios(file([{ name: 'h', steps: [{ do: 'herd', kind: 'bear' }] }])),
+    ).toThrow(/kind/);
+  });
+
   it('zooms the spyglass to a step, or out (docs/SPYGLASS.md)', () => {
     const [s] = parseScenarios(
       file([

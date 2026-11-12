@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use dwell_blocks::{AIR, StateId, require};
 use dwell_world::ramps::{RampFacing, gentle_cell, steep_cells};
 use dwell_world::{CHUNK_SIZE, ChunkCoord, FLAT_TOP_Y, FaceFrame, both_faces};
-use dwell_worldgen::grass::{Cells, GRASS, GrassData, Rule};
+use dwell_worldgen::grass::{Cells, GRASS, GrassData, GrassStage, Rule, generated_tuft};
 use dwell_worldgen::noise::{hash2, unit};
 
 /// A face-local chunk on the flat world's top, its floor at row `FLOOR`.
@@ -73,12 +73,18 @@ fn climate(share: f64) -> impl Fn(i32, i32) -> (f32, f64) {
     move |x, z| (unit(hash2(0x5EED, x, z)), share)
 }
 
-/// The share of the floor's cells holding `block`.
+/// Whether `s` is tall grass at any stage.
+fn is_tuft(s: StateId) -> bool {
+    s != AIR && dwell_blocks::block_of(s).name == "dwell:tall_grass"
+}
+
+/// The share of the floor's cells holding `block` (tall grass: at any stage).
 fn density(w: &World, f: FaceFrame, block: StateId) -> f64 {
     let mut n = 0;
     for x in 0..CHUNK_SIZE {
         for z in 0..CHUNK_SIZE {
-            n += usize::from(w.at(f, [x, FLOOR + 1, z]) == block);
+            let s = w.at(f, [x, FLOOR + 1, z]);
+            n += usize::from(s == block || is_tuft(block) && is_tuft(s));
         }
     }
     n as f64 / f64::from(CHUNK_SIZE * CHUNK_SIZE)
@@ -118,7 +124,7 @@ both_faces!(
         // Never past the cap: every tuft but the generated one stands on a fertile column.
         for x in 0..CHUNK_SIZE {
             for z in 0..CHUNK_SIZE {
-                if w.at(f, [x, FLOOR + 1, z]) == tall && (x, z) != (16, 16) {
+                if is_tuft(w.at(f, [x, FLOOR + 1, z])) && (x, z) != (16, 16) {
                     assert!(rule.fertile(env(x, z)), "({x}, {z}) is not fertile");
                 }
             }
@@ -231,7 +237,7 @@ both_faces!(
         }
         assert_eq!(density(&w, f, tall), 0.0);
         grow_daily(&rule, &mut w, f, &env, 20);
-        let back = stand.iter().filter(|&&p| w.at(f, p) == tall).count();
+        let back = stand.iter().filter(|&&p| is_tuft(w.at(f, p))).count();
         assert!(
             back as f64 > 0.9 * stand.len() as f64,
             "{back} of {} eaten tufts regrew in 20 days",
@@ -261,6 +267,12 @@ both_faces!(
         }
         loaded.apply(&writes);
         assert_eq!(density(&loaded, f, tall), density(&stepped, f, tall));
+        // The stages too: every cell the same, grown in one call or day by day.
+        let mut a: Vec<_> = loaded.now.iter().filter(|(_, s)| **s != AIR).collect();
+        let mut b: Vec<_> = stepped.now.iter().filter(|(_, s)| **s != AIR).collect();
+        a.sort();
+        b.sort();
+        assert_eq!(a, b);
         assert!(
             density(&loaded, f, tall) < rule.cap(1.0),
             "bounded: not a filled meadow"
@@ -327,7 +339,7 @@ both_faces!(
             w.edit(f, p, AIR);
         }
         grow_daily(&rule, &mut w, f, &env, 20);
-        let back = stand.iter().filter(|&&p| w.at(f, p) == tall).count();
+        let back = stand.iter().filter(|&&p| is_tuft(w.at(f, p))).count();
         assert!(
             back as f64 > 0.9 * stand.len() as f64,
             "{back} of {} cut ramp tufts regrew in 20 days",
@@ -361,16 +373,15 @@ both_faces!(
         for z in 0..CHUNK_SIZE {
             for x in half.clone() {
                 fertile += usize::from(rule.fertile(env(x, z)));
-                if w.at(f, [x, FLOOR + 2, z]) == tall {
+                if is_tuft(w.at(f, [x, FLOOR + 2, z])) {
                     on_ramps += 1;
                     assert!(rule.fertile(env(x, z)), "({x}, {z}) is not fertile");
                 }
             }
             for x in metre.clone() {
                 for y in FLOOR + 1..FLOOR + 5 {
-                    assert_ne!(
-                        w.at(f, [x, y, z]),
-                        tall,
+                    assert!(
+                        !is_tuft(w.at(f, [x, y, z])),
                         "tall grass on a 1 m ramp at {x}, {y}, {z}"
                     );
                 }
@@ -402,9 +413,8 @@ both_faces!(
         grow_daily(&rule, &mut w, f, &env, 100);
         for x in 13..20 {
             for z in 13..20 {
-                assert_ne!(
-                    w.at(f, [x, FLOOR + 2, z]),
-                    tall,
+                assert!(
+                    !is_tuft(w.at(f, [x, FLOOR + 2, z])),
                     "a tuft on a steep piece at {x}, {z}"
                 );
             }
@@ -435,9 +445,8 @@ both_faces!(
         grow_daily(&rule, &mut w, f, &env, 300);
         for x in 18..26 {
             for z in 0..CHUNK_SIZE {
-                assert_ne!(
-                    w.at(f, [x, FLOOR + 2, z]),
-                    tall,
+                assert!(
+                    !is_tuft(w.at(f, [x, FLOOR + 2, z])),
                     "a tuft on a ramp at {x}, {z}"
                 );
             }
@@ -453,5 +462,249 @@ fn the_builds_rule_resolves_by_name() {
         dwell_worldgen::decorations::DECORATIONS
             .iter()
             .any(|d| d.name == GRASS.decoration)
+    );
+}
+
+// ---- Growing in height (docs/ECOLOGY.md §10, owner 2026-11-12) ----
+
+/// A chunk-wide floor of grass with a generated tuft of state `tuft` on every column.
+fn lawn(f: FaceFrame, tuft: StateId) -> World {
+    let mut w = World::default();
+    for x in 0..CHUNK_SIZE {
+        for z in 0..CHUNK_SIZE {
+            w.natural(f, [x, FLOOR, z], require("dwell:grass"));
+            w.natural(f, [x, FLOOR + 1, z], tuft);
+        }
+    }
+    w
+}
+
+/// Each floor tuft's stage (None: no tuft).
+fn stages(rule: &Rule, w: &World, f: FaceFrame) -> Vec<usize> {
+    let mut out = Vec::new();
+    for x in 0..CHUNK_SIZE {
+        for z in 0..CHUNK_SIZE {
+            out.extend(rule.stage_of(w.at(f, [x, FLOOR + 1, z])));
+        }
+    }
+    out
+}
+
+fn mean(v: &[usize]) -> f64 {
+    v.iter().sum::<usize>() as f64 / v.len().max(1) as f64
+}
+
+#[test]
+fn the_default_stage_is_full_height() {
+    // face-a-only: block states and the data, no world cells.
+    let rule = Rule::build(1);
+    let full = GRASS.stages.len() - 1;
+    assert!(GRASS.stages.len() >= 4, "at least 4 stages");
+    assert_eq!(
+        rule.block(),
+        rule.stage_state(full),
+        "the default is the last stage"
+    );
+    assert_eq!(
+        dwell_blocks::parse_state("dwell:tall_grass").unwrap(),
+        rule.stage_state(full),
+        "tall grass saved before stages reads as full height"
+    );
+    assert_eq!(rule.stage_of(rule.block()), Some(full));
+    assert_eq!(rule.stage_of(require("dwell:grass")), None);
+    // A sprout is shorter than every later stage (the block's cross heights).
+    let h = |i: usize| {
+        dwell_blocks::info(rule.stage_state(i))
+            .cross
+            .unwrap()
+            .height
+    };
+    for i in 1..=full {
+        assert!(h(i) > h(i - 1), "stage {i} is taller than stage {}", i - 1);
+    }
+    assert_eq!(h(full), 0.85, "full height as before");
+    // A week or more of game days from a sprout to full height.
+    let days: f64 = GRASS.stages.iter().map(|s| s.days).sum();
+    assert!(days >= 7.0, "{days} days to full height");
+}
+
+both_faces!(
+    fn sprouts_grow_a_stage_at_a_time_to_full_height_over_a_week_or_more(f: FaceFrame) {
+        let rule = Rule::build(7);
+        let full = GRASS.stages.len() - 1;
+        let mut w = lawn(f, rule.sprout());
+        let env = climate(1.0);
+        let mut last = mean(&stages(&rule, &w, f));
+        assert_eq!(last, 0.0);
+        let mut by_day = Vec::new();
+        for day in 0..40 {
+            let writes = rule.grow_chunk(f, chunk(f), day, 1, &env, &mut w);
+            // A tuft grows at most one stage a day.
+            for &(c, s) in &writes {
+                let was = rule.stage_of(f.state(*w.now.get(&c).unwrap())).unwrap();
+                assert_eq!(rule.stage_of(f.state(s)), Some(was + 1), "one stage a day");
+            }
+            w.apply(&writes);
+            let now = mean(&stages(&rule, &w, f));
+            assert!(now >= last, "stages never fall: {last} → {now}");
+            last = now;
+            by_day.push(stages(&rule, &w, f));
+        }
+        let full_by = |d: usize| by_day[d].iter().filter(|&&s| s == full).count() as f64 / 1024.0;
+        // Memoryless (a stage is all a tuft keeps): a few race, but most take a week or more.
+        assert!(full_by(3) < 0.1, "few full in 4 days: {}", full_by(3));
+        assert!(
+            full_by(6) < 0.5,
+            "most not yet full in a week: {}",
+            full_by(6)
+        );
+        assert!(full_by(39) > 0.99, "all full in 40 days: {}", full_by(39));
+    }
+);
+
+both_faces!(
+    fn the_climate_caps_the_top_stage(f: FaceFrame) {
+        let rule = Rule::build(7);
+        let full = GRASS.stages.len() - 1;
+        assert_eq!(rule.top_stage(1.0), full, "a lush meadow grows full");
+        assert_eq!(rule.top_stage(0.0), 0, "no share: sprouts only");
+        // Each stage's share, by the data: a column just short of it stays a stage lower.
+        for (i, st) in GRASS.stages.iter().enumerate().skip(1) {
+            assert_eq!(rule.top_stage(st.share), i);
+            assert_eq!(rule.top_stage(st.share - 1e-6), i - 1);
+        }
+        for share in [0.1, 0.3, 0.5] {
+            let top = rule.top_stage(share);
+            assert!(top < full, "a drier climate is shorter: {share} → {top}");
+            let mut w = lawn(f, rule.sprout());
+            grow_daily(&rule, &mut w, f, &climate(share), 120);
+            let st = stages(&rule, &w, f);
+            assert!(
+                st.iter().all(|&s| s <= top),
+                "share {share}: none past {top}"
+            );
+            assert!(
+                st.iter().filter(|&&s| s == top).count() > 1000,
+                "share {share}: they reach {top}"
+            );
+        }
+        // A tuft past its climate's top (placed full by hand) is never cut back.
+        let mut w = lawn(f, rule.block());
+        grow_daily(&rule, &mut w, f, &climate(0.1), 30);
+        assert!(stages(&rule, &w, f).iter().all(|&s| s == full));
+    }
+);
+
+both_faces!(
+    fn new_and_regrown_tufts_start_as_a_sprout(f: FaceFrame) {
+        let rule = Rule::build(7);
+        let tall = rule.block();
+        let env = climate(1.0);
+        // One generated tuft, eaten; its neighbours bare: day by day, what appears is a sprout.
+        let mut w = meadow(f, require("dwell:grass"), tall);
+        w.edit(f, [16, FLOOR + 1, 16], rule.eaten(require("dwell:grass")));
+        assert_eq!(
+            w.at(f, [16, FLOOR + 1, 16]),
+            rule.sprout(),
+            "eaten: a sprout"
+        );
+        for day in 0..30 {
+            let writes = rule.grow_chunk(f, chunk(f), day, 1, &env, &mut w);
+            for &(c, s) in &writes {
+                if *w.now.get(&c).unwrap_or(&AIR) == AIR {
+                    assert_eq!(f.state(s), rule.sprout(), "a new tuft is a sprout");
+                }
+            }
+            w.apply(&writes);
+        }
+        assert_eq!(
+            w.at(f, [16, FLOOR + 1, 16]),
+            tall,
+            "the eaten tuft grew back to full height"
+        );
+        // Eaten off anything but the rule's ground, it is gone.
+        assert_eq!(rule.eaten(require("dwell:stone")), AIR);
+    }
+);
+
+both_faces!(
+    fn stages_by_data_alone(f: FaceFrame) {
+        // A fixture rule whose tufts race up (a day a stage) but only where the share is high.
+        static STAGES: [GrassStage; 4] = [
+            GrassStage {
+                value: "0",
+                days: 1.0,
+                share: 0.0,
+            },
+            GrassStage {
+                value: "1",
+                days: 1.0,
+                share: 0.0,
+            },
+            GrassStage {
+                value: "2",
+                days: 1.0,
+                share: 0.0,
+            },
+            GrassStage {
+                value: "3",
+                days: 0.0,
+                share: 0.9,
+            },
+        ];
+        let rule = Rule::new(
+            GrassData {
+                stages: &STAGES,
+                ..GRASS
+            },
+            3,
+        );
+        let mut w = lawn(f, rule.sprout());
+        grow_daily(&rule, &mut w, f, &climate(1.0), 3);
+        assert!(
+            stages(&rule, &w, f).iter().all(|&s| s == 3),
+            "full in 3 days"
+        );
+        let mut dry = lawn(f, rule.sprout());
+        grow_daily(&rule, &mut dry, f, &climate(0.5), 10);
+        assert!(
+            stages(&rule, &dry, f).iter().all(|&s| s == 2),
+            "capped at 2"
+        );
+    }
+);
+
+#[test]
+fn generation_places_tall_grass_at_its_climates_top_stage() {
+    // face-a-only: the state chosen for a share (the terrain places it face-local).
+    let rule = Rule::build(1);
+    let tall = rule.block();
+    assert_eq!(
+        generated_tuft(GRASS.decoration, tall, 1.0),
+        tall,
+        "a lush meadow: full as before"
+    );
+    for share in [0.0, 0.1, 0.3, 0.5, 0.7, 1.0] {
+        assert_eq!(
+            generated_tuft(GRASS.decoration, tall, share),
+            rule.stage_state(rule.top_stage(share))
+        );
+    }
+    assert!(
+        rule.stage_of(generated_tuft(GRASS.decoration, tall, 0.1))
+            .unwrap()
+            < rule.stage_of(tall).unwrap(),
+        "dry ground grows short grass"
+    );
+    let stone = require("dwell:stone");
+    assert_eq!(
+        generated_tuft(GRASS.decoration, stone, 0.1),
+        stone,
+        "not a tuft: as it is"
+    );
+    assert_eq!(
+        generated_tuft("other", tall, 0.1),
+        tall,
+        "another decoration: as it is"
     );
 }
