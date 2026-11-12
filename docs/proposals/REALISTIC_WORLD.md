@@ -478,7 +478,10 @@ Open: §8.10's orbit questions. q2 moved to §8 (orbits by seed). Answered: q1 (
    `tests/realistic_biomes.rs` `the_former_fallback_climates_take_the_new_presets` on both faces (seed 42 and
    each face's first subtropical seed): where the default was chosen without the two (≥ 80 % of the cells at
    −0.5…12.5 °C under 150 mm, or ≥ 18 °C over 2500 mm) they now take ≥ 95 %, and the default's land share
-   falls below a quarter of what it was. Prototype content.
+   falls below a quarter of what it was. A fix on the way: a column with no biome (a rock province's palette, or
+   a world of one biome) tried every decoration, so `dry_grass` alone changed the starter's pin (red); such a
+   column now takes only the decorations some biome of the world lists (`terrain.rs`), and the starter's pin and
+   the default's goldens are unchanged again (green). Prototype content.
 
 ## 8. Orbits by seed: the sky sets the climate band
 

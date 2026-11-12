@@ -339,7 +339,8 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    new tall broadleaf species, `shared/trees/tall_broadleaf.json`, with oaks and palms close together in
    `rainforest_groves`, thick undergrowth, dark water) by their °C and rain envelopes, in the Realistic world
    only; the default's share of its land fell from 21–47 % to under 3 % (REALISTIC_WORLD.md §7 q9); the
-   default and starter worlds unchanged. q5 (2026-11-11): no new rock blocks
+   default and starter worlds unchanged (a decoration no biome of a world lists now stands nowhere in it:
+   before, a rock province's columns tried every decoration). q5 (2026-11-11): no new rock blocks
    for now; R5 uses today's blocks (stone, basalt, sandstone, red sandstone, sand, dirt) named in data, so
    new ones can replace them later.
 

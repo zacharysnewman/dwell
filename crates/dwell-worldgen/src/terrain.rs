@@ -3942,7 +3942,16 @@ impl TerrainGenerator {
         self.decorations
             .iter()
             .enumerate()
-            .filter(|(i, _)| listed.is_none_or(|d| d.contains(&DECORATIONS[*i].name)))
+            // A column with no biome (a rock province's palette, or a world of one biome) takes the
+            // decorations some biome of the world lists: one no biome lists stands nowhere (as a
+            // placement no biome lists, `refresh_trees`), so adding one changes no other world.
+            .filter(|(i, _)| {
+                let name = &DECORATIONS[*i].name;
+                match listed {
+                    Some(d) => d.contains(name),
+                    None => self.biomes.list.iter().any(|b| b.decorations.contains(name)),
+                }
+            })
             .filter(|(_, p)| !ramp || p.on_ramps())
             // The rules' heights are metres above sea level.
             .find(|(i, p)| {
