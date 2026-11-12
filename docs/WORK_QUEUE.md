@@ -945,6 +945,8 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    less, no text of any kind, no music, clouds off unless the shot is about clouds, footage deleted after sending.
    Waiting on the owner to pick which come first. The list (suggested first: 1, 10, 3, 6, 11, 2 — the most striking
    that work today; 14 and 15 after item 39 and the swords/NPC work land; 5 after the moon trip is playable):
+   Owner, 2026-11-12: **"Preferably some of each recording should be gameplay, player perspective."** — every
+   video mixes cinematic shots with first-person gameplay (the arms and held item, actually playing).
    1. Volcano and lava — the summit lava lake at night with bloom, crust plates and orange seams, steam where lava
       meets water, a lava river cooling from bright to dark.
    2. Rainier-style peak — a drone rise up the cone past snow lines, cleavers and the glacier cap, ranges fading
