@@ -2,6 +2,14 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.54.115",
+      "changes": [
+        "The sword is now one sword from the tools pack, gripped by its handle in a closed fist.",
+        "Villagers are drawn in their own colours: shirts, trousers, skin and hair vary from one to the next.",
+        "Villagers carry their sword in their hand."
+      ]
+    },
+    {
       "version": "0.54.114",
       "changes": [
         "Deer notice you and run off as a herd: sneak (crouch) or stand still to get closer, sprint and they spot you from farther away",
