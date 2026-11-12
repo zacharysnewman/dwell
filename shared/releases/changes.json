@@ -2,6 +2,14 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.54.121",
+      "changes": [
+        "The sword's level block now lies across the view.",
+        "Villagers swinging their swords are drawn mid-swing.",
+        "Deer graze with their heads down and look up with their heads raised (they had it the wrong way round)."
+      ]
+    },
+    {
       "version": "0.54.120",
       "changes": [
         "The sword shows its own hint (stance and block), not the axe's.",
