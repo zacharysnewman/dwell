@@ -109,6 +109,34 @@ describe("a world's card", () => {
   });
 });
 
+describe("New world → More options' Sky (REALISTIC_WORLD.md §8)", () => {
+  it('carries the Sky preset for a world that rolls an orbit, and nothing for the others', () => {
+    const base = { name: 'Real', seed: '7', type: 'terrain', mode: '', spawn: '' };
+    expect(newWorldRoute({ ...base, worldgen: 'test:realistic', sky: 'extreme' })).toEqual({
+      new: '1',
+      name: 'Real',
+      seed: '7',
+      type: 'terrain',
+      worldgen: 'test:realistic',
+      sky: 'extreme',
+    });
+    // The starter and the default terrain keep today's sky: no sky in their route.
+    expect(newWorldRoute({ ...base, worldgen: 'test:starter', sky: 'extreme' })).toEqual({
+      new: '1',
+      name: 'Real',
+      seed: '7',
+      type: 'terrain',
+      worldgen: 'test:starter',
+    });
+    expect(newWorldRoute({ ...base, sky: 'extreme' })).toEqual({
+      new: '1',
+      name: 'Real',
+      seed: '7',
+      type: 'terrain',
+    });
+  });
+});
+
 describe("New world → More options' World size (BIG_MAP.md M2b)", () => {
   it("offers every named size on a desktop page, today's first, and none on a touch page", () => {
     const desktop = worldSizeChoices(false);

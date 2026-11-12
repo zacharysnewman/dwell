@@ -54,6 +54,12 @@ export interface WorldMeta {
    * world starts. Absent: today's (1×).
    */
   radiusScale?: number;
+  /**
+   * A Realistic world's Sky preset (docs/proposals/REALISTIC_WORLD.md §8: the New world form's
+   * Sky, `shared/look/orbits.json`): its orbit is rolled from its seed when its file is created
+   * (the world file keeps the orbit after that). Absent: today's sky.
+   */
+  sky?: string;
 }
 
 /** The part of `Storage` the index uses. */
@@ -257,6 +263,7 @@ export class WorldIndex {
       ...(world.mode ? { mode: world.mode } : {}),
       ...(world.worldgen ? { worldgen: world.worldgen } : {}),
       ...(world.radiusScale ? { radiusScale: world.radiusScale } : {}),
+      ...(world.sky ? { sky: world.sky } : {}),
     };
     this.put(copy);
     return copy;
@@ -274,6 +281,8 @@ export class WorldIndex {
       worldgen?: string;
       /** A bigger terrain world's radius scale (`WorldMeta.radiusScale`); 1 or absent: today's. */
       radiusScale?: number;
+      /** A Realistic world's Sky preset (`WorldMeta.sky`); absent: today's sky. */
+      sky?: string;
     },
     now: number,
     random: () => number = Math.random,
@@ -294,6 +303,7 @@ export class WorldIndex {
       ...(options.mode ? { mode: options.mode } : {}),
       ...(options.worldgen ? { worldgen: options.worldgen } : {}),
       ...(options.type === 'terrain' ? sizeOptions(options.radiusScale) : {}),
+      ...(options.sky ? { sky: options.sky } : {}),
     };
     this.put(world);
     return world;

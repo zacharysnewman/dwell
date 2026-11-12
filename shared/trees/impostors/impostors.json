@@ -1,0 +1,9 @@
+{
+  "$comment": "Far trees as multi-angle impostors (docs/proposals/TREE_IMPOSTORS.md, WORK_QUEUE item 31; owner, 2026-11-12: billboards from a few angles, from above too, \"like old Mario kart did\"). What the bake (dwell-worldgen `impostor`) makes of a species tree grown by `species::grow(species, seed, stage)`: `views` the view layout (`ring`: `azimuths` evenly spaced around the tree, at each of `elevationsDeg` above the horizon, plus one straight down when `top`), `viewPx` a view's square side in texels per renderer tier (desktop, phone, cpu), `stages` the growth stages baked (clamped to a species' last stage; a tree between them takes the nearest, scaled to its height), `variants` the seeds baked per species and stage (a tree takes variant hash(seed) mod variants), `albedo` the palette colour (shared/textures/palette.json, `ramp.stop` or a ramp's base) a leaf cell and a log are painted (the per-tree leaf tint is applied at draw time), `marginM` metres added to the bounding sphere's radius so no texel at the frame's edge is cut. The leaves' lighting normals lean out of the crown by shared/look/leaves.json `canopyBlend`, as the near trees'. Read at load and validated (a bad entry fails naming the field); no generated file.",
+  "views": { "kind": "ring", "azimuths": 8, "elevationsDeg": [0, 40], "top": true },
+  "viewPx": { "desktop": 64, "phone": 32, "cpu": 16 },
+  "stages": [2, 4, 7],
+  "variants": 4,
+  "albedo": { "leaf": "leaf.base", "log": "bark.base" },
+  "marginM": 0.25
+}

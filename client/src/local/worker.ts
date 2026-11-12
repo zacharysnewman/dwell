@@ -234,6 +234,7 @@ async function start(
   growth?: number,
   chop2 = false,
   radiusScale?: number,
+  sky?: string,
 ): Promise<void> {
   // The world file (§6.4): the chosen world's (by default one per generator and seed), in OPFS.
   // Without it the world lives in memory only (no OPFS, or the world is open in another tab).
@@ -276,6 +277,7 @@ async function start(
       growth,
       chop2,
       radiusScale,
+      sky,
     );
     stage('spawn', 'end');
     jobs?.postMessage({
@@ -370,6 +372,7 @@ scope.onmessage = (e) => {
       msg.growth,
       msg.chop2,
       msg.radiusScale,
+      msg.sky,
     );
   else handle(msg);
 };
