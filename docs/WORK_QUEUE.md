@@ -981,6 +981,12 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    19. Multiplayer (owner 2026-11-12: "Multiplayer we haven't showcased.") — two or three players in one world
        (a friend world or a local server, each a browser page): building together, one chopping while another
        carries, a sword duel between players' stances (no damage between players), seen from a third camera.
+   20. World scale, measuring a mountain (owner 2026-11-12: "A video with mountains showing the full world scale
+       showing like a measuring of a tall mountain. (Text could be in that as part of the "measure" effect, just
+       no description or titles)."): the player at the foot of the tallest peak (~5000 m), a measuring line or
+       ruler rising up the mountain with height numbers ticking as part of the effect (the only text allowed),
+       pulling back to the whole range and the island's scale. The text exception is the measuring effect's
+       numbers only — no titles or descriptions.
 
 ## Done
 

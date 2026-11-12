@@ -7,7 +7,9 @@ description: Record a showcase video of Dwell in Chrome on the GPU — cinematic
 
 Owner's format (2026-11-12): **portrait 9:16, 1080×1920, h264, 30 fps**, **1 minute or less**, no music,
 and **no text of any kind in the video** (no title card, captions or labels — owner: "Don't include any text
-or anything in the video"). Send it with SendUserFile: the upload limit is **30 MB**, so re-encode
+or anything in the video"). One exception: text that is part of an in-world effect, like a measuring
+line's height numbers (owner: "Text could be in that as part of the 'measure' effect, just no description or
+titles"). Send it with SendUserFile: the upload limit is **30 MB**, so re-encode
 (`crf 28`) if it's larger. Never commit video files to the repo.
 
 ## 1. Run the game
