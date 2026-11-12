@@ -356,6 +356,10 @@ vectors = {
     "region_edit_replace": region_head(RO["Replace"], (10, -20, 30), (1, 32, 2))
     + struct.pack("<HH", 2, 6),
     "region_edit_paste": REGION_PASTE,
+    # A saved structure's placement (STRUCTURES.md §9): Paste's body under its own op, sent only to a
+    # server that announced the `structures.place` capability.
+    "region_edit_structure": region_head(RO["Structure"], (-3, 70, 8191990), PASTE_SIZE)
+    + region_cells(PASTE_CELLS),
     "region_edit_paste_keep": REGION_PASTE_KEEP,
     "voxel_modification": VOXEL_MOD,
     "chunk_resync": struct.pack("<BH", T["ChunkResync"], 2)
@@ -437,6 +441,24 @@ vectors["world_settings"] = world_settings(
     [(0x01, f32s(800.0, 400.0, 7.0)), (0x81, f32s(1.0)), (0x9F, b"\x01\x02")]
 )
 vectors["block_registry_part"] = block_registry(1, 2, REGISTRY_PAYLOAD[40:])
+
+
+# Capabilities (ARCHITECTURE.md §8.3): u8 count, each name a u16 length and UTF-8. The server's in an
+# optional WorldSettings field (0x85, the join's), the client's answer as its own message.
+def capabilities(names):
+    out = struct.pack("<B", len(names))
+    for n in names:
+        b = n.encode()
+        out += struct.pack("<H", len(b)) + b
+    return out
+
+
+CAPS = capabilities(["structures.place", "mymod:wet"])
+vectors["capabilities"] = struct.pack("<B", T["Capabilities"]) + CAPS
+vectors["capabilities_none"] = struct.pack("<B", T["Capabilities"]) + capabilities([])
+vectors["world_settings_capabilities"] = world_settings(
+    [(0x01, f32s(800.0, 400.0, 7.0)), (0x81, f32s(1.0)), (0x85, CAPS)]
+)
 vectors["edit_ack"] = edit_ack(7, [])
 vectors["edit_ack_rejected"] = edit_ack(0x01020304, [2, 0x01020303, 0x01020304])
 
@@ -500,7 +522,8 @@ malformed = {
     "!edit_ack_truncated": edit_ack(9, [1, 2])[:-2],
     "!edit_ack_too_many": struct.pack("<BIH", T["EditAck"], 99999, c["limits"]["maxEditAckRejected"] + 1)
     + b"".join(struct.pack("<I", i + 1) for i in range(c["limits"]["maxEditAckRejected"] + 1)),
-    "!region_edit_unknown_op": region_head(5, (0, 0, 0), (1, 1, 1)) + struct.pack("<H", 1),
+    "!region_edit_unknown_op": region_head(max(RO.values()) + 1, (0, 0, 0), (1, 1, 1))
+    + struct.pack("<H", 1),
     "!region_edit_empty_side": region_head(RO["Fill"], (0, 0, 0), (1, 0, 1)) + struct.pack("<H", 1),
     "!region_edit_side_too_long": region_head(RO["Fill"], (0, 0, 0), (1, c["regionEdit"]["maxSide"] + 1, 1))
     + struct.pack("<H", 1),
@@ -533,6 +556,10 @@ malformed = {
     + struct.pack("<iii", 0, 0, 0) * (c["limits"]["maxResyncChunks"] + 1),
     "!water_currents_bad_face": struct.pack("<BBii", T["WaterCurrents"], 2, 0, 0) + bytes(512),
     "!water_currents_truncated": struct.pack("<BBii", T["WaterCurrents"], 0, 0, 0) + bytes(511),
+    "!capabilities_twice": struct.pack("<B", T["Capabilities"]) + capabilities(["a.b", "a.b"]),
+    "!capabilities_bad_name": struct.pack("<B", T["Capabilities"]) + capabilities(["Upper"]),
+    "!capabilities_truncated": vectors["capabilities"][:-1],
+    "!capabilities_trailing": vectors["capabilities"] + b"\x00",
     "!world_settings_truncated": world_settings([(0x01, f32s(800.0, 400.0, 7.0))])[:-1],
     "!world_settings_tag_twice": world_settings([(0x81, f32s(1.0)), (0x81, f32s(2.0))]),
     "!block_registry_zero_parts": block_registry(0, 0, b""),

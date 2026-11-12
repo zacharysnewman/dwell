@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { dayNightRust, pathSkew, validateDayNight } from './daynight.mjs';
+import { checkMoonDistance, dayNightRust, loadDayNight, pathSkew, validateDayNight } from './daynight.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const load = () => JSON.parse(readFileSync(join(here, 'daynight.json'), 'utf8'));
@@ -52,4 +52,17 @@ test("the sun's path skew puts sunset where the day's share says", () => {
   // Half the daylight after noon, the hour angle is a quarter turn.
   const u = (Math.PI * 2 * 600) / 1800;
   assert.ok(Math.abs(u + k * Math.sin(u) - Math.PI / 2) < 1e-12);
+});
+
+test("the moon's orbit keeps the moon grid at the sky's size", () => {
+  const grids = JSON.parse(readFileSync(join(here, '../worldgen/grids.json'), 'utf8'));
+  assert.ok(loadDayNight(), 'the checked-in distance agrees with grids.json');
+  const d = load();
+  d.moonOrbit.distanceM = 400000;
+  assert.throws(() => checkMoonDistance(validateDayNight(d), grids), /moonOrbit\.distanceM must keep the moon's 12500 m radius/);
+  const far = load();
+  far.moon.radiusDeg = 0.6;
+  far.moonOrbit.distanceM = 12500 / Math.tan((0.6 * Math.PI) / 180);
+  assert.ok(checkMoonDistance(validateDayNight(far), grids), 'a smaller moon in the sky by data alone');
+  assert.throws(() => checkMoonDistance(validateDayNight(load()), { grids: [] }), /no "dwell:moon" grid/);
 });

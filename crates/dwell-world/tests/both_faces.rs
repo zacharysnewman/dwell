@@ -12,6 +12,10 @@
 //!    `// face-b-only: <reason>` or `// both-faces: <reason>` (a test that compares or crosses the
 //!    faces itself) in its body or on the lines above it.
 //!
+//! 3. a world point is turned into a grid's or a body's space by hand (`inverse * (p - origin)`)
+//!    rather than through the grid frame (`dwell_world::GridFrame`, MOON_WORLD.md §2): a line
+//!    marked `// grid-boundary: <reason>` (on it, or the line above or below) passes.
+//!
 //! The physics' integration tests (`dwell-physics/tests`) are exempt from rule 2: CI runs that
 //! whole suite again in face B's mirror image (`DWELL_FACE=b`).
 
@@ -45,6 +49,9 @@ const WIRE_FILES: &[&str] = &["dwell-physics/src/net.rs"];
 const SELF: &str = "dwell-world/tests/both_faces.rs";
 
 const BOUNDARY: &str = "// face-boundary:";
+const GRID_BOUNDARY: &str = "// grid-boundary:";
+/// Where the grid frame lives: it may turn points by hand.
+const GRID_FILES: &[&str] = &["dwell-world/src/grid.rs"];
 const TEST_MARKERS: &[&str] = &["// face-a-only:", "// face-b-only:", "// both-faces:"];
 
 fn crates_dir() -> PathBuf {
@@ -165,6 +172,33 @@ fn rule_1(rel: &str, text: &str, out: &mut Vec<String>) {
     }
 }
 
+/// Rule 3: a world point turned into a grid's space by hand, outside the grid frame.
+fn rule_3(rel: &str, text: &str, out: &mut Vec<String>) {
+    if GRID_FILES.contains(&rel) {
+        return;
+    }
+    let lines: Vec<&str> = text.lines().collect();
+    for (i, line) in lines.iter().enumerate() {
+        let code = line.split("//").next().unwrap_or("");
+        if !(code.contains("inverse * (") || code.contains("inverse() * (")) {
+            continue;
+        }
+        let above = if i > 0 { lines[i - 1] } else { "" };
+        let below = lines.get(i + 1).copied().unwrap_or("");
+        if [*line, above, below]
+            .iter()
+            .any(|l| marked(l, GRID_BOUNDARY))
+        {
+            continue;
+        }
+        out.push(format!(
+            "{rel}:{}: a point turned into a grid's space by hand (use GridFrame): `{}`",
+            i + 1,
+            line.trim()
+        ));
+    }
+}
+
 const FACE_TOKENS: &[&str] = &[
     "FaceFrame::B",
     "Face::B",
@@ -277,6 +311,7 @@ fn face_dependent_code_goes_through_the_face_frame_and_its_tests_run_on_both_fac
     for (rel, text) in &files {
         rule_1(rel, text, &mut problems);
         rule_2(rel, text, &mut problems);
+        rule_3(rel, text, &mut problems);
     }
     assert!(
         problems.is_empty(),
@@ -307,6 +342,12 @@ fn the_check_catches_what_it_is_for() {
     rule_2("dwell-x/src/a.rs", src, &mut out);
     assert_eq!(out.len(), 1, "{out:#?}");
     assert!(out[0].contains("plain"), "{out:#?}");
+    // Rule 3: a point turned into a body's space by hand, unless marked.
+    let mut out = Vec::new();
+    let src = "let l = inverse * (p - origin);\nlet m = rotation.inverse() * (p - o);\nlet x = 1;\n\
+               // grid-boundary: the reference\nlet r = inverse * (p - origin);\nlet ok = g.to_grid(p);\n";
+    rule_3("dwell-x/src/a.rs", src, &mut out);
+    assert_eq!(out.len(), 2, "{out:#?}");
 }
 
 /// Plain tests that name a face on purpose, as of the check's arrival (2026-10-20), each with why

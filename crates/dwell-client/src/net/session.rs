@@ -105,6 +105,9 @@ pub struct Session {
     /// The world's settings as the server sent them (before Welcome), and as read.
     world_fields: Option<world_settings::SettingsFields>,
     world: Option<world_settings::WorldSettings>,
+    /// The server's capabilities (its settings' `CAPABILITIES` field, ARCHITECTURE.md §8.3); None
+    /// from a server that announced none (an older build), which is never sent `Capabilities`.
+    server_capabilities: Option<dwell_protocol::capabilities::Capabilities>,
     /// The server simulates stamina and oxygen (Welcome's `VITALS`, ADR 0069).
     vitals_server: bool,
     /// The Welcome waiting on the player's answer (Confirming).
@@ -155,6 +158,7 @@ impl Session {
             mapping: None,
             world_fields: None,
             world: None,
+            server_capabilities: None,
             vitals_server: false,
             pending: None,
             worldgen_wait: None,
@@ -227,6 +231,16 @@ impl Session {
         }
     }
 
+    /// Whether a capability (ARCHITECTURE.md §8.3) is on for this session: the server announced it
+    /// and this build has it. False before the settings arrive and on an older server.
+    pub fn capability(&self, name: &str) -> bool {
+        dwell_protocol::capability_names::ALL.contains(&name)
+            && self
+                .server_capabilities
+                .as_ref()
+                .is_some_and(|c| c.has(name))
+    }
+
     /// The player chose Continue in the join prompt.
     pub fn accept_registry(&mut self) {
         if matches!(self.state, SessionState::Confirming { .. })
@@ -260,6 +274,13 @@ impl Session {
             region_edits: w.flags & welcome_flags::REGION_EDITS != 0,
             brushes: w.flags & welcome_flags::BRUSHES != 0,
         });
+        // A server that announced capabilities (ARCHITECTURE.md §8.3) hears this client's; an
+        // older one, which would end the session on the unknown message, never does.
+        if self.server_capabilities.is_some() {
+            self.send(&Message::Capabilities(
+                dwell_protocol::capabilities::Capabilities::this_build(),
+            ));
+        }
         // A server that keeps inventories (ADR 0066) sends them once told this client understands.
         if w.flags & welcome_flags::INVENTORY != 0 {
             self.send(&Message::InventoryAction(InventoryAction::Hello));
@@ -343,6 +364,7 @@ impl Session {
             return;
         };
         let worldgen_hash = fields.worldgen_hash();
+        self.server_capabilities = fields.capabilities();
         match fields.settings(dwell_sim::server::default_settings(
             dwell_sim::water::FLOW.speed,
         )) {
@@ -545,7 +567,7 @@ impl Session {
                         e.material = id(e.material)?;
                         e.from = id(e.from)?;
                     }
-                    RegionEditOp::Paste => {
+                    RegionEditOp::Paste | RegionEditOp::Structure => {
                         // Brushes' KEEP cells name no state.
                         for c in e
                             .cells
@@ -826,6 +848,7 @@ mod tests {
             water_speed: 2.0,
             mode: "creative",
             size: dwell_protocol::world_size::WorldSize::DEFAULT,
+            moon_phase: None,
         }
     }
 
@@ -1346,6 +1369,55 @@ mod tests {
             );
             assert!(matches!(s.next_game(), Some((Message::Vitals(_), _))));
         }
+    }
+
+    /// ARCHITECTURE.md §8.3 "Capabilities": the client answers with its own only a server whose
+    /// settings announced some (an older server ends the session on the unknown message), and a
+    /// capability is on only when the server named it.
+    #[test]
+    fn capabilities_are_answered_only_to_a_server_that_announced_them() {
+        use dwell_protocol::capabilities::Capabilities;
+        use dwell_protocol::capability_names::STRUCTURES_PLACE;
+        let announced = |caps: Option<Capabilities>| {
+            let (_, mut s) = setup();
+            send_registry(&mut s, &build_registry(), 1 << 16);
+            let f = world_settings::SettingsFields::default()
+                .with(settings())
+                .with_capabilities(caps.as_ref());
+            send_settings(&mut s, &f);
+            let _ = s.take_out();
+            assert!(!s.capability(STRUCTURES_PLACE), "nothing before Welcome");
+            s.on_reliable(Channel::Control, &welcome(0).encode(), 1000.0);
+            assert!(s.joined(), "{:?}", s.state());
+            let answer = sent(&s.take_out()).into_iter().find_map(|m| match m {
+                Message::Capabilities(c) => Some(c),
+                _ => None,
+            });
+            (s.capability(STRUCTURES_PLACE), answer)
+        };
+        // An older server: no field, no answer, nothing on.
+        assert_eq!(announced(None), (false, None));
+        // This build's server: the answer is this build's, and the capability is on.
+        assert_eq!(
+            announced(Some(Capabilities::this_build())),
+            (true, Some(Capabilities::this_build()))
+        );
+        // A server that names others (a newer build's, a mod's) but not this one: answered, off.
+        assert_eq!(
+            announced(Some(Capabilities::of(["mymod:wet"]))),
+            (false, Some(Capabilities::this_build()))
+        );
+        // A name this build doesn't have is never on, whatever the server says.
+        let (_, mut s) = setup();
+        send_registry(&mut s, &build_registry(), 1 << 16);
+        send_settings(
+            &mut s,
+            &world_settings::SettingsFields::default()
+                .with(settings())
+                .with_capabilities(Some(&Capabilities::of(["mymod:wet"]))),
+        );
+        s.on_reliable(Channel::Control, &welcome(0).encode(), 1000.0);
+        assert!(!s.capability("mymod:wet"));
     }
 
     #[test]

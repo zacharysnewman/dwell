@@ -389,6 +389,8 @@ pub const BITE_LOOK: BiteLook = BiteLook {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Chips {
     pub count: u32,
+    /// Real 3D fragments a hit flings (visual only, short-lived; data `shards`, 0–8).
+    pub shards: u32,
     /// sRGB.
     pub color: [u8; 3],
     /// Their speed out of the cut (m/s).

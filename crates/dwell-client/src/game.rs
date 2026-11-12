@@ -650,6 +650,8 @@ pub struct Game<S: Scene> {
     pub chop: crate::chop::Chopping,
     /// The axe's chips in flight (crate::chips; draw-only).
     pub chips: crate::chips::Chips,
+    /// A hit's flying 3D stone fragments (docs/BLOCK_DAMAGE.md §6.4).
+    pub hit_shards: crate::hit_shards::HitShards,
     /// Steam where lava boils water away (crate::steam; the server's `Steam`, VOLCANOES.md §6.3).
     pub steam: crate::steam::Steam,
     /// The steam plumes over the world's lava vents (crate::vent_plumes, docs/CLOUDS.md §8.7).
@@ -1030,6 +1032,7 @@ impl<S: Scene> Game<S> {
             ground_target: None,
             chop: Default::default(),
             chips: Default::default(),
+            hit_shards: Default::default(),
             steam: Default::default(),
             vent_plumes: Default::default(),
             burn_until_ms: 0.0,
@@ -2573,6 +2576,13 @@ impl<S: Scene> Game<S> {
         self.region.structures = on;
     }
 
+    /// Whether the server takes structure placements as such (the `structures.place` capability,
+    /// ARCHITECTURE.md §8.3): a library structure's paste goes as `RegionEditOp::Structure`, which
+    /// it refuses outside a mode with `structures`; without it, plain pastes (STRUCTURES.md §9).
+    pub fn set_structure_ops(&mut self, on: bool) {
+        self.region.structure_ops = on;
+    }
+
     /// The hits the server will take to break `block` with what is held now.
     fn hits_to_break(&self, block: &str) -> Option<u32> {
         dwell_protocol::damage::hits_to_break_for(
@@ -3139,6 +3149,16 @@ impl<S: Scene> Game<S> {
         if let Some(look) = crate::chips::hit_chips_of(dwell_blocks::block_of(block).name) {
             let n = crate::chips::struck_normal(cell, at);
             self.chips.hit_burst(look, n, at, now_ms / 1000.0);
+            let name = dwell_blocks::block_of(block).name;
+            let ids = self.hit_shards.burst(name, n, at, now_ms / 1000.0);
+            if !ids.is_empty() {
+                let face = dwell_world::FaceFrame::at_height(at[1]);
+                let meshes = crate::hit_shards::fragment_meshes(face);
+                let mut scene = self.scene.borrow_mut();
+                for id in ids {
+                    scene.set_piece(id, meshes.as_ref().map(|(m, r)| (m.as_slice(), *r)));
+                }
+            }
         }
     }
 
@@ -3164,6 +3184,7 @@ impl<S: Scene> Game<S> {
     pub fn set_blast_settings(&mut self, s: crate::blasts::BlastSettings) {
         self.blasts.settings = s;
         self.chips.cpu = s.cpu;
+        self.hit_shards.cpu = s.cpu;
         self.steam.cpu = s.cpu;
     }
 
@@ -3961,6 +3982,11 @@ impl<S: Scene> Game<S> {
         let mut poses = self.pieces.poses(now_ms);
         poses.extend(self.glides.poses(now_ms));
         poses.extend(self.loose.poses(now_ms));
+        let (fragments, gone) = self.hit_shards.step(now_ms / 1000.0);
+        poses.extend(fragments);
+        for id in gone {
+            self.scene.borrow_mut().set_piece(id, None);
+        }
         self.scene.borrow_mut().show_pieces(poses);
         // The look's time (render_clock.rs): the sky and the flecks stand still while it is paused.
         let look_dt = if crate::render_clock::paused() {

@@ -63,6 +63,7 @@ export const AREAS: Record<string, Area> = {
       'shared/master/make_vectors.mjs',
     ],
     nodeTests: [
+      'shared/protocol/capabilities.test.mjs',
       'shared/inventory/gen.test.mjs',
       'shared/modes/gen.test.mjs',
       'shared/tools/gen.test.mjs',
