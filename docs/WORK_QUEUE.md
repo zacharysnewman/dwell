@@ -365,6 +365,15 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    sunset like our old 2D clouds."** The volume should take the deck's golden-hour tint: the sun's colour low in the
    sky, the warm underside glow and the horizon colour the deck mixed in; compare at sunrise/sunset against
    `?clouds=` the 2D deck (the reference since the lighting rework).
+   **Built (2026-11-12, cloud, branch `claude/cloud-golden-hour-zjl391`, CLOUDS.md §9.8):** the tint was lost in
+   the ambient: the deck warms its whole colour at a low sun, the volume only the sun's light, and a volume
+   sample's light is mostly the cool sky's. Now the shade (sky light and ground bounce) takes the deck's warm
+   tint too (`volume.sunsetShade`), the ramp and the far haze are one function on both; CPU twin tests at 3°
+   (the deck's warmth within 8 %, bases warm; red on the old shading), noon unchanged, both faces. And the
+   opacity split: the light march had taken `volume.extinction` too; now `volume.extinction` (0.03, was 0.006)
+   is the view's, `volume.lightExtinction` (0.006) the light's, plumes keep theirs; a dev knob
+   `?cloudExtinction=` / `__dwell.cloudExtinction(x)` for the A/B. Next (local): the look at sunrise/sunset
+   against `?clouds=` the deck, the A/B of 0.006 / 0.03 / 0.05 and `gpu.clouds`; tune by the data.
 14. **Tall grass grows and spreads** (owner 2026-11-11: "I want tall grass to steadily grow and spread. It
    should probably have a max depending on climate/biome."). **Built** (ADR 0075 T3c, docs/ECOLOGY.md §10):
    `shared/worldgen/grass.json` (the rule as data: the block, the ground, the decoration whose climate

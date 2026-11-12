@@ -46,7 +46,10 @@ pub const CLOUDS: CloudTunables = CloudTunables {
     volume: VolumeTunables {
         base_m: 1350.0,
         top_m: 4500.0,
-        extinction: 0.006,
+        extinction: 0.03,
+        light_extinction: 0.006,
+        plume_extinction: 0.006,
+        sunset_shade: 1.5,
         light_step_m: 160.0,
         light_step_growth: 1.6,
         multi_scatter: 0.5,
