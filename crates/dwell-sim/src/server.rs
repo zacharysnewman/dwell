@@ -602,6 +602,10 @@ struct Session {
     /// (`swing_flags`), both carried to the others in snapshots (CHARACTERS.md §9.3).
     held: u16,
     swing: u8,
+    /// Which swing `swing` is (`SwingKind`: a break or place, or a chop and its direction), sent
+    /// only to a client that said `SwingHello` (`swing_hello`; WORK_QUEUE item 17).
+    swing_kind: SwingKind,
+    swing_hello: bool,
     /// Which falling pieces this player's snapshots carry (`felling::PieceBook`).
     piece_book: crate::felling::PieceBook,
     /// The player's items (ADR 0066), loaded at join and saved with the world; whether its client
@@ -667,6 +671,13 @@ struct Session {
 }
 
 impl Session {
+    /// One more swing the others see (`swing_flags`): a break or place (`broke`), and which it is
+    /// (`kind`: a chop steps a break, so an older client plays that).
+    fn swung(&mut self, broke: bool, kind: SwingKind) {
+        self.swing = next_swing(self.swing, broke);
+        self.swing_kind = kind;
+    }
+
     fn new(kind: TransportKind, binding: TransportBinding) -> Self {
         Self {
             kind,
@@ -719,6 +730,8 @@ impl Session {
             edit_refused: Vec::new(),
             held: 0,
             swing: 0,
+            swing_kind: SwingKind::Plain,
+            swing_hello: false,
             piece_book: crate::felling::PieceBook::default(),
             stats: SessionStats::default(),
             chunk_mode: ChunkMode::AwaitingCheck,
@@ -787,7 +800,9 @@ fn input_in_range(f: &InputFrame) -> bool {
 }
 
 /// A player's swing after one more edit (`swing_flags`): the count steps (wrapping) and the kind
-/// is the edit's, so the others start a break or place swing when they see it change.
+/// is the edit's, so the others start a break or place swing when they see it change. A chop
+/// steps it as a break (what an older client plays) and names itself in the session's
+/// `swing_kind` ([`Session::swung`]).
 fn next_swing(swing: u8, broke: bool) -> u8 {
     let count = (swing.wrapping_add(1)) & swing_flags::COUNT_MASK;
     count
@@ -1272,6 +1287,11 @@ impl Server {
                 self.send_datagram(id, &pong);
             }
             Some(Message::PlayerInput(m)) => self.handle_input(id, &m),
+            Some(Message::SwingHello) => {
+                if let Some(s) = self.sessions.get_mut(&id) {
+                    s.swing_hello = true;
+                }
+            }
             _ => {}
         }
     }
@@ -1577,7 +1597,7 @@ impl Server {
                 };
             }
             Message::BlockEditRequest(edit) => {
-                s.swing = next_swing(s.swing, edit.action == BlockEditAction::Break);
+                s.swung(edit.action == BlockEditAction::Break, SwingKind::Plain);
                 s.edit_seq += 1;
                 if s.edits.len() < MAX_QUEUED_EDITS {
                     s.edits.push((s.edit_seq, edit, 0));
@@ -1587,7 +1607,7 @@ impl Server {
                 }
             }
             Message::BodyEditRequest(edit) => {
-                s.swing = next_swing(s.swing, edit.action == BlockEditAction::Break);
+                s.swung(edit.action == BlockEditAction::Break, SwingKind::Plain);
                 if s.body_edits.len() < MAX_QUEUED_EDITS {
                     s.body_edits.push(edit);
                 } else {
@@ -1595,7 +1615,7 @@ impl Server {
                 }
             }
             Message::RegionEdit(edit) => {
-                s.swing = next_swing(s.swing, false);
+                s.swung(false, SwingKind::Plain);
                 s.edit_seq += 1;
                 if s.region_edits.len() < region_edit::MAX_QUEUED {
                     s.region_edits.push((s.edit_seq, edit, 0));
@@ -4057,6 +4077,7 @@ impl Server {
                 flags: player_flags::DEAD,
                 held: s.held,
                 swing: s.swing,
+                swing_kind: s.swing_kind as u8,
             };
             if let Some(h) = s.handle {
                 let c = self.players.controller(h);
@@ -4095,6 +4116,7 @@ impl Server {
                 local: l,
                 remotes: Vec::new(),
                 pieces: Vec::new(),
+                swing_kinds: s.swing_hello,
             };
             // Remote players, nearest first, as many as fit in one datagram.
             let distance = |r: &RemotePlayerState| {

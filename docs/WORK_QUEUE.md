@@ -306,6 +306,18 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    on both faces); Settings → Motion → Camera sway (the explosions' Screen shake names blasts only, so a new
    toggle; off with reduced motion); `clip_probe` prints the offset per sample. Left: the owner's feel review
    in game (no GPU in the cloud).
+   Brief, 2026-11-12: **other players see the actual chop** ("Remote players still see a `break`. The wire's
+   swing byte (`swing_flags`) carries only break or place, so it can't say which chop or which direction"),
+   gated so it isn't breaking for 0.54 peers.
+   **Status (remote-chop):** built (ARCHITECTURE.md §8.3 "Swing kinds"): a chop now steps the swinger's swing
+   count (before, it didn't: others saw nothing, or an edit's swing), as a break, and the server keeps its
+   kind (`SwingKind` in `shared/protocol/constants.json`: plain, chop level, chop vertical); a client asks with
+   a `SwingHello` datagram (no Welcome or Inventory flag is free; an older server drops an unknown datagram),
+   repeated each second until a snapshot answers, ten tries at most, and its snapshots then end with each
+   remote's kind; the remote body plays `biped_chop_level` / `biped_chop_vertical` as the count steps (both
+   faces). An older client never asks and plays `break`; an older server never sends kinds. Tests: the
+   server's (hello → the kind, no hello → plain break, red → green), the body's clip (red → green), the
+   hello's schedule, wire vectors. Left: a look in game with two clients (no GPU in the cloud).
 18. **Digging marks that look carved** (owner 2026-11-11: "the 'chunks' of dirt aren't at all what we
    discussed. It should be like a normal map change (do we support normal/bump maps)? It's completely flat
    should look like mesh deformation (preferably without actually doing it for performance)"; "That part was

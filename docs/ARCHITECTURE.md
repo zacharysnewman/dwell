@@ -905,7 +905,8 @@ tests only); CI fails on stale output. Code names characters, looks, items and r
   sent, still plays it, then the fall or the landing), a landing
   one-shot under 1.5 m/s, slide, sprint, walk, crouch and crouch-walk by speed), each switch
   cross-faded by the new clip's `blend`; gaits play at speed / `cycle`; the `hold` layer while the
-  hand holds something; a break or place swing on the `action` layer when the snapshot's swing
+  hand holds something; a break or place swing, or the axe's level or vertical chop when the
+  snapshot carries its kind (`SwingHello`, §8.3), on the `action` layer when the snapshot's swing
   count steps; the head (60 %), chest (15 %) and held arm (50 %) follow the look's pitch. Your arms
   run the same machine on the arms' roles from the prediction, swinging when an edit is sent.
   Over steps a remote body is drawn at its feet plus the step view's offset (`dwell-game`'s
@@ -4064,6 +4065,24 @@ u8   pieceCount                 // [built, protocol v20] the falling pieces (doc
 repeat pieceCount:
   u32 id, i32×3 position (posfix: the piece's reference cell's centre),
   i16×4 rotation (unit quaternion x, y, z, w, each × 32767), f16×3 velocity, f16×3 spin
+optional, only to a client that said SwingHello (below):
+u8   swingKindCount             // = remotePlayerCount
+repeat swingKindCount:
+  u8 swingKind                  // SwingKind of that remote's last swing: 0 Plain (the break or
+                                //   place `swing` says), 1 ChopLevel, 2 ChopVertical; unknown: Plain
+```
+**Swing kinds: `SwingHello` (datagram) [built]** (WORK_QUEUE item 17). The swing byte says
+break or place only; an axe's chop steps it as a break (what a client without the kinds plays) and
+the server keeps which swing it was (`SwingKind`, `shared/protocol/constants.json` `swingKinds`, the
+animator's roles by name: `chop_level`, `chop_vertical`). A client asks for the kinds with a
+`SwingHello` **datagram**: no `Welcome` or `Inventory` flag is free to advertise it, and an older
+server drops a datagram it can't read (a control message it can't read ends the session). The
+client sends it on a snapshot and again each second until a snapshot ends with the kinds, ten tries
+at most (`dwell-game` `remotes::SwingHello`); from then on that client's snapshots carry them, sized
+into the datagram with the remotes. An older client never says it, so it is never sent the trailing
+bytes (it refuses them) and keeps seeing a `break`; an older server never writes them.
+```
+C→S  SwingHello 0x03, datagram: (empty)
 ```
 **Client → Server: `HeldItem` (reliable, `control`) [built, Phase 40 C1; protocol v17]** — `u16 held`
 (as above, the client's block mapped to the server's id): sent when the hand changes (the hotbar's
@@ -4072,7 +4091,9 @@ empty hand) and puts it in every snapshot, so a late joiner sees it at once and 
 costs nothing; 3 bytes a remote player against an event on change, which would need its own state
 sync for joiners (CHARACTERS.md §10 Q9). Swings: the server steps a player's swing count on each
 `BlockEditRequest` (break or place) and `RegionEdit` (place: brush strokes and region tools) it
-receives; the others start the swing when they see the count change.
+receives, and on each axe swing (`ChopAction::Swing` or `Sweep`) it takes when the axe is ready (a
+break, its kind the chop's direction, above); the others start the swing when they see the count
+change.
 Phase 20 adds, for riding Tier 1 bodies (§9.4), a `u32 groundEntityId` to the local and remote
 blocks (positions become body-local when it is non-zero), and the Tier 1 entity list:
 ```
