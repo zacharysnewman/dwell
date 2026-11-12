@@ -17,6 +17,11 @@ tectonics, hydrology, erosion, rivers, biome field).
 Owner, later: "Looks like it started the server 200+ seconds in and now it's at almost 1 minute looking for a place to
 stand. And still 0/2 280+ seconds in on shaping the world map." So the map takes ~200 s, the spawn search ~1 minute
 more, and the map stage's counter stays at 0/2 even after the server has started (it never advances or completes).
+Then: "Loaded in 300s in, but I can only see the skies of both faces, no world." / "Can't move." The world finished
+loading after ~300 s but no terrain drew (only the sky of both faces, as if the player is in the gap between them or
+no chunks arrived) and the player can't move (no ground chunks, so the controller waits; or the spawn point is
+invalid at 10×, e.g. outside the generated area or NaN). Likely related to #76 (memory at big sizes) or the spawn
+search's result at 10×.
 
 ### 90. Volumetric clouds look badly dithered and pixelated where they overlap, mostly at cloud level
 
