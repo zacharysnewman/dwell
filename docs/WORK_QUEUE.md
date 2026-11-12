@@ -1760,7 +1760,15 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    let water flow through freely."**). A body floating in water (a felled trunk, a crown) never settles back into
    blocks while it floats; it keeps drifting with the current until it beaches on dry ground (then settles as
    today). Leaf blocks are open to the water grid (water flows through their cells as through air, the leaves
-   kept), in place and on bodies.
+   kept), in place and on bodies. **Built (2026-11-12):** a body afloat (a cell in a liquid, lighter than it on the whole) of a
+   kind whose `settlesAfloat` (bodies.json, default false) is false never settles; it settles only `beachSeconds`
+   (2 s, felling.json) out of the water, then by the usual sleep or timeout (BUILT_BODIES.md §6a; waterlogging
+   later hooks in where `afloat` is decided). Leaves (any `passable` block with a `flooded` state) are open to
+   the water grid's flow, drawn flooded under the water, never replaced (WATER_SURFACE_GRID.md §2d); bodies'
+   cells were never in the grid. Generated water levels unchanged (no new compatibility line). Tests red → green:
+   a trunk in a 1 m/s river drifts 40 s without settling (both faces), a trunk moved onto the bank settles, a
+   natural raft afloat is predicted without snaps, water beyond a wall of leaves stands as with none (both
+   faces).
 
 ## Future (needs owner answers)
 
