@@ -3268,3 +3268,107 @@ fn a_world_saved_without_a_size_opens_at_1x_and_its_client_too() {
         dwell_game::minimap::MAP.big_map_levels.to_vec()
     );
 }
+
+/// A single dev teleport far off (5 km, where nothing is loaded; BUGS.md #83): the player is moved
+/// there and stays, the client follows and its terrain arrives. Regression: it did not move.
+// face-a-only: the generated world's face A spawn; the move is face-local (local.rs).
+#[test]
+fn a_single_teleport_five_km_off_moves_the_player_and_its_terrain_arrives() {
+    let mut rig = Rig::new();
+    assert!(rig.run_until(60 * 30, |r| {
+        r.game
+            .as_ref()
+            .is_some_and(|g| g.debug_state().terrain_ready)
+    }));
+    let feet = rig.game.as_ref().unwrap().debug_state().feet;
+    let to = [feet[0] + 5000.0, feet[1] + 60.0, feet[2] + 300.0];
+    assert!(rig.core.teleport_local_player(to));
+    let pid = rig.game.as_ref().unwrap().debug_state().player_id;
+    let arrived = rig.run_until(60 * 40, |r| {
+        let g = r.game.as_ref().unwrap().debug_state();
+        (g.feet[0] - to[0]).hypot(g.feet[2] - to[2]) < 2.0 && g.terrain_ready
+    });
+    let g = rig.game.as_ref().unwrap().debug_state();
+    let server = rig.core.server().feet_of(pid);
+    assert!(
+        arrived,
+        "moved to {to:?}: the client at {:?} (terrain ready {}), the server at {server:?}",
+        g.feet, g.terrain_ready
+    );
+}
+
+/// The dev link `?at=` at a far spot (5 km off, BUGS.md #83), in the air and underground: the
+/// player starts there and the game's terrain arrives (the loading ends). Regression: it hung.
+// face-a-only: a face A point; `?at=`'s spawn is face-local (local.rs).
+#[test]
+fn a_spawn_link_five_km_off_loads() {
+    for y in [60.0, 0.5, -0.0] {
+        let at = [5000.5, y + 20.0, 300.5];
+        let core = LocalCore::create_spawning(
+            dwell_world::Face::A,
+            false,
+            Some(at),
+            false,
+            false,
+            SEED,
+            GENERATOR_TERRAIN,
+            None::<NoStorage>,
+            Box::new(SeededEntropy(1)),
+            dwell_sim::water::host::Placement::Inline,
+            false,
+        )
+        .unwrap();
+        let mut rig = Rig::with_core(GENERATOR_TERRAIN, SEED, core);
+        let ready = rig.run_until(60 * 40, |r| {
+            r.game
+                .as_ref()
+                .is_some_and(|g| g.debug_state().terrain_ready)
+        });
+        let feet = rig.game.as_ref().map(|g| g.debug_state().feet);
+        assert!(
+            ready,
+            "?at={at:?}: the terrain never arrived (feet {feet:?})"
+        );
+        let feet = feet.unwrap();
+        assert!(
+            (feet[0] - at[0]).hypot(feet[2] - at[2]) < 2.0,
+            "{feet:?} at {at:?}"
+        );
+    }
+}
+
+/// The dev tools' `spawnHerd` (DEV_TOOLS.md): a deer herd and a wolf pack put by the local player
+/// come in as creatures near it, by the near ecology (WORK_QUEUE item 39's poses, filmed by it).
+// face-a-only: the generated world's face A spawn; the record is placed face-locally.
+#[test]
+fn spawn_herd_puts_a_herd_and_a_pack_by_the_player() {
+    let mut rig = Rig::new();
+    assert!(rig.run_until(60 * 30, |r| {
+        r.game
+            .as_ref()
+            .is_some_and(|g| g.debug_state().terrain_ready)
+    }));
+    let feet = rig.game.as_ref().unwrap().debug_state().feet;
+    let deer = rig.core.lava_dev("spawnHerd", &[0.0, 5.0, 10.0]);
+    assert!(deer.starts_with("{\"record\":"), "{deer}");
+    let wolves = rig.core.lava_dev("spawnHerd", &[1.0, 3.0, -10.0]);
+    assert!(wolves.starts_with("{\"record\":"), "{wolves}");
+    let near = |rig: &mut Rig, name: &str| {
+        let server = rig.core.server();
+        let table = server.creature_table();
+        server
+            .creatures()
+            .iter()
+            .filter(|c| table.creatures[c.kind].name == name)
+            .filter(|c| (c.position[0] - feet[0]).hypot(c.position[2] - feet[2]) < 25.0)
+            .count()
+    };
+    assert!(
+        rig.run_until(60 * 10, |r| near(r, "dwell:wolf") >= 3
+            && near(r, "dwell:deer") + near(r, "dwell:doe") >= 5),
+        "deer {} does {} wolves {}",
+        near(&mut rig, "dwell:deer"),
+        near(&mut rig, "dwell:doe"),
+        near(&mut rig, "dwell:wolf")
+    );
+}

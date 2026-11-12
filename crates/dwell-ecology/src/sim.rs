@@ -141,7 +141,18 @@ impl Ecosystem {
         eco
     }
 
-    fn push(&mut self, species: usize, x: f64, z: f64, size: f64, hunger: f64, energy: f64) {
+    /// Adds a far record of `species` at face-local (`x`, `z`); its id (the start's groups, and
+    /// the dev tools' `spawnHerd`, docs/DEV_TOOLS.md).
+    pub fn push(
+        &mut self,
+        species: usize,
+        x: f64,
+        z: f64,
+        size: f64,
+        hunger: f64,
+        energy: f64,
+    ) -> u32 {
+        let id = self.next_id;
         self.groups.push(Group {
             id: self.next_id,
             species,
@@ -153,6 +164,7 @@ impl Ecosystem {
             activity: Activity::Resting,
         });
         self.next_id += 1;
+        id
     }
 
     /// The head of `species` on the island (the far records; [`Self::near_head`] adds those near
