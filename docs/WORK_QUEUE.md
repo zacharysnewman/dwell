@@ -273,6 +273,9 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    chops (its vertical strip now holds the vertical grip). Left: the owner's look review (the first-person
    wind-up leaves the screen, the third-person body turns only at the chest), remote players' chop
    direction (a protocol change).
+   Owner, 2026-11-12: **"The camera could have some sway with the chop."** In progress (cloud): a small camera
+   sway following the swing (a lean into the wind-up, a kick at contact, settling in the recovery), as tool
+   data, honouring the camera-shake/motion settings.
 18. **Digging marks that look carved** (owner 2026-11-11: "the 'chunks' of dirt aren't at all what we
    discussed. It should be like a normal map change (do we support normal/bump maps)? It's completely flat
    should look like mesh deformation (preferably without actually doing it for performance)"; "That part was
