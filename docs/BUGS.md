@@ -465,7 +465,7 @@ face, or the placement check against its shape.
 
 ## Fixed
 
-### 110. Slopes show no mark when hit with a tool, though they break (fixed after 0.55.11)
+### 111. Slopes show no mark when hit with a tool, though they break (fixed after 0.55.11)
 
 Owner, 2026-11-12: "Slopes aren't affected visually by tools when hit, though they do break." A ½ m stored ramp
 (`dwell:dirt_ramp`, `dwell:stone_ramp`, …; HALF_HEIGHT_GRID.md) takes damage and breaks by the bite rule (#794,
@@ -477,6 +477,40 @@ volume, kept inside the solid and watertight at the planes' edges, and cracked o
 cell now turns its state over with the chunk (it never matched a mirrored ramp). Tests (`ramp_damage_tests.rs`, both
 faces): the carved volume k × ½ × V ÷ n, the slope carved where struck, the mesh closed, cracks staged, a fixture
 look by data alone; red on the unfixed mesher (8 triangles, nothing carved, no cracks), green after.
+### 110. Some sound effects sound like they come from right behind your head (fixed; the listening check is the owner's)
+
+Owner, 2026-11-12: "I think the sound 'source' direction might be the issue with some of our sound effects. They
+sound like they're coming from right behind your head. Are we using 2D sound?" The engine is 3D: positioned sounds go
+through a PannerNode (HRTF on desktop, equal-power on mobile; inverse distance, ref 2 m), the listener at the camera
+(`setListener(position, forward, up)`). Suspects: the listener's forward/up not matching the camera in world space
+(a sign or axis swap, face B's frame, or forward sent face-local while positions are world), which mirrors front and
+back; the player's own sounds (footsteps at the feet, swings, the held tool, breaking at the target, the swim
+strokes) positioned at or just behind/below the head, where HRTF puts them behind or inside the head; positions
+lagging a frame behind a moving listener.
+Then (owner, more precisely): "Like footsteps sound like they're in your ears." So your own footsteps should sound
+grounded — from below and slightly ahead (at the feet, ~1.6 m under the ear), with a touch of the room, not dry and
+centred in the head; positioned at the feet in front of the body rather than made non-positional, and never flipping
+behind the head when looking up or down.
+
+**Cause.** Not the listener: its forward and up are the drawn camera's, in the world frame the sounds are placed in,
+on both faces (checked: `dwell-client` game.rs `the_listener_hears_ahead_ahead_and_right_right`, a sound 5 m ahead
+heard at −z, one to the player's right at +x, the listener's right the view's, at pitch 0 and ±45°, faces A and B).
+The game sends the local player's own sounds without a position (`at` none), and the shell played them dry and
+unpanned at the ear (the footsteps ±0.12 stereo pan): a mono sound straight into both ears is heard inside the head.
+Hits and breaks were already at the block, other players' and creatures' sounds at them.
+
+**Fix.** Own sounds are placed round the ear by data (AUDIO.md §5a): each event names a placement in
+`shared/sounds` `self` — `feet` (1.5 m under the ear, 0.6 m ahead, steps alternating 0.15 m left and right, 0.08 to
+the room), `body` (swim strokes, climbing, water in and out, crouch, sprint, a wall hit), `hand` (the held tool, the
+axe's swish, a break or hit without a point: 0.3 m to the right) — in the listener's own frame, so looking up or
+down never moves them behind the head; an event without one (a gasp, a hurt: your own voice) stays at the ear. A
+slide's loop follows the ear. The listener is now set before the frame's sounds are played (it lagged a frame). The
+validator refuses a placement behind the head. Tests: `client/src/audio/listener.test.ts` (the listener frame and the
+feet below and ahead of the ears at pitch 0 and ±45° on both faces; own sounds take the self path, a remote step
+keeps its feet; red before: the own steps played at the ear with pan ±0.12, the slide's loop at the origin);
+`dwell-game` sound.rs `own_footsteps_go_to_the_ear_and_anothers_sound_at_its_feet` (both faces),
+`our_hit_on_a_block_sounds_at_the_block`; game.rs `a_struck_point_sounds_inside_the_struck_cell`. The owner's listening
+check (headphones: footsteps from the ground ahead, the tool to the right) is outstanding.
 
 ### 109. In a big world the client won't place a block past 50 km from the centre (fixed after 0.55.9)
 

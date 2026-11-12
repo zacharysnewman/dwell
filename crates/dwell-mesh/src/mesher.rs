@@ -916,7 +916,7 @@ fn neighbour_of(x: i32, y: i32, z: i32, axis: usize, sign: i32) -> [i32; 3] {
 
 /// A shaped voxel: each polygon of its shape, but the parts of cell faces a neighbour covers. A
 /// damaged one (`damage`: its view, face-local) is carved where struck and cracked once staged
-/// (BUGS.md #110, BLOCK_DAMAGE.md §6.5; `ramp_damage`).
+/// (BUGS.md #111, BLOCK_DAMAGE.md §6.5; `ramp_damage`).
 fn shaped_voxel(
     b: &mut Builder,
     cells: &Cells<'_>,
@@ -2230,7 +2230,7 @@ fn mesh_cells(
             }
         }
     }
-    // Damaged ramps (BUGS.md #110): carved and cracked in `shaped_voxel`, by cell.
+    // Damaged ramps (BUGS.md #111): carved and cracked in `shaped_voxel`, by cell.
     let ramp_hits: HashMap<[i32; 3], usize> = damaged
         .iter()
         .enumerate()

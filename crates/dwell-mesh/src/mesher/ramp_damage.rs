@@ -1,4 +1,4 @@
-//! Block damage on a stored ramp (BUGS.md #110, BLOCK_DAMAGE.md §6.5): the ramp's struck
+//! Block damage on a stored ramp (BUGS.md #111, BLOCK_DAMAGE.md §6.5): the ramp's struck
 //! polygons carved as a cube's struck faces are (§6.2), its exposed polygons cracked (§6.3), the
 //! bite rule's volume (§10, a ramp's ½) taken out over its hits. Owner, 2026-11-12: "Slopes aren't
 //! affected visually by tools when hit, though they do break."

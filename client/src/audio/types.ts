@@ -157,6 +157,22 @@ export interface EventDef {
   fallback?: false;
   /** A creature's event (AUDIO.md §2d): the event's `block` is the model's index in `creatures`. */
   creature?: 'step' | 'startle' | 'call';
+  /** Where the local player's own play of it is heard (a placement in `self`); none: at the ear. */
+  self?: string;
+}
+
+/**
+ * Where an own sound is heard (AUDIO.md §5a, BUGS.md #110): metres from the ear in the listener's
+ * own frame, so looking up or down never moves it behind the head.
+ */
+export interface SelfPlacement {
+  right: number;
+  up: number;
+  ahead: number;
+  /** Alternate plays (footsteps) move this far left and right. */
+  stepM?: number;
+  /** The share sent to the room on top of the sound's own. */
+  reverb?: number;
 }
 
 /** The ambient sounds' tunables (AUDIO.md §2), read by the Rust game. */
@@ -220,6 +236,8 @@ export interface SoundData {
   gaitOrder: string[];
   /** In the Rust game's numbering (SoundKind). */
   events: EventDef[];
+  /** The own sounds' placements by name (an event's `self`). */
+  self: Record<string, SelfPlacement>;
   sets: Record<string, Partial<Record<SetEvent, string>>>;
   actions: Record<string, string>;
   ui: Record<string, string>;

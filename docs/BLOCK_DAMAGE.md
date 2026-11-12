@@ -298,7 +298,7 @@ damage." Built, in addition to the carve (not instead of it):
   the wasm32 clippy and the Vitest files were not run here (no wasm target or `node_modules` in the
   container). The wood set is drawn round the axe's bites on a cut log (§6.4, the wood's `cut.cracks`).
 
-### 6.5 Ramps show their hits (BUGS.md #110)
+### 6.5 Ramps show their hits (BUGS.md #111)
 
 Owner, 2026-11-12: "Slopes aren't affected visually by tools when hit, though they do break." A stored ramp
 (HALF_HEIGHT_GRID.md; the ½ m `ramp` and the 45° `steep_lower`/`steep_upper` halves) is drawn as its shape's

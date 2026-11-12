@@ -25,14 +25,36 @@ export const SOUND_DATA: SoundData = {
       "gain": 0.45
     }
   },
+  "self": {
+    "feet": {
+      "right": 0,
+      "up": -1.5,
+      "ahead": 0.6,
+      "stepM": 0.15,
+      "reverb": 0.08
+    },
+    "body": {
+      "right": 0,
+      "up": -0.7,
+      "ahead": 0.4,
+      "reverb": 0.05
+    },
+    "hand": {
+      "right": 0.3,
+      "up": -0.35,
+      "ahead": 0.5
+    }
+  },
   "events": [
     {
       "name": "step",
-      "set": "step"
+      "set": "step",
+      "self": "feet"
     },
     {
       "name": "climb",
-      "set": "step"
+      "set": "step",
+      "self": "body"
     },
     {
       "name": "land",
@@ -40,24 +62,29 @@ export const SOUND_DATA: SoundData = {
       "speed": [
         3.5,
         16
-      ]
+      ],
+      "self": "feet"
     },
     {
       "name": "jump",
       "set": "step",
-      "sound": "dwell:jump"
+      "sound": "dwell:jump",
+      "self": "feet"
     },
     {
       "name": "break",
-      "set": "break"
+      "set": "break",
+      "self": "hand"
     },
     {
       "name": "place",
-      "set": "place"
+      "set": "place",
+      "self": "hand"
     },
     {
       "name": "hit",
-      "set": "hit"
+      "set": "hit",
+      "self": "hand"
     },
     {
       "name": "enter",
@@ -65,7 +92,8 @@ export const SOUND_DATA: SoundData = {
       "speed": [
         1.5,
         12
-      ]
+      ],
+      "self": "body"
     },
     {
       "name": "exit",
@@ -73,23 +101,28 @@ export const SOUND_DATA: SoundData = {
       "speed": [
         1,
         6
-      ]
+      ],
+      "self": "body"
     },
     {
       "name": "swim",
-      "set": "swim"
+      "set": "swim",
+      "self": "body"
     },
     {
       "name": "crouch_on",
-      "sound": "dwell:crouch_on"
+      "sound": "dwell:crouch_on",
+      "self": "body"
     },
     {
       "name": "crouch_off",
-      "sound": "dwell:crouch_off"
+      "sound": "dwell:crouch_off",
+      "self": "body"
     },
     {
       "name": "sprint",
-      "sound": "dwell:sprint"
+      "sound": "dwell:sprint",
+      "self": "body"
     },
     {
       "name": "slide",
@@ -98,7 +131,8 @@ export const SOUND_DATA: SoundData = {
         0.5,
         14
       ],
-      "loop": "start"
+      "loop": "start",
+      "self": "feet"
     },
     {
       "name": "slide_speed",
@@ -115,7 +149,8 @@ export const SOUND_DATA: SoundData = {
         0.5,
         14
       ],
-      "loop": "stop"
+      "loop": "stop",
+      "self": "feet"
     },
     {
       "name": "rise",
@@ -123,7 +158,8 @@ export const SOUND_DATA: SoundData = {
       "speed": [
         2,
         30
-      ]
+      ],
+      "self": "body"
     },
     {
       "name": "dive",
@@ -131,7 +167,8 @@ export const SOUND_DATA: SoundData = {
       "speed": [
         2,
         30
-      ]
+      ],
+      "self": "body"
     },
     {
       "name": "deny",
@@ -139,7 +176,8 @@ export const SOUND_DATA: SoundData = {
     },
     {
       "name": "tool",
-      "sound": "dwell:ui_click"
+      "sound": "dwell:ui_click",
+      "self": "hand"
     },
     {
       "name": "impact",
@@ -148,7 +186,8 @@ export const SOUND_DATA: SoundData = {
       "speed": [
         2,
         25
-      ]
+      ],
+      "self": "body"
     },
     {
       "name": "fell",
@@ -213,27 +252,33 @@ export const SOUND_DATA: SoundData = {
     },
     {
       "name": "chop_bark",
-      "sound": "dwell:chop_bark"
+      "sound": "dwell:chop_bark",
+      "self": "hand"
     },
     {
       "name": "chop_wood",
-      "sound": "dwell:chop_wood"
+      "sound": "dwell:chop_wood",
+      "self": "hand"
     },
     {
       "name": "chop_creak",
-      "sound": "dwell:chop_creak"
+      "sound": "dwell:chop_creak",
+      "self": "hand"
     },
     {
       "name": "axe_clank",
-      "sound": "dwell:axe_clank"
+      "sound": "dwell:axe_clank",
+      "self": "hand"
     },
     {
       "name": "axe_swish",
-      "sound": "dwell:axe_swish"
+      "sound": "dwell:axe_swish",
+      "self": "hand"
     },
     {
       "name": "axe_rustle",
-      "sound": "dwell:axe_rustle"
+      "sound": "dwell:axe_rustle",
+      "self": "hand"
     },
     {
       "name": "exhausted",
@@ -274,11 +319,13 @@ export const SOUND_DATA: SoundData = {
         0.4,
         6
       ],
-      "fallback": false
+      "fallback": false,
+      "self": "feet"
     },
     {
       "name": "stick_snap",
-      "sound": "dwell:stick_snap"
+      "sound": "dwell:stick_snap",
+      "self": "feet"
     },
     {
       "name": "steam_hiss",
@@ -286,12 +333,14 @@ export const SOUND_DATA: SoundData = {
     },
     {
       "name": "sizzle",
-      "sound": "dwell:sizzle"
+      "sound": "dwell:sizzle",
+      "self": "body"
     },
     {
       "name": "swim_under",
       "set": "swim_under",
-      "fallback": false
+      "fallback": false,
+      "self": "body"
     }
   ],
   "sets": {

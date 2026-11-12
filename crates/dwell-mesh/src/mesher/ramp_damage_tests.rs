@@ -1,4 +1,4 @@
-//! Ramps show their hits (BUGS.md #110; owner, 2026-11-12: "Slopes aren't affected visually by
+//! Ramps show their hits (BUGS.md #111; owner, 2026-11-12: "Slopes aren't affected visually by
 //! tools when hit, though they do break.").
 
 use super::*;
