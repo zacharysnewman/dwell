@@ -683,7 +683,8 @@ impl GpuMesh {
     /// A fluid mesh (a chunk's transparent mesh, a section's water): position, normal, colour,
     /// fluid id (`dwell_mesh::NO_FLUID` where the stream is short) and flood light per vertex
     /// (`fluid_vertices`). The water shader draws its ripples procedurally, so the chunks' uvs and
-    /// tiles are left behind.
+    /// tiles are left behind. With `staged`, its bytes are handed over to be written later.
+    #[allow(clippy::too_many_arguments)]
     fn fluid(
         arena: &ArenaRef,
         positions: &[f32],

@@ -254,6 +254,11 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    (`shared/render/streaming.json`), one loading item past the deadline a frame, a faster `interleave`, bench record
    budgets and the `phone-moving` scenario. Left: the flood light off the main thread, the sky volume's copy
    (`padded_box`), a chunk's upload split across frames, the minimap's tiles; a real iPhone check while moving.
+   **Status (fps-moving-2):** built: the sky volume's fluid continuation only where a neighbour is missing
+   (`padded_box` 0.44 → 0.12 s in a 4× flight), mesh job messages in one buffer, a chunk mesh over the phone's
+   budget written over several frames; at 6× the three routes drop 77 frames where they dropped 115 (BUGS.md #72
+   round 4). Left: the flood light off the main thread (the largest main-thread cost; one chunk's light is the
+   worst frames at 6×), then a real iPhone check while moving.
 17. **Axe swing directions and animation tools** (owner 2026-11-11: "The axe animations are still trash. They
    don't swing in the right direction at all. Make yourself some tools to properly observe animations, movement
    directions, positions over time, etc. Should swing right to left for horizontal and up to down for vertical";

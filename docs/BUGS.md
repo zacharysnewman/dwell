@@ -348,6 +348,47 @@ tree trunks with the leaf cards. What might be dropping frames since the last wh
   (DEV_TOOLS.md "Flight loading", fix 2), the sky volume's copy (`padded_box`, the largest main-thread cost: copy it in
   the worker, or ship the chunk and its neighbours once), a chunk's upload split across frames, and the minimap's
   tile work; then a real iPhone check while moving.
+- **Round 4 (branch `claude/fps-moving-2`).** The bench's `phone-moving` scenario (walk, sprint, fly 8 s each in turn,
+  default world, Low) at CPU 4× and 6×, budgets left out so every route runs, against main after round 3:
+
+  | Route | CPU | Build | interval p50 / p95 / p99 | dropped (> 20 ms) | frame.cpu p50 / p95 / p99 | frames > 16.7 ms CPU | mesh_dirty p95 / max | jobs.apply p95 / max |
+  | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+  | walk | 4x | main (round 3) | 16.7 / 18.5 / 18.6 | 0 of 478 | 3.7 / 13.8 / 17.5 | 7 | 8.8 / 12.3 | 3.4 / 7.2 |
+  | walk | 4x | this branch | 16.7 / 18.5 / 18.7 | 0 of 478 | 3.9 / 13.4 / 17.5 | 6 | 7.9 / 13.3 | 2.2 / 3.7 |
+  | sprint | 4x | main (round 3) | 16.7 / 18.5 / 18.6 | 0 of 480 | 3.1 / 10.9 / 15.3 | 2 | 6.8 / 12.4 | 3.4 / 7.4 |
+  | sprint | 4x | this branch | 16.7 / 18.5 / 18.6 | 0 of 479 | 3.5 / 9.1 / 15.7 | 4 | 4.0 / 12.7 | 2.3 / 4.5 |
+  | fly | 4x | main (round 3) | 16.7 / 18.3 / 18.6 | 5 of 606 | 3.6 / 13.3 / 18.4 | 13 | 7.4 / 13.1 | 3.6 / 8.5 |
+  | fly | 4x | this branch | 16.7 / 18.3 / 18.6 | 5 of 609 | 3.7 / 12.4 / 17.8 | 12 | 5.8 / 13.5 | 2.4 / 5.3 |
+  | walk | 6x | main (round 3) | 16.7 / 31.7 / 35.0 | 28 of 452 | 6.2 / 18.7 / 26.3 | 28 | 9.6 / 18.7 | 5.4 / 8.6 |
+  | walk | 6x | this branch | 16.7 / 18.7 / 33.3 | 17 of 461 | 5.7 / 19.9 / 25.4 | 29 | 10.8 / 17.9 | 3.4 / 6.4 |
+  | sprint | 6x | main (round 3) | 16.7 / 18.6 / 33.4 | 18 of 463 | 4.9 / 14.7 / 25.1 | 17 | 6.4 / 18.0 | 6.7 / 10.8 |
+  | sprint | 6x | this branch | 16.7 / 18.5 / 32.8 | 11 of 470 | 5.2 / 13.0 / 23.1 | 12 | 5.0 / 18.6 | 3.4 / 7.3 |
+  | fly | 6x | main (round 3) | 16.7 / 33.7 / 48.7 | 69 of 523 | 5.1 / 22.4 / 30.1 | 49 | 8.6 / 20.0 | 5.1 / 13.5 |
+  | fly | 6x | this branch | 16.7 / 33.2 / 48.8 | 49 of 551 | 5.5 / 21.1 / 28.1 | 36 | 9.3 / 21.2 | 3.4 / 8.3 |
+
+  Over the three routes at 6× the dropped frames go from 115 to 77 and `jobs.apply`'s worst from 13.5 to 8.3 ms (4×:
+  8.5 → 5.3); at 4× the routes were already near 60 and move little. **Cuts:** (1) the sky volume's copy
+  (`padded_box`): the fluid continuation into missing neighbours (BUGS 8) looked a neighbour up for each of the
+  volume's 124k voxels at every chunk on the streamed view's edge; it now looks each up once and visits only the
+  missing ones' part of the apron (`voxel.rs` `continue_fluids_into_missing`; 0.44 → 0.12 s in the 4× flight's
+  trace). Tests `padded_fluids`: the blocks equal the per-voxel rule's for five sets of missing neighbours, and
+  `a_chunk_on_the_streamed_edge_copies_its_sky_volume_about_as_fast_as_one_inside`, red on the old rule (edge 0.38 ms,
+  inside 0.05), green. (2) A mesh job's message is written into one buffer sized up front (`jobs/codec.rs`): test
+  `a_mesh_job_is_written_into_one_buffer_sized_up_front`, red on the old writer (535 KB in a 1 MB doubling buffer),
+  green; `encode_job` left the trace's top. (3) A chunk mesh over the frame's upload budget is written a slice a frame
+  into room reserved in the arena (`render/staged.rs`, pumped before each draw; the old mesh drawn until it is whole;
+  `upload.staged_bytes` ≤ 512 KiB a frame on the phone), and no further mesh is handed over meanwhile
+  (`Scene::uploads_waiting`): tests `staged` (no frame over the budget, a chunk shown only once whole, a replaced one
+  dropped) and `game_local` `no_mesh_is_handed_over_while_the_scene_is_still_writing_one`, red with the wait ignored
+  (288 meshes handed over), green. The sky volume is still copied on the main thread (`padded_box` 0.12 s, the copy
+  itself); sending the worker the chunk and its neighbours instead would need the workers to hold the streamed world.
+  **Not done:** the flood light off the main thread (`LightMap::load`, now the largest main-thread cost: `run_from`
+  0.26–0.40 s self, and `mesh_dirty`'s worst frames at 6×, 18–21 ms, are one chunk's light). It is a larger change than
+  this round's box: the light map is the main thread's state (edits relight it at once, meshes read its padded light,
+  creatures and players their flood light), so a worker would have to hold the streamed voxels and the light map
+  and answer each mesh start's padded light; a smaller step is lighting a chunk across frames (the BFS resumable
+  under the stream budget). The minimap's tiles were not touched: they are under their own 2 ms budget
+  (`shared/ui/map.json` `revealed.budgetMs`; `fillReveal` 0.1–0.2 s in the traces). Then a real iPhone check.
 
 ### 71. "Starting the graphics" takes a long time with no elapsed time shown (fixed after 0.52.101)
 
