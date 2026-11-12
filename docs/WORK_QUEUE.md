@@ -917,6 +917,8 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    **packs roam toward herds** (hungry packs travel toward the nearest herd, so hunts happen near players), and
    **a grazing pose and more idle behaviour** (deer lower their heads to graze, look up, flick ears; wolves sit
    and lie down). In progress (cloud); a new video after.
+   Owner on the first video: **"The recording was a really good start. I'd like to record at 9:16 1080/1920."** —
+   the next video (after this item lands) is portrait 1080×1920, framed for portrait, with a chase and fleeing.
 
 ## Done
 
