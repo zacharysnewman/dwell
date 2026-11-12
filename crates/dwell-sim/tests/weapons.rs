@@ -241,3 +241,316 @@ dwell_world::both_faces!(
         assert!(health(&fx, wolf).unwrap() < whole);
     }
 );
+
+// --- Round 2: swordplay on the wire, the player's block, NPCs that fight back. ---
+
+/// Client 2 says the `weapons.clash` capability (this build's client); client 1 says none (an
+/// older build). Player 1 says it holds the sword, level.
+fn swordplay_scene(f: FaceFrame) -> Fixture {
+    let mut fx = scene(f, "adventure");
+    fx.send(
+        2,
+        Message::Capabilities(dwell_protocol::capabilities::Capabilities::this_client()),
+    );
+    fx.send(
+        1,
+        Message::Chop(ChopAction::Held {
+            tool: SWORD.into(),
+            vertical: false,
+        }),
+    );
+    fx.server.step();
+    fx.take_all();
+    fx
+}
+
+fn swordplay(msgs: &[Message]) -> Vec<SwordplayMessage> {
+    msgs.iter()
+        .filter_map(|m| match m {
+            Message::Swordplay(s) => Some(s.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+fn clashes(msgs: &[Message]) -> Vec<ClashNet> {
+    swordplay(msgs)
+        .into_iter()
+        .filter_map(|s| match s {
+            SwordplayMessage::Clash(c) => Some(c),
+            _ => None,
+        })
+        .collect()
+}
+
+/// Player 1 looks along face-local +x (yaw 90: toward the creatures put ahead of it) for `ticks`
+/// ticks, an input frame a tick (as a client sends them), stepping the server.
+fn facing_ahead(fx: &mut Fixture, ticks: u32) {
+    static SEQ: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(1);
+    let input = dwell_physics::controller::Input {
+        look_yaw: 90.0,
+        ..Default::default()
+    };
+    for _ in 0..ticks {
+        let seq = SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let m = Message::PlayerInput(PlayerInput {
+            last_snapshot_tick: 0,
+            inputs: vec![dwell_physics::net::quantize_input(&input, seq)],
+        });
+        fx.server.on_datagram(1, &m.encode());
+        fx.server.step();
+    }
+}
+
+dwell_world::both_faces!(
+    fn a_strikes_outcome_reaches_a_capable_client_near_and_never_an_older_one(f: FaceFrame) {
+        let mut fx = swordplay_scene(f);
+        move_to(&mut fx, 2, f, 0.5, 3.0);
+        let wolf = put(&mut fx, f, "dwell:wolf", 2.0, 0.5, -90.0);
+        let mut g = Guard::holding(SWORD, true);
+        g.raised = true;
+        assert!(fx.server.set_creature_guard(wolf, Some(g)));
+        fx.take_all();
+        slash(&mut fx, f, false);
+        let all = fx.take_all();
+        let got = clashes(&all[&2]);
+        assert_eq!(got.len(), 1, "one strike, one outcome: {got:?}");
+        let c = &got[0];
+        assert_eq!(c.outcome, Clash::Blocked);
+        assert_eq!(c.striker, Fighter::Player(1));
+        assert_eq!(c.defender, Fighter::Creature(wolf));
+        assert_eq!(c.weapon, SWORD);
+        assert!(!c.striker_vertical && c.defender_vertical);
+        // Where the blades met: between the two, on this face.
+        assert_eq!(FaceFrame::at_height(f64::from(c.point[1])), f);
+        let local = f.point(c.point.map(f64::from));
+        assert!((0.5..2.0).contains(&local[0]), "{local:?}");
+        assert!(
+            swordplay(all.get(&1).map_or(&[][..], |v| v)).is_empty(),
+            "an older client is sent no Swordplay (it would refuse the type)"
+        );
+    }
+);
+
+dwell_world::both_faces!(
+    fn a_clash_goes_only_to_capable_clients_within_hear_m(f: FaceFrame) {
+        let mut fx = swordplay_scene(f);
+        let hear = sword().weapon.unwrap().guard.clash.hear_m;
+        move_to(&mut fx, 2, f, 0.5 + hear + 4.0, 0.5);
+        let wolf = put(&mut fx, f, "dwell:wolf", 2.0, 0.5, -90.0);
+        let _ = wolf;
+        for _ in 0..5 {
+            fx.server.step();
+        }
+        fx.take_all();
+        slash(&mut fx, f, false);
+        let all = fx.take_all();
+        assert!(clashes(all.get(&2).map_or(&[][..], |v| v)).is_empty());
+        assert_eq!(fx.server.strikes().len(), 1, "it was struck all the same");
+    }
+);
+
+dwell_world::both_faces!(
+    fn the_players_block_rises_and_drops_by_input_and_its_own_swing(f: FaceFrame) {
+        let mut fx = swordplay_scene(f);
+        assert_eq!(fx.server.player_guard(1), Some((false, false)));
+        fx.send(1, Message::Chop(ChopAction::Guard { raised: true }));
+        fx.server.step();
+        assert_eq!(
+            fx.server.player_guard(1),
+            Some((false, true)),
+            "raised, level"
+        );
+        // The others with the capability see it raised; the older client hears nothing.
+        let all = fx.take_all();
+        assert_eq!(
+            swordplay(&all[&2]),
+            vec![SwordplayMessage::Guards(vec![GuardNet {
+                who: Fighter::Player(1),
+                vertical: false,
+                raised: true,
+            }])]
+        );
+        // Its own swing drops the block while it runs; held, it is back after.
+        fx.send(
+            1,
+            Message::Chop(ChopAction::Sweep {
+                tool: SWORD.into(),
+                look: f.vector([1.0, 0.0, 0.0]).map(|v| v as f32),
+                vertical: false,
+            }),
+        );
+        fx.server.step();
+        assert_eq!(fx.server.player_guard(1), Some((false, false)), "mid-swing");
+        for _ in 0..swing_ticks() {
+            fx.server.step();
+        }
+        assert_eq!(fx.server.player_guard(1), Some((false, true)));
+        // The stance turns with the hold; let go, it drops; put away, no guard at all.
+        fx.send(
+            1,
+            Message::Chop(ChopAction::Held {
+                tool: SWORD.into(),
+                vertical: true,
+            }),
+        );
+        fx.server.step();
+        assert_eq!(fx.server.player_guard(1), Some((true, true)));
+        fx.send(1, Message::Chop(ChopAction::Guard { raised: false }));
+        fx.server.step();
+        assert_eq!(fx.server.player_guard(1), Some((true, false)));
+        fx.send(1, Message::Chop(ChopAction::Guard { raised: true }));
+        fx.send(
+            1,
+            Message::Chop(ChopAction::Held {
+                tool: String::new(),
+                vertical: true,
+            }),
+        );
+        fx.server.step();
+        assert_eq!(fx.server.player_guard(1), None);
+        fx.send(1, Message::Chop(ChopAction::Guard { raised: true }));
+        fx.server.step();
+        assert_eq!(fx.server.player_guard(1), None, "no weapon, no block");
+    }
+);
+
+/// A villager (holding its data's sword) at face-local (1.6, 0.5) facing player 1, turned on it.
+fn foe_villager(fx: &mut Fixture, f: FaceFrame) -> u32 {
+    move_to(fx, 2, f, 0.5, 4.0);
+    let v = put(fx, f, "dwell:villager", 1.6, 0.5, -90.0);
+    // Its own mind (not driven by a herd): its fight's give-up counts down.
+    fx.server.creatures_mut().get_mut(v).unwrap().driven = false;
+    let eye = f.point([0.5, m_of_row(BASE) + 1.6, 0.5]);
+    let cs = fx.server.creatures_mut();
+    assert!(cs.attacked(v, eye), "the villager fights back (data)");
+    cs.set_foe_player(v, 1);
+    v
+}
+
+fn villager_guard(fx: &Fixture, v: u32) -> Guard {
+    fx.server
+        .creatures()
+        .iter()
+        .find(|c| c.id == v)
+        .and_then(|c| c.guard)
+        .expect("its sword")
+}
+
+dwell_world::both_faces!(
+    fn an_npc_blocks_the_wind_up_by_counter_then_strikes_back_unhurting(f: FaceFrame) {
+        let mut fx = swordplay_scene(f);
+        facing_ahead(&mut fx, 2);
+        let v = foe_villager(&mut fx, f);
+        assert!(
+            !villager_guard(&fx, v).raised,
+            "lowered until a blade comes"
+        );
+        let healths = [fx.server.health_of(1), fx.server.health_of(2)];
+        fx.take_all();
+        // A level slash: on its wind-up the villager raises the stance that blocks it (vertical).
+        fx.send(
+            1,
+            Message::Chop(ChopAction::Sweep {
+                tool: SWORD.into(),
+                look: f.vector([1.0, 0.0, 0.0]).map(|v| v as f32),
+                vertical: false,
+            }),
+        );
+        facing_ahead(&mut fx, 3);
+        let g = villager_guard(&fx, v);
+        assert!(
+            g.raised && g.vertical,
+            "counter: upright across a level slash: {g:?}"
+        );
+        // The clients with the capability see it raised.
+        let all = fx.take_all();
+        assert!(
+            swordplay(&all[&2]).contains(&SwordplayMessage::Guards(vec![GuardNet {
+                who: Fighter::Creature(v),
+                vertical: true,
+                raised: true,
+            }]))
+        );
+        facing_ahead(&mut fx, swing_ticks());
+        assert_eq!(
+            fx.server.strikes().last().unwrap().clash,
+            Some(Clash::Blocked)
+        );
+        // In the recovery it swung back: player 1's block was down, so it connected, and hurt
+        // nobody (an NPC can't hurt a player; the owner's open question).
+        let n = fx.server.npc_strikes().to_vec();
+        assert_eq!(n.len(), 1, "{n:?}");
+        assert_eq!((n[0].npc, n[0].player_id), (v, 1));
+        assert_eq!(n[0].outcome, Some(Clash::Connected));
+        assert!(n[0].vertical, "in its stance");
+        assert_eq!([fx.server.health_of(1), fx.server.health_of(2)], healths);
+        let all = fx.take_all();
+        assert!(
+            clashes(&all[&2])
+                .iter()
+                .any(|c| c.striker == Fighter::Creature(v)
+                    && c.defender == Fighter::Player(1)
+                    && c.outcome == Clash::Connected)
+        );
+        // Its wait over, again: now player 1 holds its level block, facing it, and the villager's
+        // upright blow across it is blocked.
+        let fight = fx
+            .server
+            .creature_table()
+            .npc("dwell:villager")
+            .unwrap()
+            .fight;
+        facing_ahead(&mut fx, (fight.cooldown_s * f64::from(SIM_HZ)) as u32);
+        fx.send(1, Message::Chop(ChopAction::Guard { raised: true }));
+        fx.send(
+            1,
+            Message::Chop(ChopAction::Sweep {
+                tool: SWORD.into(),
+                look: f.vector([1.0, 0.0, 0.0]).map(|v| v as f32),
+                vertical: false,
+            }),
+        );
+        facing_ahead(&mut fx, swing_ticks());
+        facing_ahead(&mut fx, swing_ticks());
+        let n = fx.server.npc_strikes().to_vec();
+        assert_eq!(n.len(), 2, "{n:?}");
+        assert_eq!(
+            n[1].outcome,
+            Some(Clash::Blocked),
+            "upright on a level block"
+        );
+        assert_eq!([fx.server.health_of(1), fx.server.health_of(2)], healths);
+    }
+);
+
+dwell_world::both_faces!(
+    fn an_npc_gives_up_its_fight_after_give_up_s_without_a_hit(f: FaceFrame) {
+        let mut fx = swordplay_scene(f);
+        let v = foe_villager(&mut fx, f);
+        let fight = fx
+            .server
+            .creature_table()
+            .npc("dwell:villager")
+            .unwrap()
+            .fight;
+        let ticks = (fight.give_up_s * f64::from(SIM_HZ)) as u32;
+        for _ in 0..ticks - 5 {
+            fx.server.step();
+        }
+        let foe = |fx: &Fixture| {
+            fx.server
+                .creatures()
+                .iter()
+                .find(|c| c.id == v)
+                .unwrap()
+                .foe_player
+        };
+        assert_eq!(foe(&fx), Some(1), "still fighting");
+        for _ in 0..10 {
+            fx.server.step();
+        }
+        assert_eq!(foe(&fx), None, "given up");
+        assert!(!villager_guard(&fx, v).raised);
+    }
+);

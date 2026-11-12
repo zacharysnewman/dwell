@@ -3262,9 +3262,34 @@ creature with its `hitRadiusM` and `drops`; none: it can't be hurt), slides it `
 walkable ground (`KNOCK_SPEED_MPS`) and sets its `hurt_from` for the near ecology's reaction
 (docs/ECOLOGY.md §8.1). A creature killed is removed (the clients told) and drops its `drops` as loose
 items; the weapon wears once a creature struck. The client's sweep treats a wood as a bounce for a
-weapon. Not yet: a clash's sound, sparks and recoil on the clients (no message carries the outcome),
-a player's block input and raised pose (players can't be struck yet), slash clips of its own
-(CHARACTERS.md §5), NPCs raising their blocks and swinging on their own (by the defender API). An NPC whose `npc.held` is a weapon holds it as its guard (its stance, lowered) from its spawn, and a strike on an NPC also calls its `fightBack` hook (`Creatures::attacked`); the villager has health (`health` 40, no drops).
+weapon. **Swordplay [built: server, wire, client logic; the raised poses' clips and drawing local]**
+(round 2), behind the `weapons.clash` capability: (1) each strike on a creature goes as `Swordplay`'s
+clash (`ClashNet`: striker and defender, `Fighter::Player` or `Creature`; the weapon; the outcome,
+blocked / glanced / connected, a strike on no block connecting; where the blades met; both stances) to
+the joined clients with the capability within the weapon's `guard.clash.hearM`, an older client never;
+the client (`dwell-client` `swordplay.rs`) plays `guard.clash.sound` (a sound event by name: the
+sword's `axe_clank`, the metal sample) at the glance share for a glance, bursts `guard.clash.sparks`
+(chips by data, after the blocks' in `chips::chip_looks`) and, when it struck and was blocked, recoils
+its view (the swing's kick at `bounce` over `recoilS`); a connect shows none. (2) The player's block:
+Place held with a weapon (right-click, the controller's Place, the touch Place: their existing
+bindings as data) past `guard.raiseAfterS` raises it in the current stance (the swing's plane; a tap
+turns the stance as before), let go it drops; the client says it with `ChopAction::Guard` (only to a
+server with the capability); the server keeps it (`Server::player_guard`: raised, a weapon held, not
+mid-swing: its own swing, `WeaponSwing`, drops it) and tells the others' capable clients as
+`Swordplay` guards (`GuardNet`), the raised guards there are coming to a client that says the
+capability; a stance change or putting the weapon away is told too. Each stance's first-person raised
+pose is data (`guard.stances.*.raisedPose`). (3) NPC fights (`npc.fight` in shared/creatures, defaults
+in `shared/creatures/gen.mjs`; `Creatures::step_fights`, `Server::step_npc_fights`): an NPC whose
+`fightBack` triggered and that holds a weapon reads the player it fights (`FoeView`: the player's
+`WeaponSwing` phase, coming up to its contact, then recovering): it raises its block in its `stance`
+(`counter`: `GuardDef::counter`, the stance perpendicular to the coming swing; `random`) while the
+blade is coming, lowers it otherwise, swings back while the player recovers within `strikeWithinM`
+once its `cooldownS` is over, and gives up `giveUpS` after the last strike; its guard changes go to the
+capable clients. Its blow lands at its swing's middle, against the player's raised block when the
+player faces it (the weapon's `frontDeg`): blocked (the NPC recoils), glanced or connected — sent as a
+clash, and **never hurting the player** (only animals and NPCs can be struck; whether NPCs may hurt
+players is the owner's open question; `Server::npc_strikes`). Not yet: slash clips of its own
+(CHARACTERS.md §5), the raised poses' clips and others' raised swords drawn (local). An NPC whose `npc.held` is a weapon holds it as its guard (its stance, lowered) from its spawn, and a strike on an NPC also calls its `fightBack` hook (`Creatures::attacked`); the villager has health (`health` 40, no drops).
 
 **NPCs [in progress: data, server and client logic built; the colours and held item in the renderer to
 follow]** (WORK_QUEUE item 38, CHARACTERS.md §11.11). Wandering people are creatures with an `npc` block
@@ -4486,7 +4511,12 @@ piece's size in sixteenths of the block's mark; a metal tool's 32), only to a cl
 without it every mark is ×1.
 The fourth is `creatures.npcs` (WORK_QUEUE
 item 38): `Creatures` ends with its NPCs' part (above); an older client gets the message without it and
-draws an NPC as its model's plain creature.
+draws an NPC as its model's plain creature. The fifth is `weapons.clash` (WORK_QUEUE item 35, "Weapons"
+above): the server sends `Swordplay` 0x6A (S→C, reliable, world: u8 kind; 0 a clash: fighter striker,
+fighter defender, str weapon, u8 outcome 0 blocked 1 glanced 2 connected, f32×3 point, u8 bits
+striker vertical 1 | defender vertical 2; 1 the guards: u16 count, each a fighter and u8 bits vertical
+1 | raised 2; a fighter is u8 0 + u16 player id or u8 1 + u32 creature id), and the client sends
+`Chop`'s action 4, `Guard` (u8 raised); neither goes to a peer without the capability.
 ```
 S→C  WorldSettings field 0x85 (optional): u8 count (≤ 64), each str name (≤ 48 bytes, no repeat)
 C→S  Capabilities 0x69, control: the same form — the client's capabilities, once after Welcome,

@@ -422,4 +422,18 @@ test('a bad weapon fails naming it and the problem', () => {
   bad((t) => (t.weapon.guard.blockWithinDeg = 60), /blockWithinDeg \+ connectWithinDeg \(95\) must not be above 90/);
   bad((t) => (t.weapon.guard.stances.level = { rollDeg: 400 }), /stances\.level\.rollDeg must be a number/);
   bad((t) => (t.weapon.wobble = 1), /unknown field wobble/);
+  bad((t) => (t.weapon.guard.clash.sound = 'kazoo'), /guard\.clash\.sound: no sound event "kazoo"/);
+  bad((t) => (t.weapon.guard.clash.sparks.color = 'gold'), /clash\.sparks\.color must be #rrggbb/);
+  bad((t) => (t.weapon.guard.raiseAfterS = 2), /raiseAfterS must be a number/);
+  bad((t) => (t.weapon.guard.stances.vertical.raisedPose = 'Up Guard'), /raisedPose must be a clip name/);
+});
+
+test('the sword’s clash look, raise timing and raised poses are emitted (round 2)', () => {
+  const rs = toolsRust(validateTools(...fresh()));
+  assert.match(rs, /name: "dwell:sword"[^\n]*raise_after_s: 0\.15, level_pose: Some\("fp_guard_level"\), vertical_pose: Some\("fp_guard_vertical"\), clash: ClashLook \{ sound: Some\("axe_clank"\), hear_m: 32\.0, sparks: Some\(Chips \{ count: 12/);
+  // A weapon naming none: no sound, no sparks, no poses.
+  const [data, items, blocks] = fresh();
+  items.add('test:club');
+  data.tools.push({ name: 'test:club', kind: 'weapon', swingSeconds: 0.4, weapon: { damage: 3, knockbackM: 0.2 } });
+  assert.match(toolsRust(validateTools(data, items, blocks)), /name: "test:club"[^\n]*level_pose: None, vertical_pose: None, clash: ClashLook \{ sound: None, hear_m: 32\.0, sparks: None, glance_share: 0\.5 \}/);
 });

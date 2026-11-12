@@ -621,6 +621,9 @@ impl Client {
                 game.set_structure_ops(
                     session.capability(dwell_protocol::capability_names::STRUCTURES_PLACE),
                 );
+                game.set_swordplay(
+                    session.capability(dwell_protocol::capability_names::WEAPONS_CLASH),
+                );
                 if let Some(v) = s.input.flight.set_allowed(may_fly) {
                     s.shell_events.push(shell_event("flightAllowed", v));
                 }
@@ -3176,6 +3179,7 @@ impl Inner {
             game.set_structure_ops(
                 s.capability(dwell_protocol::capability_names::STRUCTURES_PLACE),
             );
+            game.set_swordplay(s.capability(dwell_protocol::capability_names::WEAPONS_CLASH));
         }
         game.set_loading_screen(self.options.loading_screen);
         game.set_crossing_roll(self.crossing_roll);

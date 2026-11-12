@@ -61,6 +61,9 @@ test('bad entries fail with a message naming them', () => {
   bad((d) => (npc(d).disposition = 'grumpy'), /disposition "grumpy"/);
   bad((d) => (npc(d).combat = 'flee'), /combat "flee"/);
   bad((d) => (npc(d).lookAtM = -1), /lookAtM/);
+  bad((d) => (npc(d).fight.stance = 'dodge'), /fight: stance "dodge" is not one of counter, random/);
+  bad((d) => (npc(d).fight.giveUpS = 0), /fight: giveUpS must be in/);
+  bad((d) => (npc(d).fight.parry = true), /fight: unknown field parry/);
   bad((d) => (d.rules[2].biomes = ['preset:moon']), /rules\[2\]\.biomes\[0\]: "preset:moon" is not a biome/);
   bad((d) => (d.rules[2].spacingM = -3), /rules\[2\]: spacingM/);
 });
@@ -80,4 +83,14 @@ test('a creature’s health, hit radius and drops are checked and emitted', () =
   bad((c) => (c.health = -1), /health must be in \[0, 10000\]/);
   bad((c) => (c.hitRadiusM = 0), /hitRadiusM must be in \(0, 4\]/);
   bad((c) => delete c.health, /drops need health/);
+});
+
+// WORK_QUEUE item 35, round 2: an NPC's fight rules are data, defaults filled for one that names none.
+test('an NPC’s fight rules are emitted, with defaults when it names none', async () => {
+  const { creaturesRust } = await import('./gen.mjs');
+  const d = validateCreatures(data(), blocks, models);
+  assert.match(creaturesRust(d, 'x'), /fight: FightDef \{ stance: FightStance::Counter, raise_on_windup: true, strike_back: true, strike_within_m: 2\.4, cooldown_s: 1\.2, give_up_s: 8\.0 \}/);
+  const e = data();
+  delete e.creatures.find((c) => c.npc).npc.fight;
+  assert.match(creaturesRust(validateCreatures(e, blocks, models), 'x'), /fight: FightDef \{ stance: FightStance::Counter, [^}]*give_up_s: 10\.0 \}/);
 });

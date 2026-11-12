@@ -646,6 +646,84 @@ pub enum Message {
     /// after `Welcome`: the capabilities this client has. A feature is used only when both sides
     /// listed it.
     Capabilities(crate::capabilities::Capabilities),
+    /// S→C reliable, world channel, only to a client with the `weapons.clash` capability
+    /// (WORK_QUEUE item 35, round 2): a strike's outcome on a raised blade, or who holds a raised
+    /// guard (`SwordplayMessage`).
+    Swordplay(SwordplayMessage),
+}
+
+/// Who fights: a player (its id) or a creature (an NPC, its id).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Fighter {
+    Player(u16),
+    Creature(u32),
+}
+
+/// A strike that met a raised blade, or a strike that connected (`Swordplay`'s kind 0): who struck
+/// whom with what weapon (an item name: its `guard.clash` look), the outcome, where (world m), and
+/// both stances (vertical, else level).
+#[derive(Clone, Debug, PartialEq)]
+pub struct ClashNet {
+    pub striker: Fighter,
+    pub defender: Fighter,
+    pub weapon: String,
+    pub outcome: crate::chopping::Clash,
+    pub point: [f32; 3],
+    pub striker_vertical: bool,
+    pub defender_vertical: bool,
+}
+
+/// A fighter's sword as others see it (`Swordplay`'s kind 1): its stance and whether its block is
+/// raised.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct GuardNet {
+    pub who: Fighter,
+    pub vertical: bool,
+    pub raised: bool,
+}
+
+/// The most guards one `Swordplay` carries.
+pub const MAX_GUARDS_PER_MESSAGE: usize = 1024;
+
+/// `Swordplay` (0x6A): u8 kind; 0 a clash (`ClashNet`), 1 the guards (u16 count, each a
+/// `GuardNet`). A fighter is u8 0 and a u16 player id, or u8 1 and a u32 creature id.
+#[derive(Clone, Debug, PartialEq)]
+pub enum SwordplayMessage {
+    Clash(ClashNet),
+    Guards(Vec<GuardNet>),
+}
+
+fn write_fighter(w: &mut ByteWriter, f: Fighter) {
+    match f {
+        Fighter::Player(id) => {
+            w.u8(0);
+            w.u16(id);
+        }
+        Fighter::Creature(id) => {
+            w.u8(1);
+            w.u32(id);
+        }
+    }
+}
+
+fn read_fighter(r: &mut ByteReader) -> Fighter {
+    match r.u8() {
+        0 => Fighter::Player(r.u16()),
+        k => {
+            r.check(k == 1);
+            Fighter::Creature(r.u32())
+        }
+    }
+}
+
+/// A clash outcome's byte.
+fn clash_byte(k: crate::chopping::Clash) -> u8 {
+    use crate::chopping::Clash;
+    match k {
+        Clash::Blocked => 0,
+        Clash::Glanced => 1,
+        Clash::Connected => 2,
+    }
 }
 
 /// The most groups one `Ecology` carries (more are left out).
@@ -762,6 +840,10 @@ pub enum ChopAction {
     /// What tool this player holds (an empty name: none) and its hold, only to a server with
     /// `CHOP_SWEEP`: it tells the others (`HeldTools`), and this client gets theirs from now on.
     Held { tool: String, vertical: bool },
+    /// Whether this player holds its weapon's block raised (WORK_QUEUE item 35, round 2), only to
+    /// a server with the `weapons.clash` capability: its stance is its `Held` plane, and its own
+    /// swing drops the block for the swing.
+    Guard { raised: bool },
 }
 
 /// The most players one `HeldTools` carries.
@@ -925,6 +1007,7 @@ impl Message {
             M::CausesHello(_) => MessageType::CausesHello,
             M::SteamHello => MessageType::SteamHello,
             M::Capabilities(_) => MessageType::Capabilities,
+            M::Swordplay(_) => MessageType::Swordplay,
             M::SwingHello => MessageType::SwingHello,
             M::BitesHello => MessageType::BitesHello,
             M::Steam(_) => MessageType::Steam,
@@ -1628,6 +1711,10 @@ fn write_body(w: &mut ByteWriter, m: &Message) {
                 ));
                 w.u8(u8::from(*vertical));
             }
+            ChopAction::Guard { raised } => {
+                w.u8(4);
+                w.u8(u8::from(*raised));
+            }
         },
         M::VitalsHello => {}
         M::CausesHello(n) => w.u8(*n),
@@ -1639,6 +1726,29 @@ fn write_body(w: &mut ByteWriter, m: &Message) {
         | M::SwingHello
         | M::BitesHello
         | M::EcologyHello => {}
+        M::Swordplay(SwordplayMessage::Clash(c)) => {
+            w.u8(0);
+            write_fighter(w, c.striker);
+            write_fighter(w, c.defender);
+            w.str(crate::bytes::clamp_str(
+                &c.weapon,
+                crate::inventory::MAX_ITEM_NAME,
+            ));
+            w.u8(clash_byte(c.outcome));
+            for &v in &c.point {
+                w.f32(v);
+            }
+            w.u8(u8::from(c.striker_vertical) | (u8::from(c.defender_vertical) << 1));
+        }
+        M::Swordplay(SwordplayMessage::Guards(list)) => {
+            w.u8(1);
+            let n = list.len().min(MAX_GUARDS_PER_MESSAGE);
+            w.u16(n as u16);
+            for g in &list[..n] {
+                write_fighter(w, g.who);
+                w.u8(u8::from(g.vertical) | (u8::from(g.raised) << 1));
+            }
+        }
         M::Steam(cells) => {
             let n = cells.len().min(MAX_STEAM_PER_MESSAGE);
             w.u16(n as u16);
@@ -2208,6 +2318,9 @@ fn read_body(r: &mut ByteReader, t: MessageType) -> Option<Message> {
                 tool: r.str(crate::inventory::MAX_ITEM_NAME),
                 vertical: r.u8() != 0,
             },
+            4 => ChopAction::Guard {
+                raised: r.u8() != 0,
+            },
             _ => return None,
         }),
         T::VitalsHello => M::VitalsHello,
@@ -2216,6 +2329,53 @@ fn read_body(r: &mut ByteReader, t: MessageType) -> Option<Message> {
         T::Capabilities => M::Capabilities(crate::capabilities::Capabilities::read(r)?),
         T::SwingHello => M::SwingHello,
         T::BitesHello => M::BitesHello,
+        T::Swordplay => M::Swordplay(match r.u8() {
+            0 => {
+                use crate::chopping::Clash;
+                let striker = read_fighter(r);
+                let defender = read_fighter(r);
+                let weapon = r.str(crate::inventory::MAX_ITEM_NAME);
+                let outcome = match r.u8() {
+                    0 => Clash::Blocked,
+                    1 => Clash::Glanced,
+                    2 => Clash::Connected,
+                    _ => return None,
+                };
+                let point = [r.f32(), r.f32(), r.f32()];
+                r.check(point.iter().all(|v| v.is_finite()));
+                let b = r.u8();
+                r.check(b < 4);
+                SwordplayMessage::Clash(ClashNet {
+                    striker,
+                    defender,
+                    weapon,
+                    outcome,
+                    point,
+                    striker_vertical: b & 1 != 0,
+                    defender_vertical: b & 2 != 0,
+                })
+            }
+            1 => {
+                let n = usize::from(r.u16());
+                r.check(n <= MAX_GUARDS_PER_MESSAGE);
+                let mut list = Vec::new();
+                for _ in 0..n {
+                    if !r.ok() {
+                        break;
+                    }
+                    let who = read_fighter(r);
+                    let b = r.u8();
+                    r.check(b < 4);
+                    list.push(GuardNet {
+                        who,
+                        vertical: b & 1 != 0,
+                        raised: b & 2 != 0,
+                    });
+                }
+                SwordplayMessage::Guards(list)
+            }
+            _ => return None,
+        }),
         T::Steam => {
             let n = usize::from(r.u16());
             r.check(n <= MAX_STEAM_PER_MESSAGE);
@@ -2747,5 +2907,73 @@ mod creature_tests {
         let mut bad = b.clone();
         bad[b.len() - 5] = NPC_POSES.len() as u8; // the pose byte, before the u32 variant
         assert_eq!(Message::decode(&bad), None, "an unknown pose");
+    }
+}
+
+#[cfg(test)]
+mod swordplay_tests {
+    use super::*;
+    use crate::chopping::Clash;
+
+    #[test]
+    fn swordplay_round_trips_and_rejects_bad_ones() {
+        let clash = Message::Swordplay(SwordplayMessage::Clash(ClashNet {
+            striker: Fighter::Player(7),
+            defender: Fighter::Creature(90_001),
+            weapon: "dwell:sword".into(),
+            outcome: Clash::Blocked,
+            point: [1.5, -40.25, 3.0],
+            striker_vertical: false,
+            defender_vertical: true,
+        }));
+        let b = clash.encode();
+        assert_eq!(b[0], MessageType::Swordplay as u8);
+        assert_eq!(Message::decode(&b), Some(clash.clone()));
+        assert_eq!(Message::decode(&b[..b.len() - 1]), None);
+        // An outcome past Connected, and stance bits past the two, are malformed.
+        let mut bad = b.clone();
+        let outcome_at = b.len() - 1 - 12 - 1;
+        bad[outcome_at] = 3;
+        assert_eq!(Message::decode(&bad), None);
+        let mut bad = b.clone();
+        *bad.last_mut().unwrap() = 4;
+        assert_eq!(Message::decode(&bad), None);
+        for outcome in [Clash::Glanced, Clash::Connected] {
+            let Message::Swordplay(SwordplayMessage::Clash(mut c)) = clash.clone() else {
+                unreachable!()
+            };
+            c.outcome = outcome;
+            let m = Message::Swordplay(SwordplayMessage::Clash(c));
+            assert_eq!(Message::decode(&m.encode()), Some(m));
+        }
+        let guards = Message::Swordplay(SwordplayMessage::Guards(vec![
+            GuardNet {
+                who: Fighter::Player(3),
+                vertical: true,
+                raised: true,
+            },
+            GuardNet {
+                who: Fighter::Creature(12),
+                vertical: false,
+                raised: false,
+            },
+        ]));
+        assert_eq!(Message::decode(&guards.encode()), Some(guards.clone()));
+        // A fighter kind past creature is malformed; so is an unknown kind.
+        let mut bad = guards.encode();
+        bad[4] = 2;
+        assert_eq!(Message::decode(&bad), None);
+        assert_eq!(
+            Message::decode(&[MessageType::Swordplay as u8, 2, 0, 0]),
+            None
+        );
+    }
+
+    #[test]
+    fn the_guard_action_round_trips() {
+        for raised in [true, false] {
+            let m = Message::Chop(ChopAction::Guard { raised });
+            assert_eq!(Message::decode(&m.encode()), Some(m));
+        }
     }
 }
