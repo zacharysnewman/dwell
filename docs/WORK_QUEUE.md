@@ -1046,8 +1046,11 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    kept molten by the world's heat, basalt and obsidian crusts), the far-body renderer drawing it from its bake as
    today's sun disc (same size in the sky, its glow and sunlight unchanged — the bake shapes the surface, the lava
    gives the light), its place in the celestial model (the sun's path today), flight and capture like the moon.
-   Design questions for the owner before building (e.g. can players land there; how dangerous it is — heat, burn;
-   its gravity; whether it lights the world from its lava or stays a light source as today).
+   Owner's answers (2026-11-12): **"The sun's doesn't really light the earth world or moon world, just
+   conceptually."** (sunlight stays today's light model; the sun world's lava doesn't light other worlds);
+   **"Players can land there."**; **"Lava has the same function on the sun as the earth world."** (same damage,
+   burn, flow and cooling rules); **"Its gravity will be the same as earth world for now."** Queued after the moon's
+   client side (M-7c) so it reuses the finished travel.
 
 ## Done
 
