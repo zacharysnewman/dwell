@@ -42,7 +42,8 @@ two faces' climates and the gradient across the disc come from the orbits model 
 vs 2× comparison of screenshots for perspective (queued, local); (6) **"iOS runs at 60fps on Low settings"** —
 item 16 done; (7) **"Metal tools break double sized bigger chunks off and reach 50% broken faster, which is when
 the blocks break. Also have double durability."** (in progress, cloud); (8) **"I'd like to see a comparison of
-the two"** — palm fronds as leaf blocks vs frond cards side by side (queued: the Tree Growth prototype).
+the two"** — palm fronds as leaf blocks vs frond cards side by side: built in the Tree Growth prototype
+(`docs/prototypes/tree-growth.html`, *Palm fronds* → *Split*, or `?species=palm&fronds=split`; to be republished to its link).
 
 Still open:
 1. **Pick a haze setting** (item 29), once the ground-level and hilltop shots (clouds off) are taken. Default:
