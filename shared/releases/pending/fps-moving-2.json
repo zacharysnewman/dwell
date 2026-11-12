@@ -1,6 +1,0 @@
-{
-  "changes": [
-    "Fewer hitches on phones while moving: a big piece of new terrain is now sent to the GPU over a few frames instead of all at once",
-    "Less work on the main thread when terrain at the edge of the view loads"
-  ]
-}
