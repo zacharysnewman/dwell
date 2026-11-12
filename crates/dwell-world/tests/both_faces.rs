@@ -39,6 +39,8 @@ const SCANNED: &[&str] = &[
     "dwell-lava/src",
     "dwell-lava/tests",
     "dwell-client/src",
+    "dwell-theater/src",
+    "dwell-theater/tests",
 ];
 
 /// Where the frame itself lives: these may mirror by hand.

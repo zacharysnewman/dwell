@@ -201,6 +201,11 @@ impl ClientCreatures {
         v.into_iter().map(|(_, p, y, s, n)| (p, y, s, n)).collect()
     }
 
+    /// A creature's drawn feet (world m) by id, and whether it is an NPC (theater mode's targets).
+    pub fn feet_of(&self, id: u32) -> Option<([f64; 3], bool)> {
+        self.seen.get(&id).map(|s| (s.shown, s.npc.is_some()))
+    }
+
     pub fn len(&self) -> usize {
         self.seen.len()
     }

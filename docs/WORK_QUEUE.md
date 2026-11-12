@@ -1085,6 +1085,13 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    time-lapse apply to their view only); **anyone, any world** (a Settings toggle or a key; the host can disable it
    for guests). The `record` skill drives the same tools (a bench `camera` step plays a path and records it), and
    the tool set grows with each video. In progress: design + logic (cloud), then the UI and recording (local).
+   **T-1 built (2026-11-12):** the design (`docs/THEATER_MODE.md`, phases T-1 … T-5) and the camera path engine
+   `crates/dwell-theater` (paths as JSON: keyframes, the moves cut/linear/ease/orbit/track/dolly/crane/pan and
+   easings, the viewer's time of day and speed ramps; presets as data in `shared/theater/presets.json`; tests on
+   both faces), wired into the client (`Game::step_theater`), `__dwell.theater`, the bench's `theater` step (the
+   name `camera` was taken) and the record skill. Not yet run in a browser (cloud session, no GPU). Next, locally:
+   T-2 the mode and editor, T-3 recording; then T-4 the creative viewpoint (designed in THEATER_MODE.md §7: the
+   `theaterViewpoint` ability, server-checked) and T-5 the MCP server.
    Owner, 2026-11-12: **"For players to use it would be cool if it had an MCP server so they could use an LLM agent to
    handle the recording complexities, not sure if that would help us at all but it's a to have."** A nice-to-have,
    after the in-game tools: an MCP server exposing theater mode's operations (find subjects, set time of day,

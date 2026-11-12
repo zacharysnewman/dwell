@@ -47,22 +47,34 @@ their ids and positions), `d.lava('report')`, spots in `client/bench/spots.json`
 
 ## 3. Camera moves
 
-`d.placeCamera([x, y, z], yaw, pitch)` places the camera (radians; the player's eyes until cleared). Drive
-it every frame from the page with `requestAnimationFrame` so the move is smooth regardless of the recorder:
+Use **theater mode's camera engine** (`d.theater`, docs/THEATER_MODE.md, docs/DEV_TOOLS.md "Theater"): a
+camera path played into the view frame-rate independently, with eased moves, a field of view, the viewer's time
+of day and speed ramps — not ad-hoc per-frame `placeCamera` scripts.
 
 ```js
-// A move: t from 0 to 1 over `s` seconds; pose(t) → [pos, yaw, pitch].
-(s, pose) => new Promise(done => { const t0 = performance.now(); const f = () => {
-  const t = Math.min(1, (performance.now() - t0) / (s * 1000)); const [p, yaw, pitch] = pose(t);
-  d.placeCamera(p, yaw, pitch); t < 1 ? requestAnimationFrame(f) : done(); }; f(); })
+// A preset around a subject, from where the camera is now (place it first to choose the side):
+d.placeCamera([x, y + 3, z - 20], 0, -5);   // degrees, face-local
+const path = d.theater('preset', { name: 'orbit', params: { radiusM: 25, heightM: 8, seconds: 15 }, subject: 'player' });
+d.theater('hud', { shown: false });          // the clean frame (one CSS rule; 'stop' shows it again)
+d.theater('play', { path });                 // poll d.theater('state', {}).finished; 'stop' at the end
 ```
 
-- **Dolly in:** lerp the position toward the subject at eye height (1–3 m), yaw fixed on it. Low and slow reads best.
-- **Orbit:** angle = a0 + t·span around the subject at radius r and height h, yaw = angle + π (look in). Keep it
-  **high or on open ground**: close orbits on hills pass through terrain and trees (trim, or raise h).
-- **Track / follow:** each frame read the subject from `d.creatures()` and sit behind-side of it at 4–8 m,
-  yaw toward it, eased (lerp 0.1 a frame) so it doesn't jitter.
-- **Drone rise:** from 5 m to 60–150 m over the subject, pitch easing from −10° to −60°.
+Presets (`shared/theater/presets.json`): `orbit`, `dolly`, `track`, `rise` (a crane), `pan`, each with
+`seconds`, `fov`, `timeFrom`/`timeTo` (a time-lapse of the light) and its own parameters. For anything else write
+a path: keyframes `{t, position, look | target, fov, timeOfDay, speed}` and segments `{move, easing, …}` (cut,
+linear, ease, orbit, track, dolly with `vertigo`, crane, pan). A target can be `"player"`, a point, or
+`{creature: id}` / `{npc: id}`. Paths are JSON: keep the ones that worked next to the plan for the next video.
+The bench's `theater` step plays one inside a scenario. Not yet tried in a real recording (built in a cloud
+session): note here what needed changing the first time.
+
+- **Dolly in:** the `dolly` preset (`fromM` → `toM`, `heightM` 1–3 m). Low and slow reads best.
+- **Orbit:** the `orbit` preset. Keep it **high or on open ground**: close orbits on hills pass through terrain
+  and trees (trim, or raise `heightM`).
+- **Track / follow:** the `track` preset on the subject (`distanceM` 4–8, `smoothingS` ~0.6): it stays centred,
+  and the lag is exponential, the same at any frame rate.
+- **Drone rise:** the `rise` preset (`fromM` 5 → `toM` 60–150, `backM`): it looks at the subject as it climbs.
+- **Time-lapse of the light:** `timeFrom`/`timeTo` (and `days`) on any preset, or `timeOfDay` on keyframes; a
+  `speed` ramp on keyframes for a shot that speeds up part way.
 - For portrait, frame tall: subjects centred, more sky or ground above and below, slower horizontal moves.
 
 ## 3b. Time-lapse and the player

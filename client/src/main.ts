@@ -3,6 +3,7 @@ import { worldChoice } from './ui/worldChoices';
 import { skyOptions } from './ui/sky';
 import { isGameMode } from './ui/modes';
 import { blockDump, formatBlockDump, type BlockDump, type BlockTarget } from './debug/blockDump';
+import { theaterOp, type TheaterOp } from './debug/theater';
 import {
   deviceOf,
   formatStreamingReport,
@@ -254,8 +255,14 @@ interface DwellDebug {
   holdSwing(vertical: boolean, t: number): boolean;
   /** Shows or hides your first-person arms (the setting, for this page only). */
   showArms(on: boolean): void;
-  /** Back to the player's eyes. */
+  /** Back to the player's eyes (stops a theater path too). */
   releaseCamera(): void;
+  /**
+   * Theater mode's camera engine (docs/THEATER_MODE.md, src/debug/theater.ts): `play {path}`,
+   * `stop`, `pause {paused}`, `state`, `presets`, `preset {name, params, subject}` (→ a path),
+   * `hud {shown}`. Throws with the engine's message on a bad path or preset.
+   */
+  theater(op: TheaterOp, args?: Record<string, unknown>): unknown;
   /**
    * The placed camera (`placeCamera`, `goto`), or null while the view is the player's eyes
    * (`view()` is the player's look, not a placed camera's).
@@ -1203,6 +1210,7 @@ async function start(): Promise<App | null> {
     releaseCamera: () => {
       client.releaseCamera();
     },
+    theater: (op, args) => theaterOp(client, document, op, args),
     camera: () => client.camera() as Camera | null,
     find: (query, options) => findPlace(findHost(app), query, options),
     goto: (query, options) => gotoPlace(findHost(app), query, options),

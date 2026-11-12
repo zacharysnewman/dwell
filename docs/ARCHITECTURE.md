@@ -287,6 +287,10 @@ There are **no official game servers**; players host (ADR 0003, details in §10)
                      island grid, the forage per cell, the day step (ecology.gen.rs from
                      shared/ecology; a fixture for tests), its bytes for saving. No dependency on
                      the server core; dwell-sim holds one per face (server/ecology.rs).
+  /dwell-theater     Theater mode's camera engine (§5.5, THEATER_MODE.md): camera paths as data
+                     (keyframes, segments with a move kind and an easing), a path at a time → a
+                     camera pose (both faces through FaceFrame), a frame-rate independent player
+                     with smoothed tracking, presets from shared/theater/presets.json.
   /dwell-characters  Characters (§5.3, CHARACTERS.md): the tables generated from shared/characters
                      (characters.gen.rs: rigs, looks composed into parts on bones, items, clips,
                      materials; characters.tiles: the brush tiles; fixture.gen.rs for tests), part
@@ -374,6 +378,9 @@ There are **no official game servers**; players host (ADR 0003, details in §10)
 /shared/ecology      ecology.json (the far ecology: island grid, forage grounds, species' group,
                      breeding, hunger, diet, flee and disperse rules; §5.4) + gen.mjs →
                      dwell-ecology ecology.gen.rs, fixtures/ (test-only species), gen.test.mjs
+/shared/theater      presets.json (theater mode's camera presets: a move kind, an easing, parameters'
+                     defaults and slider ranges; THEATER_MODE.md §4), read and validated by
+                     dwell-theater (no generator: paths are runtime data in the same format)
 /shared/models       models.json (the model-detail levels, ADR 0070 §10; each skinned model's GLB, scale, yaw, role → clip map, palette
                      remap; the player model) + glb/ (the checked-in GLBs, the source of truth) +
                      import.mjs and blender_import.py (FBX → GLB with the palette remap, Blender
@@ -1011,6 +1018,20 @@ mate (a young up to the group's cap), keep company or wander. While the ecology 
 rules that spawn the species' creatures are left out (`Creatures::reserved`).
 
 ---
+
+### 5.5 Theater mode **[in progress: T-1, the camera path engine, built; the mode's UI, recording and the creative viewpoint planned]**
+
+Design: [`THEATER_MODE.md`](THEATER_MODE.md) (WORK_QUEUE item 41). A viewer-only camera toolset: the
+character stays put while the camera follows a **camera path** — JSON keyframes (world position, a look or a
+target, field of view, the viewer's time of day, a playback speed) joined by segments of a fixed move vocabulary
+(`cut`, `linear`, `ease`, `orbit`, `track`, `dolly` with the dolly zoom, `crane`, `pan`) and easings — or a
+**preset** (`shared/theater/presets.json`) expanded into one. `crates/dwell-theater` parses and validates paths
+and presets, evaluates a path at a time into a pose and plays it frame-rate independently (tracking a moving
+player, creature or NPC with exponential smoothing). The client steps it before each frame
+(`Game::step_theater`) into the placed view (`ViewOverride`, with an optional field of view) and a viewer-only
+time of day (`theater_time`); nothing goes on the wire. Dev API `__dwell.theater`, the bench's `theater` step.
+Planned: the in-game mode and editor (T-2), canvas recording (T-3), and in creative only the camera as a
+server-checked simulation viewpoint (T-4, a mode ability).
 
 ## 6. Voxel World
 

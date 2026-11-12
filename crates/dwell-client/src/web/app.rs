@@ -639,6 +639,8 @@ impl Client {
             let touch = s.touch_used.then_some(s.touch.state);
             let perf = web_sys::window().and_then(|w| w.performance());
             let mut clock = || perf.as_ref().map_or(0.0, |p| p.now());
+            // Theater mode's camera path places the view before the frame draws it.
+            game.step_theater(now_ms);
             game.frame(now_ms, &mut s.input, touch.as_ref(), &mut clock);
             for out in game.take_outbox() {
                 match out {
@@ -872,6 +874,7 @@ impl Client {
             eye,
             yaw_deg: yaw,
             pitch_deg: pitch,
+            fov_deg: None,
         }));
         let o = Object::new();
         set(
@@ -1278,6 +1281,7 @@ impl Client {
             eye: [x, y, z],
             yaw_deg: yaw,
             pitch_deg: pitch,
+            fov_deg: None,
         }));
         true
     }
@@ -1305,9 +1309,118 @@ impl Client {
         });
         true
     }
+    /// Theater mode (docs/THEATER_MODE.md): plays a camera path (its JSON) from the start; fails
+    /// with the path's message. The view, field of view and time of day follow it until
+    /// `theaterStop`.
+    #[wasm_bindgen(js_name = theaterPlay)]
+    pub fn theater_play(&self, json: &str) -> Result<(), JsValue> {
+        let path = dwell_theater::Path::parse_str(json).map_err(|e| JsValue::from_str(&e))?;
+        let mut s = self.inner.borrow_mut();
+        let g = s.game.as_mut().ok_or("no game yet")?;
+        g.play_theater(path);
+        Ok(())
+    }
+    /// Stops the camera path: the view returns to the player's eyes.
+    #[wasm_bindgen(js_name = theaterStop)]
+    pub fn theater_stop(&self) {
+        if let Some(g) = &mut self.inner.borrow_mut().game {
+            g.stop_theater();
+        }
+    }
+    /// Pauses or resumes the camera path.
+    #[wasm_bindgen(js_name = theaterPause)]
+    pub fn theater_pause(&self, paused: bool) {
+        if let Some(g) = &mut self.inner.borrow_mut().game {
+            g.pause_theater(paused);
+        }
+    }
+    /// The camera path playing: `{ time, duration, finished }` (path seconds), or null.
+    #[wasm_bindgen(js_name = theaterState)]
+    pub fn theater_state(&self) -> JsValue {
+        let s = self.inner.borrow();
+        let Some((time, duration, finished)) = s.game.as_ref().and_then(|g| g.theater_state())
+        else {
+            return JsValue::NULL;
+        };
+        let o = Object::new();
+        set(&o, "time", time);
+        set(&o, "duration", duration);
+        set(&o, "finished", finished);
+        o.into()
+    }
+    /// The presets file (`shared/theater/presets.json`) as the build has it.
+    #[wasm_bindgen(js_name = theaterPresets)]
+    pub fn theater_presets(&self) -> String {
+        dwell_theater::preset::PRESETS_JSON.to_owned()
+    }
+    /// A preset expanded into a camera path (its JSON) around `subject` (`"player"`, `[x, y, z]`,
+    /// `{"creature": id}` or `{"npc": id}`; null for a pan) from where the camera is now, with
+    /// `params` (`{name: value}`) over its defaults.
+    #[wasm_bindgen(js_name = theaterPreset)]
+    pub fn theater_preset(
+        &self,
+        name: &str,
+        params_json: &str,
+        subject_json: &str,
+    ) -> Result<String, JsValue> {
+        use dwell_theater::Targets;
+        let s = self.inner.borrow();
+        let g = s.game.as_ref().ok_or("no game yet")?;
+        let presets = dwell_theater::presets();
+        let preset = presets
+            .iter()
+            .find(|p| p.name == name)
+            .ok_or_else(|| JsValue::from_str(&format!("no preset {name}")))?;
+        let params: serde_json::Value = serde_json::from_str(if params_json.is_empty() {
+            "{}"
+        } else {
+            params_json
+        })
+        .map_err(|e| JsValue::from_str(&format!("params: {e}")))?;
+        let overrides: Vec<(String, f64)> = params
+            .as_object()
+            .ok_or("params must be an object")?
+            .iter()
+            .filter_map(|(k, v)| Some((k.clone(), v.as_f64()?)))
+            .collect();
+        let subject_v: serde_json::Value = serde_json::from_str(if subject_json.is_empty() {
+            "null"
+        } else {
+            subject_json
+        })
+        .map_err(|e| JsValue::from_str(&format!("subject: {e}")))?;
+        let targets = g.theater_targets();
+        let subject = if subject_v.is_null() {
+            None
+        } else {
+            let t = dwell_theater::TargetRef::from_json(&subject_v, "subject")
+                .map_err(|e| JsValue::from_str(&e))?;
+            let at = targets
+                .position(&t)
+                .ok_or_else(|| JsValue::from_str("the subject isn't in view"))?;
+            Some((t, at))
+        };
+        // From the placed view, or the player's eyes.
+        let camera = match g.view() {
+            Some(v) => {
+                let f = dwell_world::FaceFrame::at_height(v.eye[1]);
+                dwell_theater::Pose::new(v.eye, f.look(v.yaw_deg, v.pitch_deg))
+            }
+            None => {
+                let eye = g.position();
+                let f = dwell_world::FaceFrame::at_height(eye[1]);
+                dwell_theater::Pose::new(eye, f.look(s.input.look.yaw, s.input.look.pitch))
+            }
+        };
+        let path = preset
+            .expand(&dwell_theater::Context { subject, camera }, &overrides)
+            .map_err(|e| JsValue::from_str(&e))?;
+        Ok(path.to_json().to_string())
+    }
     #[wasm_bindgen(js_name = releaseCamera)]
     pub fn release_camera(&self) {
         if let Some(g) = &mut self.inner.borrow_mut().game {
+            g.stop_theater();
             g.set_view(None);
         }
     }
