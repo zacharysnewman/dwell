@@ -1759,6 +1759,16 @@ impl Client {
             .borrow_mut()
             .set_model_detail(k);
     }
+    /// Your first-person arms from the rigid parts (`true`, `?fparms=rigid`: a dev switch for
+    /// comparison) or the player model (docs/CHARACTERS.md §11.10).
+    #[wasm_bindgen(js_name = setRigidArms)]
+    pub fn set_rigid_arms(&self, rigid: bool) {
+        self.inner
+            .borrow()
+            .renderer
+            .borrow_mut()
+            .set_rigid_arms(rigid);
+    }
     /// The Light shafts setting: `off`, `low` or `high` (anything else: high; ADR 0064).
     #[wasm_bindgen(js_name = setShafts)]
     pub fn set_shafts(&self, quality: &str) {

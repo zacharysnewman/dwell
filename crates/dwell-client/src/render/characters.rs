@@ -324,6 +324,9 @@ pub struct CharacterRenderer {
     /// This frame's creatures and their light (ADR 0073), set by the game.
     pub creatures: Vec<(crate::creatures::CreatureView, [f32; 2])>,
     pub stats: CharacterStats,
+    /// Your first-person arms drawn from the rigid parts, not the player model (`?fparms=rigid`,
+    /// a dev switch for comparison; docs/CHARACTERS.md §11.10).
+    pub rigid_arms: bool,
 }
 
 /// The characters' WGSL, after the shared lighting (`shaders::lighting_source`).
@@ -1043,6 +1046,7 @@ impl CharacterRenderer {
             others_lights: 0,
             arms_light: None,
             stats: CharacterStats::default(),
+            rigid_arms: false,
         }
     }
 
@@ -1278,13 +1282,29 @@ impl CharacterRenderer {
                 rig_pose: None,
             });
         }
-        let hands = self.skinned.prepare(
+        // Your arms from the player model (§11.10): the first-person clips' pose retargeted onto its
+        // arm, the held item on its hand after.
+        let arms_frame_now = arms.map(|_| arms_frame(basis));
+        let skinned_arms = match (arms, arms_frame_now) {
+            (Some(a), Some(frame)) if !self.rigid_arms => {
+                let held_item =
+                    item_shown(self.character, a.held).and_then(|n| self.character.item(n));
+                Some(super::skinned::SkinnedArms {
+                    frame,
+                    pose: with_item(&a.pose, held_item),
+                    light: a.light,
+                })
+            }
+            _ => None,
+        };
+        let (hands, arms_hand) = self.skinned.prepare(
             device,
             queue,
             eye,
             passes,
             cast_m,
             &skinned,
+            skinned_arms.as_ref(),
             crate::render_clock::now_ms() / 1000.0,
         );
         let hand_bone = self
@@ -1322,11 +1342,32 @@ impl CharacterRenderer {
                 cast_only: h.cast_only,
             });
         }
-        if let Some(a) = arms {
-            let frame = arms_frame(basis);
+        if let (Some(a), Some(frame)) = (arms, arms_frame_now) {
             let held_item = item_shown(self.character, a.held).and_then(|n| self.character.item(n));
-            let bones = arm_transforms(self.character, &with_item(&a.pose, held_item))
-                .map(|b| frame.then(&b));
+            let posed = arm_transforms(self.character, &with_item(&a.pose, held_item));
+            let skinned_arms = self.skinned.has_arms();
+            // From the player model: the held item on its hand (as on another player's body).
+            let bones = match arms_hand.filter(|_| skinned_arms) {
+                Some(hand) => on_skinned_hand(
+                    &HeldOnSkin {
+                        held: a.held,
+                        // The skinned hand already carries the item's turns (the arm is
+                        // retargeted from the pose with them on): none on top.
+                        rest: posed,
+                        posed,
+                        frame,
+                        seed: 0,
+                        light: a.light,
+                        far: false,
+                        passes: 0,
+                        casts: false,
+                        cast_only: false,
+                    },
+                    hand_bone,
+                    &hand,
+                ),
+                None => posed.map(|b| frame.then(&b)),
+            };
             let instance = push(&bones, a.held, true, true, 0.0, a.light);
             if let Some(l) = light_at(a.held, &bones, 0) {
                 own_light = Some(l);
@@ -1348,11 +1389,14 @@ impl CharacterRenderer {
                 own: false,
                 model: a.held.model(),
             });
-            keys.push(body);
+            if !skinned_arms {
+                keys.push(body);
+            }
             keys.extend(item);
             self.arms = Some(Draw {
                 instance,
-                body: Some(body),
+                // The rigid arms' parts only when the player model draws none.
+                body: (!skinned_arms).then_some(body),
                 item,
                 outline: outline_for(false),
                 passes: 0,
@@ -1486,6 +1530,7 @@ impl CharacterRenderer {
 
     /// Draws the arms (group 0 bound to the arms' frame, over a cleared depth buffer).
     pub fn draw_arms(&self, pass: &mut wgpu::RenderPass<'_>, calls: &mut u32, tris: &mut u64) {
+        self.skinned.draw_arms(pass, calls, tris);
         if let Some(d) = &self.arms {
             self.record(pass, d, calls, tris);
         }

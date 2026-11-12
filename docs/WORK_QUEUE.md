@@ -873,7 +873,10 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    first-person arms … drawing them at the eye needs its own view and clips (later)" — the swap was never queued,
    so it was missed. Now: draw your first-person arms and hands from the Peasant's own mesh (its arm vertices by
    their skin weights), driven by the first-person clips (the swings fitted with clip_probe) mapped onto its arm
-   bones, held items on its `hand.R`; the rigid arms retired. Priority: next after item 30.
+   bones, held items on its `hand.R`; the rigid arms retired. Priority: next after item 30. **Built
+   (0.54)**: the arm cut from the body mesh by skin weight (`models.json`
+   `firstPerson`), posed by the `fp_*` clips through the retarget map and scaled to the rig's reach, the
+   held item on `hand.R`; `?fparms=rigid` keeps the old arms for comparison (CHARACTERS.md §11.10).
 38. **Wandering NPCs** (owner 2026-11-12: "Another item to queue up, wandering NPCs. They'll use the same player
    character model."). People using the Peasant model who wander the world like the animals do. Owner's answers
    (2026-11-12): wander, idle (look around, sit), turn to look at a nearby player, step aside when bumped — no
