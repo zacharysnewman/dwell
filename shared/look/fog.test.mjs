@@ -44,7 +44,7 @@ test('a preset added by data alone is generated over the fog', () => {
   const d = data();
   d.presets = { misty: { density: 0.5, air: { sunTint: 0.25 }, veil: { contrast: 0.1 } } };
   const rs = fogRust(validateFog(d));
-  assert.match(rs, /"misty",\n\s+FogSettings \{\n\s+distance_m: 16000\.0,\n\s+density: 0\.5,/);
+  assert.match(rs, /"misty",\n\s+FogSettings \{\n\s+distance_m: 6000\.0,\n\s+density: 0\.5,/);
   assert.match(rs, /sun_tint: 0\.25,/);
   assert.match(rs, /veil_contrast: 0\.1,/);
 });

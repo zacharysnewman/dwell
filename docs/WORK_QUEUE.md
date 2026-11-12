@@ -786,6 +786,8 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    the mixed-forest valley at 25 m looking east at the hills and the cones (noon), 300 m over the steppe across
    the ranges toward the tall cone 14 km off (noon), and the tall cone from ~8 km at ground level (noon and
    16:48). **Waiting on the owner:** pick A–D (or a value between); its numbers move to the top of fog.json.
+   **Owner, 2026-11-12: "Yeah let's go with D on haze."** Done: fog.json's half distance 6 km (was 16 km) and scale
+   height 1 km (was 1.8 km), density 0.95; the pinned fog values updated.
 30. **Desktop frame rate on the M1 and hidden graphics settings (P0)** (owner 2026-11-12: "It seems like we're
    hiding some performance settings. I don't see 'tree' options in our settings for graphics. I think cards are
    killing my m1 mac too." / "Running 26fps." / "GPU at 31ms"). The desktop default preset is High (leaf cards
@@ -1050,6 +1052,9 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    that work today; 14 and 15 after item 39 and the swords/NPC work land; 5 after the moon trip is playable):
    Owner, 2026-11-12: **"Preferably some of each recording should be gameplay, player perspective."** — every
    video mixes cinematic shots with first-person gameplay (the arms and held item, actually playing).
+   **Owner, 2026-11-12: "Start on oldest features first for showcasing."** Order: the oldest features first — the
+   bifacial world (16), water and underwater (7, 17), rivers to the sea (18), day to night (3), building (13), dynamite
+   (12), the world's scale (20), biomes (6), then the newer ones. Recorded with theater mode, 9:16, no text.
    1. Volcano and lava — the summit lava lake at night with bloom, crust plates and orange seams, steam where lava
       meets water, a lava river cooling from bright to dark.
    2. Rainier-style peak — a drone rise up the cone past snow lines, cleavers and the glacier cap, ranges fading

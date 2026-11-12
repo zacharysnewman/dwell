@@ -178,25 +178,26 @@ mod tests {
 
     #[test]
     fn the_fixed_fog_keeps_nearby_hills_crisp_and_softens_the_far_island() {
-        // Owner, 2026-10-21: a clear day's air (about 100 km visibility): half haze at 16 km, the
-        // cap near 1 so far hills fade into the sky, and real low-lying haze (1.8 km scale height).
-        // The 0.22.7 defaults, made the one fog (shared/look/fog.json) when the sliders went.
+        // Owner, 2026-11-12 (WORK_QUEUE item 29): "Yeah let's go with D on haze" — half haze at 6 km
+        // and a 1 km scale height (was 16 km / 1.8 km since 0.22.7), the cap near 1 so far hills fade
+        // into the sky; the haze thins with height, so peaks stay crisper than the plains below them.
         assert_eq!(
             FOG,
             FogSettings {
-                distance_m: 16_000.0,
+                distance_m: 6_000.0,
                 density: 0.95,
-                height_m: 1800.0,
+                height_m: 1000.0,
                 ..FOG
             }
         );
         // Aerial perspective is off in the data every client draws (WORK_QUEUE item 29: the owner
         // picks a preset); the composite then draws the plain fade, unchanged.
         assert!(!FOG.aerial());
-        // A hill 2.5 mi off stays crisp; the far coast is clearly hazy; 40 mi (a Rainier) is mostly haze.
-        assert!(haze_amount(&FOG, EYE, 0.0, 4000.0) < 0.2);
-        assert!(haze_amount(&FOG, EYE, 0.0, 25_000.0) > 0.55);
-        assert!(haze_amount(&FOG, EYE, 0.0, 64_000.0) > 0.85);
+        // A hill 1 km off stays crisp; one 4 km off is softened; the far coast is mostly haze.
+        assert!(haze_amount(&FOG, EYE, 0.0, 1000.0) < 0.15);
+        assert!(haze_amount(&FOG, EYE, 0.0, 4000.0) > 0.3);
+        assert!(haze_amount(&FOG, EYE, 0.0, 25_000.0) > 0.85);
+        assert!(haze_amount(&FOG, EYE, 0.0, 64_000.0) > 0.9);
         for r in [0.0, RADIUS / 2.0, RADIUS] {
             assert!(haze_amount(&FOG, TOP, 0.0, r.hypot(TOP)) < FOG.density / 3.0);
             assert!(haze_amount(&THIN, TOP, 0.0, r.hypot(TOP)) < 0.05);
@@ -205,13 +206,13 @@ mod tests {
 
     #[test]
     fn todays_fog_output_is_pinned() {
-        // Golden values of today's haze (WORK_QUEUE item 29 added the aerial fields; these must
-        // not move until the owner picks a preset).
+        // Golden values of today's haze: the owner's pick D (WORK_QUEUE item 29, 2026-11-12: 6 km half
+        // distance, 1 km scale height); was 0.041/0.154/0.481/0.893 at 16 km / 1.8 km.
         for (d, want) in [
-            (1000.0, 0.040_966),
-            (4000.0, 0.153_565),
-            (16_000.0, 0.480_722),
-            (64_000.0, 0.893_435),
+            (1000.0, 0.106_739),
+            (4000.0, 0.360_238),
+            (16_000.0, 0.808_897),
+            (64_000.0, 0.949_538),
         ] {
             let got = haze_amount(&FOG, EYE, 0.0, d);
             assert!((got - want).abs() < 1e-5, "{d} m: {got}");
