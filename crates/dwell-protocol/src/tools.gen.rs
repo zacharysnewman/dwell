@@ -18,6 +18,12 @@ pub static WOODS: &[WoodDef] = &[
     WoodDef { block: "dwell:log", fell_fraction: 0.55, buck_fraction: 0.55, buck_drops: &[DropRule { chance: 1.0, choices: &[DropChoice { item: "dwell:wood", min: 2, max: 3, weight: 1.0 }] }], chips: Chips { count: 7, shards: 0, color: [217, 179, 122], speed: 2.6, size: 0.05 }, leaves: Leaves { block: Some("dwell:leaves"), count: 6, color: [95, 158, 62], radius_m: 3.0, height_m: 9.0 }, sway: Sway { from_fraction: 0.4, max_deg: 3.5 }, sounds: &[(0.0, "chop_bark"), (0.2, "chop_wood"), (0.4, "chop_creak")], cut: CutLook { tile: Some("logCut"), tint: [255, 226, 184], open: 2.5, kerf_width_m: 0.035, bite: BiteLook { width_m: 0.14, ends_m: 0.03, step: 0.6 }, cracks: Some(Cracks { tiles: &["crackWood1", "crackWood2", "crackWood3", "crackWood4"], stages: &[0.15, 0.4, 0.65, 0.85], strength: 0.85, span: 1.5 }) }, fell_wedge: Some("dwell:log_ramp"), fell_wedge_matching: false, fell_tip: 1.0, chop2: Chop2Wood { fell_fraction: 0.5, along: 0.5, wedge_matching: false } },
 ];
 
+/// The on-screen hint per tool kind (`hints`): (kind, level stance, vertical stance).
+pub static HINTS: &[(ToolKind, &str, &str)] = &[
+    (ToolKind::Axe, "Axe: level swing (right click: vertical)", "Axe: vertical swing (right click: level)"),
+    (ToolKind::Weapon, "Sword: level stance (tap right click: vertical, hold: block)", "Sword: vertical stance (tap right click: level, hold: block)"),
+];
+
 /// Blocks a break needs a tool of a kind for, where blocks are not unlimited.
 pub static BREAK_WITH: &[(&str, ToolKind)] = &[
     ("dwell:log", ToolKind::Axe),

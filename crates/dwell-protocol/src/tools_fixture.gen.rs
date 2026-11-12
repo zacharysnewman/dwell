@@ -15,6 +15,12 @@ pub static TOOLS: &[ToolDef] = &[
 pub static WOODS: &[WoodDef] = &[
 ];
 
+/// The on-screen hint per tool kind (`hints`): (kind, level stance, vertical stance).
+pub static HINTS: &[(ToolKind, &str, &str)] = &[
+    (ToolKind::Axe, "Axe: level swing (right click: vertical)", "Axe: vertical swing (right click: level)"),
+    (ToolKind::Weapon, "Sword: level stance (tap right click: vertical, hold: block)", "Sword: vertical stance (tap right click: level, hold: block)"),
+];
+
 /// Blocks a break needs a tool of a kind for, where blocks are not unlimited.
 pub static BREAK_WITH: &[(&str, ToolKind)] = &[
     ("dwell:log", ToolKind::Axe),

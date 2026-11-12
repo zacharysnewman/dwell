@@ -4738,9 +4738,9 @@ impl<S: Scene> Game<S> {
         }))
     }
 
-    /// The swing hint while an axe is held.
+    /// The swing hint while a tool is held (its kind's, shared/tools `hints`).
     pub fn chop_hint(&self) -> Option<&'static str> {
-        self.held_tool().map(|_| self.chop.hint())
+        self.held_tool().and_then(|t| self.chop.hint(t.kind))
     }
 
     /// The swing line the reticle shows while a tool is held: where its path will pass through

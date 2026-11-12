@@ -437,3 +437,12 @@ test('the sword’s clash look, raise timing and raised poses are emitted (round
   data.tools.push({ name: 'test:club', kind: 'weapon', swingSeconds: 0.4, weapon: { damage: 3, knockbackM: 0.2 } });
   assert.match(toolsRust(validateTools(data, items, blocks)), /name: "test:club"[^\n]*level_pose: None, vertical_pose: None, clash: ClashLook \{ sound: None, hear_m: 32\.0, sparks: None, glance_share: 0\.5 \}/);
 });
+
+test('each tool kind has its own hint, as data; a kind without one fails', () => {
+  const [data, items, blocks] = fresh();
+  const rs = toolsRust(validateTools(data, items, blocks));
+  assert.match(rs, /\(ToolKind::Weapon, "Sword: level stance/);
+  assert.match(rs, /\(ToolKind::Axe, "Axe: level swing/);
+  delete data.hints.weapon;
+  assert.throws(() => validateTools(data, items, blocks), /hints\.weapon is required/);
+});
