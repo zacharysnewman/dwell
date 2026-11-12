@@ -958,7 +958,7 @@ pub struct Game<S: Scene> {
     /// input; the others' guards (players' and NPCs': stance, raised) for the renderer; and when
     /// this player's last strike was blocked (its view's recoil: the time, the weapon, its plane).
     swordplay: bool,
-    /// The server takes a tool's hit at its contact (`hits.at_contact`, BUGS.md #110): the hit is
+    /// The server takes a tool's hit at its contact (`hits.at_contact`, BUGS.md #111): the hit is
     /// aimed and sent then, not at the click.
     hits_at_contact: bool,
     pub guard_input: crate::swordplay::GuardInput,
@@ -2397,7 +2397,7 @@ impl<S: Scene> Game<S> {
             return false;
         }
         // The click starts the swing; its hit is aimed at what the crosshair holds at the contact
-        // and sent then (BUGS.md #110), a miss there landing nothing.
+        // and sent then (BUGS.md #111), a miss there landing nothing.
         if contact_s > 0.0 && self.hits_at_contact {
             if self.interaction.act(action, now_ms).is_none() {
                 return false; // the click's rate
@@ -3493,7 +3493,7 @@ impl<S: Scene> Game<S> {
         }
     }
 
-    /// A tool's hit at its swing's contact, aimed at what the crosshair holds now (BUGS.md #110):
+    /// A tool's hit at its swing's contact, aimed at what the crosshair holds now (BUGS.md #111):
     /// sent to the server (which lands it on arrival, checked from the eye then), its sound and
     /// chips, or a one-hit break's sound, at that block. Nothing aimed at (air, or a moving body
     /// nearer than any block) is a miss: nothing sent, nothing shown, no wear.
@@ -4570,7 +4570,7 @@ impl<S: Scene> Game<S> {
             self.listener = listener(eye, yaw, pitch, face);
             let ready = self.terrain_ready();
             self.target(ready.then_some(eye), input, now_ms);
-            // After the aim of this frame: a hit due now strikes what it holds (BUGS.md #110).
+            // After the aim of this frame: a hit due now strikes what it holds (BUGS.md #111).
             self.land_hits(now_ms);
             self.update_motion(eye, dt);
             // Your arms in their own pass (CHARACTERS.md §5): not while zoomed in the spyglass, in
@@ -5970,6 +5970,83 @@ mod tests {
         assert_eq!(held_of(false, dirt, true), Held::Brush(dirt));
         assert_eq!(held_of(false, 0, false), Held::Empty);
     }
+
+    #[test]
+    fn a_struck_point_sounds_inside_the_struck_cell() {
+        // BUGS.md #110: a hit short of breaking sounds at its struck point, in the block, on both
+        // faces' cells. both-faces: the cells are world cells, one on each side of the midplane.
+        for cell in [[4, 30, -2], [4, -31, -2]] {
+            let c = dwell_world::centre_of_cell(cell);
+            for p in [[0, 0, 0], [128, 128, 128], [255, 255, 255]] {
+                let at = point_in_cell(cell, p);
+                let half = [0.5, dwell_world::CELL_H / 2.0, 0.5];
+                for k in 0..3 {
+                    assert!(
+                        (at[k] - c[k]).abs() <= half[k] + 1e-9,
+                        "{cell:?} {p:?} {at:?}"
+                    );
+                }
+            }
+        }
+    }
+
+    /// A point in the audio listener's frame as WebAudio hears it (right-handed: x to the right,
+    /// `forward × up`; y up; z behind, so ahead is −z).
+    fn heard_at(l: [f64; 9], p: [f64; 3]) -> [f64; 3] {
+        use crate::render::camera::{cross, dot, normalize, sub};
+        let (eye, fwd, up) = ([l[0], l[1], l[2]], [l[3], l[4], l[5]], [l[6], l[7], l[8]]);
+        let right = normalize(cross(fwd, up));
+        let d = sub(p, eye);
+        [dot(d, right), dot(d, up), -dot(d, fwd)]
+    }
+
+    dwell_world::both_faces!(
+        /// BUGS.md #110: the listener is the camera in the world frame the sounds are placed in, on
+        /// both faces: a sound 5 m ahead of the eye is heard ahead (−z), one to the player's right
+        /// (forward × the face's up) right, one over the head above, at every heading and at
+        /// pitch 0 and ±45°; and its right is the right of the view drawn.
+        fn the_listener_hears_ahead_ahead_and_right_right(f: FaceFrame) {
+            use crate::render::camera::{aim, cross, dot};
+            let eye = f.point([3.0, 40.0, -7.0]);
+            for yaw in [0.0, 37.0, 90.0, 180.0, 271.0] {
+                for pitch in [0.0, 45.0, -45.0] {
+                    let l = listener(eye, yaw, pitch, f);
+                    let at = |dir: [f64; 3], m: f64| -> [f64; 3] {
+                        std::array::from_fn(|k| eye[k] + dir[k] * m)
+                    };
+                    let ahead = heard_at(l, at(f.look(yaw, pitch), 5.0));
+                    let why = format!("{:?} yaw {yaw} pitch {pitch}", f.face);
+                    assert!((ahead[2] + 5.0).abs() < 1e-9, "ahead: {ahead:?} {why}");
+                    assert!(
+                        ahead[0].abs() < 1e-9 && ahead[1].abs() < 1e-9,
+                        "{ahead:?} {why}"
+                    );
+                    let right_dir = cross(f.look(yaw, 0.0), f.up());
+                    let right = heard_at(l, at(right_dir, 5.0));
+                    assert!((right[0] - 5.0).abs() < 1e-9, "right: {right:?} {why}");
+                    assert!(
+                        right[2].abs() < 1e-9,
+                        "right, not ahead or behind: {right:?} {why}"
+                    );
+                    let over = heard_at(l, at(f.up(), 5.0));
+                    if pitch == 0.0 {
+                        assert!(
+                            (over[1] - 5.0).abs() < 1e-9,
+                            "over the head: {over:?} {why}"
+                        );
+                    } else {
+                        assert!(over[1] > 3.0, "above: {over:?} {why}");
+                    }
+                    let drawn = aim(yaw, pitch, f, 0.0).right;
+                    let heard = cross([l[3], l[4], l[5]], [l[6], l[7], l[8]]);
+                    assert!(
+                        dot(drawn, heard) > 1.0 - 1e-9,
+                        "{drawn:?} vs {heard:?} {why}"
+                    );
+                }
+            }
+        }
+    );
 
     dwell_world::both_faces!(
         /// A theater path's held `up` (THEATER_MODE.md §3.1, WORK_QUEUE item 40): a camera on the

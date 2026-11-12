@@ -1743,7 +1743,7 @@ impl Server {
                 // A tool's hit lands at its swing's contact, never before the client's (the
                 // request left at the click): that long after it arrives (WORK_QUEUE item 25).
                 // A client with `hits.at_contact` sends it at the contact, aimed then (BUGS.md
-                // #110): it lands on arrival, checked from the eye at that tick.
+                // #111): it lands on arrival, checked from the eye at that tick.
                 let at_contact = s
                     .capabilities
                     .has(dwell_protocol::capability_names::HITS_AT_CONTACT);

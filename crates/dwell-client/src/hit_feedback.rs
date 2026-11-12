@@ -72,7 +72,7 @@ pub struct PendingHit {
     pub at: Option<[f64; 3]>,
     /// It breaks the block (one hit by the data), else a hit short of breaking.
     pub breaks: bool,
-    /// Aimed at its contact (`hits.at_contact`, BUGS.md #110): the target is what the crosshair
+    /// Aimed at its contact (`hits.at_contact`, BUGS.md #111): the target is what the crosshair
     /// holds then, and the hit is sent then; `cell`, `block`, `at` and `breaks` are unused.
     pub aimed: bool,
 }

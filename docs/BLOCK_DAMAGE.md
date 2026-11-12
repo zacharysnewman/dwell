@@ -617,7 +617,7 @@ the block's volume / number of swings required to break it."** One rule in one p
   `dwell-client` `a_hits_pieces_total_its_bite` (stone, dirt, grass, wood chips); `dwell-sim` `damage`
   (marks' chunks 26/43, both faces); `shared/tools/gen.test.mjs` (the ramp's volume, no tier chunk).
 
-## 11. A hit strikes what is aimed at its contact (BUGS.md #110)
+## 11. A hit strikes what is aimed at its contact (BUGS.md #111)
 
 Owner, 2026-11-12: "I've noticed on tool hits they don't check where they're aimed at hit time, if I click on a
 block, and move my cursor to aim at the block below it, I'll see and hear the tool hit, but it won't be on the

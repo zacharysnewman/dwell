@@ -195,7 +195,7 @@ fn says_hits_at_contact(fx: &mut Fixture) {
 
 dwell_world::both_faces!(
     fn a_hit_sent_at_its_contact_lands_on_arrival_checked_from_the_eye_then(f: FaceFrame) {
-        // BUGS.md #110 (owner, 2026-11-12): "if I click on a block, and move my cursor to aim at
+        // BUGS.md #111 (owner, 2026-11-12): "if I click on a block, and move my cursor to aim at
         // the block below it, I'll see and hear the tool hit, but it won't be on the block I'm
         // aiming at". A client with `hits.at_contact` sends the hit at the contact, naming what it
         // aims at then: the server lands it at once (no second wait), checked as any edit.

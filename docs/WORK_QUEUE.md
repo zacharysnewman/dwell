@@ -26,6 +26,13 @@ and leg speed (#103), underwater/surface swim audio (#104), floating trees + lea
 needs the owner's 0.55 line), tall grass height (item 14), far-sky rim/band (#823, conflicts). Then: the moon's
 client side (item 27), orbits O4–O5, big worlds memory (#76/#77).
 
+Owner, 2026-11-12 (BUGS.md #110): **"I think the sound 'source' direction might be the issue with some of our sound
+effects. They sound like they're coming from right behind your head. Are we using 2D sound?"**, then **"Like
+footsteps sound like they're in your ears."** → own footsteps grounded (below and slightly ahead, at the feet, a touch
+of the room), positioned rather than non-positional, never behind the head looking up or down. **Fixed (cloud,
+2026-11-12):** the listener frame checked on both faces; own sounds placed round the ear by data (`shared/sounds`
+`self`: feet, body, hand; AUDIO.md §5a). Next: the owner listens on headphones.
+
 Owner, 2026-11-12: **"How are realistic worlds going? And forests? Those are the two I'm most interested in
 seeing."** → next on the Mac after the flying frame rate: a look at both (screenshots/video of a Realistic world —
 plates, ranges, rain shadow, biomes by climate — and the old-growth forest), then R6 (the Realistic world in New
@@ -803,7 +810,7 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    Built (cloud, needs the owner's look in game): tool data `contactS` (pickaxes, shovels 0.26 s; the axe its
    swing's), the server lands hits at contact and drops cancelled ones, the client's sound and chips at
    contact, a bounce wears once and leaves alone don't (docs/BLOCK_DAMAGE.md §8).
-   Owner, 2026-11-12, follow-up (BUGS.md #110): "I've noticed on tool hits they don't check where they're aimed at
+   Owner, 2026-11-12, follow-up (BUGS.md #111): "I've noticed on tool hits they don't check where they're aimed at
    hit time, if I click on a block, and move my cursor to aim at the block below it, I'll see and hear the tool
    hit, but it won't be on the block I'm aiming at, it'll be the one I clicked on first before the hit played."
    Built: the hit is aimed at its contact, the target what the crosshair holds then, a miss there landing
@@ -1443,6 +1450,10 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    v2 review, owner: **"The camera shouldn't flip on the wide shot, show it's upside down."** — the wide shot of the
    player coming out on face B keeps face A's up (the camera never takes face B's frame), so face B and the player
    rising out of its hole read upside down, hanging under the disc. Clouds off in every shot (owner: they "might look
+   v4 review, owner: **"The camera is upside down for the out of the hole shot. I just wanted the not upside down for
+   the initial wide shot so you could tell it was a different side without the disorientation."** — only the
+   initial wide (the crane from face A round under to face B) holds face A's up; the out-of-the-hole shot on face B
+   uses face B's own up (upright, `up: "auto"`).
    weird", confirmed by the v2 comparison).
    **Built 2026-11-12:** a keyframe `up` ("a" | "b" | "auto", default auto) holds a face's up, roll and look frame
    across the midplane (THEATER_MODE.md §3.1; presets and the keyframe editor's Up take it); the next take uses
@@ -1934,6 +1945,21 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    to drop PRs for notes only updates."** Done: the stale CI runs of merged/closed branches cancelled; CI skips
    docs-only changes (`paths-ignore` docs/** and *.md); notes (BUGS/WORK_QUEUE entries) ride along with the next real
    change instead of their own PR (CI already cancels superseded runs per branch).
+
+50. **Fast re-records: one command per video, shots kept until approved** (owner 2026-11-12: "I would guess that would
+   take about 3 minutes to re-record. What are you expecting and why might it be slower currently?" → explained:
+   ~20 min because every shot is re-recorded, an agent drives each step, camera spots found by trial; owner:
+   **"Yeah build thst"**). Keep each finished shot as a compressed clip until the owner approves the video (raw
+   frames still deleted); `take.mjs <video> [--only s5]` records the named shots from the committed plan and paths
+   and re-splices with no agent in the loop; an agent only for new camera spots. Owner (2026-11-12): **build this
+   before the v5 re-record** (v5 was stopped); the bifacial manifest must make shot 5's camera and `up: "auto"` easy to
+   set (only the initial wide holds face A's up; the out-of-the-hole shot is upright in face B's frame).
+   **Built 2026-11-12:** `.claude/skills/record/videos/bifacial/video.json` (v4's shots: s1, s2, the `portal` take with
+   parts s3–s5 and shot 5's `camB`/`fov`/`up` as args, s6) and `take.mjs <video> [--only s5] [--splice-only]
+   [--dry-run]`, `--clean <video>`: records the named, missing and stale shots into a per-shot clip cache (frames
+   encoded and deleted right after capture), reuses the rest, splices with `splice.py`. Tests without a browser
+   (`take.test.mjs`, in CI): the manifest validates, shot selection and the cache, and the generated plan equals v4's
+   hand-written one. Not yet run against the real browser (the first use is the v5 re-record, on the Mac).
 
 ## Future (needs owner answers)
 

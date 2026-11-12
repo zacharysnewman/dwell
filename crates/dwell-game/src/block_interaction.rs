@@ -451,7 +451,7 @@ impl BlockInteraction {
     }
 
     /// The break of what is targeted now, outside the click's rate: a tool's hit aimed at its
-    /// swing's contact (the click that started the swing took the rate; BUGS.md #110). None when
+    /// swing's contact (the click that started the swing took the rate; BUGS.md #111). None when
     /// nothing is targeted (a miss).
     pub fn break_request(&self) -> Option<BlockEditRequest> {
         let t = self.current?;

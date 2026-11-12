@@ -3300,7 +3300,7 @@ fn hits_heard(rig: &mut Rig) -> usize {
         .count()
 }
 
-/// BUGS.md #110 (owner, 2026-11-12: "if I click on a block, and move my cursor to aim at the block
+/// BUGS.md #111 (owner, 2026-11-12: "if I click on a block, and move my cursor to aim at the block
 /// below it, I'll see and hear the tool hit, but it won't be on the block I'm aiming at, it'll be
 /// the one I clicked on first before the hit played"): clicked on stone A, aimed at stone B by the
 /// swing's contact, the hit (the server's damage, the mark, the sound) is B's and A is untouched;

@@ -4612,7 +4612,7 @@ chop clip; without it the server sends the NPC's idle pose, as older clients (wh
 pose past 2) read it. The eighth is `theater.viewpoint` (THEATER_MODE.md §7, §5.5): the client sends
 `TheaterViewpoint` 0x6B (C→S, control: u8 0 cleared | 1 then f64 × 3, finite) while a camera path plays,
 used by the server only in a mode with `theaterViewpoint`; an older server is never sent one. The ninth
-is `hits.at_contact` (BUGS.md #110, BLOCK_DAMAGE.md §11): a breaking tool's `BlockEditRequest` (one with a
+is `hits.at_contact` (BUGS.md #111, BLOCK_DAMAGE.md §11): a breaking tool's `BlockEditRequest` (one with a
 `contactS`) leaves at its swing's contact, naming the cell aimed at then, and the server lands it on
 arrival instead of `contactS` after; without it on either side the request leaves at the click and the
 server waits, as before. The message itself is unchanged.
