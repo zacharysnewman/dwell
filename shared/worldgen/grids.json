@@ -1,0 +1,57 @@
+{
+  "$comment": "The world's voxel grids (docs/proposals/MOON_WORLD.md): every buildable two-faced disc a world has, each with its own frame (where it sits and how it turns: `rest` is the home world, the grid everything else is placed against; `orbit` follows the sky's moon path, docs/DAY_NIGHT.md), its disc radius (`radiusM`, or `world` for the world's own size, docs/proposals/BIG_MAP.md), its seed (`seedSalt` mixed into the world seed; none keeps the world seed), its surface gravity (`gravityScale` × the home world's), the distance from its centre inside which a flying player is captured into its frame (`captureM`, moving grids only) and the distance past which it is drawn as a far body from its baked maps (`farM`) and its generator by kind (`terrain`: today's home generator, crates/dwell-worldgen TerrainGenerator; `cratered`: the moon rules below). Heights are face-local metres (+y up from the grid's midplane, the same frame as the home terrain's), and each face is generated from its own seed stream like the home world's (bifacial::face_seed). Read by crates/dwell-worldgen/src/grids.rs, which validates every entry with a message. The content is prototype (ARCHITECTURE.md §6.1).",
+  "grids": [
+    {
+      "name": "dwell:home",
+      "frame": "rest",
+      "radiusM": "world",
+      "gravityScale": 1,
+      "farM": 400000,
+      "generator": { "kind": "terrain" }
+    },
+    {
+      "name": "dwell:moon",
+      "frame": "orbit",
+      "radiusM": 12500,
+      "seedSalt": 1297040974,
+      "gravityScale": 0.1667,
+      "captureM": 40000,
+      "farM": 150000,
+      "generator": {
+        "kind": "cratered",
+        "$comment": "Cratered plains over a datum, ridged noise for the ridges, maria as smooth low basins (fewer craters, flatter, darker), and a crater field of size classes, each `perKm2` craters a km² with radii drawn in `radiusM`. Heights never go under `minM` (the grid's floor over its midplane, where overlapping craters would dig through). A crater's profile, by radius R: a floor `depthRatio` × R deep (at most `maxDepthM`) flat over `floorFraction` of R, a bowl up to a rim `rimRatio` × R high (at most `maxRimM`) at R, and ejecta falling off as the cube of the distance out to `reach` × R. `bake.size` is the far-LOD map's texels a side per face.",
+        "block": "dwell:moon_dust",
+        "datumM": 72,
+        "minM": 16,
+        "plains": { "amplitudeM": 5, "wavelengthM": 700, "octaves": 4 },
+        "ridges": { "amplitudeM": 12, "wavelengthM": 2400, "octaves": 3, "sharpness": 2.5, "inMaria": 0.35 },
+        "maria": {
+          "cellM": 7000,
+          "chance": 0.7,
+          "radiusM": [1600, 3400],
+          "depthM": 14,
+          "edgeM": 900,
+          "flatten": 0.15,
+          "craterDensity": 0.3,
+          "albedo": 0.78
+        },
+        "craters": {
+          "reach": 2.4,
+          "depthRatio": 0.2,
+          "maxDepthM": 40,
+          "rimRatio": 0.05,
+          "maxRimM": 12,
+          "floorFraction": 0.3,
+          "classes": [
+            { "radiusM": [6, 18], "perKm2": 30 },
+            { "radiusM": [18, 60], "perKm2": 5 },
+            { "radiusM": [60, 200], "perKm2": 0.5 },
+            { "radiusM": [200, 700], "perKm2": 0.04 },
+            { "radiusM": [700, 1500], "perKm2": 0.004 }
+          ]
+        },
+        "bake": { "size": 256 }
+      }
+    }
+  ]
+}

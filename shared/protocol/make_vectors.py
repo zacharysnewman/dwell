@@ -444,7 +444,7 @@ vectors["block_registry_part"] = block_registry(1, 2, REGISTRY_PAYLOAD[40:])
 
 
 # Capabilities (ARCHITECTURE.md §8.3): u8 count, each name a u16 length and UTF-8. The server's in an
-# optional WorldSettings field (0x84, the join's), the client's answer as its own message.
+# optional WorldSettings field (0x85, the join's), the client's answer as its own message.
 def capabilities(names):
     out = struct.pack("<B", len(names))
     for n in names:
@@ -457,7 +457,7 @@ CAPS = capabilities(["structures.place", "mymod:wet"])
 vectors["capabilities"] = struct.pack("<B", T["Capabilities"]) + CAPS
 vectors["capabilities_none"] = struct.pack("<B", T["Capabilities"]) + capabilities([])
 vectors["world_settings_capabilities"] = world_settings(
-    [(0x01, f32s(800.0, 400.0, 7.0)), (0x81, f32s(1.0)), (0x84, CAPS)]
+    [(0x01, f32s(800.0, 400.0, 7.0)), (0x81, f32s(1.0)), (0x85, CAPS)]
 )
 vectors["edit_ack"] = edit_ack(7, [])
 vectors["edit_ack_rejected"] = edit_ack(0x01020304, [2, 0x01020303, 0x01020304])

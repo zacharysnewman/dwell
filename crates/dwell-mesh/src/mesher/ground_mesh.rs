@@ -351,24 +351,23 @@ fn polygons(shape: GroundShape, [sx, sy, sz]: [f64; 3], base: bool) -> Vec<Vec<[
             out
         }
         GroundShape::Shard => {
-            // An uneven five-sided base and an off-centre tip: five angular facets, a flake.
-            const RADII: [f64; 5] = [1.0, 0.72, 0.94, 0.66, 0.88];
-            let base_ring: Vec<[f64; 3]> = (0..5)
-                .map(|i| {
-                    let a = f64::from(i as u8) * std::f64::consts::TAU / 5.0 + 0.3;
-                    [
-                        a.cos() * sx / 2.0 * RADII[i],
-                        0.0,
-                        a.sin() * sz / 2.0 * RADII[i],
-                    ]
-                })
-                .collect();
-            let tip = [0.18 * sx, sy, -0.12 * sz];
-            let mut out: Vec<Vec<[f64; 3]>> = (0..5)
-                .map(|i| vec![base_ring[i], tip, base_ring[(i + 1) % 5]])
-                .collect();
-            if base {
-                out.push(base_ring);
+            // An elongated low-poly shard (WORK_QUEUE item 18: "elongated low poly shards"): an
+            // uneven triangular waist and two off-axis tips along x, eight flat faces, about 3:1.
+            // Every face is drawn (a loose shard tumbles; on the ground its two lower ones hide).
+            let _ = base;
+            let waist = [
+                [0.08 * sx, 0.0, -sz / 2.0],
+                [-0.06 * sx, 0.0, sz / 2.0],
+                [0.12 * sx, sy, 0.08 * sz],
+            ];
+            let head = [sx / 2.0, 0.35 * sy, -0.12 * sz];
+            let tail = [-sx / 2.0, 0.2 * sy, 0.14 * sz];
+            let mut out = Vec::new();
+            for i in 0..3 {
+                let j = (i + 1) % 3;
+                // The waist's ring runs −z, +z, top: counter-clockwise seen from −x.
+                out.push(vec![waist[j], waist[i], head]);
+                out.push(vec![waist[i], waist[j], tail]);
             }
             out
         }
@@ -619,6 +618,10 @@ mod tests {
             // (The cluster is lumps; a lump's faces are checked here.)
             let size = [0.4, 0.1, 0.2];
             let faces = polygons(shape, size, true);
+            // The shape's middle: its vertices' mean (a shard's tips are off its base's middle).
+            let pts: Vec<[f64; 3]> = faces.iter().flatten().copied().collect();
+            let mid: [f64; 3] =
+                std::array::from_fn(|k| pts.iter().map(|p| p[k]).sum::<f64>() / pts.len() as f64);
             let mut m = MeshArrays::default();
             for f in &faces {
                 push_polygon(
@@ -636,7 +639,11 @@ mod tests {
                 let c: [f64; 3] =
                     std::array::from_fn(|k| f.iter().map(|p| p[k]).sum::<f64>() / f.len() as f64);
                 let n = &m.normals[at * 3..at * 3 + 3];
-                let out = [c[0], c[1] - size[1] * 0.4, c[2]];
+                let out = if shape == GroundShape::Shard {
+                    [c[0] - mid[0], c[1] - mid[1], c[2] - mid[2]]
+                } else {
+                    [c[0], c[1] - size[1] * 0.4, c[2]]
+                };
                 let dot: f64 = (0..3).map(|k| f64::from(n[k]) * out[k]).sum();
                 assert!(dot > 0.0, "{shape:?} face {f:?} normal {n:?}");
                 at += f.len();
@@ -738,6 +745,49 @@ mod tests {
             let tile = crate::textures::tile_rect(look_tile(&l));
             assert!((f64::from(m.tiles[0]) - tile.u0).abs() < 1e-6, "{item}");
         }
+    }
+
+    /// Stone's per-hit piece is an elongated low-poly shard (WORK_QUEUE item 18, owner: "The stone
+    /// hits should be elongated low poly shards"): about 3:1 long to wide, 6–10 flat triangles,
+    /// closed all round (it tumbles), its base on the ground.
+    #[test]
+    fn the_rock_shard_is_an_elongated_low_poly_shard() {
+        // both-faces: item-local geometry; the loose item mirrors it with its face.
+        let l = look("dwell:rock_shard");
+        assert_eq!(l.shape, GroundShape::Shard);
+        let m = look_mesh(&l);
+        let triangles = m.indices.len() / 3;
+        assert!((6..=10).contains(&triangles), "{triangles} triangles");
+        let (mut lo, mut hi) = ([f32::MAX; 3], [f32::MIN; 3]);
+        for p in m.positions.chunks_exact(3) {
+            for k in 0..3 {
+                lo[k] = lo[k].min(p[k]);
+                hi[k] = hi[k].max(p[k]);
+            }
+        }
+        let (len, wide, tall) = (hi[0] - lo[0], hi[2] - lo[2], hi[1] - lo[1]);
+        assert!(
+            len >= 2.5 * wide && len >= 2.5 * tall,
+            "elongated: {len} × {wide} × {tall}"
+        );
+        assert!(lo[1].abs() < 1e-6, "its base on the ground");
+        // Closed: every edge in exactly two triangles.
+        let q = |i: u32| {
+            let p = &m.positions[i as usize * 3..i as usize * 3 + 3];
+            p.iter()
+                .map(|x| (x * 1e5).round() as i64)
+                .collect::<Vec<_>>()
+        };
+        let mut edges = std::collections::HashMap::new();
+        for t in m.indices.chunks_exact(3) {
+            for k in 0..3 {
+                let (a, b) = (q(t[k]), q(t[(k + 1) % 3]));
+                *edges
+                    .entry(if a < b { (a, b) } else { (b, a) })
+                    .or_insert(0) += 1;
+            }
+        }
+        assert!(edges.values().all(|&n| n == 2), "closed all round");
     }
 
     #[test]

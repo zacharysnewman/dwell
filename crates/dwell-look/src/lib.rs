@@ -6,6 +6,7 @@
 
 pub mod ambient;
 pub mod bloom;
+pub mod celestial;
 pub mod clouds;
 #[path = "clouds.gen.rs"]
 mod clouds_gen;
@@ -22,6 +23,7 @@ pub mod motes;
 pub mod motion;
 pub mod outline;
 pub mod pixel_art;
+pub mod plumes;
 pub mod reflections;
 #[path = "reflections.gen.rs"]
 mod reflections_gen;

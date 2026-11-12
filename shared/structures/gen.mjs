@@ -30,9 +30,13 @@ export {
 // ---- Loading a directory and emitting Rust -------------------------------------------------------
 
 /** Validates every `*.json` in `dir`; `namespace` checks (`"test"` only, or anything but). */
+/** Data files kept beside the structures that are not structures. */
+const NOT_STRUCTURES = new Set(['library.json']);
+
 export function loadDir(dir, registry, { test }) {
   const out = [];
-  for (const f of readdirSync(dir).filter((n) => n.endsWith('.json')).sort()) {
+  // `library.json` is the players' structure library's limits (docs/STRUCTURES.md §9), not a structure.
+  for (const f of readdirSync(dir).filter((n) => n.endsWith('.json') && !NOT_STRUCTURES.has(n)).sort()) {
     const file = relative(root, join(dir, f));
     let json;
     try {

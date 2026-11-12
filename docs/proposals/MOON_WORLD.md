@@ -1,0 +1,294 @@
+# The moon as a real bifacial world (and grids with their own frames)
+
+**Status:** proposal, written 2026-11-12 (WORK_QUEUE item 27). Slices **M-1 built** (the grids'
+data, the moon's generator, the far-body bake, the moon spawn search; native, not wired into the
+game) and **M-4 built** (the celestial model, §6: logic and tests, not drawn yet). Not architecture until an ADR adopts it; open questions in §12.
+
+## 1. Brief and the owner's answers (2026-11-12)
+
+> "We're going to make the moon a real bifacial world like the current world, with simple gray dirt
+> across the whole thing for now. Farthest LOD, AKA the one you can see now, should be a simple
+> lighting normal map based on the actual terrain. It should glow like it is now and cast light like
+> it does now, and it should be the same size in the sky as it is now."
+
+Answers: travel and landing later, **but design for it now** (the moon's terrain is the one you'd
+stand on); about **¼ of our disc** (~12.5 km radius); terrain from the **world's seed** with moon
+rules (cratered plains, ridges, maria), **gray dirt everywhere** for now, so every world has its own
+moon; today's size in the sky, glow and moonlight kept; the face shown follows its orbit.
+
+Further lines the same day, each folded in below:
+
+1. "This moon is potentially an extension of our "other" buildable surfaces that aren't always
+   oriented the same way like our physics objects." → §2: the moon is one **grid** with its own
+   frame, as a built body is; the home world is the grid at rest.
+2. "Could we make it so you can fly to the moon, when you get close enough you begin following its
+   position, locked to it, gravity shifts to align like the underside of the bifacial world. Gravity
+   is lower on the moon." → §7.
+3. "The earth should use the same normal map kinda technique when far enough away, when on the
+   moon." → §5: one far-body renderer and one bake for every grid.
+4. "Add a moon starting spawn too side A and B." → §8.
+5. "We may need to consider a new model for the sun, world, and moon positions in order to get moon
+   phases." → §6, which **supersedes "today's motion"** for the moon.
+
+## 2. Grids: one frame abstraction for the home world, the moon and bodies
+
+A **grid** is a voxel lattice with its own **frame**: a position, an orientation, its own up and
+gravity. Everything that crosses from world space into a grid goes through the grid's frame, as
+face-local code crosses into the world through `dwell_world::FaceFrame` today.
+
+```
+world (the home grid's rest frame, f64)
+ ├─ grid "dwell:home"   frame = identity (at rest)       faces A/B: FaceFrame
+ ├─ grid "dwell:moon"   frame = orbit(t)  (§6)           faces A/B: FaceFrame
+ └─ body #17 (a felled trunk, a build-platform raft)  frame = Rapier pose   (one face, +y)
+```
+
+**`GridFrame`** (proposed, M-3): `{ grid: GridId, origin: DVec3, rotation: DQuat, velocity,
+spin }`, with `to_grid(point)`, `to_world(point)`, `vector`, `look`, and the grid's **gravity**
+(`gravityScale` × g toward its midplane, by the face the point is on). Code that today takes a
+`FaceFrame` takes `(GridFrame, FaceFrame)`: the grid frame turns world into the grid's space, the
+face frame turns that into face-local. The home grid's frame is the identity, so every caller keeps
+its results exactly (a test pins that the identity frame changes no bit).
+
+| Needed for a grid | Built bodies have it (BUILT_BODIES.md) | New for a huge generated grid |
+|---|---|---|
+| Rendering | meshing per body (`pieces.rs` `piece_meshes`), drawn at its pose | chunk meshes in the grid's space drawn under its frame's model matrix; **LOD per grid** (the LOD tree is per grid, in its own coordinates); camera-relative drawing at 600 km |
+| Collision | a collider per cell, in body space (Rapier) | chunk colliders in grid space; the controller runs **in the grid's frame** (the grid moves, the player stands still in it) |
+| Targeting | the ray turned into body space (`Target::Body`) | the same, against the grid's chunks: `Target::Voxel { grid, cell, face }` |
+| Edits | `BodyEditRequest` by body id | block edits carry a grid id (the home grid's is implicit, so today's message is unchanged) |
+| Streaming | a body's cells all sent at once | **chunks streamed per grid**, keyed `(grid, chunk)`; storage per grid (a region file set per grid) |
+| Gravity | none of their own | gravity toward the grid's midplane, by face (§7) |
+| Seed and terrain | none | the grid's generator (`grids.json`), its seed from the world's |
+
+So the first slices don't paint the work into a home-only corner: the data is a **list of grids**
+from M-1, the generator and the bake are keyed by grid, and the frame comes before travel (M-3).
+
+## 3. The data: `shared/worldgen/grids.json` [built, M-1]
+
+One entry per grid (validated in `crates/dwell-worldgen/src/grids.rs` with messages; a grid added
+by data alone generates, a test does it):
+
+| Field | Home | Moon | Meaning |
+|---|---|---|---|
+| `name` | `dwell:home` | `dwell:moon` | namespaced |
+| `frame` | `rest` | `orbit` | where it sits: at rest, or on the moon's orbit (§6) |
+| `radiusM` | `world` | 12500 | the disc's radius; `world` = the world's own size (BIG_MAP.md) |
+| `seedSalt` | — | a u32 | mixed into the world seed: every world its own moon; required for a moving grid, unique |
+| `gravityScale` | 1 | 0.1667 | its surface gravity × the home world's |
+| `captureM` | — | 40000 | inside this distance of its centre a flying player is captured (§7) |
+| `farM` | 400000 | 150000 | past this the grid is drawn as a far body (§5) |
+| `generator.kind` | `terrain` | `cratered` | today's generator, or the moon rules (§4) |
+
+Both faces of every grid: face A from the grid seed, face B from `bifacial::face_seed`, as home.
+
+## 4. The moon's generator: `cratered` [built, M-1]
+
+`CrateredTerrain` (`grids.rs`), face-local heights (m over the grid's midplane), all from data:
+
+- **Datum and plains:** `datumM` (72) + fbm plains (`plains`, ±5 m, 700 m).
+- **Ridges:** ridged noise (`1 − |fbm|`)^`sharpness`, 12 m over 2.4 km; × `inMaria` (0.35) in maria.
+- **Maria:** basins on a jittered grid (`cellM` 7 km, `chance`, radius 1.6–3.4 km) with a soft
+  `edgeM`; inside, the floor sits `depthM` lower, the plains are `flatten`ed, only `craterDensity`
+  of the craters are kept (a younger floor), and the albedo is × `albedo` (darker).
+- **Crater field:** size classes, each `perKm2` craters a km² with radii in `radiusM` (u² toward the
+  small end): a jittered grid of cell √(10⁶ / perKm2), one crater a cell, so density is the data
+  exactly. A crater of radius R: a flat floor `depthRatio`·R deep (≤ `maxDepthM`) over
+  `floorFraction` of R, a parabolic bowl to a rim `rimRatio`·R high (≤ `maxRimM`), ejecta falling as
+  the cube of the distance out to `reach`·R. Craters add; the ground never goes under `minM` (16 m).
+- **Block:** `dwell:moon_dust` (gray, digs like sand; prototype content, ARCHITECTURE.md §6.1).
+- **Chunks:** `CrateredTerrain::generate(coord, chunk)` fills a grid chunk through `FaceFrame` (face
+  B's flipped), so travel streams the same terrain the sky shows (§7).
+
+Tests (`crates/dwell-worldgen/tests/grids.rs`, both faces): floors under rims and rims raised over
+the ejecta's reach; 4 × `perKm2` gives 4 × the craters; maria flatter (mean slope < 0.7 × the
+highlands') and lower; heights inside the build volume and over `minM`; chunks hold dust up to the
+height.
+
+## 5. One far-body renderer for every grid
+
+**The bake [built, M-1].** `grids::bake_far(src: &impl FarSource, face, size) -> FarBake`, generic
+over a grid's generator (`FarSource`: radius, height at a texel's scale, albedo). Per face, `size`²
+texels over the disc's square, face-local:
+
+- `normal_height` RGBA: the normal (R = x, G = z, B = up), A the height over `height_range`; outside
+  the disc straight up with A 0. Heights at texel centres with only the craters at least a texel
+  wide (smaller ones would only alias), normals by central differences.
+- `albedo` RGBA: the block's colour × the mare albedo; A 255 inside the disc.
+
+Deterministic per (world seed, grid, face); different seeds and faces differ; on a crater's inner
+wall the normal leans toward its centre (tests). 256² per face (the data's `bake.size`): **95–160 ms
+natively per face, 512 KiB per face** (both maps), 2 MiB for both faces of the moon. Preview,
+seed 0 (face A lit by a low sun, its albedo, face B lit, its albedo; `cargo run --release -p
+dwell-worldgen --example moon_bake -- 0 <dir>`):
+
+![The moon's bake, seed 0](moon-world-bake-seed0.png)
+
+**The renderer (M-2).** A grid farther than its `farM` from the camera is drawn as a **far body**:
+a disc quad in the grid's frame (its two faces back to back, `FaceFrame` choosing which one the
+viewer sees by the side of its midplane it is on), sampling the face's normal and albedo maps, lit
+by the **real sun direction** turned into the grid's frame (§6), plus today's glow and bloom from
+`daynight.json`'s `moon` (scaled by the lit share seen). Owner, 2026-11-12: **"If not already planned
+we want the same moon shine/glow effects we already had. So the moon should look bright."** So the
+drawn moon keeps today's halo and brightness: its lit part is as bright as today's moon (`moon.color`;
+the bake shapes the surface, not its overall brightness), and its bloom and glow are today's × the lit
+share (M-4's `Celestial::glow`, `MoonView::lit`). Nearer than `farM` the grid is LOD terrain
+(its own LOD tree, M-5), crossfading over a band. The bake is cached per world (the client's world
+store, keyed by grid, face, generator version and seed), baked in a worker on the first join.
+
+**The home world's bake (M-6).** The same `FarSource` over the home world map: heights from the
+world map's cells (`worldmap`, 100 m cells over the 50 km disc: 1000 cells a side), downsampled to
+512² per face, albedo from the biomes' ground colours, **water a separate mask** (albedo A = water,
+for a specular glint and a sea colour). The map is already built at join, so the bake is a pass
+over it: an estimate of tens of ms natively, 2 MiB for both faces at 512² (1 MiB at 256² for
+phones). From the moon (~597 km) the home disc is ~4.8° in radius (four times the moon's look
+from home), so 512² is about a texel per screen pixel at 1080p's ~60° view.
+
+## 6. A celestial model: sun, home and moon as bodies [built, M-4; not drawn yet]
+
+**As built (M-4)** (`dwell-look` `celestial.rs`, DAY_NIGHT.md §14): the orbit is data in
+`shared/look/daynight.json` — the month is `moon.cycleDays` (8, new to new) from `moon.startPhase` or
+the world's phase; `moonOrbit` holds `inclinationDeg` 5, `nodeDeg` 90 and `nodeTurnDays` 96 (the
+node turns against the sun, so eclipse seasons come round), `distanceM` 596 800 (checked by
+`daynight.mjs` to keep grids.json's 12.5 km at `moon.radiusDeg`); `moon.nightFloor` 0.15. The
+`Celestial` model gives, from the world clock: `sun_direction` (today's, golden-tested),
+`moon_position`/`moon_direction` (from the home disc's centre), `moon_axes` (tidally locked: the
+grid's up at home; M-3's grid frame), `view(t, viewer)` (the face seen, the lit share n·s, the phase,
+the direction), `moonlight(t, viewer, face)` (the floor + the rest × lit × the disc over the
+horizon) and `glow` (today's halo × lit). The world's month start is the optional `WorldSettings`
+tag `MOON_PHASE` (0x84); absent, the data's. The moon's orbit is placed in the sky frame (turning
+with the sun, as the stars do), so the phase runs evenly though the solar angle doesn't; with an
+integer month the full moon comes at the same clock time (face A's midnight for `startPhase` 0.5).
+New worlds don't draw their phase from the seed yet (none writes the tag): M-2's choice.
+
+The design as proposed:
+
+Today (DAY_NIGHT.md §3) the home disc is fixed, the **sun** circles it on a great circle tilted so
+it culminates 60° above face A's horizon, and since the circle passes under the disc, **face B gets
+day while face A has night** (face B's solar angle is A's + 180°). The **moon** is drawn opposite the
+sun with a phase counted by the clock (8 days), not by geometry.
+
+Proposed: positions as data (`shared/look/sky_bodies.json`, or an `orbit` block in `grids.json`):
+
+```
+            ☉ sun: a direction s(t), today's path (period 1 day, 60° culmination, dayS/nightS split)
+            :
+   moon ◐ ··:·· orbit: radius D, inclination i to the sun's path plane, sidereal period P
+     \      :
+      \  ___:___  home disc (at rest), face A up, face B down
+         ‾‾‾‾‾‾‾
+```
+
+| Body | Model | Today kept |
+|---|---|---|
+| Sun | the direction `s(t)` exactly as today (the uneven solar angle keeps 20/10-minute days) | the clock, the path, both faces' day and night |
+| Home | at rest at the origin (the frame everything is placed in) | — |
+| Moon | at `D · o(t)` on a circle of radius D, inclined `i` to the sun's path plane, period P sidereal days; orientation tidally locked (§12 Q2) | its angular radius 1.2° → **D = 12.5 km / tan 1.2° ≈ 597 km**; its glow and bloom |
+
+- **Phases fall out of geometry**: the far-body renderer lights the baked normals by the real sun
+  direction in the moon's frame. The synodic month S follows from P: 1/S = 1 − 1/P, so today's
+  8-day cycle is P = 8/7 days; the moon rises ~2.5 minutes of a 20-minute day later each day, is up
+  by day near first and last quarter, and new moons are moonless nights.
+- **A flat disc has no terminator**: a sunlit face brightens and dims as a whole (n·s), so a crescent
+  is a dim face whose crater walls catch the light, not a lit sliver. For the familiar crescent the
+  renderer can mix a **dome normal** into the baked one (a data knob, `domeBias` 0–1; §12 Q3).
+- **Moonlight on the ground** = today's `moonLight` × the moon's lit share seen from the home grid
+  (the sunlit side's n·s, where the viewer sees that side) × its height over each face's horizon (as
+  today, per face), down to `newMoonLight` if the owner wants every night readable (§12 Q4).
+- **Face B:** it sees the moon when the moon is under the home midplane, and sees the moon's other
+  side lit or dark by the same geometry; nothing face-specific beyond `FaceFrame`.
+- **Travel uses the same positions:** the moon's world position and orientation at tick t are this
+  model's `D · o(t)` and spin, the `orbit` frame of `grids.json`; the server and the clients compute it
+  from the world clock, so they agree with no new message.
+- **Compatibility:** the clock is already the world's (`WorldSettings`, ADR 0054). Propose the
+  **orbit (P, i, phase at tick 0) as an optional world setting**, its phase drawn from the world seed
+  so every world's month starts somewhere else; an older world without it takes the build's default.
+  The sky change alone is a look (not public API, not breaking); once players can stand on the moon,
+  its position at a tick is public API on the line (a player saved on the moon must find it there).
+
+## 7. Travel: fly there, be captured, land
+
+- **Distance and speed.** The moon is ~597 km out (§6). Flight today tops out at 8 m/s × 2.5 × 2^5.5
+  ≈ 905 m/s (`flySpeedMaxLevel` 11), **~11 minutes** each way. Proposed **far flight**: past a
+  height of 2 km over every grid's surface, the fly speed grows with the distance to the nearest grid
+  (v = clamp(k · d, today's, 20 km/s), k ≈ 0.08/s), so 597 km takes ~1–1.5 minutes and slows
+  smoothly toward either surface (data in `shared/physics`, the controller's fly mode).
+- **Capture.** Inside a grid's `captureM` (40 km for the moon, past its radius) the server switches
+  the player's **frame** to the grid's: position and velocity turned into the grid's space
+  (p' = R⁻¹(p − c(t)), v' = R⁻¹(v − ċ(t) − ω × (p − c))), so nothing jumps; from then on the player
+  moves with the grid, locked to its position and orientation. Leaving past `captureM` × 1.1
+  (hysteresis) hands them back to the home frame the same way.
+- **Gravity** turns to the grid's local down like crossing the home midplane today
+  (BIFACIAL_WORLD.md §6): the face sign is the side of the moon's midplane the player is on, the view
+  keeps its world direction and rolls upright over `crossingRollS`; its strength is the grid's
+  `gravityScale` (⅙ on the moon: higher jumps, longer falls). Between the grids (in neither capture
+  and over 2 km up) flight is the only mode: the home grid's gravity holds until the player is
+  captured (§12 Q6).
+- **Authority and protocol.** The server owns a player's frame; snapshots carry the player's **grid
+  id** (a byte, optional tag), block edits and targets a grid id (the home grid's implicit). A client
+  that does not know grids would draw a captured player wrongly, so the travel phase is a **new
+  compatibility line** (the owner raises it); M-1 to M-4 are not.
+- **Precision.** At 597 km an f32 is ~6 cm: everything is drawn camera-relative and simulated in the
+  player's grid frame (f64 at the frame change), never in raw world f32.
+
+## 8. Moon spawn, faces A and B [search built, M-1; the choice M-8]
+
+`CrateredTerrain::spawn_point(face)`: a golden-angle spiral from the disc's centre to the first
+column whose ground is flat (±1 m over 4 m) and clear of every crater ≥ 10 m wide (outside 1.2 radii),
+deterministic per seed, one per face (tested on both). In M-8 the New world form's spawn choice and
+the `?spawn=` link gain `moon` and `moon-b` (beside today's `b`, `portal`, `portal-b`); the player
+starts in the moon's frame with its gravity, and the home world streams in only when they fly back.
+
+## 9. Memory and cost
+
+| Item | Size | Time |
+|---|---|---|
+| Moon bake, 256² both maps, both faces | 2 MiB (RGBA8; 1 MiB if the normal is packed with the albedo's luminance) | 2 × ~0.1 s native; a worker on the web, once per world, cached |
+| Home bake, 512² both faces (M-6) | 2 MiB | a pass over the world map (estimate tens of ms) |
+| Moon chunks while there (M-7) | as home chunks: streamed per grid, the home grid's unloaded | the generator's columns are ~45 crater candidates + noise: in line with home terrain (to measure) |
+
+## 10. Compatibility
+
+- **M-1 changes nothing a player sees:** a new block (adding blocks is not breaking, ADR 0038), a
+  new data file, new code not called by the game. The home terrain is unchanged (no golden moves).
+- **The sky (M-2, M-4)** is a look: not breaking.
+- **The moon's terrain** becomes public API when players can stand on it (M-7): changing the moon
+  rules after that is a worldgen change (a new line), as for home.
+- **Travel and moon spawn** need the grid id in the protocol and saves: a new compatibility line.
+
+## 11. Phases (each ≤ 45 minutes of agent work, each its own release)
+
+| Phase | What | Exit criteria |
+|---|---|---|
+| **M-1** [built] | Grids data (`grids.json`), the `cratered` generator on both faces, `moon_dust`, the generic far-body bake, the moon spawn search | `cargo test -p dwell-worldgen --test grids` (19 tests, both faces): crater floors under raised rims, density by data, flatter maria, bake deterministic/differing, normals out of crater walls, spawn flat |
+| M-2 | The sky draws the moon from its bake at M-4's position: today's size, glow and brightness (owner: "the moon should look bright"); the baked normals lit by the sun direction; the face from the orbit; moonlight from M-4's `moonlight` | the client bakes in a worker and caches per world; a screenshot per phase angle on both faces; the lit part as bright as today's moon and its halo today's × the lit share (a full moon side by side with today's); CPU-adapter tier |
+| M-3 | `GridFrame`: the frame abstraction (world ↔ grid ↔ face) for rendering, collision, targeting and gravity; the home grid the identity | the identity frame changes no result (parity tests across physics, targeting, meshing); a moving test grid's points round-trip |
+| **M-4** [built] | The celestial model (§6): the moon's orbit as data, phases from geometry, moonlight by lit share with a night floor; the orbit's phase an optional world setting | `cargo test -p dwell-look --lib celestial` (13 tests, both faces): full when opposite the sun, new when between, lit share monotonic; face A toward home at every phase; both faces' phases equal; the floor kept; the clock and the sun unchanged (golden); `MOON_PHASE` round-trips and is absent by default (`dwell-protocol`) |
+| M-5 | LOD per grid: the moon's LOD terrain inside `farM`, the far body beyond, crossfaded | the moon's LOD from its generator at 150 km; no seam at the switch (screenshot) |
+| M-6 | The home world's bake from its world map (water mask), drawn from far | bake tests on both faces; a screenshot from 600 km |
+| M-7 | Streaming the moon's chunks per grid; far flight; capture and release; gravity per grid; the grid id in snapshots (new line) | a scripted flight home → moon → home with no jump in position (≤ 1 cm) on both of the moon's faces; ⅙ g jump height |
+| M-8 | Moon spawn A and B in the New world form and `?spawn=moon`, `moon-b` | a new world spawned on each face stands on the moon's ground in its frame |
+
+## 12. Open questions for the owner
+
+**Answered (owner, 2026-11-12):** Q2 **tidally locked** (home always sees face A; face B is the far side);
+Q3 **keep it physical** (no dome bias: the flat disc dims as a whole, crescents only in crater walls); Q4
+**"A darker floor but a minimum still."** (new-moon nights darker than today's floor, but never black); Q7
+**about 1–1.5 minutes** to the moon (a faster far-flight speed away from ground). Still open: Q1, Q5, Q6, Q8
+(the proposal's defaults until answered: darker maria by albedo, an 8-day month at 5°, home gravity until
+captured, 12.5 km at ~597 km).
+
+
+1. **The moon's look of the maria:** darker basins (albedo 0.78) or one flat gray ("gray dirt
+   everywhere")? Today's sky moon has darker maria, so they are kept as albedo only.
+2. **Which face shows:** tidally locked (home always sees the moon's face A, round at every phase;
+   face B is the far side you only see by flying) — recommended — or an axis fixed in space (both
+   faces shown in turn, but the disc is seen edge-on, as a line, twice an orbit)?
+3. **Crescents on a disc:** a flat disc dims as a whole, crescents only in its crater walls. Mix a
+   dome normal for the familiar crescent (`domeBias`, e.g. 0.6), or keep it physical (0)?
+4. **Moonless nights:** with real geometry new moons are dark nights and quarters rise by day. Keep
+   `newMoonLight` (every night readable) or let new-moon nights be dark?
+5. **The month:** keep 8 days? Orbit inclination (e.g. 5°, so eclipses are rare)?
+6. **Between the grids:** home gravity until captured (simple), or weightless space past some height?
+7. **Far-flight speed:** ~1–1.5 minutes to the moon, or should the trip feel longer?
+8. **The moon's size:** 12.5 km at ~597 km keeps today's 1.2°; is a nearer, smaller-looking-on-the-way
+   moon wanted instead?

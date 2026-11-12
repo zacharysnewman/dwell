@@ -65,6 +65,23 @@ pub struct MoonLook {
     pub glow: f64,
     pub glow_color: Rgb,
     pub new_moon_light: f64,
+    /// The celestial model's share of the moonlight on a moonless night (`crate::celestial`; M-2
+    /// draws with it in place of `new_moon_light`).
+    pub night_floor: f64,
+}
+
+/// The moon's orbit (`crate::celestial`, docs/proposals/MOON_WORLD.md §6); its month is
+/// [`MoonLook::cycle_days`].
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct MoonOrbit {
+    /// The orbit's tilt to the sun's path.
+    pub inclination_deg: f64,
+    /// The ascending node's angle along the sun's path from the sun, at day 0.
+    pub node_deg: f64,
+    /// Days for the node to turn once against the sun (0: never).
+    pub node_turn_days: f64,
+    /// From the home disc's centre to the moon's (m).
+    pub distance_m: f64,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -132,6 +149,7 @@ pub struct DayNight {
     pub sun_path: SunPath,
     pub sun: SunLook,
     pub moon: MoonLook,
+    pub moon_orbit: MoonOrbit,
     pub stars: StarLook,
     pub sky: SkyShape,
     pub eye: EyeLook,

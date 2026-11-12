@@ -66,12 +66,15 @@ const SCHEMA = {
     powder: [0, 1],
     ambient: [0, 1],
     maxDistanceM: [100, 1e6],
+    plumeBillow: [0, 1],
   },
 };
 
 /** The most march steps and light samples a tier may take (the shader's loop bounds). */
 export const MAX_STEPS = 64;
 export const MAX_LIGHT_STEPS = 4;
+/** The most samples a tier may take through one plume (the shader's loop bound). */
+export const MAX_PLUME_STEPS = 16;
 /** The Clouds setting's values that draw clouds, each with a tier. */
 const TIERS = ['high', 'medium', 'low'];
 const TIER = {
@@ -79,20 +82,32 @@ const TIER = {
   lightSteps: ['count', 0, MAX_LIGHT_STEPS],
   divisor: ['count', 1, 4],
   historyBlend: [0.02, 1],
+  plumeSteps: ['count', 0, MAX_PLUME_STEPS],
 };
-/** A plume: an extra density source (a column, e.g. volcano ash), in world metres. */
+/** A plume's look: a column of cloud (steam, smoke, volcano ash) rising at riseMps. */
+const PLUME_LOOK = {
+  radiusM: [1, 1e5],
+  spread: [0, 10],
+  density: [0, 4],
+  color: 'color',
+  riseMps: [0, 100],
+};
+/** A plume the world starts with (the run-time list's defaults), in world x, z and heights above
+ * sea level on face A (docs/CLOUDS.md §8.7). */
 const PLUME = {
   name: 'name',
   xM: [-1e7, 1e7],
   zM: [-1e7, 1e7],
-  radiusM: [1, 1e5],
-  spread: [0, 10],
   baseM: [-1e5, 1e5],
   topM: [-1e5, 1e5],
-  density: [0, 4],
-  color: 'color',
+  ...PLUME_LOOK,
 };
-export const MAX_PLUMES = 8;
+/** A run-time source's look (`sources`): a plume's, with its height over the source. */
+const SOURCE = { ...PLUME_LOOK, heightM: [1, 1e5] };
+/** The sources the game knows (the code's fixed vocabulary). */
+const SOURCES = ['lavaVent'];
+/** The most plume slots the run-time list may have (the uniform's size). */
+export const MAX_PLUME_SLOTS = 32;
 
 const snake = (s) => s.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
 const fail = (m) => {
@@ -130,7 +145,14 @@ function checkValue(where, v, spec) {
 
 /** Checks the tunables against the schema and each other; returns them. Throws naming the entry. */
 export function validateClouds(data) {
-  checkKeys('(root)', data, [...Object.keys(SCHEMA), 'tiers', 'plumes']);
+  checkKeys('(root)', data, [...Object.keys(SCHEMA), 'tiers', 'plumeSlots', 'sources', 'plumes']);
+  checkValue('plumeSlots', data.plumeSlots, ['count', 1, MAX_PLUME_SLOTS]);
+  checkKeys('sources', data.sources, SOURCES);
+  for (const src of SOURCES) {
+    checkKeys(`sources.${src}`, data.sources[src], Object.keys(SOURCE));
+    for (const [k, spec] of Object.entries(SOURCE))
+      checkValue(`sources.${src}.${k}`, data.sources[src][k], spec);
+  }
   checkKeys('tiers', data.tiers, TIERS);
   for (const tier of TIERS) {
     checkKeys(`tiers.${tier}`, data.tiers[tier], Object.keys(TIER));
@@ -138,7 +160,7 @@ export function validateClouds(data) {
       checkValue(`tiers.${tier}.${k}`, data.tiers[tier][k], spec);
   }
   if (!Array.isArray(data.plumes)) fail('plumes must be a list');
-  if (data.plumes.length > MAX_PLUMES) fail(`plumes: at most ${MAX_PLUMES}`);
+  if (data.plumes.length > data.plumeSlots) fail(`plumes: at most plumeSlots (${data.plumeSlots})`);
   const names = new Set();
   data.plumes.forEach((p, i) => {
     checkKeys(`plumes[${i}]`, p, Object.keys(PLUME));
@@ -172,6 +194,10 @@ export function validateClouds(data) {
 const rf = (v) => (Number.isInteger(v) ? `${v}.0` : `${v}`);
 export { SCHEMA };
 const rgb = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255);
+const rgbRust = (hex) =>
+  `[${rgb(hex)
+    .map((c) => rf(+c.toFixed(6)))
+    .join(', ')}]`;
 
 /** The Rust source for validated tunables. */
 export function cloudsRust(data) {
@@ -209,8 +235,21 @@ export function cloudsRust(data) {
       `            light_steps: ${t.lightSteps},`,
       `            divisor: ${t.divisor},`,
       `            history_blend: ${rf(t.historyBlend)},`,
+      `            plume_steps: ${t.plumeSteps},`,
       '        },',
     );
+  }
+  rs.push('    },');
+  rs.push(`    plume_slots: ${data.plumeSlots},`);
+  rs.push('    sources: PlumeSources {');
+  for (const src of SOURCES) {
+    const v = data.sources[src];
+    rs.push(`        ${snake(src)}: PlumeSource {`);
+    for (const k of Object.keys(SOURCE)) {
+      if (k === 'color') rs.push(`            color: ${rgbRust(v.color)},`);
+      else rs.push(`            ${snake(k)}: ${rf(v[k])},`);
+    }
+    rs.push('        },');
   }
   rs.push('    },');
   rs.push(data.plumes.length ? '    plumes: &[' : '    plumes: &[],');
@@ -219,12 +258,7 @@ export function cloudsRust(data) {
     rs.push(`            name: ${JSON.stringify(p.name)},`);
     for (const k of Object.keys(PLUME)) {
       if (k === 'name') continue;
-      if (k === 'color')
-        rs.push(
-          `            color: [${rgb(p.color)
-            .map((c) => rf(+c.toFixed(6)))
-            .join(', ')}],`,
-        );
+      if (k === 'color') rs.push(`            color: ${rgbRust(p.color)},`);
       else rs.push(`            ${snake(k)}: ${rf(p[k])},`);
     }
     rs.push('        },');

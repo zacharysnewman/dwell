@@ -17,6 +17,7 @@ pub mod find;
 pub mod flecks;
 pub mod game;
 pub mod hit_feedback;
+pub mod hit_shards;
 pub mod jobs;
 pub mod local;
 pub mod lod_map;
@@ -30,6 +31,7 @@ pub mod render_clock;
 pub mod settle_glide;
 pub mod steam;
 pub mod telemetry;
+pub mod vent_plumes;
 #[cfg(target_arch = "wasm32")]
 mod web;
 pub mod world_clock;

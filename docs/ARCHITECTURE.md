@@ -2964,6 +2964,20 @@ chunks), keeps the last selection (`LodSystem::update`; ~1 ms a frame standing s
   only): `?time=0..1`, `?moon=0..1`, `?timespeed=N`, `__dwell.setTime`, the bench's `time` and
   `timelapse` steps, the F3 line (the clock, the day, the solar angles, the keyframes between, the
   moon). Measured GPU cost: see §7.4.
+  **The celestial model [built, M-4; not drawn yet]** (`dwell-look` `celestial.rs`,
+  [`proposals/MOON_WORLD.md`](./proposals/MOON_WORLD.md) §6, DAY_NIGHT.md §14): the sun, the home
+  disc and the moon as bodies, pure functions of the world clock (server and clients agree with no
+  message). The sun is today's direction exactly; the moon goes round a circle `moonOrbit.distanceM`
+  (596.8 km: the moon grid's 12.5 km at `moon.radiusDeg` 1.2°, checked against `grids.json` by
+  `daynight.mjs`) out, inclined `inclinationDeg` (5°) to the sun's path, once a month (`cycleDays` 8,
+  new to new) against the sky's turn, its node turning against the sun every `nodeTurnDays` (96);
+  tidally locked (the moon grid's up, its face A's, at the home disc's centre: `Celestial::moon_axes`,
+  the grid's frame for M-3). The phase and the lit share (a flat disc: n·s of the face seen, physical)
+  follow from the geometry, the same from either home face; moonlight = today's × (`moon.nightFloor`
+  0.15 + the rest × lit share × the disc's share over the face's horizon); the halo is today's × the
+  lit share. The month's start is the world's (`WorldSettings` optional tag `MOON_PHASE` 0x84; absent,
+  `moon.startPhase`). The sky still draws today's moon (opposite the sun, counted phase,
+  `newMoonLight`) until M-2 draws from the model.
 - **Clouds [built, Phase 31]** ([ADR 0034](./adr/0034-sky-clouds.md), [`CLOUDS.md`](./CLOUDS.md)): a
   2D cloud layer drawn as part of the sky in the composite pass (not volumetric, no geometry). A thin
   deck lies `altitudeM` above the viewer's own face's sea level, on a sphere about a centre
@@ -3011,9 +3025,16 @@ chunks), keeps the last selection (`LodSystem::update`; ~1 ms a frame standing s
   direction (a `CloudPrev` uniform with the last camera; reset on new buffers or a jump), then copied
   to the history. The composite upsamples it in place of the eye's deck (`upsampled_clouds`,
   depth-aware: hidden where the scene is nearer than the four texels' nearest first cloud). Density:
-  the deck's noise as a weather map (the same coverage uniform), a cut rising with height, 3D detail,
-  plus `plumes` (extra density columns with a colour, as data, generated into the shader); Beer and
-  powder lighting. Snell's window, the reflections and the other face's sky keep the deck. The
+  the deck's noise as a weather map (the same coverage uniform), a cut rising with height, 3D detail;
+  Beer and powder lighting; no samples at all with no coverage. **Run-time plumes** (`CLOUDS.md`
+  §8.7): columns of cloud (steam, smoke, ash) the game adds, moves and removes by name in a list
+  (`dwell_look::plumes::PlumeList`, `plumeSlots` of them, `clouds.json`'s `plumes` its defaults),
+  packed each frame into a uniform at the clouds pass's group 3 binding 4 (`CloudPlumes`: the eye's
+  face's plumes within the march's reach, nearest first, axes relative to the eye) and marched apart
+  from the layer, `plumeSteps` samples (per tier; none on Low, Off or the CPU adapter) over each
+  plume's own span for the plumes the ray crosses, with rising billows (`riseMps`). Sources: the
+  world's lava vents (`dwell-client` `vent_plumes`: the worldgen config's `lavaVents`, a plume over
+  the vent column's top molten cell while it has one, look `sources.lavaVent`); `__dwell.plume`. Snell's window, the reflections and the other face's sky keep the deck. The
   deck's CPU in-cloud fog is off on a volume tier (the march fogs by density). Telemetry
   `gpu.clouds`.
 - Coarse sections: where a cell is taller than the relief, the column's top cell takes the
@@ -4174,7 +4195,7 @@ S→C  WorldSettings 0x54 (protocol v22): u8 count, each u8 tag, u16 length, byt
                    world's settings (`dwell_protocol::world_settings`): tag 1 the clock
                    (f32 day s, f32 night s, f32 start hour), 0x81 the water speed (f32),
                    0x82 the game mode's name (UTF-8, ADR 0065; a build before modes skips
-                   it, an unknown name reads as creative), 0x84 the server's
+                   it, an unknown name reads as creative), 0x85 the server's
                    capabilities (the join's, never saved; below);
                    a tag with the top bit set is optional (skipped by a build that doesn't
                    know it), any other must be understood ("This world needs a newer
@@ -4185,7 +4206,9 @@ S→C  WorldSettings 0x54 (protocol v22): u8 count, each u8 tag, u16 length, byt
                    (u64 FNV-1a of its text, ADR 0074 B7), only for a world made from a
                    config (a Chisel edit or a fixture), never saved: an older build refuses
                    it; this one sends WorldgenRequest after Welcome and joins once the text
-                   arrives and matches
+                   arrives and matches. **[built, M-4]** Tag 0x84 (optional) the moon's
+                   phase at day 0 (f32, 0 new, 0.5 full; MOON_WORLD.md §6): written only
+                   for a world that sets one, absent = the build's `moon.startPhase`
 C→S  WorldgenRequest 0x62: empty, only to a server whose WorldSettings has tag 2
 S→C  WorldgenConfig  0x63: u32 length (at most 512 KiB), UTF-8 — the world's worldgen config
                    text (`dwell_worldgen::config::world_config`); answers WorldgenRequest
@@ -4319,7 +4342,7 @@ field), generated by `gen.mjs` into `dwell_protocol::capability_names` (`STRUCTU
 and the TS constants. A feature adds an entry and checks it by name. The exchange
 (`dwell_protocol::capabilities`):
 
-1. The server lists the capabilities it has in an **optional** `WorldSettings` field (tag 0x84,
+1. The server lists the capabilities it has in an **optional** `WorldSettings` field (tag 0x85,
    before `Welcome`): a build that doesn't know the tag skips it, as any optional field. It is the
    join's, added to what the server sends (`Server::join_settings`), never saved with the world
    (`SettingsFields::with` drops it).
@@ -4333,9 +4356,9 @@ and the TS constants. A feature adds an entry and checks it by name. The exchang
 Existing flags and hellos stay as they are. The first capability is `structures.place` (a saved
 structure's placement as `RegionEdit`'s `Structure` op, below).
 ```
-S→C  WorldSettings field 0x84 (optional): u8 count (≤ 64), each str name (≤ 48 bytes, no repeat)
+S→C  WorldSettings field 0x85 (optional): u8 count (≤ 64), each str name (≤ 48 bytes, no repeat)
 C→S  Capabilities 0x69, control: the same form — the client's capabilities, once after Welcome,
-                  only to a server whose settings had field 0x84
+                  only to a server whose settings had field 0x85
 ```
 
 **Client → Server: `BlockEditRequest` (reliable, `control`) [built, Phase 3d]** (§6.5)

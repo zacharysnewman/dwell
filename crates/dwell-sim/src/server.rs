@@ -358,6 +358,7 @@ pub fn default_settings(water_speed: f64) -> WorldSettings {
         water_speed: water_speed as f32,
         mode: dwell_protocol::modes::DEFAULT_MODE,
         size: dwell_protocol::world_size::WorldSize::DEFAULT,
+        moon_phase: None,
     }
 }
 
@@ -4511,6 +4512,7 @@ impl Server {
                 let before = WorldSettings {
                     mode: dwell_protocol::modes::DEFAULT_MODE,
                     size: dwell_protocol::world_size::WorldSize::DEFAULT,
+                    moon_phase: None,
                     ..self.settings
                 };
                 match f.settings(before) {
