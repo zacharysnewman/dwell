@@ -221,55 +221,61 @@ export function applyCoat(bytes, coat, palette) {
 /**
  * Checks a model's `repaint` (a part of its mesh given a palette ramp of its own, so a variant can
  * recolour it alone: the Peasant's hat, painted with its hair's colour in the pack):
- * `[{ from, to, minY, beyond, above }]`, each vertex coloured with a stop of ramp `from` at least
- * `minY` up (model units) and either `beyond` out from the up axis or `above` up takes the same stop
- * of ramp `to`.
+ * `[{ from, to, part }]`, each vertex of part `part` (its part map, shared/models/parts.mjs) coloured
+ * with a stop of ramp `from` takes the same stop of ramp `to`. `parts`: the model's part names.
  */
-export function validateRepaint(list, palette, at = "repaint") {
+export function validateRepaint(list, palette, at = "repaint", parts = undefined) {
   if (!Array.isArray(list) || list.length === 0)
     throw new Error(`${at} is a non-empty list`);
   list.forEach((r, i) => {
     const w = `${at}[${i}]`;
     for (const k of Object.keys(r))
-      if (!["from", "to", "minY", "beyond", "above", "$comment"].includes(k))
+      if (!["from", "to", "part", "$comment"].includes(k))
         throw new Error(`${w}: unknown entry ${k}`);
     for (const k of ["from", "to"])
       if (typeof palette.ramps[r[k]] !== "object")
         throw new Error(`${w}.${k}: no palette ramp ${r[k]}`);
     if (r.from === r.to) throw new Error(`${w}: from and to are the same ramp`);
-    for (const k of ["minY", "beyond", "above"])
-      if (!Number.isFinite(r[k])) throw new Error(`${w}.${k} must be a number`);
+    if (typeof r.part !== "string") throw new Error(`${w}.part: a part's name`);
+    if (parts && !parts.includes(r.part))
+      throw new Error(`${w}.part: the model's part map has no part ${r.part}`);
   });
 }
 
-/** The GLB with each `repaint` applied to every mesh's COLOR_0 (a new buffer). Applying it again
- * changes nothing: the repainted vertices no longer have `from`'s colours. */
-export function applyRepaint(bytes, list, palette) {
+/**
+ * The GLB with each `repaint` applied to every mesh's COLOR_0 (a new buffer). `parts`: the model's
+ * part names and each detail level's vertex parts (`{ names, levels }`, shared/models/parts.mjs
+ * `allLevelParts`; mesh `detail_k` takes `levels[k]`). Applying it again changes nothing: the
+ * repainted vertices no longer have `from`'s colours.
+ */
+export function applyRepaint(bytes, list, palette, parts) {
   const { b: src, json, binAt } = chunks(bytes);
   const b = Buffer.from(src);
   const stops = (ramp) =>
     ["shadow", "base", "light"]
       .filter((k) => typeof palette.ramps[ramp][k] === "string")
       .map((k) => [k, hexRgb(palette.ramps[ramp][k])]);
-  for (const p of (json.meshes ?? []).flatMap((m) => m.primitives)) {
-    if (p.attributes.COLOR_0 === undefined) continue;
-    const pos = view(b, json, binAt, p.attributes.POSITION);
-    const col = view(b, json, binAt, p.attributes.COLOR_0);
-    for (let i = 0; i < pos.count; i++) {
-      const y = pos.get(i, 1);
-      const r = Math.hypot(pos.get(i, 0), pos.get(i, 2));
-      const s = [0, 1, 2].map((k) => toSrgb(col.get(i, k)));
-      for (const rp of list) {
-        if (y < rp.minY || (r < rp.beyond && y < rp.above)) continue;
-        const hit = stops(rp.from).find(([, c]) =>
-          c.every((v, k) => Math.abs(v - s[k]) < 1.5 / 255),
-        );
-        if (!hit) continue;
-        const to = stops(rp.to).find(([k]) => k === hit[0]) ?? stops(rp.to)[0];
-        for (let k = 0; k < 3; k++) col.set(i, k, toLinear(to[1][k]));
-        break;
+  (json.meshes ?? []).forEach((m, mi) => {
+    const level = /^detail_(\d+)$/.exec(m.name ?? "");
+    const vp = parts.levels[level ? Number(level[1]) : mi];
+    for (const p of m.primitives) {
+      if (p.attributes.COLOR_0 === undefined) continue;
+      const col = view(b, json, binAt, p.attributes.COLOR_0);
+      for (let i = 0; i < col.count; i++) {
+        const part = parts.names[(vp?.[i] ?? 0) - 1];
+        const s = [0, 1, 2].map((k) => toSrgb(col.get(i, k)));
+        for (const rp of list) {
+          if (rp.part !== part) continue;
+          const hit = stops(rp.from).find(([, c]) =>
+            c.every((v, k) => Math.abs(v - s[k]) < 1.5 / 255),
+          );
+          if (!hit) continue;
+          const to = stops(rp.to).find(([k]) => k === hit[0]) ?? stops(rp.to)[0];
+          for (let k = 0; k < 3; k++) col.set(i, k, toLinear(to[1][k]));
+          break;
+        }
       }
     }
-  }
+  });
   return b;
 }

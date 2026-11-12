@@ -387,6 +387,8 @@ There are **no official game servers**; players host (ADR 0003, details in §10)
                      headless, run by hand from the unpacked packs) + gen.mjs (validates against
                      the GLBs and the palette, → Rust for dwell-models), fixtures/ (the two-joint
                      test model and its maker), gen.test.mjs (CHARACTERS.md §11, ADR 0070);
+                     parts/ + parts.mjs (each model's part map: a part a vertex, what an NPC's
+                     colours recolour; seeded from the mesh, rendered to PNGs; CHARACTERS.md §11.11);
                      props.json + glb/props/ (the static props: tools, weapons, containers, … by
                      category, sizes validated; import.mjs --props with blender_props.py; ADR 0070 §8).
 /shared/brushes      brushes.json (brush presets and the game modes' brush policy) + gen.mjs

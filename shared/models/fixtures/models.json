@@ -14,6 +14,7 @@
       "poses": { "lie": { "tip": [90, 0, 0] } },
       "poseBlendS": 1,
       "glb": "two_bone.glb",
+      "parts": "parts/two_bone.json",
       "scale": 1,
       "yaw": 0,
       "remap": {},

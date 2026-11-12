@@ -145,16 +145,16 @@ pub struct NpcDef {
     pub colours: &'static [ColourSlot],
 }
 
-/// An NPC's colours from its `variant` seed: per part, (the model's ramp, the ramp drawn in its
-/// place). Deterministic: the same seed always picks the same.
-pub fn npc_colours(def: &NpcDef, variant: u32) -> Vec<(&'static str, &'static str)> {
+/// An NPC's colours from its `variant` seed: per part, (the part, the model's ramp, the ramp drawn
+/// in its place; BUGS.md #96: the recolour is by part). Deterministic: the same seed always picks the same.
+pub fn npc_colours(def: &NpcDef, variant: u32) -> Vec<(&'static str, &'static str, &'static str)> {
     def.colours
         .iter()
         .enumerate()
         .map(|(j, c)| {
             let h = unit(mix(u64::from(variant), [j as i32, 0, 0], 0x636f_6c6f));
             let i = ((h * c.to.len() as f64) as usize).min(c.to.len() - 1);
-            (c.from, c.to[i])
+            (c.part, c.from, c.to[i])
         })
         .collect()
 }
@@ -1999,8 +1999,9 @@ mod tests {
                 npc_colours(def, v.wrapping_mul(0x9e37_79b9)),
                 "deterministic"
             );
-            for ((from, to), (slot, seen)) in c.iter().zip(def.colours.iter().zip(&mut seen)) {
-                assert_eq!(*from, slot.from);
+            for ((part, from, to), (slot, seen)) in c.iter().zip(def.colours.iter().zip(&mut seen))
+            {
+                assert_eq!((*part, *from), (slot.part, slot.from));
                 assert!(slot.to.contains(to));
                 seen.insert(*to);
             }

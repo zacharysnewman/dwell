@@ -1620,6 +1620,13 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    distinct colours (front/side/back, rotate), paints vertices into parts, previews the creature's colour variants
    (creatures.json `colours`), and exports the part map file the game reads (the recolour by part, not by colour).
    Order: bug #96's fix lands the part map format and the game reading it; then the page.
+   **First half built with bug #96's fix (after 0.54.171):** the part map format (`shared/models/parts/<model>.json`,
+   models.json `parts`), `shared/models/parts.mjs` (`--seed` from rules: mesh island near a point, colour ramp, joint
+   weight, height; `--render` front/side/back PNGs; `--stats`), gen.mjs's checks (vertex count, known parts, every
+   NPC colour part a part of its model) and the game recolouring by part (CHARACTERS.md §11.11). Bug #96's owner
+   follow-ups, 2026-11-12: "Oh maybe not all of them, but their hair and faces are really crazy looking." / "I think
+   some of the clothes and hat vertices are being assigned incorrectly (like they should be face and hair)."
+   Left: the painter page.
 
 ## Future (needs owner answers)
 

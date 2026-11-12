@@ -6,16 +6,6 @@ pins it.
 
 ## Open
 
-### 96. Villagers' faces are jet black, not their skin colour
-
-Owner, 2026-11-12: "Why do all the villagers look like their faces are jet black? Not even matching the rest of
-their skin color?" Every villager's face draws black regardless of its skin variant. Suspects: the face's colours in
-the Peasant GLB snap to a palette stop the villager's `skin` colour part doesn't map (its `from` is `skin_fair`, the
-face a different stop or a shade the recolour misses, or a utility/never-snap colour that the NPC pass reads as 0);
-the hat repaint (`repaint` hair_brown → wool_yellow with minY/beyond/above) catching the face; the NPC draw's colour
-table missing an entry (index out of range → black); or the face's normals inverted at the default model detail.
-Check whether your own body/other players (the same model, no recolour) show it too.
-
 ### 95. Far trees seen from above have holes through to the sky below
 
 Owner, 2026-11-12 (screenshot at night, looking straight down from high up): "looking down at trees from high up,
@@ -442,6 +432,33 @@ face, or the placement check against its shape.
 
 
 ## Fixed
+
+### 96. Villagers' faces are jet black, not their skin colour (fixed after 0.54.171)
+
+Owner, 2026-11-12: "Why do all the villagers look like their faces are jet black? Not even matching the rest of
+their skin color?" Then: "Oh maybe not all of them, but their hair and faces are really crazy looking." and "I think
+some of the clothes and hat vertices are being assigned incorrectly (like they should be face and hair)." And: "You
+should have tooling for debugging this and setting up a model so it can be retextured" (WORK_QUEUE item 43).
+- **Cause:** two. (1) The GLBs' vertex colours are linear (glTF `COLOR_0`) and the skinned shader read them as sRGB
+  bytes, decoding them a second time: every skinned model drew darker than its palette and the dark ramps near
+  black — a skin_deep villager's face at a sixteenth of its brightness, skin_brown at a third. Your own body and the
+  other players drew darker too, but in skin_fair it reads as skin. (2) The villager's colour parts recoloured by
+  colour, not by part: the hat's repaint by height (hair_brown → wool_yellow above 1.4 m and out past 16 cm) had
+  caught the hair's fringe, so the fringe took the hat's colour; the neck (skin_tan) and the hair's shading
+  (skin_brown, soil) kept the model's colours whatever the variant.
+- **Fix:** the vertices carry sRGB bytes (`skinned::vertex_bytes` through `dwell_models::linear_to_srgb`), and a
+  **part map** per model (`shared/models/parts/peasant.json`, `shared/models/parts.mjs`: a part a vertex, seeded
+  from the mesh: the hat and the hair are islands of their own, the skin, shirt and trousers by colour on the body)
+  is what an NPC's colours recolour (each vertex's part in its colour's alpha byte; the part's new ramp at the
+  vertex's shade). The repaint is by part now, and gives the fringe its hair_brown back. `parts.mjs --render` draws
+  a part map to PNGs, `--stats` counts it.
+- **Tests:** `every_villager_variant_draws_its_face_in_its_skin_and_its_hair_in_its_hair` (dwell-client,
+  render/skinned.rs): at every detail level and 64 variants, by position, the face draws the variant's skin as
+  bright as its ramp, the back of the head its hair, no head vertex is clothes, the hat is only its brim and crown.
+  The same check run on main's pipeline (colour-matched remap, linear bytes) failed: a skin_deep face drew at
+  luminance 0.0044 against the ramp's 0.071, and 5 fringe vertices carried the hat's wool_yellow at detail 1. Also
+  gen.test.mjs (the part map's checks, the fixture's part map by data alone, the repaint by part, the Peasant's
+  islands) and dwell-models' `a_part_map_is_added_by_data_alone`.
 
 ### 94. Jumping into a tree's leaves rubber-bands you toward the ground until you back out (fixed after 0.54.14x)
 

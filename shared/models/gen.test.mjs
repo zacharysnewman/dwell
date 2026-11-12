@@ -12,6 +12,16 @@ import {
   validateRepaint,
 } from "./coat.mjs";
 import {
+  allLevelParts,
+  islands,
+  nearestRamp,
+  readMesh,
+  rows,
+  seedParts,
+  validateParts,
+} from "./parts.mjs";
+import {
+  checkCreatureParts,
   generate,
   glbAccessor,
   glbJson,
@@ -593,44 +603,107 @@ test("a pose's $drop lowers the body: the wolf sits and lies down on the ground,
   assert.throws(() => validate(d, palette, here), /\$drop -1 is outside/);
 });
 
-test("the Peasant's hat has a ramp of its own (repaint): the brim is wool_yellow, the hair stays", () => {
-  // Owner, 2026-11-12: "Hat gets its own colours".
+test("the Peasant's hat has a ramp of its own (repaint by part): the hat is wool_yellow, the hair hair_brown", () => {
+  // Owner, 2026-11-12: "Hat gets its own colours"; BUGS.md #96: the repaint by height had caught
+  // the hair's fringe (wool_yellow on the hair, so a villager's hat colour recoloured it).
   const m = data().models.peasant;
   const bytes = readFileSync(join(here, m.glb));
+  const file = JSON.parse(readFileSync(join(here, m.parts), "utf8"));
+  const base = Uint8Array.from(file.vertices.join(""), Number);
+  const parts = { names: file.parts, levels: allLevelParts(bytes, base) };
   assert.ok(
-    Buffer.from(applyRepaint(bytes, m.repaint, palette)).equals(bytes),
+    Buffer.from(applyRepaint(bytes, m.repaint, palette, parts)).equals(bytes),
     "applied (idempotent)",
   );
-  const g = glbJson(bytes);
-  const p = g.meshes[0].primitives[0];
-  const pos = glbAccessor(bytes, p.attributes.POSITION);
-  const col = glbAccessor(bytes, p.attributes.COLOR_0);
-  const lin = (h) =>
-    [1, 3, 5].map((i) => {
-      const c = parseInt(h.slice(i, i + 2), 16) / 255;
-      return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
-    });
-  const is = (i, hex) =>
-    lin(hex).every(
-      (v, k) => Math.abs(v - col.values[i * col.width + k]) < 0.01,
-    );
-  let brim = 0,
-    hair = 0;
-  for (let i = 0; i < pos.values.length / 3; i++) {
-    const y = pos.values[i * 3 + 1];
-    const r = Math.hypot(pos.values[i * 3], pos.values[i * 3 + 2]);
-    if (y > 1.4 && r > 0.16 && is(i, palette.ramps.wool_yellow.base)) brim++;
-    if (y > 1.4 && y < 1.6 && r < 0.16 && is(i, palette.ramps.hair_brown.base))
-      hair++;
-  }
-  assert.ok(brim > 20, `the brim repainted: ${brim}`);
-  assert.ok(hair > 20, `the hair under it kept: ${hair}`);
+  const hat = file.parts.indexOf("hat") + 1;
+  const hair = file.parts.indexOf("hair") + 1;
+  parts.levels.forEach((ps, k) => {
+    const mesh = readMesh(bytes, `detail_${k}`);
+    let hatYellow = 0;
+    for (let i = 0; i < mesh.count; i++) {
+      const ramp = nearestRamp(palette, mesh.colour(i));
+      if (ps[i] === hair)
+        assert.notEqual(ramp, "wool_yellow", `detail_${k}: hair vertex ${i} is the hat's ramp`);
+      if (ps[i] === hat && ramp === "wool_yellow") hatYellow++;
+    }
+    assert.ok(hatYellow > 20, `detail_${k}: the hat repainted: ${hatYellow}`);
+  });
   assert.throws(
-    () =>
-      validateRepaint(
-        [{ from: "hair_brown", to: "nope", minY: 0, beyond: 0, above: 0 }],
-        palette,
-      ),
+    () => validateRepaint([{ from: "hair_brown", to: "nope", part: "hat" }], palette),
     /no palette ramp nope/,
   );
+  assert.throws(
+    () => validateRepaint([{ from: "hair_brown", to: "leather", part: "cape" }], palette, "r", ["hat"]),
+    /no part cape/,
+  );
+  assert.throws(
+    () => validateRepaint([{ from: "hair_brown", to: "leather", minY: 1 }], palette),
+    /unknown entry minY/,
+  );
+});
+
+test("a part map is checked: its names, every vertex a part, as many as the full mesh", () => {
+  const ok = { parts: ["skin", "hair"], vertices: ["0120", "21"] };
+  assert.equal(validateParts(ok, "p", 6), "012021");
+  assert.throws(() => validateParts(ok, "p", 7), /6 vertices, but the full mesh has 7/);
+  assert.throws(() => validateParts({ ...ok, vertices: ["013"] }, "p"), /vertex 2 is "3", not 0..2/);
+  assert.throws(() => validateParts({ ...ok, parts: ["skin", "skin"] }, "p"), /part skin twice/);
+  assert.throws(() => validateParts({ ...ok, parts: ["Skin"] }, "p"), /not a lower_snake_case/);
+  assert.throws(
+    () => validateParts({ ...ok, parts: ["a", "b", "c", "d", "e", "f", "g"] }, "p"),
+    /7 parts, at most 6/,
+  );
+  assert.throws(() => validateParts({ ...ok, seed: [{ part: "cape", y: [0, 1] }] }, "p"), /no part cape/);
+  assert.throws(() => validateParts({ ...ok, seed: [{ part: "skin" }] }, "p"), /no test/);
+  assert.throws(() => validateParts({ ...ok, wat: 1 }, "p"), /unknown key wat/);
+});
+
+test("a part map is added by data alone: the fixture's seeds to its checked-in vertices", () => {
+  const f = fixture();
+  const m = f.models.two_bone;
+  const bytes = readFileSync(join(fixtures, m.glb));
+  const file = JSON.parse(readFileSync(join(fixtures, m.parts), "utf8"));
+  const mesh = readMesh(bytes, "detail_0");
+  assert.equal(rows(seedParts(mesh, file, palette)).join(""), file.vertices.join(""));
+  const models = validate(f, palette, fixtures);
+  assert.deepEqual(models.two_bone.partMap.names, ["tip", "base"]);
+  assert.match(generate()[1][1], /parts: Some\(Parts \{ names: &\["tip", "base"\], levels: &\["2122", /);
+  // A part map of the wrong length fails naming the model.
+  const read = (p) =>
+    p.endsWith("two_bone.json")
+      ? Buffer.from(JSON.stringify({ ...file, vertices: ["21"] }))
+      : readFileSync(p);
+  assert.throws(() => validate(f, palette, fixtures, read), /model two_bone: .*2 vertices, but the full mesh has 4/);
+});
+
+test("the Peasant's parts: the hat and the hair are their islands, no head vertex is clothes", () => {
+  const m = data().models.peasant;
+  const bytes = readFileSync(join(here, m.glb));
+  const file = JSON.parse(readFileSync(join(here, m.parts), "utf8"));
+  const mesh = readMesh(bytes, "detail_0");
+  const ps = Uint8Array.from(file.vertices.join(""), Number);
+  const isl = islands(mesh);
+  const num = (n) => file.parts.indexOf(n) + 1;
+  const head = ["spine.005", "spine.006"].map((j) => mesh.jointNames.indexOf(j));
+  const onHead = (i) =>
+    mesh.joints(i).reduce((a, j, k) => a + (head.includes(j) ? mesh.weights(i)[k] : 0), 0) >= 0.5;
+  const islandOf = (part) => new Set([...ps.keys()].filter((i) => ps[i] === num(part)).map((i) => isl[i]));
+  assert.equal(islandOf("hat").size, 1, "the hat is one island");
+  assert.equal(islandOf("hair").size, 1, "the hair is one island");
+  for (let i = 0; i < mesh.count; i++) {
+    if (onHead(i)) assert.ok(![num("shirt"), num("trousers")].includes(ps[i]), `head vertex ${i}`);
+    if (ps[i] === num("hat")) assert.ok(mesh.position(i)[1] >= 1.44, `hat vertex ${i} below the brim`);
+  }
+});
+
+test("every NPC colour part is a part of its model", () => {
+  const models = validate(data(), palette, here);
+  const creatures = JSON.parse(readFileSync(join(root, "shared/creatures/creatures.json"), "utf8"));
+  checkCreatureParts(creatures, models);
+  const bad = structuredClone(creatures);
+  bad.creatures.find((c) => c.npc).npc.colours[0].part = "cape";
+  assert.throws(() => checkCreatureParts(bad, models), /colour part cape is not a part of model peasant/);
+  const none = structuredClone(creatures);
+  none.creatures.find((c) => c.npc).model = "wolf";
+  assert.throws(() => checkCreatureParts(none, models), /need a part map on model wolf/);
 });

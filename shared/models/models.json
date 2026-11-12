@@ -18,8 +18,10 @@
   "models": {
     "peasant": {
       "glb": "glb/peasant.glb",
+      "parts": "parts/peasant.json",
       "repaint": [
-        { "$comment": "The hat (owner, 2026-11-12: \"Hat gets its own colours\"): the pack paints it with the hair's colour; its brim (out past the head) and crown (above the hair) take wool_yellow, a ramp of their own, which the villager's `hat` colour part recolours.", "from": "hair_brown", "to": "wool_yellow", "minY": 1.4, "beyond": 0.16, "above": 1.6 }
+        { "$comment": "The hat (owner, 2026-11-12: \"Hat gets its own colours\"): the pack paints it with the hair's colour; the hat part (parts/peasant.json: its crown and brim) takes wool_yellow, a ramp of its own, which the villager's `hat` colour part recolours.", "from": "hair_brown", "to": "wool_yellow", "part": "hat" },
+        { "$comment": "BUGS.md #96: the hat's repaint by height (to 0.54.171) caught the hair's fringe; the hair part takes its own ramp back.", "from": "wool_yellow", "to": "hair_brown", "part": "hair" }
       ],
       "source": {
         "pack": "Stylized_NPC_-_Peasant_Nolant_DEMO",
