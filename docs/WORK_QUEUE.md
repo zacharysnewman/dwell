@@ -908,6 +908,12 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    (`dwell_worldgen::impostor`, data `shared/trees/impostors/impostors.json`, preview sheet
    `docs/proposals/tree-impostors-bake.png`). Next: I-2 tree lists per section (cloud-able), then I-3 drawing
    (local, GPU, measured on the M1 at High). Waiting on the owner: the proposal's questions.
+   **I-3's CPU half built (2026-11-12, local):** the hand-over per Far trees tier as data (`impostors.json`
+   `far.tiers`: `on` an impostor from 96 m over a 24 m fade, `off` none), the crossfade's shares, the dithered
+   view pick, the baked stage/variant per tree and the view direction through `FaceFrame` (tests on both faces).
+   **Not built:** the GPU half (atlas upload, instance buffer, the billboard shader with the baked normals and
+   depth offset) and I-2's tree lists; the far trees are still `lod_trees.rs`'s. Next (local): I-2, then the
+   draw, measured with `forest-perf`.
 
 32. **A tall dense forest for performance reference** (owner 2026-11-12: "We should have a tall dense forest
    biome/climate for performance reference on trees."). A biome preset (tall, closely spaced mature trees — an
@@ -928,6 +934,17 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    edge and inside (24.7 ms at the edge on the M1 at High; the near pass's cutout leaves and tall grass, sun
    shadows), then the impostors (item 31); re-record the forest video after, with most of it in the forest, recorded
    frame-exact (the screencast, not real time) so a slow page doesn't show as a slow video.
+
+   **The forest's frame, measured (2026-11-12, M1 Air, `forest-perf` at High, `--unthrottled`, `gpu.frame`
+   p50 / p95 ms):** before inside 17.0 / 18.8, edge 25.2 / 26.4, above 14.6 / 15.8. The edge's ablation
+   (`forest-edge-ablate`): the cutout meshes (leaf cards + tall grass) off 24.6 → 9.8 (−14.8 ms, `gpu.near`
+   21.9 → 7.7), sun shadows off −3.3, full detail 192 → 96 m −1.8. **Cut:** tall grass past its fade (88 m) was
+   drawn out to the full-detail distance and discarded per fragment; any plant past its fade is now dropped
+   whole in the vertex stage, as leaf cards were. After: inside **14.7 / 15.4** (under 16.7), edge 24.3 / 25.7
+   (unchanged: its cutout cost is the cards and grass within their fades, seen from just over the crowns),
+   above 14.5 / 15.8. **Outstanding:** the edge, ~9 ms over. Next: split the edge's 14.8 ms between the leaf
+   cards and the near grass (`?cards=0` against the default) and cut it inside the High look (the cards'
+   fade 24–40 m, cards seen edge-on from above, grass under a closed canopy).
 33. **Licensed music replaces the generated music** (owner 2026-11-12: "I downloaded a big music set as a Unity
    asset, I'd like the casual game music setup in a prototype and make it play randomly in the game. Probably
    needs compression. It'll replace the current music which is AI generated."). The pack: *Andrew Sitkov Music*

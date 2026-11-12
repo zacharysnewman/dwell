@@ -1145,6 +1145,12 @@ npm run bench -- --warm forest-perf
 npm run bench -- --warm --compare forest-perf   # a configuration against the baseline, side by side
 ```
 
+Numbers (2026-11-12, M1 Air, `--unthrottled`, `gpu.frame` p50 / p95 ms), before → after tall grass past
+its fade was dropped in the vertex stage: inside 17.0 / 18.8 → 14.7 / 15.4, edge 25.2 / 26.4 → 24.3 / 25.7,
+above 14.6 / 15.8 → 14.5 / 15.8. `forest-edge-ablate` splits the edge's frame by switching each suspect off
+for 4 s (cutout meshes −14.8 ms, sun shadows −3.3, full detail 192 → 96 m −1.8): the leaf cards and grass
+within their fades are the edge's cost.
+
 Cloud sessions have no GPU: there it is not run; `cargo test --release -p dwell-worldgen --test forest_world`
 checks the world (every column old-growth, the density in range on both faces, deterministic), and its
 ignored `spots` test prints the places the spots stand at.

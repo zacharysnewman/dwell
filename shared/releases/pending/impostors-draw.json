@@ -1,0 +1,1 @@
+{"changes": ["Forests run much faster: tall grass past its fade-out distance is no longer drawn at all", "Behind the scenes: the far-tree impostors' hand-over distances and view picking (not drawn yet)"]}
