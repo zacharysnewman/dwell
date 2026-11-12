@@ -16,6 +16,13 @@ Last updated: 2026-11-11 (0.52.108).
 
 ## Queued next, in order (2026-11-12)
 
+Owner, 2026-11-12: **"How are realistic worlds going? And forests? Those are the two I'm most interested in
+seeing."** → next on the Mac after the flying frame rate: a look at both (screenshots/video of a Realistic world —
+plates, ranges, rain shadow, biomes by climate — and the old-growth forest), then R6 (the Realistic world in New
+world) and the far-tree impostors drawn (I-2/I-3); R5 (geology) in the cloud now.
+
+
+
 The running order across the items below; each line names its item, where the owner's words and details are.
 
 1. **High at 60 fps on the M1 Air (item 30, P0)** — running locally: measure each feature at High, cull leaf cards
@@ -294,6 +301,16 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    Owner, 2026-11-12, again: **"Also the volumetric clouds still look bad no proper lighting or shading?"** In progress
    (cloud): a light march toward the sun for self-shadowing, darker bases, sky-coloured ambient, silver lining —
    matched against the old 2D deck; then the in-game look and cost (local).
+   **Built (2026-11-12, branch `claude/cloud-lighting`, CLOUDS.md §8.8):** the volume lit as data: Medium takes 4
+   light samples toward the sun (High 6; growing steps, stopping where the path leaves the layer; the cause was
+   Medium taking none), Beer with a multiple-scattering floor and a powder term, a dual-lobe Henyey–Greenstein
+   phase (the silver lining toward the sun), the sky's light from above and a darker warm ground bounce from
+   below dimmed by the cloud over and under each sample (read free from its own noise): bases ~0.45, tops ~0.95
+   in the deck's palette; night and sunset tints kept; the light samples reuse the sample's warp (half the old
+   cost each). A CPU twin with tests (top brighter than base, deeper darker, phase toward the sun, tier caps from
+   data, both faces). Read from the shader: Medium ≤ ~5.3k ALU a texel (was 2.6k), High ≤ 7.6k (was 4.8k).
+   Next (local): the in-game look side by side with the old deck (sun high, low sun, from above, night) and the
+   bench before/after at the §8.3 views; tune by the data.
 14. **Tall grass grows and spreads** (owner 2026-11-11: "I want tall grass to steadily grow and spread. It
    should probably have a max depending on climate/biome."). **Built** (ADR 0075 T3c, docs/ECOLOGY.md §10):
    `shared/worldgen/grass.json` (the rule as data: the block, the ground, the decoration whose climate
@@ -828,7 +845,25 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    trees / impostors, leaf cards and chamfer, hit shards and particles, far herds, distant shadows (its own),
    volumetric clouds and plumes, lava crust/glow, bloom, haze extras, water tiers, light shafts, reflections, view
    distance; the audit test widened from `render/*_for` to every per-feature switch the renderer and mesher read.
-   In progress (cloud).
+   **Built (2026-11-12, cloud; the GPU measurement outstanding, local):** Settings → Graphics in seven groups
+   (Display, Lighting, Sky & weather, Water, Terrain & trees, Effects, Distance); new settings with switches where
+   there were none, each preset keeping what it drew before (all on / 100 %): Tall grass 0–100 % (the mesher's
+   `ChunkFlags::plants`), Far trees (the LOD sections' trees), Distant shadows (its own switch at the Shadows
+   tier), Hit shards 0–100 %, Particles 0–100 % (chips, sparks, leaves, steam), Far herds; stored in the
+   append-only `dwell.features` record (an older record reads with the defaults). `graphicsAudit.test.ts` now
+   covers four declared lists — the renderer's tier functions, the look data files, the mesher's switches and
+   the client's CPU-tiered effects — each naming a setting or a written reason (the fog's haze, ambient and flood
+   light baked at mesh time, the LOD blend, dev previews, …; lava's glow is Bloom's, the vent plumes are drawn by
+   the clouds' pass). Next (local): measure each new switch's GPU cost on the M1 at High (forest-perf) and decide
+   which presets should cut them (Low and Mobile are the candidates for tall grass, far trees and distant
+   shadows); chamfered leaves have no switch (the mesh shape, not a per-pixel cost).
+   Owner, 2026-11-12: **"It would be sweet if we could see in realtime on graphics menu exactly or approximately what %
+   of performance is being used by each setting."** Plan: the renderer's GPU pass timings (the `gpu.*` telemetry,
+   timestamp queries where the browser allows them) mapped to the settings that drive each pass (data: setting →
+   passes), shown live beside each setting as ms and % of the frame budget (16.7 ms at 60 fps); settings without
+   their own pass (e.g. tall grass, cards inside the terrain pass) estimated by a quick on/off A/B when the menu
+   opens, labelled "≈"; a total bar; works without timestamp queries by falling back to the A/B estimate. Queued
+   (local, after the setting-for-everything work lands).
 31. **Far trees as multi-angle impostors** (owner 2026-11-12: "billboards (maybe from above billboards too,
    possibly a few different angles so we can switch between them like old Mario kart did with carts, and some
    trees too)" and "The farther distant thoughts on billboards are because our low LOD trees look pretty bad and

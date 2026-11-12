@@ -1,0 +1,7 @@
+{
+  "changes": [
+    "Settings → Graphics is grouped into Display, Lighting, Sky & weather, Water, Terrain & trees, Effects and Distance.",
+    "New graphics settings: Tall grass, Far trees, Distant shadows, Hit shards, Particles and Far herds, so every visual feature can be turned down.",
+    "Every preset keeps today's look; lower these yourself for more frame rate."
+  ]
+}

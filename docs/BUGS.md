@@ -6,6 +6,14 @@ pins it.
 
 ## Open
 
+### 88. Volumetric clouds z-fight against tall terrain
+
+Owner, 2026-11-12: "a bug with volumetric clouds z fighting against tall terrain like mountains." Where a mountain
+rises into the cloud layer, the cloud volume and the terrain flicker against each other. Suspects: the volume pass's
+depth test against the low-resolution (½/¼ res) depth or its temporal reprojection mixing samples across the
+terrain's silhouette; the march not stopping at the scene depth (or comparing depth in a different space/precision
+far away); the far pass's depth range at mountain distance.
+
 ### 87. An NPC's raised vertical block leans the blade back over its shoulder
 
 Found fixing #86 (2026-11-12), not reported: `clip_probe` puts the third-person `guard_vertical` pose's

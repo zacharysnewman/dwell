@@ -263,6 +263,16 @@ pub fn cards_for(device_type: wgpu::DeviceType, phone: bool, forced: Option<bool
     })
 }
 
+/// The Tall grass setting (0–1) as the mesher's percent of cross plants
+/// (`dwell_mesh::ChunkFlags::plants`); anything not a number draws them all.
+pub fn plant_percent_of(tall_grass: f64) -> u8 {
+    if tall_grass.is_finite() {
+        (tall_grass.clamp(0.0, 1.0) * 100.0).round() as u8
+    } else {
+        100
+    }
+}
+
 /// Whether the moon's disc is lit by its baked normals (moon.rs): not on a CPU adapter, which
 /// draws its baked albedo alone, lit as a flat disc.
 pub fn moon_normals_for(device_type: wgpu::DeviceType) -> bool {
@@ -1465,6 +1475,12 @@ pub struct Renderer {
     heightfield_override: Option<bool>,
     /// `?cards=0|1`: forces the leaf cards on or off (`cards_for`); `None` the tier's.
     cards_override: Option<bool>,
+    /// Graphics → Tall grass, percent of cross plants meshed (`plant_percent_of`).
+    plant_percent: u8,
+    /// Graphics → Far trees: LOD sections mesh their trees.
+    far_trees: bool,
+    /// Graphics → Distant shadows (`lod_shadows::lod_shadows_for`).
+    distant_shadows: bool,
     /// The water's flow shown (flow.rs `FLOW_RIPPLES`, `FLOW_FOAM`; the Water flow settings).
     flow_switches: u32,
     /// The water's noise and caustic tiles (water_tiles.rs).
@@ -2294,6 +2310,9 @@ impl Renderer {
             water_debug: 0,
             heightfield_override: None,
             cards_override: None,
+            plant_percent: 100,
+            far_trees: true,
+            distant_shadows: true,
             flow_switches: 0,
             water_tiles,
             pacer: pacing::FramePacer::default(),
@@ -2818,7 +2837,11 @@ impl Renderer {
             return None;
         }
         LOD_SHADOWS
-            .tier(lod_shadows::lod_shadows_for(self.adapter, self.shadows()))
+            .tier(lod_shadows::lod_shadows_for(
+                self.adapter,
+                self.shadows(),
+                self.distant_shadows,
+            ))
             .copied()
     }
     /// The dev switches in the page's query for the distant shadows: `?lodshadows=off` turns
@@ -2901,6 +2924,17 @@ impl Renderer {
     /// from then on follow it; set it before the world streams in.
     pub fn set_cards_override(&mut self, on: Option<bool>) {
         self.cards_override = on;
+    }
+    /// Graphics → Tall grass (0–1, the share of cross plants meshed) and Far trees (the LOD
+    /// sections' trees): chunks and sections meshed from then on follow them.
+    pub fn set_terrain_detail(&mut self, tall_grass: f64, far_trees: bool) {
+        self.plant_percent = plant_percent_of(tall_grass);
+        self.far_trees = far_trees;
+    }
+    /// Graphics → Distant shadows: the distant terrain's sun shadows (`lod_shadows_for`), at
+    /// the Shadows setting's tier when on.
+    pub fn set_distant_shadows(&mut self, on: bool) {
+        self.distant_shadows = on;
     }
     /// The water this adapter draws: the setting's, Low on a CPU adapter (`water_for`).
     fn water(&self) -> WaterQuality {
@@ -5988,6 +6022,12 @@ impl crate::game::Scene for Renderer {
     fn draws_cards(&self) -> bool {
         cards_for(self.adapter, self.phone, self.cards_override)
     }
+    fn plant_percent(&self) -> u8 {
+        self.plant_percent
+    }
+    fn draws_far_trees(&self) -> bool {
+        self.far_trees
+    }
     fn upload_budget_bytes(&self) -> u64 {
         streaming::StreamingBudgets::get().upload_bytes(self.phone)
     }
@@ -6462,6 +6502,21 @@ mod tests {
             interleave(&[(&p, 3), (&uv, 2)]),
             vec![1.0, 2.0, 3.0, 7.0, 8.0, 4.0, 5.0, 6.0, 9.0, 10.0]
         );
+    }
+
+    #[test]
+    fn the_tall_grass_and_far_trees_settings_reach_the_meshers() {
+        // WORK_QUEUE item 30: Graphics → Tall grass and Far trees (red before them: the renderer
+        // had no such switches, every plant and far tree was meshed whatever the settings).
+        use crate::game::Scene;
+        let mut r = noop_renderer();
+        assert_eq!((r.plant_percent(), r.draws_far_trees()), (100, true));
+        r.set_terrain_detail(0.4, false);
+        assert_eq!((r.plant_percent(), r.draws_far_trees()), (40, false));
+        r.set_terrain_detail(f64::NAN, true);
+        assert_eq!(r.plant_percent(), 100);
+        assert_eq!(plant_percent_of(-1.0), 0);
+        assert_eq!(plant_percent_of(3.0), 100);
     }
 
     #[test]

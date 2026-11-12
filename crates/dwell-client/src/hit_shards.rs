@@ -41,6 +41,8 @@ pub struct HitShards {
     pub cpu: bool,
     /// A phone: half.
     pub phone: bool,
+    /// Graphics → Hit shards: the share of them flung (crate::effect_share).
+    pub share: crate::effect_share::Share,
 }
 
 fn hash(seed: u32, k: u32) -> f64 {
@@ -60,20 +62,21 @@ fn norm(v: [f64; 3]) -> [f64; 3] {
 
 impl HitShards {
     /// How many fragments a hit on `block` (by name) flings: its data's, none on a CPU adapter,
-    /// half (at least one) on a phone.
+    /// half (at least one) on a phone, then the Hit shards setting's share of that.
     pub fn count_of(&self, block: &str) -> usize {
         let n = BLOCK_DAMAGE
             .iter()
             .find(|d| d.block == block)
             .and_then(|d| d.chips)
             .map_or(0, |c| c.shards as usize);
-        if self.cpu || n == 0 {
+        let n = if self.cpu || n == 0 {
             0
         } else if self.phone {
             n.div_ceil(2)
         } else {
             n
-        }
+        };
+        self.share.of(n)
     }
 
     /// A hit's fragments out of the face with outward `normal` (world) at `point` (world): the
