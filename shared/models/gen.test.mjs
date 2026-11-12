@@ -502,3 +502,26 @@ test("a handle's axis is measured from its GLB: the props' tools", () => {
   assert.ok(Math.abs(props.metal_shovel.grip[2] + 0.056) < 0.003);
   assert.equal(typeof measureHandle, "function");
 });
+
+test("the sword is one sword out of the joined katanas prop, held by its handle", () => {
+  // The katanas FBX is one blade and five colour variants of one handle, stacked (WORK_QUEUE
+  // item 35): the sword is the blade on one handle, not the whole stack.
+  const data = props();
+  const p = data.props.sword;
+  assert.deepEqual(p.objects, ["KatanaBlade.001", "KatanaHandle.001"]);
+  const out = validateProps(data, here).sword;
+  assert.equal(out.length, 1);
+  assert.equal(propSummary(readFileSync(join(here, p.glb))).meshes, 1);
+  // The grip is on the bare handle, toward the pommel end, on its measured axis.
+  const [lo, hi] = [Math.min(...p.handle), Math.max(...p.handle)];
+  assert.ok(out.grip[1] >= lo && out.grip[1] <= hi, `${out.grip}`);
+  assert.ok(out.grip[1] < -0.25, "the handle is the sword's lower quarter");
+  assert.ok(out.axis[1] > 0.99, `${out.axis}`);
+  // A grip off the handle (on the blade) fails with a message.
+  const bad = props();
+  bad.props.sword.grip = [0, 0.2, 0];
+  assert.throws(
+    () => validateProps(bad, here),
+    /prop sword: grip 0\.2 m is outside its handle -0\.47\.\.-0\.25 m/,
+  );
+});

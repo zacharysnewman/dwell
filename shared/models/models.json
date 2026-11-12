@@ -55,7 +55,9 @@
           "tool": "fist",
           "stone_axe": "fist",
           "stone_axe_vertical": "fist",
-          "brush": "fist"
+          "brush": "fist",
+          "sword": "fist",
+          "sword_vertical": "fist"
         }
       },
       "retarget": {

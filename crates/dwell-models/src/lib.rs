@@ -16,7 +16,29 @@ mod table {
 }
 pub use table::{
     DETAIL_DEFAULT, DETAIL_LEVELS, GLBS, HAND_GRIP, MODELS, PLAYER, PLAYER_GLB, PROP_GLBS, PROPS,
+    RAMP_BASES,
 };
+
+/// The most colours one body's remap swaps (the skinned shader's `remap` rows).
+pub const MAX_REMAP: usize = 4;
+
+/// A palette ramp's base colour (sRGB `0xRRGGBB`), by name: what a model's faces carry (§11.2).
+pub fn ramp_base(name: &str) -> Option<u32> {
+    RAMP_BASES.iter().find(|(n, _)| *n == name).map(|&(_, c)| c)
+}
+
+/// A body's colour remap as drawn: per pair (the model's ramp, the ramp in its place), the two
+/// base colours as sRGB 0..1, at most [`MAX_REMAP`]; a pair naming no ramp, or swapping a ramp
+/// for itself, is left out (docs/CHARACTERS.md §11.11).
+pub fn colour_remap(pairs: &[(&str, &str)]) -> Vec<([f32; 3], [f32; 3])> {
+    let rgb = |c: u32| [16, 8, 0].map(|s| ((c >> s) & 0xff) as f32 / 255.0);
+    pairs
+        .iter()
+        .filter(|(from, to)| from != to)
+        .filter_map(|(from, to)| Some((rgb(ramp_base(from)?), rgb(ramp_base(to)?))))
+        .take(MAX_REMAP)
+        .collect()
+}
 
 /// The fixture table (shared/models/fixtures): a model added by data alone, for tests.
 #[rustfmt::skip]
@@ -333,6 +355,37 @@ mod detail_tests {
         assert_eq!(m.level(1).indices.len(), 3);
         // A level past the model's last draws its coarsest.
         assert_eq!(m.level(9).positions.len(), m.level(1).positions.len());
+    }
+}
+
+#[cfg(test)]
+mod remap_tests {
+    use super::*;
+
+    #[test]
+    fn a_remap_swaps_ramp_bases_by_name() {
+        assert_eq!(ramp_base("wool_green"), Some(0x4f8a4a));
+        assert_eq!(ramp_base("nope"), None);
+        let r = colour_remap(&[
+            ("wool_green", "wool_red"),
+            ("flint", "flint"),
+            ("skin_fair", "nope"),
+        ]);
+        assert_eq!(
+            r.len(),
+            1,
+            "a swap for itself and an unknown ramp are left out"
+        );
+        assert_eq!(
+            r[0].0,
+            [
+                0x4f as f32 / 255.0,
+                0x8a as f32 / 255.0,
+                0x4a as f32 / 255.0
+            ]
+        );
+        let many: Vec<_> = (0..9).map(|_| ("wool_green", "linen")).collect();
+        assert_eq!(colour_remap(&many).len(), MAX_REMAP);
     }
 }
 

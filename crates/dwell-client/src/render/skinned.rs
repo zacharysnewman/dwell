@@ -33,6 +33,11 @@ use super::frame::{HDR, VIEW_DEPTH};
 pub const INSTANCE_BYTES: u64 = 3328;
 const INSTANCE_FLOATS: usize = INSTANCE_BYTES as usize / 4;
 const JOINT_FLOATS: usize = MAX_JOINTS * 12;
+/// The remap's rows after the light: two vec4 a pair (docs/CHARACTERS.md §11.11).
+pub const REMAP_FLOATS: usize = dwell_models::MAX_REMAP * 8;
+/// A body drawn in its model's own colours.
+pub const NO_REMAP: [f32; REMAP_FLOATS] = [0.0; REMAP_FLOATS];
+const _: () = assert!(JOINT_FLOATS + 4 + REMAP_FLOATS <= INSTANCE_FLOATS);
 /// Bytes of a vertex: position, normal, colour (rgba8), joints (4 × u8), weights (4 × unorm8).
 pub const VERTEX_BYTES: usize = 36;
 
@@ -60,6 +65,22 @@ pub struct SkinnedDraw {
     pub rig_pose: Option<dwell_characters::anim::Pose>,
     /// The held item's name (characters.json `items`): the hand's grip (models.json `grips`).
     pub grip: Option<&'static str>,
+    /// Its colour remap's shader rows (an NPC's colours: [`remap_floats`] of
+    /// [`dwell_models::colour_remap`]); [`NO_REMAP`]: as modelled.
+    pub remap: [f32; REMAP_FLOATS],
+}
+
+/// A body's remap rows for the shader (`REMAP_FLOATS` floats): per pair the model's base and
+/// the base in its place, w 1 where used, 0 past the last pair.
+pub fn remap_floats(remap: &[([f32; 3], [f32; 3])]) -> [f32; REMAP_FLOATS] {
+    let mut out = [0.0; REMAP_FLOATS];
+    for (k, (from, to)) in remap.iter().take(dwell_models::MAX_REMAP).enumerate() {
+        out[k * 8..k * 8 + 3].copy_from_slice(from);
+        out[k * 8 + 3] = 1.0;
+        out[k * 8 + 4..k * 8 + 7].copy_from_slice(to);
+        out[k * 8 + 7] = 1.0;
+    }
+    out
 }
 
 /// The model's pose this frame: retargeted from the rig's pose where the model has a map and one
@@ -171,6 +192,9 @@ struct SkinInstance {
     joints: array<vec4f, JOINT_ROWS>,
     // x sky, y block level / 15 (docs/DAY_NIGHT.md §11).
     light: vec4f,
+    // The body's colour remap (an NPC's colours, docs/CHARACTERS.md §11.11): pairs of rows, the
+    // model's ramp base and the base drawn in its place (sRGB 0..1); w 1 where the pair is used.
+    remap: array<vec4f, REMAP_ROWS>,
 };
 @group(1) @binding(0) var<uniform> skin: SkinInstance;
 
@@ -193,6 +217,18 @@ fn joint_apply(j: u32, p: vec3f, w: f32) -> vec3f {
     return vec3f(dot(skin.joints[j * 3u], q), dot(skin.joints[j * 3u + 1u], q), dot(skin.joints[j * 3u + 2u], q));
 }
 
+// A vertex's palette colour after the body's remap: a face carrying one of the pairs' ramp bases
+// (within a byte and a half) takes the pair's other base.
+fn remap_colour(c: vec3f) -> vec3f {
+    for (var k = 0u; k < REMAP_ROWS; k += 2u) {
+        let was = skin.remap[k];
+        if (was.w > 0.5 && all(abs(c - was.rgb) < vec3f(1.5 / 255.0))) {
+            return skin.remap[k + 1u].rgb;
+        }
+    }
+    return c;
+}
+
 @vertex
 fn skinned_vs(v: SkinnedIn) -> SkinnedOut {
     var p = vec3f(0.0);
@@ -208,8 +244,8 @@ fn skinned_vs(v: SkinnedIn) -> SkinnedOut {
     o.rel = p;
     o.normal = n;
     o.clip = frame.view_proj * vec4f(p, 1.0);
-    // The palette colour, sRGB bytes to linear.
-    o.color = pow(v.color.rgb, vec3f(2.2));
+    // The palette colour (remapped for this body), sRGB bytes to linear.
+    o.color = pow(remap_colour(v.color.rgb), vec3f(2.2));
     return o;
 }
 
@@ -257,9 +293,10 @@ fn skinned_fs(i: SkinnedOut, @builtin(front_facing) front: bool) -> SceneOut {
 /// The module's source: the shared lighting and the skinned bodies' entry points.
 pub fn source() -> String {
     format!(
-        "{}\nconst JOINT_ROWS: u32 = {}u;\nconst CHARACTER_EXPOSURE: f32 = {:?};\n{WGSL}",
+        "{}\nconst JOINT_ROWS: u32 = {}u;\nconst REMAP_ROWS: u32 = {}u;\nconst CHARACTER_EXPOSURE: f32 = {:?};\n{WGSL}",
         super::shaders::lighting_source(),
         MAX_JOINTS * 3,
+        REMAP_FLOATS / 4,
         CHARACTER_EXPOSURE,
     )
 }
@@ -729,6 +766,8 @@ impl SkinnedRenderer {
                 floats[at + k * 12..at + k * 12 + 12].copy_from_slice(&rows(&mm::mul(&place, j)));
             }
             floats[at + JOINT_FLOATS..at + JOINT_FLOATS + 2].copy_from_slice(&d.light);
+            floats[at + JOINT_FLOATS + 4..at + JOINT_FLOATS + 4 + REMAP_FLOATS]
+                .copy_from_slice(&d.remap);
             self.draws.push(Draw {
                 instance: (at / INSTANCE_FLOATS) as u32,
                 mesh,
@@ -878,6 +917,7 @@ mod tests {
                 cast_only: false,
                 rig_pose: None,
                 grip: None,
+                remap: NO_REMAP,
             };
             let place = body_matrix(&d, data, [0.0; 3]);
             let joints: Vec<Mat4> = anim::joint_matrices(model, &anim::rest(model))
@@ -908,6 +948,7 @@ mod tests {
             cast_only: false,
             rig_pose: None,
             grip: None,
+            remap: NO_REMAP,
         };
         let place = body_matrix(&d, data, [0.0; 3]);
         let mut p = Player::new(data, model, "walk");
@@ -1105,6 +1146,7 @@ mod tests {
                         cast_only: true,
                         rig_pose: Some(pose),
                         grip: None,
+                        remap: NO_REMAP,
                     };
                     let place = body_matrix(&d, data, [0.0; 3]);
                     let p = Player::new(data, model, "idle");
