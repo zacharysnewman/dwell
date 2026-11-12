@@ -68,6 +68,25 @@ pub struct SkinnedDraw {
     /// Its colour remap's shader rows (an NPC's colours: [`remap_floats`] of
     /// [`dwell_models::colour_remap`]); [`NO_REMAP`]: as modelled.
     pub remap: [f32; REMAP_FLOATS],
+    /// Its idle pose by name (an animal's `graze`, `lie`, ...: models.json `poses`, WORK_QUEUE
+    /// item 39), blended in over the model's `pose_blend_s`; None: its clips as they are.
+    pub idle_pose: Option<&'static str>,
+}
+
+/// An idle pose's blend (the pose shown and its weight, 0..1) after `dt` seconds wanting `want`:
+/// the shown pose fades out before another fades in, each over `blend_s`.
+pub fn blend_pose(
+    shown: (Option<&'static str>, f32),
+    want: Option<&'static str>,
+    dt: f32,
+    blend_s: f32,
+) -> (Option<&'static str>, f32) {
+    let step = dt / blend_s.max(1e-3);
+    match shown {
+        (Some(s), w) if Some(s) == want => (Some(s), (w + step).min(1.0)),
+        (Some(s), w) if w - step > 0.0 => (Some(s), w - step),
+        _ => (want, if want.is_some() { step.min(1.0) } else { 0.0 }),
+    }
 }
 
 /// A body's remap rows for the shader (`REMAP_FLOATS` floats): per pair the model's base and
@@ -359,6 +378,8 @@ pub struct SkinnedRenderer {
     group: wgpu::BindGroup,
     /// Each body's clip player, by its mesh and its player's (or creature's) id.
     players: HashMap<(usize, u32), Player>,
+    /// Each body's idle pose blend ([`blend_pose`]), by its clip player's key.
+    idle_poses: HashMap<(usize, u32), (Option<&'static str>, f32)>,
     draws: Vec<Draw>,
     last_s: Option<f64>,
     /// The Model detail setting's level (`dwell_models::DETAIL_LEVELS`), every mesh drawn at it.
@@ -647,6 +668,7 @@ impl SkinnedRenderer {
             capacity,
             group,
             players: HashMap::default(),
+            idle_poses: HashMap::default(),
             draws: Vec::new(),
             last_s: None,
             level,
@@ -749,10 +771,15 @@ impl SkinnedRenderer {
                 continue;
             }
             let place = body_matrix(d, data, eye);
-            let globals = anim::globals(
-                model,
-                &model_pose(data, model, p, d.rig_pose.as_ref(), d.grip),
-            );
+            let blend = self.idle_poses.entry((mesh, d.seed)).or_insert((None, 0.0));
+            *blend = blend_pose(*blend, d.idle_pose, dt, data.pose_blend_s);
+            let mut local = model_pose(data, model, p, d.rig_pose.as_ref(), d.grip);
+            if let (Some(name), w) = *blend
+                && let Some(turns) = data.pose(name)
+            {
+                dwell_models::grip::apply_weighted(model, turns, &mut local, w);
+            }
+            let globals = anim::globals(model, &local);
             hands[n] = hand_frame(data, model, &globals, &place);
             let joints: Vec<Mat4> = model
                 .skin
@@ -894,6 +921,45 @@ impl SkinnedRenderer {
 mod tests {
     use super::*;
 
+    #[test]
+    fn an_idle_pose_blends_in_and_out_and_turns_its_joints() {
+        // face-a-only: model space, before any face frame. WORK_QUEUE item 39: a pose fades in
+        // over the model's blend, out before another comes in.
+        let mut b = (None, 0.0);
+        for _ in 0..5 {
+            b = blend_pose(b, Some("graze"), 0.1, 0.5);
+        }
+        assert_eq!(b.0, Some("graze"));
+        assert!((b.1 - 1.0).abs() < 1e-5);
+        b = blend_pose(b, Some("lookUp"), 0.25, 0.5);
+        assert_eq!(b, (Some("graze"), 0.5), "the old pose fades out first");
+        b = blend_pose(b, Some("lookUp"), 0.25, 0.5);
+        b = blend_pose(b, Some("lookUp"), 0.25, 0.5);
+        assert_eq!(b.0, Some("lookUp"));
+        assert_eq!(blend_pose((Some("lie"), 0.1), None, 0.2, 0.5), (None, 0.0));
+        // The data's graze turns the deer's neck: its head joint moves.
+        let (data, model) = dwell_models::model("deer").unwrap();
+        let turns = data.pose("graze").expect("the deer grazes by data");
+        let p = Player::new(data, model, "idle");
+        let base = model_pose(data, model, &p, None, None);
+        let mut posed = base.clone();
+        dwell_models::grip::apply_weighted(model, turns, &mut posed, 1.0);
+        let head = |pose: &[anim::Trs]| {
+            let g = anim::globals(model, pose);
+            let j = model.skin[turns.turns.last().unwrap().0];
+            [g[j][3][0], g[j][3][1], g[j][3][2]]
+        };
+        let (a, z) = (head(&base), head(&posed));
+        let moved = (0..3).map(|k| (a[k] - z[k]).powi(2)).sum::<f32>().sqrt();
+        assert!(
+            moved > 0.0 || turns.turns.len() > 1,
+            "the pose turns its joints"
+        );
+        let mut half = base.clone();
+        dwell_models::grip::apply_weighted(model, turns, &mut half, 0.0);
+        assert_eq!(head(&half), a, "weight 0: as the clip");
+    }
+
     fn peasant_head(m: &Model) -> usize {
         (0..m.positions.len())
             .max_by(|&a, &b| m.positions[a][1].total_cmp(&m.positions[b][1]))
@@ -918,6 +984,7 @@ mod tests {
                 rig_pose: None,
                 grip: None,
                 remap: NO_REMAP,
+                idle_pose: None,
             };
             let place = body_matrix(&d, data, [0.0; 3]);
             let joints: Vec<Mat4> = anim::joint_matrices(model, &anim::rest(model))
@@ -949,6 +1016,7 @@ mod tests {
             rig_pose: None,
             grip: None,
             remap: NO_REMAP,
+            idle_pose: None,
         };
         let place = body_matrix(&d, data, [0.0; 3]);
         let mut p = Player::new(data, model, "walk");
@@ -1147,6 +1215,7 @@ mod tests {
                         rig_pose: Some(pose),
                         grip: None,
                         remap: NO_REMAP,
+                        idle_pose: None,
                     };
                     let place = body_matrix(&d, data, [0.0; 3]);
                     let p = Player::new(data, model, "idle");

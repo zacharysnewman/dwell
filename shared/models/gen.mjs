@@ -32,6 +32,12 @@ export const ROLES = [
 ];
 
 /** Every palette stop a remap may snap to: `[{ name, hex }]`, ramps first, `exclude`d ramps left out. */
+/**
+ * The idle poses a model may give as data (`poses`): the ecology's and NPCs' idle poses that are
+ * not the plain idle clip (dwell_ecology::IdlePose's names, less `stand`; the NPCs' `look`, `sit`).
+ */
+export const POSE_NAMES = ["graze", "lookUp", "earFlick", "sit", "lie", "look"];
+
 export function paletteStops(palette, exclude = []) {
   const out = [];
   for (const [ramp, stops] of Object.entries(palette.ramps)) {
@@ -326,9 +332,48 @@ export function validate(
           fail(`${at}: grips: item ${item} names no pose ${pose}`);
         else grips.items.push([item, pose]);
     }
+    // Idle poses as data (WORK_QUEUE item 39): a creature's pose (`graze`, `lie`, ...) as turns of
+    // its joints on top of its idle clip, blended in and out over `blendS`.
+    const poses = [];
+    if (m.poses !== undefined) {
+      if (
+        typeof m.poses !== "object" ||
+        m.poses === null ||
+        Array.isArray(m.poses)
+      )
+        fail(`${at}: poses is { name: { joint: [x, y, z] } }`);
+      for (const [pose, joints] of Object.entries(m.poses)) {
+        if (pose === "$comment") continue;
+        if (!POSE_NAMES.includes(pose))
+          fail(
+            `${at}: poses: ${pose} is not a pose (${POSE_NAMES.join(", ")})`,
+          );
+        if (
+          typeof joints !== "object" ||
+          joints === null ||
+          Array.isArray(joints)
+        )
+          fail(`${at}: poses: ${pose} is { joint: [x, y, z] }`);
+        const turns = Object.entries(joints).map(([j, r]) => {
+          const k = s.jointNames.indexOf(j);
+          if (k < 0)
+            fail(`${at}: poses: ${pose}: no joint ${j} in ${m.glb}'s skin`);
+          if (!(Array.isArray(r) && r.length === 3 && r.every(Number.isFinite)))
+            fail(`${at}: poses: ${pose}: ${j} is [x, y, z]`);
+          return { joint: k, rot: r };
+        });
+        if (!turns.length) fail(`${at}: poses: ${pose} turns no joint`);
+        poses.push({ name: pose, turns });
+      }
+    }
+    const blend = m.poseBlendS ?? 0.5;
+    if (!(Number.isFinite(blend) && blend > 0 && blend <= 5))
+      fail(`${at}: poseBlendS ${blend} is outside (0, 5] seconds`);
     out[name] = {
       ...m,
       grips,
+      poses,
+      poseBlendS: blend,
       clips: s.clips,
       joints: s.joints,
       hand,
@@ -712,12 +757,18 @@ export function rust(data, models, glbRoot) {
           `Grip { name: ${JSON.stringify(g.name)}, turns: &[${g.turns.map((t) => `(${t.joint}, ${v3(t.rot)})`).join(", ")}] }`,
       )
       .join(", ")}]`;
+    const poses = `&[${m.poses
+      .map(
+        (g) =>
+          `Grip { name: ${JSON.stringify(g.name)}, turns: &[${g.turns.map((t) => `(${t.joint}, ${v3(t.rot)})`).join(", ")}] }`,
+      )
+      .join(", ")}]`;
     const gripItems = `&[${m.grips.items.map(([i, g]) => `(${JSON.stringify(i)}, ${JSON.stringify(g)})`).join(", ")}]`;
     const firstPerson = m.firstPerson
       ? `Some(FirstPerson { joints: &[${m.firstPerson.joints.join(", ")}], weight: ${f32(m.firstPerson.weight)}, turn: ${v3(m.firstPerson.turn)} })`
       : "None";
     lines.push(
-      `    ModelData { name: ${JSON.stringify(name)}, glb: ${JSON.stringify(m.glb)}, joints: ${m.joints}, scale: ${f32(m.scale)}, yaw: ${f32(m.yaw ?? 0)}, fallback: ${JSON.stringify(m.fallback)}, roles: &[${roles}], hand: ${hand}, retarget: ${retarget}, first_person: ${firstPerson}, grips: ${grips}, grip_items: ${gripItems} },`,
+      `    ModelData { name: ${JSON.stringify(name)}, glb: ${JSON.stringify(m.glb)}, joints: ${m.joints}, scale: ${f32(m.scale)}, yaw: ${f32(m.yaw ?? 0)}, fallback: ${JSON.stringify(m.fallback)}, roles: &[${roles}], hand: ${hand}, retarget: ${retarget}, first_person: ${firstPerson}, grips: ${grips}, grip_items: ${gripItems}, poses: ${poses}, pose_blend_s: ${f32(m.poseBlendS)} },`,
     );
   }
   lines.push("];", "");

@@ -129,6 +129,13 @@ pub struct Grip {
     pub turns: &'static [(usize, [f32; 3])],
 }
 
+impl ModelData {
+    /// Its idle pose of that name (models.json `poses`), if it has one.
+    pub fn pose(&self, name: &str) -> Option<&'static Grip> {
+        self.poses.iter().find(|p| p.name == name)
+    }
+}
+
 /// One model's data.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ModelData {
@@ -153,6 +160,10 @@ pub struct ModelData {
     /// hand.
     pub grips: &'static [Grip],
     pub grip_items: &'static [(&'static str, &'static str)],
+    /// Idle poses as data (models.json `poses`, WORK_QUEUE item 39): per pose name its joints'
+    /// turns on top of the clips, blended in and out over `pose_blend_s` seconds.
+    pub poses: &'static [Grip],
+    pub pose_blend_s: f32,
 }
 
 impl ModelData {

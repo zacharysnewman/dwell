@@ -5,7 +5,8 @@
 //! their part (kind, pose, palette variant) at the end of each message.
 
 use super::{Server, SessionId};
-use dwell_protocol::capability_names::CREATURES_NPCS;
+use dwell_protocol::CreaturePoseNet;
+use dwell_protocol::capability_names::{CREATURES_NPCS, CREATURES_POSES};
 use dwell_protocol::{
     Channel, CreatureNet, CreaturesMessage, MAX_CREATURES_PER_MESSAGE, Message, NpcNet,
 };
@@ -23,6 +24,7 @@ impl Server {
         };
         s.creatures_hello = true;
         let npcs = s.capabilities.has(CREATURES_NPCS);
+        let poses = npcs && s.capabilities.has(CREATURES_POSES);
         let table = self.creatures.table;
         let all: Vec<CreatureNet> = self.creatures.list.iter().map(|c| c.net(&table)).collect();
         for part in all.chunks(MAX_CREATURES_PER_MESSAGE) {
@@ -30,10 +32,48 @@ impl Server {
                 creatures: part.to_vec(),
                 gone: Vec::new(),
                 npcs: None,
+                poses: None,
             };
-            let m = Message::Creatures(self.with_npcs(m, npcs));
+            let m = Message::Creatures(self.with_parts(m, npcs, poses));
             self.send_reliable(id, &m, Channel::World);
         }
+    }
+
+    /// The animals' idle poses near players (WORK_QUEUE item 39): each herd member's creature id
+    /// and its pose's index in `CREATURE_POSES`, stand left out.
+    pub fn creature_poses(&self) -> Vec<CreaturePoseNet> {
+        let mut out = Vec::new();
+        for g in &self.ecology.near.groups {
+            for m in &g.members {
+                let pose = dwell_ecology::IdlePose::ALL
+                    .iter()
+                    .position(|&p| p == m.pose)
+                    .unwrap_or(0);
+                if pose != 0 {
+                    out.push(CreaturePoseNet {
+                        id: m.creature,
+                        pose: pose as u8,
+                    });
+                }
+            }
+        }
+        out
+    }
+
+    /// `m` with its parts for a client's capabilities: the NPCs' (`npcs`, `creatures.npcs`) and
+    /// the animals' poses (`poses`, `creatures.poses`); as it is for a client with neither.
+    fn with_parts(&self, m: CreaturesMessage, npcs: bool, poses: bool) -> CreaturesMessage {
+        let mut m = self.with_npcs(m, npcs);
+        if poses {
+            let ids: std::collections::HashSet<u32> = m.creatures.iter().map(|c| c.id).collect();
+            m.poses = Some(
+                self.creature_poses()
+                    .into_iter()
+                    .filter(|p| ids.contains(&p.id))
+                    .collect(),
+            );
+        }
+        m
     }
 
     /// `m` with its creatures' NPC part, for a client with `creatures.npcs` (`npcs`); as it is
@@ -119,11 +159,14 @@ impl Server {
         if moving.is_empty() && gone.is_empty() {
             return;
         }
-        let hello: Vec<(SessionId, bool)> = self
+        let hello: Vec<(SessionId, bool, bool)> = self
             .sessions
             .iter()
             .filter(|(_, s)| s.joined() && s.creatures_hello)
-            .map(|(&id, s)| (id, s.capabilities.has(CREATURES_NPCS)))
+            .map(|(&id, s)| {
+                let npcs = s.capabilities.has(CREATURES_NPCS);
+                (id, npcs, npcs && s.capabilities.has(CREATURES_POSES))
+            })
             .collect();
         let mut msgs = Vec::new();
         for part in moving.chunks(MAX_CREATURES_PER_MESSAGE) {
@@ -131,6 +174,7 @@ impl Server {
                 creatures: part.to_vec(),
                 gone: Vec::new(),
                 npcs: None,
+                poses: None,
             });
         }
         for part in gone.chunks(MAX_CREATURES_PER_MESSAGE) {
@@ -138,14 +182,21 @@ impl Server {
                 creatures: Vec::new(),
                 gone: part.to_vec(),
                 npcs: None,
+                poses: None,
             });
         }
         for m in msgs {
-            // Built once each way: with the NPCs' part, and as older clients read it.
+            // Built once each way: with both parts, the NPCs' only, and as older clients read it.
+            let all = Message::Creatures(self.with_parts(m.clone(), true, true));
             let with = Message::Creatures(self.with_npcs(m.clone(), true));
             let without = Message::Creatures(m);
-            for &(id, npcs) in &hello {
-                self.send_reliable(id, if npcs { &with } else { &without }, Channel::World);
+            for &(id, npcs, poses) in &hello {
+                let msg = match (npcs, poses) {
+                    (_, true) => &all,
+                    (true, false) => &with,
+                    _ => &without,
+                };
+                self.send_reliable(id, msg, Channel::World);
             }
         }
     }

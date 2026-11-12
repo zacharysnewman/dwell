@@ -160,6 +160,20 @@ dwell_world::both_faces!(
             old.iter().all(|m| m.npcs.is_none()),
             "no part for an older client"
         );
+        // WORK_QUEUE item 39: the animals' poses' part, likewise, only to a client with
+        // `creatures.poses` (here client 2, whose capabilities are this build's).
+        assert!(
+            old.iter().all(|m| m.poses.is_none()),
+            "no poses for an older client"
+        );
+        assert!(
+            new.iter().all(|m| m.poses.is_some()),
+            "the poses' part for a client with the capability"
+        );
+        assert!(
+            dwell_protocol::capabilities::Capabilities::this_client()
+                .has(capability_names::CREATURES_POSES)
+        );
         let part: Vec<NpcNet> = new
             .iter()
             .filter_map(|m| m.npcs.clone())
@@ -178,3 +192,12 @@ dwell_world::both_faces!(
         }
     }
 );
+
+#[test]
+fn the_wire_poses_are_the_ecologys_idle_poses_in_order() {
+    // both-faces: no world geometry, the pose names only.
+    assert_eq!(
+        dwell_protocol::CREATURE_POSES,
+        dwell_ecology::IdlePose::NAMES
+    );
+}

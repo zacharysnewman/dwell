@@ -525,3 +525,39 @@ test("the sword is one sword out of the joined katanas prop, held by its handle"
     /prop sword: grip 0\.2 m is outside its handle -0\.47\.\.-0\.25 m/,
   );
 });
+
+test("idle poses are data: the fixture's lie by data alone, bad entries fail by name", () => {
+  // WORK_QUEUE item 39: an animal's graze, sit or lie as joint turns on its idle clip.
+  const f = fixture();
+  const m = validate(f, palette, fixtures).two_bone;
+  assert.deepEqual(m.poses, [
+    { name: "lie", turns: [{ joint: 1, rot: [90, 0, 0] }] },
+  ]);
+  assert.match(
+    rust(f, validate(f, palette, fixtures), "../../../shared/models/fixtures"),
+    /poses: &\[Grip \{ name: "lie", turns: &\[\(1, \[90\.0, 0\.0, 0\.0\]\)\] \}\], pose_blend_s: 1\.0/,
+  );
+  const bad = (edit, re) => {
+    const g = fixture();
+    edit(g.models.two_bone);
+    assert.throws(() => validate(g, palette, fixtures), re);
+  };
+  bad(
+    (t) => (t.poses = { dance: { tip: [1, 0, 0] } }),
+    /poses: dance is not a pose/,
+  );
+  bad(
+    (t) => (t.poses = { lie: { nose: [1, 0, 0] } }),
+    /poses: lie: no joint nose/,
+  );
+  bad(
+    (t) => (t.poses = { lie: { tip: [1, 0] } }),
+    /poses: lie: tip is \[x, y, z\]/,
+  );
+  bad((t) => (t.poses = { lie: {} }), /poses: lie turns no joint/);
+  bad((t) => (t.poseBlendS = 0), /poseBlendS 0 is outside/);
+  // The shipped animals' poses validate against their skins.
+  const shipped = validate(data(), palette, here);
+  assert.ok(shipped.deer.poses.some((p) => p.name === "graze"));
+  assert.ok(shipped.wolf.poses.some((p) => p.name === "lie"));
+});

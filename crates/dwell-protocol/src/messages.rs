@@ -777,7 +777,22 @@ pub struct CreaturesMessage {
     /// `creatures.npcs` capability, so an older one (which refuses trailing bytes) never gets it;
     /// `None` writes nothing.
     pub npcs: Option<Vec<NpcNet>>,
+    /// The animals' idle poses (WORK_QUEUE item 39), after the NPCs' part: only to a client with
+    /// the `creatures.poses` capability (which has `creatures.npcs` too: the NPCs' part, empty if
+    /// need be, is written first); `None` writes nothing.
+    pub poses: Option<Vec<CreaturePoseNet>>,
 }
+
+/// A creature's idle pose (`CreaturesMessage::poses`): its id and the pose, by [`CREATURE_POSES`].
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct CreaturePoseNet {
+    pub id: u32,
+    pub pose: u8,
+}
+
+/// The idle poses a creature is sent in, by `CreaturePoseNet::pose`: the ecology's
+/// (`dwell_ecology::IdlePose::NAMES`, the same order; a test in dwell-sim pins it).
+pub const CREATURE_POSES: [&str; 6] = ["stand", "graze", "lookUp", "earFlick", "sit", "lie"];
 
 /// An NPC's part of a `Creatures` message (CHARACTERS.md §11.11): its creature's `id`, its kind's
 /// name (`"dwell:villager"`, in shared/creatures/creatures.json), its idle `pose` (0 stand, 1 look
@@ -1821,7 +1836,8 @@ fn write_body(w: &mut ByteWriter, m: &Message) {
             for &id in &m.gone[..n] {
                 w.u32(id);
             }
-            if let Some(npcs) = &m.npcs {
+            let no_npcs = Vec::new();
+            if let Some(npcs) = m.npcs.as_ref().or(m.poses.as_ref().map(|_| &no_npcs)) {
                 let n = npcs.len().min(MAX_CREATURES_PER_MESSAGE);
                 w.u16(n as u16);
                 for c in &npcs[..n] {
@@ -1829,6 +1845,14 @@ fn write_body(w: &mut ByteWriter, m: &Message) {
                     w.str(crate::bytes::clamp_str(&c.kind, MAX_MODEL_NAME));
                     w.u8(c.pose);
                     w.u32(c.variant);
+                }
+            }
+            if let Some(poses) = &m.poses {
+                let n = poses.len().min(MAX_CREATURES_PER_MESSAGE);
+                w.u16(n as u16);
+                for c in &poses[..n] {
+                    w.u32(c.id);
+                    w.u8(c.pose);
                 }
             }
         }
@@ -2508,10 +2532,26 @@ fn read_body(r: &mut ByteReader, t: MessageType) -> Option<Message> {
                 }
                 npcs
             });
+            let poses = (!r.at_end()).then(|| {
+                let n = usize::from(r.u16());
+                r.check(n <= MAX_CREATURES_PER_MESSAGE);
+                let mut poses = Vec::new();
+                for _ in 0..n {
+                    if !r.ok() {
+                        break;
+                    }
+                    let id = r.u32();
+                    let pose = r.u8();
+                    r.check(usize::from(pose) < CREATURE_POSES.len());
+                    poses.push(CreaturePoseNet { id, pose });
+                }
+                poses
+            });
             M::Creatures(CreaturesMessage {
                 creatures,
                 gone,
                 npcs,
+                poses,
             })
         }
         T::Vitals => {
@@ -2859,6 +2899,7 @@ mod creature_tests {
             }],
             gone: vec![2, 5],
             npcs: None,
+            poses: None,
         });
         let b = m.encode();
         assert_eq!(Message::decode(&b), Some(m.clone()));
@@ -2875,6 +2916,39 @@ mod creature_tests {
     // WORK_QUEUE item 38: the NPCs' part rides after `gone`, written only when present (for a
     // client with `creatures.npcs`); without it the bytes are the old message's, byte for byte.
     #[test]
+    fn the_poses_part_follows_the_npcs_part_and_is_checked() {
+        // WORK_QUEUE item 39: the animals' idle poses ride after the NPCs' part (written empty
+        // when there are none), only for a client with `creatures.poses`.
+        let m = CreaturesMessage {
+            creatures: Vec::new(),
+            gone: vec![3],
+            npcs: None,
+            poses: Some(vec![CreaturePoseNet { id: 9, pose: 5 }]),
+        };
+        let bytes = Message::Creatures(m.clone()).encode();
+        let back = Message::decode(&bytes).unwrap();
+        assert_eq!(
+            back,
+            Message::Creatures(CreaturesMessage {
+                npcs: Some(Vec::new()),
+                ..m.clone()
+            })
+        );
+        // A pose past the list fails the message.
+        let mut bad = bytes.clone();
+        *bad.last_mut().unwrap() = CREATURE_POSES.len() as u8;
+        assert_eq!(Message::decode(&bad), None);
+        // Without it: the bytes end after the NPCs' part (or after `gone`).
+        let plain = Message::Creatures(CreaturesMessage {
+            poses: None,
+            npcs: None,
+            ..m
+        })
+        .encode();
+        assert!(plain.len() < bytes.len());
+    }
+
+    #[test]
     fn the_npcs_part_is_optional_trailing_and_checked() {
         let plain = CreaturesMessage {
             creatures: vec![CreatureNet {
@@ -2886,6 +2960,7 @@ mod creature_tests {
             }],
             gone: vec![],
             npcs: None,
+            poses: None,
         };
         let with = CreaturesMessage {
             npcs: Some(vec![NpcNet {

@@ -667,6 +667,8 @@ pub mod capability_names {
     pub const CREATURES_NPCS: &str = "creatures.npcs";
     /// Swordplay on the wire (WORK_QUEUE item 35, round 2): the server sends `Swordplay` (each strike's outcome, blocked / glanced / connected, where, and both stances, to clients within the weapon's `clash.hearM`; and who holds a raised guard in which stance, players and NPCs), and the client says its raised block with `ChopAction::Guard`. Without it neither is sent: an older client sees no clash and no raised swords, and an older server is never sent a guard.
     pub const WEAPONS_CLASH: &str = "weapons.clash";
+    /// A Creatures message ends, after its NPCs' part (written empty if need be), with the animals' idle poses (WORK_QUEUE item 39): per creature its id and pose (stand, graze, lookUp, earFlick, sit, lie; the ecology's idle poses), drawn as the model's `poses` data (shared/models/models.json) blended over its idle clip. Without it the server leaves the part out and the animals play their idle clip.
+    pub const CREATURES_POSES: &str = "creatures.poses";
     /// Every capability this build knows, in the table's order.
-    pub const ALL: &[&str] = &[STRUCTURES_PLACE, GRID_FRAMES, DAMAGE_CHUNKS, CREATURES_NPCS, WEAPONS_CLASH];
+    pub const ALL: &[&str] = &[STRUCTURES_PLACE, GRID_FRAMES, DAMAGE_CHUNKS, CREATURES_NPCS, WEAPONS_CLASH, CREATURES_POSES];
 }

@@ -22,6 +22,20 @@ fn euler(r: [f32; 3]) -> math::Quat {
     qmul(x, qmul(y, z))
 }
 
+/// `turns` (an idle pose's, models.json `poses`) on `pose` at weight `w` (0 none, 1 all): each
+/// turn's angles scaled by `w`, so a pose blends in and out.
+pub fn apply_weighted(model: &Model, turns: &Grip, pose: &mut [Trs], w: f32) {
+    let w = w.clamp(0.0, 1.0);
+    if w <= 0.0 {
+        return;
+    }
+    for &(joint, rot) in turns.turns {
+        if let Some(t) = model.skin.get(joint).and_then(|&n| pose.get_mut(n)) {
+            t.r = qmul(t.r, euler(rot.map(|a| a * w)));
+        }
+    }
+}
+
 /// `grip`'s turns on `pose` (every node's local transform).
 pub fn apply(model: &Model, grip: &Grip, pose: &mut [Trs]) {
     for &(joint, rot) in grip.turns {
