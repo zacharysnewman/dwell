@@ -7,7 +7,11 @@
       "radiusM": "world",
       "gravityScale": 1,
       "farM": 400000,
-      "generator": { "kind": "terrain" }
+      "generator": {
+        "kind": "terrain",
+        "$comment": "The home world's far bake (MOON_WORLD.md §5, M-6) is made from its world map: heights and water from the map's cells, the colour from each column's surface block (its biome's palette, blocks.json `color`). `bake.size` is its texels a side per face (256: 390 m texels over the 50 km disc).",
+        "bake": { "size": 256 }
+      }
     },
     {
       "name": "dwell:moon",

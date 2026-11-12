@@ -564,6 +564,13 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    and snap, home targeting (`raycast_block_in`) and the controller's spawn face go through it; the both-faces
    check's rule 3 (no hand `inverse * (p − origin)`). Renderer model matrices per grid left for M-5; grid ids for
    M-7 (MOON_WORLD.md §2.1).
+   **M-6's bake built 2026-11-12** (branch `claude/moon-m6-home-bake`; the owner's "The earth should use the same
+   normal map kinda technique when far enough away, when on the moon."): `dwell-worldgen` `home_far.rs`, the home
+   grid's `FarSource` over its world map — heights from the map's cells (water flat at its level), the albedo from
+   each column's surface block (its biome's palette, blocks.json `color`), a separate water channel
+   (`FarBake::water`, the share of the texel in the sea or a lake) — at `grids.json`'s home `bake.size` 256: 576 KiB
+   and ~0.17 s a face natively; 10 tests on both faces; `examples/home_bake.rs` writes preview PNGs
+   (MOON_WORLD.md §5). Clouds out of scope. Not drawn yet: drawing it from the moon comes with M-5/M-7.
 
 ## Done
 
