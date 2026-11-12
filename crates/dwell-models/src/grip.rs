@@ -14,12 +14,12 @@ fn qmul(a: math::Quat, b: math::Quat) -> math::Quat {
     ]
 }
 
-/// Euler XYZ degrees (as characters.json: x first) as a quaternion.
+/// Euler XYZ degrees as a quaternion: Rx·Ry·Rz, as characters.json (`dwell_characters::math::euler`).
 fn euler(r: [f32; 3]) -> math::Quat {
     let x = math::axis_angle([1.0, 0.0, 0.0], r[0]);
     let y = math::axis_angle([0.0, 1.0, 0.0], r[1]);
     let z = math::axis_angle([0.0, 0.0, 1.0], r[2]);
-    qmul(z, qmul(y, x))
+    qmul(x, qmul(y, z))
 }
 
 /// `grip`'s turns on `pose` (every node's local transform).

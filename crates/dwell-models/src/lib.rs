@@ -93,6 +93,9 @@ pub struct FirstPerson {
     pub joints: &'static [usize],
     /// The least share of a vertex's skin weight on `joints` that puts it in the arm.
     pub weight: f32,
+    /// Degrees, Euler XYZ in view space: the whole arm turned about its hand (the sleeve's cuff
+    /// brought into view, the hand and item kept).
+    pub turn: [f32; 3],
 }
 
 /// A pose of the hand (models.json `grips.poses`, docs/CHARACTERS.md §11.10): turns of skin joints

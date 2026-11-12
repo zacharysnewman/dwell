@@ -51,7 +51,7 @@ pub fn pose(
     pose: &Pose,
     item: Option<&str>,
 ) -> Option<(Vec<Mat4>, Mat4)> {
-    data.first_person?;
+    let fp_data = data.first_person?;
     let map = data.retarget?;
     let chain = character.first_person?.bones;
     let (&first, &last) = (chain.first()?, chain.last()?);
@@ -104,7 +104,23 @@ pub fn pose(
         &mm::trs(at, turn, [s; 3]),
         &mm::trs([-p[0], -p[1], -p[2]], [0.0, 0.0, 0.0, 1.0], [1.0; 3]),
     );
-    Some((globals, place))
+    // The whole arm turned about the rig's hand (`turn`): the elbow and the sleeve up into view.
+    let hand_at = posed[last].t;
+    let e = dwell_characters::math::euler(fp_data.turn);
+    let turn: Mat4 = [
+        [e[0][0], e[0][1], e[0][2], 0.0],
+        [e[1][0], e[1][1], e[1][2], 0.0],
+        [e[2][0], e[2][1], e[2][2], 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ];
+    let about = mm::mul(
+        &mm::trs(hand_at, [0.0, 0.0, 0.0, 1.0], [1.0; 3]),
+        &mm::mul(
+            &turn,
+            &mm::trs(hand_at.map(|v| -v), [0.0, 0.0, 0.0, 1.0], [1.0; 3]),
+        ),
+    );
+    Some((globals, mm::mul(&about, &place)))
 }
 
 #[cfg(test)]

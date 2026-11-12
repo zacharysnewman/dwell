@@ -297,7 +297,14 @@ export function validate(
       if (!(f.weight > 0 && f.weight <= 1))
         fail(`${at}: firstPerson: weight is in (0, 1]`);
       if (!retarget) fail(`${at}: firstPerson needs a retarget map`);
-      firstPerson = { joints, weight: f.weight };
+      const turn = f.turn ?? [0, 0, 0];
+      if (!(
+        Array.isArray(turn) &&
+        turn.length === 3 &&
+        turn.every(Number.isFinite)
+      ))
+        fail(`${at}: firstPerson: turn is [x, y, z]`);
+      firstPerson = { joints, weight: f.weight, turn };
     }
     let grips = { poses: [], items: [] };
     if (m.grips !== undefined) {
@@ -306,7 +313,8 @@ export function validate(
       for (const pose of names) {
         const turns = Object.entries(g.poses[pose]).map(([j, r]) => {
           const k = s.jointNames.indexOf(j);
-          if (k < 0) fail(`${at}: grips: ${pose}: no joint ${j} in ${m.glb}'s skin`);
+          if (k < 0)
+            fail(`${at}: grips: ${pose}: no joint ${j} in ${m.glb}'s skin`);
           if (!(Array.isArray(r) && r.length === 3 && r.every(Number.isFinite)))
             fail(`${at}: grips: ${pose}: ${j} is [x, y, z]`);
           return { joint: k, rot: r };
@@ -700,7 +708,7 @@ export function rust(data, models, glbRoot) {
       .join(", ")}]`;
     const gripItems = `&[${m.grips.items.map(([i, g]) => `(${JSON.stringify(i)}, ${JSON.stringify(g)})`).join(", ")}]`;
     const firstPerson = m.firstPerson
-      ? `Some(FirstPerson { joints: &[${m.firstPerson.joints.join(", ")}], weight: ${f32(m.firstPerson.weight)} })`
+      ? `Some(FirstPerson { joints: &[${m.firstPerson.joints.join(", ")}], weight: ${f32(m.firstPerson.weight)}, turn: ${v3(m.firstPerson.turn)} })`
       : "None";
     lines.push(
       `    ModelData { name: ${JSON.stringify(name)}, glb: ${JSON.stringify(m.glb)}, joints: ${m.joints}, scale: ${f32(m.scale)}, yaw: ${f32(m.yaw ?? 0)}, fallback: ${JSON.stringify(m.fallback)}, roles: &[${roles}], hand: ${hand}, retarget: ${retarget}, first_person: ${firstPerson}, grips: ${grips}, grip_items: ${gripItems} },`,

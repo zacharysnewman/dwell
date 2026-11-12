@@ -760,9 +760,20 @@ model?" Your arm on screen is the Peasant's own right arm, the same sleeve, cuff
   bone and the arm scaled so its rest reach (shoulder to hand) is the rig's, so the hand lands where
   the clips were fitted (`clip_probe` stays the source of truth): over every first-person clip the
   Peasant's `hand.R` is within 6 cm of the rigid hand bone (`the_skinned_hand_follows_the_rigid_arms_hand_through_the_swings`).
+- **The grip** (`models.json` `grips`, `dwell_models::grip`): hand poses as data (`fist`: the two
+  finger joints bent 90° each about their z) and the pose each held item takes (the tools, both axe
+  holds and the brush close the fist; a block or a torch sits on the open hand). Put on top of the
+  retarget, first person and third alike; `a_fist_closes_round_the_handle_and_an_open_hand_does_not`
+  pins the fingertips within 2.5 cm of the handle's line (1.3 cm; 8 cm open).
+- **The arm's turn** (`firstPerson.turn`, 40° about view +x): the whole arm turned about the rig's
+  hand, so the hand and item stay put and more of the forearm shows across the bottom right. The
+  Peasant's green sleeve is short (it ends above the elbow), so it only shows when the clips bring
+  the upper arm on screen.
 - **Drawing**: the skinned pipeline in the arms pass (its frame group, the cleared depth), the
   joints through `arms_frame`; the held item on the Peasant's hand by `models.json` `hand`, as on
-  another player's body (§11.5). `?fparms=rigid` (`setRigidArms`) draws the old rigid arms instead,
+  another player's body (§11.5). Since 0.54 the item is put on the skinned hand as it is, in first
+  and third person: the hand already carries the item's turns from the retarget (they were applied
+  twice before, the axe 50° off the rig's hand; `another_players_item_is_turned_once_on_the_skinned_hand`). `?fparms=rigid` (`setRigidArms`) draws the old rigid arms instead,
   a dev switch for comparison; the rigid arms' parts stay in `characters.json` for it and for your
   own body (§5.1).
 
