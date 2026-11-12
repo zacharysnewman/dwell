@@ -289,6 +289,12 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    for now; R5 uses today's blocks (stone, basalt, sandstone, red sandstone, sand, dirt) named in data, so
    new ones can replace them later.
 
+   Owner, 2026-11-12, on q2 (which latitude bands): **"I think latitude bands are based on orbits right? Orbits
+   should be seed determined."** So the climate band is not a list to pick from: the seed sets the world's orbit
+   (its distance from the sun → overall warmth, its axial tilt → seasons and how climate changes across the disc,
+   its day and year length within playable bounds) and the moon's orbit, and the latitude band and seasons follow
+   from them; one celestial model (MOON_WORLD.md §6) shared by the sky and the Realistic climate (R3). Design
+   update in progress (cloud).
 16. **Phone frame rate (P0)** (owner 2026-11-11, iPhone 17, Safari, setting Low: "I'm only getting ~23 fps on
    mobile, seeing lots of z-fighting on tree trunks with the leaf cards. What might be dropping frames since the
    last while. Used to get 60 fps"). Suspect: leaf cards are on in every tier but CPU, Low included; cards lying
