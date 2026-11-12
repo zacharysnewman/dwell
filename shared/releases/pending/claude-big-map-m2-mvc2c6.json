@@ -1,6 +1,0 @@
-{
-  "changes": [
-    "Dedicated servers can make a bigger world for testing: --size 2x (up to 10x); the world keeps its size when reopened",
-    "Behind the scenes: a big world's terrain, edges and distant view follow its own size"
-  ]
-}
