@@ -1431,6 +1431,10 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
 
 ## Smaller items, after the queue
 
+- **Leaves rubber-band (BUGS.md #94, 2026-11-12, `claude/leaves-rubberband-dy5tni`), done.** Owner: "seems to be a mismatch
+  between server and client for leaves collision. Jumping into the leaves of a tree makes you rubberband falling to
+  the ground endlessly until you back out of the leaves." The server's buried-player lift took leaves (solid but
+  passable) for ground; it now uses the terrain collision's own test. Tests in `netcode` and `buried` (both faces).
 - **Realistic and forest look (2026-11-12, `claude/realistic-forest-look`), seen in Chrome on the GPU** (Realistic
   seeds 1–3 face A, `test:forest`; stills, a contact sheet and a 9:16 video handed to the owner). What reads: the big
   map (M, widest level) shows the plates' story at a glance — one continent a seed, snow-capped ranges, a green wet

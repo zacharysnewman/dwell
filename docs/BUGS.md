@@ -17,17 +17,6 @@ leaves a hole (or an unfilled cell) under each far tree's trunk/column (the tree
 not filled), or T-junction cracks where the far tree's mesh meets the LOD ground; at that distance the gap is a
 pixel or two and the sky behind the disc shows through.
 
-### 94. Jumping into a tree's leaves rubber-bands you toward the ground until you back out
-
-Owner, 2026-11-12: "A bug I just found seems to be a mismatch between server and client for leaves collision.
-Jumping into the leaves of a tree makes you rubberband falling to the ground endlessly until you back out of the
-leaves." Suspects: the client's predicted controller and the server's disagree about leaves — one treats leaf cells
-as solid (or as a climbable/slowing medium) and the other as passable, so every snapshot corrects the predicted
-position and prediction falls again; candidates: leaves' collision shape or `solid` flag read from different data
-(block registry vs the mesher's leaf cards / leaf density), trees composed at chunk load on one side only
-(TREE_GROWTH layer, tombstones/growers) so the server or client has no leaf blocks there, or leaves' `flooded`/state
-aliasing differing across the registry sync.
-
 ### 92. Downhill water shows edge triangles and thin lines at its ½ m level steps
 
 Owner, 2026-11-12 (screenshot + block dump): "I'm seeing some edge triangles and thin lines at slope transitions on
@@ -443,6 +432,27 @@ face, or the placement check against its shape.
 
 
 ## Fixed
+
+### 94. Jumping into a tree's leaves rubber-bands you toward the ground until you back out (fixed after 0.54.14x)
+
+Owner, 2026-11-12: "A bug I just found seems to be a mismatch between server and client for leaves collision.
+Jumping into the leaves of a tree makes you rubberband falling to the ground endlessly until you back out of the
+leaves." Suspects: the client's predicted controller and the server's disagree about leaves — one treats leaf cells
+as solid (or as a climbable/slowing medium) and the other as passable, so every snapshot corrects the predicted
+position and prediction falls again; candidates: leaves' collision shape or `solid` flag read from different data
+(block registry vs the mesher's leaf cards / leaf density), trees composed at chunk load on one side only
+(TREE_GROWTH layer, tombstones/growers) so the server or client has no leaf blocks there, or leaves' `flooded`/state
+aliasing differing across the registry sync.
+Cause: not the collision or the leaf cells — both sides built the same crown voxel for voxel, and both controllers pass
+through leaves (`passable`). The server alone also runs the buried-player lift (`server/buried.rs`, BUGS #82), which
+read any `solid` full cell as ground to be lifted out of: leaves are `solid` (and `passable`), so a player whose centre
+entered a crown was teleported to the crown's top every tick while the client's prediction fell through it — each
+snapshot pulled the prediction back up and it fell again, until the player left the leaves. Fixed: the lift asks
+`dwell_blocks::collision_class`, the terrain collision's own test, so a passable block buries no one. Tests:
+`netcode` `jumping_into_a_trees_leaves_is_predicted_exactly_without_latency` (the real server and a predicting
+client on a flat world with a pine, walking and jumping in and out of the crown: 10 replays of 1–3 m on the unfixed
+code → 0, every acknowledged position exact) and `buried` `a_player_inside_leaves_is_not_buried_and_falls_through_them`
+(both faces: held at the crown's top 4.6 m up on the unfixed code → falls to the stone).
 
 ### 93. Vertical swings (axe, sword, …) play twice for one swing (fixed after 0.54.14x; the look in game left local)
 
