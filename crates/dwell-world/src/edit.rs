@@ -428,6 +428,25 @@ pub fn raycast_block(
     raycast_block_past(world, origin, dir, max_distance, |_, _| false)
 }
 
+/// [`raycast_block`] in a grid's frame (MOON_WORLD.md §2, M-3): the world ray turned into the
+/// grid's space and walked over `world`, that grid's cells; the hit's cell and face are the grid's,
+/// its distance the world's (a rigid frame keeps lengths). The home grid's frame is the identity, so
+/// on it this is [`raycast_block`] exactly (`tests/grid_frame.rs`).
+pub fn raycast_block_in(
+    world: &mut VoxelWorld,
+    grid: &crate::GridFrame,
+    origin: [f64; 3],
+    dir: [f32; 3],
+    max_distance: f32,
+) -> Option<BlockHit> {
+    raycast_block(
+        world,
+        grid.to_grid(origin),
+        grid.vector_to_grid_f32(dir),
+        max_distance,
+    )
+}
+
 /// [`raycast_block`] passing through the targetable cells `see_through(cell, state)` names.
 pub fn raycast_block_past(
     world: &mut VoxelWorld,

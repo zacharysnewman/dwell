@@ -2,7 +2,7 @@
 
 **Status:** proposal, written 2026-11-12 (WORK_QUEUE item 27). Slice **M-1 built** (the grids'
 data, the moon's generator, the far-body bake, the moon spawn search; native, not wired into the
-game). Not architecture until an ADR adopts it; open questions in §12.
+game). Slice **M-3 built** (the `GridFrame` abstraction, §2.1). Not architecture until an ADR adopts it; open questions in §12.
 
 ## 1. Brief and the owner's answers (2026-11-12)
 
@@ -59,6 +59,48 @@ its results exactly (a test pins that the identity frame changes no bit).
 | Streaming | a body's cells all sent at once | **chunks streamed per grid**, keyed `(grid, chunk)`; storage per grid (a region file set per grid) |
 | Gravity | none of their own | gravity toward the grid's midplane, by face (§7) |
 | Seed and terrain | none | the grid's generator (`grids.json`), its seed from the world's |
+
+### 2.1 `GridFrame` as built [M-3, 2026-11-12]
+
+`dwell_world::GridFrame` (`crates/dwell-world/src/grid.rs`): `{ origin: [f64; 3], rotation: [x, y, z,
+w], velocity, spin, gravity_scale }`, no grid id yet (the id is `grids.json`'s name; it joins the
+frame where a frame is looked up by grid, M-7). Its maps:
+
+| Map | What |
+|---|---|
+| `to_grid` / `to_world`, `vector_to_grid` / `vector_to_world` (`_f32`) | world ↔ grid points and directions |
+| `face_at(p)`, `to_local(f, p)` / `from_local`, `vector_to_local` / `vector_from_local` | world ↔ grid ↔ face-local: the face is the side of the grid's midplane, then `FaceFrame` |
+| `up(f)`, `look(f, yaw, pitch)`, `gravity(p, g)` | a face's up, a face-local look and gravity (toward the grid's midplane from the point's face, × `gravity_scale`) in the world |
+| `cell_of(p)`, `cell_min(c)`, `cell_centre(c)` | the grid cell of a world point; a cell's corner and centre in the world |
+| `point_velocity(p)`, `capture(p, v)` / `release` | the grid's velocity at a point; a point and velocity into and out of a moving grid (§7's p′, v′) |
+
+`GridFrame::HOME` is the identity and returns its input bit for bit (negative zeros too). The
+rotation is glam's `DQuat * DVec3`, term for term, so a body's pose as a frame (`dwell-physics`
+`frame::grid_of_pose`, the `GridMaps` trait in the physics' types) maps to the same bits as glam.
+
+**Through it now** (straight swaps, same bits): the client's ray into a body (`pieces.rs`
+`raycast`), a felled piece's hits on players and its snap to the grid (`felling.rs` `hits`,
+`follow_pose`, `resample`), the home world's targeting (`edit::raycast_block_in` with `HOME`, from
+`dwell-game` `target_hit`), the controller's face at spawn and the predictor's stand-in frames
+(`HOME.face_at`). **Left for later** (a note, not a rewrite): the renderer draws a body by its
+(offset, quaternion) pair and home chunks unrotated: a model matrix per grid arrives with the LOD
+per grid (M-5); the bodies' other rotations (`settle_glide`, the impact code) compose quaternions,
+not points, and stay glam; colliders, streaming and storage per grid and the grid id on the wire
+are M-7.
+
+**The scan rule.** The both-faces check (BIFACIAL_WORLD.md §11.2) gains rule 3: a world point turned
+into a grid's space by hand (`inverse * (p − origin)`) outside `grid.rs` fails unless marked
+`// grid-boundary: <reason>`.
+
+**Tests.** `dwell-world` `grid.rs` (unit, both faces where face-dependent): the home frame bit for
+bit and equal to `FaceFrame` on each face; 200 moving, turned grids out to 600 km with points,
+vectors, cells and capture/release round-tripping (≤ 1 µm), lengths kept; a carried point has no
+velocity in its grid; gravity toward the grid's midplane at ⅙ g on each face; a quarter turn's cells.
+`dwell-world` `tests/grid_frame.rs`: `raycast_block_in` on `HOME` equals `raycast_block` on both
+faces; on a turned grid 250 km out a world ray finds the grid ray's cell at the same distance.
+`dwell-physics` `tests/grid_frame.rs`: a body's pose as a frame matches glam to the bit (2000
+poses); the home frame picks the controller frame of the height. The physics, sim (felling) and
+game suites are unchanged, on face B too (`DWELL_FACE=b`).
 
 So the first slices don't paint the work into a home-only corner: the data is a **list of grids**
 from M-1, the generator and the bake are keyed by grid, and the frame comes before travel (M-3).
@@ -240,7 +282,7 @@ starts in the moon's frame with its gravity, and the home world streams in only 
 |---|---|---|
 | **M-1** [built] | Grids data (`grids.json`), the `cratered` generator on both faces, `moon_dust`, the generic far-body bake, the moon spawn search | `cargo test -p dwell-worldgen --test grids` (19 tests, both faces): crater floors under raised rims, density by data, flatter maria, bake deterministic/differing, normals out of crater walls, spawn flat |
 | M-2 | The sky draws the moon from its bake: today's motion, size, glow and light; the baked normals lit by the sun direction; the face from the orbit | the client bakes in a worker and caches per world; a screenshot per phase angle on both faces; CPU-adapter tier |
-| M-3 | `GridFrame`: the frame abstraction (world ↔ grid ↔ face) for rendering, collision, targeting and gravity; the home grid the identity | the identity frame changes no result (parity tests across physics, targeting, meshing); a moving test grid's points round-trip |
+| **M-3** [built] | `GridFrame`: the frame abstraction (world ↔ grid ↔ face) for rendering, collision, targeting and gravity; the home grid the identity | the identity frame changes no result (parity tests across physics, targeting, meshing); a moving test grid's points round-trip |
 | M-4 | The celestial model (§6): the moon's orbit as data, phases from geometry, moonlight by lit share; the orbit an optional world setting | geometry tests (full when opposite the sun, new when between, lit share); the clock and the sun unchanged (golden) |
 | M-5 | LOD per grid: the moon's LOD terrain inside `farM`, the far body beyond, crossfaded | the moon's LOD from its generator at 150 km; no seam at the switch (screenshot) |
 | M-6 | The home world's bake from its world map (water mask), drawn from far | bake tests on both faces; a screenshot from 600 km |

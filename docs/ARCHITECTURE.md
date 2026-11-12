@@ -1552,6 +1552,25 @@ player on face B stands upside down in the world.
   mirroring outside the frame and on plain tests that name a face without running on both. The dev link `?spawn=b`
   (and a bench scenario's `"face": "b"`) starts a local world on face B's spawn
   (`spawn_point_b`, its own world file `…-faceb`); real worlds spawn on face A.
+- **Grid frames [built, M-3, 2026-11-12] ([`proposals/MOON_WORLD.md`](./proposals/MOON_WORLD.md) §2).**
+  A voxel grid with its own transform (the home world, a built body; the moon later) crosses world ↔
+  grid ↔ face-local through **`dwell_world::GridFrame`** (`grid.rs`): its origin (f64), orientation
+  (a unit quaternion), velocity, spin and gravity scale; points, vectors and looks each way, the face
+  of a world point (the side of the grid's midplane), each face's up and gravity, the cell of a world
+  point and a cell's world corner and centre, and capture/release of a point and velocity into a
+  moving grid. Code placing something in a grid takes `(GridFrame, FaceFrame)`. `GridFrame::HOME`
+  is the identity and returns its input bit for bit; its rotation is glam's `DQuat * DVec3` term for
+  term, so `dwell-physics` `frame::grid_of_pose` (a body's pose as a grid frame, with the `GridMaps`
+  trait in the physics' types) gives the same bits as the bodies' old hand transforms. Through it
+  today: the bodies' crosshair ray (`dwell-client` `pieces.rs` `raycast`), a felled piece's hits on
+  players and its snap to the grid (`dwell-sim` `felling.rs` `hits`, `follow_pose`, `resample`), the
+  home world's targeting (`dwell-world` `edit::raycast_block_in`, called by `dwell-game`'s
+  `target_hit` with `HOME`), and the controller's face at spawn and the predictor's stand-in frames
+  (`HOME`). Not yet: the renderer still draws a body by its (offset, quaternion) pair and the home
+  chunks unrotated (a model matrix per grid comes with M-5's LOD per grid), and chunk storage,
+  streaming, colliders and the protocol carry no grid id (M-7). The both-faces check's rule 3 fails
+  on a world point turned into a grid's space by hand (`inverse * (p − origin)`) outside `grid.rs`
+  unless marked `// grid-boundary: <reason>`.
 - **Generation.** `dwell_worldgen::BifacialTerrain` (`bifacial.rs`) holds two `TerrainGenerator`s working
   in face-local coordinates: face A's is seeded by the world seed as ever, face B's by
   `face_seed(seed, B)`, a hash through streams no stage uses — its own island and hills. A chunk of
