@@ -372,6 +372,17 @@ ride after a `Cuts` message's cells only to a client that said `BitesHello` (a d
 `SwingHello`), and after the `cuts` record's cells (an older record loads with none). A cut without
 bites is drawn as before. ARCHITECTURE.md §8.3, BLOCK_DAMAGE.md §6.4.
 
+## Note 2026-11-12: bites round 2, and the stump keeps its gash (WORK_QUEUE item 26)
+
+The in-game check found the bites growing down the cell into a slot, no cracks showing, and a swing
+after the fall clearing the stump's ramp (the axe's `clears` held `dwell:log_ramp`). Owner, on the
+stump: "I think let's do your recommendation." So: a hit lands beside any bite on its side, both bands,
+within the log's width (`Cut::bite_in`), every V in the notch's band (the cell's middle half), the grid
+carved across the octagon's chamfers; the wood's cracks painted in ink at 0.85. A wood's `fellWedge` is
+chopped as that wood (`chopped_wood`) and never cleared: a bite and a wear a hit, down at the fell
+fraction with the wood's `buckDrops`; no tool's `clears` may name one (the generator fails it). The
+cut model (§2) and felling at 11 swings are unchanged. BLOCK_DAMAGE.md §6.4 "Round 2".
+
 ## Consequences
 
 - A new tool is an item and a `tools` entry; a new wood a block with an `axis` and a `woods` entry;

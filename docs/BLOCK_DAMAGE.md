@@ -314,14 +314,14 @@ each hit lands, joining into the notch, grain cracks round them, felling unchang
   notch's V along the grain under the mask of all the side's bites, each band's kerf V (its depth notch +
   kerf, apex in the band) under that band's bites' mask, the deepest; a bite's mask 1 over the head's
   width, its ends sloping in over `endsM`. One hit is a V the axe head's size where it struck; bites side
-  by side merge; at the fell the notch spans more than three heads. Bites are kept on an octagonal log's
-  flat face, every V ends inside the cell, so the face's outline never moves (watertight; T-junctions on
-  straight edges as §6.2's carve); opposite sides keep the 2 cm waist.
+  by side merge; at the fell the notch spans the log (round 2, below: across its chamfers too). Every V
+  ends inside the cell (watertight; T-junctions on straight edges as §6.2's carve); opposite sides keep
+  the 2 cm waist.
 - **Cracks**: the wood's `cut.cracks` (the `wood` set of `shared/textures/cracks.json`, splitting along
   the grain) over every face of the cell, §6.3's overlay and shader, its stage by the share of the fell
   (or buck) fraction cut, centred on the deepest side's newest bite.
 - **Data** (`shared/tools/tools.json`, the wood's `cut`): `bite` (`widthM` 0.14, `endsM` 0.03, `step` 0.6)
-  and `cracks` (`set`, `stages` 0.15 / 0.4 / 0.65 / 0.85, `strength` 0.6); validated by
+  and `cracks` (`set`, `stages` 0.15 / 0.4 / 0.65 / 0.85, `strength` 0.85, was 0.6); validated by
   `shared/tools/gen.mjs` (ranges, unknown fields, the set and stages), a fixture wood's by data alone.
 - **Wire and save, additive**: `Cuts` ends with each cell's bites only to a client that said `BitesHello`
   (a datagram; ARCHITECTURE.md §8.3); the `cuts` record appends them after its cells. A cut without bites
@@ -335,8 +335,37 @@ each hit lands, joining into the notch, grain cracks round them, felling unchang
   old carve: fresh wood across the face); `dwell-protocol` the placement, the record and message round
   trips, an older record loading without bites; `dwell-sim` `tests/chopping.rs` the bite recorded where
   struck and the fell still at 11 (both faces), bites only after `BitesHello`, saved.
-- **Not done:** no browser check (cloud session, no GPU): the look in game is for the owner's review; the
-  rare case of two adjacent sides both cut deep near their shared edge can overlap (not clipped).
+- **Not done:** no browser check (cloud session, no GPU): the look in game is for the owner's review.
+
+**Round 2 (2026-11-12, the in-game check of 0.54.x).** Found: the first bite head-sized, but more
+swings grew it down into a slot the cell's full height, still ~0.14 m wide; no cracks seen round the
+bites; a swing after the fall cleared the stump's slanted top. Fixed:
+
+- **Across, not down.** A hit lands beside any bite on its side, in either band (`Cut::bite_in`), so one
+  aim's hits alternate left and right of it one `step` apart and 11 of them span the log; kept inside the
+  log's own width (`span`, a thinner trunk's octagon: the server's `log_span`). Every V lies in the
+  notch's band, the cell's middle half (a band's height, ¼ m): the notch's V opens at most that tall
+  (before, `open` × its depth reached the cell's ends by the 2nd–3rd hit), each band's kerf V in its half
+  of it (apex ⅛ m off the middle, mouth ⅛ m). Tests: `dwell-protocol`
+  `eleven_hits_at_one_spot_spread_across_the_log` (red: 0.56 of the log), `carve::bites`
+  `chopping_one_spot_…` (red: the cut faces 0..1 along the grain).
+- **Over the chamfers.** A bitten side's front, its flat face and the chamfers it owns (both, unless the
+  side round the corner is bitten too and comes first), is one grid across the whole log: each triangle
+  is the bites' surface where it lies inside the wood and the octagon's (bark) where it doesn't, split on
+  the same line (closed); a cut stops short of the far side's outline there. A thinner trunk, whose
+  sides are all off the cell's faces, is carved too (it wasn't). Test: `a_notch_spans_an_octagonal_log_…`
+  (a full log and a half-width one; red: only the flat face, 0.29..0.71).
+- **Cracks that read.** The wood splits were painted in the bark ramp's shadow, the colour of the bark's
+  own streaks along the grain, at strength 0.6: a split the same dark as the grain it runs along. Now in
+  `ink`, a little wider, at `strength` 0.85 (`mesher_tests` `wood_cracks_read_darker_than_the_barks_own_streaks`,
+  red: the split 64 against the streaks' 70; `a_bitten_logs_cracks_show_on_the_bark_round_the_bites`).
+- **The stump keeps its gash** (owner: "I think let's do your recommendation"): a wood's `fellWedge` is
+  chopped as that wood (`chopped_wood`), never cleared; the axe's `clears` lost `dwell:log_ramp`, and the
+  generator fails a `clears` naming a fell wedge. A hit on the stump bites it and wears the axe (a hit on
+  its slope takes the side the swing comes in from); it comes down cut through at the wood's fell
+  fraction and drops its `buckDrops`. `dwell-sim` `a_swing_after_the_fall_bites_the_stump_…` (both faces;
+  red: the 12th swing's arc cleared it). **Not done:** the stump's bites aren't drawn yet (the mesher
+  carves full logs; a ramp is drawn as its shape), only recorded, worn and counted toward its fall.
 
 ### 6.4 Stone shatters, it doesn't dent (WORK_QUEUE item 18)
 

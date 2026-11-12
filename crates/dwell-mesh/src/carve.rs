@@ -13,6 +13,8 @@ use dwell_protocol::chopping::{BANDS, Cut, CutLook, SIDES, side_axis};
 
 mod bites;
 pub(crate) use bites::carve_bites;
+#[cfg(test)]
+pub(crate) use bites::depth_at;
 use dwell_world::CELL_H;
 
 /// What a carved face is, for its look: the uncut bark of side `s` (its outer plane, trimmed),

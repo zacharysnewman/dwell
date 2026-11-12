@@ -72,13 +72,17 @@ fn one_hit_bites_no_wider_than_the_axe_head_centred_where_it_struck() {
         hi - lo > 0.5 * l.bite.width_m,
         "a head-sized bite: {lo}..{hi}"
     );
-    // As deep as the cut at its middle, a V along the grain in the band hit (the lower quarter),
-    // and the bark untouched elsewhere.
+    // As deep as the cut at its middle, a V along the grain in the band hit (its half of the
+    // notch's band, the cell's middle half: apex 0.375, its mouth ⅛ m), and the bark untouched elsewhere.
     let k = f64::from(c.kerf[0][0]);
     assert!(k > 0.05);
-    assert!((depth_at(1, &c, &l, 0, 0.25, 0.3) - k).abs() < 1e-9);
-    assert!(depth_at(1, &c, &l, 0, 0.25, 0.7).abs() < 1e-12);
+    assert!((depth_at(1, &c, &l, 0, 0.375, 0.3) - k).abs() < 1e-9);
+    assert!(depth_at(1, &c, &l, 0, 0.375, 0.7).abs() < 1e-12);
     assert!(depth_at(1, &c, &l, 0, 0.75, 0.3).abs() < 1e-12);
+    assert!(
+        depth_at(1, &c, &l, 0, 0.2, 0.3).abs() < 1e-12,
+        "inside the notch's band"
+    );
     assert!(depth_at(1, &c, &l, 0, 0.32, 0.3) < k);
     // Its faces are fresh wood sloping in; every point inside the cell.
     assert!(f.iter().all(|f| {
@@ -108,13 +112,14 @@ fn bites_at_nearby_spots_merge_into_one() {
     let (lo, hi) = (0.4 - 0.5 * w + l.bite.ends_m, a2 + 0.5 * w - l.bite.ends_m);
     for i in 0..=40 {
         let u = lo + (hi - lo) * f64::from(i) / 40.0;
-        assert!(depth_at(1, &b, &l, 0, 0.25, u) > 0.0, "a gap at {u}");
+        assert!(depth_at(1, &b, &l, 0, 0.375, u) > 0.0, "a gap at {u}");
     }
     let f = carve_bites(1, &b, &l, None);
     assert_closed(&f);
     let (flo, fhi) = cut_span(&f, 0);
     assert!(fhi - flo > w && fhi - flo <= w * (1.0 + l.bite.step) + 1e-9);
-    // Hits in the other band at the same spot are the classic notch's second cut: same place.
+    // A hit in the other band at the same spot (the notch's second cut) lands beside it too:
+    // across the side, not down it (round 2).
     let at = hit(&mut c, 1, 0, 0, 0.5);
     let at2 = hit(&mut c, 1, 0, 0, 0.5);
     assert_eq!(
@@ -122,7 +127,11 @@ fn bites_at_nearby_spots_merge_into_one() {
         1,
         "the head came in beside the kerf"
     );
-    assert!((at - 0.5).abs() < 1e-9 && (at2 - 0.5).abs() < 1e-9);
+    let step = l.bite.step * l.bite.width_m;
+    assert!(
+        (at - 0.5).abs() < 1e-9 && (at2 - (0.5 + step)).abs() < 1e-6,
+        "{at} {at2}"
+    );
 }
 
 #[test]
@@ -145,11 +154,21 @@ fn chopping_one_spot_widens_the_bites_into_the_notch_and_still_fells_at_the_rule
     let v = assert_closed(&f);
     assert!(v < 0.9 && v > 0.5, "a notch out: {v}");
     let (lo, hi) = cut_span(&f, 0);
-    assert!(
-        hi - lo > 3.0 * l.bite.width_m,
-        "widened across the side: {lo}..{hi}"
-    );
+    // Round 2 (the in-game check: "a slot the cell's full height, still ~0.14 m wide"): across
+    // the log, most of its width, and no taller than the notch's band (the cell's middle half).
+    assert!(hi - lo > 0.85, "across the side: {lo}..{hi}");
     assert!(lo > 0.0 && hi < 1.0, "inside the side: {lo}..{hi}");
+    let (tlo, thi) = f
+        .iter()
+        .filter(|f| f.part == Part::Cut(0))
+        .flat_map(|f| f.pts.iter())
+        .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), p| {
+            (lo.min(p[1]), hi.max(p[1]))
+        });
+    assert!(
+        tlo >= 0.25 - 1e-9 && thi <= 0.75 + 1e-9,
+        "in the notch's band along the grain, not the cell's height: {tlo}..{thi}"
+    );
     // The notch's V at its middle is the cut's notch (cells: ×1 across x).
     let n = f64::from(c.notch[0]);
     assert!(n > 0.3);
@@ -199,6 +218,69 @@ fn bitten_cells_stay_closed_on_every_grain_and_in_the_octagon() {
                 );
             }
         }
+    }
+}
+
+/// WORK_QUEUE item 26 round 2: eleven hits at one spot of an octagonal trunk (a full log, and a
+/// thinner one half its cell wide, as the server spreads them: `bite_in` over the log's span) cut a
+/// notch across the log's whole width, over its chamfers (red before: only the flat face was
+/// carved, 0.29..0.71 of a full log, and a thinner trunk's sides not at all), closed, inside the
+/// octagon.
+#[test]
+fn a_notch_spans_an_octagonal_log_over_its_chamfers() {
+    let l = look();
+    let c = 0.2929;
+    for k in [1.0, 0.5] {
+        let oct: Vec<[f64; 2]> = [
+            [c, 0.0],
+            [1.0 - c, 0.0],
+            [1.0, c],
+            [1.0, 1.0 - c],
+            [1.0 - c, 1.0],
+            [c, 1.0],
+            [0.0, 1.0 - c],
+            [0.0, c],
+        ]
+        .iter()
+        .map(|p| [0.5 + (p[0] - 0.5) * k, 0.5 + (p[1] - 0.5) * k])
+        .collect();
+        let span = [0.5 - 0.5 * k, 0.5 + 0.5 * k];
+        let mut cut = Cut::default();
+        for _ in 0..11 {
+            let band = cut.open_band(0, 0);
+            cut.swing(axe(), 1, 0, band, 1.0);
+            cut.bite_in(1, 0, band, 0.5, &l.bite, span);
+        }
+        let f = carve_bites(1, &cut, &l, Some(&oct));
+        let (sum, v) = closure(&f);
+        assert!(sum.iter().all(|x| x.abs() < 1e-6), "{k}: open: {sum:?}");
+        assert!(v > 0.2 * k * k && v < k * k, "{k}: {v}");
+        let inside = |p: &[f64; 3]| {
+            let (a, b) = ((p[0] - 0.5) / k + 0.5, (p[2] - 0.5) / k + 0.5);
+            [a, b].iter().all(|x| (-1e-6..=1.0 + 1e-6).contains(x))
+                && a + b >= c - 1e-6
+                && (1.0 - a) + b >= c - 1e-6
+                && a + (1.0 - b) >= c - 1e-6
+                && (1.0 - a) + (1.0 - b) >= c - 1e-6
+        };
+        let bad: Vec<_> = f
+            .iter()
+            .filter(|f| !f.pts.iter().all(inside))
+            .map(|f| (f.part, f.pts.clone()))
+            .take(3)
+            .collect();
+        assert!(bad.is_empty(), "{k}: outside the octagon: {bad:?}");
+        let (lo, hi) = f
+            .iter()
+            .filter(|f| f.part == Part::Cut(0))
+            .flat_map(|f| f.pts.iter())
+            .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), p| {
+                (lo.min(p[2]), hi.max(p[2]))
+            });
+        assert!(
+            (hi - lo) / k > 0.85,
+            "{k}: the notch spans the log ({lo}..{hi} of {span:?})"
+        );
     }
 }
 
