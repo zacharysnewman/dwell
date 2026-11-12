@@ -198,9 +198,11 @@ deer's tail hung 7 cm behind the rump.
 
 ## 5. The first-person arms
 
-The arms are a **separate view** of the same character, as first-person games do it:
+The arms are a **separate view** of the same character, as first-person games do it. Since 0.54 the
+arm drawn is the **Peasant's** (the player model others see, §11.10), posed from this view's clips
+and chain; the rigid parts below are drawn only with the dev switch `?fparms=rigid`.
 
-- **The same parts.** The arms view draws the parts on the `firstPerson.bones` chain (and the
+- **The same parts** (the rigid arms). The arms view draws the parts on the `firstPerson.bones` chain (and the
   accessories and held item on them) from the same composed model as the full body, with the same
   materials and shading. Nothing is duplicated, so the arms match the body exactly; parts marked
   `"view": "arms"` add close-up detail (knuckles) the body doesn't need, and `"view": "body"` parts
@@ -655,9 +657,8 @@ characters' ramp from the vertex's palette colour, the same lights and shadow ma
   light rides the same frame. A model with no `hand` (the animals) holds nothing.
 - **Your shadow** (the `cast_only` body) is the Peasant, into the nearest cascade only, with your
   held item in its hand: your shadow is what others see.
-- **Still rigid**: your **first-person arms** and your **own body** seen in first person (§5.1). The
-  Peasant's arms are part of its one body mesh, with no arms mesh or first-person clips; drawing them
-  at the eye needs its own view and clips (later).
+- **Still rigid**: your **own body** seen in first person (§5.1). Your first-person arms are the
+  Peasant's since 0.54 (§11.10).
 
 ### 11.6 The animals in the world (phase 3, ADR 0073)
 
@@ -682,7 +683,7 @@ characters' ramp from the vertex's palette colour, the same lights and shadow ma
   and dark tail tip, faces still flat-shaded. Colours are palette references mixed in sRGB, so a
   coat holds blends between palette stops.
 
-- **NPCs** (WORK_QUEUE item 38, §11.10): people drawn as the Peasant who wander among the animals.
+- **NPCs** (WORK_QUEUE item 38, §11.11): people drawn as the Peasant who wander among the animals.
 
 ### 11.7 What is left (next)
 
@@ -738,11 +739,36 @@ animator play (§6), not the Peasant's own idle and walk.
   the height (arms overhead in the swim: the Peasant's shoulders are lower); in the world, on both
   faces, the skinned hand (where a held item is drawn) is within 0.15 m and 5.2° of the rigid body's
   hand bone.
-- **Not yet**: the first-person arms still play their own view-space clips (`fp_*`), so the arms on
-  screen and the shadow's arms differ by design; the Peasant's proportions differ from the rig's
+- **Not yet**: the first-person arms play their own view-space clips (`fp_*`, now on the Peasant's
+  arm, §11.10), so the arms on screen and the shadow's arms differ by design; the Peasant's proportions differ from the rig's
   (shorter arms, lower shoulders), so a shadow's hand sits up to ~0.15 m from the rigid body's.
 
-### 11.10 Wandering NPCs (WORK_QUEUE item 38, 2026-11-12)
+### 11.10 Your first-person arms from the Peasant (0.54, WORK_QUEUE item 37)
+
+The owner (2026-11-12): "I thought we were going to swap out the AI generated first person character
+model?" Your arm on screen is the Peasant's own right arm, the same sleeve, cuff and hand others see.
+
+- **Data**: a model's `firstPerson` in `models.json`: `joints` (the arm's skin joints: the Peasant's
+  `upper_arm.R`, `forearm.R`, `hand.R` and its fingers and thumb) and `weight` (0.5). The generator
+  fails on an unknown or repeated joint, a weight outside (0, 1] or a model with no `retarget`.
+- **The mesh** (`dwell_models::first_person::arm_triangles`, at load and on a detail change): the
+  triangles of the one body mesh whose three vertices each have at least `weight` of their skin
+  weight on `joints`, a second index buffer over the body's own vertices (the cut is where the
+  shoulder's weights take over). No new vertices: the arm is the body's.
+- **The pose** (`first_person::pose`, every frame): the first-person clips' pose (`fp_*`, with the
+  held item's turns), its `firstPerson.bones` chain in view space (`arm_transforms`, the anchor, the
+  walk bob) turned onto the arm's joints by the model's `retarget` map (§11.9; only the chain's
+  bones: the rest of the body keeps its rest). The arm's shoulder joint is put on the chain's first
+  bone and the arm scaled so its rest reach (shoulder to hand) is the rig's, so the hand lands where
+  the clips were fitted (`clip_probe` stays the source of truth): over every first-person clip the
+  Peasant's `hand.R` is within 6 cm of the rigid hand bone (`the_skinned_hand_follows_the_rigid_arms_hand_through_the_swings`).
+- **Drawing**: the skinned pipeline in the arms pass (its frame group, the cleared depth), the
+  joints through `arms_frame`; the held item on the Peasant's hand by `models.json` `hand`, as on
+  another player's body (§11.5). `?fparms=rigid` (`setRigidArms`) draws the old rigid arms instead,
+  a dev switch for comparison; the rigid arms' parts stay in `characters.json` for it and for your
+  own body (§5.1).
+
+### 11.11 Wandering NPCs (WORK_QUEUE item 38, 2026-11-12)
 
 The owner (2026-11-12): "wandering NPCs. They'll use the same player character model." Answers: wander,
 idle (look around, sit), turn to look at a nearby player, step aside when bumped — no talking or trading

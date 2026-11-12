@@ -15,7 +15,7 @@ test('a capability added by data alone is emitted', () => {
   t.capabilities.push({ name: 'mymod:chop.kinds', description: 'A fixture.' });
   const rs = capabilitiesRust(validateCapabilities(t)).join('\n');
   assert.match(rs, /pub const MYMOD_CHOP_KINDS: &str = "mymod:chop\.kinds";/);
-  assert.match(rs, /pub const ALL: &\[&str\] = &\[STRUCTURES_PLACE, .*MYMOD_CHOP_KINDS\];/);
+  assert.match(rs, /pub const ALL: &\[&str\] = &\[STRUCTURES_PLACE, [A-Z_, ]*MYMOD_CHOP_KINDS\];/);
 });
 
 test('a bad entry fails with a message', () => {

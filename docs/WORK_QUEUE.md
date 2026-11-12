@@ -41,7 +41,10 @@ Answered 2026-11-12: (1) **"Yes add those biomes"** — cold desert and tropical
 two faces' climates and the gradient across the disc come from the orbits model alone, no extra tuning; (5) a 1×
 vs 2× comparison of screenshots for perspective (queued, local); (6) **"iOS runs at 60fps on Low settings"** —
 item 16 done; (7) **"Metal tools break double sized bigger chunks off and reach 50% broken faster, which is when
-the blocks break. Also have double durability."** (in progress, cloud); (8) **"I'd like to see a comparison of
+the blocks break. Also have double durability."** (built, branch `claude/metal-tools`: a tier's
+`chunk` and metal speed 2 × stone's, so the metal pickaxe and shovel break in 3 hits to 5 with marks twice
+the size, the metal axe fells in 5 swings to 11, metal tools 64 hits; BLOCK_DAMAGE.md §9; outstanding:
+the owner's look in game); (8) **"I'd like to see a comparison of
 the two"** — palm fronds as leaf blocks vs frond cards side by side: built in the Tree Growth prototype
 (`docs/prototypes/tree-growth.html`, *Palm fronds* → *Split*, or `?species=palm&fronds=split`; to be republished to its link).
 
@@ -335,8 +338,14 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    and the default its goldens; `tests/realistic_biomes.rs` on both faces: no dry biome where the rain is a
    wet coast's or on the main range's wet windward side, no forest above the tree line (−1.5 °C) and tundra
    there, a colder band more boreal/tundra on the same ground. The Chisel overlays moved to R5. Next: R5
-   (geology and materials); q2's bands (R3 offers three, as data), q6, q8 and q9 (R4: presets for the cold
-   desert and tropical rainforest the default now takes) still open. q5 (2026-11-11): no new rock blocks
+   (geology and materials); q2's bands (R3 offers three, as data), q6 and q8 still open. q9 (owner,
+   2026-11-12: "Yes add those biomes") built: `preset:cold_desert` (cold, nearly rainless: dry dirt and sand,
+   sparse dry grass, rocks, no trees, its own snow line) and `preset:tropical_rainforest` (hot, very wet: a
+   new tall broadleaf species, `shared/trees/tall_broadleaf.json`, with oaks and palms close together in
+   `rainforest_groves`, thick undergrowth, dark water) by their °C and rain envelopes, in the Realistic world
+   only; the default's share of its land fell from 21–47 % to under 3 % (REALISTIC_WORLD.md §7 q9); the
+   default and starter worlds unchanged (a decoration no biome of a world lists now stands nowhere in it:
+   before, a rock province's columns tried every decoration). q5 (2026-11-11): no new rock blocks
    for now; R5 uses today's blocks (stone, basalt, sandstone, red sandstone, sand, dirt) named in data, so
    new ones can replace them later.
 
@@ -818,7 +827,15 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    biome/climate for performance reference on trees."). A biome preset (tall, closely spaced mature trees — an
    old-growth temperate rainforest of tall pines and broadleaf, thick undergrowth) placed by climate (cool and very
    wet), plus a fixed test world and bench spot that stand in the densest forest, so every tree/leaf/impostor change
-   is measured there at High on the M1 Air. In progress (cloud).
+   is measured there at High on the M1 Air. **Built (2026-11-12, cloud), the GPU run outstanding (local):** the
+   `preset:old_growth` biome (6–13 °C, 2200 mm and up; the old-growth species `dwell:old_pine` 18–26 m and
+   `dwell:old_oak` 9–14 m, mostly mature, ~220 a hectare by the `old_growth` placement, crowns interleaving
+   by a negative `spacing`; tall grass nearly everywhere), in the Realistic world by climate and the
+   starter's cool wet ground (3.5 % of its land; its terrain changed there, a new line for the owner to raise; the default unchanged); `test:forest`, old-growth
+   everywhere; the spots `forest:inside`, `forest:edge`, `forest:above` and the scenario `forest-perf` at
+   `?preset=high`, a 16.7 ms frame budget report-only until item 30 (docs/DEV_TOOLS.md "The tree performance
+   reference"). Next (local): run `forest-perf` on the M1 Air for the first numbers, look at the stand, and
+   tune the spots if a view misses the densest trees.
 
 33. **Licensed music replaces the generated music** (owner 2026-11-12: "I downloaded a big music set as a Unity
    asset, I'd like the casual game music setup in a prototype and make it play randomly in the game. Probably
@@ -838,6 +855,14 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    it crosses at contact, with damage, knockback and durability per sword as data (reusing the swing and
    clip_probe systems); in the creative inventory now, adventure recipes later. The models from the owner's
    *3D Low Poly Tools Weapons Containers* pack (NexusArcadeStudios), as the tools were. Queued.
+   Owner, 2026-11-12: **"For the sword we'll use a perpendicular vs parallel defense attack gameplay. Wandering
+   NPCs will get swords. We'll use the Wii Resort sword fighting model, you can only hold the sword vertical or
+   horizontal, and you can choose to block or not. Attacking drops block, if you hit enemy sword within an angle
+   threshold of perpendicular you're blocked, if within an angle of parallel it connects."** So: a sword is held
+   in one of two stances, vertical or horizontal (the same two swings as the axe); holding block raises the
+   sword in its stance; attacking drops the block for the swing; a strike that meets the defender's raised sword
+   within a threshold of perpendicular to it is blocked (a clash, no damage), within a threshold of parallel it
+   slips past and connects; angles and thresholds as data. NPCs carry swords and fight by the same rules (item 38).
 36. **A showcase video of the deer and wolves** (owner 2026-11-12: "have you observed the animals simulation? Make
    some clips of the deer/wolves behavior, really showcase it and try to get good angles. Keep it under 2 minutes
    of video. Splice it together into a single video."). Queued (local, after item 30).
@@ -848,7 +873,10 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    first-person arms … drawing them at the eye needs its own view and clips (later)" — the swap was never queued,
    so it was missed. Now: draw your first-person arms and hands from the Peasant's own mesh (its arm vertices by
    their skin weights), driven by the first-person clips (the swings fitted with clip_probe) mapped onto its arm
-   bones, held items on its `hand.R`; the rigid arms retired. Priority: next after item 30.
+   bones, held items on its `hand.R`; the rigid arms retired. Priority: next after item 30. **Built
+   (0.54)**: the arm cut from the body mesh by skin weight (`models.json`
+   `firstPerson`), posed by the `fp_*` clips through the retarget map and scaled to the rig's reach, the
+   held item on `hand.R`; `?fparms=rigid` keeps the old arms for comparison (CHARACTERS.md §11.10).
 38. **Wandering NPCs** (owner 2026-11-12: "Another item to queue up, wandering NPCs. They'll use the same player
    character model."). People using the Peasant model who wander the world like the animals do. Owner's answers
    (2026-11-12): wander, idle (look around, sit), turn to look at a nearby player, step aside when bumped — no
@@ -860,7 +888,7 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    Built (cloud, 0.52.x): the villager as a creature with an `npc` block (idles stand/look/sit, look-at,
    sidestep, held, disposition, combat hook `fightBack`, colour parts), rules' `spacingM` and `biomes`, the
    server's behaviour, the `creatures.npcs` capability's NPC part on `Creatures`, the client's pose roles and
-   colours; CHARACTERS.md §11.10. Left (local): the colour remap and held item in the renderer, sit/look
+   colours; CHARACTERS.md §11.11. Left (local): the colour remap and held item in the renderer, sit/look
    clips, combat with the swords.
 
 ## Done
@@ -959,6 +987,14 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
 
 ## Smaller items, after the queue
 
+- **Chisel's world knobs take every key gen.mjs takes (owner 2026-11-12: "fix a failing test on main": `state.test.ts`
+  "opens the starter world as a valid edit" failed with "tectonics.lavaVents is not a world knob"; "make Chisel
+  accept every key the generator's world config accepts — ideally derived from the same schema … so new keys never
+  break it again"). Done (`claude/chisel-world-knobs`): `validateWorldKnobs` (shared/worldgen/biomes.mjs) takes the
+  knob groups' list keys from `TERRAIN_LISTS` (`WORLD_LISTS`, checked by the same checker gen.mjs uses, over
+  terrain.json's group), as the tectonics' ranged keys already came from `TERRAIN`; a test validates every world
+  file's knob-group overrides as a Chisel edit. Still open on main: `textures.test.ts` "flags colours off the art
+  direction" lists `obsidian.shadow` and `lava.light` off the palette (an art-direction call for the owner).
 - **Chop check (2026-11-12, `claude/chop-check`), items 24–26 seen in Chrome on the GPU** (`fell-tree` and scratch
   scenarios on `?world=flat`):
   - **One swing after the fall wipes the gash (item 24).** At the 11th swing the stump is an upright ramp low at the

@@ -909,8 +909,11 @@ async function step(run: Run, s: Step): Promise<void> {
       const t = await record(run, s.name);
       const over = s.budget ? overBudget(t.frames, s.budget) : [];
       if (over.length > 0) {
-        for (const o of over) console.log(`    OVER BUDGET [${s.name}] ${o}`);
-        throw new Error(`record ${s.name} over its budget: ${over.join('; ')}`);
+        const tag = s.reportOnly ? 'OVER BUDGET (report only)' : 'OVER BUDGET';
+        for (const o of over) console.log(`    ${tag} [${s.name}] ${o}`);
+        if (!s.reportOnly) throw new Error(`record ${s.name} over its budget: ${over.join('; ')}`);
+      } else if (s.budget) {
+        console.log(`    within budget [${s.name}]`);
       }
       return;
     }

@@ -659,8 +659,10 @@ pub mod capability_names {
     pub const STRUCTURES_PLACE: &str = "structures.place";
     /// The player's grid travels on the wire (docs/proposals/MOON_WORLD.md §7.2): a snapshot ends with the local player's grid (its index in shared/worldgen/grids.json, 0 the home grid) and, off home, the grid's frame (origin, rotation); the other grids' chunks arrive as ChunkData and ChunkUnload ending with their grid byte. Without it the server sends neither, and a player off home is seen at their world position.
     pub const GRID_FRAMES: &str = "grid.frames";
-    /// A Creatures message ends with its NPCs' part (WORK_QUEUE item 38, CHARACTERS.md §11.10): per NPC its id, kind name, idle pose (stand, look, sit) and palette variant seed, from which the client picks the NPC's colours by shared/creatures/creatures.json. Without it the server leaves the part out, and an NPC is drawn as its model's plain creature.
+    /// A Damage message's cells end with each hit mark's chunk (docs/BLOCK_DAMAGE.md §9: how big a piece the hit took off, in sixteenths of the block's mark; a metal tool's 32, owner 2026-11-12 "Metal tools break double sized bigger chunks off"). Without it the server sends none and the client draws every mark at ×1.
+    pub const DAMAGE_CHUNKS: &str = "damage.chunks";
+    /// A Creatures message ends with its NPCs' part (WORK_QUEUE item 38, CHARACTERS.md §11.11): per NPC its id, kind name, idle pose (stand, look, sit) and palette variant seed, from which the client picks the NPC's colours by shared/creatures/creatures.json. Without it the server leaves the part out, and an NPC is drawn as its model's plain creature.
     pub const CREATURES_NPCS: &str = "creatures.npcs";
     /// Every capability this build knows, in the table's order.
-    pub const ALL: &[&str] = &[STRUCTURES_PLACE, GRID_FRAMES, CREATURES_NPCS];
+    pub const ALL: &[&str] = &[STRUCTURES_PLACE, GRID_FRAMES, DAMAGE_CHUNKS, CREATURES_NPCS];
 }

@@ -585,10 +585,7 @@ mod tests {
             let local = std::array::from_fn(|k| stone_at[k] - origin[k]);
             let view = dwell_protocol::damage::DamageView {
                 fraction: 200,
-                marks: vec![dwell_protocol::damage::HitMark {
-                    face: 4,
-                    point: [128, 128, 255],
-                }],
+                marks: vec![dwell_protocol::damage::HitMark::at(4, [128, 128, 255])],
             };
             let m = crate::mesh_chunk_trees(
                 &padded,

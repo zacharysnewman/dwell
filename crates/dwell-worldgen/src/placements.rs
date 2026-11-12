@@ -551,7 +551,8 @@ impl Planter {
 pub fn ground_margin(planters: &[Planter]) -> i32 {
     let on = || planters.iter().filter(|p| p.active());
     let reach = on().map(Planter::reach).max().unwrap_or(0);
-    let spacing = on().map(|p| p.rule.spacing).max().unwrap_or(0);
+    // A negative spacing (crowns interleaving) needs no more ground than none.
+    let spacing = on().map(|p| p.rule.spacing).max().unwrap_or(0).max(0);
     3 * reach + spacing + reach.max(2) + 1
 }
 

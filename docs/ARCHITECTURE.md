@@ -3239,7 +3239,7 @@ skinned renderer (a mesh per model, `render/skinned.rs`), smoothed toward the se
 by speed (`dwell-client` `creatures.rs`).
 
 **NPCs [in progress: data, server and client logic built; the colours and held item in the renderer to
-follow]** (WORK_QUEUE item 38, CHARACTERS.md §11.10). Wandering people are creatures with an `npc` block
+follow]** (WORK_QUEUE item 38, CHARACTERS.md §11.11). Wandering people are creatures with an `npc` block
 in `creatures.json` (the villager: the Peasant model): idles picked by weight from a fixed vocabulary of
 poses (stand, look around, sit) for their `seconds`; turning (`turnDegPerS`) to face the nearest player
 within `lookAtM` while idling; stepping `sidestepM` away from a player or another NPC within `bumpM`;
@@ -4452,7 +4452,11 @@ structure's placement as `RegionEdit`'s `Structure` op, below). The second is `g
 the grid's space), and `ChunkData`/`ChunkUnload` end with their grid's byte when not home (a trailing
 0 is malformed). The server lists it; this build's client doesn't say it yet
 (`capabilities::CLIENT_PENDING`: its predictor and renderer don't follow another grid), so a player
-off home is sent its world position, as an older client is. The third is `creatures.npcs` (WORK_QUEUE
+off home is sent its world position, as an older client is. The third is `damage.chunks`
+(BLOCK_DAMAGE.md §9): `Damage` ends with `0xC4` and each cell's hit marks' chunks (a byte a mark, the
+piece's size in sixteenths of the block's mark; a metal tool's 32), only to a client that listed it;
+without it every mark is ×1.
+The fourth is `creatures.npcs` (WORK_QUEUE
 item 38): `Creatures` ends with its NPCs' part (above); an older client gets the message without it and
 draws an NPC as its model's plain creature.
 ```

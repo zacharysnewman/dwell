@@ -129,7 +129,7 @@ fields, ranges and names fail with the entry named):
 | `lava {op, args?}` | the local server's lava (`__dwell.lava(op, args)`, VOLCANOES.md §6.3), its JSON printed: `report` its fields (face, centre, origin, `molten` columns, deepest m, vents, the world's worldgen, `steamCells` sent so far), `rate` [k] every vent's rate × k (fill a lake in seconds), `vent` [x, y, z, rateM3s, depthM] a lake vent at a world point, `ventNear` [dx, dz, rateM3s, depthM] one off the player's feet; `lava-lake` shoots the starter's summit lake and lava meeting the sea. A scenario's `query` (e.g. `{"worldgen": "test:starter", "seed": "0", "at": "x,y,z"}`) opens a test world at a point for steps of its own |
 | `give {item, count}` | gives the local player `count` of `item` (`__dwell.give`, a local world that uses items, e.g. `?mode=adventure`): `pieces-combine` fills the backpack with pieces to shoot its Combine section |
 | `mark` | forgets the telemetry so far: the next `record` measures from here |
-| `record {name, budget?}` | saves everything above under `name`; a `budget` (`{"<series>.<stat>": max}`, stat `mean`, `p50`, `p95`, `p99` or `max`, e.g. `{"frame.cpu.p95": 18.5}`) fails the scenario when a value is over its maximum or not recorded (`overBudget`). `phone-moving` (walk, sprint, fly 8 s each on an iPhone-sized page; run `--touch --cpu-throttle 4` at Low, BUGS.md #72) bounds `frame.cpu`, `jobs.apply` and `mesh_dirty` while moving |
+| `record {name, budget?, reportOnly?}` | saves everything above under `name`; a `budget` (`{"<series>.<stat>": max}`, stat `mean`, `p50`, `p95`, `p99` or `max`, e.g. `{"frame.cpu.p95": 18.5}`) fails the scenario when a value is over its maximum or not recorded (`overBudget`). `phone-moving` (walk, sprint, fly 8 s each on an iPhone-sized page; run `--touch --cpu-throttle 4` at Low, BUGS.md #72) bounds `frame.cpu`, `jobs.apply` and `mesh_dirty` while moving; with `reportOnly` true a value over it prints `OVER BUDGET (report only)` and the scenario goes on (`forest-perf`, a target not met yet) |
 | `shot {name, at? \| above?, yaw?, pitch?, face?, quietFrames?, maxS?}` | screenshot; with a placement an exact one ([Screenshots of a place](#screenshots-of-a-place)): `at` [x, y, z] the eye, or `above` [x, z, height] the eye `height` m over the ground there along `face`'s up; the camera placed, the view settled, then shot; saved in `report.json`'s `shots` |
 | `spot {spot, name?}` | a placed `shot` of the saved spot `spot` (`bench/spots.json`), named `name` (default the spot's, `:` → `-`) |
 | `traceStart`, `traceStop {name}` | a Chrome performance trace (timeline, GPU, V8, the CPU profiler) and its profile summary |
@@ -1044,6 +1044,35 @@ when still. The blast's cost is the server's (ticks of 4–6.5 ms, a 68 ms worst
 Not covered here: a moving flight (the bench's held key stalled, above), a flood after a breach, the
 first-person arms and the stand-in characters on their own, night (stars, torches). Re-run the same
 scratch scenarios after each fix to read its gain.
+
+## The tree performance reference (`forest-perf`)
+
+**THE place every tree, leaf, card or impostor change is measured** (WORK_QUEUE items 30–32; the owner's
+target: High at 60 fps on an M1 MacBook Air). The world is `test:forest` (`shared/worldgen/worlds/forest.json`):
+gentle land that is the old-growth forest (`preset:old_growth`, ADR 0074) everywhere, ~220 trees a hectare,
+old-growth pines up to 26 m and broadleaf up to 14 m over thick tall grass; fixed by its data and seed 0,
+so before and after compare the same stand. Its spots (`bench/spots.json`):
+
+| Spot | Where |
+| --- | --- |
+| `forest:inside` | standing in the densest stand (49 trees in a 40 m square, at 40, −40), eye at a player's height along the trunks |
+| `forest:edge` | 32 m over the highest ground 440 m south, just over the crowns, looking north across the canopy |
+| `forest:above` | flying 150 m over the stand, looking north and down to the horizon (every LOD tree level) |
+
+The scenario `forest-perf` opens it at `?preset=high` (1280 × 720 by default) and, at each spot, shoots it
+(`inside.png`, `edge.png`, `above.png`), then records 8 s (`inside`, `edge`, `above`): `frame.cpu`,
+`gpu.frame` and every pass. Its budget is a 16.7 ms frame (`frame.cpu.p95`, `gpu.frame.p95`), **report
+only** until item 30 lands: a record over it prints `OVER BUDGET (report only)` and the run goes on; make it
+failing (drop `reportOnly`) once High holds 60 fps there. On the M1 Air, before and after a change:
+
+```
+npm run bench -- --warm forest-perf
+npm run bench -- --warm --compare forest-perf   # a configuration against the baseline, side by side
+```
+
+Cloud sessions have no GPU: there it is not run; `cargo test --release -p dwell-worldgen --test forest_world`
+checks the world (every column old-growth, the density in range on both faces, deterministic), and its
+ignored `spots` test prints the places the spots stand at.
 
 ## Render scale and upscaling
 

@@ -4,7 +4,7 @@
 //! nearby point on walkable ground, stopping at water and cliffs), and are removed once no player
 //! is within `despawn_m`. Everything is face-local through `FaceFrame`: face B mirrors face A.
 //!
-//! NPCs (WORK_QUEUE item 38, CHARACTERS.md §11.10) are creatures with an `npc` block: they idle in a
+//! NPCs (WORK_QUEUE item 38, CHARACTERS.md §11.11) are creatures with an `npc` block: they idle in a
 //! pose picked by weight (stand, look around, sit), turn to face a player within `look_at_m`, step
 //! aside when a player or another NPC comes within `bump_m`, and carry a palette variant seed the
 //! client picks their colours from; their rules may keep groups apart (`spacing_m`) and to biomes.

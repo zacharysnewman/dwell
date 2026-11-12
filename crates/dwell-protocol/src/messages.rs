@@ -701,7 +701,7 @@ pub struct CreaturesMessage {
     pub npcs: Option<Vec<NpcNet>>,
 }
 
-/// An NPC's part of a `Creatures` message (CHARACTERS.md §11.10): its creature's `id`, its kind's
+/// An NPC's part of a `Creatures` message (CHARACTERS.md §11.11): its creature's `id`, its kind's
 /// name (`"dwell:villager"`, in shared/creatures/creatures.json), its idle `pose` (0 stand, 1 look
 /// around, 2 sit: `NPC_POSES`) and its palette `variant` seed (the client picks its colours by the
 /// kind's data from it).
@@ -836,6 +836,10 @@ pub const MAX_DAMAGE_PER_MESSAGE: usize = 512;
 pub struct DamageMessage {
     pub cells: Vec<([i32; 3], crate::damage::DamageView)>,
     pub gone: Vec<[i32; 3]>,
+    /// It ends with the cells' marks' chunks (`DamageView::write_chunks`, after
+    /// `damage::CHUNKS_MARK`): only to a client that listed the `damage.chunks` capability, so an
+    /// older one (which refuses trailing bytes) never gets them; without them every mark is ×1.
+    pub chunks: bool,
 }
 
 /// The most cells one `GroundGone` carries (more go in more messages).
@@ -1683,6 +1687,12 @@ fn write_body(w: &mut ByteWriter, m: &Message) {
                     w.i32(v);
                 }
             }
+            if m.chunks {
+                w.u8(crate::damage::CHUNKS_MARK);
+                for (_, d) in &m.cells[..m.cells.len().min(MAX_DAMAGE_PER_MESSAGE)] {
+                    d.write_chunks(w);
+                }
+            }
         }
         M::Creatures(m) => {
             let n = m.creatures.len().min(MAX_CREATURES_PER_MESSAGE);
@@ -2274,7 +2284,19 @@ fn read_body(r: &mut ByteReader, t: MessageType) -> Option<Message> {
                 }
                 gone.push([r.i32(), r.i32(), r.i32()]);
             }
-            M::Damage(DamageMessage { cells, gone })
+            let chunks = r.ok() && !r.at_end();
+            if chunks {
+                let mark = r.u8();
+                r.check(mark == crate::damage::CHUNKS_MARK);
+                for (_, d) in &mut cells {
+                    d.read_chunks(r);
+                }
+            }
+            M::Damage(DamageMessage {
+                cells,
+                gone,
+                chunks,
+            })
         }
         T::Creatures => {
             let n = usize::from(r.u16());

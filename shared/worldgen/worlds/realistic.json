@@ -1,5 +1,5 @@
 {
-  "$comment": "The Realistic world (docs/proposals/REALISTIC_WORLD.md, phase R2; owner 2026-11-11: \"the seed should determine tectonic plates, rain shadow, ground/rock materials, etc.\"): the seed does the placing. `tectonics.plates` 1: each face's own plate layout from its face seed (shared/worldgen/plates.json) decides land and sea (continental plates land, oceanic sea, a sea margin at the disc's edge), and every boundary adds its kind's landform by rule (ranges on a subducting boundary's overriding side with a trench before them, collision ranges where two continents meet, rifts on divergent boundaries, little on transforms), with arcs of dormant cones on the overriding side and hotspot chains older along the plate's motion (plates.json `uplift`). No hand-placed boundary, arc or chain. `tectonics.climate` 1 (R3): the face seed's latitude band, its prevailing wind (trade winds, westerlies or polar easterlies) and the rain marched along it over the seed's mountains on a coarse grid (shared/worldgen/climate.json), feeding the rivers' discharge: big rivers on a range's windward side, a dry lee. `biomes` (R4): the default biome (the fallback where nothing fits) and every preset, unchanged (no per-world tuning: a bare name each), chosen by climate alone, Whittaker-style: each preset's `where` in °C (`celsius`) and annual rain in mm (`rain`) read the climate's temperature and its rain marched again over the eroded map (climate.json `biomes`), so a cold band may have no desert and a warm one no tundra. Rocks from plate history (R5) come later; until then the noise's rock provinces. A test world, not in the New world form yet (R6: `newWorld`); its seeds' terrain may change between releases while it is one (owner, §7 q7). Play it at ?worldgen=test:realistic. Prototype content.",
+  "$comment": "The Realistic world (docs/proposals/REALISTIC_WORLD.md, phase R2; owner 2026-11-11: \"the seed should determine tectonic plates, rain shadow, ground/rock materials, etc.\"): the seed does the placing. `tectonics.plates` 1: each face's own plate layout from its face seed (shared/worldgen/plates.json) decides land and sea (continental plates land, oceanic sea, a sea margin at the disc's edge), and every boundary adds its kind's landform by rule (ranges on a subducting boundary's overriding side with a trench before them, collision ranges where two continents meet, rifts on divergent boundaries, little on transforms), with arcs of dormant cones on the overriding side and hotspot chains older along the plate's motion (plates.json `uplift`). No hand-placed boundary, arc or chain. `tectonics.climate` 1 (R3): the face seed's latitude band, its prevailing wind (trade winds, westerlies or polar easterlies) and the rain marched along it over the seed's mountains on a coarse grid (shared/worldgen/climate.json), feeding the rivers' discharge: big rivers on a range's windward side, a dry lee. `biomes` (R4): the default biome (the fallback where nothing fits) and every preset, unchanged (no per-world tuning: a bare name each; the cold desert and the tropical rainforest since §7 q9 fill the climates R4 left to the default), chosen by climate alone, Whittaker-style: each preset's `where` in °C (`celsius`) and annual rain in mm (`rain`) read the climate's temperature and its rain marched again over the eroded map (climate.json `biomes`), so a cold band may have no desert and a warm one no tundra. The old-growth forest (WORK_QUEUE item 32) where it is cool (6–13 °C) and very wet (2200 mm and more). Rocks from plate history (R5) come later; until then the noise's rock provinces. A test world, not in the New world form yet (R6: `newWorld`); its seeds' terrain may change between releases while it is one (owner, §7 q7). Play it at ?worldgen=test:realistic. Prototype content.",
   "name": "test:realistic",
   "overrides": {
     "tectonics": {
@@ -13,8 +13,10 @@
     "preset:badlands",
     "preset:boreal",
     "preset:coastal_cliffs",
+    "preset:cold_desert",
     "preset:cold_rainforest",
     "preset:mixed_forest",
+    "preset:old_growth",
     "preset:red_rock_mesa",
     "preset:sand_desert",
     "preset:savanna",
@@ -22,6 +24,7 @@
     "preset:steppe",
     "preset:temperate_meadow",
     "preset:tropical_beach",
+    "preset:tropical_rainforest",
     "preset:wetland"
   ]
 }
