@@ -321,10 +321,11 @@ dwell_world::both_faces!(
         assert_eq!(c.defender, Fighter::Creature(wolf));
         assert_eq!(c.weapon, SWORD);
         assert!(!c.striker_vertical && c.defender_vertical);
-        // Where the blades met: between the two, on this face.
+        // Where the blades met: on the wolf's raised blade, on this face.
         assert_eq!(FaceFrame::at_height(f64::from(c.point[1])), f);
         let local = f.point(c.point.map(f64::from));
-        assert!((0.5..2.0).contains(&local[0]), "{local:?}");
+        let (grip, tip) = raised_blade_local(f, true, [2.0, m_of_row(BASE), 0.5], [-1.0, 0.0, 0.0]);
+        assert!(to_segment(local, grip, tip) <= 0.15, "{local:?}");
         assert!(
             swordplay(all.get(&1).map_or(&[][..], |v| v)).is_empty(),
             "an older client is sent no Swordplay (it would refuse the type)"
@@ -412,6 +413,103 @@ dwell_world::both_faces!(
         fx.send(1, Message::Chop(ChopAction::Guard { raised: true }));
         fx.server.step();
         assert_eq!(fx.server.player_guard(1), None, "no weapon, no block");
+    }
+);
+
+/// The distance from `p` to the segment `a`–`b` (any space).
+fn to_segment(p: [f64; 3], a: [f64; 3], b: [f64; 3]) -> f64 {
+    let ab: [f64; 3] = std::array::from_fn(|i| b[i] - a[i]);
+    let ap: [f64; 3] = std::array::from_fn(|i| p[i] - a[i]);
+    let ll: f64 = ab.iter().map(|v| v * v).sum();
+    let t = (ab.iter().zip(&ap).map(|(x, y)| x * y).sum::<f64>() / ll.max(1e-12)).clamp(0.0, 1.0);
+    (0..3)
+        .map(|i| (a[i] + ab[i] * t - p[i]).powi(2))
+        .sum::<f64>()
+        .sqrt()
+}
+
+/// A raised blade of the sword's data in stance `vertical`, held by one standing at face-local
+/// `feet` facing face-local `ahead` (level, unit): its grip and tip, face-local. A body on face B is
+/// turned over (not mirrored), so its right is the face-local frame's left there.
+fn raised_blade_local(
+    f: FaceFrame,
+    vertical: bool,
+    feet: [f64; 3],
+    ahead: [f64; 3],
+) -> ([f64; 3], [f64; 3]) {
+    let b = sword().weapon.unwrap().guard.blade(vertical);
+    // ahead × up: the body's right on face A.
+    let right = [-ahead[2] * f.handed(1.0), 0.0, ahead[0] * f.handed(1.0)];
+    let at = |p: [f64; 3]| -> [f64; 3] {
+        std::array::from_fn(|i| {
+            feet[i] + right[i] * p[0] + if i == 1 { p[1] } else { 0.0 } + ahead[i] * p[2]
+        })
+    };
+    (at(b.grip), at(b.tip))
+}
+
+/// The nearest a swing's blade comes to `p` (face-local): over the arc, finely, each step a segment
+/// from the eye out to the arc's reach (face-local, the swing along face-local `look`).
+fn to_arc(f: FaceFrame, eye: [f64; 3], look: [f64; 3], vertical: bool, p: [f64; 3]) -> f64 {
+    let t = sword();
+    let mut arc = dwell_world::swing::Arc::of(t);
+    arc.samples = 400;
+    dwell_world::swing::arc_dirs(f, f.vector(look), vertical, &arc)
+        .into_iter()
+        .map(|d| {
+            let d = f.vector(d);
+            let head = std::array::from_fn(|i| eye[i] + d[i] * arc.reach_m);
+            to_segment(p, eye, head)
+        })
+        .fold(f64::INFINITY, f64::min)
+}
+
+// BUGS.md #86: a clash's sparks showed ~1.5 m beside the blades, in the air: the clash's point was
+// the middle of the striker's eye and the defender's body, not where the blades met. A level slash
+// on a villager's raised upright guard: the point lies on both blades (within 0.15 m of the
+// sweeping blade and of the guard's, from the villager's hand by the stance's data).
+dwell_world::both_faces!(
+    fn a_clash_point_lies_where_the_blades_met(f: FaceFrame) {
+        let mut fx = swordplay_scene(f);
+        facing_ahead(&mut fx, 2);
+        move_to(&mut fx, 2, f, 0.5, 4.0);
+        // Its feet 2.1 m ahead along +x, facing the swinger (face-local -x: yaw -90).
+        let feet = [2.6, m_of_row(BASE), 0.5];
+        let v = put(&mut fx, f, "dwell:villager", feet[0], feet[2], -90.0);
+        fx.server.creatures_mut().get_mut(v).unwrap().driven = false;
+        let at = f.point([0.5, m_of_row(BASE) + 1.6, 0.5]);
+        assert!(fx.server.creatures_mut().attacked(v, at));
+        fx.server.creatures_mut().set_foe_player(v, 1);
+        fx.take_all();
+        // A level slash: in its wind-up the villager raises its upright counter.
+        fx.send(
+            1,
+            Message::Chop(ChopAction::Sweep {
+                tool: SWORD.into(),
+                look: f.vector([1.0, 0.0, 0.0]).map(|v| v as f32),
+                vertical: false,
+            }),
+        );
+        facing_ahead(&mut fx, swing_ticks());
+        assert!(villager_guard(&fx, v).vertical);
+        let all = fx.take_all();
+        let got: Vec<_> = clashes(&all[&2])
+            .into_iter()
+            .filter(|c| c.striker == Fighter::Player(1))
+            .collect();
+        assert_eq!(got.len(), 1, "{got:?}");
+        assert_eq!(got[0].outcome, Clash::Blocked);
+        let p = f.point(got[0].point.map(f64::from));
+        let (grip, tip) = raised_blade_local(f, true, feet, [-1.0, 0.0, 0.0]);
+        let guard = to_segment(p, grip, tip);
+        let mut eye = f.point(fx.server.feet_of(1).expect("a live player"));
+        eye[1] += f64::from(flat().player_config.body.eye_height);
+        let striking = to_arc(f, eye, [1.0, 0.0, 0.0], false, p);
+        assert!(
+            guard <= 0.15 && striking <= 0.15,
+            "the clash at {p:?} (face-local) is {guard:.2} m from the guard's blade \
+             {grip:?}–{tip:?} and {striking:.2} m from the slash's"
+        );
     }
 );
 
@@ -521,6 +619,20 @@ dwell_world::both_faces!(
             "upright on a level block"
         );
         assert_eq!([fx.server.health_of(1), fx.server.health_of(2)], healths);
+        // Where the blades met (BUGS.md #86): on player 1's raised level blade, not between the eyes.
+        let all = fx.take_all();
+        let c = clashes(&all[&2])
+            .into_iter()
+            .rfind(|c| c.striker == Fighter::Creature(v) && c.outcome == Clash::Blocked)
+            .expect("the blocked blow's clash");
+        let p = f.point(c.point.map(f64::from));
+        let feet = f.point(fx.server.feet_of(1).unwrap());
+        let (grip, tip) = raised_blade_local(f, false, feet, [1.0, 0.0, 0.0]);
+        let d = to_segment(p, grip, tip);
+        assert!(
+            d <= 0.15,
+            "{p:?} is {d:.2} m from the block's blade {grip:?}–{tip:?}"
+        );
     }
 );
 

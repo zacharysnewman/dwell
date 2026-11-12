@@ -924,6 +924,12 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    chop clips (`npcs.swings`). The clash's sparks show, but **about 1.5 m off to the side of the blades,
    in the air** (the clash point looks wrong; to check next). Your own body isn't drawn from a placed
    camera, so the player's side of the duel isn't seen in third person.
+   **Clash point (cloud, 2026-11-12; owner's brief: "the sword clash's sparks appear ~1.5 m to the side of
+   the blades … the closest point between the two blade segments; both faces"):** fixed, BUGS.md #86: the
+   point was the middle of the eye and the defender's body (or the two eyes), never on the blades. Each
+   stance's raised blade is now data (`guard.stances.*.blade`, grip and tip from the feet, fitted to the
+   raised clips and kept in step by a `clip_probe` test), and the point is where the swing's arc meets it.
+   Not yet seen in game (a duel screencast on the local machine).
 36. **A showcase video of the deer and wolves** (owner 2026-11-12: "have you observed the animals simulation? Make
    some clips of the deer/wolves behavior, really showcase it and try to get good angles. Keep it under 2 minutes
    of video. Splice it together into a single video."). Queued (local, after item 30).

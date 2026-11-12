@@ -3265,7 +3265,7 @@ items; the weapon wears once a creature struck. The client's sweep treats a wood
 weapon. **Swordplay [built: server, wire, client logic; the raised poses' clips and drawing local]**
 (round 2), behind the `weapons.clash` capability: (1) each strike on a creature goes as `Swordplay`'s
 clash (`ClashNet`: striker and defender, `Fighter::Player` or `Creature`; the weapon; the outcome,
-blocked / glanced / connected, a strike on no block connecting; where the blades met; both stances) to
+blocked / glanced / connected, a strike on no block connecting; where the blades met — the middle of the two blades' nearest points where the swing's arc, finely between its steps, comes nearest the defender's raised blade, each stance's from the holder's feet by data (`guard.stances.*.blade`: grip and tip, right / up / ahead, fitted to the third-person raised pose and kept within 0.1 m of it by a `clip_probe` test), or on the striking blade nearest the body when no raised blade met it (BUGS.md #86); both stances) to
 the joined clients with the capability within the weapon's `guard.clash.hearM`, an older client never;
 the client (`dwell-client` `swordplay.rs`) plays `guard.clash.sound` (a sound event by name: the
 sword's `axe_clank`, the metal sample) at the glance share for a glance, bursts `guard.clash.sparks`

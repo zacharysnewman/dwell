@@ -6,6 +6,15 @@ pins it.
 
 ## Open
 
+### 87. An NPC's raised vertical block leans the blade back over its shoulder
+
+Found fixing #86 (2026-11-12), not reported: `clip_probe` puts the third-person `guard_vertical` pose's
+sword grip at (0.50, 1.38, 0.33) and its tip at (0.38, 1.73, -0.45) m from the feet (right, up, ahead):
+the blade ~66° off upright, its tip behind the body, where `biped_guard_vertical`'s comment means "the
+blade upright ahead of the face" (a first guess, never fitted). The sword's `guard.stances.vertical.blade`
+follows what is drawn, so a clash's sparks land on the drawn blade. Fix: fit the clip with
+`clip_probe --fit` (as the level block was), then refit the data (the probe test fails until they agree).
+
 ### 85. A dev `look` with an object kicks the player: "refused the connection: Malformed message"
 
 Found 2026-11-12 filming the sword duel. `__dwell.look({yaw: 0, pitch: -5})` (the signature is
@@ -325,6 +334,23 @@ face, or the placement check against its shape.
 
 
 ## Fixed
+
+### 86. A sword clash's sparks show ~1.5 m beside the blades, in the air (fixed after 0.54.121)
+
+Owner's duel, filmed 2026-11-12 (WORK_QUEUE item 35, round 5): the villager blocks and strikes back,
+but the clash's sparks fly about 1.5 m to the side of the blades, in the air. Cause: the server's clash
+point (`ClashNet::point`) was never on the blades: a player's strike sent the middle of the striker's eye
+and the creature's body (`clash_point(eye, feet, rows)`), an NPC's blow the middle of the two eyes. The
+client was right: it bursts the sparks at the point it is sent (`Game::on_clash`, world, no offset).
+Fixed: each guard stance's raised blade is data (shared/tools `guard.stances.*.blade`: grip and tip from
+the holder's feet, right / up / ahead, fitted to the third-person raised poses), and the clash point is
+the middle of the two blades' nearest points where the swing's arc (finely, between its steps) comes
+nearest the raised blade; a strike on no raised blade puts it on the striking blade nearest the body.
+Tests: `crates/dwell-sim/tests/weapons.rs` `a_clash_point_lies_where_the_blades_met` (a level slash on
+a villager's upright counter: red before, 0.65 m from the guard's blade; both faces) and the NPC's
+blocked blow in `an_npc_blocks_the_wind_up_by_counter_then_strikes_back_unhurting` (red before, 0.41 m
+from the player's level blade); `clip_probe.rs` `the_raised_blades_data_is_where_the_raised_poses_draw_it`
+keeps the data within 0.1 m of the clips.
 
 ### 84. A dev `teleport` did not move the player (fixed after 0.54.116)
 
