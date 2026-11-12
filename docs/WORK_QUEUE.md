@@ -662,6 +662,13 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    axe's notch carve still its own size (the chips follow the rule), the owner's look in game.
    Owner, 2026-11-12, on the axe notch left out of the rule (#794: its ¼ m band can't hold half a cell): **"Yes the
    notch should grow to follow the 50% rule."**
+   **Status (notch-bite-rule):** built (BLOCK_DAMAGE.md §6.4 round 3, §10): each bitten side's notch is one V
+   grown so the log cell's carve after k of its swings to fell is k × ½ × the log's volume ÷ those swings (read
+   from the cut alone, `Cut::progress`: stone 11, metal 5), within 0.1 % on the mesh; its mouth starts in the
+   ¼ m band and opens past it (data `cut.bite.bandM`, `depthPerMouth`, `widthPerDepth`), the bites widened into
+   it; by the fell the gash's V, both faces turned out of the notch. Fell and stump unchanged. Left: in the
+   octagon the fell's half is more than a V holds (0.36 of 0.41, never drawn: the cell splits); the chips are
+   half the cell's, ~20 % over an octagon's carve; the owner's look in game (checked locally after).
 19. **Lava glow, remaining** (owner 2026-11-11: "Lava should have bloom glow"; "Lava looks dark red instead of
    bright red/orange"; "It should darken as it solidifies though"). Built 0.52.107: colour by heat stops, heat in
    cells. **Bloom built (pending release, `claude/bloom`):** keyed on the scene's self-lit flag (lava, torches,
@@ -758,6 +765,8 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    carved over the octagon's chamfers; the wood cracks painted in ink (they were the bark's own streak colour)
    at 0.85; the stump's `dwell:log_ramp` is chopped as the log (a bite, a wear), never cleared, and comes
    down only when cut through, dropping wood. Not done: the stump's bites aren't drawn (recorded only).
+   Round 3 (item 18's rule, 2026-11-12): the notch grows to follow the 50% rule (a V deepening and widening from
+   the ¼ m band to the gash's V by the fell, the bites joining into it); see item 18's status.
    BLOCK_DAMAGE.md §6.4 "Round 2", ADR 0067 note.
 26b. **A felled trunk landing on its chopper flings them (BUGS.md #52)** (the owner's brief, 2026-11-12: fix the
    cause, "we shouldn't be capping player kick like that" (2026-11-08): no cap on the kick; a trunk hitting a

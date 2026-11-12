@@ -3,13 +3,13 @@
 //! with the dirt and stone ones").
 //!
 //! Each hit records where it struck a side ([`dwell_protocol::chopping::Bite`]): a place across the
-//! side and the band it cut. A bite is a V along the grain (the notch's or its band's kerf's, as the
-//! cut's depths say: opened by the look's `open`) under a mask across the side: 1 over the axe
-//! head's width (`bite.widthM`), its two ends sloping to 0 over `bite.endsM`. A side's depth at a
-//! point is the deepest of the notch's V under the mask of all its bites and each band's kerf V
-//! under the mask of that band's bites, so the notch's cross-section is the union of the bites, and
-//! where the hits spread across the side (a hit on a bitten spot lands beside it) they join into
-//! the notch. Opposite sides never meet (a waist of [`super::MIN_LEFT`] is left).
+//! side and the band it cut. A side's notch is one V along the grain under a mask across the side,
+//! each bite's footprint (1 over its width, its two ends sloping to 0 over `bite.endsM`), so where
+//! the hits spread across the side (a hit on a bitten spot lands beside it) they join into the
+//! notch. The V is grown by the bite rule (WORK_QUEUE item 18, [`Field::of`]): the cell's carve is
+//! its share of the swings to fell × half the log's volume, the V deepening, its bites widening and
+//! its mouth opening past the ¼ m band until at the fell it is the gash's. Opposite sides never meet
+//! (a waist of [`super::MIN_LEFT`] is left).
 //!
 //! The geometry: the uncut cell's faces ([`super::carve_in`], clipped to an octagonal log's prism),
 //! each bitten side's bark face (a rectangle in (along the grain, across) on the side's plane)
@@ -20,7 +20,7 @@
 //! `damage_mesh`'s carve). Each grid quad is two flat-lit triangles (a hewn face), uncut quads one.
 
 use super::{Face, MIN_LEFT, Part, TINY, across, normal, size_m};
-use dwell_protocol::chopping::{BANDS, Cut, CutLook, SIDES};
+use dwell_protocol::chopping::{Cut, CutLook, SIDES};
 
 /// One V along the grain (`c` its apex, `hw` its half-width, `t` units; `d` its depth, m) under a
 /// mask across the side.
@@ -67,101 +67,122 @@ pub(crate) struct Field {
     sides: [Vec<Part2>; SIDES],
     /// The log's thickness (cells) along each across axis.
     thick: [f64; 2],
-    /// Its cross-section (cell units on the two axes across the grain): a cut stops short of the
-    /// far side's outline.
-    poly: Vec<[f64; 2]>,
+    /// Each side's view of the log's cross-section (cell units on the two axes across the grain):
+    /// a cut stops short of the far side's outline.
+    fronts: [Front; SIDES],
 }
 
-/// The notch's band: every V within this (cell units along the grain) of the cell's middle, the
-/// band's height (½ the cell: one of its [`BANDS`]).
-const NOTCH_HALF: f64 = 0.5 / BANDS as f64;
-/// A band's kerf V's apex off the cell's middle: the middle of its half of the notch's band.
-const KERF_OFF: f64 = 0.5 * NOTCH_HALF;
-
 impl Field {
-    /// The field of `cut` (face-local sides, its bites recorded): side `s`'s bites kept inside
-    /// `range[s]` across it (cell units: the stretch of the log its grid covers), the log
-    /// `poly` its cross-section (cell units; its waist is left inside it).
+    /// The field of `cut` (face-local sides, its bites recorded) at `progress` of its swings to
+    /// fell ([`Cut::progress`]): side `s`'s bites kept inside `range[s]` across it (cell units:
+    /// the stretch of the log its grid covers), the log `poly` its cross-section (cell units; its
+    /// waist is left inside it).
     ///
-    /// Every V lies in the notch's band, the middle [`NOTCH_HALF`] either side of the cell's
-    /// middle along the grain (WORK_QUEUE item 26 round 2: a bite is the band's height, not the
-    /// cell's; red before: the notch's V opened `open` × its depth and reached the cell's ends by
-    /// the second or third hit, a tall narrow slot); each band's kerf V in its half of it.
+    /// The bite rule (WORK_QUEUE item 18; owner, 2026-11-12: "Yes the notch should grow to follow
+    /// the 50% rule"; red before: a V within the notch's ¼ m band, about a fifth of the rule at the
+    /// fell): the cell's carved wood is `progress` × ½ × the log's volume, shared by the bitten
+    /// sides as their cuts are (`Cut::removed_m`). Each bitten side's notch is one V along the grain
+    /// centred on the cell's middle, `x` m deep, its mouth `look.bite.band_m` at least and
+    /// `x ÷ depth_per_mouth` past it (the cell's length at most), under the mask of the side's
+    /// bites, each widened to `x × width_per_depth` across the side (the head's width at least):
+    /// `x` is found so the side's carved wood (summed over the outline) is its share. One hit is a
+    /// small V where it struck; more grow it deeper, taller and across, the bites joining into it,
+    /// until at the fell it is the gash's V, its mouth the cell's height, its apex near the far side.
     fn of(
         grain: usize,
         cut: &Cut,
         look: &CutLook,
         range: [[f64; 2]; SIDES],
         poly: &[[f64; 2]],
+        progress: f64,
     ) -> Field {
         let thick: [f64; 2] = std::array::from_fn(|j| {
             let lo = poly.iter().map(|p| p[j]).fold(f64::INFINITY, f64::min);
             let hi = poly.iter().map(|p| p[j]).fold(f64::NEG_INFINITY, f64::max);
             hi - lo
         });
+        let mut field = Field {
+            grain,
+            sides: std::array::from_fn(|_| Vec::new()),
+            thick,
+            fronts: std::array::from_fn(|s| Front::of(poly, s)),
+        };
+        let bitten: Vec<usize> = (0..SIDES)
+            .filter(|&s| cut.bites[s].n > 0 && cut.removed_m(s) > 0.0)
+            .collect();
+        let total: f64 = bitten.iter().map(|&s| cut.removed_m(s)).sum();
+        if bitten.is_empty() || total <= 0.0 {
+            return field;
+        }
+        let want = progress.clamp(0.0, 1.0) * 0.5 * area2(poly);
+        for &s in &bitten {
+            let share = want * cut.removed_m(s) / total;
+            let (mut lo, mut hi) = (0.0, 4.0);
+            field.sides[s] = Self::grown(grain, cut, look, range[s], s, hi);
+            if field.carved(s, range[s]) > share {
+                for _ in 0..28 {
+                    let x = 0.5 * (lo + hi);
+                    field.sides[s] = Self::grown(grain, cut, look, range[s], s, x);
+                    if field.carved(s, range[s]) < share {
+                        lo = x;
+                    } else {
+                        hi = x;
+                    }
+                }
+                field.sides[s] = Self::grown(grain, cut, look, range[s], s, 0.5 * (lo + hi));
+            }
+        }
+        field
+    }
+
+    /// Side `s`'s notch grown to `x` m deep (its V and its bites' widened masks, [`Field::of`]).
+    fn grown(
+        grain: usize,
+        cut: &Cut,
+        look: &CutLook,
+        range: [f64; 2],
+        s: usize,
+        x: f64,
+    ) -> Vec<Part2> {
         let ax = across(grain);
         let len = size_m(grain);
-        let sides = std::array::from_fn(|s| {
-            let j = s / 2;
-            // The axis across this side (its bites' `u`) and the stretch the bites may cover.
-            let other = ax[1 - j];
-            let [lo, hi] = range[s];
-            let size = size_m(other);
-            let w = look.bite.width_m / size;
-            let half = (0.5 * w).min(0.5 * (hi - lo)).max(1e-3);
-            let ends = (look.bite.ends_m / size).min(half);
-            let mask_of = |band: Option<usize>| -> Vec<Mask> {
-                cut.bites[s]
-                    .all()
-                    .iter()
-                    .filter(|b| band.is_none_or(|k| usize::from(b.band) == k))
-                    .map(|b| Mask {
-                        c: f64::from(b.u).clamp(lo + half, (hi - half).max(lo + half)),
-                        half,
-                        ends,
-                    })
-                    .collect()
-            };
-            let notch = f64::from(cut.notch[s]);
-            let hw_n = (0.5 * look.open * notch / len).clamp(0.02, NOTCH_HALF);
-            let mut parts = Vec::new();
-            if notch > TINY * len {
-                parts.push(Part2 {
-                    c: 0.5,
-                    hw: hw_n,
-                    d: notch,
-                    mask: mask_of(None),
-                });
+        let size = size_m(ax[1 - s / 2]);
+        let b = &look.bite;
+        let [lo, hi] = range;
+        let wide = (x * b.width_per_depth).max(b.width_m) / size;
+        let half = (0.5 * wide).min(0.5 * (hi - lo)).max(1e-3);
+        let ends = (b.ends_m / size).min(half);
+        let mask = cut.bites[s]
+            .all()
+            .iter()
+            .map(|bt| Mask {
+                c: f64::from(bt.u).clamp(lo + half, (hi - half).max(lo + half)),
+                half,
+                ends,
+            })
+            .collect();
+        let mouth = (x / b.depth_per_mouth.max(1e-6)).max(b.band_m).min(len);
+        vec![Part2 {
+            c: 0.5,
+            hw: (0.5 * mouth / len).clamp(0.02, 0.5),
+            d: x,
+            mask,
+        }]
+    }
+
+    /// The wood side `s`'s cut takes out of the log (cell units) as its grid draws it
+    /// ([`side_grid`]'s triangles: the bites' surface where it is deeper than the outline).
+    fn carved(&self, s: usize, range: [f64; 2]) -> f64 {
+        let mut v = 0.0;
+        for_grid_tris(self, &self.fronts[s], s, range, &mut |tri, _| {
+            let inside = clip_gp(tri, &|p| p.d - p.c);
+            for k in 1..inside.len().saturating_sub(1) {
+                let (a, b, c) = (inside[0], inside[k], inside[k + 1]);
+                let area = 0.5 * ((b.t - a.t) * (c.u - a.u) - (c.t - a.t) * (b.u - a.u)).abs();
+                v += area * ((a.d - a.c) + (b.d - b.c) + (c.d - c.c)) / 3.0;
             }
-            for b in 0..BANDS {
-                let k = f64::from(cut.kerf[s][b]);
-                if k <= TINY * len {
-                    continue;
-                }
-                // In the band's half of the notch's band.
-                let c = if b == 0 {
-                    0.5 - KERF_OFF
-                } else {
-                    0.5 + KERF_OFF
-                };
-                let d = notch + k;
-                let hw = (0.5 * look.open * d / len).clamp(0.02, NOTCH_HALF - KERF_OFF);
-                parts.push(Part2 {
-                    c,
-                    hw,
-                    d,
-                    mask: mask_of(Some(b)),
-                });
-            }
-            parts.retain(|p| !p.mask.is_empty());
-            parts
         });
-        Field {
-            grain,
-            sides,
-            thick,
-            poly: poly.to_vec(),
-        }
+        v
     }
 
     /// Side `s`'s depth (m) at `t` along the grain and `u` across, before the waist.
@@ -178,7 +199,7 @@ impl Field {
         let room = (self.thick[s / 2] - MIN_LEFT).max(MIN_LEFT) * size;
         let k = if a + b > room { room / (a + b) } else { 1.0 };
         // Short of the far side's outline there (a thinner trunk's chamfers come in close).
-        let back = (self.thick[s / 2] - Front::of(&self.poly, s ^ 1).depth(u) - MIN_LEFT) * size;
+        let back = (self.thick[s / 2] - self.fronts[s ^ 1].depth(u) - MIN_LEFT) * size;
         (a * k).min(back.max(0.0)) / size
     }
 
@@ -202,6 +223,18 @@ impl Field {
             }
         }
     }
+}
+
+/// The area of a convex outline (cell units).
+fn area2(p: &[[f64; 2]]) -> f64 {
+    let n = p.len();
+    0.5 * (0..n)
+        .map(|i| {
+            let (a, b) = (p[i], p[(i + 1) % n]);
+            a[0] * b[1] - b[0] * a[1]
+        })
+        .sum::<f64>()
+        .abs()
 }
 
 /// Sorted, in `[lo, hi]`, without near-duplicates.
@@ -343,6 +376,7 @@ pub(crate) fn carve_bites(
     cut: &Cut,
     look: &CutLook,
     outline: Option<&[[f64; 2]]>,
+    progress: f64,
 ) -> Vec<Face> {
     let base = super::carve_in(grain, &Cut::default(), look, outline);
     let square = [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]];
@@ -376,7 +410,7 @@ pub(crate) fn carve_bites(
         };
         [lo, hi]
     });
-    let field = Field::of(grain, cut, look, range, &poly);
+    let field = Field::of(grain, cut, look, range, &poly, progress);
     let mut out = Vec::new();
     for f in base {
         let drop = match f.part {
@@ -437,14 +471,15 @@ fn clip_gp(pts: &[Gp], keep: &dyn Fn(&Gp) -> f64) -> Vec<Gp> {
     out
 }
 
-/// Side `s`'s front over `range` across it (cell units) as its grid: the bites' surface inside
-/// the wood (fresh wood where cut, bark where not), the outline's surface (bark) where the bites
-/// lie outside it.
-fn side_grid(field: &Field, front: &Front, s: usize, range: [f64; 2], out: &mut Vec<Face>) {
-    let grain = field.grain;
-    let ax = across(grain);
-    let a_side = ax[s / 2];
-    let a_u = ax[1 - s / 2];
+/// Side `s`'s grid over `range` across it (cell units): each quad uncut and on the flat face
+/// (`f(quad, true)`, four points), else each of its two triangles (`f(tri, false)`).
+fn for_grid_tris(
+    field: &Field,
+    front: &Front,
+    s: usize,
+    range: [f64; 2],
+    f: &mut dyn FnMut(&[Gp], bool),
+) {
     let [u0, u1] = range;
     let mut ts = Vec::new();
     let mut us = Vec::new();
@@ -457,22 +492,6 @@ fn side_grid(field: &Field, front: &Front, s: usize, range: [f64; 2], out: &mut 
     // The outline's corners: its depth is linear between them.
     us.extend(front.kinks());
     let us = lines(us, u0, u1);
-    let at = |t: f64, u: f64, depth: f64| {
-        let mut p = [0.0; 3];
-        p[grain] = t;
-        p[a_u] = u;
-        p[a_side] = front.plane + front.inward * depth;
-        p
-    };
-    let mut outward = [0.0; 3];
-    outward[a_side] = -front.inward;
-    let mut push = |mut pts: Vec<[f64; 3]>, part: Part| {
-        let n = normal(&pts);
-        if n[0] * outward[0] + n[1] * outward[1] + n[2] * outward[2] < 0.0 {
-            pts.reverse();
-        }
-        out.push(Face { pts, part });
-    };
     let gp = |t: f64, u: f64| Gp {
         t,
         u,
@@ -490,7 +509,7 @@ fn side_grid(field: &Field, front: &Front, s: usize, range: [f64; 2], out: &mut 
             let cut = q.iter().any(|p| p.d > TINY);
             let flat = q.iter().all(|p| p.c <= 1e-9);
             if !cut && flat {
-                push(q.iter().map(|p| at(p.t, p.u, 0.0)).collect(), Part::Bark(s));
+                f(&q, true);
                 continue;
             }
             // Split along the diagonal whose ends differ least in depth (the crease follows the V).
@@ -501,38 +520,84 @@ fn side_grid(field: &Field, front: &Front, s: usize, range: [f64; 2], out: &mut 
                 [[q[0], q[1], q[3]], [q[1], q[2], q[3]]]
             };
             for tri in tris {
-                // The bites' surface where it is inside the wood (deeper than the outline).
-                let inside = clip_gp(&tri, &|p| p.d - p.c);
-                if inside.len() >= 3 {
-                    let part = if inside.iter().any(|p| p.d > TINY) {
-                        Part::Cut(s)
-                    } else if flat {
-                        Part::Bark(s)
-                    } else {
-                        Part::Inner(s)
-                    };
-                    push(inside.iter().map(|p| at(p.t, p.u, p.d)).collect(), part);
-                }
-                // The outline's surface where the bites don't reach it (off the flat face).
-                if !flat {
-                    let bark = clip_gp(&tri, &|p| p.c - p.d);
-                    if bark.len() >= 3 && bark.iter().any(|p| p.c > 1e-9) {
-                        push(
-                            bark.iter().map(|p| at(p.t, p.u, p.c)).collect(),
-                            Part::Inner(s),
-                        );
-                    }
-                }
+                f(&tri, false);
             }
         }
     }
 }
 
-/// Side `s`'s depth (cells) at `t` along the grain and `u` across, for a cut with bites (tests).
+/// Side `s`'s front over `range` across it (cell units) as its grid: the bites' surface inside
+/// the wood (fresh wood where cut, bark where not), the outline's surface (bark) where the bites
+/// lie outside it.
+fn side_grid(field: &Field, front: &Front, s: usize, range: [f64; 2], out: &mut Vec<Face>) {
+    let grain = field.grain;
+    let ax = across(grain);
+    let a_side = ax[s / 2];
+    let a_u = ax[1 - s / 2];
+    let at = |t: f64, u: f64, depth: f64| {
+        let mut p = [0.0; 3];
+        p[grain] = t;
+        p[a_u] = u;
+        p[a_side] = front.plane + front.inward * depth;
+        p
+    };
+    let mut outward = [0.0; 3];
+    outward[a_side] = -front.inward;
+    let mut push = |mut pts: Vec<[f64; 3]>, part: Part| {
+        let n = normal(&pts);
+        if n[0] * outward[0] + n[1] * outward[1] + n[2] * outward[2] < 0.0 {
+            pts.reverse();
+        }
+        out.push(Face { pts, part });
+    };
+    for_grid_tris(field, front, s, range, &mut |tri, quad| {
+        if quad {
+            push(
+                tri.iter().map(|p| at(p.t, p.u, 0.0)).collect(),
+                Part::Bark(s),
+            );
+            return;
+        }
+        let flat = tri.iter().all(|p| p.c <= 1e-9);
+        // The bites' surface where it is inside the wood (deeper than the outline).
+        let inside = clip_gp(tri, &|p| p.d - p.c);
+        if inside.len() >= 3 {
+            let part = if inside.iter().any(|p| p.d > TINY) {
+                Part::Cut(s)
+            } else if flat {
+                Part::Bark(s)
+            } else {
+                Part::Inner(s)
+            };
+            push(inside.iter().map(|p| at(p.t, p.u, p.d)).collect(), part);
+        }
+        // The outline's surface where the bites don't reach it (off the flat face).
+        if !flat {
+            let bark = clip_gp(tri, &|p| p.c - p.d);
+            if bark.len() >= 3 && bark.iter().any(|p| p.c > 1e-9) {
+                push(
+                    bark.iter().map(|p| at(p.t, p.u, p.c)).collect(),
+                    Part::Inner(s),
+                );
+            }
+        }
+    });
+}
+
+/// Side `s`'s depth (cells) at `t` along the grain and `u` across, for a cut with bites at
+/// `progress` of its swings to fell (tests).
 #[cfg(test)]
-pub(crate) fn depth_at(grain: usize, cut: &Cut, look: &CutLook, s: usize, t: f64, u: f64) -> f64 {
+pub(crate) fn depth_at(
+    grain: usize,
+    cut: &Cut,
+    look: &CutLook,
+    progress: f64,
+    s: usize,
+    t: f64,
+    u: f64,
+) -> f64 {
     let square = [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]];
-    Field::of(grain, cut, look, [[0.0, 1.0]; SIDES], &square).depth(s, t, u)
+    Field::of(grain, cut, look, [[0.0, 1.0]; SIDES], &square, progress).depth(s, t, u)
 }
 
 #[cfg(test)]
