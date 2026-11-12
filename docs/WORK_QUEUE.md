@@ -1436,6 +1436,14 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    up out of it, hovers, flies out and lands; (6) a drone rise from the player on face B past the monument and the
    coast to the whole disc from beneath. Paths kept with the plan (the record skill's lessons). Seed 7's portal
    at (1780.5, 20690.5) (`?spawn=portal`).
+   **Video 1 v3 recorded 2026-11-12** (51.4 s, 6 clips, 17.9 MB, clouds off throughout, no flight): (1) the outline
+   push as v2; (2) the crane over face A and under to face B with `"up": "a"`; (3) first person walking to the hole
+   and dropping in; (4) the motes at 0.35×; (5) a hard cut to a wide 22 m out on face B with `"up": "a"`: face B's
+   ground overhead, the monument's pillars hanging down, the player rising head-down out of the hole by momentum
+   alone, then falling back in; (6) a drone rise from face B's hole (face A's up held) out under the disc and round
+   the rim to the face-A outline, closing the loop on shot 1. Not in it: the landing beside face B's hole — in the
+   browser the exit push never acts on face B (BUGS.md #107; natively the same shaft lands 6 m out), so the clip
+   ends as the player falls back. Paths in `.claude/skills/record/paths/bifacial-v3/`.
 41. **Theater mode** (owner 2026-11-12: "We should use full camera tools to do the things you were doing and expand
    this tool set as you go, we could call it theater mode. Even make it available ingame as a feature that could be
    toggled on for any world type."). Answers: **both** presets (pick a target and a move: orbit, dolly, track,

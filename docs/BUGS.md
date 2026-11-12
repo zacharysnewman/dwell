@@ -6,6 +6,20 @@ pins it.
 
 ## Open
 
+### 107. In the browser a player dropped into a portal doesn't come out beside face B's hole (the exit push)
+
+Found recording showcase #1 v3 (2026-11-12, 0.54.205's tree). Seed 7's portal (`?fresh=1&seed=7&spawn=portal`,
+axis 1779.5, 20690.5; `top` A 51.0, B 44.5): walked in on the diagonal (yaw 45) and dropped, the player rises ~12 m
+out of face B's hole (feet to y −56.3), gets no sideways push, falls straight back and swings on; on the return the
+push **does** act on face A (lands ~6.7 m from the axis on face A's ground). 5 of 5 browser drops the same, with and
+without the theater camera, with the look held at yaw 45 or let go after the crossing, from yaw 45 or 135. Natively
+the same shaft works: `drop_in` (`crates/dwell-physics/tests/portal_exit.rs`) on seed 7's nearest shaft from face A
+lands on face B 5.96 m from the axis after one crossing. Suspects: something in the browser path on face B only —
+the look the client sends after the crossing (`look_yaw`), the client's prediction against the local server, or
+the input after the face change. Repro to start from: the take script
+`.claude/skills/record/paths/bifacial-v3/portaltake.js` (`{"noCam": true}` logs the drop, the apex and where it
+ends).
+
 ### 106. Trees look like sticks
 
 Owner, 2026-11-12 (on a release after the blocked stretch, ~60 versions newer than the last they played): "What
