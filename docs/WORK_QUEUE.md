@@ -898,6 +898,10 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    some clips of the deer/wolves behavior, really showcase it and try to get good angles. Keep it under 2 minutes
    of video. Splice it together into a single video."). Queued (local, after item 30).
 
+   Made 2026-11-12: 85.6 s (sunrise herd with its stag: dolly, orbits, a follow, a drone rise; a wolf pack on a
+   cliff at evening). Not in it: a chase or deer fleeing (on day 0 every pack is kilometres from any herd and
+   players can't scare deer), far herds (none seen from above, unconfirmed), grazing (no grazing pose). Bugs found:
+   BUGS.md (a herd popping up in size, deer overlapping, a wolf in a cliff, `?at=` into the ground).
 37. **First-person arms from the player model** (owner 2026-11-12: "I thought we were going to swap out the AI
    generated first person character model? We discussed this yesterday."). The Peasant (the owner's Asset Store
    model) became other players' body and your shadow in 0.52.35 (CHARACTERS.md §11.5), but "Still rigid: your
@@ -924,6 +928,15 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    colours; CHARACTERS.md §11.11. Left (local): the colour remap and held item in the renderer, sit/look
    clips. Combat with the swords built in item 35's round 2 (`npc.fight`: an NPC blocks its foe's wind-up by
    its stance rule, strikes back on the recovery, gives up after `giveUpS`; it never hurts a player).
+
+39. **Livelier animals** (owner 2026-11-12, after the video had no chase or fleeing — on day one every pack is
+   kilometres from any herd and players can't scare deer): chose **deer flee from players** (they notice a player
+   within a distance by data, closer when crouching, and run off; wolves keep their distance unless hungry),
+   **packs roam toward herds** (hungry packs travel toward the nearest herd, so hunts happen near players), and
+   **a grazing pose and more idle behaviour** (deer lower their heads to graze, look up, flick ears; wolves sit
+   and lie down). In progress (cloud); a new video after.
+   Owner on the first video: **"The recording was a really good start. I'd like to record at 9:16 1080/1920."** —
+   the next video (after this item lands) is portrait 1080×1920, framed for portrait, with a chase and fleeing.
 
 ## Done
 

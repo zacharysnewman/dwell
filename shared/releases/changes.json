@@ -2,6 +2,39 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.54.99",
+      "changes": [
+        "Behind the scenes: a recording skill for showcase videos"
+      ]
+    },
+    {
+      "version": "0.54.98",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.97",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.96",
+      "changes": [
+        "Behind the scenes: bug notes"
+      ]
+    },
+    {
+      "version": "0.54.95",
+      "changes": [
+        "A sword, in the creative inventory's new Weapons group: swing it level or overhead, as the axe.",
+        "Deer and wolves can be hurt and killed with it: each hit lands as the blade reaches them, knocks them back, and wears the sword.",
+        "Hurt deer run off; hurt wolves turn on you, and flee when badly wounded. A killed animal leaves raw meat.",
+        "Villagers can be struck too, and turn to face whoever hit them. A sword never hurts another player."
+      ]
+    },
+    {
       "version": "0.54.94",
       "changes": [
         "Your hand, and other players' hands, now close into a fist round a tool's handle; blocks and torches still rest on the open palm.",
