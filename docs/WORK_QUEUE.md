@@ -293,8 +293,19 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    should be seed determined."** So the climate band is not a list to pick from: the seed sets the world's orbit
    (its distance from the sun → overall warmth, its axial tilt → seasons and how climate changes across the disc,
    its day and year length within playable bounds) and the moon's orbit, and the latitude band and seasons follow
-   from them; one celestial model (MOON_WORLD.md §6) shared by the sky and the Realistic climate (R3). Design
-   update in progress (cloud).
+   from them; one celestial model (MOON_WORLD.md §6) shared by the sky and the Realistic climate (R3).
+   **Design written 2026-11-12** (docs only, REALISTIC_WORLD.md §8 "Orbits by seed", cross-linked from
+   MOON_WORLD.md §6): a flat disc's latitude is its sky's pole height (today's 60° noon = 30° N on face A,
+   30° S on B; parallel sunlight gives no gradient, so R3's 14° span across the map stays a game-scale
+   stretch); the seed rolls the pole height and yaw (latitude and north), the distance (± a few °C), the
+   axial tilt and year (seasons: opposite on the faces, optional/later; generation reads the annual mean),
+   the clock within a range, and the moon's month, inclination, node and phase (its distance kept for its
+   size); R3's bands become names and `rainMm`; data `shared/look/orbits.json` (ranges, limits, today's
+   orbit), rolled once at creation and stored as world settings (`CELESTIAL`, required for a world whose
+   terrain reads it); default and starter keep today's sky exactly, only Realistic rolls; phases O1–O5.
+   Open for the owner (§8.10): seasons now or later; how varied orbits may be (and whether the day length or
+   default-generator worlds vary); the moon's orbit by seed; how much the faces' climates differ; the
+   gradient across the disc.
 16. **Phone frame rate (P0)** (owner 2026-11-11, iPhone 17, Safari, setting Low: "I'm only getting ~23 fps on
    mobile, seeing lots of z-fighting on tree trunks with the leaf cards. What might be dropping frames since the
    last while. Used to get 60 fps"). Suspect: leaf cards are on in every tier but CPU, Low included; cards lying

@@ -234,6 +234,14 @@ with the sun, as the stars do), so the phase runs evenly though the solar angle 
 integer month the full moon comes at the same clock time (face A's midnight for `startPhase` 0.5).
 New worlds don't draw their phase from the seed yet (none writes the tag): M-2's choice.
 
+**Orbits by seed** (design, 2026-11-12; [REALISTIC_WORLD.md](./REALISTIC_WORLD.md) §8, owner: "Orbits should
+be seed determined."): the same model takes a seed-rolled orbit stored as world settings (a `CELESTIAL` tag
+beside `CLOCK` and `MOON_PHASE`): the sun path's pole height (the disc's latitude: today's 60° noon is 30° N on
+face A, 30° S on face B), its yaw (north), the distance from the sun, an axial tilt and year (seasons, later),
+and the moon's month, inclination, node and phase, its distance kept so its size in the sky stays. The
+Realistic climate (R3) reads the latitude from it instead of a picked band; the default and starter worlds
+roll nothing and keep today's sky exactly.
+
 The design as proposed:
 
 Today (DAY_NIGHT.md §3) the home disc is fixed, the **sun** circles it on a great circle tilted so
