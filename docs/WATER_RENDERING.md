@@ -73,7 +73,8 @@ opaque draws and only suits one plane (sea level), so it's an Ultra-tier extra a
 ray-marched reflection through a GPU voxel structure was the planned exact path; it went with the ray
 marcher, ADR 0044.)
 
-**Underwater.** Eye test into a `Frame` uniform (underwater flag, surface height, fluid id).
+**Underwater.** Eye test into a `Frame` uniform (underwater flag, surface height, fluid id). The same eye test muffles
+the sound (a low-pass on the world's buses, eased at the crossing; docs/AUDIO.md §3a, BUGS.md #104).
 Per-pixel split where a lens point along each view ray crosses the surface (Crest's "water line"; built, §12). Per-channel
 absorption fog replaces height fog while submerged. The surface from below (the water mesh is
 already double-sided): outside Snell's window (critical angle `asin(1/ior)`, about 48.6°) total

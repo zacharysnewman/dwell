@@ -18,6 +18,8 @@ export interface SamplePlay<B extends Decoded> {
   /** Playback rate (pitch): 2^(semitones / 12). */
   rate: number;
   gain: number;
+  /** The data's low-pass on the play (Hz), if any. */
+  lowpassHz?: number;
 }
 
 /** Whether a sound plays its samples (it has them and the data does not choose its layers). */
@@ -78,7 +80,15 @@ export class SampleBank<B extends Decoded> {
     if (file === undefined || !buffer) return null;
     this.last.set(id, file);
     const semis = sound.samples.pitch ?? 0;
-    const rate = 2 ** (((this.rng() * 2 - 1) * semis) / 12);
-    return { file, buffer, rate, gain: sound.samples.gain ?? 1 };
+    const shift = sound.samples.shift ?? 0;
+    const rate = 2 ** ((shift + (this.rng() * 2 - 1) * semis) / 12);
+    const lowpassHz = sound.samples.lowpassHz;
+    return {
+      file,
+      buffer,
+      rate,
+      gain: sound.samples.gain ?? 1,
+      ...(lowpassHz !== undefined ? { lowpassHz } : {}),
+    };
   }
 }
