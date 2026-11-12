@@ -941,6 +941,7 @@ async function start(): Promise<App | null> {
     client.setMotion(s.motion.speedEffects, s.motion.fovBoost);
     client.setReducedMotion(prefersReducedMotion());
     client.setPlants(s.motion.plantSway ? 1 : 0, true);
+    client.setCameraSway(s.motion.cameraSway);
     client.setFov(s.fovDeg);
     client.setShowArms(s.showArms);
     client.setDetail(s.detail.distanceM, s.detail.pixelError, s.detail.memoryMb);

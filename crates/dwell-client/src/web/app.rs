@@ -296,6 +296,8 @@ struct Inner {
     reduced_motion: bool,
     /// The Show your arms setting (docs/CHARACTERS.md §5).
     show_arms: bool,
+    /// The Camera sway setting (Settings → Motion).
+    camera_sway: bool,
     /// How long the camera rolls upright across the midplane (s; 0 snaps): `?crossingroll=` or
     /// `setCrossingRoll`, kept here for a game started later.
     crossing_roll: f64,
@@ -452,6 +454,7 @@ impl Client {
             fov_setting: dwell_lod::frustum::VERTICAL_FOV,
             reduced_motion: false,
             show_arms: true,
+            camera_sway: true,
             crossing_roll,
             shaping: Shaping::NotAsked,
         };
@@ -624,6 +627,7 @@ impl Client {
             game.fov_setting = s.fov_setting;
             game.reduced_motion = s.reduced_motion;
             game.show_arms = s.show_arms;
+            game.camera_sway = s.camera_sway;
             let touch = s.touch_used.then_some(s.touch.state);
             let perf = web_sys::window().and_then(|w| w.performance());
             let mut clock = || perf.as_ref().map_or(0.0, |p| p.now());
@@ -2052,6 +2056,12 @@ impl Client {
     #[wasm_bindgen(js_name = setShowArms)]
     pub fn set_show_arms(&self, shown: bool) {
         self.inner.borrow_mut().show_arms = shown;
+    }
+    /// The Camera sway setting (Settings → Motion; docs/CHARACTERS.md §5.2): the view's sway with
+    /// a swing of the axe. Off: the view holds still (the aim never sways either way).
+    #[wasm_bindgen(js_name = setCameraSway)]
+    pub fn set_camera_sway(&self, on: bool) {
+        self.inner.borrow_mut().camera_sway = on;
     }
     /// Whether the browser asks for reduced motion: the spyglass then zooms without easing.
     #[wasm_bindgen(js_name = setReducedMotion)]

@@ -230,7 +230,9 @@ weighty first-person physical swings (the mechanics only). Built:
   `windupS` 0.12, `activeS` 0.14 (the arc), `hitStopS` 0.08, `recoverHitS` 0.22, `recoverMissS`
   0.36, `reachM` 2.2, `arcDeg` 110, `samples` 12, `kickDeg` 1.6, `staminaCost` 8 (unused until
   stamina exists: swinging, swimming and sprinting will draw on it), `swish` and `bounce` sound
-  events. A miss must last at least `swingSeconds` (the server's wait).
+  events. A miss must last at least `swingSeconds` (the server's wait). (2026-11-12: `kickDeg` and the
+  hardcoded camera curve were replaced by `swing.camera`, keyed view sway per swing kind with a kick at
+  contact; docs/CHARACTERS.md §5.2.)
 - **The path is what hits; free swings.** A swing goes any time, at nothing too. `dwell_world::swing`
   sweeps the head's arc face-locally (level: the screen's right to its left; vertical: top to
   bottom); the first solid cell is hit. The client sends `Chop::Sweep` (look, plane) to a server

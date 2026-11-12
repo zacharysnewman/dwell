@@ -252,6 +252,7 @@ export function settingsJson(s: Settings): string {
       speedEffects: s.motion.speedEffects,
       fovBoost: Math.round(s.motion.fovBoost * 100) / 100,
       plantSway: s.motion.plantSway,
+      cameraSway: s.motion.cameraSway,
     },
     explosions: { ...s.explosions },
     fovDeg: Math.round(s.fovDeg),
@@ -795,6 +796,15 @@ function panes(mobile: boolean): Record<SettingsPane, Group[]> {
               hint: 'Tall grass sways in the wind',
               get: (s) => s.motion.plantSway,
               with: (s, v) => ({ ...s, motion: { ...s.motion, plantSway: v } }),
+            },
+          },
+          {
+            toggle: {
+              label: 'Camera sway',
+              pin: 'motion.cameraSway',
+              hint: 'The view leans and kicks a little with a swing of the axe (never your aim)',
+              get: (s) => s.motion.cameraSway,
+              with: (s, v) => ({ ...s, motion: { ...s.motion, cameraSway: v } }),
             },
           },
         ],

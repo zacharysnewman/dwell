@@ -1,5 +1,5 @@
 {
-  "$comment": "Tools and what they cut (docs/adr/0067-stone-axe-and-chopping.md). A tool is an item (shared/inventory/inventory.json names it) with a `kind` from a fixed vocabulary (`axe`: chops the `woods`). A swing cuts `biteM` into open wood when its plane crosses the grain; its share is `along + (across - along) * |cos θ|^sharpness`, θ the angle between the swing plane's normal and the grain. Wood cut deeper than a side's open notch binds: a swing into a kerf cuts `bite / (1 + kerf / bindM)`. A chunk comes out when both bands of a side are cut past its notch. `woods`: the blocks an axe cuts (by name; their grain is their `axis` property), when a standing one falls (`fellFraction` of its cross-section cut) and a lying one is cut through (`buckFraction`), what a cut-through length drops (`buckDrops`, as a block's `drops`) and the chips a swing knocks out (`chips`: how many, their colour, speed m/s and size m; the client's particles). A tool's `held` is the item of shared/characters/characters.json a hand shows holding it for a level swing, `heldVertical` for a vertical one (two holds). A tool's `swing` is its feel and its path (the owner, 2026-11-08: weighty first-person melee): `windupS` before the arc, `activeS` the arc's sweep (the head travels `arcDeg` at `reachM` from the eye in `samples` steps, screen right to left for a level swing, top to bottom for a vertical one; the first solid cell on the path is hit, the server sweeping the same arc), `hitStopS` the pause on impact, `recoverHitS` after a hit and `recoverMissS` after a miss (a looser follow-through), `kickDeg` the camera's jolt on a hit, `staminaCost` what a swing will draw when stamina exists (unused until then), `swish` and `bounce` its sound events (shared/sounds; a bounce: not a wood), `rustle` the event of a swing that cleared blocks and `rustleLeaves` the leaves each cleared cell scatters (the client's particles). A tool's `clears` are the blocks (by name; not woods) its swing goes through and breaks on the way (owner, 2026-11-09: the axe clears leaves): every one the arc touches is broken (dropping its block's `drops` where blocks are not unlimited), and the head goes on to the wood behind (chopped) or another solid (a bounce). A wood's `leaves` are shaken down from that leaf block within `radiusM` and `heightM` above the hit on each hit, its `sway` leans the standing tree from `fromFraction` of the cross-section cut up to `maxDeg` at the fell fraction, and its `sounds` are each hit's sound event by the cut's fraction (`from` rising from 0). A wood's `cut` is how its cuts are carved into the cell's mesh (the client's; ADR 0067 §11): `tile` the atlas tile of the fresh-wood faces inside (shared/textures/materials.json's `tiles`; none: the block's end-grain tile) and `tint` a colour multiplying it (warm, so the wood stays tan in shade under the sky's and the ground's light), `open` the notch's opening along the grain per metre of its depth (its V), `kerfWidthM` the kerf slits' width. A wood's `fellWedge` (a stored-ramp block, a carrier) is what felling leaves (Phase 55 T2; owner, 2026-11-09): the cut cell split along its diagonal, the stump keeping its upright ramp rising away from the notch and the trunk's new bottom its upside-down ramp; none: the cut cell goes; `fellWedgeTrunk` how the trunk's ramp lies (`matching`, the default: parallel to the stump's; `open`: the notch's upper face); `fellTip` the trunk's tip toward the notch as a share of `felling`'s topple spin (owner, 2026-11-09: \"make the tree tip if needed, like we used to, maybe 3/4 of the force\"; 0.75 left a short trunk standing on the matching wedge, so the log's is 1; 0: none). A block's `breakWith` (shared/blocks) names the tool kind breaking it needs where blocks are not unlimited (adventure: logs need an axe). Prototype content (ARCHITECTURE.md §6.1). Run `node shared/tools/gen.mjs` after editing; CI fails if the generated files are stale.",
+  "$comment": "Tools and what they cut (docs/adr/0067-stone-axe-and-chopping.md). A tool is an item (shared/inventory/inventory.json names it) with a `kind` from a fixed vocabulary (`axe`: chops the `woods`). A swing cuts `biteM` into open wood when its plane crosses the grain; its share is `along + (across - along) * |cos θ|^sharpness`, θ the angle between the swing plane's normal and the grain. Wood cut deeper than a side's open notch binds: a swing into a kerf cuts `bite / (1 + kerf / bindM)`. A chunk comes out when both bands of a side are cut past its notch. `woods`: the blocks an axe cuts (by name; their grain is their `axis` property), when a standing one falls (`fellFraction` of its cross-section cut) and a lying one is cut through (`buckFraction`), what a cut-through length drops (`buckDrops`, as a block's `drops`) and the chips a swing knocks out (`chips`: how many, their colour, speed m/s and size m; the client's particles). A tool's `held` is the item of shared/characters/characters.json a hand shows holding it for a level swing, `heldVertical` for a vertical one (two holds). A tool's `swing` is its feel and its path (the owner, 2026-11-08: weighty first-person melee): `windupS` before the arc, `activeS` the arc's sweep (the head travels `arcDeg` at `reachM` from the eye in `samples` steps, screen right to left for a level swing, top to bottom for a vertical one; the first solid cell on the path is hit, the server sweeping the same arc), `hitStopS` the pause on impact, `recoverHitS` after a hit and `recoverMissS` after a miss (a looser follow-through), `camera` the view's sway with the swing per swing kind (`level`, `vertical`; owner, 2026-11-12: \"The camera could have some sway with the chop\"; docs/CHARACTERS.md §5.2): `keys` over the phase time `t` (0 the swing's start, 1 the wind-up's end, 2 the arc's end, 3 a miss's recovery's end; at rest at 0 and 3), each `yaw` degrees toward the screen's right, `pitch` up, `roll` the view leaning right and `bob` [right, up, back] metres, eased between keys; `kick` the jolt at contact (the same offsets, dying over `decayS`; a miss kicks at `miss` of it as the head passes the arc's middle, a hit into a wood at 1, a bounce at `bounce`); the view only (never the aim), off with Settings → Motion → Camera sway, `staminaCost` what a swing will draw when stamina exists (unused until then), `swish` and `bounce` its sound events (shared/sounds; a bounce: not a wood), `rustle` the event of a swing that cleared blocks and `rustleLeaves` the leaves each cleared cell scatters (the client's particles). A tool's `clears` are the blocks (by name; not woods) its swing goes through and breaks on the way (owner, 2026-11-09: the axe clears leaves): every one the arc touches is broken (dropping its block's `drops` where blocks are not unlimited), and the head goes on to the wood behind (chopped) or another solid (a bounce). A wood's `leaves` are shaken down from that leaf block within `radiusM` and `heightM` above the hit on each hit, its `sway` leans the standing tree from `fromFraction` of the cross-section cut up to `maxDeg` at the fell fraction, and its `sounds` are each hit's sound event by the cut's fraction (`from` rising from 0). A wood's `cut` is how its cuts are carved into the cell's mesh (the client's; ADR 0067 §11): `tile` the atlas tile of the fresh-wood faces inside (shared/textures/materials.json's `tiles`; none: the block's end-grain tile) and `tint` a colour multiplying it (warm, so the wood stays tan in shade under the sky's and the ground's light), `open` the notch's opening along the grain per metre of its depth (its V), `kerfWidthM` the kerf slits' width. A wood's `fellWedge` (a stored-ramp block, a carrier) is what felling leaves (Phase 55 T2; owner, 2026-11-09): the cut cell split along its diagonal, the stump keeping its upright ramp rising away from the notch and the trunk's new bottom its upside-down ramp; none: the cut cell goes; `fellWedgeTrunk` how the trunk's ramp lies (`matching`, the default: parallel to the stump's; `open`: the notch's upper face); `fellTip` the trunk's tip toward the notch as a share of `felling`'s topple spin (owner, 2026-11-09: \"make the tree tip if needed, like we used to, maybe 3/4 of the force\"; 0.75 left a short trunk standing on the matching wedge, so the log's is 1; 0: none). A block's `breakWith` (shared/blocks) names the tool kind breaking it needs where blocks are not unlimited (adventure: logs need an axe). Prototype content (ARCHITECTURE.md §6.1). Run `node shared/tools/gen.mjs` after editing; CI fails if the generated files are stale.",
   "formatVersion": 1,
   "chop2": {
     "$comment": "The chopping prototype (docs/WORK_QUEUE.md item 7, ADR 0067 amendment; owner 2026-11-11), behind a switch until approved: `enabled` its default (false: today's chopping; dev `?chop=v2` turns it on for a local world). Each chop at the crosshair removes a tool's `chop2.bite` of the cross-section on the side hit (along the grain: the wood's `chop2.along` of that); the first side cut is the notch (a V), a cut on another side a flat back cut; past the wood's `chop2.fellFraction` of the section cut it falls, toward the notch (the hinge steers), the stump keeping the notch's lower face and the trunk its upper face (`chop2.fellWedgeTrunk`: open).",
@@ -26,7 +26,74 @@
         "reachM": 2.2,
         "arcDeg": 110,
         "samples": 12,
-        "kickDeg": 1.6,
+        "camera": {
+          "level": {
+            "keys": [
+              { "t": 0 },
+              {
+                "t": 1,
+                "yaw": 1.8,
+                "pitch": 0.5,
+                "roll": 1.4,
+                "bob": [0.012, 0.004, 0.015]
+              },
+              {
+                "t": 1.5,
+                "yaw": -0.6,
+                "pitch": -0.2,
+                "roll": -0.6,
+                "bob": [-0.006, -0.002, -0.004]
+              },
+              {
+                "t": 2,
+                "yaw": -2,
+                "pitch": -0.4,
+                "roll": -1.3,
+                "bob": [-0.012, -0.004, -0.006]
+              },
+              {
+                "t": 2.5,
+                "yaw": -0.6,
+                "pitch": -0.1,
+                "roll": -0.4,
+                "bob": [-0.004, 0, -0.002]
+              },
+              { "t": 3 }
+            ],
+            "kick": {
+              "yaw": 0.5,
+              "pitch": -0.7,
+              "roll": 0.5,
+              "bob": [0, -0.006, 0.004],
+              "decayS": 0.09,
+              "miss": 0.35,
+              "bounce": 1.6
+            }
+          },
+          "vertical": {
+            "keys": [
+              { "t": 0 },
+              {
+                "t": 1,
+                "yaw": 0.3,
+                "pitch": 2.2,
+                "roll": 0.3,
+                "bob": [0, 0.01, 0.014]
+              },
+              { "t": 1.5, "pitch": -0.8, "bob": [0, -0.006, -0.004] },
+              { "t": 2, "pitch": -2, "bob": [0, -0.014, -0.006] },
+              { "t": 2.5, "pitch": -0.6, "bob": [0, -0.004, -0.002] },
+              { "t": 3 }
+            ],
+            "kick": {
+              "pitch": -1.4,
+              "bob": [0, -0.008, 0],
+              "decayS": 0.1,
+              "miss": 0.35,
+              "bounce": 1.6
+            }
+          }
+        },
         "staminaCost": 8,
         "swish": "axe_swish",
         "bounce": "axe_clank",
@@ -56,7 +123,74 @@
         "reachM": 2.2,
         "arcDeg": 110,
         "samples": 12,
-        "kickDeg": 1.6,
+        "camera": {
+          "level": {
+            "keys": [
+              { "t": 0 },
+              {
+                "t": 1,
+                "yaw": 1.8,
+                "pitch": 0.5,
+                "roll": 1.4,
+                "bob": [0.012, 0.004, 0.015]
+              },
+              {
+                "t": 1.5,
+                "yaw": -0.6,
+                "pitch": -0.2,
+                "roll": -0.6,
+                "bob": [-0.006, -0.002, -0.004]
+              },
+              {
+                "t": 2,
+                "yaw": -2,
+                "pitch": -0.4,
+                "roll": -1.3,
+                "bob": [-0.012, -0.004, -0.006]
+              },
+              {
+                "t": 2.5,
+                "yaw": -0.6,
+                "pitch": -0.1,
+                "roll": -0.4,
+                "bob": [-0.004, 0, -0.002]
+              },
+              { "t": 3 }
+            ],
+            "kick": {
+              "yaw": 0.5,
+              "pitch": -0.7,
+              "roll": 0.5,
+              "bob": [0, -0.006, 0.004],
+              "decayS": 0.09,
+              "miss": 0.35,
+              "bounce": 1.6
+            }
+          },
+          "vertical": {
+            "keys": [
+              { "t": 0 },
+              {
+                "t": 1,
+                "yaw": 0.3,
+                "pitch": 2.2,
+                "roll": 0.3,
+                "bob": [0, 0.01, 0.014]
+              },
+              { "t": 1.5, "pitch": -0.8, "bob": [0, -0.006, -0.004] },
+              { "t": 2, "pitch": -2, "bob": [0, -0.014, -0.006] },
+              { "t": 2.5, "pitch": -0.6, "bob": [0, -0.004, -0.002] },
+              { "t": 3 }
+            ],
+            "kick": {
+              "pitch": -1.4,
+              "bob": [0, -0.008, 0],
+              "decayS": 0.1,
+              "miss": 0.35,
+              "bounce": 1.6
+            }
+          }
+        },
         "staminaCost": 8,
         "swish": "axe_swish",
         "bounce": "axe_clank",
@@ -125,7 +259,11 @@
     "$comment": "Tools wear (owner, 2026-11-11: the stone axe \"should survive 32 hits of durability\"; \"stone pick wears too like axe, same with shovel\": the stone pickaxe and the wooden shovel 32 each, the metal tools unlimited): `items` gives a tool item its hits; a hit that counts (a chop, or a break hit, with it held) uses one, and at none left the tool breaks (gone from its slot, `breakSound` played). A tool not listed never wears. `creativeWear`: whether tools wear where blocks are unlimited (false: creative's tools don't). The wear rides in the inventory record (dwell_protocol::inventory, a slot's `wear`).",
     "creativeWear": false,
     "breakSound": "stick_snap",
-    "items": { "dwell:stone_axe": 32, "dwell:stone_pickaxe": 32, "dwell:wooden_shovel": 32 }
+    "items": {
+      "dwell:stone_axe": 32,
+      "dwell:stone_pickaxe": 32,
+      "dwell:wooden_shovel": 32
+    }
   },
   "breaking": {
     "$comment": "Which tool breaks which blocks faster (owner, 2026-11-10: \"pickaxe, shovel, and axe. Stone and Metal variants\"): `classes` maps a tool class to the blocks (by name) it is the right tool for, each block in at most one; `tiers` is a tier's break speed (a multiple of the bare hand's, 1); `tools` gives an item (shared/inventory) its class and tier. A break of a block holding the right class goes at its tier's speed, anything else at 1 (dwell_protocol::chopping::break_speed). The axe's chopping (`tools` above) is unchanged.",

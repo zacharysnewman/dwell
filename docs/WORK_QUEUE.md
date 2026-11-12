@@ -276,6 +276,14 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    Owner, 2026-11-12: **"The camera could have some sway with the chop."** In progress (cloud): a small camera
    sway following the swing (a lean into the wind-up, a kick at contact, settling in the recovery), as tool
    data, honouring the camera-shake/motion settings.
+   **Status (chop-sway):** built (CHARACTERS.md §5.2): each tool's `swing.camera` per swing kind (keyed yaw,
+   pitch, roll and a bob over the swing's phase time, a kick at contact; replaces `kickDeg` and the hardcoded
+   jolt), validated in the generator (at rest at both ends, in order, ±10° and ±0.1 m); the level chop leans
+   back and right into the wind-up and turns left through the strike, the vertical pitches up and dips at
+   contact; a miss kicks at 0.35, a hit into wood at 1, a bounce at 1.6; the view only, never the aim (tested
+   on both faces); Settings → Motion → Camera sway (the explosions' Screen shake names blasts only, so a new
+   toggle; off with reduced motion); `clip_probe` prints the offset per sample. Left: the owner's feel review
+   in game (no GPU in the cloud).
 18. **Digging marks that look carved** (owner 2026-11-11: "the 'chunks' of dirt aren't at all what we
    discussed. It should be like a normal map change (do we support normal/bump maps)? It's completely flat
    should look like mesh deformation (preferably without actually doing it for performance)"; "That part was
