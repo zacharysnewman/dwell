@@ -914,6 +914,16 @@ test('grass.json validates, its output is current, and bad entries fail naming t
   bad({ maxDensity: 0.1 }, /maxDensity 0.1 is under decoration meadow_grass/);
   bad({ reach: 1.5 }, /reach must be a whole number/);
   bad({ extra: 1 }, /unknown extra/);
+  bad({ onRamps: 1 }, /onRamps must be true or false/);
+  const strict = new Map(blocks);
+  const tall = strict.get('dwell:tall_grass');
+  strict.set('dwell:tall_grass', { ...tall, placeOn: tall.placeOn.filter((b) => b !== 'dwell:grass_ramp') });
+  assert.throws(() => validateGrass(grass(), strict, decorations), /onRamps: dwell:tall_grass may not stand on dwell:grass_ramp/);
+  const noRamps = new Map(blocks);
+  noRamps.delete('dwell:grass_ramp');
+  assert.throws(() => validateGrass(grass(), noRamps, decorations), /onRamps: dwell:grass has no ramps/);
+  assert.match(grassRust(g), /on_ramps: true,/);
+  assert.match(grassRust({ ...g, onRamps: undefined }), /on_ramps: false,/);
   // A rule by data alone: another ground and rates.
   const fixture = validateGrass({ ...grass(), on: ['dwell:dirt'], spreadPerDay: 1, reach: 2 }, blocks, decorations);
   assert.match(grassRust(fixture), /on: &\["dwell:dirt"\]/);
