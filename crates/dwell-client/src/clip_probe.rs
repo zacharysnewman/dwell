@@ -128,6 +128,43 @@ pub struct At {
 pub struct Sample {
     pub t: f32,
     pub at: Vec<At>,
+    /// How the tool and the arm are turned at `t`.
+    pub orient: Orient,
+}
+
+/// What a glyph on the sheet stands for.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Glyph {
+    /// The blade's edge: from the edge's centre outward (the way the edge faces).
+    Edge,
+    /// The handle: from the grip to the head.
+    Handle,
+    /// A bone's local axis (`ARM_BONES[bone]`, axis 0 x, 1 y, 2 z) from its pivot.
+    Axis(usize, usize),
+}
+
+/// The arm bones whose turns the probe reports, shoulder to hand.
+pub const ARM_BONES: [&str; 3] = ["arm_r", "forearm_r", "hand_r"];
+
+/// The tool's and the arm's orientation at one time (owner, 2026-11-11: "Ensure your tooling helps
+/// you tell rotation too").
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Orient {
+    /// The way the blade's edge faces (unit; the player's frame), from the lashing to the edge.
+    pub blade: Option<[f32; 3]>,
+    /// The handle's axis, grip to head (unit; the player's frame).
+    pub handle: Option<[f32; 3]>,
+    /// Each arm bone's local x, y, z axes in the player's frame (`ARM_BONES` order).
+    pub axes: [[[f32; 3]; 3]; 3],
+    /// The hand's roll about its own long axis against the forearm (degrees).
+    pub hand_roll: f32,
+    /// Each arm bone's angular speed (degrees/s; from the sample before, 0 at the first).
+    pub spin: [f32; 3],
+    /// The angle between the blade's facing and the edge's motion (degrees; from the sample
+    /// before and after): under 90 the edge leads, over 90 it trails.
+    pub blade_vs_motion: Option<f32>,
+    /// Glyphs to draw: each a segment from one place to another.
+    pub glyphs: Vec<(Glyph, At, At)>,
 }
 
 /// A stretch of the clip and where the first point went over it.
@@ -418,8 +455,8 @@ pub fn fit(role: &str, item: Option<&'static str>, body: bool, target: Target, f
     let hold = held.item().and_then(|(n, _)| ch.item(n));
     let (gb, gp) = local_point(held, Point::Grip).expect("grip");
     let (hb, hp) = local_point(held, Point::ToolHead).unwrap_or((gb, gp));
-    let edge = local_point(held, Point::Part("axe_blade"));
-    let lash = local_point(held, Point::Part("axe_lashing"));
+    // The blade's facing as the probe measures it (`edge_points`).
+    let edge = edge_points(held);
     let bone = |n: &str| ch.bone(n).expect("bone");
     let (arm, fore, hand, chest) = (
         bone("arm_r"),
@@ -440,10 +477,9 @@ pub fn fit(role: &str, item: Option<&'static str>, body: bool, target: Target, f
             arm_transforms(ch, &with_item(&pose, hold))
         };
         let at = |(i, p): (usize, [f32; 3])| to_local(b[i].apply(p));
-        let blade = match (edge, lash) {
-            (Some(e), Some(l)) => norm3(sub3(at(e), at(l))),
-            _ => [0.0; 3],
-        };
+        let blade = edge.map_or([0.0; 3], |(b, c, tip)| {
+            norm3(sub3(at((b, tip)), at((b, c))))
+        });
         (at((gb, gp)), at((hb, hp)), blade)
     };
     // The rig's joint limits, and a torso turn of at most 0.25 m (arms) or 50° (body).
@@ -557,6 +593,34 @@ fn to_local(v: [f32; 3]) -> [f32; 3] {
     [-v[0], v[1], v[2]]
 }
 
+/// The blade's edge centre and a point 0.12 m out from it along the edge's facing (the lashing to
+/// the edge), in the held bone's frame; none without an `axe_blade` and `axe_lashing`.
+pub fn edge_points(held: Held) -> Option<(usize, [f32; 3], [f32; 3])> {
+    let (eb, e) = local_point(held, Point::Part("axe_blade"))?;
+    let (lb, l) = local_point(held, Point::Part("axe_lashing"))?;
+    if eb != lb {
+        return None;
+    }
+    let d = norm3(sub3(e, l));
+    Some((eb, e, std::array::from_fn(|k| e[k] + 0.12 * d[k])))
+}
+
+/// The hand's roll about its long axis (its y) against the forearm, degrees: the angle from the
+/// forearm's x (laid flat across the hand's long axis) to the hand's x.
+pub fn hand_roll(forearm: [[f32; 3]; 3], hand: [[f32; 3]; 3]) -> f32 {
+    let y = hand[1];
+    let f = norm3(sub3(forearm[0], y.map(|v| v * dot3(forearm[0], y))));
+    dot3(cross3(f, hand[0]), y)
+        .atan2(dot3(f, hand[0]))
+        .to_degrees()
+}
+
+/// The angle (degrees) between two frames given by their axes.
+fn turn_between(a: [[f32; 3]; 3], b: [[f32; 3]; 3]) -> f32 {
+    let tr: f32 = (0..3).map(|k| dot3(a[k], b[k])).sum();
+    ((tr - 1.0) / 2.0).clamp(-1.0, 1.0).acos().to_degrees()
+}
+
 /// Runs a probe.
 pub fn probe(p: &Probe) -> Result<Report, String> {
     let ch = player();
@@ -573,29 +637,86 @@ pub fn probe(p: &Probe) -> Result<Report, String> {
     let basis: Basis = aim(p.yaw, p.pitch, p.face, 0.0);
     let frame = arms_frame(&basis);
     let n = p.samples.max(2);
-    let samples: Vec<Sample> = (0..n)
+    let edge = edge_points(held);
+    let grip = local_point(held, Point::Grip);
+    let head = local_point(held, Point::ToolHead);
+    let arm_bones = ARM_BONES.map(|b| ch.bone(b));
+    let mut samples: Vec<Sample> = (0..n)
         .map(|i| {
             let t = clip.duration * i as f32 / (n - 1) as f32;
             let arms = arms_bones(role, held, t);
             let body = body_bones(role, held, t);
+            let at_of = |bone: usize, q: [f32; 3]| {
+                let v = arms[bone].apply(q);
+                let z = v[2].max(1e-3);
+                let w = frame.apply(v);
+                let b = body[bone].apply(q);
+                At {
+                    local: to_local(v),
+                    screen: [-v[0] / (z * tan * p.aspect), v[1] / (z * tan), v[2]],
+                    world: w.map(f64::from),
+                    body: to_local(b),
+                }
+            };
             let at = points
                 .iter()
-                .map(|&(_, (bone, q))| {
-                    let v = arms[bone].apply(q);
-                    let z = v[2].max(1e-3);
-                    let w = frame.apply(v);
-                    let b = body[bone].apply(q);
-                    At {
-                        local: to_local(v),
-                        screen: [-v[0] / (z * tan * p.aspect), v[1] / (z * tan), v[2]],
-                        world: w.map(f64::from),
-                        body: to_local(b),
-                    }
-                })
+                .map(|&(_, (bone, q))| at_of(bone, q))
                 .collect();
-            Sample { t, at }
+            let mut o = Orient::default();
+            if let Some((b, c, tip)) = edge {
+                let (a0, a1) = (at_of(b, c), at_of(b, tip));
+                o.blade = Some(norm3(sub3(a1.local, a0.local)));
+                o.glyphs.push((Glyph::Edge, a0, a1));
+            }
+            if let (Some((gb, g)), Some((hb, h))) = (grip, head) {
+                let (a0, a1) = (at_of(gb, g), at_of(hb, h));
+                o.handle = Some(norm3(sub3(a1.local, a0.local)));
+                o.glyphs.push((Glyph::Handle, a0, a1));
+            }
+            for (k, bone) in arm_bones.iter().enumerate() {
+                let Some(bone) = *bone else { continue };
+                let a0 = at_of(bone, [0.0; 3]);
+                for ax in 0..3 {
+                    let mut q = [0.0f32; 3];
+                    q[ax] = 0.05;
+                    let a1 = at_of(bone, q);
+                    o.axes[k][ax] = norm3(sub3(a1.local, a0.local));
+                    o.glyphs.push((Glyph::Axis(k, ax), a0, a1));
+                }
+            }
+            o.hand_roll = hand_roll(o.axes[1], o.axes[2]);
+            Sample { t, at, orient: o }
         })
         .collect();
+    // Angular speeds, and the blade's facing against the edge's motion.
+    for i in 0..samples.len() {
+        if i > 0 {
+            let dt = (samples[i].t - samples[i - 1].t).max(1e-6);
+            for k in 0..3 {
+                samples[i].orient.spin[k] =
+                    turn_between(samples[i - 1].orient.axes[k], samples[i].orient.axes[k]) / dt;
+            }
+        }
+        let (a, b) = (i.saturating_sub(1), (i + 1).min(samples.len() - 1));
+        let centre = |s: &Sample| {
+            s.orient
+                .glyphs
+                .iter()
+                .find(|g| g.0 == Glyph::Edge)
+                .map(|g| g.1.local)
+        };
+        if let (Some(blade), Some(p0), Some(p1)) = (
+            samples[i].orient.blade,
+            centre(&samples[a]),
+            centre(&samples[b]),
+        ) {
+            let m = sub3(p1, p0);
+            if dot3(m, m) > 1e-8 {
+                samples[i].orient.blade_vs_motion =
+                    Some(dot3(norm3(m), blade).clamp(-1.0, 1.0).acos().to_degrees());
+            }
+        }
+    }
     let swing = swing_def(p.item, role);
     let cuts: Vec<(&'static str, f32, f32)> = match swing {
         Some(s) => {
@@ -692,7 +813,7 @@ pub fn table(r: &Report) -> String {
             format!("{} fp x,y,depth / body r,u,a", p.name())
         );
     }
-    let _ = writeln!(s);
+    let _ = writeln!(s, " | edge∠motion | hand roll | spin arm,fore,hand °/s");
     for smp in &r.samples {
         let _ = write!(s, "{:>6.3}", smp.t);
         for a in &smp.at {
@@ -702,7 +823,17 @@ pub fn table(r: &Report) -> String {
                 a.screen[0], a.screen[1], a.screen[2], a.body[0], a.body[1], a.body[2]
             );
         }
-        let _ = writeln!(s);
+        let o = &smp.orient;
+        let _ = writeln!(
+            s,
+            " | {:>11} | {:>+8.0}° | {:>4.0} {:>4.0} {:>4.0}",
+            o.blade_vs_motion
+                .map_or("-".to_string(), |a| format!("{a:.0}°")),
+            o.hand_roll,
+            o.spin[0],
+            o.spin[1],
+            o.spin[2]
+        );
     }
     let _ = writeln!(s, "phases of {} :", r.points[0].name());
     for ph in &r.phases {
@@ -1001,6 +1132,37 @@ pub fn svg(r: &Report, views: &[&str]) -> String {
                 p.name()
             );
         }
+        // Orientation glyphs every third sample: the handle (grey), the blade's edge facing (a dark
+        // red arrow), and every sixth the arm bones' axes (x red, y green, z blue), so a blade
+        // turned the wrong way or a wrist flip shows.
+        for (i, smp) in r.samples.iter().enumerate() {
+            if i % 3 != 0 {
+                continue;
+            }
+            for (g, a, b) in &smp.orient.glyphs {
+                let (p0, p1) = (map(view_xy(view, a)), map(view_xy(view, b)));
+                let (colour, width) = match g {
+                    Glyph::Handle => ("#8a7f70", 1.6),
+                    Glyph::Edge => ("#7a1010", 2.0),
+                    Glyph::Axis(_, ax) if i % 6 == 0 => {
+                        (["#d03030", "#30a040", "#3050d0"][*ax], 1.0)
+                    }
+                    Glyph::Axis(..) => continue,
+                };
+                let _ = writeln!(
+                    s,
+                    r#"<line x1="{:.1}" y1="{:.1}" x2="{:.1}" y2="{:.1}" stroke="{colour}" stroke-width="{width}" opacity="0.8"/>"#,
+                    p0.0, p0.1, p1.0, p1.1
+                );
+                if *g == Glyph::Edge {
+                    let _ = writeln!(
+                        s,
+                        r#"<circle cx="{:.1}" cy="{:.1}" r="2" fill="{colour}"/>"#,
+                        p1.0, p1.1
+                    );
+                }
+            }
+        }
         if let Some(c) = r.contact_t {
             let (x, y) = map(view_xy(view, &r.at(0, c)));
             let _ = writeln!(
@@ -1183,6 +1345,55 @@ mod chop_swing_tests {
             assert!(
                 grip >= 0.4 * head && grip > 0.4,
                 "{role}: the hands travel the arc with the head: grip {grip:.2} m, head {head:.2} m"
+            );
+        }
+    }
+
+    #[test]
+    fn the_edge_faces_its_motion_through_the_strike() {
+        // face-a-only: view space. Owner, 2026-11-11: "Ensure your tooling helps you tell
+        // rotation too": the blade turned the wrong way is a rotation the head's path can't show.
+        for role in ["chop_level", "chop_vertical"] {
+            let mut p = Probe::new(role);
+            p.samples = 121;
+            let r = probe(&p).expect("probe");
+            for s in within(&r, "strike") {
+                let a = s.orient.blade_vs_motion.expect("an axe has an edge");
+                assert!(
+                    a < 50.0,
+                    "{role}: at {:.3} s the edge faces {a:.0}° off its motion (want < 50°)\n{}",
+                    s.t,
+                    table(&r)
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn the_wrist_never_flips() {
+        // face-a-only: view space. A wrist flip: the hand's roll about its own axis jumping
+        // between samples, or turning further than a wrist does over the swing.
+        for role in ["chop_level", "chop_vertical"] {
+            let mut p = Probe::new(role);
+            p.samples = 121;
+            let r = probe(&p).expect("probe");
+            let rolls: Vec<f32> = r.samples.iter().map(|s| s.orient.hand_roll).collect();
+            for (i, w) in r.samples.windows(2).enumerate() {
+                let rate = (rolls[i + 1] - rolls[i]).abs() / (w[1].t - w[0].t);
+                assert!(
+                    rate < 2000.0,
+                    "{role}: the hand rolls {rate:.0}°/s at {:.3} s (a flip)\n{}",
+                    w[0].t,
+                    table(&r)
+                );
+            }
+            let (lo, hi) = rolls
+                .iter()
+                .fold((f32::MAX, f32::MIN), |(a, b), &v| (a.min(v), b.max(v)));
+            assert!(
+                hi - lo < 120.0,
+                "{role}: the hand rolls through {:.0}° over the swing",
+                hi - lo
             );
         }
     }
