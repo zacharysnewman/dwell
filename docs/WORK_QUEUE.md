@@ -309,6 +309,9 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    Owner, 2026-11-12: q6 "dormant volcanoes only for now."; q8 "also on the big map" (overlays in Chisel and the
    in-game big map); q9 asked "how does the default biome fill them?" (answer pending). Big map q5: "No, no
    hitches" — region maps built ahead of the player.
+   Orbits by seed (REALISTIC_WORLD.md §8), owner 2026-11-12: orbits first, seasons after; "a great setting to have
+   default with some presets. Like proposed ranges, fixed day, day varies, more extreme with hotter/colder."; the
+   moon's orbit by seed too (size kept); Realistic worlds only. O1–O3 in progress (cloud).
 16. **Phone frame rate (P0)** (owner 2026-11-11, iPhone 17, Safari, setting Low: "I'm only getting ~23 fps on
    mobile, seeing lots of z-fighting on tree trunks with the leaf cards. What might be dropping frames since the
    last while. Used to get 60 fps"). Suspect: leaf cards are on in every tier but CPU, Low included; cards lying

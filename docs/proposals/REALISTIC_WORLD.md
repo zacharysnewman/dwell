@@ -657,6 +657,16 @@ A fixture orbit added by data alone is drawn and read (O1–O3's tests).
 
 ### 8.10 Questions for the owner
 
+**Answered (owner, 2026-11-12):** 1. **orbits first, seasons after** (O1–O3, then O4–O5). 2. **"I think this would
+be a great setting to have default with some presets. Like proposed ranges, fixed day, day varies, more extreme
+with hotter/colder."** — the orbit's variety is a world setting (New world → More options) with presets as data:
+*Default* (the proposed ranges, the day fixed at 20 min), *Day varies* (the same with the day length rolled a
+little), *Extreme* (wider ranges: hotter and colder worlds); more presets by data. 3. **the moon's orbit by seed
+too**, its size in the sky kept. Default-generator worlds: **Realistic worlds only** roll orbits; the default
+and starter keep today's sky. Still open: 4 (how much the two faces' climates differ) and 5 (the gradient across
+the disc) — the proposal's defaults until answered.
+
+
 1. **Seasons now or later?** Proposed: the orbit (φ, distance, the moon) first (O1–O3), seasons' model O4 and
    drawn O5 after, the seasonal snow and forage later.
 2. **How varied may orbits be?** Proposed ranges: pole 15–55° (subtropical to subarctic, as R3's bands),
