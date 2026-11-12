@@ -49,8 +49,9 @@ pub fn pose(
     data: &ModelData,
     character: &Character,
     pose: &Pose,
+    item: Option<&str>,
 ) -> Option<(Vec<Mat4>, Mat4)> {
-    data.first_person?;
+    let fp_data = data.first_person?;
     let map = data.retarget?;
     let chain = character.first_person?.bones;
     let (&first, &last) = (chain.first()?, chain.last()?);
@@ -70,7 +71,12 @@ pub fn pose(
         root: [0.0; 3],
         hip_m: 1.0,
     };
-    let globals = anim::globals(model, &retarget::pose(model, data, &map, &rig));
+    let mut local = retarget::pose(model, data, &map, &rig);
+    // The hand closed on what it holds (models.json `grips`).
+    if let Some(g) = item.and_then(|i| data.grip(i)) {
+        crate::grip::apply(model, g, &mut local);
+    }
+    let globals = anim::globals(model, &local);
     let node_of = |b: usize| {
         let name = character.bones[b].name;
         let j = map.bones.iter().find(|m| m.bone == name)?.joint;
@@ -98,7 +104,23 @@ pub fn pose(
         &mm::trs(at, turn, [s; 3]),
         &mm::trs([-p[0], -p[1], -p[2]], [0.0, 0.0, 0.0, 1.0], [1.0; 3]),
     );
-    Some((globals, place))
+    // The whole arm turned about the rig's hand (`turn`): the elbow and the sleeve up into view.
+    let hand_at = posed[last].t;
+    let e = dwell_characters::math::euler(fp_data.turn);
+    let turn: Mat4 = [
+        [e[0][0], e[0][1], e[0][2], 0.0],
+        [e[1][0], e[1][1], e[1][2], 0.0],
+        [e[2][0], e[2][1], e[2][2], 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ];
+    let about = mm::mul(
+        &mm::trs(hand_at, [0.0, 0.0, 0.0, 1.0], [1.0; 3]),
+        &mm::mul(
+            &turn,
+            &mm::trs(hand_at.map(|v| -v), [0.0, 0.0, 0.0, 1.0], [1.0; 3]),
+        ),
+    );
+    Some((globals, mm::mul(&about, &place)))
 }
 
 #[cfg(test)]
@@ -150,7 +172,7 @@ mod tests {
             for n in 0..=8 {
                 let t = c.duration * n as f32 / 8.0;
                 let p = dwell_characters::anim::sample(c, t);
-                let (g, place) = pose(model, data, ch, &p).unwrap();
+                let (g, place) = pose(model, data, ch, &p, None).unwrap();
                 let skinned = mm::point(&mm::mul(&place, &g[hand_node]), [0.0; 3]);
                 let rigid = arm_transforms(ch, &p)[hand_bone].t;
                 let d = (0..3)

@@ -6,6 +6,7 @@
 pub mod anim;
 pub mod first_person;
 pub mod glb;
+pub mod grip;
 pub mod math;
 pub mod retarget;
 
@@ -92,6 +93,18 @@ pub struct FirstPerson {
     pub joints: &'static [usize],
     /// The least share of a vertex's skin weight on `joints` that puts it in the arm.
     pub weight: f32,
+    /// Degrees, Euler XYZ in view space: the whole arm turned about its hand (the sleeve's cuff
+    /// brought into view, the hand and item kept).
+    pub turn: [f32; 3],
+}
+
+/// A pose of the hand (models.json `grips.poses`, docs/CHARACTERS.md §11.10): turns of skin joints
+/// on top of their own.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Grip {
+    pub name: &'static str,
+    /// (skin joint index, degrees Euler XYZ in the joint's frame).
+    pub turns: &'static [(usize, [f32; 3])],
 }
 
 /// One model's data.
@@ -114,6 +127,18 @@ pub struct ModelData {
     pub retarget: Option<Retarget>,
     /// Your first-person arms drawn from it; None: it draws none.
     pub first_person: Option<FirstPerson>,
+    /// Its hand's poses, and which each held item (by name) takes; an item not listed: the open
+    /// hand.
+    pub grips: &'static [Grip],
+    pub grip_items: &'static [(&'static str, &'static str)],
+}
+
+impl ModelData {
+    /// The hand's pose for held item `item` (a characters.json item's name); None: the open hand.
+    pub fn grip(&self, item: &str) -> Option<&'static Grip> {
+        let (_, name) = self.grip_items.iter().find(|(i, _)| *i == item)?;
+        self.grips.iter().find(|g| g.name == *name)
+    }
 }
 
 impl ModelData {
