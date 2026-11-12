@@ -370,6 +370,15 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    almost looked 3D"** — compare the deck as it was before the volumetric work (before 93fd6c26, e.g. at
    122b0f0e) with today's deck term by term (fake relief/normals from the noise, self-shadowing toward the sun,
    rim/silver light, the dark undersides, the sunset ramp) and restore what was lost.
+   **Built (2026-11-12, cloud, branch `claude/deck-lighting`, CLOUDS.md §10):** the shading code was never changed;
+   what changed is which deck shows. Before the volume, desktops drew the deck at `high` (5 octaves and a
+   self-shadow sample toward the sun); since, the sky's deck is only Low (phones, `?clouds=low`, and while the
+   volume's noise bakes), which never took the sample, so its light was a function of density alone: no sun side,
+   grey-white cores. The sample is now data on every tier (`light.lowShadowOctaves` 2 on Low,
+   `light.shadowOctaves` 5 for Medium/High's deck in reflections); Low 7 → 9 noise evaluations a pixel (old
+   desktop 14). CPU reference renders (`examples/deck_lighting.rs`) and tests on both faces: Low's sun side vs far
+   side +0.010 → +0.209 at 5°, cores 0.521 → 0.264 lit at 70° (old desktop +0.155, 0.286). Next (local): the look
+   in game at `?clouds=low` and `gpu.composite` on Low before/after.
    **Built (2026-11-12, cloud, branch `claude/cloud-golden-hour-zjl391`, CLOUDS.md §9.8):** the tint was lost in
    the ambient: the deck warms its whole colour at a low sun, the volume only the sun's light, and a volume
    sample's light is mostly the cool sky's. Now the shade (sky light and ground bounce) takes the deck's warm

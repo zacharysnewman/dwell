@@ -1,0 +1,5 @@
+{
+  "changes": [
+    "Low clouds (the 2D deck) have their old lighting back: sun-facing edges lit, undersides shaded"
+  ]
+}
