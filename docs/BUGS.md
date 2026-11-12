@@ -6,6 +6,15 @@ pins it.
 
 ## Open
 
+### 106. Trees look like sticks
+
+Owner, 2026-11-12 (on a release after the blocked stretch, ~60 versions newer than the last they played): "What
+happened to the trees, they just look like sticks?" Suspects, all from today: the far-tree impostors (#797) — the
+near crowns fade out from 48 m and hand over to the impostors, but the trunks don't (they show under them), so if
+the impostors don't draw (atlas bake not finished/failed, the Far trees tier, a CPU adapter, a shader error) or draw
+too faint, every tree past ~48 m is a bare trunk; the faded-plant drop (#773/#784) dropping whole cutout chunks;
+the leaf-card face-B packed-normal change (#799).
+
 ### 104. Swimming underwater sounds like swimming at the surface; underwater sound isn't muffled
 
 Owner, 2026-11-12: "swimming underwater sounds like swimming on the water surface, when underwater sounds should be
@@ -492,6 +501,18 @@ shallow ramp, maybe same problem with steep ramps too?" Not investigated yet: ta
 face, or the placement check against its shape.
 
 ## Fixed
+
+### 105. The "no" sound for clicking at nothing is too loud and jarring (fixed after 0.54.205)
+
+Owner, 2026-11-12: "The 'no' sound effect for clicking when nothing is there is way to loud and jarring and generally
+a bad sound effect for it. Read the names and waveform to find a good one from our package." The `deny` sound (Break
+or Place with nothing targeted) played Universal Sound FX's `UI_Error_Tone_01`: a 0.18 s buzzy error tone peaking at
+−0.5 dBFS, at sample gain 0.4 (~−8.5 dBFS as played). Fix: candidates picked by name (UI clicks and taps, errors,
+denied notifications, toggles, subtle thuds and knocks) and measured (duration, peak, RMS, attack, spectral centroid,
+energy above 2 kHz); the pick is `UI_Click_Tap_Knock_Subtle_Darker`, a dull 30 ms knock (centroid ~260 Hz, no
+energy above 2 kHz, peak −6.1 dBFS) at gain 0.2 with ±1 semitone: ~12 dB under the old tone's peak, ~16 dB under its
+loudness. The procedural fallback's gain went from 0.879 to 0.3. Test: samples.test.ts "keeps the deny sound soft"
+(red on the old data, green on the new).
 
 ### 103. Walking through tall grass is loud, fast and crackly; the first-person legs step too fast (fixed after 0.54.201; the listening check is the owner's)
 

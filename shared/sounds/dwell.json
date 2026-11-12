@@ -1597,8 +1597,8 @@
       ]
     },
     "deny": {
-      "samples": {"files": ["deny-1.m4a"], "gain": 0.4, "pitch": 0},
-      "gain": 0.879,
+      "samples": {"files": ["deny-knock-1.m4a"], "gain": 0.2, "pitch": 1},
+      "gain": 0.3,
       "reverb": 0.028,
       "variation": "none",
       "layers": [

@@ -196,7 +196,7 @@ mono AAC 64 kbps, 44.1 kHz, leading and trailing silence trimmed; about 0.8 MB i
 | `dynamite_boom` | `EXPLOSION_Medium_Blast_Scatter_Debris`, `EXPLOSION_Short_Dark_Debris`, `EXPLOSION_Medium_Fast_with_Rock_Debris` |
 | `chop_bark` / `chop_wood` / `chop_creak` | `AXE_Chop_Tree_01_RR1–3` / `AXE_Chop_Wood_01_RR1–3` / `CREAK_Wood_01–03` |
 | `axe_clank` / `axe_swish` | `PICKAXE_Impact_Metal_01_RR1–3` / `WHOOSH_Air_Blade_RR1–3` |
-| `deny` | `UI_Error_Tone_01` |
+| `deny` | `UI_Click_Tap_Knock_Subtle_Darker` (owner, 2026-11-12: the old `UI_Error_Tone_01` was "way to loud and jarring"; a soft dull 30 ms knock played ~12 dB under it, ±1 semitone) |
 
 Still procedural: the slides and slide stops, `rise`, `dive`, `crouch_on`/`off`, `sprint`,
 `respawn`, `axe_rustle`, the torch's place and break, the fuse, the loops (fire, fuse fizz,
