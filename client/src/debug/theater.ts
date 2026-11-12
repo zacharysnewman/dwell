@@ -2,6 +2,8 @@
 // args)` drives the camera path engine (crates/dwell-theater, through the client) for the bench's
 // `theater` step and the record skill. The in-game UI (T-2) builds on the same calls.
 
+import { setHud } from '../theater/hud';
+
 /** What the dev API needs from the WASM client. */
 export interface TheaterClient {
   theaterPlay(json: string): void;
@@ -14,21 +16,12 @@ export interface TheaterClient {
 
 export type TheaterOp = 'play' | 'stop' | 'pause' | 'state' | 'presets' | 'preset' | 'hud';
 
-const HUD_CLASS = 'theater-clean';
-const HUD_STYLE_ID = 'theater-clean-style';
-
 /**
  * Hides (or shows again) every element but the game canvas (`#view`): the clean frame for a
- * recording. A class on `body` and one style rule, so the elements the game re-shows stay hidden.
+ * recording, through theater mode's HUD switch (src/theater/hud.ts), its bar hidden too.
  */
 export function setHudShown(doc: Document, shown: boolean): void {
-  if (!doc.getElementById(HUD_STYLE_ID)) {
-    const style = doc.createElement('style');
-    style.id = HUD_STYLE_ID;
-    style.textContent = `body.${HUD_CLASS} > *:not(#view):not(script):not(style) { visibility: hidden !important; }`;
-    doc.head.appendChild(style);
-  }
-  doc.body.classList.toggle(HUD_CLASS, !shown);
+  setHud(doc, null, shown, true);
 }
 
 /**

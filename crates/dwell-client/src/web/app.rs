@@ -1417,6 +1417,36 @@ impl Client {
             .map_err(|e| JsValue::from_str(&e))?;
         Ok(path.to_json().to_string())
     }
+    /// Theater mode's free-fly camera (docs/THEATER_MODE.md §2): moves the placed view (from the
+    /// player's eyes the first time) by `forward`, `right` and `up` metres along its face-local
+    /// look, and turns it by `yaw`/`pitch` degrees (pitch held within ±89°). The body stays put.
+    /// Returns the view as `[x, y, z, yaw, pitch]`, or empty before the game has started.
+    #[wasm_bindgen(js_name = theaterFly)]
+    pub fn theater_fly(&self, forward: f64, right: f64, up: f64, yaw: f64, pitch: f64) -> Vec<f64> {
+        let mut s = self.inner.borrow_mut();
+        let look = (s.input.look.yaw, s.input.look.pitch);
+        let Some(g) = &mut s.game else {
+            return Vec::new();
+        };
+        if g.theater_state().is_some() {
+            g.stop_theater();
+        }
+        let v = g.view().unwrap_or(crate::game::ViewOverride {
+            eye: g.position(),
+            yaw_deg: look.0,
+            pitch_deg: look.1,
+            fov_deg: None,
+        });
+        let next = crate::game::fly_step(v, forward, right, up, yaw, pitch);
+        g.set_view(Some(next));
+        vec![
+            next.eye[0],
+            next.eye[1],
+            next.eye[2],
+            next.yaw_deg,
+            next.pitch_deg,
+        ]
+    }
     #[wasm_bindgen(js_name = releaseCamera)]
     pub fn release_camera(&self) {
         if let Some(g) = &mut self.inner.borrow_mut().game {

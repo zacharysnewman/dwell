@@ -138,6 +138,10 @@ import { ControllerPanel } from './ui/controllerPanel';
 import { workerCount } from './workerCount';
 import { startThumbnailCapture, WorldThumbs } from './local/worldThumbs';
 import { pauseFromQuery, togglePause } from './debug/pause';
+import { THEATER } from './theater/config';
+import { TheaterMode } from './theater/mode';
+import { PathStore } from './theater/store';
+import gamepadData from '../../shared/input/gamepad.json';
 
 type Vec3 = [number, number, number];
 
@@ -563,6 +567,10 @@ interface App {
   minimap: MapUi | null;
   /** The minimap's height shading (Settings, On screen). */
   mapShading: boolean;
+  /** Theater mode (docs/THEATER_MODE.md): the free camera, paths and recording. */
+  theater: TheaterMode | null;
+  /** The canvas's size in device px while a take records (theater mode), else null. */
+  canvasOverride: { width: number; height: number } | null;
 }
 
 /**
@@ -654,9 +662,23 @@ function forwardInput(app: App): void {
     const t = e.target;
     if (t instanceof HTMLTextAreaElement || (t instanceof HTMLInputElement && t.type !== 'range'))
       return;
+    // Theater mode's key (shared/theater/theater.json) toggles it; while it is on, the keys fly
+    // its camera and the body hears none of them.
+    const th = app.theater;
+    if (th && e.code === THEATER.key && !e.repeat && app.playing && !app.settings?.isOpen) {
+      e.preventDefault();
+      th.toggle();
+      if (th.active) client.blur();
+      return;
+    }
+    if (th?.key(e.code, true, e.shiftKey)) {
+      e.preventDefault();
+      return;
+    }
     if (client.keyDown(e.code, e.repeat, e.ctrlKey, e.metaKey, e.timeStamp)) e.preventDefault();
   });
   window.addEventListener('keyup', (e) => {
+    if (app.theater?.key(e.code, false, e.shiftKey)) return;
     client.keyUp(e.code);
   });
   window.addEventListener('blur', () => {
@@ -670,6 +692,7 @@ function forwardInput(app: App): void {
     client.setPointerLocked(document.pointerLockElement === canvas);
   });
   canvas.addEventListener('mousedown', (e) => {
+    if (app.theater?.active) return;
     client.mouseDown(e.button, performance.now(), e.altKey);
   });
   // Letting go of Place stops building on (docs/ITEMS.md §5); on the document, so a release off
@@ -681,13 +704,45 @@ function forwardInput(app: App): void {
     e.preventDefault();
   });
   document.addEventListener('mousemove', (e) => {
+    if (app.theater?.active) {
+      if (document.pointerLockElement === canvas) app.theater.mouse(e.movementX, e.movementY);
+      return;
+    }
     client.mouseMove(e.movementX, e.movementY);
   });
+  // Theater mode on a touch screen: the left half moves the camera, the right half looks.
+  const touches = (e: TouchEvent, f: (t: Touch) => void): void => {
+    if (!app.theater?.active) return;
+    e.preventDefault();
+    for (const t of e.changedTouches) f(t);
+  };
+  canvas.addEventListener(
+    'touchstart',
+    (e) => {
+      touches(e, (t) => app.theater?.touchStart(t.identifier, t.clientX, t.clientY, innerWidth));
+    },
+    { passive: false },
+  );
+  canvas.addEventListener(
+    'touchmove',
+    (e) => {
+      touches(e, (t) => app.theater?.touchMoveTo(t.identifier, t.clientX, t.clientY));
+    },
+    { passive: false },
+  );
+  for (const ev of ['touchend', 'touchcancel'] as const)
+    canvas.addEventListener(ev, (e) => {
+      touches(e, (t) => app.theater?.touchEnd(t.identifier));
+    });
   window.addEventListener(
     'wheel',
     (e) => {
       // Line or page deltas (Firefox's mouse wheel) as pixels, for the notch accumulator.
       const px = e.deltaMode === 1 ? 40 : e.deltaMode === 2 ? 800 : 1;
+      if (app.theater?.active) {
+        app.theater.wheel(e.deltaY * px);
+        return;
+      }
       client.wheel(e.deltaX * px, e.deltaY * px, e.altKey, e.timeStamp);
     },
     { passive: true },
@@ -876,6 +931,12 @@ async function start(): Promise<App | null> {
   }
 
   const resize = (): void => {
+    // A theater take renders at its own size (theater/record.ts `recordSize`).
+    const take = app.canvasOverride;
+    if (take) {
+      client.resize(take.width, take.height, 1);
+      return;
+    }
     client.resize(
       canvas.clientWidth,
       canvas.clientHeight,
@@ -907,6 +968,8 @@ async function start(): Promise<App | null> {
     mapShading: true,
     world: null,
     playing: false,
+    theater: null,
+    canvasOverride: null,
   };
   // On-screen controls on touch devices (shown on the first touch too, e.g. a tablet with a mouse).
   const touch = new TouchControls(document.body, client);
@@ -1394,8 +1457,44 @@ async function start(): Promise<App | null> {
 
   // The HUD's layout (shared/ui/layout.json): placed again when the screen or a part's size changes.
   const layout = new LayoutRunner(document, HUD_LAYOUT, mobile, LAYOUT_EVERY_MS);
+  // Theater mode (docs/THEATER_MODE.md §2): its toolbar, its key, the controller's button and the
+  // touch button; the host may turn it off for guests (world settings, T-2 outstanding).
+  const theater = new TheaterMode({
+    doc: document,
+    canvas,
+    client,
+    store: new PathStore(localStorage),
+    arms: (shown) => {
+      client.setShowArms(shown && loadSettings(mobile).showArms);
+    },
+    touch: (shown) => {
+      touch.visible = shown && touchWanted;
+    },
+    canvasSize: (size) => {
+      app.canvasOverride = size;
+      resize();
+    },
+    where: () => (app.world ? { seed: app.world.seed.toString() } : {}),
+  });
+  app.theater = theater;
+  settings.addTheaterPage(
+    THEATER.key,
+    () => {
+      theater.enter();
+    },
+    () => theater.allowed,
+  );
+  const theaterButton =
+    gamepadData.buttons.find((b) => b.name === THEATER.gamepadToggle)?.index ?? -1;
+  let theaterButtonWas = false;
   const frame = (now: number): void => {
-    pad.poll(now);
+    const gp = [...navigator.getGamepads()].find((g) => g !== null) ?? null;
+    const down = gp?.buttons[theaterButton]?.pressed ?? false;
+    if (down && !theaterButtonWas && app.playing && !settings.isOpen) theater.toggle();
+    theaterButtonWas = down;
+    theater.frame(now, theater.active ? gp : null);
+    theater.showOpenButton(touchWanted && app.playing);
+    if (!theater.active) pad.poll(now);
     // Only the frames drawn count (one is skipped while the GPU is behind).
     app.fps.frame(now, client.frame(now));
     handleEvents(app);

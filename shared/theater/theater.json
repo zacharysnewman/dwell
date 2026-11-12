@@ -1,0 +1,41 @@
+{
+  "$comment": "Theater mode's in-game tools (docs/THEATER_MODE.md §2, §6): the key and controller button that toggle it, the free-fly camera's tunables, and the recording choices. Read by the shell (client/src/theater/config.ts), which validates it; presets live in presets.json.",
+  "formatVersion": 1,
+  "key": "F9",
+  "gamepadToggle": "rs",
+  "fly": {
+    "$comment": "speedMps: the free camera's speed (m/s) and its range; wheelStep: one wheel notch's factor; runFactor: Shift's; lookDegPerPx: the mouse (and a touch drag); padLookDegPerS: the right stick at full tilt.",
+    "speedMps": 8,
+    "minSpeedMps": 0.5,
+    "maxSpeedMps": 400,
+    "wheelStep": 1.25,
+    "runFactor": 4,
+    "lookDegPerPx": 0.12,
+    "padLookDegPerS": 120,
+    "deadzone": 0.15
+  },
+  "keyframes": {
+    "$comment": "gapS: the path seconds a new keyframe is placed after the last; moves: the segment moves offered (dwell_theater's vocabulary).",
+    "gapS": 5,
+    "moves": ["ease", "linear", "cut", "pan", "crane", "dolly"]
+  },
+  "record": {
+    "$comment": "aspects: the frame's shape (width:height); heights: the frame's height choices (px); fps: the stream's rate choices; mimeTypes: tried in order, the first the browser records is used.",
+    "aspects": [
+      { "name": "9:16", "w": 9, "h": 16 },
+      { "name": "16:9", "w": 16, "h": 9 }
+    ],
+    "heights": [720, 1080, 1440],
+    "fps": [24, 30, 60],
+    "defaultAspect": "9:16",
+    "defaultHeight": 1080,
+    "defaultFps": 30,
+    "bitsPerSecond": 12000000,
+    "mimeTypes": [
+      "video/mp4;codecs=avc1",
+      "video/webm;codecs=vp9",
+      "video/webm;codecs=vp8",
+      "video/webm"
+    ]
+  }
+}
