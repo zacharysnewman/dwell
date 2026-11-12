@@ -749,7 +749,7 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    `preset:old_growth` biome (6–13 °C, 2200 mm and up; the old-growth species `dwell:old_pine` 18–26 m and
    `dwell:old_oak` 9–14 m, mostly mature, ~220 a hectare by the `old_growth` placement, crowns interleaving
    by a negative `spacing`; tall grass nearly everywhere), in the Realistic world by climate and the
-   starter's cool wet lowland (its terrain changed there; the default unchanged); `test:forest`, old-growth
+   starter's cool wet ground (3.5 % of its land; its terrain changed there, a new line for the owner to raise; the default unchanged); `test:forest`, old-growth
    everywhere; the spots `forest:inside`, `forest:edge`, `forest:above` and the scenario `forest-perf` at
    `?preset=high`, a 16.7 ms frame budget report-only until item 30 (docs/DEV_TOOLS.md "The tree performance
    reference"). Next (local): run `forest-perf` on the M1 Air for the first numbers, look at the stand, and

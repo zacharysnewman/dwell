@@ -213,7 +213,7 @@ meadow grass and the `old_growth_undergrowth` decoration, tall grass nearly ever
 sticks. The tree density, the species' weights and their stages are data (the placement's `grid`,
 `density`, `spacing`, `structures`; the species' `growth.wild`; the biome's `trees`), so a tool can thin
 or thicken the stand. The Realistic world lists it (by climate alone); the starter lists it in its own
-0..1 terms on the cool, wet lowland (temperature 0.34–0.5, wetness 0.6 and up, below 450 m), so the
+0..1 terms on its cool, wet ground (temperature 0.32–0.5, wetness 0.3 and up, below 900 m; 3.5 % of the land on each face), so the
 starter's terrain changed there; the default world is unchanged (goldens byte-identical). The fixture
 world `test:forest` (`worlds/forest.json`) is gentle land that is this forest everywhere: the tree
 performance reference (docs/DEV_TOOLS.md, the bench's `forest-perf` and `forest:*` spots;
