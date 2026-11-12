@@ -6,6 +6,26 @@ pins it.
 
 ## Open
 
+### 101. Clouds draw in the void beyond the world's rim, under a far camera
+
+Found 2026-11-12 recording the bifacial showcase (seed 7, a theater camera 140 km from the centre, 11 km up,
+looking at the disc, time 0.29). With clouds on, a cloud layer fills the void below the camera out there, where
+there is no world: on **Low** (the 2D deck) a flat sheet of hard-edged white blotches from the frame's bottom to the
+horizon; on **High** (volumetric) rows of tall, thin grey spires with noisy, jagged edges — "crazy triangles" from a
+distance — standing in front of the stars. Neither tier draws anything visible over the island itself from there.
+At 120 km out and 3 km up the camera sits inside the layer and the frame is a wall of grey smears. The clouds seem
+to be a layer around the camera, not clipped to the disc (or to its face's sky). Off, the frame is clean. Expected:
+no clouds beyond the rim (a cloud field bounded by the disc, fading out at the edge). Stills: the bifacial v2
+deliverables (`outline_clouds_off/low/high.png`). Showcase work uses clouds off meanwhile.
+
+### 102. A bright horizontal band in face B's sky seen from beyond the rim
+
+Found 2026-11-12 with #101's camera, clouds off: a soft white-grey band a few degrees wide crosses the whole frame
+below the disc (in face B's half of the sky, between the disc and the stars), and stays there while the camera
+pushes in, orbits and rises; from under face B it shows below the disc the same way. It reads as a glow stripe
+that isn't anything in the world: likely face B's sky horizon/haze glow drawn at its own horizon for a camera far
+outside the disc. Cosmetic; it shows in every far shot of the outline.
+
 ### 100. Volumetric clouds look like "crazy triangles"
 
 Owner, 2026-11-12: "the clouds look ridiculous at least the volumetric ones. Look like crazy triangles. Find a
