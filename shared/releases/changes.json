@@ -2,6 +2,18 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.53.4",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.53.3",
+      "changes": [
+        "Behind the scenes: a fix for the two-faces code check"
+      ]
+    },
+    {
       "version": "0.53.2",
       "changes": [
         "The axe swings with the arms now: the hands draw back to the shoulder (or over the head) before the strike and sweep across or down with the head, instead of a flick of the wrist",
