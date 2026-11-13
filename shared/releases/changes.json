@@ -2,6 +2,15 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.58.3",
+      "changes": [
+        "The big map shows shrines across the whole view, merged into counts when zoomed out instead of a glowing block",
+        "A marker's waypoint no longer sticks to the top of the screen while you stand on it",
+        "The map shows a pin where your new marker will go while you pick its look",
+        "New world → More options no longer repeats World type, Seed and Spawn; it uses the choices above, Realistic included"
+      ]
+    },
+    {
       "version": "0.58.2",
       "changes": [
         "Behind the scenes: a dev switch hides the targeted block's outline for clean showcase recordings",

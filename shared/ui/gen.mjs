@@ -567,7 +567,7 @@ const mkFail = (m) => {
 };
 const MARKER_TOP = ['$comment', 'palette', 'icons', 'auto', 'limits', 'world'];
 const MARKER_LIMITS = { maxMarkers: [1, 1000], labelChars: [4, 64], nameBytes: [8, 64], pickRadiusPx: [4, 64] };
-const MARKER_WORLD = { sizePx: [8, 96], nearM: [0, 1000], farM: [1, 100000], fadedAlpha: [0, 1], edgePx: [0, 200], showM: [10, 100000] };
+const MARKER_WORLD = { sizePx: [8, 96], nearM: [0, 1000], farM: [1, 100000], fadedAlpha: [0, 1], edgePx: [0, 200], showM: [10, 100000], hideWithinM: [0, 100] };
 /** The SVG path commands an icon may use (absolute only, so every point can be checked) and their numbers. */
 const PATH_ARGS = { M: 2, L: 2, H: 1, V: 1, C: 6, Q: 4, A: 7, Z: 0 };
 /** An icon's box (its path's points lie in 0..BOX). */

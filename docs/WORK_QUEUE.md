@@ -2181,6 +2181,15 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    shrine nearest its point on that face (face A's spawn and face B's `?spawn=b`); when none lies within `spawnWithin`
    m a shrine is built at the search's point itself (deterministic: the point is the seed's), so a spawn always has
    one. Portal and moon spawns keep theirs (they stand at a portal's rim or on another world by design).
+   **Fixes after a browser screenshot pass (2026-11-13, brief):** four bugs, BUGS.md #115–118, fixed on branch
+   `claude/map-shrine-fixes`: (1) "Shrine clutter on the big map: zoomed out, shrine icons are drawn only in a square
+   patch around the view centre, a dense overlapping glowing block … Fix: shrines over the whole visible map, icons
+   thinned/clustered by zoom (no overlap; e.g. hide below a zoom or merge into a count), data-driven thresholds";
+   (2) "The spawn waypoint shows '1 m' stuck to the top screen edge while standing on the spawn: hide a waypoint
+   within a few metres (data), and don't edge-clamp a point that is below/at the camera"; (3) "No pending pin while
+   the marker picker is open: draw a temporary pin at the clicked spot until saved/cancelled"; (4) "New world → More
+   options repeats World type, Seed and Spawn (already shown above) and that copy has no Realistic choice: remove the
+   duplicates (one source of each field)".
 
 ## Future (needs owner answers)
 

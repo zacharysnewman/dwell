@@ -32,7 +32,8 @@ fails on stale output (`shared/ui/gen.test.mjs`).
 - `limits`: the most markers per player per world (auto ones included), a label's most characters
   (code points, as Rust's `chars`), the most bytes of an icon or kind name, the big map's pick radius.
 - `world`: the waypoint's size, its fade (full to `nearM`, `fadedAlpha` from `farM`), the edge margin
-  an off-screen waypoint clamps to, and `showM` (farther markers show only on the maps).
+  an off-screen waypoint clamps to, `showM` (farther markers show only on the maps) and `hideWithinM` (a marker
+  this near the eye or across the ground, at or under the camera, shows no waypoint; BUGS.md #116).
 
 What stays code: the path vocabulary, the two keep rules, where the auto kinds are noted (the shell
 notes `spawn` and `death`; a portal system would call `MarkerList.noteAuto('portal', …)`).
@@ -67,7 +68,8 @@ are kept (an unknown icon draws as the fallback).
 the codec and the geometry; `markerPicker.ts` the big map's picker (icons as SVG, the palette, a
 label, Save / Delete / Cancel; `PickerDraft` its rules); `minimap.ts` draws them:
 
-- **Big map:** a click on empty ground opens the picker to place a marker there; a click on a marker
+- **Big map:** a click on empty ground opens the picker to place a marker there, a pending pin (the
+  picker's icon and colour, ringed) marking the spot until it is saved or cancelled (BUGS.md #117); a click on a marker
   opens it to edit or delete; dragging a marker moves it. Markers on the shown face are drawn.
 - **Minimap:** markers on the player's face within the disc, heading up (`minimapOffset`, the same
   frame as `dwell_game::minimap::MapFrame`; face B's right is the mirror's).

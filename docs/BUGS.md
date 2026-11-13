@@ -474,6 +474,41 @@ face, or the placement check against its shape.
 
 ## Fixed
 
+### 115. Zoomed out, the big map's shrines are a dense glowing block in a square patch (fixed after 0.58.2)
+
+Found in a browser screenshot pass of the map markers and shrines (2026-11-13; a 4× world and a Realistic world):
+zoomed out, shrine icons are drawn only in a square patch round the view's centre, a dense block of overlapping
+glowing icons. Cause: the big map asked the crate for the shrine cells within at most 4 of the centre's (`cellsFor`,
+an 18 km square) and drew every icon at its spot whatever the zoom. Fixed (`mapShrines.ts`): every shrine cell on
+the visible map and on the disc (`shrineCellsIn`; in adventure only those with explored ground, `ShrineSites`),
+new cells sited within `siteMsPerDraw` ms a draw and the rest the next draws; icons nearer than `clusterPx` on
+screen merged into one with a count (`clusterShrines`); none drawn when the 2 km grid is under `minSpacingPx` on
+screen (shrines.json `map`, validated). Tests `mapShrines.test.ts` (the whole view's cells, clustering without
+overlap, the zoom, the budget): red on the unfixed code (the functions missing, `cellsFor` capped at 4), green after.
+
+### 116. Standing on the spawn, its waypoint reads "1 m" stuck to the top of the screen (fixed after 0.58.2)
+
+Same pass: the spawn's auto marker's waypoint shows "1 m" pinned to the top screen edge while standing on it. Cause:
+the waypoint's spot (1.5 m over the feet) is at the eye, so its projection had no direction and was edge-clamped.
+Fixed: a marker within `world.hideWithinM` (4 m, `markers.json`) of the eye or across the ground (so one at or
+under the camera) shows no waypoint (`waypointShown`). Test `markers.test.ts` "a waypoint at or under the camera":
+red before (no `hideWithinM`), green after.
+
+### 117. No pin at the clicked spot while the marker picker is open (fixed after 0.58.2)
+
+Same pass: a click on the big map opens the picker for a new marker, but nothing marks where it will go until it is
+saved. Fixed: a pending pin (the picker's current icon and colour, ringed) at the clicked spot until it is saved or
+cancelled (`bigMapPins`, the picker's `look` and `onChange`). Test `markers.test.ts` "the big map pins": red before
+(no pending pin), green after.
+
+### 118. New world → More options repeats World type, Seed and Spawn, without a Realistic choice (fixed after 0.58.2)
+
+Same pass: More options (Play advanced's panel) repeats the form's World type, Seed and Spawn, and its World type
+has no Realistic. Fixed: More options shows Play advanced's fields less the form's (`moreOptionsFields`,
+`NEW_WORLD_FORM_PARAMS`); its Play takes the Type or World (Realistic as `worldgen`, with its Sky), Seed and Spawn
+from the form above (`moreOptionsRoute`), so each field has one source. Test `mainMenu.test.ts` "New world → More
+options": red before (the functions missing), green after.
+
 ### 113. First-person recordings show the block-target box; no dev toggle hides it (fixed after 0.57.4)
 
 Found recording showcase video 2 (water, 2026-11-12): wading in off seed 7's beach, the thin black box round the
