@@ -5041,6 +5041,10 @@ impl<S: Scene> Game<S> {
 
     /// Uses the world's sky (its settings, DAY_NIGHT.md §2: its clock, its moon's phase and its
     /// orbit, REALISTIC_WORLD.md §8).
+    /// A retuned world's maps for the generation workers (Chisel in the game, Phase 56 B7).
+    pub fn install_maps(&mut self, maps: &[Vec<u8>]) {
+        self.pool.borrow_mut().install_maps(maps);
+    }
     pub fn set_world_settings(&mut self, s: &dwell_protocol::world_settings::WorldSettings) {
         self.world_day = dwell_look::orbits::day_night_for(s);
         self.install_travel();

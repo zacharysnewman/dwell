@@ -1923,7 +1923,24 @@ sends `WorldgenRequest`, gets `WorldgenConfig` (the text), checks the hash and p
 asks the shell for the maps under it (`prepareWorld(seed, version, worldgen)`), so its generators make
 the host's ground. An older build reads the tag as an unknown required one and refuses ("This world
 needs a newer version of Dwell."); a default world's join is byte-identical. The dedicated server takes
-`--worldgen FILE|test:NAME` (installed before it starts; not saved, given on every start). The game's
+`--worldgen FILE|test:NAME` (installed before it starts; not saved, given on every start). **In the game (B7, WORK_QUEUE item 34):** a local world's
+game menu has a **Chisel** page (`client/src/ui/chiselPanel.ts`, logic in `client/src/chisel/inGame.ts`: the
+world's config opened as an edit, sliders for its biomes' `detail`, `shaping` and `banks` from `biomes.mjs`
+`TERRAIN`, Undo, Reset to the config it opened with, a 400 ms debounce), offered in creative worlds. A change
+goes to the local-world worker (`retune`) and the server (`dwell-sim` `server/chisel.rs`
+`Server::retune_worldgen`): each face's installed map re-wrapped with the new config
+(`config::retune_worldgen`: decoded and encoded again, nothing recomputed; an edit that moves the ground
+itself, another height field, is refused as a new world), the generators made again (the world's, its
+pool, the LOD's bases), and every loaded or saved chunk within 3 chunks of the player horizontally
+generated again under it with the player's edits kept on top (the cells where the chunk differs from the
+old config's generation, `rebase_chunk`), marked modified, saved and sent whole to the clients streaming it,
+its LOD section marked dirty. The config is saved in the world file's settings (`worldgen`) and installed
+before the generators when the world opens (a re-wrap when the ground matches, else the maps computed);
+the world index's `WorldMeta.worldgen` follows so the page builds the right maps first. The page installs
+the new maps in its instance and re-inits its generation workers (`installWorldMaps`, `Jobs::install_maps`),
+the worker its server-jobs worker. Host only: refused while guests are in the world. Not yet: chunks out of
+the radius that carry edits keep the old ground until a retune reaches them; the client's far LOD sections
+and its far terrain stay the old config's until the world reopens; the water grid is not re-read. The game's
 terrain volume (the cliffs) is over the edit's ground, where Chisel's
 preview has none (docs/DEV_TOOLS.md "Play a test world").
 

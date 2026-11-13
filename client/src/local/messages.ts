@@ -57,6 +57,11 @@ export type ToWorker =
   | { t: 'save' }
   /** The host switches the world's game mode (ADR 0065, by name); answered with `mode`. */
   | { t: 'setMode'; mode: string }
+  /**
+   * The host retunes the world's worldgen config (Chisel in the game, Phase 56 B7): the chunks
+   * within `radius` chunks of the player generated again, edits kept, saved; answered with `retuned`.
+   */
+  | { t: 'retune'; worldgen: string; radius: number }
   /** Friend-world hosting (§10.2): start hosting with these limits and policies. */
   | {
       t: 'host';
@@ -103,6 +108,8 @@ export type FromWorker =
   | { t: 'ready'; persisted: boolean; mode?: string }
   /** The world's game mode after a `setMode` (unchanged if the name was refused). */
   | { t: 'mode'; mode: string }
+  /** After a `retune`: faces A's and B's new maps for the page's instances, or the refusal. */
+  | { t: 'retuned'; maps: Uint8Array[]; error?: string }
   | { t: 'error'; message: string }
   /**
    * A loading stage of the world's start (shared/look/loading.json `stages`, by id) began or ended;
