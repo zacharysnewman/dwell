@@ -471,6 +471,7 @@ impl DayNight {
             b: self.sample(solar_deg + 180.0),
             air: crate::atmosphere::Air::GROUND,
             moon_shown: true,
+            clouds_shown: true,
         }
     }
 }
@@ -501,6 +502,9 @@ pub struct DayState {
     /// Whether the sky draws the moon's far disc: false for a viewer on the moon itself
     /// (MOON_WORLD.md §7.3; true from [`DayNight::state`]).
     pub moon_shown: bool,
+    /// Whether the sky draws home's clouds: false for a viewer on another grid, whose sky has no
+    /// cloud deck of its own yet (MOON_WORLD.md §7.3; true from [`DayNight::state`]).
+    pub clouds_shown: bool,
 }
 
 impl Default for DayState {

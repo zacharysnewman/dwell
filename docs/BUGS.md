@@ -6,6 +6,13 @@ pins it.
 
 ## Open
 
+### 126. Home's sky shows on the moon (clouds hidden after 0.58.4; the moon's sky not built)
+
+Same flight: home's blue sky and clouds show on the moon. The moon's sky (no air, black) is not built yet
+(MOON_WORLD.md §7.3 "Not yet"). Partly fixed: home's clouds are not drawn off home (`DayState::clouds_shown`,
+false from `grid_view::day_on_grid`; the renderer's `clouds_now` is Off), test `grid_view`
+`on_the_moon_the_sun_is_turned_into_its_frame`. Left: the sky's colours and air on the moon.
+
 ### 100. Volumetric clouds look like "crazy triangles"
 
 Owner, 2026-11-12: "the clouds look ridiculous at least the volumetric ones. Look like crazy triangles. Find a
@@ -473,6 +480,41 @@ shallow ramp, maybe same problem with steep ramps too?" Not investigated yet: ta
 face, or the placement check against its shape.
 
 ## Fixed
+
+### 123. On the moon its ground is not drawn: sky above, stars below (fixed after 0.58.4; the browser check outstanding)
+
+Owner's first browser flight (0.58 on e4220fcd, M1, seed 7, both faces): on the moon the client held 232 chunks,
+all meshed, `__dwell.voxel()` found solid cells under the feet and the target outline showed, but only 16–17 draw
+calls (~1.8k triangles; home 527, 820k) were drawn: the screen was sky above and a starfield below. Cause: the
+renderer draws a chunk by `Game::chunk_fade`, which asked home's LOD; while away the LOD's selection is frozen
+(`update_lod` returns on another grid) and was made in home's coordinates, so the moon's grid-local chunks mostly
+read "the LOD draws here" and were skipped. The native test checked chunks requested and meshed, not drawn.
+Fixed: off home every chunk held is drawn in full (`chunk_fade`), and home's LOD is dropped at the crossing (#124).
+Test `game_local` `on_the_moon_its_chunks_are_drawn_and_homes_lod_meshes_dropped` (both faces, LOD on): the
+moon's chunk under the player and every moon chunk meshed are drawn; red on the unfixed code (the chunk under the
+player not drawn), green after.
+
+### 124. Mesh memory grows across moon trips: home's LOD meshes kept while away (fixed after 0.58.4)
+
+Same flight: mesh memory 44 MB on the first moon visit, 164 MB back home, 256 MB on the second visit with still 232
+moon chunks. Cause: at the crossing the chunks were dropped (`ChunkStreamer::unload_all`) but home's LOD sections
+stayed uploaded, only hidden. Fixed: `LodSystem::drop_all` (every section's mesh off the view, the selection and
+fades cleared; the index, bounds and jobs in flight kept), called at each crossing (`Game::follow_grid`); back home
+the LOD builds again from the root. Same test: no section held at the capture or on the moon (red: 57 held), and
+home's sections meshed and shown again after the release.
+
+### 125. Snaps at the moon's capture and release (fixed after 0.58.4; the browser check outstanding)
+
+Same flight: after the face A landing 2 snaps + 1 reset (the dev move's snap and the join's reset, and one more:
+last correction 34 m); the face B trip 3 → 11 snaps (last 18.7 m). Cause: the predictor carries the player at
+its guess of the server tick an input runs in (the latest snapshot's `server_tick − 1 − ack`); with uneven frames
+and a laggy link the server runs it a few ticks off, and the carry turns positions with the moon's frame at that
+other moment of its ~1 km/s orbit (~17 m a tick: 34 m is 2 ticks, 18.7 m one). Natively the rig ran in lock-step
+and showed none. Fixed (`dwell-physics` `predictor.rs`): for `CARRY_WINDOW` inputs after a carry a correction up to
+the grids' relative speed × `CARRY_SLIP_TICKS` (8) ticks is smoothed out (the 0.1 s display offset) instead of
+snapped. Test `game_local` `a_moon_trip_on_a_jittery_device_makes_no_snap` (both faces: 6 ticks of latency, every
+7th frame 4 ticks): no snap through the capture, descent, landing and release; red on the unfixed code (a 45–93 m
+correction snapped at the first snapshot on the moon), green after.
 
 ### 115. Zoomed out, the big map's shrines are a dense glowing block in a square patch (fixed after 0.58.2)
 

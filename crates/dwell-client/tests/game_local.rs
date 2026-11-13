@@ -4079,6 +4079,122 @@ dwell_world::both_faces!(
     }
 );
 
+dwell_world::both_faces!(
+    /// BUGS.md #123, #124 (MOON_WORLD.md §7.3): with the LOD on, home's section meshes are dropped
+    /// at the capture (they stayed uploaded while away, the mesh memory growing each trip), and the
+    /// moon's chunks under the player are drawn: `Game::chunk_fade` (the renderer's draw decision
+    /// for a chunk) is not asked of home's LOD selection, made in home's coordinates, for the
+    /// moon's grid-local chunks (the browser drew 16 of 232).
+    fn on_the_moon_its_chunks_are_drawn_and_homes_lod_meshes_dropped(f: FaceFrame) {
+        let mut rig = Rig::with_generator(GENERATOR_SANDBOX);
+        assert!(rig.run_until(60 * 20, |r| {
+            r.game
+                .as_ref()
+                .is_some_and(|g| g.debug_state().terrain_ready)
+        }));
+        rig.game
+            .as_mut()
+            .unwrap()
+            .enable_lod(dwell_client::game::LodSettings {
+                pixel_error: 4.0,
+                cache_bytes: 256 << 20,
+                detail_distance_m: Some(256.0),
+                full_mode: false,
+            });
+        assert!(
+            rig.run_until(60 * 30, |r| r.scene.borrow().held.len() > 4),
+            "home's LOD sections meshed: {:?}",
+            rig.game.as_ref().unwrap().debug_state().lod
+        );
+        let feet = rig.game.as_ref().unwrap().debug_state().feet;
+        let home = [feet[0], feet[1] + 1.0, feet[2]];
+        let id = my_id(&rig);
+        rig.input.flight.set_allowed(true);
+        rig.input.flight.set(true);
+        rig.run_until(30, |_| false);
+
+        // Captured over the moon's face `f` (a dev move 200 m over its ground, moving with it).
+        let t = f64::from(rig.core.server().tick()) / 60.0;
+        let fr = rig.core.server().grids().frame(0, t);
+        let (wp, wv) = fr.release(moon_ground(rig.seed, f, 200.0), [0.0; 3]);
+        assert!(rig.core.server().place_on_grid(id, wp, wv));
+        assert!(
+            rig.run_until(120, |r| r.game.as_ref().unwrap().grid() == 1),
+            "captured"
+        );
+        let held_at_capture = rig.scene.borrow().held.len();
+
+        // Down onto the moon's ground: its chunk under the player meshed and drawn.
+        let cell = dwell_world::GridFrame::HOME.cell_of(moon_ground(
+            rig.seed,
+            f,
+            -0.5 * dwell_world::CELL_H,
+        ));
+        let chunk = dwell_world::chunk_of(cell[0], cell[1], cell[2]);
+        assert!(
+            rig.core
+                .server()
+                .place_on_grid(id, moon_ground(rig.seed, f, 6.0), [0.0; 3])
+        );
+        assert!(
+            rig.run_until(60 * 30, |r| r.scene.borrow().chunks.len() > 8
+                && r.scene.borrow().chunks.contains(&chunk)),
+            "the moon's chunks meshed"
+        );
+        rig.run_until(30, |_| false);
+        let g = rig.game.as_ref().unwrap();
+        assert!(
+            g.chunk_fade(chunk).is_some(),
+            "the moon's chunk under the player is drawn"
+        );
+        let scene = rig.scene.borrow();
+        let hidden = scene
+            .chunks
+            .iter()
+            .filter(|&&c| g.chunk_fade(c).is_none())
+            .count();
+        assert_eq!(
+            hidden,
+            0,
+            "every moon chunk meshed is drawn ({} meshed)",
+            scene.chunks.len()
+        );
+        assert_eq!(
+            held_at_capture, 0,
+            "home's LOD meshes dropped at the capture"
+        );
+        assert!(
+            scene.held.is_empty(),
+            "no home section uploaded on the moon"
+        );
+        assert!(scene.shown.is_empty(), "no home section shown on the moon");
+        drop(scene);
+
+        // Home again (out past the release sphere, then a dev move to the spawn): its LOD builds
+        // again from nothing.
+        let moon = dwell_worldgen::grids::grid("dwell:moon").unwrap();
+        let r = moon.capture_m.unwrap() * dwell_worldgen::grids::travel().release_factor - 200.0;
+        let upv = f.vector([0.0, 1.0, 0.0]);
+        let at = [0, 1, 2].map(|k| dwell_sim::travel::GRID_CENTRE[k] + upv[k] * r);
+        assert!(rig.core.server().place_on_grid(id, at, [0.0; 3]));
+        rig.run_until(30, |_| false);
+        rig.input.set_key("Space", true);
+        assert!(
+            rig.run_until(120, |r| r.game.as_ref().unwrap().grid() == 0
+                && r.core.server().grid_state_of(id).is_some_and(|g| g.0 == 0)),
+            "released by the client and the server"
+        );
+        rig.input.set_key("Space", false);
+        assert!(rig.core.server().place_on_grid(id, home, [0.0; 3]));
+        assert!(
+            rig.run_until(60 * 30, |r| r.scene.borrow().held.len() > 4
+                && !r.scene.borrow().shown.is_empty()),
+            "home's LOD sections meshed and shown again: {:?}",
+            rig.game.as_ref().unwrap().debug_state().lod
+        );
+    }
+);
+
 /// BUGS.md #113: a clean recording can hide the targeted block's outline (`setView({ targetOutline:
 /// false })`); the block stays targeted, and the outline comes back when switched on again.
 #[test]
@@ -4227,5 +4343,127 @@ dwell_world::both_faces!(
             m.ground_m.unwrap() < 0.3 && m.up_mps.abs() < 0.1
         });
         assert!(landed, "landed on the moon's ground");
+    }
+);
+
+dwell_world::both_faces!(
+    /// BUGS.md #125: a capture, the descent, the landing and the release on a device with uneven
+    /// frames and a laggy link make no snap. The server runs an input a few ticks off the client's
+    /// guess (`server_tick − 1 − ack`), so the carry turned positions at another moment of the
+    /// moon's ~1 km/s orbit: 45–93 m off at the first snapshot on the moon, snapped (the browser's
+    /// 34 m and 18.7 m). The predictor now smooths a correction its carry's clock slip explains.
+    fn a_moon_trip_on_a_jittery_device_makes_no_snap(f: FaceFrame) {
+        let mut rig = Rig::with_generator(GENERATOR_SANDBOX);
+        rig.latency_steps = 6;
+        assert!(rig.run_until(60 * 20, |r| {
+            r.game
+                .as_ref()
+                .is_some_and(|g| g.debug_state().terrain_ready)
+        }));
+        rig.input.flight.set_allowed(true);
+        rig.input.flight.set(true);
+        rig.run_until(30, |_| false);
+        let face = if f == dwell_world::FaceFrame::A {
+            1.0
+        } else {
+            -1.0
+        };
+        let r = rig.core.moon_approach(300.0, face);
+        assert!(!r.contains("error"), "{r}");
+        rig.run_until(60, |_| false);
+        let snaps = |r: &Rig| r.game.as_ref().unwrap().debug_state().stats.snaps;
+        let report = |r: &Rig| r.game.as_ref().unwrap().moon_report().unwrap();
+        let before = snaps(&rig);
+        // Every 7th frame takes 4 ticks (a hitch), as `flyTo` steers.
+        let mut n = 0usize;
+        let mut step = |r: &mut Rig| {
+            n += 1;
+            if n.is_multiple_of(7) {
+                r.slow_frame(4);
+            } else {
+                r.frame();
+            }
+        };
+        let mut captured = false;
+        for _ in 0..60 * 60 {
+            let m = report(&rig);
+            if m.grid == "moon" {
+                captured = true;
+                break;
+            }
+            rig.input.look.yaw = m.look.0;
+            rig.input.look.pitch = m.look.1;
+            rig.input.set_key("KeyW", m.look.1.abs() < 70.0);
+            rig.input.set_key("Space", m.look.1 > 20.0);
+            rig.input.set_key("KeyC", m.look.1 < -20.0);
+            step(&mut rig);
+        }
+        for k in ["KeyW", "Space", "KeyC"] {
+            rig.input.set_key(k, false);
+        }
+        assert!(captured, "captured");
+        // Down to 40 m, then flight off and the landing.
+        rig.input.look.pitch = 0.0;
+        rig.input.set_key("KeyC", true);
+        for _ in 0..60 * 120 {
+            let g = report(&rig).ground_m.unwrap();
+            if g < 40.0 {
+                break;
+            }
+            rig.input
+                .flight
+                .set_speed_level(if g < 600.0 { 6.0 } else { 11.0 });
+            step(&mut rig);
+        }
+        rig.input.set_key("KeyC", false);
+        rig.input.flight.set(false);
+        let mut landed = false;
+        for _ in 0..60 * 30 {
+            let m = report(&rig);
+            if m.ground_m.unwrap() < 0.3 && m.up_mps.abs() < 0.1 {
+                landed = true;
+                break;
+            }
+            step(&mut rig);
+        }
+        assert!(landed, "landed: {:?}", report(&rig).ground_m);
+        assert_eq!(
+            snaps(&rig),
+            before,
+            "no snap through the capture and landing"
+        );
+
+        // Out: inside the release sphere (a dev move: its own snap), then up past it.
+        let id = my_id(&rig);
+        let moon = dwell_worldgen::grids::grid("dwell:moon").unwrap();
+        let r = moon.capture_m.unwrap() * dwell_worldgen::grids::travel().release_factor - 200.0;
+        let upv = f.vector([0.0, 1.0, 0.0]);
+        let at = [0, 1, 2].map(|k| dwell_sim::travel::GRID_CENTRE[k] + upv[k] * r);
+        rig.input.flight.set(true);
+        rig.run_until(5, |_| false);
+        assert!(rig.core.server().place_on_grid(id, at, [0.0; 3]));
+        rig.run_until(60, |_| false);
+        let before = snaps(&rig);
+        rig.input.set_key("Space", true);
+        let mut released = false;
+        for _ in 0..60 * 10 {
+            if rig.game.as_ref().unwrap().grid() == 0
+                && rig
+                    .core
+                    .server()
+                    .grid_state_of(id)
+                    .is_some_and(|g| g.0 == 0)
+            {
+                released = true;
+                break;
+            }
+            step(&mut rig);
+        }
+        rig.input.set_key("Space", false);
+        assert!(released, "released");
+        for _ in 0..120 {
+            step(&mut rig);
+        }
+        assert_eq!(snaps(&rig), before, "no snap through the release");
     }
 );

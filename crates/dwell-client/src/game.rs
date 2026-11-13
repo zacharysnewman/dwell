@@ -1720,8 +1720,13 @@ impl<S: Scene> Game<S> {
         self.chunk_fade(c).is_some()
     }
     /// How the renderer draws a chunk: in full, cross-fading with its level-1 section (dwell-lod
-    /// fade.rs), or (None) not at all.
+    /// fade.rs), or (None) not at all. On another grid every chunk held is drawn in full: the LOD
+    /// is home's, its selection in home's coordinates, not the grid's (BUGS.md #123; that grid's
+    /// own LOD is M-5).
     pub fn chunk_fade(&self, c: ChunkCoord) -> Option<Fade> {
+        if self.grid_drawn != 0 {
+            return Some(Fade::Full);
+        }
         self.lod
             .as_ref()
             .map_or(Some(Fade::Full), |l| l.chunk_fade(c))
@@ -3220,6 +3225,11 @@ impl<S: Scene> Game<S> {
             return None;
         }
         self.streamer.unload_all();
+        // The LOD's sections are home's: their meshes go too (BUGS.md #124), and home's view
+        // builds again from the root on the way back.
+        if let Some(lod) = &mut self.lod {
+            lod.drop_all::<SectionMeshes>(&mut View(self.scene.clone()));
+        }
         self.prediction = EditPredictor::new();
         self.grid_drawn = to;
         telemetry::sample("grid.crossings", 1.0);
