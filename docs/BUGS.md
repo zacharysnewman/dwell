@@ -296,6 +296,43 @@ ground 24 m north and south and a few metres wide (a radial cleaver, `peak_relie
 shade should reach the hill is the question: the sweep has no sun disc across the light, so a ridge a
 few metres wide shades as a wall would.
 
+Round 2 (branch `claude/lod-shadow-69`, session scratchpad `lod-bugs/`):
+
+- **Not the cleaver.** A native model of the sweep (dwell-look `horizon` over the starter's height field,
+  maps centred on the spot, the light from +X at 3°) shades the same receivers, the hill at x ≈ 5350–5550
+  on z ≈ −4866, and lights z ± 60 m. The step that shades them is at 389 m, mip 3: one 128 m texel whose
+  highest point (948 m) is ground to the north of the line (the hill rising north), not on the ray. The
+  max mips reach a third of a step's distance to the side of the ray.
+- **A sweep change on the branch fixes that model but not the game.** Each step is split into sub-steps
+  no longer than the sun's disc (2 tan penumbra) is wide at their distance (at most 8). Test:
+  `a_wall_beside_the_light_does_not_shade_a_column_off_its_line` (both faces), red then green; the
+  ridge tests still pass. In the native model the streak goes and 162 of 312 columns on the line are
+  shaded instead of 243. **In Chrome the column stays** (`r2after/v69a/west.png`), as it did with mip 0
+  only. The sweep costs 0.94 ms on the frames that run it, against 0.25 ms before (`lod-shadows-dusk`,
+  64 of ~385 frames; frame intervals unchanged on the M1).
+- **Not the chunks.** With the chunks left out of the heightmaps it stays (`nochunks/v69a/west.png`). It
+  is not a portal monument either (the starter's sites are all far off). It is not on the eye's line:
+  300 m south, after a refill, the centre has none (`centre/v69c/s300-late.png`).
+- **So the caster is in the LOD sections as the heightmaps draw them**, not in the height field: a
+  section's top above its columns (cells, tree blobs at ≤ 2 m levels, skirts), or the fill's transform at
+  that place. Next: read the level-1 heightmap's texels back along z = −4866, east of x = 5450, and compare
+  them with `column_at` (a dev readback of `lod_maps`, `__dwell`).
+
+Round 3: the sub-steps are kept with the sweep at 4 rows a frame (`sweepRows`, was 32): on
+`lod-shadows-dusk` (M1, unthrottled) `gpu.lodsweep` p50 0.32 ms, mean 0.53 ms on the 156 frames that sweep
+(before the sub-steps: p50 0.19, mean 0.25 on 64 frames; with 8 rows: p50 0.38, mean 0.57 on 239);
+frame intervals and `frame.cpu` unchanged. A cap of 4 sub-steps would cost less but lets a wall 250 m
+beside the line shade it again (the test fails), so the cap stays 8. **The fill's geometry, read back
+natively** (`dwell-lod`, the starter world's real LOD selection from the spot, every shown section's
+opaque triangles rasterised into an 8 m top map over x −7000…13000, z −5000…−4728; probe kept as a diff in
+the session scratchpad `lod-bugs/probe_fill.diff`): the drawn tops stand at most ~90 m over `column_at`
+near the hill (cliff edges in 16 m cells, the cell's centre sample spread over the cell; up to ~230 m on
+the cone's 128 m cells), and an exact march over them toward +X at 3° finds **no streak** on z = −4866
+(no column shaded there with those 64 m north and south lit). So neither the fill's content nor the
+march's sideways reach makes the column; what is left is the sweep's and the fragment's sampling (the
+horizon map's texel rows, level boundaries) or the real light's azimuth at the world's opening hour
+(7:00, not due east). Next: read the horizon map itself back on the GPU along that line.
+
 ### 60. On the software renderer the page draws no frame for ~6 s just after the first torch is placed
 
 Found 2026-11-10 chasing main's e2e failure on 0.51.8: `edit.spec.ts`'s every-palette-block test failed

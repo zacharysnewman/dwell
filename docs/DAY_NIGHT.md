@@ -624,9 +624,11 @@ WGSL), `dwell-look` `lod_shadows.rs` (the tunables, the march and the blend in f
   still costs nothing.
 - **Horizon maps, swept**: per level an `r16float` map (two layers). A sweep marches every texel's
   ray toward the light over the heightmaps in use (from 1.5 texels out, 24 steps on High and 16 on
-  Low growing geometrically to `reachM`, 5 km or 2 km, each reading the max mip its length needs, so
-  a long step sees every ridge it passes) and keeps the terrain's highest elevation tangent seen
-  from the texel's height plus `biasM`. 32 rows a frame; it replaces the map in use when whole. A
+  Low growing geometrically to `reachM`, 5 km or 2 km, each split into sub-steps no longer than the
+  sun's disc (2 tan `penumbraDeg`) is wide at their distance, at most 8, each reading the max mip its
+  length needs, so a long step sees every ridge it passes and nothing far beside its line, BUGS.md
+  #69) and keeps the terrain's highest elevation tangent seen from the texel's height plus `biasM`.
+  4 rows a frame (32 before the sub-steps, which cost about 4–8×); it replaces the map in use when whole. A
   level is swept again when its heightmap was refilled or the light has turned `turnDeg` (0.5°)
   about the face's up; the light's elevation needs no sweep (the fragment compares it).
 - **Receiving**: every fragment on the face (inside the cascades too, below) reads its column's horizon (bilinear, the finest

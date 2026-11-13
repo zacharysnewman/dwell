@@ -23,7 +23,8 @@
 //! it reads anything back or blocks: the main thread's share is the fill's draws (a budget a frame).
 
 use dwell_look::lod_shadows::{
-    LodShadowTier, LodShadowTunables, MAX_LEVELS, NO_HORIZON, RefreshTunables, max_mips,
+    LodShadowTier, LodShadowTunables, MAX_LEVELS, MAX_SUBSTEPS, NO_HORIZON, RefreshTunables,
+    max_mips,
 };
 use dwell_look::shadows::{Caster, ShadowQuality};
 use dwell_world::{ChunkCoord, FaceFrame};
@@ -465,12 +466,13 @@ pub fn uniforms(
 }
 
 /// Floats in the sweep's uniform block (`Sweep` in `SWEEP_WGSL`).
-pub const SWEEP_FLOATS: usize = (MAX_LEVELS + 3) * 4;
+pub const SWEEP_FLOATS: usize = (MAX_LEVELS + 4) * 4;
 
 /// The sweep's uniform block: per level its heightmap's centre relative to the swept map's centre
 /// (x, z), half-width and layer (−1: none); the heights' top and range, the maps' image of world z
 /// and their texels a side; the march (steps, first step in texels, reach, bias); the light's
-/// direction across the face (x, z), the swept map's half-width and the mips.
+/// direction across the face (x, z), the swept map's half-width and the mips; the sun's disc across
+/// (2 tan of the penumbra: m per m of distance) and the most sub-steps a step takes.
 pub fn sweep_uniforms(
     t: &LodShadowTunables,
     tier: &LodShadowTier,
@@ -509,6 +511,8 @@ pub fn sweep_uniforms(
         batch.place.half as f32,
         max_mips(tier.resolution) as f32,
     ]);
+    u[at + 12] = (2.0 * t.march.penumbra_deg.to_radians().tan()) as f32;
+    u[at + 13] = MAX_SUBSTEPS as f32;
     u
 }
 
@@ -583,6 +587,8 @@ struct Sweep {
     // xy the light's direction across the face (unit; world x, z), z the swept map's half-width,
     // w the mips.
     dir: vec4f,
+    // x the sun's disc across (m per m of distance), y the most sub-steps a step takes.
+    disc: vec4f,
 };
 @group(0) @binding(0) var<uniform> sweep: Sweep;
 @group(0) @binding(1) var heights: texture_depth_2d_array;
@@ -650,12 +656,18 @@ fn sweep_fs(@builtin(position) at: vec4f) -> @location(0) vec4f {
     var most = -NO_HORIZON;
     var s = start;
     for (var i = 0; i < steps; i++) {
-        let q = col + sweep.dir.xy * s;
-        let lv = sweep_level(q);
-        if (lv >= 0) {
-            let tl = 2.0 * sweep.maps[lv].z / res;
-            let mip = min(i32(round(log2(max(s * (growth - 1.0) / tl, 1.0)))), mips - 1);
-            most = max(most, (sweep_height(lv, q, mip) - h0) / s);
+        // Sub-steps no longer than the sun's disc is wide at their distance (BUGS.md #69).
+        let delta = s * (growth - 1.0);
+        let n = i32(clamp(ceil(delta / max(s * sweep.disc.x, 1e-6)), 1.0, sweep.disc.y));
+        for (var k = 0; k < n; k++) {
+            let d = s + delta * f32(k) / f32(n);
+            let q = col + sweep.dir.xy * d;
+            let lv = sweep_level(q);
+            if (lv >= 0) {
+                let tl = 2.0 * sweep.maps[lv].z / res;
+                let mip = min(i32(round(log2(max(delta / f32(n) / tl, 1.0)))), mips - 1);
+                most = max(most, (sweep_height(lv, q, mip) - h0) / d);
+            }
         }
         s *= growth;
     }
@@ -1497,8 +1509,10 @@ mod tests {
             "let h0 = sweep_height(home, col, 0) + sweep.march.w;",
             "let start = texel * sweep.march.y;",
             "let growth = pow(sweep.march.z / start, 1.0 / f32(max(steps, 2) - 1));",
-            "let mip = min(i32(round(log2(max(s * (growth - 1.0) / tl, 1.0)))), mips - 1);",
-            "most = max(most, (sweep_height(lv, q, mip) - h0) / s);",
+            "let n = i32(clamp(ceil(delta / max(s * sweep.disc.x, 1e-6)), 1.0, sweep.disc.y));",
+            "let d = s + delta * f32(k) / f32(n);",
+            "let mip = min(i32(round(log2(max(delta / f32(n) / tl, 1.0)))), mips - 1);",
+            "most = max(most, (sweep_height(lv, q, mip) - h0) / d);",
             "return vec4f(min(most, NO_HORIZON), 0.0, 0.0, 1.0);",
         ] {
             assert!(SWEEP_WGSL.contains(line), "{line}");
