@@ -39,6 +39,7 @@ use dwell_world::{
 use dwell_protocol::auth::verify_ed25519;
 
 mod buried;
+pub mod chisel;
 mod chopping;
 mod creatures;
 mod ecology;
@@ -1152,6 +1153,8 @@ impl Server {
         // A world from an older line (or a launch naming a retired version) opens on this build's
         // generator of its kind.
         config.generator_version = dwell_world::current_generator(config.generator_version);
+        // A world retuned in the game (Phase 56 B7): its saved worldgen config installed first.
+        Self::install_saved_worldgen(&config);
         let (generator, air_test, sky) = match &config.generator_override {
             Some(g) => (g.clone(), config.air_test_override.clone(), None),
             None => {

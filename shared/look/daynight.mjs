@@ -23,6 +23,8 @@ const SCHEMA = {
     bloom: [0, 1],
     glowDeg: [1, 90],
     glow: [0, 1],
+    distanceM: [1000, 1e9],
+    surface: [0, 1],
   },
   moon: {
     radiusDeg: [0.05, 10],
@@ -218,9 +220,24 @@ export function checkMoonDistance(data, grids) {
   return data;
 }
 
+/**
+ * The sun world (shared/worldgen/grids.json `dwell:sun`, docs/proposals/SUN_WORLD.md) sits sun.distanceM out
+ * on the sun's path, its radius at the sky's sun.radiusDeg: radiusM / distanceM = tan(radiusDeg), to
+ * 1%, so the disc keeps today's size.
+ */
+export function checkSunDistance(data, grids) {
+  const sun = (grids?.grids ?? []).find((g) => g.name === 'dwell:sun');
+  if (!sun) fail('shared/worldgen/grids.json has no "dwell:sun" grid for sun.distanceM to keep in the sky');
+  const want = sun.radiusM / Math.tan((data.sun.radiusDeg * Math.PI) / 180);
+  if (Math.abs(data.sun.distanceM / want - 1) > 0.01) {
+    fail(`sun.distanceM must keep the sun's ${sun.radiusM} m radius at sun.radiusDeg ${data.sun.radiusDeg}°: about ${Math.round(want)} m, got ${data.sun.distanceM}`);
+  }
+  return data;
+}
+
 export function loadDayNight(path = join(here, 'daynight.json')) {
   const grids = JSON.parse(readFileSync(join(root, 'shared/worldgen/grids.json'), 'utf8'));
-  return checkMoonDistance(validateDayNight(JSON.parse(readFileSync(path, 'utf8'))), grids);
+  return checkSunDistance(checkMoonDistance(validateDayNight(JSON.parse(readFileSync(path, 'utf8'))), grids), grids);
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {

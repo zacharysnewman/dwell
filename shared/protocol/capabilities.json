@@ -44,6 +44,10 @@
       "description": "A player's map markers (WORK_QUEUE item 53, docs/MAP_MARKERS.md) go both ways as `Markers` (the record, dwell_protocol::markers): the server sends that player's saved record once, after this client's Capabilities, to that player only; the client sends its whole record again on each change, and the server keeps it for that player's device key in the world's optional `markers` table. Without it neither is sent: the client keeps its markers for this session only."
     },
     {
+      "name": "grid.sun",
+      "description": "The client knows the sun's grid (shared/worldgen/grids.json `dwell:sun`, its `capability`; docs/proposals/SUN_WORLD.md \u00a75): the server may capture it into the sun's space (grid index 2 on the `grid.frames` wire) and counts the sun's slab in its far flight. Without it the server never captures it there: it flies on through as before, and the sun stays a far body for it."
+    },
+    {
       "name": "blueprints.world",
       "description": "Blueprints (WORK_QUEUE item 55, docs/BLUEPRINTS.md) go both ways as `Blueprints` (dwell_protocol::blueprints): the server sends every blueprint in the world once after this client's Capabilities, then each one placed or gone (completed or removed) to every client with it; the client places and removes one with `Place` and `Remove`, which the server keeps in the world's optional `blueprints` table. Without it neither is sent: an older client sees no blueprints and an older server is never sent one."
     }

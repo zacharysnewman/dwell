@@ -1987,6 +1987,30 @@ impl Client {
             .borrow_mut()
             .set_clouds(CloudQuality::from_name(quality).unwrap_or(CloudQuality::High));
     }
+    /// A retuned world's maps (Chisel in the game, Phase 56 B7; the local world's `retuneWorldgen`
+    /// gave them): installed in this instance and in the generation workers, which make their
+    /// generators again, so the chunks they generate next are the new config's. The chunks the
+    /// server generated again arrive whole. False if a map is refused.
+    #[wasm_bindgen(js_name = installWorldMaps)]
+    pub fn install_world_maps(&self, maps: Array) -> bool {
+        let maps: Vec<Vec<u8>> = maps
+            .iter()
+            .filter_map(|m| m.dyn_into::<Uint8Array>().ok())
+            .map(|m| m.to_vec())
+            .collect();
+        if maps
+            .iter()
+            .any(|m| dwell_worldgen::worldmap::install(m).is_err())
+        {
+            return false;
+        }
+        let mut s = self.inner.borrow_mut();
+        s.shaping = Shaping::Ready(maps.iter().map(|m| Uint8Array::from(&m[..])).collect());
+        if let Some(g) = s.game.as_mut() {
+            g.install_maps(&maps);
+        }
+        true
+    }
     /// The Model detail setting: a level of shared/models/models.json's `detail.levels`, by id
     /// (anything else: the data's default; ADR 0070 §10).
     #[wasm_bindgen(js_name = setModelDetail)]
@@ -3790,6 +3814,10 @@ impl Inner {
         if let Some(bake) = crate::render::moon::bake_for(world_seed) {
             self.renderer.borrow_mut().set_moon(&bake);
         }
+        // The sun's disc from the sun world's face A (docs/proposals/SUN_WORLD.md S-3; ~60 ms natively).
+        if let Some(bake) = crate::render::moon::sun_bake_for(world_seed) {
+            self.renderer.borrow_mut().set_sun(&bake);
+        }
         game.vent_plumes = crate::vent_plumes::VentPlumes::from_worldgen(
             self.session.as_ref().map_or("", |s| s.worldgen_config()),
         );
@@ -3803,6 +3831,13 @@ impl Inner {
             game.set_structures(s.structures());
             game.set_structure_ops(
                 s.capability(dwell_protocol::capability_names::STRUCTURES_PLACE),
+            );
+            game.set_grid_capabilities(
+                dwell_protocol::capability_names::ALL
+                    .iter()
+                    .filter(|c| s.capability(c))
+                    .map(|c| c.to_string())
+                    .collect(),
             );
             game.set_grid_frames(s.capability(dwell_protocol::capability_names::GRID_FRAMES));
             game.set_swordplay(s.capability(dwell_protocol::capability_names::WEAPONS_CLASH));

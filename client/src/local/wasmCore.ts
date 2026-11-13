@@ -129,6 +129,13 @@ export class LocalCore {
   setMode(name: string): boolean {
     return this.world.setMode(name);
   }
+  /**
+   * The host retunes the world's worldgen config (Chisel in the game, Phase 56 B7); faces A's and
+   * B's new maps. Throws the refusal's message.
+   */
+  retuneWorldgen(worldgen: string, radius: number): Uint8Array[] {
+    return this.world.retuneWorldgen(worldgen, radius) as Uint8Array[];
+  }
   /** The world's game mode's name. */
   get mode(): string {
     return this.world.mode;

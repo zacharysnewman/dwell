@@ -2,6 +2,34 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.60.6",
+      "changes": [
+        "Behind the scenes: a tool to paint patterns and marks on character models, ready for outfit bands and eyes"
+      ]
+    },
+    {
+      "version": "0.60.5",
+      "changes": [
+        "The sun is now a world of its own: a volcano world of lava oceans, lava rivers in its rifts and crater lakes in its cones, crusted in basalt and obsidian, different in every world.",
+        "The sun's disc in the sky is drawn from that world's surface: bright lava and darker crusts, with the same size, glow and sunlight as before.",
+        "Fliers on this version can be captured by the sun and fly away from it as at the moon; older versions fly past it (its sky, spawns and flowing lava come later)."
+      ]
+    },
+    {
+      "version": "0.60.4",
+      "changes": [
+        "Forests draw a little faster: leaves and plants send less data to the graphics card per corner."
+      ]
+    },
+    {
+      "version": "0.60.3",
+      "changes": [
+        "Chisel in the game: a local creative world's menu has a Chisel page to tune its biomes' sliders",
+        "The terrain around you is generated again as you tune, keeping what you built; Undo and Reset",
+        "The tuned biomes are saved with the world (host only: not while guests are in it)"
+      ]
+    },
+    {
       "version": "0.60.2",
       "changes": [
         "Main menu: All versions and Third-party notices are buttons like the rest of the menu, not web links.",

@@ -1180,6 +1180,41 @@ pub fn installed_worldgen(world_seed: u64) -> String {
         .to_owned()
 }
 
+/// Retunes world `world_seed` to worldgen `config` in place (the in-game Chisel, ADR 0074 B7):
+/// each face's installed map re-wrapped with the new config and installed again, its height field
+/// kept, so nothing is recomputed (a biome, biome map, geology or vegetation edit). An edit that
+/// moves the ground itself (the world knobs: another height field) is refused: that is a new world.
+/// `""` takes the world back to the build's ground. Returns each face's map bytes (A, B), for the
+/// other instances (the page's workers) to install.
+pub fn retune_worldgen(world_seed: u64, config: &str) -> Result<Vec<Vec<u8>>, String> {
+    let height_of = |text: &str| -> Result<Option<HeightField>, String> {
+        Ok(world_config(text)?.and_then(|e| e.height))
+    };
+    let next = height_of(config)?;
+    let mut out = Vec::with_capacity(2);
+    for face in [dwell_world::Face::A, dwell_world::Face::B] {
+        let seed = crate::bifacial::face_seed(world_seed, face);
+        if !crate::worldmap::cache::is_ready(seed) {
+            return Err("the world's maps are not here yet".into());
+        }
+        let m = crate::worldmap::cache::for_seed(seed);
+        if height_of(m.worldgen_text())? != next {
+            return Err(
+                "this edit moves the ground itself (the world knobs): make a new world from Chisel"
+                    .into(),
+            );
+        }
+        let mut copy = crate::worldmap::codec::decode(&crate::worldmap::codec::encode(&m))?;
+        copy.worldgen = None;
+        copy.tectonics = HEIGHT.tectonics;
+        let copy = copy.with_worldgen(config.trim())?;
+        let bytes = crate::worldmap::codec::encode(&copy);
+        crate::worldmap::cache::install(&bytes)?;
+        out.push(bytes);
+    }
+    Ok(out)
+}
+
 /// Face seed `seed`'s world map under worldgen `config` (`worldmap::build_bytes` for the build's
 /// ground; a test world's over its height field, `WorldMap::for_height`, carrying the config).
 pub fn worldgen_map(seed: u64, config: &str) -> Result<Option<crate::worldmap::WorldMap>, String> {
