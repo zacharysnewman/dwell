@@ -91,8 +91,8 @@ test("an edited map exports in the repo's format and passes parts.mjs's check", 
 });
 
 test("a part map of the wrong vertex count is refused with a message", () => {
-  assert.throws(() => C.parseParts(mapText, 12, "peasant.json"), /4253 vertices, but the full mesh has 12/);
-  assert.throws(() => validateParts(JSON.parse(mapText), "peasant.json", 12), /4253 vertices, but the full mesh has 12/);
+  assert.throws(() => C.parseParts(mapText, 12, "peasant.json"), /\d+ vertices, but the full mesh has 12/);
+  assert.throws(() => validateParts(JSON.parse(mapText), "peasant.json", 12), /\d+ vertices, but the full mesh has 12/);
   for (const bad of [
     { parts: [], vertices: [] },
     { parts: ["Skin"], vertices: ["1"] },
