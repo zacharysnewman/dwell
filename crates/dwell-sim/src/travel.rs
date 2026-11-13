@@ -36,6 +36,7 @@ use dwell_world::{
     VoxelWorld,
 };
 use dwell_worldgen::grids::{CrateredTerrain, GridDef, GridFrameKind, GridGenerator, TravelRules};
+use dwell_worldgen::volcanic::VolcanicTerrain;
 
 type V3 = [f64; 3];
 
@@ -97,38 +98,37 @@ pub fn quat_of_axes(axes: [V3; 3]) -> [f64; 4] {
 }
 
 /// A grid's frame at `world_s` (MOON_WORLD.md §6): the home grid at rest; an orbiting grid at the
-/// celestial model's moon position and tidally locked axes, moving with the orbit (its velocity
-/// and spin by a central difference over ½ s, smooth to well under a µm/s at the orbit's speeds).
+/// celestial model's moon position and tidally locked axes; the sun's (`sunPath`, docs/proposals/SUN_WORLD.md)
+/// at the sun's place on its path, face A toward home. A moving grid moves with its path (its
+/// velocity and spin by a central difference over ½ s, smooth to well under a µm/s at these speeds).
 pub fn grid_frame_at(celestial: &Celestial, def: &GridDef, world_s: f64) -> GridFrame {
-    match def.frame {
-        GridFrameKind::Rest => GridFrame::HOME,
-        GridFrameKind::Orbit => {
-            const H: f64 = 0.25;
-            let origin = celestial.moon_position(world_s);
-            let axes = celestial.moon_axes(world_s);
-            let (a0, a1) = (
-                celestial.moon_axes(world_s - H),
-                celestial.moon_axes(world_s + H),
-            );
-            let (p0, p1) = (
-                celestial.moon_position(world_s - H),
-                celestial.moon_position(world_s + H),
-            );
-            let velocity = sub(p1, p0).map(|v| v / (2.0 * H));
-            // ω = ½ Σ aᵢ × ȧᵢ for an orthonormal frame turning at ω.
-            let mut spin = [0.0; 3];
-            for i in 0..3 {
-                let rate = sub(a1[i], a0[i]).map(|v| v / (2.0 * H));
-                let c = cross(axes[i], rate);
-                for k in 0..3 {
-                    spin[k] += 0.5 * c[k];
-                }
-            }
-            GridFrame::at_pose(origin, quat_of_axes(axes))
-                .moving(velocity, spin)
-                .with_gravity_scale(def.gravity_scale)
+    type Path = (fn(&Celestial, f64) -> V3, fn(&Celestial, f64) -> [V3; 3]);
+    let (position, axes): Path = match def.frame {
+        GridFrameKind::Rest => return GridFrame::HOME,
+        GridFrameKind::Orbit => (Celestial::moon_position, Celestial::moon_axes),
+        GridFrameKind::SunPath => (Celestial::sun_position, Celestial::sun_axes),
+    };
+    const H: f64 = 0.25;
+    let origin = position(celestial, world_s);
+    let now = axes(celestial, world_s);
+    let (a0, a1) = (axes(celestial, world_s - H), axes(celestial, world_s + H));
+    let (p0, p1) = (
+        position(celestial, world_s - H),
+        position(celestial, world_s + H),
+    );
+    let velocity = sub(p1, p0).map(|v| v / (2.0 * H));
+    // ω = ½ Σ aᵢ × ȧᵢ for an orthonormal frame turning at ω.
+    let mut spin = [0.0; 3];
+    for i in 0..3 {
+        let rate = sub(a1[i], a0[i]).map(|v| v / (2.0 * H));
+        let c = cross(now[i], rate);
+        for k in 0..3 {
+            spin[k] += 0.5 * c[k];
         }
     }
+    GridFrame::at_pose(origin, quat_of_axes(now))
+        .moving(velocity, spin)
+        .with_gravity_scale(def.gravity_scale)
 }
 
 /// A grid's centre in the grid's space: its midplane's centre.
@@ -159,23 +159,34 @@ pub fn look_across(
     (yaw, pitch)
 }
 
+/// The test for a grid's chunks that are all air: off its slab (`surface` m each side of its
+/// midplane) or outside its disc of `radius` m.
+fn slab_air(radius: f64, surface: f64) -> AirChunkTest {
+    Arc::new(move |c: ChunkCoord| {
+        let s = f64::from(CHUNK_SIZE);
+        let (x0, z0) = (f64::from(c.x) * s, f64::from(c.z) * s);
+        let (y0, y1) = (f64::from(c.y) * s * CELL_H, f64::from(c.y + 1) * s * CELL_H);
+        // The nearest point of the chunk's columns to the disc's axis.
+        let dx = (0.0f64).clamp(x0, x0 + s);
+        let dz = (0.0f64).clamp(z0, z0 + s);
+        let off_slab = y0 > MIDPLANE_M + surface || y1 < MIDPLANE_M - surface;
+        off_slab || dx.hypot(dz) > radius + 1.0
+    })
+}
+
 /// The chunk generator for a grid's own space: its generator in the grid's local frame, and the
 /// test for chunks that are all air (outside its slab), which are never generated or stored.
 pub fn grid_generator(def: &GridDef, world_seed: u64) -> Option<(ChunkGenerator, AirChunkTest)> {
     match &def.generator {
         GridGenerator::Cratered(_) => {
             let t = Arc::new(CrateredTerrain::new(def, world_seed)?);
-            let (radius, surface) = (t.radius_m(), def.surface_m);
-            let air: AirChunkTest = Arc::new(move |c: ChunkCoord| {
-                let s = f64::from(CHUNK_SIZE);
-                let (x0, z0) = (f64::from(c.x) * s, f64::from(c.z) * s);
-                let (y0, y1) = (f64::from(c.y) * s * CELL_H, f64::from(c.y + 1) * s * CELL_H);
-                // The nearest point of the chunk's columns to the disc's axis.
-                let dx = (0.0f64).clamp(x0, x0 + s);
-                let dz = (0.0f64).clamp(z0, z0 + s);
-                let off_slab = y0 > MIDPLANE_M + surface || y1 < MIDPLANE_M - surface;
-                off_slab || dx.hypot(dz) > radius + 1.0
-            });
+            let air = slab_air(t.radius_m(), def.surface_m);
+            let generate: ChunkGenerator = Arc::new(move |c, chunk| t.generate(c, chunk));
+            Some((generate, air))
+        }
+        GridGenerator::Volcanic(_) => {
+            let t = Arc::new(VolcanicTerrain::new(def, world_seed)?);
+            let air = slab_air(t.radius_m(), def.surface_m);
             let generate: ChunkGenerator = Arc::new(move |c, chunk| t.generate(c, chunk));
             Some((generate, air))
         }
@@ -220,6 +231,14 @@ impl TravelMap {
             home_radius_m,
             grids,
         }
+    }
+
+    /// Only the grids a client with the capabilities `has` may be captured into (a grid's
+    /// `capability`, docs/proposals/SUN_WORLD.md §5), as the server runs them for it: the others are
+    /// far bodies to it, passed through and not counted in its far flight.
+    pub fn open_to(mut self, has: impl Fn(&str) -> bool) -> Self {
+        self.grids.retain(|g| g.1.open_to(&has));
+        self
     }
 
     fn def(&self, grid: u8) -> Option<&(u8, &'static GridDef, f64)> {

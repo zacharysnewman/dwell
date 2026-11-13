@@ -49,6 +49,11 @@ pub struct SunLook {
     pub bloom: f64,
     pub glow_deg: f64,
     pub glow: f64,
+    /// From the home disc's centre to the sun world's (m; `crate::celestial`, docs/proposals/SUN_WORLD.md),
+    /// keeping its grid's radius at `radius_deg`.
+    pub distance_m: f64,
+    /// How much the sun world's baked ground shades the sky's disc (0 none; sky.wgsl `dwell_sun_disc`).
+    pub surface: f64,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]

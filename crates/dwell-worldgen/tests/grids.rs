@@ -41,7 +41,7 @@ fn the_build_s_grids_are_home_at_rest_and_a_cratered_moon() {
     assert!(m.capture_m.unwrap() > 12_500.0);
     assert_ne!(m.seed(42), 42);
     assert_ne!(m.seed(42), m.seed(43), "every world its own moon");
-    assert_eq!(g.len(), 2);
+    assert_eq!(g.len(), 3, "home, the moon and the sun");
 }
 
 /// A bad entry fails with a message naming it.
@@ -88,7 +88,11 @@ both_faces!(
             .find("    {\n      \"name\": \"dwell:moon\"")
             .unwrap();
         let end = GRIDS_JSON.rfind("\n  ]").unwrap();
-        let entry = GRIDS_JSON[moon_entry_at..end]
+        // The moon's own entry: up to the next grid's (the sun's) or the list's end.
+        let entry_end = GRIDS_JSON[moon_entry_at..end]
+            .find(",\n    {")
+            .map_or(end, |k| moon_entry_at + k);
+        let entry = GRIDS_JSON[moon_entry_at..entry_end]
             .replace("dwell:moon\"", "test:little_moon\"")
             .replace("1297040974", "7")
             .replace("\"radiusM\": 12500", "\"radiusM\": 3000")

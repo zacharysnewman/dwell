@@ -129,6 +129,11 @@ mod tests {
                 "the sun declares no air"
             );
             assert!(!grid_has_air(1) && grid_has_air(0), "the moon none, home's");
+            let all = dwell_worldgen::grids::grids();
+            for name in ["dwell:moon", "dwell:sun"] {
+                let i = all.iter().position(|g| g.name == name).expect(name) as u8;
+                assert!(!grid_has_air(i), "{name} has no air");
+            }
             for k in 0..48 {
                 let t = f64::from(k) / 48.0;
                 let day = DAY_NIGHT.state(0.0, Some(t), None);

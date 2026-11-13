@@ -876,26 +876,29 @@ fn terrain_fs(i: TerrainOut, @builtin(front_facing) front: bool) -> SceneOut {
 // Cutout geometry (docs/TRANSPARENT_BLOCKS.md): the terrain vertex and a `plant` vec4 — how far
 // wind sways the vertex (m; 0 at a plant's base and on ladders), the wind's speed, and the distance
 // fade's start and end (m; end 0: no fade).
-// The normal (snorm8x4, w 0) and `lit` (unorm8x4: light, flood sky, flood block, bare) are four
-// bytes each (render/mod.rs `packed_cutout`: the forest's leaves are bound by their vertices).
+// The normal (snorm8x4, w 0), the colour (unorm8x4: rgb over a scale 1 + 3a, so tints up to 4) and
+// `lit` (unorm8x4: light, flood sky, flood block, bare) are four bytes each (render/mod.rs
+// `packed_lit`, `scaled_rgb`: the forest's leaves are bound by their vertices).
 struct CutoutIn {
     @location(0) position: vec3f,
     @location(1) normal: vec4f,
-    @location(2) color: vec3f,
+    @location(2) color: vec4f,
     @location(3) uv: vec2f,
     @location(4) tile: vec4f,
     @location(5) plant: vec4f,
     @location(6) lit: vec4f,
 };
+// A face's tile and a plant's fade are the same at its every corner: flat, not interpolated
+// (WORK_QUEUE item 32: the forest edge's leaves are bound by their vertices' work).
 struct CutoutOut {
     @builtin(position) clip: vec4f,
     @location(0) rel: vec3f,
     @location(1) normal: vec3f,
     @location(2) color: vec3f,
     @location(3) uv: vec2f,
-    @location(4) tile: vec4f,
+    @location(4) @interpolate(flat) tile: vec4f,
     @location(5) @interpolate(flat) draw: u32,
-    @location(6) fade: vec2f,
+    @location(6) @interpolate(flat) fade: vec2f,
     @location(7) @interpolate(flat) bare: f32,
     @location(8) light: f32,
     @location(9) flood: vec2f,
@@ -1005,7 +1008,7 @@ fn cutout_vs(v: CutoutIn, @builtin(instance_index) k: u32) -> CutoutOut {
         o.clip = vec4f(0.0, 0.0, -1.0, 1.0);
     }
     o.normal = qrot(draw.quat, v.normal.xyz);
-    o.color = v.color;
+    o.color = v.color.rgb * (1.0 + 3.0 * v.color.a);
     o.uv = v.uv;
     o.tile = v.tile;
     o.fade = v.plant.zw;

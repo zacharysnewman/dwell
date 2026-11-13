@@ -38,6 +38,9 @@ import {
   type TransportPreference,
 } from './net/connect';
 import { enableHosting } from './hostWorld';
+import { ChiselPanel } from './ui/chiselPanel';
+import { DEFAULT_MODE } from './ui/modes.gen';
+import { RETUNE_RADIUS_CHUNKS } from './chisel/inGame';
 import { formatCode } from './net/joinCode';
 import { configuredMasterUrl, MasterClient } from './net/master';
 import { parseInvite } from './net/invite';
@@ -2437,6 +2440,29 @@ async function connect(app: App): Promise<void> {
       const id = thumbId;
       enableHosting(app.settings, local, prefersTouch(), worldName, (mode) => {
         if (id) index.setMode(id, mode);
+      });
+    }
+    // A local world's biome sliders (Chisel in the game, Phase 56 B7): the host's alone.
+    if (local && app.settings && localWorld) {
+      const id = thumbId;
+      const loopback = local.loopback;
+      const panel = new ChiselPanel({
+        worldgen: worldgenConfig,
+        mode: () => loopback.mode || DEFAULT_MODE,
+        retune: async (text) => {
+          const r = await loopback.retuneWorldgen(text, RETUNE_RADIUS_CHUNKS);
+          if (r.error) return r.error;
+          // This page's generators and its job workers over the new maps, and the world's record
+          // carries the config, so the world reopens on it (its file has it too).
+          client.installWorldMaps(r.maps);
+          worldgenConfig = text;
+          const meta = id ? index.get(id) : null;
+          if (meta) index.put({ ...meta, worldgen: text });
+          return null;
+        },
+      });
+      app.settings.addChiselPanel(panel.element, () => {
+        panel.draw();
       });
     }
     let started = false;
