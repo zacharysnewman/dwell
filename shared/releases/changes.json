@@ -9,12 +9,17 @@
         "Realistic's layered rock slopes are smooth ramps broken by ledges, not fields of little stairs, and mesa tops keep a little of the ground's roll.",
         "Sand ramps fall like sand and land as flat sand.",
         "Resurrection shrines' pillars now stand apart with gaps between them, and the tallest three are joined by an arched lintel.",
-        "Smoother frames with other players online: a player far away no longer makes the sun shadows redraw every few frames",
-        "Behind the scenes: a camera placed at your own eyes no longer draws your whole body around it, which hid the view in every forest benchmark",
         "New compatibility line: the Realistic and starter worlds' terrain changed, so worlds from 0.58 open in 0.58 builds."
-        ]
-      },
-      {
+      ]
+    },
+    {
+      "version": "0.58.11",
+      "changes": [
+        "Smoother frames with other players online: a player far away no longer makes the sun shadows redraw every few frames",
+        "Behind the scenes: a camera placed at your own eyes no longer draws your whole body around it, which hid the view in every forest benchmark"
+      ]
+    },
+    {
       "version": "0.58.10",
       "changes": [
         "Forests draw fewer hidden leaves: past the far trees' hand-over, the ground no longer sends the GPU tree leaves that were already faded out."
