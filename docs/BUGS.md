@@ -6,6 +6,14 @@ pins it.
 
 ## Open
 
+### 113. First-person recordings show the block-target box; no dev toggle hides it
+
+Found recording showcase video 2 (water, 2026-11-12): wading in off seed 7's beach, the thin black box round the
+targeted cell (the sand under shallow water, within reach) draws in the first-person frames, over the water and the
+caustics. Hiding the DOM HUD doesn't remove it, and `d.setView` has no option for it. Suspect: the target box is
+drawn by the renderer, not the DOM HUD. Wanted: a dev/theater switch (e.g. `d.setView({ target: false })`, or off
+whenever the theater HUD is off) so clean first-person takes have no box.
+
 ### 100. Volumetric clouds look like "crazy triangles"
 
 Owner, 2026-11-12: "the clouds look ridiculous at least the volumetric ones. Look like crazy triangles. Find a

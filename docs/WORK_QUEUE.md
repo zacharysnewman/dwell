@@ -1259,6 +1259,13 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    (AAC/Opus at a music bitrate, loudness-matched), a music list as data (tracks, moods, gain, fade), a prototype
    page to audition the set, the game's music player shuffling them (no repeats back to back, gaps and fades as
    data) in place of the current tracks; licence notes as for the Imphenzia samples (AUDIO.md §2b).
+   Owner (2026-11-12): "Did you give me a sample of the music yet". **Built (branch `claude/casual-music`):**
+   20 candidates from the casual packs (Mega *Casual Game Music*, Massive *Casual Game Music Pack* and its
+   acoustic versions, *Simple and Positive*), AAC 96 kbps at −18 LUFS, 24.2 MB; the playlist as data
+   (`shared/music/music.json` `playlist`: shuffle, 20–60 s gaps, cross-fade 0) played by
+   `client/src/audio/playlist.ts`; Starry Sunshine removed; the audition page
+   `docs/prototypes/music-audition.html` (https://claude.ai/artifact/Ccdtsp5eiQYF4b9uzspyYe). **Waiting on the owner:** the
+   picks (the page's JSON), the level and the gap.
 
 34. **The in-game Chisel editor and the Textures tab extras** (owner 2026-11-12: "these all seem solid yes"): open
    Chisel's biome sliders inside a running world with the terrain around the player regenerating as they tune
@@ -1462,6 +1469,14 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    showcase with recordings. Ideally recordings are 1 minute or less. Don't include any text or anything in the
    video."). Made with the `record` skill (`.claude/skills/record/`): 9:16 at 1080×1920, h264 30 fps, a minute or
    less, no text of any kind, no music, clouds off unless the shot is about clouds, footage deleted after sending.
+   **Showcase audio** (owner, 2026-11-13: "showcases shouldn't have music, but sound effects and ambiance are good";
+   asked whether that meant the recordings: "Yes it's for the recordings"). Built 2026-11-13: every take records the
+   game's own sound, effects and ambience, never the music or the UI (`__dwell.audioTap({ music: false })`, a parallel
+   tap of the mix, the speakers unchanged); the record driver saves it beside the frames, take.mjs muxes it into each
+   clip (aligned to the first frame, 48 kHz AAC), splice.py cuts, cross-fades and fades it with the picture
+   (time-stretched on slow-motion parts, muted on time-lapses past 2×); a manifest's `audio` is on by default, per
+   shot and per part overrides; theater mode's take takes `audio: true`. Outstanding: the first re-record with sound
+   on the owner's machine (a browser check; the cloud session that built it had none), and the owner's listen.
    Video 1, the bifacial world (16), recorded 2026-11-12 (55 s, 7 clips; at the rim of seed 7 the edge is open sea on
    both faces, so the player flies over the edge rather than walking; BUGS.md #99 fixed for the third-person shots).
    Waiting on the owner to pick which come first. The list (suggested first: 1, 10, 3, 6, 11, 2 — the most striking
@@ -1539,7 +1554,8 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    screencast takes via a MediaRecorder of the master (minus music) written alongside the frames and aligned in the
    splice; the manifest's audio on by default for showcases. Queued after video 2 and the Realistic steps.
    Video 2 plan given (coast glide, river to the sea, wading in, the transition, underwater swim, surfacing at
-   sunset). Owner sent a look reference: **"Underwater reference photo from the game abzu for pretty underwater with
+   sunset). Owner on the underwater look pass (#860), 2026-11-12: **"Water looks good"** — approved; video 2
+   recorded with `take.mjs water` (manifest `.claude/skills/record/videos/water/`, seed 7's coast at ~11700, 19500). Owner sent a look reference: **"Underwater reference photo from the game abzu for pretty underwater with
    transparent surface, light rays etc."** (ABZÛ: bright turquoise water with a long clear view, a bright see-through
    surface from below with the sun's disc and Snell's window, strong volumetric light shafts, caustics, a colourful
    lit floor). Before recording video 2: an underwater look pass toward that reference (WATER_RENDERING.md W4's

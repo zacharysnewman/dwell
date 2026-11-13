@@ -11,6 +11,9 @@ const FILE = /^[a-z0-9][a-z0-9-]*\.(mp3|m4a)$/;
 export const WHEN = ["always"];
 /** A track's file may be at most this large (it ships once per site, streamed). */
 export const MAX_BYTES = 20_000_000;
+/** How the playlist picks the next track (client/src/audio/playlist.ts). */
+export const ORDER = ["shuffle"];
+const PLAYLIST_KEYS = ["order", "gapMinS", "gapMaxS", "crossfadeS"];
 const TRACK_KEYS = [
   "title",
   "author",
@@ -45,23 +48,50 @@ export function contentHash(bytes) {
   return createHash("sha256").update(bytes).digest("hex").slice(0, 8);
 }
 
+/** The playlist: the order and the silence (or overlap) between tracks. */
+function resolvePlaylist(where, p) {
+  if (!isObject(p)) fail(where, "must be an object");
+  for (const k of Object.keys(p))
+    if (!PLAYLIST_KEYS.includes(k)) fail(where, `unknown field "${k}"`);
+  for (const k of PLAYLIST_KEYS) if (!(k in p)) fail(where, `missing "${k}"`);
+  if (!ORDER.includes(p.order))
+    fail(`${where}.order`, `"${p.order}" is not one of ${ORDER.join(", ")}`);
+  number(`${where}.gapMinS`, p.gapMinS, 0, 600);
+  number(`${where}.gapMaxS`, p.gapMaxS, 0, 600);
+  if (p.gapMaxS < p.gapMinS)
+    fail(`${where}.gapMaxS`, `${p.gapMaxS} is below gapMinS ${p.gapMinS}`);
+  number(`${where}.crossfadeS`, p.crossfadeS, 0, 30);
+  return {
+    order: p.order,
+    gapMinS: p.gapMinS,
+    gapMaxS: p.gapMaxS,
+    crossfadeS: p.crossfadeS,
+  };
+}
+
 /**
  * Resolves `files` (parsed shared/music/*.json) against the audio files in `dir`: the tracks in
  * order (by namespace, then as listed), each with its published file name (`name-<hash>.ext`).
  */
 export function resolveMusic(files, dir) {
   const tracks = [];
+  let playlist = null;
   const sorted = [...files].sort((a, b) =>
     a.namespace < b.namespace ? -1 : 1,
   );
   for (const file of sorted) {
     if (!isObject(file)) fail("file", "must be an object");
     for (const k of Object.keys(file))
-      if (!["$comment", "namespace", "tracks"].includes(k))
+      if (!["$comment", "namespace", "playlist", "tracks"].includes(k))
         fail(`namespace ${file.namespace}`, `unknown field "${k}"`);
     if (typeof file.namespace !== "string" || !NAME.test(file.namespace))
       fail("namespace", `bad namespace ${file.namespace}`);
     const ns = file.namespace;
+    if ("playlist" in file) {
+      if (playlist)
+        fail(`namespace ${ns}`, "a second playlist (only one file sets it)");
+      playlist = resolvePlaylist(`playlist (${ns})`, file.playlist);
+    }
     if (!isObject(file.tracks)) fail(ns, "tracks must be an object");
     for (const [name, t] of Object.entries(file.tracks)) {
       const id = `${ns}:${name}`;
@@ -71,8 +101,7 @@ export function resolveMusic(files, dir) {
       if (!isObject(t)) fail(where, "must be an object");
       for (const k of Object.keys(t))
         if (!TRACK_KEYS.includes(k)) fail(where, `unknown field "${k}"`);
-      for (const k of TRACK_KEYS)
-        if (!(k in t)) fail(where, `missing "${k}"`);
+      for (const k of TRACK_KEYS) if (!(k in t)) fail(where, `missing "${k}"`);
       text(`${where}.title`, t.title);
       text(`${where}.author`, t.author);
       if (typeof t.file !== "string" || !FILE.test(t.file))
@@ -113,5 +142,6 @@ export function resolveMusic(files, dir) {
     }
   }
   if (tracks.length === 0) fail("tracks", "none");
-  return { tracks };
+  if (!playlist) fail("playlist", "missing (one file sets it)");
+  return { playlist, tracks };
 }

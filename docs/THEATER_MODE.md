@@ -200,7 +200,12 @@ A new preset is a data entry (a test adds one from a fixture file no code names)
 
 - **MediaRecorder on the canvas** (`canvas.captureStream(fps)`), the HUD hidden, the first of
   theater.json's `mimeTypes` the browser records (MP4/H.264, then WebM VP9/VP8), downloaded at the end as
-  `<path name>.mp4|webm`. No audio at first (the showcase format has none). Built (T-3, `src/theater/record.ts`):
+  `<path name>.mp4|webm`. **Sound** (owner, 2026-11-13: "showcases shouldn't have music, but sound effects and
+  ambiance are good"): `audio: true` on the dev API's take adds the game's effects and ambience, never the music or
+  the UI, from the mixer's recording tap (`Mixer.tap`, `AudioEngine.tapStream`, `__dwell.audioTap`: a parallel graph
+  with its own master level, underwater muffle and limiter, so the speakers are unchanged), recorded as the first of
+  theater.json's `audioMimeTypes` at `audioBitsPerSecond`; off by default (the Record panel's takes stay silent). The
+  record skill's screencast takes use the same tap (its §0b). Built (T-3, `src/theater/record.ts`):
   **Record path** plays the keyframes and ends the take with the path; **Record free** records the free camera
   until Esc. The dev API `__dwell.theaterMode('record', {path, aspect, height, fps, download})` returns the file
   (base64) for agents.

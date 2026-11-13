@@ -1,8 +1,8 @@
 # Dwell — Sound Effects
 
 > **Status: [in progress, Phase 28]** — built and tested; waiting for the owner's listening review
-> of the WAV renders and answers to §9. The music (§2a, §6a; the owner's Starry Sunshine) is
-> built and tested, waiting for the owner's listen. Decisions in [ADR 0032](./adr/0032-audio.md); the built
+> of the WAV renders and answers to §9. The music (§2a, §6a; 20 casual tracks from Andrew Sitkov's
+> Total Music Collection, shuffled) is built and tested, waiting for the owner's picks. Decisions in [ADR 0032](./adr/0032-audio.md); the built
 > mechanisms are summarised in [`ARCHITECTURE.md`](./ARCHITECTURE.md) §5.2 and §6.1 (the
 > registry's `sound` field). The sounds themselves are **prototype content** (§6.1), like the
 > block set: they exercise the system and are expected to be replaced.
@@ -110,27 +110,45 @@ directly, without CLAUDE.md's questions; the defaults below are open to change.
 | Data | Each track's title, author, file, volume, loop, fades and condition. |
 | Per build, world or player? | Per build; the Music volume per browser. |
 
-One file per namespace (`music.json`), its audio files beside it:
+One file per namespace (`music.json`), its audio files beside it; one file sets the `playlist`:
 
 ```json
-"tracks": { "starry_sunshine": { "title": "Starry Sunshine", "author": "Zachary Newman",
-  "file": "starry-sunshine.mp3", "volume": 0.45, "loop": true, "fadeInS": 4, "fadeOutS": 2,
+"playlist": { "order": "shuffle", "gapMinS": 20, "gapMaxS": 60, "crossfadeS": 0 },
+"tracks": { "casual_theme_1": { "title": "Casual Theme #1", "author": "Andrew Sitkov",
+  "file": "casual-theme-1.m4a", "volume": 0.6, "loop": false, "fadeInS": 2, "fadeOutS": 3,
   "when": "always" } }
 ```
+
+- `playlist` (exactly one file has it): `order` from the vocabulary (`shuffle`: a shuffled bag, each
+  track once a round, never the same twice in a row); after a track ends, a gap of silence drawn in
+  [`gapMinS`, `gapMaxS`] (0–600 s); the next starts `crossfadeS` (0–30 s) earlier than that, so with
+  a gap of 0 the two overlap, the old one fading out over its `fadeOutS` as the new one fades in.
 
 - `file`: a lower-case `.mp3` or `.m4a` (formats every browser streams) of at most 20 MB, beside
   the data; `volume` 0–1 under the Music volume; `loop`; `fadeInS` / `fadeOutS` (0–60 s: the
   fade-in at the start, the fade-out on a stop and over the end of a track that does not loop);
-  `when`: where it plays, one of the vocabulary (`always`). The first track (namespaces in order,
-  then as listed) whose `when` holds plays.
+  `when`: where it plays, one of the vocabulary (`always`). The playlist plays every track whose
+  `when` holds.
 - `shared/music/gen.mjs` validates it (messages name the track) and emits
   `client/src/audio/music.gen.ts`, each track with its published name `<file>-<8 hex of its
   SHA-256>.<ext>`; CI regenerates it and fails on a diff, so a changed audio file without a
   regeneration fails too.
-- **Starry Sunshine** (`dwell:starry_sunshine`): the owner's composition, uploaded as "Pitch Black
-  Dungeon" and retitled; its ID3 title rewritten to "Starry Sunshine" and the old cover art
-  dropped, the audio frames untouched (3:33, MP3, 48 kHz stereo, 4.9 MB). First-party, so not in
-  `THIRD_PARTY_NOTICES`: the repository's `LICENSE` covers it as one of its assets.
+- **The casual tracks** (owner 2026-11-12, WORK_QUEUE item 33: "I'd like the casual game music setup in
+  a prototype and make it play randomly in the game … It'll replace the current music which is AI
+  generated."): 20 tracks from Andrew Sitkov's *Total Music Collection* (Unity Asset Store), its
+  casual packs: *Mega Game Collection / Casual Game Music* (Casual Classic #1–#5 here; #6 "Triumph",
+  a 51 s fanfare, left out), *Massive Game Music Collection / Casual Game Music Pack* (Casual Theme
+  #1–#5) and its *Acoustic Guitar Versions*, and *Simple and Positive Casual Music Pack* (#1–#5): the
+  full (not looped) versions, 76–146 s each. Converted with ffmpeg: gain to −18 LUFS integrated
+  (sources −14.7 to −22.9), a limiter at −1 dBFS, a 0.3 s fade in and 2.5 s fade out, stereo AAC
+  (AudioToolbox) at 96 kbps, 44.1 kHz, no metadata, faststart: 0.9–1.8 MB each, 24.2 MB together.
+  The owner's picks (the audition page below) will trim the list. Credited in `THIRD_PARTY_NOTICES`
+  (`shared/licenses/third_party.json`) under the Unity Asset Store EULA, as the Imphenzia samples.
+  Starry Sunshine, the AI-generated track they replace, is removed.
+- **Audition page**: [`docs/prototypes/music-audition.html`](./prototypes/music-audition.html)
+  (published: https://claude.ai/artifact/Ccdtsp5eiQYF4b9uzspyYe): play, skip, keep or drop each candidate, a shuffle preview
+  with the playlist's gaps, cross-fade and fades (and "start near the end" to hear transitions), the
+  picks exported as JSON.
 
 Blocks: `"sound"` on a block in `shared/blocks/*.json` names a set (`dwell:stone`); the block
 generator checks that it exists and emits it in the TS `BLOCK_DEFS`. Blocks without one use the
@@ -508,6 +526,12 @@ right-handed (right = forward × up, ahead −z), which is the drawn view's righ
 
 ### 6a. Music playback (`client/src/audio/music.ts`)
 
+- **The playlist** (`client/src/audio/playlist.ts`): the tracks whose `when` holds, in a shuffled
+  bag (`Shuffler`: each once a round; a round never opens with the track the last ended on, so none
+  plays twice in a row). Each track is its own player (below); the playlist polls the playing one
+  every 250 ms and, once its end is near or past, starts the next at the end + the drawn gap −
+  `crossfadeS`. It holds while the tab is hidden. The first track is the one the previous page
+  saved (`dwell.musicAt`, under 30 s old), else the shuffle's first.
 - **Streamed**: an `<audio>` element (`preload="auto"`, `loop` from the data) plays the file; it is
   never decoded whole into a buffer, so the 4.9 MB file does not hold up loading. Once the page's
   AudioContext runs, the element is routed into it (`createMediaElementSource` → its own gain →
@@ -601,8 +625,9 @@ right-handed (right = forward × up, ahead −z), which is the drawn view's righ
 5. Should the main menu (launcher) have its own volume control, or only the in-game Settings?
 6. iOS's silent switch mutes Web Audio: acceptable?
 7. Who will author sound sets later — is a sound editor page (like the Adaptive Block Lab) wanted?
-8. Music: is Starry Sunshine's level right (`volume` 0.45 under a 60 % Music default)? Should it
-   play in the main menu too (it does), or only once in a world? When more tracks come, what
-   decides which plays (biome, time of day, menus)?
+8. Music: which of the 20 casual tracks stay (the audition page's JSON)? Is the level right (`volume`
+   0.6 under a 60 % Music default) and the gap (20–60 s of silence, no cross-fade)? Should it play in
+   the main menu too (it does), or only once in a world? What decides which plays later (biome,
+   time of day, menus)?
 
 **Recordings play dry (0.52.16, owner: "they've got some reverb-like feel"):** a recorded play sends nothing to the room unless its `samples.reverb` asks for some (`roomSend`, `client/src/audio/engine.ts`); a sound's `reverb` is for its procedural layers. Test: samples.test.ts "recordings play dry".

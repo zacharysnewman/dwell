@@ -10,6 +10,31 @@
       ]
     },
     {
+      "version": "0.56.4",
+      "changes": [
+        "Behind the scenes: a test fix"
+      ]
+    },
+    {
+      "version": "0.56.3",
+      "changes": [
+        "New music: 20 light, casual tracks replace the old theme, played in a shuffle that never repeats a track back to back, with a quiet gap between tracks.",
+        "The music files are smaller and levelled to the same loudness."
+      ]
+    },
+    {
+      "version": "0.56.2",
+      "changes": [
+        "Behind the scenes: showcase recordings include the game's sound effects and ambience"
+      ]
+    },
+    {
+      "version": "0.56.1",
+      "changes": [
+        "The water showcase video's camera paths and takes are saved for one-command re-recording."
+      ]
+    },
+    {
       "version": "0.56.0",
       "changes": [
         "Bigger worlds (2× to 10×) keep their mountains: 1×-height ranges across the whole island, more peaks the bigger the world",

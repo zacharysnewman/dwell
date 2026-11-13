@@ -7,7 +7,7 @@ import { THEATER, parseTheaterConfig } from './config';
 import { HUD_ELEMENTS, HUD_RULES, setHud, shownWhenClean } from './hud';
 import { KeyframeEditor, MIN_GAP_S, type PathJson } from './keyframes';
 import { flyMove, wheelSpeed } from './mode';
-import { extensionOf, fitOnScreen, pickMime, recordSize } from './record';
+import { extensionOf, fitOnScreen, pickMime, recordSize, takeTracks } from './record';
 import { type KeyValue, PathStore, STORE_KEY, exportName, parseImported } from './store';
 
 const SRC = join(__dirname, '..');
@@ -279,6 +279,19 @@ describe('recording', () => {
     expect(pickMime(['video/x'], () => false)).toBe('');
     expect(extensionOf('video/mp4;codecs=avc1')).toBe('mp4');
     expect(extensionOf('video/webm')).toBe('webm');
+  });
+
+  it('a take with sound records the tap’s audio track beside the canvas, with an audio codec', () => {
+    const video = { getTracks: () => ['v'] };
+    const tap = { getAudioTracks: () => ['a'] };
+    expect(takeTracks(video, tap)).toEqual(['v', 'a']);
+    expect(takeTracks(video, null)).toEqual(['v']);
+    expect(pickMime(THEATER.record.audioMimeTypes, (t) => t.startsWith('video/webm'))).toBe(
+      'video/webm;codecs=vp9,opus',
+    );
+    expect(THEATER.record.audioMimeTypes.slice(0, -1).every((t) => /,(opus|mp4a)/.test(t))).toBe(
+      true,
+    );
   });
 });
 
