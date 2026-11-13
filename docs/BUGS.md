@@ -547,6 +547,27 @@ face, or the placement check against its shape.
 
 ## Fixed
 
+### 142. Your own feet in first person seemed to float (fixed after 0.61.3)
+
+Owner, 2026-11-13 (after #140): "Is the first person model lined up with the ground though? The feet were first
+person feet that didn't line up / seemed to be floating?" Measured: your own body in first person was moved back
+**whole** along its −z to keep it off the eye (`own::shift`: `back` 0.1 m, 0.4 m looking straight down), so its
+soles stood 0.1–0.4 m behind where you stand: off their shadow (cast by the unmoved body where you stand), and on a
+ramp or slope over or under the ground there (the old code's lowest sole was 5 cm off another player's at a level
+look on a ½ m ramp, and up to ~40 cm looking down on a 1 m slope). The soles' height was right; their place was
+not. In the bench (flat world, looking straight down) the drawn feet sat well behind the crosshair while the shadow's
+feet met at it. Fixed (CHARACTERS.md §5.1): the body now **leans back from its soles** (`own::lean`, a shear: each
+point moved back by the offset × its height ÷ the eye's), so the soles stand where you stand, on the ground and their
+shadow, and the chest is still kept off the eye; a pose that still brings a vertex within `clear` (a crouch under a
+lagging eye) is moved back whole as much more as clears it, and a body off its feet (lowest point 12 cm up) or in a
+role that stands on nothing (swim, climb, fly) moves back whole as before. Test: `render::skinned`
+`your_own_bodys_soles_stand_on_the_ground_in_first_person` (both faces; red before: "idle t 0/4, pitch 0, grade
+0.5: your sole -0.049 m over the ground, another player's -0.099"): idle and walking, looking level, 60° and
+straight down, on flat ground, a ½ m ramp and a 1 m slope, your lowest sole is on the ground where another player's
+is (1 cm idle; walking 1 cm + 3 cm × the grade, a lifted foot leans a little), and at idle on flat ground within
+2 cm of the feet. The near-camera and screen-fill sweep passes unchanged. Screenshots: bench scratch scenarios
+looking down 89° and 60°, standing and walking, flat and generated terrain.
+
 ### 141. Lava expired into rock and "all just goes away" (fixed after 0.60.11)
 
 Owner, 2026-11-13: "Another thing I observed, I think Lava needs to not just expire into rock, since it all just goes
