@@ -19,7 +19,7 @@ test('a liquid added by data alone reaches the Rust table (a fixture oil, slow a
   const d = data();
   d.liquids['test:oil'] = {
     ripples: { advect: 0.5, cycleS: 4 },
-    shore: { bands: 1, periodS: 9, lineM: 0, featherM: 0.1, widthM: 0.3, bandSoftness: 0.5, strength: 0.4, wobble: 0 },
+    shore: { bands: 1, periodS: 9, lineM: 0, featherM: 0.1, widthM: 0.3, bandSoftness: 0.5, strength: 0.4, wobble: 0, cornerRadiusM: 0.3 },
     foam: { fromMs: 1, toMs: 3, color: '#403010', strength: 0.2, lengthM: 2, widthM: 0.5 },
     particles: {
       count: 0,

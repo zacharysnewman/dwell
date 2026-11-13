@@ -729,3 +729,24 @@ fells the tree above as a body, as before.
   `a_damaged_log_is_carved_by_its_marks_k_bites_after_k_hits` (both faces, the closed mesh's volume). The
   old model's tests of notches, kerfs, the gash and bites recorded by the server were removed with it.
 - **Not done:** no browser check (cloud session, no GPU): the look in game is for the owner's check.
+
+## 13. Hold to punch (WORK_QUEUE item 17)
+
+Owner, 2026-11-13: "You should also be able to hold 'punch' to dig with your hand."
+
+- **Data:** `breaking.hand` in `shared/tools/tools.json`: `repeatOnHold` and `repeatS` (0.4 s), validated by
+  the generator into `dwell_protocol::chopping::HAND_REPEAT_S` (none: one punch per press, at the edit rate).
+- **A punch** is a Break holding no breaking tool (`breaking.tools`) nor chopping tool (`tools`): an empty
+  hand, a block or any other item (`chopping::is_punch`), the hits it takes the block's `default` (§1).
+- **Client:** Break held (mouse, the controller's trigger, a still touch in Break mode) punches every
+  `repeatS` (`held_use::Repeat::of_break`), each landing at once on the block aimed at then (a hand has no
+  `contactS`), with the arms' break swing each time. A punch short of breaking is sent no more often than
+  `repeatS`, clicked or held.
+- **Server:** a punch short of breaking takes a punch credit, refilled at `repeatS` and holding one spare
+  (`PUNCH_BURST` 2) for the network's bunching; without one it is refused. A one-hit break (creative's
+  `instantBreaks`, a world's `one_hit_breaks`) takes none, so creative's clicks are as fast as before.
+- **Tests:** `dwell-sim` `damage` `punches_at_the_hands_rate_land_and_break_dirt_after_its_hand_hits` and
+  `punches_faster_than_the_hands_rate_are_refused` (both faces; the second red on the old server: 10 of 10
+  landed); `dwell-client` `game_local` `a_held_punch_digs_dirt_at_the_hands_rate_and_stops_when_let_go`
+  (the controller's hold: 4 punches in 3 × `repeatS`, none after the release, the dirt broken after its hand
+  hits, none refused; red on the old client); `held_use.rs`; `shared/tools/gen.test.mjs`.

@@ -95,8 +95,9 @@ fn hit(fx: &mut Fixture, f: FaceFrame, local: [i32; 3]) {
             point: None,
         }),
     );
-    // Within the edit rate (10 a second), and past a tool's contact (WORK_QUEUE item 25).
-    for _ in 0..7 + contact_ticks("dwell:stone_pickaxe") {
+    // Within the edit rate (10 a second), past a tool's contact (WORK_QUEUE item 25) and the
+    // hand's punch rate (WORK_QUEUE item 17).
+    for _ in 0..(7 + contact_ticks("dwell:stone_pickaxe")).max(punch_ticks()) {
         fx.server.step();
     }
 }
@@ -104,6 +105,12 @@ fn hit(fx: &mut Fixture, f: FaceFrame, local: [i32; 3]) {
 /// The ticks from a hit's request to its tool's contact (`contactS` in shared/tools/tools.json).
 fn contact_ticks(item: &str) -> u32 {
     (chopping::break_contact_s(Some(item)) * f64::from(SIM_HZ) - 1e-9).ceil() as u32
+}
+
+/// The ticks between punches at the hand's rate (`breaking.hand.repeatS`), rounded up.
+fn punch_ticks() -> u32 {
+    let r = chopping::HAND_REPEAT_S.expect("the hand repeats on hold");
+    (r * f64::from(SIM_HZ) - 1e-9).ceil() as u32
 }
 
 fn send_hit(fx: &mut Fixture, f: FaceFrame, local: [i32; 3]) {
@@ -728,3 +735,74 @@ impl MoveLocal for Fixture {
         );
     }
 }
+
+dwell_world::both_faces!(
+    fn punches_at_the_hands_rate_land_and_break_dirt_after_its_hand_hits(f: FaceFrame) {
+        // Owner, 2026-11-13: "You should also be able to hold 'punch' to dig with your hand." A
+        // held punch is a hit every `repeatS` (`breaking.hand`): each lands, and the dirt breaks
+        // after its hits by hand.
+        let mut fx = scene_with(f, config(f, "adventure"));
+        empty_hand(&mut fx);
+        let need = damage::hits_to_break("dwell:dirt", None).expect("dirt breaks by hand");
+        assert!(need > 1);
+        let before = fx.server.stats_of(1).unwrap();
+        let cell = f.cell(DIRT);
+        for k in 1..=need {
+            assert_eq!(block_at(&mut fx, f, DIRT), "dwell:dirt", "before punch {k}");
+            send_hit(&mut fx, f, DIRT);
+            for _ in 0..punch_ticks() {
+                fx.server.step();
+            }
+            if k < need {
+                assert_eq!(
+                    fx.server.damage_of(cell).map(|d| u32::from(d.hits)),
+                    Some(k),
+                    "punch {k} landed"
+                );
+            }
+        }
+        assert_ne!(
+            block_at(&mut fx, f, DIRT),
+            "dwell:dirt",
+            "broken by punch {need}"
+        );
+        let after = fx.server.stats_of(1).unwrap();
+        assert_eq!(after.edits_rejected, before.edits_rejected, "none refused");
+    }
+);
+
+dwell_world::both_faces!(
+    fn punches_faster_than_the_hands_rate_are_refused(f: FaceFrame) {
+        // The server takes a punch no faster than the hand's data rate (one spare for the
+        // network's bunching): a client punching at twice it lands about half.
+        let mut fx = scene_with(f, config(f, "adventure"));
+        empty_hand(&mut fx);
+        let every = punch_ticks().div_ceil(2).max(7);
+        let seconds = 2.0;
+        let sends = (seconds * f64::from(SIM_HZ) / f64::from(every)) as u32;
+        let before = fx.server.stats_of(1).unwrap();
+        for _ in 0..sends {
+            send_hit(&mut fx, f, DIRT);
+            for _ in 0..every {
+                fx.server.step();
+            }
+        }
+        let landed = fx
+            .server
+            .damage_of(f.cell(DIRT))
+            .map_or(0, |d| u32::from(d.hits));
+        let r = chopping::HAND_REPEAT_S.unwrap();
+        let most = (f64::from(sends * every) / f64::from(SIM_HZ) / r).floor() as u32 + 2;
+        assert!(
+            landed <= most && landed < sends,
+            "{landed} of {sends} punches landed, at most {most}"
+        );
+        let after = fx.server.stats_of(1).unwrap();
+        assert_eq!(
+            after.edits_rejected - before.edits_rejected,
+            sends - landed,
+            "the rest refused"
+        );
+        assert_eq!(block_at(&mut fx, f, DIRT), "dwell:dirt");
+    }
+);

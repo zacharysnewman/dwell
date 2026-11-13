@@ -3479,6 +3479,110 @@ fn a_held_pickaxe_swing_strikes_what_is_aimed_at_each_contact() {
     );
 }
 
+/// Break held with an empty hand (owner, 2026-11-13: "You should also be able to hold 'punch' to dig
+/// with your hand."), by the controller's trigger: a punch every `breaking.hand.repeatS`, each a hit
+/// the server takes (none refused), stopping when let go, and the dirt breaks after its hits by hand.
+// face-a-only: the sandbox's floor and aim; the server's rate check is both faces' (dwell-sim damage).
+#[test]
+fn a_held_punch_digs_dirt_at_the_hands_rate_and_stops_when_let_go() {
+    let mut rig = predicting_rig(2);
+    let SessionState::Joined { player_id, .. } = rig.session.state().clone() else {
+        panic!("joined")
+    };
+    // A dirt block on the floor (creative's palette), then adventure: no instant breaks.
+    let dirt = dwell_blocks::require("dwell:dirt");
+    let palette = dwell_game::block_interaction::palette();
+    let pick = palette
+        .iter()
+        .position(|s| s.item == "dwell:dirt")
+        .expect("dirt on the palette");
+    rig.game.as_mut().unwrap().interaction.select(pick as i64);
+    let floor = target_at(&mut rig, 0.0, -35.0);
+    let a = [floor[0], floor[1] + 1, floor[2]];
+    assert!(rig.game.as_mut().unwrap().edit(EditAction::Place, rig.now));
+    assert!(rig.run_until(120, |r| r.game.as_ref().unwrap().prediction.pending() == 0));
+    assert_eq!(server_voxel(&mut rig, a), dirt);
+    assert!(rig.core.server().set_mode("adventure"));
+    rig.run_until(60, |_| false);
+    let empty = rig
+        .core
+        .server()
+        .inventory_of(player_id)
+        .unwrap()
+        .slots
+        .iter()
+        .take(dwell_protocol::inventory::HOTBAR_SLOTS)
+        .position(|s| s.is_none())
+        .expect("an empty hotbar slot");
+    rig.game.as_mut().unwrap().select_hotbar(empty as i64);
+    rig.run_until(30, |_| false);
+    assert_eq!(target_at(&mut rig, 0.0, -35.0), a);
+    let g = rig.game.as_ref().unwrap();
+    assert!(g.use_repeats(), "an empty hand repeats on hold");
+    let need = dwell_protocol::damage::hits_to_break("dwell:dirt", None).unwrap();
+    assert!(need > 4);
+    let r_ms = dwell_protocol::chopping::HAND_REPEAT_S.unwrap() * 1000.0;
+    let hits = |rig: &mut Rig| {
+        rig.core
+            .server()
+            .damage_of(a)
+            .map_or(0, |d| u32::from(d.hits))
+    };
+    let before = rig.core.server().stats_of(player_id).unwrap();
+    let pad = dwell_game::build_drag::Holder::Gamepad;
+    // Held for 3 punches' worth: the press and a punch every `repeatS`.
+    let press = rig.now;
+    assert!(
+        rig.game
+            .as_mut()
+            .unwrap()
+            .edit_held(EditAction::Break, pad, press)
+    );
+    let hold_ms = 3.0 * r_ms + 100.0;
+    while rig.now < press + hold_ms {
+        rig.frame();
+    }
+    rig.game.as_mut().unwrap().release_use(pad);
+    for _ in 0..90 {
+        rig.frame();
+    }
+    let n = hits(&mut rig);
+    assert_eq!(
+        n, 4,
+        "the press and three repeats in {hold_ms} ms at {r_ms} ms"
+    );
+    // Let go: no more.
+    for _ in 0..60 {
+        rig.frame();
+    }
+    assert_eq!(hits(&mut rig), n, "none after the release");
+    // Held again until it breaks: the rest of its hits by hand, at the same rate.
+    let press = rig.now;
+    assert!(
+        rig.game
+            .as_mut()
+            .unwrap()
+            .edit_held(EditAction::Break, pad, press)
+    );
+    assert!(rig.run_until(
+        60 * 10,
+        |r| r.core.server().world().get_voxel(a[0], a[1], a[2]) != dirt
+    ));
+    let took = rig.now - press;
+    rig.game.as_mut().unwrap().release_use(pad);
+    let rest = f64::from(need - n - 1);
+    assert!(
+        took >= rest * r_ms && took <= rest * (r_ms + 1000.0 / 60.0) + 200.0,
+        "{} more punches took {took} ms",
+        need - n
+    );
+    let after = rig.core.server().stats_of(player_id).unwrap();
+    assert_eq!(
+        after.edits_rejected, before.edits_rejected,
+        "the server took every punch of the hold"
+    );
+}
+
 /// A local world as the browser's worker opens it at `size` (BIG_MAP.md M2b): the page's maps for
 /// that size installed first (`buildWorldMap` with the scale), its jobs in the server-jobs worker.
 fn sized_core(

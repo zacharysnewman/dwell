@@ -651,6 +651,8 @@ characters and animals first, the tools pack after.
 - **Data** (`shared/models/models.json`): per model its GLB, `source` (pack and paths, to rerun the
   import), `scale`, `yaw`, `remap`, `fallback`, and `roles` (role → `{clip, speed}`); `player` names the
   model other players are drawn as. Edit it, then `node shared/models/gen.mjs`.
+  The Peasant's `scale` (1.09 since BUGS.md #140) puts its eyes at the controller's eye height (1.62 m) with its
+  soles on the collider's bottom (`the_peasant_stands_on_its_soles_with_its_eyes_at_the_cameras`).
 - **Generator** (`gen.mjs`): validates against the GLBs and the palette and writes
   `crates/dwell-models/src/models.gen.rs` (and `fixture.gen.rs` from `fixtures/`: the two-joint test
   model, made by `fixtures/make_two_bone.mjs`). CI runs it and `gen.test.mjs` and fails on a diff.

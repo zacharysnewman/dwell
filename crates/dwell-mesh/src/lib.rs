@@ -71,6 +71,21 @@ pub use mesher::{
 };
 /// The `fluids` stream's value for a see-through face that is not a fluid's.
 pub const NO_FLUID: f32 = 255.0;
+/// A fluid vertex's value spans this per shore mask step: the value is the fluid id plus
+/// `SHORE_SPAN` × its water top's shore mask (the mesher's `shore_mask`, WATER_RENDERING.md §21).
+pub const SHORE_SPAN: f32 = 256.0;
+/// A fluid vertex's value for fluid id `fluid` and shore mask `shore` (0..256).
+pub fn fluid_with_shore(fluid: f32, shore: u32) -> f32 {
+    fluid + SHORE_SPAN * shore as f32
+}
+/// A fluid vertex value's fluid id.
+pub fn fluid_id(v: f32) -> f32 {
+    v % SHORE_SPAN
+}
+/// A fluid vertex value's shore mask.
+pub fn shore_of(v: f32) -> u32 {
+    (v / SHORE_SPAN) as u32
+}
 
 pub use textures::{
     ATLAS_CELLS, ATLAS_SIZE, ATLAS_TILES, CELL, GUTTER, MISSING_TILE, PAINTERLY_TILE,
