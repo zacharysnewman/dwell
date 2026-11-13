@@ -38,6 +38,9 @@ import {
   type TransportPreference,
 } from './net/connect';
 import { enableHosting } from './hostWorld';
+import { ChiselPanel } from './ui/chiselPanel';
+import { DEFAULT_MODE } from './ui/modes.gen';
+import { RETUNE_RADIUS_CHUNKS } from './chisel/inGame';
 import { formatCode } from './net/joinCode';
 import { configuredMasterUrl, MasterClient } from './net/master';
 import { parseInvite } from './net/invite';
@@ -125,7 +128,9 @@ import {
 import {
   flyHome,
   flyToMoon,
+  teleportToMoon,
   type HomeTrip,
+  type MoonLanding,
   type MoonReport,
   type MoonTrip,
   type TripHost,
@@ -336,6 +341,12 @@ interface DwellDebug {
    * chunks. Rejects with what failed.
    */
   flyTo(to: 'moon' | 'home', options?: TripOptions): Promise<MoonTrip | HomeTrip>;
+  /**
+   * Teleports onto the moon's ground (debug/moonTrip.ts `teleportToMoon`; a local world), no
+   * flight, and waits until standing there with its chunk held: the quick check that the moon's
+   * ground draws (bench `moonLand`). `flyTo('home')` comes back.
+   */
+  moonLand(options?: Pick<TripOptions, 'face' | 'maxS'>): Promise<MoonLanding>;
   /** Plants' wind scale (0 still, 1 the data's) and whether cutout meshes draw (cost A/B). */
   plants(wind: number, shown: boolean): void;
   /** The last frame's draw calls and triangles. */
@@ -1420,6 +1431,11 @@ async function start(): Promise<App | null> {
       if (!start) throw new Error('flyTo home: no start (fly to the moon first)');
       return flyHome(host, start, options);
     },
+    moonLand: async (options) => {
+      const trip = await teleportToMoon(tripHost(app), options);
+      if (trip.home) tripStart = trip.home;
+      return trip;
+    },
     plants: (wind, shown) => {
       client.setPlants(wind, shown);
     },
@@ -1690,6 +1706,7 @@ function tripHost(app: App): TripHost {
     moon: () => moonOf(app),
     approach: (margin, face) =>
       app.loopback?.lavaDev('moonApproach', [margin, face]) ?? Promise.resolve(null),
+    land: (face) => app.loopback?.lavaDev('moonLand', [face]) ?? Promise.resolve(null),
     placeHome: (feet) => app.loopback?.lavaDev('placeHome', [...feet]) ?? Promise.resolve(null),
     press: (code, down) => {
       client.press(code, down);
@@ -2423,6 +2440,29 @@ async function connect(app: App): Promise<void> {
       const id = thumbId;
       enableHosting(app.settings, local, prefersTouch(), worldName, (mode) => {
         if (id) index.setMode(id, mode);
+      });
+    }
+    // A local world's biome sliders (Chisel in the game, Phase 56 B7): the host's alone.
+    if (local && app.settings && localWorld) {
+      const id = thumbId;
+      const loopback = local.loopback;
+      const panel = new ChiselPanel({
+        worldgen: worldgenConfig,
+        mode: () => loopback.mode || DEFAULT_MODE,
+        retune: async (text) => {
+          const r = await loopback.retuneWorldgen(text, RETUNE_RADIUS_CHUNKS);
+          if (r.error) return r.error;
+          // This page's generators and its job workers over the new maps, and the world's record
+          // carries the config, so the world reopens on it (its file has it too).
+          client.installWorldMaps(r.maps);
+          worldgenConfig = text;
+          const meta = id ? index.get(id) : null;
+          if (meta) index.put({ ...meta, worldgen: text });
+          return null;
+        },
+      });
+      app.settings.addChiselPanel(panel.element, () => {
+        panel.draw();
       });
     }
     let started = false;

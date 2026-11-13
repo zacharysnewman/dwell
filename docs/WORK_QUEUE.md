@@ -917,7 +917,14 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
 22. **Settings and version buttons look like web links** (owner 2026-11-11: "I thought we had settings and
    version buttons changed queued, is that true?" — it wasn't recorded anywhere; then "The buttons should be
    aligned to match the design of the others instead of looking like web links"). Restyle them as the menu's
-   own buttons, aligned with the others.
+   own buttons, aligned with the others. **Built 2026-11-13** (branch `claude/menu-buttons-goikyd`): Settings
+   and Versions are the home's paper block buttons (`mm-action mm-action-secondary`, since 0.53.x) side by
+   side under Worlds and Play with others; the last link-styled controls are buttons now: Versions' All
+   versions is a page-head button beside Back (`mm-head-button`), About's Third-party notices a small menu
+   button; Back, All versions and the world card's ⋯ gained hover and pressed states; the unused underlined
+   `.menu-link` style is gone. `mainMenuButtons.test.ts` pins that every main-menu button and link carries a
+   class of `MENU_BUTTON_CLASSES` (links only through `linkButton`), that no menu control is underlined, and
+   that each class has hover and pressed rules. Left: the owner's look.
 
 23. **Expandable sections in the main menu** (owner 2026-11-12: "Our main menu has some expandable sections that
    don't have good UI best practices to indicate they can expand and collapse. Improve these."). Built
@@ -1004,11 +1011,11 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    the fall checked against ⅙ g, landing; `home`: out past the release, home's chunks back) and the `moon-trip`
    scenario (DEV_TOOLS.md "The moon"). **Left:** running `moon-trip` on a GPU (local).
    **First browser flight (owner's findings, 0.58 on e4220fcd, M1, seed 7, both faces; branch
-   `claude/moon-chunks-culling-pfqgty`, 2026-11-13):** "the moon's ground is not drawn" (232 chunks held and meshed, 16–17
+   `claude/moon-chunks-culling-pfqgty`, 2026-11-13; BUGS.md #123–#125, #136):** "the moon's ground is not drawn" (232 chunks held and meshed, 16–17
    draw calls; sky above, starfield below); "(b) snaps … after the face A landing 2 snaps + 1 reset (last correction
    34 m); face B trip snaps 3 → 11 (last 18.7 m); (c) mesh memory grows across trips: 44 MB first moon visit, 164 MB
    back home, 256 MB second visit … (d) home's blue sky and clouds show on the moon … leave unless trivial: at least
-   hide home's clouds on the moon." Fixed (BUGS.md #123–#125, #126 partly; MOON_WORLD.md §7.3): chunks drawn off
+   hide home's clouds on the moon." Fixed (BUGS.md #123–#125, #136, #126 partly; MOON_WORLD.md §7.3): chunks drawn off
    home, home's LOD dropped at each crossing, carries' clock-slip corrections smoothed, home's clouds hidden on the
    moon. **Left:** re-running `moon-trip` on a GPU (local); the moon's sky.
    **Second browser flight (0.58.8 on facaaaf1, seed 7, M1; brief 2026-11-13, branch `claude/moon-trip-fixes-df1uke`):**
@@ -1019,6 +1026,12 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    169 MB over three trips, not dropping at home (one page; may not be a leak)." Fixed: 1 (BUGS.md #129: `placeHome`
    asked again until the server's release, a home saved only on home ground), 2 (#130: a cross-grid correction
    measured in world coordinates). 3: not reproduced natively, open with its suspects (BUGS.md #131). 4: recorded, not chased (one page's reading).
+   **Teleport for the drawing check:** owner, 2026-11-13 (via the orchestrator): **"We should just teleport to the moon to see if ground draws,
+   flying there is an inefficient test of drawing. Fine if testing the flight itself."** So the drawing test
+   teleports onto the moon (`LocalCore::moon_land`, a dev move onto its ground captured the next tick), which found
+   #136 (the moon's chunks sent before the client crossed were dropped; now held for the crossing); the bench has a
+   `moonLand` step and a `moon-draw` scenario (draw calls, triangles, mesh bytes, shots on both faces). **Left:**
+   `npm run bench -- --warm moon-draw` on a GPU (local); the moon's sky.
    **Left:** the browser flight (local, GPU), the roll upright at a crossing, M-5 (the moon's LOD), M-8. Earlier
    **M-7c status (2026-11-12, branch `claude/moon-m7c-x07vsc`, local):** owner, 2026-11-12: "Do we have the real physical moon yet?" (no: the client doesn't draw the moon
    up close yet (M-5) and there are no moon spawns (M-8)). **Built:** `carry` moved into `dwell-physics`; a
@@ -1400,6 +1413,21 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    is still **~2.6 ms over** at p95. Next: the cutout's vertex outputs (26 floats a vertex to the tiler: tile,
    fade and draw could be flat or packed), the colour as unorm8x4 (its tints can pass 1: needs a range),
    then `clouds`/`composite` measured by `--compare` with them off.
+   **Round 4, the cutout's colour and outputs (2026-11-13, local, `claude/forest-r4`):** clouds measured by switching
+   them off at the edge (a `view` step, same page): `gpu.frame` 18.6 / 19.5 → 18.3 / 19.4 → back on 18.7 / 19.5, so
+   the clouds' 5.3 ms pass time is ~0.3 ms of real frame (they overlap the near pass). The composite measured by
+   its parts (`--compare forest-edge`, new configs `shafts-off`, `bloom-off`): `gpu.frame` p95 18.26 / 18.27 /
+   18.40 ms, `composite` 6.4 in all three, so neither is a cost at High and the composite's ~6 ms pass time is the
+   near pass's overlap, not its own work. Built: the cutout's colour as unorm8x4 over a scale (`scaled_rgb`: rgb / (1 + 3a), tints up to 4, a colour within 0–1 keeps plain
+   8-bit rounding; cutout 72 → 64 bytes a vertex; the terrain's colour stays floats, its lava faces code a stop in
+   it), and the cutout's tile and fade passed flat (the same at every corner, test
+   `cutout_tiles_and_fades_are_the_same_at_a_triangles_corners`; 6 of the 22 interpolated floats). No look change
+   (same-spot edge shots before/after differ by the clouds' drift and the wind). `forest-perf`, M1 Air, High,
+   `--unthrottled`, `gpu.frame` p50 / p95 ms, before (round 3 / this session's base) → after: inside 12.6 / 13.0 →
+   **12.4 / 12.9**, **edge 18.7 / 19.3, 18.6 / 19.5 → 18.3 / 18.9** (`gpu.near` 14.1 → 13.8), above 12.0 / 12.4 →
+   12.2 / 12.7 (noise). The edge is still **~2.2 ms over** at p95; what is left there is the near pass's ~4 M leaf
+   triangles themselves. Next levers: fewer leaf triangles past the cards' fade (merged faces, no chamfer), or the
+   terrain's colour packed too (its lava code needs a byte of its own).
 33. **Licensed music replaces the generated music** (owner 2026-11-12: "I downloaded a big music set as a Unity
    asset, I'd like the casual game music setup in a prototype and make it play randomly in the game. Probably
    needs compression. It'll replace the current music which is AI generated."). The pack: *Andrew Sitkov Music*
@@ -1440,6 +1468,19 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    Chisel's biome sliders inside a running world with the terrain around the player regenerating as they tune
    (Phase 56 B7); the Textures tab adding new materials and blocks by data, editing water and sky colours, and
    painting item and model textures (B6's rest). Queued.
+   Brief (2026-11-13): "in a local world (creative, or a dev/creator toggle — say which), open Chisel's biome
+   sliders as an in-game panel; a change becomes a world edit (saved with the world, the existing edit path)
+   and the terrain around the player regenerates — the chunks within a radius re-generated and re-meshed
+   (player edits kept on top …), LOD refreshed; debounced; undo/reset. Multiplayer: host only (say so)."
+   **First slice built (branch `claude/chisel-in-game-phase-56-2jgr7e`):** the game menu's **Chisel** page in
+   local worlds, offered in **creative** mode (no separate dev toggle): per biome the `detail`, `shaping` and
+   `banks` sliders, Undo, Reset, a 400 ms debounce; a change retunes the world: the config saved in the world
+   file (settings `worldgen`) and the world record, the maps re-wrapped (no recompute; a ground-moving edit is
+   refused: a new world), the chunks within 3 chunks of the player generated again with the player's edits kept,
+   sent whole and their LOD sections recomputed. **Host only**: refused while guests are in the world.
+   Outstanding: the far LOD and far terrain follow only on reopening, edited chunks outside the radius keep
+   the old ground, the water grid isn't re-read, the browser check (cloud session: no GPU), the Textures tab
+   extras.
 35. **Swords as weapons** (owner 2026-11-12: "we'll want to bring in the swords from the model pack we got the
    tools from as weapons."). Answers: animals only for now (no PvP); a timed swing arc like the axe that hits what
    it crosses at contact, with damage, knockback and durability per sword as data (reusing the swing and
@@ -1850,6 +1891,25 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    **"Players can land there."**; **"Lava has the same function on the sun as the earth world."** (same damage,
    burn, flow and cooling rules); **"Its gravity will be the same as earth world for now."** Queued after the moon's
    client side (M-7c) so it reuses the finished travel.
+   **First slice S-1..S-3 built (2026-11-13, brief: "the sun as a grid in the grids data with its own frame, size
+   and place on the sun's existing path … a volcanic generator by data … the far-body bake so the sky's sun disc
+   is drawn from the sun world's surface (its glow kept) … capture/release and travel by the moon's rules if
+   they generalise by data (say what doesn't)"; docs/proposals/SUN_WORLD.md):** `dwell:sun` in grids.json
+   (`sunPath` frame on today's sun path at 954.7 km, 25 km radius at the disc's 1.5°, gravity 1), the `volcanic`
+   generator (lava oceans, rift rivers, cones with crater lakes, basalt and obsidian; both faces), its bake
+   shading the sky's sun disc (`sun.surface`; size, glow and sunlight unchanged), travel by the moon's rules
+   natively. **Left:** the sky disc's look on a GPU (a local check); constant lava flow on the sun (lava fields
+   on its rivers and lakes, damage there), its sky, spawns, its LOD.
+   **Kept additive (orchestrator, 2026-11-13: "to keep this additive (no new line), gate the sun's travel on the
+   client: add a capability (e.g. "grid.sun", or a grid count in the capability exchange) and have the server
+   never capture a client that doesn't declare it into the sun's grid (it flies on as before, the sun stays a far
+   body for it); a test that an old client (no capability) near the sun isn't captured and a new one is"):** a
+   grid's optional `capability` in grids.json (the sun's `grid.sun`); the server captures only sessions that
+   declare it, and the client's travel map holds only those grids.
+   **The sun's sky** (owner, 2026-11-13: "Sun and moon should be space, the same as night sky. Could perhaps just
+   make space a more general skybox and have 'day' be a closer atmosphere skybox so it can fade out as you leave
+   earth."): the general sky is built by the moon session (claude/moon-m5), not here; the sun only declares in its
+   grid data that it has no atmosphere, once that field exists.
 
 ## Done
 
@@ -2165,6 +2225,25 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    (refused when the vertex count isn't the GLB's `detail_0`). `node --test shared/models/painter.test.mjs` runs the
    page's core against `parts.mjs` (the Peasant's export byte for byte). Left: the owner repaints the Peasant's face
    and hair with it.
+   **Outfit patterns and the eyes** (owner 2026-11-13): **"I also want to improve the outfit texturing of the human
+   model. Alternating patterns around the hat, not on the brim. and also around the waist we have some of that now.
+   Also I think we lost the eyes, maybe other features in the low poly ization? Or it may not have had eyes?"**
+   Findings (branch `claude/outfit-patterns`, 2026-11-13): the Peasant's mesh has **no eye, brow or mouth geometry**
+   (`detail_0` is the pack's full mesh, ratio 1: the face is one smooth skin surface of ~70 front triangles; the head's
+   islands are the body, the hair cap and the hat). Whatever eyes the pack had were **painted in its texture** and
+   were lost at the import's paint step (`blender_import.py` `paint`: each face takes the median of five texture
+   samples, snapped to a palette base; an eye smaller than a face loses the vote), not by the decimation and not by
+   the part map. Nothing on the face is darker than `skin_deep` at any level; the nose and lip shading
+   (`skin_tan`) survived. The pack isn't in the repo, so its texture was not checked to prove it had eyes. The
+   **default level (60 %) draws the face as ~10 triangles** and the full mesh's facets are wide quads across the
+   face, so **painting eyes onto existing faces doesn't work** (tried: a dark wedge under the fringe at 60 %,
+   "sunglasses" at 100 %): eyes need **small geometry** (a few quads a side on the head joint, by data, added to
+   every level). The waist: the belt (`hair_brown`/`heartwood`, no part) is a ring at y 0.87–0.92 m mostly
+   inside the tunic; a band painted on the tunic at 60 % paints long spikes (its triangles run hip to chest).
+   **Built so far:** `shared/models/decor.mjs` (bands of alternating colours on a part's ring, by height and
+   radius, and marks; by facet, every level; `node --test shared/models/decor.test.mjs`), not yet applied to the
+   Peasant. **Left:** eyes as geometry; the hat band and a waist band wired into models.json `decor` once the eyes
+   land, with renders for the owner.
 
 44. **Trees on slopes hang over the edge** (owner 2026-11-12: **"I notice a lot of trees on slopes are hanging out over
    the edge. Perhaps trees should always have flats under them? Don't limit trees to flats, since they might not

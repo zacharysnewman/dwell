@@ -129,6 +129,7 @@ fields, ranges and names fail with the entry named):
 | `herd {kind?, back?}` | the finder (WORK_QUEUE item 46): logs the far herds nearest first (`__dwell.herds`) and stands the player `back` m (40) short of the nearest of `kind` (`deer`, `wolf`; either) on the ground (`goToHerd`, a local world); fails when there is none. Scenario `herds` |
 | `lava {op, args?}` | the local server's lava (`__dwell.lava(op, args)`, VOLCANOES.md §6.3), its JSON printed: `report` its fields (face, centre, origin, `molten` columns, deepest m, vents, the world's worldgen, `steamCells` sent so far), `rate` [k] every vent's rate × k (fill a lake in seconds), `vent` [x, y, z, rateM3s, depthM] a lake vent at a world point, `ventNear` [dx, dz, rateM3s, depthM] one off the player's feet; `lava-lake` shoots the starter's summit lake and lava meeting the sea. A scenario's `query` (e.g. `{"worldgen": "test:starter", "seed": "0", "at": "x,y,z"}`) opens a test world at a point for steps of its own |
 | `flyTo {to, face?, landM?, maxS?}` | the moon trip ([The moon](#the-moon-__dwellmoon-the-flyto-step); `__dwell.flyTo`, a local world): `to: "moon"` moves the player just outside the moon's capture sphere over its face `face` (`a`, `b`) with the dev move, flies it in for real until captured, down to `landM` m (40) over the moon's ground, measures the fall with flight off (**failing the run unless it is the moon's gravity within 25 %**) and lands; `to: "home"` flies up past the release sphere, back to where the trip started, and waits until the client holds home's chunk under the feet. Each leg at most `maxS` s (120); saved in `report.json`'s `trips`. Scenario `moon-trip` |
+| `moonLand {face?, maxS?, waitS?}` | teleports onto the moon's ground on face `face` (`a`, `b`; `__dwell.moonLand`, a local world), no flight, waits until standing there with its chunk held and `waitS` (3) s more, and prints the frame's draw calls, triangles and mesh bytes (saved in `report.json`'s `trips`). Scenario `moon-draw` |
 | `give {item, count}` | gives the local player `count` of `item` (`__dwell.give`, a local world that uses items, e.g. `?mode=adventure`): `pieces-combine` fills the backpack with pieces to shoot its Combine section |
 | `mark` | forgets the telemetry so far: the next `record` measures from here |
 | `record {name, budget?, reportOnly?}` | saves everything above under `name`; a `budget` (`{"<series>.<stat>": max}`, stat `mean`, `p50`, `p95`, `p99` or `max`, e.g. `{"frame.cpu.p95": 18.5}`) fails the scenario when a value is over its maximum or not recorded (`overBudget`). `phone-moving` (walk, sprint, fly 8 s each on an iPhone-sized page; run `--touch --cpu-throttle 4` at Low, BUGS.md #72) bounds `frame.cpu`, `jobs.apply` and `mesh_dirty` while moving; with `reportOnly` true a value over it prints `OVER BUDGET (report only)` and the scenario goes on (`forest-perf`, a target not met yet) |
@@ -517,6 +518,16 @@ ground. `home`: Space until released, then `placeHome` (the worker's op: the fee
 moon started, on either face) and a wait for `groundHeld`. The native check of the same flight is `game_local`'s
 `the_moon_report_steers_a_flight_into_its_capture` (both faces: the report from home and on the moon, the capture,
 the descent, ⅙ g ± 10 %, the landing).
+
+**`__dwell.moonLand({face?, maxS?})`** (`teleportToMoon` in `moonTrip.ts`; a local world) teleports instead of
+flying, for checking what the moon draws (owner, 2026-11-13: "We should just teleport to the moon to see if ground
+draws, flying there is an inefficient test of drawing"): the worker's `moonLand` op (`LocalCore::moon_land`) puts
+the player 1.5 m over the moon's spawn on face `face`, moving with it, captured on the next tick; flight off, it
+waits until the player stands there with the chunk under the feet held. `flyTo('home')` comes back. The bench step
+`moonLand {face?, maxS?, waitS?}` then waits `waitS` (3) s and prints the frame's draw calls, triangles and mesh
+bytes (saved in `trips`); `npm run bench -- --warm moon-draw` lands on face A, shoots `moon-a-across` and
+`moon-a-down`, goes home, lands on face B and shoots `moon-b-across`. A moon whose ground draws shows hundreds of
+calls, not tens (BUGS.md #123: 16–17).
 
 `npm run bench -- --warm moon-trip` flies there, lands, shoots `on-the-moon` and `moon-sky` at noon, flies
 back and shoots `home-again`; the capture, descent, landing and return seconds and the fall are printed and saved in

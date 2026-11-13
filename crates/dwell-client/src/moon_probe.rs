@@ -151,6 +151,15 @@ pub fn approach_point(map: &TravelMap, world_seed: u64, f: FaceFrame, margin_m: 
     Some(at(up))
 }
 
+/// The point `up_m` over the moon's spawn on face `f` (grid-local m): where the dev teleport onto
+/// the moon (`LocalCore::moon_land`) puts the capsule's centre, inside the capture sphere.
+pub fn landing_point(map: &TravelMap, world_seed: u64, f: FaceFrame, up_m: f64) -> Option<V3> {
+    let &(_, def, _) = map.grids.iter().find(|g| g.1.name == "dwell:moon")?;
+    let terrain = dwell_worldgen::grids::CrateredTerrain::new(def, world_seed)?;
+    let s = terrain.spawn_point(f.face);
+    Some(f.point([s[0], s[1] + up_m, s[2]]))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
