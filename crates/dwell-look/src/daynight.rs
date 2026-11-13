@@ -478,6 +478,7 @@ impl DayNight {
             moon_shown: true,
             clouds_shown: true,
             airless: false,
+            on_moon: false,
         }
     }
 }
@@ -515,6 +516,10 @@ pub struct DayState {
     /// space at every height, [`Air::SPACE`](crate::atmosphere::Air::SPACE) (MOON_WORLD.md §7.3;
     /// false from [`DayNight::state`]).
     pub airless: bool,
+    /// Whether the viewer stands on the sky's moon itself (the `dwell:moon` grid; false from
+    /// [`DayNight::state`]): its sky has no moon halo and its ground no moonlight, as well as no
+    /// disc (BUGS.md #142).
+    pub on_moon: bool,
 }
 
 impl Default for DayState {
@@ -611,8 +616,13 @@ impl DayState {
         let saturation = self.viewer(adapted_a).saturation;
         // The celestial model's moonlight (M-4): the night floor plus the rest by the lit share
         // (each face's own horizon weighs it in the shaders, `own`).
-        let moon_light =
-            DAY_NIGHT.moon.night_floor + (1.0 - DAY_NIGHT.moon.night_floor) * self.moon_lit;
+        // None on the moon itself: it neither glows nor shines in its own sky (BUGS.md #142).
+        let moon_light = if self.on_moon {
+            0.0
+        } else {
+            DAY_NIGHT.moon.night_floor + (1.0 - DAY_NIGHT.moon.night_floor) * self.moon_lit
+        };
+        let moon_glow = if self.on_moon { 0.0 } else { self.moon_lit };
         let mut u = [0.0f32; DAY_SKY_FLOATS];
         let mut i = 0;
         let mut put = |v: [f64; 4]| {
@@ -633,12 +643,12 @@ impl DayState {
         put(with(v.sky_horizon, saturation));
         put(with(v.glow, v.glow_strength));
         put(with(v.band, v.band_strength));
-        put(with(v.sun_disc, v.moon_glow * self.moon_lit));
+        put(with(v.sun_disc, v.moon_glow * moon_glow));
         put([
             self.air.stars(v.stars),
             seconds.rem_euclid(3600.0),
             pixel_angle,
-            self.moon_lit,
+            moon_glow,
         ]);
         for s in [&self.a, &self.b] {
             put(lit(s.sun_light, s.sun_intensity));
@@ -652,7 +662,7 @@ impl DayState {
         put(with(o.sky_horizon, o.saturation));
         put(with(o.glow, o.glow_strength));
         put(with(o.band, o.band_strength));
-        put(with(o.sun_disc, o.moon_glow * self.moon_lit));
+        put(with(o.sun_disc, o.moon_glow * moon_glow));
         put([
             self.air.stars(o.stars),
             self.fog_density(face.other()),

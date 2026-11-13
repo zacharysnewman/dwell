@@ -16,6 +16,9 @@ use serde_json::Value;
 
 use crate::bifacial::face_seed;
 use crate::noise::{fbm2, hash2, seed_word, smooth_step, unit};
+use crate::ramps::{RampRule, Top};
+use dwell_world::ramps::RampFacing;
+use dwell_world::rows_for_m;
 
 /// The build's grids file.
 pub const GRIDS_JSON: &str = include_str!("../../../shared/worldgen/grids.json");
@@ -183,8 +186,24 @@ pub struct CraterRules {
     pub ridges: RidgeRule,
     pub maria: MariaRule,
     pub craters: CraterField,
+    /// The rule that shapes its tops into stored ramps (`ramps`: `none`, `strict` or `notched`,
+    /// HALF_HEIGHT_GRID.md §4 and §10); none when not given.
+    pub ramps: crate::ramps::RampRule,
     /// The far-LOD map's texels a side, per face.
     pub bake_size: usize,
+}
+
+/// A generator's `ramps` (none when not given).
+pub(crate) fn ramp_rule(g: &Value, at: &str) -> Result<crate::ramps::RampRule, String> {
+    match g.get("ramps") {
+        None => Ok(crate::ramps::RampRule::None),
+        Some(v) => v
+            .as_str()
+            .and_then(crate::ramps::RampRule::parse)
+            .ok_or_else(|| {
+                format!("{at}: `generator.ramps` must be \"none\", \"strict\" or \"notched\"")
+            }),
+    }
 }
 
 pub(crate) fn get<'a>(v: &'a Value, path: &str, at: &str) -> Result<&'a Value, String> {
@@ -338,6 +357,7 @@ fn crater_rules(g: &Value, at: &str) -> Result<CraterRules, String> {
             },
             classes,
         },
+        ramps: ramp_rule(g, at)?,
         bake_size: bake,
     })
 }
@@ -819,6 +839,9 @@ pub struct CrateredTerrain {
     block: StateId,
     /// The maria's ground.
     mare_block: StateId,
+    /// Each ground block's ramp pieces by facing: the ½ m ramp's cell and the 1 m ramp's cells
+    /// from the bottom (empty when the rules shape no ramps).
+    pieces: Vec<(StateId, RampFacing, StateId, Vec<StateId>)>,
 }
 
 const PLAINS: u32 = 0x4D_0001;
@@ -841,12 +864,31 @@ impl CrateredTerrain {
             return None;
         };
         let seed = def.seed(world_seed);
+        let block = dwell_blocks::require(&rules.block);
+        let mare_block = dwell_blocks::require(&rules.maria.block);
+        let mut pieces = Vec::new();
+        if rules.ramps != RampRule::None {
+            for (m, name) in [(block, &rules.block), (mare_block, &rules.maria.block)] {
+                for facing in RampFacing::ALL {
+                    let g = dwell_world::ramps::gentle_cell_flooded(name, facing, false);
+                    let st = dwell_world::ramps::steep_cells_flooded(name, facing, false);
+                    let (Some(g), Some(st)) = (g, st) else {
+                        panic!(
+                            "grid `{}`: `generator.ramps` shapes ramps but `{name}` has no ramp family (blocks `rampFamilies`)",
+                            def.name
+                        );
+                    };
+                    pieces.push((m, facing, g, st));
+                }
+            }
+        }
         Some(Self {
             rules: rules.clone(),
             radius: def.radius_m?,
             seeds: [face_seed(seed, Face::A), face_seed(seed, Face::B)],
-            block: dwell_blocks::require(&rules.block),
-            mare_block: dwell_blocks::require(&rules.maria.block),
+            block,
+            mare_block,
+            pieces,
         })
     }
 
@@ -1012,6 +1054,44 @@ impl CrateredTerrain {
             .then(|| (self.height(face, cx, cz) / CELL_H).round() as i64 - 1)
     }
 
+    /// The cells (from the bottom) topping column (x, z) of `face`, by the rules' `ramps`
+    /// (HALF_HEIGHT_GRID.md §4): empty for a flat top. `top` gives a column's top row (`None` off
+    /// the disc, lower than any ground), the column's own included.
+    pub fn top_pieces(
+        &self,
+        face: Face,
+        x: i64,
+        z: i64,
+        top: impl Fn(i64, i64) -> Option<i64>,
+    ) -> &[StateId] {
+        if self.pieces.is_empty() {
+            return &[];
+        }
+        let Some(t) = top(x, z) else {
+            return &[];
+        };
+        let around: crate::ramps::Around = std::array::from_fn(|r| {
+            std::array::from_fn(|c| {
+                top(x + c as i64 - 1, z + r as i64 - 1).map_or(i32::MIN / 2, |t| (t + 1) as i32)
+            })
+        });
+        let (facing, steep) = match self.rules.ramps.top(&around, rows_for_m(1.0)) {
+            Top::Flat => return &[],
+            Top::Gentle(f) => (f, false),
+            Top::Steep(f) => (f, true),
+        };
+        let m = self.surface_block(face, x, z);
+        let Some((_, _, g, st)) = self.pieces.iter().find(|p| p.0 == m && p.1 == facing) else {
+            return &[];
+        };
+        let cells: &[StateId] = if steep { st } else { std::slice::from_ref(g) };
+        // A 1 m ramp needs two cells of ground.
+        if cells.len() as i64 > t + 1 {
+            return &[];
+        }
+        cells
+    }
+
     /// The ground block of column (x, z) on `face`: the maria's block where the column's centre
     /// is at least half in a mare, the grid's block elsewhere.
     pub fn surface_block(&self, face: Face, x: i64, z: i64) -> StateId {
@@ -1065,18 +1145,33 @@ impl CrateredTerrain {
         const S: i32 = CHUNK_SIZE;
         let f = FaceFrame::at_chunk_y(coord.y);
         let local = f.chunk(coord);
+        let (x0, z0) = (i64::from(local.x * S), i64::from(local.z * S));
+        // The tops of the chunk's columns and a ring round them, for the ramp rule's neighbours.
+        let w = (S + 2) as usize;
+        let tops: Vec<Option<i64>> = (0..w * w)
+            .map(|k| self.top_row(f.face, x0 - 1 + (k % w) as i64, z0 - 1 + (k / w) as i64))
+            .collect();
+        let top_at = |x: i64, z: i64| tops[((z - z0 + 1) as usize) * w + (x - x0 + 1) as usize];
         let cells = chunk.voxels_mut();
         for z in 0..S {
             for x in 0..S {
-                let wx = i64::from(local.x * S + x);
-                let wz = i64::from(local.z * S + z);
-                let top = self.top_row(f.face, wx, wz);
+                let wx = x0 + i64::from(x);
+                let wz = z0 + i64::from(z);
+                let top = top_at(wx, wz);
                 let ground = f.state(self.surface_block(f.face, wx, wz));
+                let pieces = self.top_pieces(f.face, wx, wz, top_at);
+                let first = top.map_or(0, |t| t + 1 - pieces.len() as i64);
                 for y in 0..S {
                     let row = i64::from(local.y * S + y);
                     let solid = top.is_some_and(|t| row >= 0 && row <= t);
                     let ly = if f.is_b() { S - 1 - y } else { y };
-                    cells[local_index(x, ly, z)] = if solid { ground } else { M.air };
+                    cells[local_index(x, ly, z)] = if !solid {
+                        M.air
+                    } else if row >= first && !pieces.is_empty() {
+                        f.state(pieces[(row - first) as usize])
+                    } else {
+                        ground
+                    };
                 }
             }
         }

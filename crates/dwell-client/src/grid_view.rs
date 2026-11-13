@@ -27,6 +27,9 @@ pub fn day_on_grid(day: &DayState, frame: &GridFrame, grid: u8) -> DayState {
         moon_shown: false,
         clouds_shown: false,
         airless: !grid_has_air(grid),
+        on_moon: dwell_worldgen::grids::grids()
+            .get(usize::from(grid))
+            .is_some_and(|g| g.name == crate::render::moon::MOON_GRID),
         ..*day
     }
 }
@@ -289,6 +292,50 @@ mod tests {
             assert_eq!(home_noon.air, dwell_look::atmosphere::Air::GROUND);
             assert!((dot(on.sun, day.sun) - 1.0).abs() > 1e-3, "turned");
             assert_eq!(on.time_of_day, day.time_of_day);
+        }
+    );
+
+    dwell_world::both_faces!(
+        /// The moon is never in its own sky (owner, 0.61: "Is there a moon visible from the
+        /// moon?"; BUGS.md #142): standing on the moon's ground on face `f` at every hour of a
+        /// month's days and phases, the sky draws no moon disc (`space.w`), no moon halo (the
+        /// viewer's and the other face's `disc.a`) and no moonlight (both faces' `moon_light`), and
+        /// home's sky keeps all three.
+        fn the_moon_is_never_in_its_own_sky(f: FaceFrame) {
+            let moon = dwell_worldgen::grids::grids()
+                .iter()
+                .position(|g| g.name == "dwell:moon")
+                .expect("the moon") as u8;
+            let frame = GridFrame {
+                origin: [400_000.0, 300_000.0, -200_000.0],
+                rotation: dwell_world::quat_axis_angle([0.6, 0.0, 0.8], 0.7),
+                ..GridFrame::HOME
+            };
+            let (mut home_halo, mut home_light) = (0usize, 0usize);
+            for day_n in 0..9 {
+                for k in 0..12 {
+                    let world_s =
+                        (f64::from(day_n) + f64::from(k) / 12.0) * DAY_NIGHT.day_length_s();
+                    let day = DAY_NIGHT.state(world_s, None, None);
+                    let on = day_on_grid(&day, &frame, moon).at_eye(80.0, 0.0, 12_500.0);
+                    let u = on.pack(f, 1.0, 0.0, 0.001);
+                    assert_eq!(u[23 * 4 + 3], 0.0, "no moon disc");
+                    assert_eq!(u[7 * 4 + 3], 0.0, "no moon halo ({day_n}, {k})");
+                    assert_eq!(u[21 * 4 + 3], 0.0, "no moon halo in the other face's sky");
+                    assert_eq!(u[8 * 4 + 3], 0.0, "no moon glint on water");
+                    for face in [10, 14] {
+                        assert_eq!(&u[face * 4..face * 4 + 3], &[0.0; 3], "no moonlight");
+                    }
+                    let h = day.pack(f, 1.0, 0.0, 0.001);
+                    assert_eq!(h[23 * 4 + 3], 1.0, "home draws the moon");
+                    home_halo += usize::from(h[7 * 4 + 3] > 0.0);
+                    home_light += usize::from(h[10 * 4..10 * 4 + 3].iter().any(|&c| c > 0.0));
+                }
+            }
+            assert!(
+                home_halo > 0 && home_light > 0,
+                "home keeps the halo and moonlight"
+            );
         }
     );
 }
