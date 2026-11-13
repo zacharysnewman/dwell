@@ -1,4 +1,4 @@
-//! The world's blueprints on the server (WORK_QUEUE item 55, docs/BLUEPRINTS.md): placed and
+//! The world's blueprints on the server (WORK_QUEUE item 56, docs/BLUEPRINTS.md): placed and
 //! removed by players where the mode has the `blueprints` ability, sent to every client with the
 //! `blueprints.world` capability, saved in the world's optional `blueprints` table, removed once
 //! every cell holds its block; and their builders (`blueprints.json` `builder`), NPCs that walk to

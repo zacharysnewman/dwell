@@ -1,4 +1,4 @@
-//! The world's blueprints on the client (WORK_QUEUE item 55, docs/BLUEPRINTS.md): kept from the
+//! The world's blueprints on the client (WORK_QUEUE item 56, docs/BLUEPRINTS.md): kept from the
 //! server's `Blueprints` (`blueprints.world`), the one the view aims into, its ghost (the cells left,
 //! in the build colour where the player has the block, red where not) for the brush preview's
 //! renderer, the panel's have/need rows, and the held Place's pace.

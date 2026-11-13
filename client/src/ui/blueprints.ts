@@ -1,4 +1,4 @@
-// Blueprints in the shell (WORK_QUEUE item 55, docs/BLUEPRINTS.md): a library structure turned into
+// Blueprints in the shell (WORK_QUEUE item 56, docs/BLUEPRINTS.md): a library structure turned into
 // the cells a blueprint record carries, and the compact panel shown while aiming into one ("log
 // 12/40": each item's have / need, and the cells left), drawn from the client's `blueprintPanel`.
 import type { ValidStructure } from '../local/structures';

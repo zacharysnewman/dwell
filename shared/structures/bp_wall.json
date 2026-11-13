@@ -1,5 +1,5 @@
 {
-  "$comment": "Prototype content (ARCHITECTURE.md \u00a76.1): a test blueprint for builder NPCs and players (docs/BLUEPRINTS.md, WORK_QUEUE item 55). Not Dwell's building design. A wall segment 7 m long, 3 m tall, crenellated on top.",
+  "$comment": "Prototype content (ARCHITECTURE.md \u00a76.1): a test blueprint for builder NPCs and players (docs/BLUEPRINTS.md, WORK_QUEUE item 56). Not Dwell's building design. A wall segment 7 m long, 3 m tall, crenellated on top.",
   "format": 1,
   "name": "dwell:bp_wall",
   "kind": "voxels",

@@ -1,4 +1,4 @@
-//! The game's side of blueprints (WORK_QUEUE item 55, docs/BLUEPRINTS.md): placing and removing
+//! The game's side of blueprints (WORK_QUEUE item 56, docs/BLUEPRINTS.md): placing and removing
 //! one, the aimed one's ghost and panel each frame, and Place aimed into one building its ghost
 //! cells only, from what the player has, one piece every `player.paceMs` while held — as one-cell
 //! region fills, the drag building's path (ITEMS.md §5).

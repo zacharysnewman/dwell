@@ -18,7 +18,7 @@ test("the build's data validates: creative is the default, adventure is experime
   // used for cheating in adventure"; docs/THEATER_MODE.md §7).
   assert.ok(!adventure.abilities.includes('theaterViewpoint'));
   assert.match(modesRust(d), /Ability::Map\.bit\(\) \| Ability::MapRevealed\.bit\(\)/);
-  // Blueprints are placed in both (owner, 2026-11-13, WORK_QUEUE item 55: "In adventure you can place
+  // Blueprints are placed in both (owner, 2026-11-13, WORK_QUEUE item 56: "In adventure you can place
   // "blueprints"").
   assert.deepEqual(adventure.abilities, ['damage', 'map', 'stamina', 'oxygen', 'blueprints']);
   assert.equal(adventure.experimental, true);

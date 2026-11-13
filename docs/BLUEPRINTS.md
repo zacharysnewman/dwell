@@ -1,6 +1,6 @@
 # Blueprints and builder NPCs
 
-**[in progress: B1–B3 built (2026-11-13, branch `claude/builder-npcs-blueprints-rs25zj`); B4 planned]** WORK_QUEUE item 55. Owner, 2026-11-13: **"I also want to add a new version of the human
+**[in progress: B1–B3 built (2026-11-13, branch `claude/builder-npcs-blueprints-rs25zj`); B4 planned]** WORK_QUEUE item 56. Owner, 2026-11-13: **"I also want to add a new version of the human
 NPC, same looks, no sword capable of building blueprints like the ones you can save right now. In adventure
 you can place "blueprints" but not as actual blocks as an entity that shows ghost blocks. When you hold
 build, it auto places only within the correct placement, only the correct blocks where you're aiming like

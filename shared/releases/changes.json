@@ -2,6 +2,15 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.60.7",
+      "changes": [
+        "Humans no longer die: at 0 health you kneel where you fell, head bowed, your sword planted before you (or your hand on your knee), while the camera pulls out to show it.",
+        "After a few seconds the view fades and you stand up at the nearest resurrection shrine.",
+        "Villagers are defeated the same way: they kneel, then stand up again at the nearest shrine.",
+        "What you carried is left where you knelt, not dropped the moment you fall."
+      ]
+    },
+    {
       "version": "0.60.6",
       "changes": [
         "Behind the scenes: a tool to paint patterns and marks on character models, ready for outfit bands and eyes"

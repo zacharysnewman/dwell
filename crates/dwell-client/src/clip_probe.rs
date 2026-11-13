@@ -55,6 +55,8 @@ impl Point {
             "tool_tip" | "tip" => Point::ToolTip,
             "grip" | "hand" => Point::Grip,
             "elbow" => Point::Bone("forearm_r"),
+            // The head bone's pivot (`head` is the tool's head).
+            "head_bone" | "neck" => Point::Bone("head"),
             "shoulder" => Point::Bone("arm_r"),
             other => {
                 let name: &'static str = Box::leak(other.to_string().into_boxed_str());
@@ -254,6 +256,20 @@ fn swing_of(role: &str) -> Option<Swing> {
     }
 }
 
+/// Defeat's input for one of its roles (`kneel`, `kneel_sword`: kneeling; `stand`, `stand_sword`:
+/// standing up), none for any other.
+fn defeat_of(role: &str) -> Option<dwell_characters::animator::Defeat> {
+    use dwell_characters::animator::Defeat;
+    let r = &dwell_protocol::defeat::ROLES;
+    if role == r.kneel || role == r.kneel_armed {
+        Some(Defeat::Kneel)
+    } else if role == r.stand || role == r.stand_armed {
+        Some(Defeat::Stand)
+    } else {
+        None
+    }
+}
+
 /// A raised block's role (`guard_level`: a hold-layer clip the animator lays over the gait,
 /// `MoveInput::guard`), if `role` is one; the probe poses it as the game does instead of a swing.
 fn guard_of(role: &str) -> Option<&'static str> {
@@ -281,6 +297,12 @@ fn resolve(name: &str) -> Result<(&'static str, &'static dwell_characters::Clip)
         if let Some(i) = ch.arms_clip(role)
             && TABLES.clip(i).name == name
         {
+            return Ok((role, TABLES.clip(i)));
+        }
+    }
+    // A body-only role (defeat's `kneel`, `stand`: CHARACTERS.md §11.13), or its clip.
+    for &(role, i) in ch.clips {
+        if role == name || TABLES.clip(i).name == name {
             return Ok((role, TABLES.clip(i)));
         }
     }
@@ -464,8 +486,35 @@ impl Fit {
 /// (`arm_transforms` / `bone_transforms` with the hold's turns), so the key plays where it was
 /// fitted.
 pub fn fit(role: &str, item: Option<&'static str>, body: bool, target: Target, from: Fit) -> Fit {
+    fit_at(role, item, body, target, from, 0.0)
+}
+
+/// [`fit`] for the key at clip time `t`: on the body, a defeat role's (`kneel_sword`, CHARACTERS.md
+/// §11.13) other bones are its clip's at `t` (the kneeling legs and bowed head), so the arm is
+/// fitted on the kneeling body; any other role's are at rest.
+pub fn fit_at(
+    role: &str,
+    item: Option<&'static str>,
+    body: bool,
+    target: Target,
+    from: Fit,
+    t: f32,
+) -> Fit {
     let ch = player();
     let held = held_for(item, role);
+    let base = if body && defeat_of(role).is_some() {
+        let mut a = Animator::new(&TABLES, ch, Space::Body);
+        let input = MoveInput {
+            holding: held != Held::Empty,
+            defeat: defeat_of(role),
+            armed: held.is_weapon(),
+            ..Default::default()
+        };
+        a.update(&input, 0.0);
+        a.update(&input, t)
+    } else {
+        dwell_characters::anim::Pose::REST
+    };
     let hold = held.item().and_then(|(n, _)| ch.item(n));
     let (gb, gp) = local_point(held, Point::Grip).expect("grip");
     let (hb, hp) = local_point(held, Point::ToolHead).unwrap_or((gb, gp));
@@ -479,12 +528,13 @@ pub fn fit(role: &str, item: Option<&'static str>, body: bool, target: Target, f
         bone("chest"),
     );
     let place = |x: &[f32; 10]| {
-        let mut pose = dwell_characters::anim::Pose::REST;
-        pose.rot[arm] = [x[0], x[1], x[2]];
-        pose.rot[fore] = [x[3], 0.0, 0.0];
-        pose.rot[hand] = [x[4], x[5], x[6]];
+        let mut pose = base;
+        pose.set(arm, [x[0], x[1], x[2]]);
+        pose.set(fore, [x[3], 0.0, 0.0]);
+        pose.set(hand, [x[4], x[5], x[6]]);
         let b = if body {
-            pose.rot[chest] = [0.0, x[7], 0.0];
+            let c = base.rot[chest];
+            pose.set(chest, [c[0], c[1] + x[7], c[2]]);
             bone_transforms(ch, &with_item(&pose, hold))
         } else {
             pose.root = [x[7], x[8], x[9]];
@@ -591,6 +641,8 @@ fn body_bones(role: &str, held: Held, t: f32) -> [Affine; MAX_BONES] {
     let input = MoveInput {
         holding: held != Held::Empty,
         guard: guard_of(role),
+        defeat: defeat_of(role),
+        armed: held.is_weapon(),
         ..Default::default()
     };
     a.update(&input, 0.0);
@@ -598,7 +650,9 @@ fn body_bones(role: &str, held: Held, t: f32) -> [Affine; MAX_BONES] {
         a.swing(s);
         a.drive_action(Some(t));
     }
-    let pose = a.update(&input, 0.0);
+    // A defeat role plays from its start: `t` into it.
+    let dt = if input.defeat.is_some() { t } else { 0.0 };
+    let pose = a.update(&input, dt);
     let hold = held.item().and_then(|(n, _)| ch.item(n));
     bone_transforms(ch, &with_item(&pose, hold))
 }
@@ -656,6 +710,8 @@ pub fn probe(p: &Probe) -> Result<Report, String> {
     let grip = local_point(held, Point::Grip);
     let head = local_point(held, Point::ToolHead);
     let arm_bones = ARM_BONES.map(|b| ch.bone(b));
+    // A body-only role (defeat's): the top, side and front views show the body (from its feet).
+    let body_only = ch.arms_clip(role).is_none();
     let mut samples: Vec<Sample> = (0..n)
         .map(|i| {
             let t = clip.duration * i as f32 / (n - 1) as f32;
@@ -667,7 +723,7 @@ pub fn probe(p: &Probe) -> Result<Report, String> {
                 let w = frame.apply(v);
                 let b = body[bone].apply(q);
                 At {
-                    local: to_local(v),
+                    local: if body_only { to_local(b) } else { to_local(v) },
                     screen: [-v[0] / (z * tan * p.aspect), v[1] / (z * tan), v[2]],
                     world: w.map(f64::from),
                     body: to_local(b),
@@ -1837,4 +1893,109 @@ mod chop_swing_tests {
             );
         }
     }
+}
+
+#[cfg(test)]
+mod defeat_tests {
+    //! The defeat clips by their data (WORK_QUEUE item 55; owner, 2026-11-13: "Head down, hand on
+    //! sword hilt, sword in the ground"; CHARACTERS.md §11.13), posed as the game poses the body
+    //! (`body_bones`: the body's animator with `MoveInput::defeat`), placed in the world on either
+    //! face through `place_frame` and read back face-locally.
+    use super::*;
+    use crate::render::characters::place_frame;
+    use dwell_world::FaceFrame;
+
+    /// A point of the body's pose at clip time `t` of `role` holding `item`, face-local metres from
+    /// feet standing at face-local `feet` on face `f` facing `yaw`: (right, up, ahead of the feet).
+    fn at(f: FaceFrame, role: &str, item: Option<&'static str>, t: f32, point: Point) -> [f64; 3] {
+        let held = held_for(item, role);
+        let (bone, q) = local_point(held, point).expect("a point");
+        let bones = body_bones(role, held, t);
+        let (feet, yaw) = (f.point([12.5, 70.0, -4.5]), 30.0);
+        let frame = place_frame(feet, yaw, f, [0.0; 3]);
+        let w = frame.apply(bones[bone].apply(q)).map(f64::from);
+        let (p, o) = (f.point(w), f.point(feet));
+        // Into the body's frame: +z ahead along the yaw, right is −x turned.
+        let (s, c) = (yaw.to_radians().sin(), yaw.to_radians().cos());
+        let (dx, dz) = (p[0] - o[0], p[2] - o[2]);
+        let ahead = dx * s + dz * c;
+        let left = dx * c - dz * s;
+        [-left, p[1] - o[1], ahead]
+    }
+
+    fn end(role: &str) -> f32 {
+        let ch = player();
+        TABLES.clip(ch.clip(role).expect("a clip")).duration
+    }
+
+    dwell_world::both_faces!(
+        fn the_armed_kneel_plants_the_sword_and_holds_its_hilt_head_bowed(f: FaceFrame) {
+            let (role, sword) = ("kneel_sword", Some("dwell:sword"));
+            let t = end(role);
+            let grip = at(f, role, sword, t, Point::Grip);
+            let tip = at(f, role, sword, t, Point::ToolTip);
+            // The fist on the hilt before the raised knee, the blade straight down into the ground.
+            assert!(
+                grip[1] > 0.7 && grip[1] < 1.0 && grip[2] > 0.35,
+                "grip {grip:?}"
+            );
+            assert!(tip[1].abs() < 0.06, "the tip at the ground: {tip:?}");
+            assert!(tip[2] > 0.4, "before the knee: {tip:?}");
+            let lean = (tip[0] - grip[0]).hypot(tip[2] - grip[2]) / (grip[1] - tip[1]);
+            assert!(lean < 0.3, "the blade upright: {lean}");
+            // Down on one knee: the left knee (shin_l's pivot) at the ground, the right raised.
+            let knee_l = at(f, role, sword, t, Point::Bone("shin_l"));
+            let knee_r = at(f, role, sword, t, Point::Bone("shin_r"));
+            // The knee joint within the leg's thickness (its capsule ~0.075 m) of the ground.
+            assert!(knee_l[1] < 0.15, "the left knee down: {knee_l:?}");
+            assert!(knee_r[1] > 0.4, "the right knee up: {knee_r:?}");
+            // Head bowed: the head's up axis (neck to crown) turned well forward and down.
+            let neck = at(f, role, sword, t, Point::Bone("head"));
+            assert!(neck[1] < 1.2 && neck[2] > 0.15, "over the knee: {neck:?}");
+            let b = body_bones(role, held_for(sword, role), t);
+            let h = player().bone("head").expect("a head");
+            let (n, c) = (b[h].apply([0.0; 3]), b[h].apply([0.0, 0.36, 0.0]));
+            let (up, ahead) = (c[1] - n[1], c[2] - n[2]);
+            let bow = ahead.atan2(up).to_degrees();
+            assert!(bow > 45.0, "the head bowed {bow:.0}° from upright");
+        }
+    );
+
+    dwell_world::both_faces!(
+        fn the_unarmed_kneel_rests_the_hand_on_the_raised_knee(f: FaceFrame) {
+            let role = "kneel";
+            let t = end(role);
+            let hand = at(f, role, None, t, Point::Bone("hand_r"));
+            let knee = at(f, role, None, t, Point::Bone("shin_r"));
+            let d = (0..3)
+                .map(|k| (hand[k] - knee[k]).powi(2))
+                .sum::<f64>()
+                .sqrt();
+            assert!(d < 0.15, "the hand {hand:?} on the knee {knee:?}: {d:.3} m");
+            assert!(hand[1] > knee[1], "on top of it");
+        }
+    );
+
+    dwell_world::both_faces!(
+        fn the_stands_rise_from_the_kneel_to_standing(f: FaceFrame) {
+            for (role, item) in [("stand", None), ("stand_sword", Some("dwell:sword"))] {
+                let knee0 = at(f, role, item, 0.0, Point::Bone("shin_l"));
+                let hips1 = at(f, role, item, end(role), Point::Bone("hips"));
+                assert!(knee0[1] < 0.15, "{role} starts kneeling: {knee0:?}");
+                assert!(
+                    (hips1[1] - 0.92).abs() < 0.03,
+                    "{role} ends standing: {hips1:?}"
+                );
+            }
+            // With the sword: drawn up out of the ground back into the hold.
+            let tip = at(
+                f,
+                "stand_sword",
+                Some("dwell:sword"),
+                end("stand_sword"),
+                Point::ToolTip,
+            );
+            assert!(tip[1] > 1.0, "the sword back in hand: {tip:?}");
+        }
+    );
 }

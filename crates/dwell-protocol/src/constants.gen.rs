@@ -15,7 +15,6 @@ pub const MAX_INPUTS_PER_DATAGRAM: usize = 4;
 
 pub mod players {
     pub const MAX_HEALTH: i64 = 100;
-    pub const RESPAWN_SECONDS: i64 = 5;
     pub const RECONCILE_SNAP_DISTANCE: f32 = 1.0;
     pub const INTERP_DELAY_MS: i64 = 100;
     pub const PREDICT_PROXY_RADIUS: f32 = 16.0;
@@ -681,6 +680,8 @@ pub mod capability_names {
     pub const CREATURES_POSES: &str = "creatures.poses";
     /// An NPC's pose in a Creatures message's NPCs' part may be 3 or 4 (`NPC_STRIKE_POSES`: striking level, striking vertical) while it swings its sword (WORK_QUEUE item 35), and the client plays that swing's clip. Without it the server sends its idle pose instead, as older clients read it.
     pub const NPCS_SWINGS: &str = "npcs.swings";
+    /// A defeated NPC (docs/CHARACTERS.md §11.13: humans never die) is sent in a Creatures message's NPCs' part with pose 5 (`NPC_DEFEAT_POSES`: kneeling where it fell) or 6 (standing up at a shrine), and the client plays the characters' `kneel` or `stand` clip for it. Without it the server sends pose 0 (standing) instead, as older clients read it. A defeated player needs nothing new: its snapshot's `DEAD` flag, at the place it fell and now with the facing it knelt with, is drawn kneeling by a client that knows defeat.
+    pub const HUMANS_DEFEAT: &str = "humans.defeat";
     /// The client sends `TheaterViewpoint` (docs/THEATER_MODE.md §7, T-4): theater mode's camera position while a camera path plays (at most world.theaterViewpointHz a second), and an empty one when it ends. The server adds it to the player's interest (chunks streamed around it, creatures and NPCs spawned and simulated near it, the near ecology and the water stepped there) only where the world's mode has the `theaterViewpoint` ability (shared/modes/modes.json: creative), within world.theaterViewpointMaxM of the body; elsewhere it ignores it. Without it the client never sends one.
     pub const THEATER_VIEWPOINT: &str = "theater.viewpoint";
     /// A breaking tool's hit (one with a `contactS`, shared/tools/tools.json; docs/BLOCK_DAMAGE.md §11) is sent at its swing's contact, aimed at what the crosshair targets then, and the server lands it on arrival (reach, line of sight and the edit rate checked from the eye at that tick) instead of `contactS` after it arrives. Without it (either side) the client sends the hit at the click, at the cell clicked, and the server lands it `contactS` after it arrives.
@@ -689,8 +690,8 @@ pub mod capability_names {
     pub const MARKERS_PRIVATE: &str = "markers.private";
     /// The client knows the sun's grid (shared/worldgen/grids.json `dwell:sun`, its `capability`; docs/proposals/SUN_WORLD.md §5): the server may capture it into the sun's space (grid index 2 on the `grid.frames` wire) and counts the sun's slab in its far flight. Without it the server never captures it there: it flies on through as before, and the sun stays a far body for it.
     pub const GRID_SUN: &str = "grid.sun";
-    /// Blueprints (WORK_QUEUE item 55, docs/BLUEPRINTS.md) go both ways as `Blueprints` (dwell_protocol::blueprints): the server sends every blueprint in the world once after this client's Capabilities, then each one placed or gone (completed or removed) to every client with it; the client places and removes one with `Place` and `Remove`, which the server keeps in the world's optional `blueprints` table. Without it neither is sent: an older client sees no blueprints and an older server is never sent one.
+    /// Blueprints (WORK_QUEUE item 56, docs/BLUEPRINTS.md) go both ways as `Blueprints` (dwell_protocol::blueprints): the server sends every blueprint in the world once after this client's Capabilities, then each one placed or gone (completed or removed) to every client with it; the client places and removes one with `Place` and `Remove`, which the server keeps in the world's optional `blueprints` table. Without it neither is sent: an older client sees no blueprints and an older server is never sent one.
     pub const BLUEPRINTS_WORLD: &str = "blueprints.world";
     /// Every capability this build knows, in the table's order.
-    pub const ALL: &[&str] = &[STRUCTURES_PLACE, GRID_FRAMES, DAMAGE_CHUNKS, CREATURES_NPCS, WEAPONS_CLASH, CREATURES_POSES, NPCS_SWINGS, THEATER_VIEWPOINT, HITS_AT_CONTACT, MARKERS_PRIVATE, GRID_SUN, BLUEPRINTS_WORLD];
+    pub const ALL: &[&str] = &[STRUCTURES_PLACE, GRID_FRAMES, DAMAGE_CHUNKS, CREATURES_NPCS, WEAPONS_CLASH, CREATURES_POSES, NPCS_SWINGS, HUMANS_DEFEAT, THEATER_VIEWPOINT, HITS_AT_CONTACT, MARKERS_PRIVATE, GRID_SUN, BLUEPRINTS_WORLD];
 }

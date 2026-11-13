@@ -56,7 +56,6 @@ pub struct SkinnedDraw {
     /// Degrees; 0 faces +z.
     pub yaw: f64,
     pub face: FaceFrame,
-    pub dead: bool,
     /// The base role (`dwell_characters::animator::body_role`'s names).
     pub role: &'static str,
     /// The flood light it stands in (as `BodyDraw::light`).
@@ -172,7 +171,7 @@ pub fn hand_frame(
 /// The body's model space to eye-relative world space: its place (upside down on face B), the
 /// model's yaw and scale.
 pub fn body_matrix(d: &SkinnedDraw, data: &ModelData, eye: V3) -> Mat4 {
-    let place: Affine = place_frame(d.feet, d.yaw, d.face, d.dead, eye);
+    let place: Affine = place_frame(d.feet, d.yaw, d.face, eye);
     let p: Mat4 = [
         [place.m[0][0], place.m[0][1], place.m[0][2], 0.0],
         [place.m[1][0], place.m[1][1], place.m[1][2], 0.0],
@@ -472,7 +471,7 @@ pub fn own_joints(
         .collect();
     let points = dwell_models::first_person::skin_points(model, level, &in_body, verts);
     let d = &own.draw;
-    let frame = place_frame(d.feet, d.yaw, d.face, d.dead, eye);
+    let frame = place_frame(d.feet, d.yaw, d.face, eye);
     let (eye_local, pitch) = super::characters::eye_in(&frame, own.forward);
     let s = dwell_characters::own::shift_points(&own.body, points, eye_local, pitch);
     let placed = mat4(&frame.then(&Affine::translation([0.0, 0.0, -s])));
@@ -1136,7 +1135,6 @@ mod tests {
                 feet: face.point([10.0, 5.0, 0.0]),
                 yaw: 90.0,
                 face,
-                dead: false,
                 role: "idle",
                 light: [1.0, 0.0],
                 cast_only: false,
@@ -1168,7 +1166,6 @@ mod tests {
             feet: face.point([4.0, 7.0, -2.0]),
             yaw: 30.0,
             face,
-            dead: false,
             role: "walk",
             light: [1.0, 0.0],
             cast_only: false,
@@ -1367,7 +1364,6 @@ mod tests {
                         feet,
                         yaw: 30.0,
                         face,
-                        dead: false,
                         role,
                         light: [1.0, 0.0],
                         cast_only: true,
@@ -1380,7 +1376,7 @@ mod tests {
                     let p = Player::new(data, model, "idle");
                     let globals = anim::globals(model, &model_pose(data, model, &p, d.rig_pose.as_ref(), d.grip));
                     let skinned = hand_frame(data, model, &globals, &place).unwrap();
-                    let frame = place_frame(feet, 30.0, face, false, [0.0; 3]);
+                    let frame = place_frame(feet, 30.0, face, [0.0; 3]);
                     let rigid = frame.then(&bone_transforms(ch, &pose)[hand_r]);
                     let miss = (0..3).map(|k| (skinned.t[k] - rigid.t[k]).powi(2)).sum::<f32>().sqrt();
                     // The angle between the two frames' axes (their worst axis).

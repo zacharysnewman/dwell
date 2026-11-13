@@ -14,7 +14,6 @@
   "maxInputsPerDatagram": 4,
   "players": {
     "maxHealth": 100,
-    "respawnSeconds": 5,
     "reconcileSnapDistance": 1.0,
     "interpDelayMs": 100,
     "predictProxyRadius": 16,

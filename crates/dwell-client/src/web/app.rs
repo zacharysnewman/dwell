@@ -2677,6 +2677,8 @@ impl Client {
             let edge = dwell_lava::DATA.burn_edge;
             set(&o, "burn", g.hud.burn * f64::from(edge.opacity));
             set(&o, "burnColor", edge.color);
+            // Defeat's fade (CHARACTERS.md §11.13): 0 clear, 1 black.
+            set(&o, "fade", g.defeat_fade());
             set(&o, "region", g.region.status().as_str());
             // The held axe's swing hint (ADR 0067): null without one.
             set(

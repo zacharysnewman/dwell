@@ -1,5 +1,5 @@
 {
-  "$comment": "Prototype content (ARCHITECTURE.md \u00a76.1): a test blueprint for builder NPCs and players (docs/BLUEPRINTS.md, WORK_QUEUE item 55). Not Dwell's building design. A 3 \u00d7 3 m watchtower: log posts and a log back wall 6 m tall, a stone platform with a low parapet.",
+  "$comment": "Prototype content (ARCHITECTURE.md \u00a76.1): a test blueprint for builder NPCs and players (docs/BLUEPRINTS.md, WORK_QUEUE item 56). Not Dwell's building design. A 3 \u00d7 3 m watchtower: log posts and a log back wall 6 m tall, a stone platform with a low parapet.",
   "format": 1,
   "name": "dwell:bp_watchtower",
   "kind": "voxels",

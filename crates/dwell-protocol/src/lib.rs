@@ -8,6 +8,7 @@ pub mod bytes;
 pub mod capabilities;
 pub mod chopping;
 pub mod damage;
+pub mod defeat;
 pub mod fragment;
 pub mod inventory;
 pub mod markers;

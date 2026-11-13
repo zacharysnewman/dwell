@@ -50,7 +50,7 @@ pub enum Ability {
     /// and the water there as near a body. Without it the server ignores a client's
     /// `TheaterViewpoint` and the camera sees only what is loaded near the player.
     TheaterViewpoint,
-    /// Players place and remove blueprints (WORK_QUEUE item 55, docs/BLUEPRINTS.md): a structure
+    /// Players place and remove blueprints (WORK_QUEUE item 56, docs/BLUEPRINTS.md): a structure
     /// placed as ghost blocks everyone in the world sees and builds. Without it the server refuses
     /// a client's `Blueprints` `Place` and `Remove` (builders still build the world's own).
     Blueprints,

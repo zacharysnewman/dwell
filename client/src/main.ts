@@ -917,6 +917,8 @@ function showHud(app: App, now: number): void {
     /** The burning edge's opacity now (0: none) and colour (shared/fluids/lava.json `burnEdge`). */
     burn?: number;
     burnColor?: string;
+    /** Defeat's fade (0 clear, 1 black; docs/CHARACTERS.md §11.13). */
+    fade?: number;
     region?: string;
     /** The held axe's swing hint (ADR 0067), else null. */
     chop?: string | null;
@@ -932,6 +934,7 @@ function showHud(app: App, now: number): void {
   app.hud.setSpyglass(h.spyglass ?? null);
   if (h.damaged) app.hud.flashDamage(now);
   app.hud.setBurn(h.burn ?? 0, h.burnColor ?? '#ff5a1e');
+  app.hud.setFade(h.fade ?? 0);
   app.hud.setHealth(h.health ?? 0, now);
   app.hud.setVitals(h.vitals ?? null);
   app.hud.setMessage(h.message);

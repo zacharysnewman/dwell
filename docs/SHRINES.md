@@ -85,6 +85,11 @@ and the moon keep theirs: they stand at a portal's rim or on another world by de
 
 ## 5. Respawn (`dwell-sim` `server.rs`)
 
+Humans never die (CHARACTERS.md §1a, WORK_QUEUE item 55): at 0 health a player or an NPC is
+**defeated**, kneels where it fell for its defeat's `kneelS` and `fadeS` (`shared/defeat`), and then
+stands up at the shrine below, playing the stand (CHARACTERS.md §11.13). A defeated NPC stands up at
+the stand point of the shrine nearest where it fell, on that face, 1.5 m along +x (`npc_stand_point`).
+
 `kill` takes the respawn point from `ShrineRespawn` (`dwell_worldgen::shrine_respawn_for_sized`): the
 shrine nearest the death on the death's face (`FaceFrame::at_height`), its stand point plus the players'
 spread and half a metre (a spread may stand on a higher step), in **every game mode**. A world without

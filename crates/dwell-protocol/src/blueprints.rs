@@ -1,4 +1,4 @@
-//! Blueprints (WORK_QUEUE item 55, docs/BLUEPRINTS.md): a structure's cells placed in the world as
+//! Blueprints (WORK_QUEUE item 56, docs/BLUEPRINTS.md): a structure's cells placed in the world as
 //! an entity shown as ghost blocks, built by players and builder NPCs. Everyone in the world sees
 //! them; the server keeps them in the world's optional `blueprints` table and sends them to every
 //! client with the `blueprints.world` capability (`Blueprints`).

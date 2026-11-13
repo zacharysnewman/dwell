@@ -1,4 +1,4 @@
-//! Blueprints through the server (WORK_QUEUE item 55, docs/BLUEPRINTS.md): placed by a client
+//! Blueprints through the server (WORK_QUEUE item 56, docs/BLUEPRINTS.md): placed by a client
 //! with `blueprints.world` and sent to every client with it (and none without), saved with the
 //! world and back at the next join, removed once every cell holds its block, and built by a
 //! builder NPC over ticks, foundation up, skipping a cell a player filled with something else.

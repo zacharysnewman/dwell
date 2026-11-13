@@ -1,4 +1,4 @@
-//! Blueprints (WORK_QUEUE item 55, docs/BLUEPRINTS.md): a structure's cells placed as an entity
+//! Blueprints (WORK_QUEUE item 56, docs/BLUEPRINTS.md): a structure's cells placed as an entity
 //! shown as ghost blocks. This is the geometry both the server and the client use: a record
 //! (`dwell_protocol::blueprints::Blueprint`, face-local) resolved to its world cells through its
 //! face (`Ghost`), what is left to build, a player's pick along the view ray (only ghost cells,
