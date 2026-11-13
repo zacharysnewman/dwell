@@ -24,9 +24,8 @@ time"). Notes ride with real changes (no notes-only PRs; CI skips docs-only chan
   branch `claude/underwater-look`; the reference image at the session scratchpad `abzu-ref.jpg` (not in the repo).
   Video 2 (water/underwater, plan in item 40) waits for the owner's look approval.
 - **Next, in order:** (1) PR #856 slopes show tool hits (`claude/ramp-hit-marks-eaj3ru`) — conflicts with main,
-  resolve and merge; (2) big-world terrain quick fix (item 52) — WIP on `claude/notes-batch-2` (also carries the
-  v5 approval and ABZÛ notes; the cloud session was stopped mid-work: read its status note on that branch); needs
-  the 0.56 line raised by the owner; (3) the moon's client side M-7c (item 27) — WIP on `claude/moon-m7c`;
+  resolve and merge; (2) big-world terrain quick fix (item 52) — built on `claude/notes-batch-2` (also carries the
+  v5 approval and ABZÛ notes), its PR open, not merged: it waits for the owner to raise the 0.56 line; (3) the moon's client side M-7c (item 27) — WIP on `claude/moon-m7c`;
   (4) browser check of Realistic worlds (R6 merged #858: create, play, reload); (5) the forest edge (~9 ms over at
   High on the M1; impostors save ~4 ms, #848); (6) the in-game cloud check (#822 shapes/colour, #790, #801, #823).
 - **Merged today (late):** #857 the axe like the other tools; #858 Realistic in New world; #854 hits at contact;
@@ -2029,26 +2028,19 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    new cuts (no notch, kerfs or gash wedges); older saves' cuts still load and draw, the next hit carrying their
    progress into damage. Additive: no new compatibility line (docs/BLOCK_DAMAGE.md §12, ADR 0067 note).
 
-52. **Big worlds keep their mountains and rivers** — **WIP status (2026-11-12, cloud session stopped by the owner
-   mid-work; branch `claude/notes-batch-2`, not compiled since the last edit, no PR):** *Measured* natively (seed 0,
-   face A, `cargo run --release -p dwell-worldgen --example big_terrain`, new): before — 1× max 2 613 m, 6.4 % of
-   the land above 1 500 m, 0.96 ranges/1 000 km², widest channel 67 m, lakes 0.11 % (3); 4× 1 961 m, 0.3 %,
-   0.42, 469 m, 4.2 % (1 355 lakes); 10× 1 427 m, 0.0 %, 0.09, 6 477 m, 10.5 % (5 888 lakes). Causes found: range
-   centres drawn 3–9 km from the coast (absolute: a ring on a 250 km island), the erosion's ridge cells draining a
-   whole coarse cell's area (ridges lose ~ln(scale)·U/K of height), the least lake 0.3 km² (< one 1 km cell), and
-   channel width linear in discharge (lip cells). *Fix written* (`hydrology.json` `bigWorlds`, generated
-   `BIG_WORLDS`; `HydrologyParams::sized`, `ridge_cell`, erosion, `channels.rs` `step_flows` via
-   `BigWorlds::lips`): ranges' coast distances × the scale, ridge cells drain a profile cell's area, least lake
-   area × scale² and depth × scale, lips linear to 100 m³/s then √Q (1× max discharge is ≤ 20 m³/s over 6
-   seeds and the fixtures, so 1× is unchanged by construction). Measured with env-var prototypes of the same
-   rules: 4× 2 641 m, 5.6 % > 1 500 m, 1.1 % lakes (13); 10× 2 692 m, 8.1 %, 0.03 % (1); channels 611 m / 2 745 m
-   before the lip rule (not yet re-measured with it). *Left:* compile and run the example; `node --test
-   shared/worldgen/gen.test.mjs` (the new `bigWorlds` group may need a test fixture update); `check:worldgen`
-   (1× goldens and the hydrology digest must be unchanged); the range count metric (`worldmap/relief.rs` counts
-   connected land > 1 000 m, which merges ranges at 10×: 0.25/1 000 km² vs 1×'s 0.96 — count higher ground or
-   spines); tests at 4× and 10× (both faces) red on main → green; the per-column analytic uplift (not started);
-   BIG_MAP.md's table, BUGS #77, release note `shared/releases/pending/big-terrain.json`; the PR (0.56 line,
-   owner raises it). Original item:
+52. **Big worlds keep their mountains and rivers** — **Quick fix built 2026-11-12** (branch `claude/notes-batch-2`,
+   one PR; needs the owner to raise the 0.56 line before it merges: it changes 2×–10× worlds' terrain, 1× is the same
+   bits, its goldens and hydrology digests unchanged). `hydrology.json` `bigWorlds` (generated `BIG_WORLDS`,
+   applied by `HydrologyParams::sized` above 1×): the ranges' coast distances × the radius scale (they rise across
+   the island, not in a ring by its coast), ridges eroded as at the profile's cell (`ridge_cell`), the least lake
+   × scale² and its depth × scale, river lips one for one to 100 m³/s then by √Q. Measured (seed 0, face A,
+   `examples/big_terrain.rs`, table in BIG_MAP.md §5.1): 10× before max 1 427 m, 0.0 % above 1 500 m, 0.76
+   peaks/1 000 km², a 6.5 km channel, 5 888 lakes (10.5 %); after 2 692 m, 8.1 %, 2.83, 807 m, 1 lake (0.03 %); 1×
+   2 613 m, 6.4 %, 1.92, 67 m, 3 lakes. Tests `tests/big_terrain.rs` (4×, 10×, both faces vs 1×), red on the old
+   rules → green; `map_build_budget`'s uplift bound 4× → 8× (ranges across the island: ~1 000 segment tests a
+   cell at 10×, the map still ~2 s). **Left:** the uplift's ranges sampled per column at full resolution (the
+   world map would carry its spines to the chunk generator: a map-format change), and (2) below, the regional
+   100 m maps (small rivers and lakes, R1–R4). Original item:
    **Big worlds keep their mountains and rivers** (owner 2026-11-12: "any idea why 10x worlds are super flat with
    massive rivers and lakes? And no mountains? Are they just stretching out the noise or something like that?" →
    explained: the whole-map grids keep ~1 M cells, so a 10× cell is 1 km; ranges narrower than a few cells vanish,
