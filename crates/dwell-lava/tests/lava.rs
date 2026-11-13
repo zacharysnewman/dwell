@@ -258,7 +258,8 @@ both_faces!(
             level_m: 10.0,
         };
         field.add_vent(&lake).unwrap();
-        let events = near(&mut field, field.fluid.rest_seconds * 50.0);
+        let secs = field.fluid.rest_seconds * 50.0;
+        let events = near(&mut field, secs);
         check_cells(f, &field, &events);
         assert!(
             !events.iter().any(|e| matches!(e, LavaEvent::Rock { .. })),
@@ -270,13 +271,21 @@ both_faces!(
     }
 );
 
-/// A still pool on flat ground, `x0..x1` along row 0 of a 32 × 1 field, 0.5 m deep.
-fn still_pool(x0: usize, x1: usize) -> Field {
+/// A still pool on flat ground, `x0..x1` along row 0 of a 32 × 1 field, 0.5 m deep, walled in:
+/// columns 20..25 stand 5 m high, and 25..32 are a second basin 2 m up, full too when `second`.
+fn still_pool(x0: usize, x1: usize, second: bool) -> Field {
     let mut field = Field::new(&DATA, "dwell:lava", 32, 1).expect("dwell:lava");
-    for x in x0..x1 {
+    for x in 0..32 {
         let i = field.at(x, 0);
-        field.depth[i] = 0.5;
-        field.heat[i] = 1.0;
+        field.ground[i] = match x {
+            20..25 => 5.0,
+            25.. => 2.0,
+            _ => 0.0,
+        };
+        if (x0..x1).contains(&x) || (second && x >= 25) {
+            field.depth[i] = 0.5;
+            field.heat[i] = 1.0;
+        }
     }
     field.settle();
     field
@@ -303,7 +312,7 @@ both_faces!(
         let keep = DATA.fluid("dwell:lava").unwrap().source_keep_m as usize;
         assert!(keep >= 1);
         let secs = DATA.fluid("dwell:lava").unwrap().rest_seconds * 3.0;
-        let mut beside = still_pool(0, 20);
+        let mut beside = still_pool(0, 20, false);
         beside.add_vent(&still_source(0)).unwrap();
         let events = near(&mut beside, secs);
         check_cells(f, &beside, &events);
@@ -319,9 +328,10 @@ both_faces!(
                 assert!(beside.ground[i] >= 0.5 - 1e-4, "x {x}: its lava is rock");
             }
         }
-        // The same pool with its source 10 columns off, not joined by lava: all of it hardens.
-        for mut far in [still_pool(0, 20), {
-            let mut p = still_pool(0, 20);
+        // The same pool with no source, and with a source in the next basin over (not joined to
+        // it by lava): all of it hardens.
+        for mut far in [still_pool(0, 20, false), {
+            let mut p = still_pool(0, 20, true);
             p.add_vent(&still_source(31)).unwrap();
             p
         }] {
