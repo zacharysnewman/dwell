@@ -1,0 +1,5 @@
+{
+  "changes": [
+    "Smoother frame rate while running or flying into new ground, most on phones: the ground ahead is made solid a little at a time before you reach it"
+  ]
+}

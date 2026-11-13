@@ -267,6 +267,7 @@ pub struct Predictor {
     carried: Option<(u32, f32)>,
     vitals_rules: Option<crate::controller::VitalsRules>,
     collision_cells: Option<usize>,
+    collision_ahead: Option<crate::terrain::CollisionAhead>,
 }
 
 impl Predictor {
@@ -300,6 +301,7 @@ impl Predictor {
             carried: None,
             vitals_rules: None,
             collision_cells: None,
+            collision_ahead: None,
         }
     }
 
@@ -325,6 +327,9 @@ impl Predictor {
         }
         if let Some(n) = self.collision_cells {
             players.set_collision_cells_per_tick(n);
+        }
+        if let Some(a) = self.collision_ahead {
+            players.set_collision_ahead(a);
         }
         let nh = crate::controller::carry(
             (&mut self.players, &mut self.physics),
@@ -775,6 +780,13 @@ impl Predictor {
     pub fn set_collision_cells_per_tick(&mut self, cells: usize) {
         self.collision_cells = Some(cells);
         self.players.set_collision_cells_per_tick(cells);
+    }
+
+    /// How far ahead of the player its terrain collision is built, and how many chunks a tick
+    /// (`Players::set_collision_ahead`; the tier's from shared/render/streaming.json).
+    pub fn set_collision_ahead(&mut self, ahead: crate::terrain::CollisionAhead) {
+        self.collision_ahead = Some(ahead);
+        self.players.set_collision_ahead(ahead);
     }
 
     /// The server's vitals as of input `seq` (`Message::Vitals`, ADR 0069 §7): where the

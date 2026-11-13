@@ -5,8 +5,8 @@
 
 use dwell_blocks::{Facing, VoxelShape, info, shape::solid_span_at};
 use dwell_world::{
-    CELL_H, FaceFrame, MIDPLANE_M, VoxelWorld, centre_of_cell, chunk_distance, chunk_of_pos,
-    m_of_row, mirror_y, row_of_m, rows_for_m,
+    CELL_H, ChunkCoord, FaceFrame, MIDPLANE_M, VoxelWorld, centre_of_cell, chunk_distance,
+    chunk_of_pos, m_of_row, mirror_y, row_of_m, rows_for_m,
 };
 use rapier3d_f64::prelude::*;
 
@@ -572,6 +572,8 @@ pub struct Players {
     /// The most cells a tick puts in the collider besides those in the players' and boxes'
     /// reach (`TerrainCollision::catch_up`; `COLLISION_CELLS_PER_TICK` by default).
     collision_cells_per_tick: usize,
+    /// The chunks built ahead of each player (`TerrainCollision::ahead_chunks`).
+    collision_ahead: crate::terrain::CollisionAhead,
     ticks: u32,
     /// This tick's pushes: each body a player pushed, and the velocity it gave it (world, m/s).
     pushes: Vec<(BodyHandle, DVec3)>,
@@ -589,6 +591,7 @@ impl Players {
             terrain_boxes: Vec::new(),
             terrain_boxes_per_tick: usize::MAX,
             collision_cells_per_tick: crate::terrain::COLLISION_CELLS_PER_TICK,
+            collision_ahead: crate::terrain::CollisionAhead::default(),
             ticks: 0,
             pushes: Vec::new(),
             ring: ring(),
@@ -615,6 +618,13 @@ impl Players {
     /// contacts are the same; the rest only wait longer.
     pub fn set_collision_cells_per_tick(&mut self, cells: usize) {
         self.collision_cells_per_tick = cells;
+    }
+
+    /// How far ahead of each player its terrain collision is built, and how many chunks a tick
+    /// (WORK_QUEUE item 16: the client's prediction on a phone builds fewer a tick). What is built
+    /// ahead only arrives sooner: a player's contacts are the same.
+    pub fn set_collision_ahead(&mut self, ahead: crate::terrain::CollisionAhead) {
+        self.collision_ahead = ahead;
     }
 
     /// Spawns a player standing with its feet at `feet`, on the face that position lies on.
@@ -948,10 +958,12 @@ impl Players {
                 &self.terrain_boxes,
                 self.terrain_boxes_per_tick,
             );
+            let mut ahead: Vec<ChunkCoord> = Vec::new();
             for p in self.players.iter().flatten() {
                 let pos = physics.position(p.body);
                 // Capped: fast flight must not ask for kilometres of collision.
-                let speed = physics.velocity(p.body).length() as f32;
+                let velocity = physics.velocity(p.body);
+                let speed = velocity.length() as f32;
                 let reach = f64::from(3.0 + (speed * DT * 2.0).min(64.0));
                 terrain.ensure_box(
                     physics,
@@ -959,6 +971,28 @@ impl Players {
                     pos - DVec3::splat(reach),
                     pos + DVec3::splat(reach),
                 );
+                // The chunks it is heading into, built a few a tick before the reach gets there
+                // (WORK_QUEUE item 16: a newly reached chunk's build was the tick's worst cost).
+                // A player standing (or nearly) has its reach's chunks: nothing to build ahead,
+                // and the collider's cells go in in the fixed order, as without the look-ahead.
+                if self.collision_ahead.chunks_per_tick > 0
+                    && speed >= self.collision_ahead.min_speed
+                {
+                    let mine = TerrainCollision::ahead_chunks(
+                        &self.collision_ahead,
+                        pos,
+                        velocity,
+                        reach,
+                        RETAIN_CHUNKS,
+                    );
+                    terrain.ensure_ahead(
+                        physics,
+                        world,
+                        &mine,
+                        self.collision_ahead.chunks_per_tick,
+                    );
+                    ahead.extend(mine);
+                }
             }
             self.ticks += 1;
             if self.ticks.is_multiple_of(RETAIN_EVERY_TICKS) {
@@ -993,7 +1027,7 @@ impl Players {
                 let reach = f64::from(3.0 + (speed * DT * 2.0).min(64.0));
                 near.push((pos - DVec3::splat(reach), pos + DVec3::splat(reach)));
             }
-            terrain.catch_up(physics, &near, self.collision_cells_per_tick);
+            terrain.catch_up(physics, &near, &ahead, self.collision_cells_per_tick);
         }
     }
 

@@ -189,6 +189,11 @@ pub trait Scene: TerrainRenderer {
     fn collision_cells_per_tick(&self) -> usize {
         dwell_physics::terrain::COLLISION_CELLS_PER_TICK
     }
+    /// The chunks the prediction builds collision for ahead of the player, and how many a tick
+    /// (shared/render/streaming.json `collisionAhead` by tier; WORK_QUEUE item 16).
+    fn collision_ahead(&self) -> dwell_physics::terrain::CollisionAhead {
+        dwell_physics::terrain::CollisionAhead::default()
+    }
     /// Rewrites chunk `coord`'s heightfield tile alone (none: its water is gone), its meshes kept.
     fn set_water_tile(
         &mut self,
@@ -4556,8 +4561,12 @@ impl<S: Scene> Game<S> {
         self.last_frame_ms = Some(now_ms);
         self.accumulator =
             (self.accumulator + elapsed * self.tick_rate).min(MAX_TICKS_PER_FRAME * TICK_MS);
-        let cells = self.scene.borrow().collision_cells_per_tick();
+        let (cells, ahead) = {
+            let scene = self.scene.borrow();
+            (scene.collision_cells_per_tick(), scene.collision_ahead())
+        };
         self.predictor.set_collision_cells_per_tick(cells);
+        self.predictor.set_collision_ahead(ahead);
         let t0 = telemetry::now_ms();
         while self.accumulator >= TICK_MS {
             self.accumulator -= TICK_MS;
