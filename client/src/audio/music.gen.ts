@@ -37,11 +37,11 @@ export const MUSIC_DATA: MusicData = {
       ]
     },
     {
-      "id": "dwell:casual_classic_2",
-      "title": "Casual Classic #2",
+      "id": "dwell:close_your_eyes_and_fly_5",
+      "title": "Close Your Eyes And Fly - Variation #5",
       "author": "Andrew Sitkov",
-      "source": "casual-classic-2.m4a",
-      "file": "casual-classic-2-0c2559c2.m4a",
+      "source": "close-your-eyes-and-fly-5.m4a",
+      "file": "close-your-eyes-and-fly-5-27809f78.m4a",
       "volume": 0.6,
       "loop": false,
       "fadeInS": 2,
@@ -53,11 +53,11 @@ export const MUSIC_DATA: MusicData = {
       ]
     },
     {
-      "id": "dwell:casual_classic_3",
-      "title": "Casual Classic #3",
+      "id": "dwell:lyric_fantasy_theme_4",
+      "title": "Lyric Fantasy Theme #4",
       "author": "Andrew Sitkov",
-      "source": "casual-classic-3.m4a",
-      "file": "casual-classic-3-25df124f.m4a",
+      "source": "lyric-fantasy-theme-4.m4a",
+      "file": "lyric-fantasy-theme-4-38333eee.m4a",
       "volume": 0.6,
       "loop": false,
       "fadeInS": 2,
@@ -69,267 +69,11 @@ export const MUSIC_DATA: MusicData = {
       ]
     },
     {
-      "id": "dwell:casual_classic_4",
-      "title": "Casual Classic #4",
+      "id": "dwell:dream_on",
+      "title": "Dream On",
       "author": "Andrew Sitkov",
-      "source": "casual-classic-4.m4a",
-      "file": "casual-classic-4-f30a0fc5.m4a",
-      "volume": 0.6,
-      "loop": false,
-      "fadeInS": 2,
-      "fadeOutS": 3,
-      "when": "always",
-      "times": [
-        "day",
-        "night"
-      ]
-    },
-    {
-      "id": "dwell:casual_classic_5",
-      "title": "Casual Classic #5",
-      "author": "Andrew Sitkov",
-      "source": "casual-classic-5.m4a",
-      "file": "casual-classic-5-76f958d9.m4a",
-      "volume": 0.6,
-      "loop": false,
-      "fadeInS": 2,
-      "fadeOutS": 3,
-      "when": "always",
-      "times": [
-        "day",
-        "night"
-      ]
-    },
-    {
-      "id": "dwell:casual_theme_1",
-      "title": "Casual Theme #1",
-      "author": "Andrew Sitkov",
-      "source": "casual-theme-1.m4a",
-      "file": "casual-theme-1-43e3ea77.m4a",
-      "volume": 0.6,
-      "loop": false,
-      "fadeInS": 2,
-      "fadeOutS": 3,
-      "when": "always",
-      "times": [
-        "day",
-        "night"
-      ]
-    },
-    {
-      "id": "dwell:casual_theme_2",
-      "title": "Casual Theme #2",
-      "author": "Andrew Sitkov",
-      "source": "casual-theme-2.m4a",
-      "file": "casual-theme-2-b441f702.m4a",
-      "volume": 0.6,
-      "loop": false,
-      "fadeInS": 2,
-      "fadeOutS": 3,
-      "when": "always",
-      "times": [
-        "day",
-        "night"
-      ]
-    },
-    {
-      "id": "dwell:casual_theme_3",
-      "title": "Casual Theme #3",
-      "author": "Andrew Sitkov",
-      "source": "casual-theme-3.m4a",
-      "file": "casual-theme-3-82850a9b.m4a",
-      "volume": 0.6,
-      "loop": false,
-      "fadeInS": 2,
-      "fadeOutS": 3,
-      "when": "always",
-      "times": [
-        "day",
-        "night"
-      ]
-    },
-    {
-      "id": "dwell:casual_theme_4",
-      "title": "Casual Theme #4",
-      "author": "Andrew Sitkov",
-      "source": "casual-theme-4.m4a",
-      "file": "casual-theme-4-ec8da792.m4a",
-      "volume": 0.6,
-      "loop": false,
-      "fadeInS": 2,
-      "fadeOutS": 3,
-      "when": "always",
-      "times": [
-        "day",
-        "night"
-      ]
-    },
-    {
-      "id": "dwell:casual_theme_5",
-      "title": "Casual Theme #5",
-      "author": "Andrew Sitkov",
-      "source": "casual-theme-5.m4a",
-      "file": "casual-theme-5-17b659be.m4a",
-      "volume": 0.6,
-      "loop": false,
-      "fadeInS": 2,
-      "fadeOutS": 3,
-      "when": "always",
-      "times": [
-        "day",
-        "night"
-      ]
-    },
-    {
-      "id": "dwell:casual_theme_1_acoustic",
-      "title": "Casual Theme #1 (Acoustic)",
-      "author": "Andrew Sitkov",
-      "source": "casual-theme-1-acoustic.m4a",
-      "file": "casual-theme-1-acoustic-81531cca.m4a",
-      "volume": 0.6,
-      "loop": false,
-      "fadeInS": 2,
-      "fadeOutS": 3,
-      "when": "always",
-      "times": [
-        "day",
-        "night"
-      ]
-    },
-    {
-      "id": "dwell:casual_theme_2_acoustic",
-      "title": "Casual Theme #2 (Acoustic)",
-      "author": "Andrew Sitkov",
-      "source": "casual-theme-2-acoustic.m4a",
-      "file": "casual-theme-2-acoustic-66d9e86f.m4a",
-      "volume": 0.6,
-      "loop": false,
-      "fadeInS": 2,
-      "fadeOutS": 3,
-      "when": "always",
-      "times": [
-        "day",
-        "night"
-      ]
-    },
-    {
-      "id": "dwell:casual_theme_3_acoustic",
-      "title": "Casual Theme #3 (Acoustic)",
-      "author": "Andrew Sitkov",
-      "source": "casual-theme-3-acoustic.m4a",
-      "file": "casual-theme-3-acoustic-ee2269eb.m4a",
-      "volume": 0.6,
-      "loop": false,
-      "fadeInS": 2,
-      "fadeOutS": 3,
-      "when": "always",
-      "times": [
-        "day",
-        "night"
-      ]
-    },
-    {
-      "id": "dwell:casual_theme_4_acoustic",
-      "title": "Casual Theme #4 (Acoustic)",
-      "author": "Andrew Sitkov",
-      "source": "casual-theme-4-acoustic.m4a",
-      "file": "casual-theme-4-acoustic-97549353.m4a",
-      "volume": 0.6,
-      "loop": false,
-      "fadeInS": 2,
-      "fadeOutS": 3,
-      "when": "always",
-      "times": [
-        "day",
-        "night"
-      ]
-    },
-    {
-      "id": "dwell:casual_theme_5_acoustic",
-      "title": "Casual Theme #5 (Acoustic)",
-      "author": "Andrew Sitkov",
-      "source": "casual-theme-5-acoustic.m4a",
-      "file": "casual-theme-5-acoustic-c527912e.m4a",
-      "volume": 0.6,
-      "loop": false,
-      "fadeInS": 2,
-      "fadeOutS": 3,
-      "when": "always",
-      "times": [
-        "day",
-        "night"
-      ]
-    },
-    {
-      "id": "dwell:simple_positive_1",
-      "title": "Simple and Positive Track #1",
-      "author": "Andrew Sitkov",
-      "source": "simple-positive-1.m4a",
-      "file": "simple-positive-1-fa364b22.m4a",
-      "volume": 0.6,
-      "loop": false,
-      "fadeInS": 2,
-      "fadeOutS": 3,
-      "when": "always",
-      "times": [
-        "day",
-        "night"
-      ]
-    },
-    {
-      "id": "dwell:simple_positive_2",
-      "title": "Simple and Positive Track #2",
-      "author": "Andrew Sitkov",
-      "source": "simple-positive-2.m4a",
-      "file": "simple-positive-2-9a55550c.m4a",
-      "volume": 0.6,
-      "loop": false,
-      "fadeInS": 2,
-      "fadeOutS": 3,
-      "when": "always",
-      "times": [
-        "day",
-        "night"
-      ]
-    },
-    {
-      "id": "dwell:simple_positive_3",
-      "title": "Simple and Positive Track #3",
-      "author": "Andrew Sitkov",
-      "source": "simple-positive-3.m4a",
-      "file": "simple-positive-3-9c7c55b0.m4a",
-      "volume": 0.6,
-      "loop": false,
-      "fadeInS": 2,
-      "fadeOutS": 3,
-      "when": "always",
-      "times": [
-        "day",
-        "night"
-      ]
-    },
-    {
-      "id": "dwell:simple_positive_4",
-      "title": "Simple and Positive Track #4",
-      "author": "Andrew Sitkov",
-      "source": "simple-positive-4.m4a",
-      "file": "simple-positive-4-756f14c2.m4a",
-      "volume": 0.6,
-      "loop": false,
-      "fadeInS": 2,
-      "fadeOutS": 3,
-      "when": "always",
-      "times": [
-        "day",
-        "night"
-      ]
-    },
-    {
-      "id": "dwell:simple_positive_5",
-      "title": "Simple and Positive Track #5",
-      "author": "Andrew Sitkov",
-      "source": "simple-positive-5.m4a",
-      "file": "simple-positive-5-276706b1.m4a",
+      "source": "dream-on.m4a",
+      "file": "dream-on-1b88947a.m4a",
       "volume": 0.6,
       "loop": false,
       "fadeInS": 2,

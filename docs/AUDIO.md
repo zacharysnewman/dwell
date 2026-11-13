@@ -1,8 +1,8 @@
 # Dwell — Sound Effects
 
 > **Status: [in progress, Phase 28]** — built and tested; waiting for the owner's listening review
-> of the WAV renders and answers to §9. The music (§2a, §6a; 20 casual tracks from Andrew Sitkov's
-> Total Music Collection, shuffled) is built and tested, waiting for the owner's picks. Decisions in [ADR 0032](./adr/0032-audio.md); the built
+> of the WAV renders and answers to §9. The music (§2a, §6a; the owner's four picks from Andrew Sitkov's
+> Total Music Collection, shuffled) is built and tested. Decisions in [ADR 0032](./adr/0032-audio.md); the built
 > mechanisms are summarised in [`ARCHITECTURE.md`](./ARCHITECTURE.md) §5.2 and §6.1 (the
 > registry's `sound` field). The sounds themselves are **prototype content** (§6.1), like the
 > block set: they exercise the system and are expected to be replaced.
@@ -116,8 +116,8 @@ One file per namespace (`music.json`), its audio files beside it; one file sets 
 "playlist": { "order": "shuffle", "gapMinS": 180, "gapMaxS": 600, "crossfadeS": 0, "dayAt": 0.1,
   "contexts": { "menu": { "firstDelayMinS": 0, "firstDelayMaxS": 0 },
                 "game": { "firstDelayMinS": 30, "firstDelayMaxS": 180 } } },
-"tracks": { "casual_theme_1": { "title": "Casual Theme #1", "author": "Andrew Sitkov",
-  "file": "casual-theme-1.m4a", "volume": 0.6, "loop": false, "fadeInS": 2, "fadeOutS": 3,
+"tracks": { "casual_classic_1": { "title": "Casual Classic #1", "author": "Andrew Sitkov",
+  "file": "casual-classic-1.m4a", "volume": 0.6, "loop": false, "fadeInS": 2, "fadeOutS": 3,
   "when": "always" } }
 ```
 
@@ -142,15 +142,17 @@ One file per namespace (`music.json`), its audio files beside it; one file sets 
   regeneration fails too.
 - **The casual tracks** (owner 2026-11-12, WORK_QUEUE item 33: "I'd like the casual game music setup in
   a prototype and make it play randomly in the game … It'll replace the current music which is AI
-  generated."): 20 tracks from Andrew Sitkov's *Total Music Collection* (Unity Asset Store), its
-  casual packs: *Mega Game Collection / Casual Game Music* (Casual Classic #1–#5 here; #6 "Triumph",
-  a 51 s fanfare, left out), *Massive Game Music Collection / Casual Game Music Pack* (Casual Theme
-  #1–#5) and its *Acoustic Guitar Versions*, and *Simple and Positive Casual Music Pack* (#1–#5): the
-  full (not looped) versions, 76–146 s each. Converted with ffmpeg: gain to −18 LUFS integrated
-  (sources −14.7 to −22.9), a limiter at −1 dBFS, a 0.3 s fade in and 2.5 s fade out, stereo AAC
-  (AudioToolbox) at 96 kbps, 44.1 kHz, no metadata, faststart: 0.9–1.8 MB each, 24.2 MB together.
-  The owner's picks (the audition page below) will trim the list. Credited in `THIRD_PARTY_NOTICES`
-  (`shared/licenses/third_party.json`) under the Unity Asset Store EULA, as the Imphenzia samples.
+  generated."): the owner's picks (2026-11-12, of Casual Classic #1: "I like that one"; after previews of
+  calmer candidates: "I really only like Night: 1, 4, 5 for both day and night."), four tracks from Andrew
+  Sitkov's *Total Music Collection* (Unity Asset Store), each for day and night: *Mega Game Collection / Casual
+  Game Music / Casual Classic #1*, *_UPDATE 1.28 / Close Your Eyes And Fly (Relaxing Themes) / Variation #5*,
+  *Massive Game Music Collection / Lyric Fantasy Background Music Pack / Lyric Fantasy Theme #4* and *Big
+  Cinematic Collection / Beautiful and Emotional Music Pack / Dream On*: the full (not looped) versions,
+  84–159 s each. Converted with ffmpeg: gain to −18 LUFS integrated (sources −15.8 to −25.0), a limiter at
+  −1 dBFS, a 0.3 s fade in and 2.5 s fade out, stereo AAC (AudioToolbox) at 96 kbps, 44.1 kHz, no metadata,
+  faststart: 1.0–1.9 MB each, 5.6 MB together. The other 19 casual candidates of the audition were dropped.
+  Credited in `THIRD_PARTY_NOTICES` (`shared/licenses/third_party.json`) under the Unity Asset Store EULA, as
+  the Imphenzia samples.
   Starry Sunshine, the AI-generated track they replace, is removed.
 - **Audition page**: [`docs/prototypes/music-audition.html`](./prototypes/music-audition.html)
   (published: https://claude.ai/artifact/Ccdtsp5eiQYF4b9uzspyYe): play, skip, keep or drop each candidate, a shuffle preview
@@ -641,7 +643,7 @@ right-handed (right = forward × up, ahead −z), which is the drawn view's righ
 5. Should the main menu (launcher) have its own volume control, or only the in-game Settings?
 6. iOS's silent switch mutes Web Audio: acceptable?
 7. Who will author sound sets later — is a sound editor page (like the Adaptive Block Lab) wanted?
-8. Music: which of the 20 casual tracks stay (the audition page's JSON)? Is the level right (`volume`
+8. Music: (picked 2026-11-12: four tracks, §2a.) Is the level right (`volume`
    0.6 under a 60 % Music default) and the gap (20–60 s of silence, no cross-fade)? Should it play in
    the main menu too (it does), or only once in a world? What decides which plays later (biome,
    time of day, menus)?
