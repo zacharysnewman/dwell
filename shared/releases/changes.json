@@ -2,6 +2,12 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.61.6",
+      "changes": [
+        "Smoother frame rate while running or flying into new ground, most on phones: the ground ahead is made solid a little at a time before you reach it"
+      ]
+    },
+    {
       "version": "0.61.5",
       "changes": [
         "In first person your own feet stand where you do, on the ground and on their shadow, on flat ground and ramps (they were drawn behind you and seemed to float)."
