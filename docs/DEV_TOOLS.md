@@ -1204,7 +1204,9 @@ depth prepass for the cutout (an alpha-tested depth-only draw, then the colour o
 sample once) was built and measured and made it worse, every spot +6–8 ms (edge 31.4, inside 20.2, above 18.4):
 drawing the leaves' geometry twice costs more than the overdraw it saves. Not adopted. The levers left are
 fewer leaf triangles past the near trees (impostors from nearer than 96 m, or a plainer leaf mesh with
-distance). `forest-edge` is the edge alone (6 s) for quick A/Bs.
+distance). `forest-edge` is the edge alone (6 s) for quick A/Bs. (2026-11-13: chunks past the hand-over draw their plants without
+their leaves, the edge's triangles ~5.4 M → 4.0 M, its frame unchanged within noise: 23.4 / 25.4 ms p50 / p95;
+WORK_QUEUE item 32.)
 
 **Far tree impostors** (2026-11-12, WORK_QUEUE item 31): the configuration `impostors-off` (`?impostors=0`)
 draws the far trees as before (the LOD sections' tree cells, near leaves to the full-detail distance); `npm run

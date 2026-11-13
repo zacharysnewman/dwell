@@ -171,8 +171,41 @@ pub fn plants_reach() -> f32 {
 /// by, WORK_QUEUE item 32). `None`: every chunk's (no impostors).
 pub fn cutout_reach(far: Option<Far>) -> Option<f32> {
     let f = far.filter(|f| f.impostor)?;
-    Some((f.from + f.fade).max(plants_reach()) + 2.0)
+    Some((f.from + f.fade).max(plants_reach()) + REACH_MARGIN_M)
 }
+
+/// What of a chunk's cutout mesh draws (its triangles ordered with the trees' leaves last,
+/// `dwell_mesh::tree_leaves_from`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CutoutDraw {
+    /// The whole mesh.
+    All,
+    /// The plants, ladders and other cutouts, not the trees' leaves: the chunk is past the far
+    /// trees' hand-over (every leaf there dropped by the shader) but within the plants' fades.
+    Plants,
+    /// Nothing: past both.
+    Nothing,
+}
+
+/// What of a chunk's cutout mesh draws with its nearest point `d` m from the eye and the
+/// impostors' hand-over `far` (shared/trees/impostors/impostors.json `far.tiers`): its leaves
+/// only within the hand-over's end ([`cutout_reach`]'s margin past it), so the leaves' vertices
+/// past it, which the shader would drop, are not drawn (WORK_QUEUE item 32, the forest edge).
+pub fn cutout_draw(far: Option<Far>, d: f32) -> CutoutDraw {
+    let (Some(f), Some(end)) = (far.filter(|f| f.impostor), cutout_reach(far)) else {
+        return CutoutDraw::All;
+    };
+    if d <= f.from + f.fade + REACH_MARGIN_M {
+        CutoutDraw::All
+    } else if d <= end {
+        CutoutDraw::Plants
+    } else {
+        CutoutDraw::Nothing
+    }
+}
+
+/// Metres past a fade's end a chunk's cutout still draws (a swaying vertex's reach).
+const REACH_MARGIN_M: f32 = 2.0;
 
 /// One instance's 20 bytes: `inst`'s face-local foot crossed into the world by `face`, its layer
 /// and turns, and its leaf tint as a ratio of the baked leaf colour over 2 (`imp_fs`).
@@ -1000,6 +1033,33 @@ mod tests {
         assert!(r > on.from + on.fade, "every near leaf faded out first");
         assert!(r > plants_reach(), "tall grass faded out first");
         assert!(plants_reach() >= dwell_look::leaves::LEAVES.cards.fade_end_m as f32);
+    }
+
+    #[test]
+    fn a_chunk_past_the_hand_over_draws_its_plants_without_its_leaves() {
+        // face-a-only: distances only.
+        // WORK_QUEUE item 32 (the forest edge): the leaves stop at the data's hand-over end
+        // (impostors.json `far.tiers.on` fromM + fadeM), the plants at their own fades. Red
+        // before: every chunk within the plants' reach drew its leaves too.
+        let c = Config::get();
+        let on = c.far("on").expect("on");
+        let leaves_end = on.from + on.fade + REACH_MARGIN_M;
+        assert!(leaves_end < plants_reach(), "the band this saves is empty");
+        assert_eq!(cutout_draw(Some(on), 0.0), CutoutDraw::All);
+        assert_eq!(cutout_draw(Some(on), leaves_end), CutoutDraw::All);
+        assert_eq!(cutout_draw(Some(on), leaves_end + 0.5), CutoutDraw::Plants);
+        let end = cutout_reach(Some(on)).expect("impostors");
+        assert_eq!(cutout_draw(Some(on), end), CutoutDraw::Plants);
+        assert_eq!(cutout_draw(Some(on), end + 0.5), CutoutDraw::Nothing);
+        // The switch is the data's: a later hand-over keeps the leaves later.
+        let later = Far {
+            from: on.from + 20.0,
+            ..on
+        };
+        assert_eq!(cutout_draw(Some(later), leaves_end + 0.5), CutoutDraw::All);
+        // No impostors (the Far trees tier off, or not ready): the whole mesh at every distance.
+        assert_eq!(cutout_draw(c.far("off"), 500.0), CutoutDraw::All);
+        assert_eq!(cutout_draw(None, 500.0), CutoutDraw::All);
     }
 
     #[test]
