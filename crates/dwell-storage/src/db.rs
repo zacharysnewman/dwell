@@ -112,6 +112,10 @@ pub struct WorldMeta {
     /// their tagged form, fields a newer build added kept; none: a world from before them (the
     /// build's defaults).
     pub settings: Option<Vec<u8>>,
+    /// The grid face its players spawn on (docs/proposals/MOON_WORLD.md §8: a spawn key, `moon`,
+    /// `sun-b`); none: home. Optional and additive: an older build ignores it and spawns at
+    /// `spawn`; saving `None` leaves a stored one alone.
+    pub spawn_grid: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -460,6 +464,9 @@ fn meta_from(get: impl Fn(&str) -> Option<Vec<u8>>) -> Option<WorldMeta> {
         app_version_created: text("app_version_created"),
         app_version_last: text("app_version_last"),
         settings: get("world_settings"),
+        spawn_grid: get("spawn_grid")
+            .and_then(|b| String::from_utf8(b).ok())
+            .filter(|s| !s.is_empty()),
     })
 }
 
@@ -1023,6 +1030,9 @@ impl WorldDb {
                 put("world_tick", &u64::from(m.world_tick).to_le_bytes())?;
                 if let Some(s) = &m.settings {
                     put("world_settings", s)?;
+                }
+                if let Some(g) = &m.spawn_grid {
+                    put("spawn_grid", g.as_bytes())?;
                 }
                 put("saved_at", &now.to_le_bytes())?;
                 match m.spawn {

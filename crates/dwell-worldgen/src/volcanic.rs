@@ -496,11 +496,21 @@ impl VolcanicTerrain {
         best
     }
 
-    /// Spawn points and dev teleports on the sun: the dry column nearest the disc's centre on
-    /// `face` (searched in rings 8 m apart), its ground at least 2 m over any lava it borders and
-    /// level within 1 m over 4 m each way; face-local (x, ground, z).
+    /// Spawn points and dev teleports on the sun (MOON_WORLD.md §8): the dry column nearest the
+    /// disc's centre on `face` (a bounded search, rings 8 m apart out to 4 km), its ground at least
+    /// 2 m over any lava it borders, level within 1 m over 4 m each way, and no molten column within
+    /// 16 m (eight ways); face-local (x, ground, z). The centre's surface if none is found.
     pub fn spawn_point(&self, face: Face) -> [f64; 3] {
-        for ring in 0..2000 {
+        let clear = |x: f64, z: f64| {
+            (0..8).all(|k| {
+                let a = f64::from(k) * std::f64::consts::FRAC_PI_4;
+                [8.0, 16.0].iter().all(|r| {
+                    let o = self.column(face, x + r * a.cos(), z + r * a.sin());
+                    !o.molten()
+                })
+            })
+        };
+        for ring in 0..500 {
             let r = f64::from(ring) * 8.0;
             let n = (r * std::f64::consts::TAU / 8.0).ceil().max(1.0) as i32;
             for k in 0..n {
@@ -519,7 +529,7 @@ impl VolcanicTerrain {
                         let o = self.column(face, x + dx, z + dz);
                         (o.ground - c.ground).abs() <= 1.0 && o.ground >= o.lava + 1.0
                     });
-                if level {
+                if level && clear(x, z) {
                     return [x, c.ground, z];
                 }
             }

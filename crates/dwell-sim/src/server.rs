@@ -86,6 +86,9 @@ const INPUT_BUFFER: usize = 2; // jitter buffer depth (ticks)
 /// prediction once we report half a second queued (its `BUFFER_HOLD`, 30) and nudges its tick
 /// rate for smaller drift, so only a client that ignores both reaches this.
 const MAX_BUFFERED_INPUTS: usize = 60;
+/// How long a player spawned at home waits for its client to say it can be on the world's spawn
+/// grid (its capabilities) before it stays home (MOON_WORLD.md §8).
+const GRID_SPAWN_GRACE_TICKS: u32 = 10 * SIM_HZ;
 const LATENCY_WINDOW_TICKS: u32 = 60;
 const MAX_SEQ_AHEAD: u32 = 256; // inputs further ahead are rejected
 const INPUT_DATAGRAMS_PER_SECOND: u32 = 2 * SIM_HZ; // §11: SIM_HZ + redundancy
@@ -273,6 +276,11 @@ pub struct ServerConfig {
     /// they left the world: a local world opened by a spawn link (`?spawn=portal`, `b`; owner,
     /// 2026-10-27). Off, a saved world keeps its own spawn and players continue where they were.
     pub join_at_spawn: bool,
+    /// The grid face a new world's players spawn and respawn on (docs/proposals/MOON_WORLD.md §8,
+    /// M-8: a spawn key of `dwell_worldgen::grids::spawn_keys`, `moon`, `sun-b`); none: home. A
+    /// saved world keeps its own (unless `join_at_spawn` with one). Only a client that can be on that
+    /// grid (`grid.frames` and the grid's `capability`) goes there; any other starts at `spawn`.
+    pub spawn_grid: Option<String>,
     /// Terrain generation and streaming (§6.3): 0 threads generate on the tick within the budget.
     pub worldgen_threads: usize,
     pub worldgen_budget: Duration,
@@ -425,6 +433,7 @@ impl Default for ServerConfig {
             generator_version: dwell_world::GENERATOR_TERRAIN,
             spawn: None,
             join_at_spawn: false,
+            spawn_grid: None,
             worldgen_threads: 0,
             worldgen_budget: Duration::from_micros(4000),
             pregen_radius_chunks: 2,
@@ -696,6 +705,11 @@ struct Session {
     known_cause: u8,
     /// Its lava burn (docs/proposals/VOLCANOES.md §6): burning left after leaving lava.
     burn: dwell_lava::Burn,
+    /// The world spawns on another grid (MOON_WORLD.md §8): until this tick, the player (just
+    /// spawned at home) is moved there once its client says it can be (`Server::spawn_on_grids`).
+    grid_spawn_due: Option<u32>,
+    /// It died on another grid: its respawn goes to the world's spawn grid.
+    grid_respawn: bool,
     /// Whether its client draws creatures (`CreaturesHello`, ADR 0073).
     creatures_hello: bool,
     /// Whether its client draws block damage (`DamageHello`, docs/BLOCK_DAMAGE.md).
@@ -798,6 +812,8 @@ impl Session {
             markers_loaded: false,
             markers_sent: false,
             burn: dwell_lava::Burn::default(),
+            grid_spawn_due: None,
+            grid_respawn: false,
             creatures_hello: false,
             damage_hello: false,
             ecology_hello: false,
@@ -1139,6 +1155,9 @@ impl Server {
             config.generator_version = meta.generator_version;
             if meta.spawn.is_some() && !(config.join_at_spawn && config.spawn.is_some()) {
                 config.spawn = meta.spawn;
+            }
+            if meta.spawn_grid.is_some() && !(config.join_at_spawn && config.spawn_grid.is_some()) {
+                config.spawn_grid = meta.spawn_grid;
             }
             // And its own size (BIG_MAP.md M2): its settings' (`init_storage` reads the rest); a
             // world from before sizes, or saved without settings, is today's size.
@@ -1903,6 +1922,11 @@ impl Server {
         s.inputs.clear();
         s.primed = false;
         s.last_input = Input::default();
+        // At the world's spawn (or up again after a death on another grid): on its spawn grid, if
+        // the world has one, once the client says it can be there (a few seconds' grace).
+        let to_grid = feet.is_none() || std::mem::take(&mut s.grid_respawn);
+        s.grid_spawn_due = (to_grid && self.config.spawn_grid.is_some())
+            .then_some(self.tick + GRID_SPAWN_GRACE_TICKS);
     }
 
     /// Server-originated velocity change for a player (knockback), applied before this tick's
@@ -1981,6 +2005,7 @@ impl Server {
         if !away {
             self.drop_inventory(id, death);
         }
+        self.sessions.get_mut(&id).expect("session").grid_respawn = away;
         let s = self.sessions.get_mut(&id).expect("session");
         s.death_position = death;
         s.handle = None;
@@ -4973,6 +4998,7 @@ impl Server {
                 app_version_created: APP_VERSION.into(),
                 app_version_last: APP_VERSION.into(),
                 settings: Some(self.settings_fields.to_bytes()),
+                spawn_grid: self.config.spawn_grid.clone(),
             }),
             ..SaveBatch::default()
         };

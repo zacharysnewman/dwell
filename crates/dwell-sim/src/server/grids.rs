@@ -334,6 +334,7 @@ impl Server {
         if self.grids.slots.is_empty() {
             return;
         }
+        self.spawn_on_grids();
         let world_s = self.world_s();
         let ids: Vec<SessionId> = self
             .sessions
@@ -356,24 +357,8 @@ impl Server {
                         .to_array();
                     if let Some(slot) = self.grids.capturing(p, world_s, &s.capabilities) {
                         let (lp, lv) = self.grids.frame(slot, world_s).capture(p, v);
-                        let space = &mut self.grids.slots[slot].space;
-                        let scale = space.def.gravity_scale as f32;
-                        let nh = carry(
-                            (&mut self.players, &mut self.physics),
-                            h,
-                            (&mut space.players, &mut space.physics),
-                            scale,
-                            lp,
-                            lv,
-                        );
-                        let s = self.sessions.get_mut(&id).expect("session");
-                        s.handle = None;
-                        s.away = Some(Away { slot, handle: nh });
-                        s.grid_streamed.clear();
-                        if s.capabilities.has(GRID_FRAMES) {
-                            s.forget_home_stream();
-                        }
-                        let pid = s.player_id;
+                        self.carry_to_grid(id, h, slot, lp, lv);
+                        let pid = self.sessions[&id].player_id;
                         let (after, v_after) = self.world_state_of(pid).expect("carried");
                         let to = self.grids.slots[slot].index.into();
                         self.grids.transfers.push((
@@ -420,6 +405,87 @@ impl Server {
                 _ => {}
             }
         }
+    }
+
+    /// The world's spawn grid (`ServerConfig::spawn_grid`, MOON_WORLD.md §8): its slot and face, and
+    /// the stand point there (grid-local capsule centre), if the build has that grid.
+    pub fn grid_spawn_point(&self) -> Option<(usize, FaceFrame, V3)> {
+        let key = self.config.spawn_grid.as_deref()?;
+        let gs = dwell_worldgen::grids::grid_spawn(key)?;
+        let slot = self
+            .grids
+            .slots
+            .iter()
+            .position(|s| usize::from(s.index) == gs.index)?;
+        let feet = dwell_worldgen::grids::stand_point(gs.def, self.config.world_seed, gs.face)?;
+        let f = FaceFrame::of(gs.face);
+        let half = f64::from(self.config.player_config.half_height(false));
+        Some((slot, f, f.point([feet[0], feet[1] + half + 0.05, feet[2]])))
+    }
+
+    /// Players just spawned at home in a world whose spawn is on another grid go there once their
+    /// client says it can be on it (`grid.frames` and the grid's `capability`); a client that
+    /// hasn't within `GRID_SPAWN_GRACE_TICKS` (an older build) stays at home's spawn.
+    fn spawn_on_grids(&mut self) {
+        let due: Vec<SessionId> = self
+            .sessions
+            .iter()
+            .filter(|(_, s)| s.grid_spawn_due.is_some() && s.handle.is_some())
+            .map(|(id, _)| *id)
+            .collect();
+        if due.is_empty() {
+            return;
+        }
+        let point = self.grid_spawn_point();
+        for id in due {
+            let s = &self.sessions[&id];
+            let open = point.is_some_and(|(slot, ..)| {
+                s.capabilities.has(GRID_FRAMES)
+                    && self.grids.slots[slot]
+                        .space
+                        .def
+                        .open_to(|c| s.capabilities.has(c))
+            });
+            let late = s.grid_spawn_due.is_some_and(|t| self.tick >= t);
+            let (Some((slot, _, at)), true) = (point, open) else {
+                if late || point.is_none() {
+                    self.sessions.get_mut(&id).expect("session").grid_spawn_due = None;
+                }
+                continue;
+            };
+            let h = s.handle.expect("filtered");
+            self.sessions.get_mut(&id).expect("session").grid_spawn_due = None;
+            self.carry_to_grid(id, h, slot, at, [0.0; 3]);
+        }
+    }
+
+    /// Carries home player `h` of session `id` into slot `slot`'s space at grid-local `lp`, `lv`.
+    fn carry_to_grid(
+        &mut self,
+        id: SessionId,
+        h: PlayerHandle,
+        slot: usize,
+        lp: V3,
+        lv: V3,
+    ) -> PlayerHandle {
+        let space = &mut self.grids.slots[slot].space;
+        let scale = space.def.gravity_scale as f32;
+        let nh = carry(
+            (&mut self.players, &mut self.physics),
+            h,
+            (&mut space.players, &mut space.physics),
+            scale,
+            lp,
+            lv,
+        );
+        let s = self.sessions.get_mut(&id).expect("session");
+        s.handle = None;
+        s.away = Some(Away { slot, handle: nh });
+        s.grid_streamed.clear();
+        if s.capabilities.has(GRID_FRAMES) {
+            s.forget_home_stream();
+        }
+        nh
     }
 
     /// Carries an away player back into the home space at its world position and velocity, and

@@ -481,6 +481,67 @@ pub fn grid(name: &str) -> Option<&'static GridDef> {
     grids().iter().find(|g| g.name == name)
 }
 
+/// A spawn on another grid (MOON_WORLD.md §8, M-8; owner 2026-11-13: "Im not seeing a moon spawn or
+/// sun spawn in my new world settings"): the grid and face a world's players start on, chosen by
+/// its key (the grid's name after its namespace, `-b` for face B: `moon`, `moon-b`, `sun`, `sun-b`),
+/// the New world form's Spawn and the `?spawn=` link alike. Every grid of the list but the home
+/// grid (index 0) that has a generator of its own offers both faces.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct GridSpawn {
+    /// The grid's index in its list (the wire's grid byte).
+    pub index: usize,
+    pub def: &'static GridDef,
+    pub face: Face,
+}
+
+/// A grid face's spawn key (`moon`, `moon-b`).
+pub fn spawn_key(def: &GridDef, face: Face) -> String {
+    let short = def
+        .name
+        .split_once(':')
+        .map_or(def.name.as_str(), |(_, n)| n);
+    match face {
+        Face::A => short.to_owned(),
+        Face::B => format!("{short}-b"),
+    }
+}
+
+/// The spawn keys a grid list offers, in its order (both faces of every grid but the home one with
+/// a generator a stand point is found on).
+pub fn spawn_keys(list: &[GridDef]) -> Vec<String> {
+    list.iter()
+        .skip(1)
+        .filter(|g| g.radius_m.is_some() && !matches!(g.generator, GridGenerator::Terrain { .. }))
+        .flat_map(|g| [spawn_key(g, Face::A), spawn_key(g, Face::B)])
+        .collect()
+}
+
+/// The build's grid spawn of key `key` (`sun-b`), if any.
+pub fn grid_spawn(key: &str) -> Option<GridSpawn> {
+    let all = grids();
+    all.iter().enumerate().skip(1).find_map(|(index, def)| {
+        [Face::A, Face::B]
+            .into_iter()
+            .find(|&f| spawn_key(def, f) == key && spawn_keys(all).contains(&spawn_key(def, f)))
+            .map(|face| GridSpawn { index, def, face })
+    })
+}
+
+/// Where a player stands on grid `def` of the world of `world_seed` on `face`: its generator's
+/// spawn point (the moon's flat ground clear of crater walls; the sun's dry crust away from lava),
+/// face-local feet (x, ground, z). `None` for a grid without such a generator.
+pub fn stand_point(def: &GridDef, world_seed: u64, face: Face) -> Option<[f64; 3]> {
+    match &def.generator {
+        GridGenerator::Cratered(_) => {
+            Some(CrateredTerrain::new(def, world_seed)?.spawn_point(face))
+        }
+        GridGenerator::Volcanic(_) => {
+            Some(crate::volcanic::VolcanicTerrain::new(def, world_seed)?.spawn_point(face))
+        }
+        GridGenerator::Terrain { .. } => None,
+    }
+}
+
 /// Travel between the grids (`grids.json` `travel`, MOON_WORLD.md §7).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct TravelRules {
