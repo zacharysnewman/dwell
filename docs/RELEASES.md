@@ -94,6 +94,10 @@ by the Vite build and linked from the menu's About screen). Beside the native se
   - **Before `1.0.0`** SemVer allows anything to change; Dwell follows the common `0.y.z` convention
     (npm's and Cargo's): breaking changes bump MINOR (`0.1.0` → `0.2.0`), compatible features and
     fixes bump PATCH (`0.1.0` → `0.1.1`). Most phases ship at least one breaking release.
+  - **Who raises the line** (owner, 2026-11-12: "You have my permission to bump minor versions as needed, record if
+    necessary."): Claude starts a new line itself when a breaking change is ready — `package.json` to `0.N.0`,
+    `line.json` to `0.N`, its `changes.json` entry with the shipped changes' notes folded in — batching breaking
+    changes that are ready together, and says so in the PR and the report.
   - **The baseline — the first versioned release — is `0.1.0`.**
   - **Dev builds** are SemVer pre-releases of the next version, numbered by the CI run, with the
     commit as build metadata: `0.2.0-dev.42+ab12cd3`. They sort correctly
