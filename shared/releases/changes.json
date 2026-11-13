@@ -2,6 +2,12 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.58.10",
+      "changes": [
+        "Forests draw fewer hidden leaves: past the far trees' hand-over, the ground no longer sends the GPU tree leaves that were already faded out."
+      ]
+    },
+    {
       "version": "0.58.9",
       "changes": [
         "The moon trip test tool waits for the server to release you before flying you home, and never saves a spot in space as home.",
