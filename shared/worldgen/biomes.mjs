@@ -819,6 +819,24 @@ export const GEOLOGY = {
     gullyWavelength: [4, 10_000, true],
     gullyDepth: [0, 100],
   },
+  mesaRelief: {
+    topAmplitude: [0, 50],
+    topWavelength: [16, 100000, true],
+    dip: [0, 0.2],
+    dipWavelength: [100, 100000, true],
+    knobSpacing: [16, 100000, true],
+    knobChance: [0, 1],
+    knobHeight: [0, 100],
+    knobRadius: [1, 1000],
+    floorSlope: [0, 0.2],
+    floorRise: [0, 100],
+    moundHeight: [0, 20],
+    moundWavelength: [16, 100000, true],
+    fanHeight: [0, 50],
+    fanWidth: [0, 1000],
+    washDepth: [0, 20],
+    washWavelength: [16, 100000, true],
+  },
 };
 
 /** The climates a rock's `capBy` may name (the code's vocabulary, geology.rs `CapClimate`). */
@@ -843,6 +861,7 @@ export function validateRocks(data, blocks) {
         "provinces",
         "shaping",
         "erosion",
+        "mesaRelief",
         "tectonic",
         "plateProvinces",
         "arid",

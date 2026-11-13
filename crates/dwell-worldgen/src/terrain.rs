@@ -1517,7 +1517,12 @@ impl TerrainGenerator {
         };
         let geo = &self.biomes.geology;
         let e = &geo.geology.erosion;
-        let (mut g, cut) = crate::geology::eroded(e, h, floor, margin);
+        // Relief on the mesas (rocks.json `mesaRelief`): the standing ground undulates, tilts and
+        // carries knobs, the floor slopes to its drainage line with mounds, fans and washes; the
+        // wall and the talus between them follow both, so the edge stays a wall.
+        let (top, low) = self.mesa_relief(x, z, margin);
+        let (h_top, floor) = (h + top, (floor + low).min(h + top));
+        let (mut g, cut) = crate::geology::eroded(e, h_top, floor, margin);
         let gullies: f64 = mix
             .iter()
             .map(|(i, w)| w * self.biomes.list[i].gullies)
@@ -1559,6 +1564,79 @@ impl TerrainGenerator {
             Cut::Standing => rock.or(own.map(|r| (r, Part::Tread))),
         };
         (out, rock)
+    }
+
+    /// The mesa relief at face-local (x, z) whose cut-back margin is `margin` (rocks.json
+    /// `mesaRelief`): (m added to the standing ground, m added to the floor).
+    fn mesa_relief(&self, x: i64, z: i64, margin: f64) -> (f64, f64) {
+        use crate::noise::{fbm2, mix32, seed_word};
+        let r = &self.biomes.geology.geology.mesa_relief;
+        let w = self.world_seed;
+        let noise = |stream: u32, wavelength: f64, octaves: u32| {
+            f64::from(fbm2(
+                seed_word(w, 0x6E01_0100 + stream),
+                x,
+                z,
+                wavelength.max(1.0) as i32,
+                octaves,
+                None,
+            ))
+        };
+        let mut top = 0.0;
+        if r.top_amplitude > 0.0 {
+            top += r.top_amplitude * 2.0 * noise(0, r.top_wavelength, 3);
+        }
+        if r.dip > 0.0 {
+            // A tilt of about `dip` m per m: a long noise whose slope is near the dip.
+            top += r.dip * r.dip_wavelength / std::f64::consts::PI
+                * 2.0
+                * noise(1, r.dip_wavelength, 1);
+        }
+        if r.knob_height > 0.0 && r.knob_chance > 0.0 {
+            let cell = r.knob_spacing.max(1.0);
+            let (cx, cz) = ((x as f64 / cell).floor(), (z as f64 / cell).floor());
+            let mut best = 0.0f64;
+            for dz in -1..=1 {
+                for dx in -1..=1 {
+                    let (i, k) = (cx as i64 + dx, cz as i64 + dz);
+                    let hsh = mix32(seed_word(w, 0x6E01_0110) ^ mix32(i as u32 ^ mix32(k as u32)));
+                    let u = |s: u32| f64::from(mix32(hsh ^ s)) / 4_294_967_296.0;
+                    if u(1) >= r.knob_chance {
+                        continue;
+                    }
+                    let (px, pz) = ((i as f64 + u(2)) * cell, (k as f64 + u(3)) * cell);
+                    let d = (x as f64 - px).hypot(z as f64 - pz) / r.knob_radius.max(1.0);
+                    if d < 1.0 {
+                        // A butte: steep sides, a flat-ish top.
+                        let t = (1.0 - d) / 0.35;
+                        best = best.max(r.knob_height * (0.5 + 0.5 * u(4)) * t.min(1.0).powf(0.7));
+                    }
+                }
+            }
+            top += best;
+        }
+        // The floor: rising from its drainage line, low mounds, talus fans, washes.
+        let mut low = 0.0;
+        if let Some(field) = self.biomes.drainage.as_ref() {
+            let (dist, _, _) = field.at(&self.map, x as f64, z as f64);
+            low += (r.floor_slope * dist).min(r.floor_rise);
+        }
+        if r.mound_height > 0.0 {
+            low += r.mound_height * (2.0 * noise(2, r.mound_wavelength, 2)).max(0.0);
+        }
+        if r.fan_height > 0.0 && r.fan_width > 0.0 {
+            let e = &self.biomes.geology.geology.erosion;
+            let beyond = -margin - e.talus_width;
+            let t = (1.0 - beyond / r.fan_width).clamp(0.0, 1.0);
+            let lobes =
+                0.5 + 0.5 * (2.0 * noise(3, (r.fan_width * 0.8).max(16.0), 1)).clamp(-1.0, 1.0);
+            low += r.fan_height * t * t * lobes;
+        }
+        if r.wash_depth > 0.0 {
+            let v = noise(4, r.wash_wavelength, 2).abs();
+            low -= r.wash_depth * (1.0 - smooth01(v / 0.06));
+        }
+        (top, low)
     }
 
     /// The palette rock `r`'s tread shows at face-local (x, z) over `base` m: its first `capBy`

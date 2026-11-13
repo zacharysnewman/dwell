@@ -129,6 +129,8 @@ pub struct Geology {
     pub notched: Notched,
     /// The rule-based erosion (T4).
     pub erosion: Erosion,
+    /// Relief on the erosion's mesa tops and floors.
+    pub mesa_relief: MesaRelief,
     /// The tectonic provinces' stacks (T5, `rocks.json` `tectonic`): a volcano's, the old core's.
     pub volcanic_stack: &'static str,
     pub core_stack: &'static str,
@@ -784,6 +786,59 @@ pub struct Erosion {
     pub gully_wavelength: f64,
     /// The rills' depth (m).
     pub gully_depth: f64,
+}
+
+/// Relief on the erosion's mesas (rocks.json `mesaRelief`; owner, 2026-11-13: "mesas are too flat
+/// on the tops and the bottoms, real mesas have height variety"): the standing tops undulate, tilt
+/// and carry knobs; the floors slope to their drainage line with mounds, talus fans and washes.
+/// All 0: the flat tops and floors of 0.58–0.61.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct MesaRelief {
+    /// The tops' undulation (m, ±) by noise at `top_wavelength` m.
+    pub top_amplitude: f64,
+    pub top_wavelength: f64,
+    /// Each mesa's tilt of its caprock, about this many m per m, its direction by a noise at `dip_wavelength` m.
+    pub dip: f64,
+    pub dip_wavelength: f64,
+    /// A knob or small butte on a top: one cell of `knob_spacing` m in `knob_chance` holds one, `knob_height` m high and `knob_radius` m wide.
+    pub knob_spacing: f64,
+    pub knob_chance: f64,
+    pub knob_height: f64,
+    pub knob_radius: f64,
+    /// The floors rise away from their drainage line by this many m per m, at most `floor_rise` m.
+    pub floor_slope: f64,
+    pub floor_rise: f64,
+    /// Low mounds on the floors: up to `mound_height` m by noise at `mound_wavelength` m.
+    pub mound_height: f64,
+    pub mound_wavelength: f64,
+    /// Talus fans: the floor raised up to `fan_height` m at a wall's talus, falling off over `fan_width` m beyond it, lobed by noise.
+    pub fan_height: f64,
+    pub fan_width: f64,
+    /// Shallow washes across the floors: `wash_depth` m deep along a noise's zero lines at `wash_wavelength` m.
+    pub wash_depth: f64,
+    pub wash_wavelength: f64,
+}
+
+impl MesaRelief {
+    /// None: flat tops and floors (an edit stored before 0.62).
+    pub const NONE: Self = Self {
+        top_amplitude: 0.0,
+        top_wavelength: 1.0,
+        dip: 0.0,
+        dip_wavelength: 1.0,
+        knob_spacing: 1.0,
+        knob_chance: 0.0,
+        knob_height: 0.0,
+        knob_radius: 1.0,
+        floor_slope: 0.0,
+        floor_rise: 0.0,
+        mound_height: 0.0,
+        mound_wavelength: 1.0,
+        fan_height: 0.0,
+        fan_width: 0.0,
+        wash_depth: 0.0,
+        wash_wavelength: 1.0,
+    };
 }
 
 /// The world map's drainage seen from above (T4): per map cell, the distance (m) to the nearest

@@ -621,8 +621,8 @@ export function rocksRust(data) {
     `// ${rocksHeader}`,
     "",
     "use crate::geology::{",
-    "    Arid, CapClimate, CapRule, Erosion, Geology, Jointing, Layer, Mixing, Notched, PlateMix,",
-    "    PlateProvinces, PlateRule, PlateSetting, Rock, Stack,",
+    "    Arid, CapClimate, CapRule, Erosion, Geology, Jointing, Layer, MesaRelief, Mixing, Notched,",
+    "    PlateMix, PlateProvinces, PlateRule, PlateSetting, Rock, Stack,",
     "};",
     "",
   ];
@@ -685,6 +685,10 @@ export function rocksRust(data) {
   const snake = (k) => k.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
   for (const k of Object.keys(GEOLOGY.erosion))
     rs.push(`        ${snake(k)}: ${rf(data.erosion[k])},`);
+  rs.push("    },");
+  rs.push("    mesa_relief: MesaRelief {");
+  for (const k of Object.keys(GEOLOGY.mesaRelief))
+    rs.push(`        ${snake(k)}: ${rf(data.mesaRelief[k])},`);
   rs.push("    },");
   rs.push(`    volcanic_stack: ${JSON.stringify(data.tectonic.volcanic)},`);
   rs.push(`    core_stack: ${JSON.stringify(data.tectonic.core)},`);

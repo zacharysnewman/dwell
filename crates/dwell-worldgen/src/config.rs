@@ -621,6 +621,7 @@ pub fn geology_from_json(v: &Value) -> Result<Geology, String> {
             _ => crate::geology::Notched::None,
         },
         erosion: erosion_from_json(v.get("erosion"))?,
+        mesa_relief: mesa_relief_from_json(v.get("mesaRelief"))?,
         // The tectonic provinces' stacks (T5); absent (an edit stored before T5): the build's.
         volcanic_stack: v
             .get("tectonic")
@@ -754,6 +755,32 @@ fn plate_provinces_from_json(v: Option<&Value>) -> Result<crate::geology::PlateP
 
 /// The erosion (rocks.json `erosion`, systemic terrain T4); absent (an edit stored before T4):
 /// the build's.
+/// rocks.json `mesaRelief`; absent (an edit stored before 0.62): none, flat as before.
+fn mesa_relief_from_json(v: Option<&Value>) -> Result<crate::geology::MesaRelief, String> {
+    let Some(v) = v else {
+        return Ok(crate::geology::MesaRelief::NONE);
+    };
+    let g = |k: &str| num(v, k).map_err(|e| format!("rocks.json: mesaRelief.{e}"));
+    Ok(crate::geology::MesaRelief {
+        top_amplitude: g("topAmplitude")?,
+        top_wavelength: g("topWavelength")?,
+        dip: g("dip")?,
+        dip_wavelength: g("dipWavelength")?,
+        knob_spacing: g("knobSpacing")?,
+        knob_chance: g("knobChance")?,
+        knob_height: g("knobHeight")?,
+        knob_radius: g("knobRadius")?,
+        floor_slope: g("floorSlope")?,
+        floor_rise: g("floorRise")?,
+        mound_height: g("moundHeight")?,
+        mound_wavelength: g("moundWavelength")?,
+        fan_height: g("fanHeight")?,
+        fan_width: g("fanWidth")?,
+        wash_depth: g("washDepth")?,
+        wash_wavelength: g("washWavelength")?,
+    })
+}
+
 fn erosion_from_json(v: Option<&Value>) -> Result<Erosion, String> {
     let Some(v) = v else {
         return Ok(GEOLOGY.erosion);
