@@ -118,8 +118,8 @@ pub const DAY_NIGHT: DayNight = DayNight {
         Keyframe {
             name: "morning",
             sun: 30.0,
-            sky_zenith: [0.376471, 0.596078, 0.847059],
-            sky_horizon: [0.886275, 0.886275, 0.847059],
+            sky_zenith: [0.168627, 0.407843, 0.768627],
+            sky_horizon: [0.658824, 0.776471, 0.901961],
             sun_disc: [1.0, 0.94902, 0.847059],
             glow: [0.972549, 0.862745, 0.666667],
             glow_strength: 0.95,
@@ -141,8 +141,8 @@ pub const DAY_NIGHT: DayNight = DayNight {
         Keyframe {
             name: "noon",
             sun: 90.0,
-            sky_zenith: [0.392157, 0.603922, 0.854902],
-            sky_horizon: [0.898039, 0.898039, 0.882353],
+            sky_zenith: [0.145098, 0.388235, 0.776471],
+            sky_horizon: [0.611765, 0.752941, 0.917647],
             sun_disc: [1.0, 0.980392, 0.941176],
             glow: [0.960784, 0.85098, 0.635294],
             glow_strength: 1.0,
@@ -164,8 +164,8 @@ pub const DAY_NIGHT: DayNight = DayNight {
         Keyframe {
             name: "afternoon",
             sun: 150.0,
-            sky_zenith: [0.376471, 0.596078, 0.839216],
-            sky_horizon: [0.901961, 0.886275, 0.831373],
+            sky_zenith: [0.164706, 0.4, 0.768627],
+            sky_horizon: [0.662745, 0.772549, 0.894118],
             sun_disc: [1.0, 0.941176, 0.815686],
             glow: [0.972549, 0.847059, 0.627451],
             glow_strength: 0.95,

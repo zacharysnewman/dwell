@@ -122,8 +122,8 @@
     {
       "name": "morning",
       "sun": 30,
-      "skyZenith": "#6098d8",
-      "skyHorizon": "#e2e2d8",
+      "skyZenith": "#2b68c4",
+      "skyHorizon": "#a8c6e6",
       "sunDisc": "#fff2d8",
       "glow": "#f8dcaa",
       "glowStrength": 0.95,
@@ -145,8 +145,8 @@
     {
       "name": "noon",
       "sun": 90,
-      "skyZenith": "#649ada",
-      "skyHorizon": "#e5e5e1",
+      "skyZenith": "#2563c6",
+      "skyHorizon": "#9cc0ea",
       "sunDisc": "#fffaf0",
       "glow": "#f5d9a2",
       "glowStrength": 1,
@@ -168,8 +168,8 @@
     {
       "name": "afternoon",
       "sun": 150,
-      "skyZenith": "#6098d6",
-      "skyHorizon": "#e6e2d4",
+      "skyZenith": "#2a66c4",
+      "skyHorizon": "#a9c5e4",
       "sunDisc": "#fff0d0",
       "glow": "#f8d8a0",
       "glowStrength": 0.95,

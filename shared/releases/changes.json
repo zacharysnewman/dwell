@@ -5,9 +5,35 @@
       "version": "0.62.0",
       "changes": [
         "Realistic worlds: a new compatibility line, their terrain redrawn from the seed (older Realistic worlds open in their own version)",
-        "Realistic rifts are chains of lakes that open as gulfs at the sea; a continent and an ocean pulling apart make a wide shelf, and closing oceans an island arc",
-        "Realistic plates all have room inland, ranges rise and dip into peaks and saddles, and continents run out toward the world's edge instead of a ring of sea",
-        "Realistic interiors mix rock provinces, vary rain and temperature by district, roll in basins and swells, and lose the grid-aligned streaks in eroded slopes"
+        "Realistic plates and coasts: rifts are chains of lakes, coasts end in shelves, no sliver plates, ranges rise and dip, continents run out toward the world's edge",
+        "Realistic interiors mix rock provinces and vary rain and temperature by district; rolling ground is flat-topped again, with notched ramps only along mesa and rock-wall edges",
+        "Mesa country reads like Monument Valley: dark red-brown walls over red dirt floors with red sand and pale tan patches blending smoothly, and new red dirt blocks",
+        "Mesa tops rise, tilt and carry knobs and small buttes; floors slope to their washes with mounds and talus fans; grey-green sagebrush dots the floors",
+        "Hot tan sand deserts with dunes fill the warm dry lowlands of subtropical faces, separate from the red mesa country"
+      ]
+    },
+    {
+      "version": "0.61.7",
+      "changes": [
+        "A bluer day sky: deep blue overhead fading to a lighter blue at the horizon, and far hills fade into that blue."
+      ]
+    },
+    {
+      "version": "0.61.6",
+      "changes": [
+        "Smoother frame rate while running or flying into new ground, most on phones: the ground ahead is made solid a little at a time before you reach it"
+      ]
+    },
+    {
+      "version": "0.61.5",
+      "changes": [
+        "In first person your own feet stand where you do, on the ground and on their shadow, on flat ground and ramps (they were drawn behind you and seemed to float)."
+      ]
+    },
+    {
+      "version": "0.61.4",
+      "changes": [
+        "Far trees: a tree you fell no longer stays standing as a distant impostor."
       ]
     },
     {

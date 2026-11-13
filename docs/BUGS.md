@@ -6,6 +6,14 @@ pins it.
 
 ## Open
 
+### 142. `dwell-sim` `items.rs` `dying_in_adventure_drops_everything_where_the_player_died` fails on main
+
+Found 2026-11-13 (branch `claude/collision-ahead`, not caused by it: the same failure on main at 0.61.1 and after
+merging main): both faces fail at `items.rs:202`, `a stack a slot: []`: `kill_player` in adventure leaves no loose
+items (4 expected: the starting axe, two stacks of dirt, the sticks). Suspect: the defeat kneel (WORK_QUEUE item 55,
+"humans don't die") changed what a kill does, and the test still expects the old death drop. Not investigated
+further; the owner decides whether a defeated player drops their items.
+
 ### 135. Flat ground on a plateau can show a sandstone wall's face (red sandstone) instead of a tread
 
 Found 2026-11-13 while fixing #134 (Realistic, seed 42 face A, e.g. (−6000, −3500) and (−4250, 0)): a few wide, flat
@@ -547,15 +555,36 @@ face, or the placement check against its shape.
 
 ## Fixed
 
-### 142. Red sand on humid red-desert floors cut down to the siltstone (fixed in 0.62.0)
+### 143. Red sand on humid red-desert floors cut down to the siltstone (fixed in 0.62.0)
 
 Found 2026-11-13 by the realistic batch (parts A and B together, seed 1 face A, e.g. (−7750, −8500) in the red rock
 mesa): 14 of 2137 sandstone floors were red sand where the climate is not arid, against #134's rule. Cause: the
 erosion snaps a floor down to the stack's soft layer (`Cut::Floor`), the red desert beds' siltstone, whose `cap` was
 `dwell:red_sand` with no `capBy`, so its treads were red sand in any climate. Fix (data, `rocks.json`): the siltstone's
-cap is `dwell:red_sandstone` with `capBy` `[{"arid": "dwell:red_sand"}]`, as the sandstone's. Test:
+cap is `dwell:red_sandstone` with `capBy` `[{"arid": "dwell:red_sand"}]`, as the sandstone's (then, the same line, the mesa country palette made its floors red dirt: WORK_QUEUE item 15). Test:
 `tests/realistic_rocks.rs` `the_red_desert_floors_are_red_sand`, red at 14 of 2137 (over its 1 in 200), green after;
 the default's goldens unchanged; the starter's red rock mesa has the same stack, so its terrain pin (`tests/starter_memory.rs`) is re-pinned on this line.
+### 142. Your own feet in first person seemed to float (fixed after 0.61.3)
+
+Owner, 2026-11-13 (after #140): "Is the first person model lined up with the ground though? The feet were first
+person feet that didn't line up / seemed to be floating?" Measured: your own body in first person was moved back
+**whole** along its −z to keep it off the eye (`own::shift`: `back` 0.1 m, 0.4 m looking straight down), so its
+soles stood 0.1–0.4 m behind where you stand: off their shadow (cast by the unmoved body where you stand), and on a
+ramp or slope over or under the ground there (the old code's lowest sole was 5 cm off another player's at a level
+look on a ½ m ramp, and up to ~40 cm looking down on a 1 m slope). The soles' height was right; their place was
+not. In the bench (flat world, looking straight down) the drawn feet sat well behind the crosshair while the shadow's
+feet met at it. Fixed (CHARACTERS.md §5.1): the body now **leans back from its soles** (`own::lean`, a shear: each
+point moved back by the offset × its height ÷ the eye's), so the soles stand where you stand, on the ground and their
+shadow, and the chest is still kept off the eye; a pose that still brings a vertex within `clear` (a crouch under a
+lagging eye) is moved back whole as much more as clears it, and a body off its feet (lowest point 12 cm up) or in a
+role that stands on nothing (swim, climb, fly) moves back whole as before. Test: `render::skinned`
+`your_own_bodys_soles_stand_on_the_ground_in_first_person` (both faces; red before: "idle t 0/4, pitch 0, grade
+0.5: your sole -0.049 m over the ground, another player's -0.099"): idle and walking, looking level, 60° and
+straight down, on flat ground, a ½ m ramp and a 1 m slope, your lowest sole is on the ground where another player's
+is (1 cm idle; walking 1 cm + 3 cm × the grade, a lifted foot leans a little), and at idle on flat ground within
+2 cm of the feet. The near-camera and screen-fill sweep passes unchanged. Screenshots: bench scratch scenarios
+looking down 89° and 60°, standing and walking, flat and generated terrain.
+
 ### 141. Lava expired into rock and "all just goes away" (fixed after 0.60.11)
 
 Owner, 2026-11-13: "Another thing I observed, I think Lava needs to not just expire into rock, since it all just goes
@@ -1647,6 +1676,33 @@ tree trunks with the leaf cards. What might be dropping frames since the last wh
   between frames was tried and parked (on the test's generated world the builds ahead read neighbours that then
   changed, and their rebuilds landed in the ticks; it needs a streamed-world test). Still open: that, and a real
   iPhone check while moving.
+- **Round 7 (branch `claude/collision-ahead`): a newly reached chunk's collision built ahead.** The chunks a
+  moving player (≥ 1 m/s) is heading into are built before its reach gets there, a few a tick
+  (`TerrainCollision::ahead_chunks` / `ensure_ahead`; data: `shared/render/streaming.json` `collisionAhead`, 1 s of
+  travel, ≤ 48 m, the reach + 1 m; 2 chunks a tick on the server and a desktop, 1 on a phone), and their cells go in
+  first from the background budget. Round 6's parked problem is handled: a chunk is built ahead only once the world
+  holds (or generates) the 26 chunks around it, so a streamed neighbour's arrival never rebuilds it. A standing
+  player builds nothing ahead and its cells go in in the old order (the explosives debris test, chaotic, settled in
+  17.95 s instead of 9.75 s while a standing player's chunks were reordered; now the same as main, and the golden
+  five-player trace unchanged). Tests `dwell-physics` `tests/collision_ahead.rs` (both faces, `DWELL_FACE=b`, and
+  far out): sprinting and flying (levels 4 and 6, the phone's 1 a tick) across chunk borders build no chunk on the
+  tick that reaches it and never stand the player in an unbuilt chunk, red without the look-ahead (each test checks
+  its own run without it reaches chunks unbuilt); the budget holds with many chunks ahead; on a streamed world (the
+  client's) every build is the look-ahead's, one a tick, none a rebuild (red with it off: tick 4 built when reached);
+  the feet equal the run without it on every tick. Measured natively (`measure_the_tick_cost_with_and_without_the_look_ahead`,
+  ignored: 600 ticks over the seed-0 terrain, the path pre-generated; `Players::tick_terrain` ms, a cloud container):
+
+  | Run | cells/tick | ahead/tick | reached unbuilt | built ahead | mean | p99 | max | ticks > 2 ms |
+  | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+  | sprint | 8192 | 0 → 2 | 10 → 0 | 0 → 20 | 0.044 → 0.090 | 1.11 → 1.39 | 2.93 → 1.98 | 2 → 0 |
+  | fly 6 | 8192 | 0 → 2 | 62 → 0 | 0 → 66 | 0.172 → 0.192 | 2.38 → 1.84 | 3.35 → 2.67 | 8 → 4 |
+  | fly 6 | 1024 (phone) | 0 → 1 | 62 → 0 | 0 → 66 | 0.145 → 0.152 | 2.36 → 0.92 | 3.25 → 1.49 | 7 → 0 |
+  | fly 8 | 1024 (phone) | 0 → 1 | 94 → 3 | 0 → 95 | 0.120 → 0.138 | 1.83 → 1.19 | 3.21 → 1.60 | 4 → 0 |
+
+  The work is the same or a little more (a chunk beside the path is built too), spread: the phone's worst terrain
+  tick about halves, none over 2 ms. At fly level 8 one a tick lets 3 of ~95 chunks be reached first. Not measured
+  in the browser (no GPU in the cloud session): the `phone-moving` bench at CPU 6× before and after, and a real
+  iPhone check while moving, are left.
 
 ### 71. "Starting the graphics" takes a long time with no elapsed time shown (fixed after 0.52.101)
 

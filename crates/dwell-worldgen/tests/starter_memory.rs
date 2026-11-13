@@ -117,7 +117,7 @@ fn fnv(h: &mut u64, bytes: &[u8]) {
 /// sandstone's treads show red sand where the ground is arid (its `capBy`, rocks.json `arid`), red
 /// sandstone elsewhere.
 ///
-/// Re-pinned 2026-11-13 for BUGS.md #142 (the realistic batch's line): the red desert beds'
+/// Re-pinned 2026-11-13 for BUGS.md #143 (the realistic batch's line): the red desert beds'
 /// siltstone, whose floors the erosion cuts down to, shows red sand only where arid (its `capBy`),
 /// red sandstone elsewhere, as the sandstone does.
 const STARTER_PIN: [(Face, &str); 2] =

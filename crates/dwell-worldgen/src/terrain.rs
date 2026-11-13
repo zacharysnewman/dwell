@@ -3644,12 +3644,16 @@ impl TerrainGenerator {
                 (lo.0..=hi.0).contains(&t.anchor[0]) && (lo.1..=hi.1).contains(&t.anchor[2])
             })
             .filter_map(|t| {
-                let (species, seed, stage) = self.planters[t.planter as usize].grown(&t)?;
+                let p = &self.planters[t.planter as usize];
+                let (species, seed, stage) = p.grown(&t)?;
+                let (stem, stem_cells) = p.stem(&t);
                 Some(crate::impostor::FarTree {
                     anchor: t.anchor,
                     species,
                     seed,
                     stage,
+                    stem,
+                    stem_cells,
                 })
             })
             .collect();
