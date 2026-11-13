@@ -126,7 +126,7 @@ test('a creature’s attack and hurt look are checked, defaulted and emitted', a
   bad((d) => (d.hurtLook.glow = 1), /glow/);
 });
 
-// BUGS.md #151: the skin tones and the hair colours that go with each, as data.
+// BUGS.md #152: the skin tones and the hair colours that go with each, as data.
 const appearance = () => JSON.parse(readFileSync(join(here, 'appearance.json'), 'utf8'));
 
 test('the appearance sets validate, and the villagers pick from one', () => {

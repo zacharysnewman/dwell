@@ -112,7 +112,7 @@ pub fn blend_pose(
 
 /// A body's remap rows for the shader (`REMAP_FLOATS` floats): per part slot (part `k + 1`) the
 /// model's base and the base in its place (sRGB 0..1), the first's w 1 where used, 0 where not, the
-/// second's w the share of the part's shading kept (BUGS.md #151).
+/// second's w the share of the part's shading kept (BUGS.md #152).
 pub fn remap_floats(remap: &[Option<dwell_models::PartRemap>]) -> [f32; REMAP_FLOATS] {
     let mut out = [0.0; REMAP_FLOATS];
     for (k, pair) in remap.iter().take(dwell_models::MAX_REMAP).enumerate() {
@@ -263,7 +263,7 @@ fn joint_apply(j: u32, p: vec3f, w: f32) -> vec3f {
 
 // A vertex's palette colour (sRGB 0..1) after the body's remap, by its part (the colour's alpha
 // byte: 0 none, k part k): a remapped part's vertex takes the new base at its shade of the old
-// (luminance over the old base's), keeping the to row's w share of it (BUGS.md #151: one skin).
+// (luminance over the old base's), keeping the to row's w share of it (BUGS.md #152: one skin).
 // dwell_models::recolour mirrors it.
 fn remap_colour(c: vec4f) -> vec3f {
     let part = u32(round(c.a * 255.0));
@@ -1863,7 +1863,7 @@ mod villager_colour_tests {
     #[test]
     fn every_skin_vertex_of_a_villager_draws_its_one_skin_tone() {
         // both-faces: model space at rest (a vertex's colour does not depend on the face).
-        // BUGS.md #151 (owner, 2026-11-13): "face should always match arms, etc. shouldn't have
+        // BUGS.md #152 (owner, 2026-11-13): "face should always match arms, etc. shouldn't have
         // different skin colors on different skin parts." The Peasant's skin part is modelled in
         // two ramps (skin_fair face and arms, a skin_tan neck and jaw a ramp darker), and the
         // recolour kept that whole step, so the neck and jaw read as another skin. Across 200
