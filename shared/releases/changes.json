@@ -2,6 +2,12 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.55.21",
+      "changes": [
+        "The big map's debug layers (L) now cover only the world's disc, not the square around it."
+      ]
+    },
+    {
       "version": "0.55.20",
       "changes": [
         "Behind the scenes: the client can now predict flying into the moon and back home as the server does"
