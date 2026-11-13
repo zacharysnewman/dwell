@@ -75,7 +75,7 @@ export interface ShapeDef {
 }
 
 /** FNV-1a 64 over the canonical state strings (each followed by "\n") in id order. */
-export const REGISTRY_HASH = 0x713a49aae0cecbefn;
+export const REGISTRY_HASH = 0x8892ede122354d78n;
 
 export const BLOCK_DEFS: readonly BlockDef[] = [
   { id: 'dwell:air', first: 0, count: 1, properties: [] },
@@ -132,6 +132,7 @@ export const BLOCK_DEFS: readonly BlockDef[] = [
   { id: 'dwell:red_sand_ramp', first: 708, count: 48, properties: [{ name: 'facing', values: ['north', 'east', 'south', 'west'] }, { name: 'flooded', values: ['false', 'true'] }, { name: 'half', values: ['bottom', 'top'] }, { name: 'shape', values: ['ramp', 'steep_lower', 'steep_upper'] }], sound: 'dwell:sand' },
   { id: 'dwell:red_dirt', first: 756, count: 2, properties: [{ name: 'flooded', values: ['false', 'true'] }], sound: 'dwell:dirt' },
   { id: 'dwell:red_dirt_ramp', first: 758, count: 48, properties: [{ name: 'facing', values: ['north', 'east', 'south', 'west'] }, { name: 'flooded', values: ['false', 'true'] }, { name: 'half', values: ['bottom', 'top'] }, { name: 'shape', values: ['ramp', 'steep_lower', 'steep_upper'] }], sound: 'dwell:dirt' },
+  { id: 'dwell:brush', first: 806, count: 2, properties: [{ name: 'flooded', values: ['false', 'true'] }], sound: 'dwell:grass' },
 ];
 
 /** The shapes block states use. */
@@ -989,6 +990,8 @@ const STATES_6: readonly StateDef[] = [
   { id: 803, state: 'dwell:red_dirt_ramp[facing=west,flooded=true,half=top,shape=ramp]', block: 53, values: { facing: 'west', flooded: 'true', half: 'top', shape: 'ramp' }, look: 'shaped', render: 'opaque', color: 0xad6038, opacity: 1, textures: { top: 'redDirt', side: 'redDirt', bottom: 'redDirt' }, shape: 23, flooded: true, placeable: false },
   { id: 804, state: 'dwell:red_dirt_ramp[facing=west,flooded=true,half=top,shape=steep_lower]', block: 53, values: { facing: 'west', flooded: 'true', half: 'top', shape: 'steep_lower' }, look: 'shaped', render: 'opaque', color: 0xad6038, opacity: 1, textures: { top: 'redDirt', side: 'redDirt', bottom: 'redDirt' }, shape: 24, flooded: true, placeable: false },
   { id: 805, state: 'dwell:red_dirt_ramp[facing=west,flooded=true,half=top,shape=steep_upper]', block: 53, values: { facing: 'west', flooded: 'true', half: 'top', shape: 'steep_upper' }, look: 'shaped', render: 'opaque', color: 0xad6038, opacity: 1, textures: { top: 'redDirt', side: 'redDirt', bottom: 'redDirt' }, shape: 25, flooded: true, placeable: false },
+  { id: 806, state: 'dwell:brush[flooded=false]', block: 54, values: { flooded: 'false' }, look: 'cube', render: 'cutout', color: 0x8a9878, opacity: 1, textures: { top: 'brush', side: 'brush', bottom: 'brush' }, shape: 1, flooded: false, placeable: true },
+  { id: 807, state: 'dwell:brush[flooded=true]', block: 54, values: { flooded: 'true' }, look: 'cube', render: 'cutout', color: 0x8a9878, opacity: 1, textures: { top: 'brush', side: 'brush', bottom: 'brush' }, shape: 1, flooded: true, placeable: false },
 ];
 
 export const STATE_DEFS: readonly StateDef[] = [

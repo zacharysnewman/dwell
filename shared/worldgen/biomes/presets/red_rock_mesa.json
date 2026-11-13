@@ -66,9 +66,9 @@
     }
   ],
   "decorations": [],
-  "placements": ["boulders"],
+  "placements": ["boulders", "sagebrush"],
   "ground": { "dwell:ground_rock": 2.5 },
-  "trees": { "boulders": 1.5 },
+  "trees": { "boulders": 1.5, "sagebrush": 1 },
   "water": "dwell:water",
   "rockStack": "dwell:red_desert_beds",
   "erosion": 1,

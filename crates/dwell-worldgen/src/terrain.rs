@@ -3563,6 +3563,13 @@ impl TerrainGenerator {
     /// ask for computed at most once per column of the rectangle and its margin, and only the
     /// columns asked (a species' wide crown makes the margin large and its candidates sparse;
     /// ADR 0079).
+    /// The name of the placement rule a placed tree's `planter` is (`placements.json`).
+    pub fn planter_name(&self, planter: u8) -> Option<&'static str> {
+        self.planters
+            .get(usize::from(planter))
+            .map(|p| p.rule().name)
+    }
+
     pub fn trees_in(&self, (x0, z0): (i32, i32), (x1, z1): (i32, i32)) -> Vec<Tree> {
         if self.planters.is_empty() {
             return Vec::new();

@@ -54,8 +54,8 @@
   ],
   "decorations": [],
   "vegetation": 1,
-  "placements": ["boulders"],
-  "ground": {"dwell:ground_rock": 2},
-  "trees": {"boulders": 0.6},
+  "placements": ["boulders", "sagebrush"],
+  "ground": { "dwell:ground_rock": 2 },
+  "trees": { "boulders": 0.6, "sagebrush": 0.3 },
   "water": "dwell:water"
 }

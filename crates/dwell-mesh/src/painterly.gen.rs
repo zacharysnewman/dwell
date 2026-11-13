@@ -4,7 +4,7 @@
 pub const PAINTERLY_TILE: usize = 32;
 
 /// The atlas tiles the painterly set paints, in the order of their texels in [`PAINTERLY_TEXELS`].
-pub const PAINTERLY_TILES: [&str; 57] = [
+pub const PAINTERLY_TILES: [&str; 58] = [
     "grass",
     "grassSide",
     "dirt",
@@ -19,6 +19,7 @@ pub const PAINTERLY_TILES: [&str; 57] = [
     "logHeart",
     "logCut",
     "leaves",
+    "brush",
     "leafCard",
     "tallGrass",
     "ladder",
@@ -65,31 +66,32 @@ pub const PAINTERLY_TILES: [&str; 57] = [
 ];
 
 /// Each tile's glow: how much of its colour it gives off unlit (its material's `emissive`).
-pub const PAINTERLY_EMISSIVE: [f32; 57] = [
+pub const PAINTERLY_EMISSIVE: [f32; 58] = [
     0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
     0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-    0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+    0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+    0.0,
 ];
 
 /// Whether each tile hangs from its block's top edge (its material's `hang`): a side face shows
 /// the tile's top on every block, so it never merges up or down; other tiles run in world metres.
-pub const PAINTERLY_HANG: [bool; 57] = [
+pub const PAINTERLY_HANG: [bool; 58] = [
     false, true, false, false, false, false, false, false, false, false, false, false, false, false,
-    false, false, false, false, true, false, true, false, false, false, true, false, false, false,
+    false, false, false, false, false, true, false, true, false, false, false, true, false, false,
     false, false, false, false, false, false, false, false, false, false, false, false, false,
     false, false, false, false, false, false, false, false, false, false, false, false, false,
-    false, false, false,
+    false, false, false, false,
 ];
 
 /// Whether each tile is molten (its material's `molten`): the terrain shader moves a slow heat
 /// pattern over its glow (lava), off on the CPU tier.
-pub const PAINTERLY_MOLTEN: [bool; 57] = [
+pub const PAINTERLY_MOLTEN: [bool; 58] = [
     false, false, false, false, false, false, false, false, false, false, false, false, false,
     false, false, false, false, false, false, false, false, false, false, false, false, false,
     false, false, false, false, false, false, false, false, false, false, false, false, false,
-    false, false, true, false, false, false, false, false, false, false, false, false, false, false,
-    false, false, false, false,
+    false, false, false, true, false, false, false, false, false, false, false, false, false, false,
+    false, false, false, false, false,
 ];
 
 /// Each painterly tile's RGBA8 texels (sRGB), row y = 0 (the tile's bottom) first.
-pub static PAINTERLY_TEXELS: &[u8; 233472] = include_bytes!("painterly.rgba");
+pub static PAINTERLY_TEXELS: &[u8; 237568] = include_bytes!("painterly.rgba");

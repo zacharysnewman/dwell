@@ -866,6 +866,23 @@
       "damage": { "default": 11, "shovel": 7, "look": { "kind": "scoops", "size": 0.38, "color": "#6e3322", "crack": "#4a2418", "depth": 0.14, "cracks": { "set": "soil", "stages": [0.2, 0.45, 0.65, 0.85], "strength": 0.6 } }, "chips": { "count": 6, "shards": 3, "piece": "dwell:dirt_clump", "color": "#8a4a30", "speed": 1.8, "size": 0.06 } },
       "family": "ramp",
       "of": "red_dirt"
+    },
+    {
+      "$comment": "Sagebrush's crown (0.62; owner, 2026-11-13, of Monument Valley: \"Some brush too. Could add some single 'tree' block with brush on top.\"): leaves' rules (a rider, passable, cutout, filtering the light) in the palette's grey-green sage ramp; the crown of dwell:sagebrush (shared/trees/sagebrush.json). Prototype content.",
+      "name": "brush",
+      "drops": [{ "item": "dwell:stick", "chance": 0.3 }],
+      "sound": "dwell:grass",
+      "density": 200,
+      "shape": "full",
+      "placeable": true,
+      "support": "rider",
+      "passable": true,
+      "nearFade": 1.2,
+      "render": "cutout",
+      "color": "#8a9878",
+      "textures": "brush",
+      "lightFilter": 2,
+      "properties": { "flooded": ["false", "true"] }
     }
   ]
 }

@@ -16,6 +16,7 @@
     "logHeart": "log_heart",
     "logCut": "fresh_wood",
     "leaves": "leaves",
+    "brush": "brush",
     "leafCard": "leaf_clump",
     "tallGrass": "tall_grass",
     "ladder": "ladder_wood",
@@ -307,6 +308,16 @@
         { "kind": "dab", "count": 12, "colors": ["@shadow", "@base"], "width": [8, 10], "length": [10, 13], "angle": 35, "angleJitter": 40, "softness": 1 },
         { "kind": "dab", "count": 9, "colors": ["@base"], "width": [5, 7], "length": [7, 10], "angle": 40, "angleJitter": 30, "opacity": 0.8, "clip": true, "seed": 1 },
         { "kind": "dab", "count": 7, "colors": ["@light"], "width": [3, 4], "length": [5, 7], "angle": 45, "angleJitter": 20, "opacity": 0.75, "clip": true, "seed": 2 }
+      ]
+    },
+    "brush": {
+      "$comment": "Sagebrush's crown (0.62): leaves' clusters with gaps, smaller and denser, in the grey-green sage ramp.",
+      "use": "block", "ramp": "sage", "overlay": 1, "alpha": "strokes",
+      "layers": [
+        { "kind": "fill", "color": "@base" },
+        { "kind": "dab", "count": 16, "colors": ["@shadow", "@base"], "width": [5, 7], "length": [6, 9], "angle": 35, "angleJitter": 60, "softness": 1 },
+        { "kind": "dab", "count": 12, "colors": ["@base"], "width": [3, 5], "length": [4, 7], "angle": 40, "angleJitter": 50, "opacity": 0.8, "clip": true, "seed": 1 },
+        { "kind": "dab", "count": 9, "colors": ["@light"], "width": [2, 3], "length": [3, 5], "angle": 45, "angleJitter": 40, "opacity": 0.75, "clip": true, "seed": 2 }
       ]
     },
     "leaf_clump": {

@@ -16,7 +16,11 @@
       "spacing": 1,
       "rotate": [0, 90, 180, 270],
       "variants": [
-        { "name": "snowy", "replace": { "dwell:leaves": "dwell:snowy_leaves" }, "height": [1050, 1250] }
+        {
+          "name": "snowy",
+          "replace": { "dwell:leaves": "dwell:snowy_leaves" },
+          "height": [1050, 1250]
+        }
       ]
     },
     {
@@ -47,7 +51,11 @@
       "spacing": 1,
       "rotate": [0, 90, 180, 270],
       "variants": [
-        { "name": "snowy", "replace": { "dwell:leaves": "dwell:snowy_leaves" }, "height": [1050, 1250] }
+        {
+          "name": "snowy",
+          "replace": { "dwell:leaves": "dwell:snowy_leaves" },
+          "height": [1050, 1250]
+        }
       ]
     },
     {
@@ -66,7 +74,15 @@
     {
       "name": "boulders",
       "structures": { "dwell:proto_rock": 1 },
-      "on": ["dwell:sand", "dwell:stone", "dwell:dirt", "dwell:grass"],
+      "on": [
+        "dwell:sand",
+        "dwell:stone",
+        "dwell:dirt",
+        "dwell:grass",
+        "dwell:red_dirt",
+        "dwell:red_sand",
+        "dwell:red_sandstone"
+      ],
       "footprint": "anchor",
       "grid": 16,
       "density": 0.3,
@@ -90,7 +106,11 @@
     },
     {
       "name": "rainforest_groves",
-      "structures": { "dwell:tall_broadleaf": 6, "dwell:oak": 2, "dwell:palm": 2 },
+      "structures": {
+        "dwell:tall_broadleaf": 6,
+        "dwell:oak": 2,
+        "dwell:palm": 2
+      },
       "on": ["dwell:grass"],
       "footprint": "on",
       "grid": 5,
@@ -100,6 +120,19 @@
       "rise": { "full": 20, "low": 0.5 },
       "maxSlopeDeg": 40,
       "spacing": 0,
+      "rotate": [0, 90, 180, 270]
+    },
+    {
+      "$comment": "Sagebrush (0.62; owner, 2026-11-13, of Monument Valley: \"Some brush too.\"): grey-green shrubs dense on mesa and desert floors, one per 2 m cell in 0.9, crowns touching (about 1.5–3 m apart), none steeper than 25° (none on walls or talus).",
+      "name": "sagebrush",
+      "structures": { "dwell:sagebrush": 1 },
+      "on": ["dwell:red_dirt", "dwell:red_sand", "dwell:sand"],
+      "footprint": "anchor",
+      "grid": 2,
+      "density": 0.9,
+      "height": [1, 2500],
+      "maxSlopeDeg": 25,
+      "spacing": -2,
       "rotate": [0, 90, 180, 270]
     }
   ]
