@@ -1,6 +1,6 @@
 # Blueprints and builder NPCs
 
-**[in progress: B1–B3 built (2026-11-13, branch `claude/builder-npcs-blueprints-rs25zj`); B4 planned]** WORK_QUEUE item 56. Owner, 2026-11-13: **"I also want to add a new version of the human
+**[built: B1–B3 0.60.x; B4 towns 0.62.0 (branch `claude/blueprints-towns`)]** WORK_QUEUE item 56. Owner, 2026-11-13: **"I also want to add a new version of the human
 NPC, same looks, no sword capable of building blueprints like the ones you can save right now. In adventure
 you can place "blueprints" but not as actual blocks as an entity that shows ghost blocks. When you hold
 build, it auto places only within the correct placement, only the correct blocks where you're aiming like
@@ -72,22 +72,47 @@ in before walls and supports before spans. A cell a player filled with something
 one already holding its block counts as built. The server places its piece as the growers do (an edit
 broadcast to everyone, saved with the world).
 
-## 6. Towns (B4)
+## 6. Towns (B4) **[built, 0.62]**
 
-**[planned]** Deterministic town sites per face (a grid with spacing and siting rules, as the shrines',
-SHRINES.md), each a town plan (blueprints laid out by data) whose builders spawn there and build over time.
-Siting changes nothing a seed generates by itself (the blueprints are entities and the blocks are edits), but
-the owner asked for a new compatibility line with it.
+The data (`blueprints.json` `towns`):
+
+| Key | Value | Meaning |
+|---|---|---|
+| `spacingM`, `jitter`, `attempts` | 1200 m, 0.6, 8 | One site at most per grid cell, at a seeded point within `jitter` × half a cell of its centre; points tried in order, the first that suits is the site |
+| `heightM`, `maxSlopeDeg`, `footprintM` | [2, 600] m, 12°, 32 m | Its footprint's centre and four corners (±`footprintM`) dry land (no sea, lake, river or stream) that high above sea level, rising at most `maxSlopeDeg` across it |
+| `foundM` | 128 m | A living player this near (on its face) founds it |
+| `plans` | `dwell:hamlet` | Picked per site by `weight`: blueprints (a structure, its anchor's offset `at` [x, z] m from the site, its `turn`); the hamlet is a well, two huts, a watchtower and a wall |
+
+**Siting** (`dwell_world::blueprint::TownRules::site_in`, `sites_near`, `layout`) is a pure function of the
+world seed, the face (face B hashes its own), the grid cell and the ground: never of another cell, so sites
+agree in any order. The ground is `dwell_worldgen::town_ground_for_sized`: the face's height field (`column_at`)
+where it is dry land in the band, and clear of the shrines' clear ground by 8 m and of the portals by the
+shrines' `portalClear` (`Shrines::crowds`). A world without a height field (the flat world, the sandbox, a
+test generator) has no towns.
+
+**Founding** (the server, every 2 s): each site within `foundM` of a living player not yet founded is founded
+once every blueprint of its plan finds the world's ground under its anchor (within 12 rows of the height field's;
+until then it waits): the blueprints are placed as any blueprint (§2, saved, synced), and the site is recorded in
+the world's `blueprints` record (format 2: the founded sites after the blueprints; format 1, B1–B3's, still read),
+so it is never founded again, built or not. Builders (§5) then come and build them while players are near.
+
+**Compatibility**: the 0.62 line (RELEASES.md "Who raises the line"; the owner asked for a line with towns).
+Seeds' terrain is unchanged (blueprints are entities, the blocks edits), but a world opened in 0.62 gets towns
+an older build wouldn't found or save.
+
+**Cost** (release, seed 0): the sites within 3 km of the spawn, 16 on face A and 10 on face B, in 30–130 ms the
+first time (the shrines' cells sited and cached); a founding check looks at the cells within `foundM` only.
 
 ## 7. Built, and left
 
-Built (B1–B3): the data and its generator, the four test blueprints, the record and message behind the
+Built (B1–B4): the data and its generator, the four test blueprints, the record and message behind the
 capability, the ghost geometry (`dwell_world::blueprint`), the world's list on the server (placed, removed,
 completed, saved), the builders, the client's ghost (drawn in the brush preview's slot while no brush is
-active), the held Place, the panel, and the Structures page's Blueprints list.
+active), the held Place, the panel, the Structures page's Blueprints list, and the towns (§6).
 
 Left:
-- **B4, towns** (§6), with its compatibility line.
+- Towns' plans beyond the hamlet (more plans are data); paths and roads between their blueprints; player-placed
+  towns (the owner: later). A town on the map.
 - A ghost preview while choosing where to place one (it is placed straight at the crosshair, as a turn picked
   on the page; the paste ghost box could follow the crosshair first, as for a structure).
 - A blueprint's ghost is drawn only while aimed into (within four reaches); a brush in use hides it.

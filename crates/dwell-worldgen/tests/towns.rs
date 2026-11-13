@@ -1,6 +1,6 @@
 //! Town sites on a generated world (WORK_QUEUE item 56, B4, docs/BLUEPRINTS.md §6): the ground test
 //! of the height field finds sites on both faces of the default seed near its spawn, each one's
-//! centre on dry land within the band, the same each time asked.
+//! centre on dry land within the band and clear of the shrines, the same each time asked.
 
 use dwell_protocol::world_size::WorldSize;
 use dwell_world::blueprint::SHIPPED;
