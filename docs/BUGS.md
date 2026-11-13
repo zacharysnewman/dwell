@@ -554,6 +554,16 @@ face, or the placement check against its shape.
 
 ## Fixed
 
+### 138. Red sand on humid red-desert floors cut down to the siltstone (fixed in 0.61.0)
+
+Found 2026-11-13 by the realistic batch (parts A and B together, seed 1 face A, e.g. (−7750, −8500) in the red rock
+mesa): 14 of 2137 sandstone floors were red sand where the climate is not arid, against #134's rule. Cause: the
+erosion snaps a floor down to the stack's soft layer (`Cut::Floor`), the red desert beds' siltstone, whose `cap` was
+`dwell:red_sand` with no `capBy`, so its treads were red sand in any climate. Fix (data, `rocks.json`): the siltstone's
+cap is `dwell:red_sandstone` with `capBy` `[{"arid": "dwell:red_sand"}]`, as the sandstone's. Test:
+`tests/realistic_rocks.rs` `the_red_desert_floors_are_red_sand`, red at 14 of 2137 (over its 1 in 200), green after;
+the default and starter goldens unchanged (only the mesa's own stack has siltstone).
+
 ### 137. Opening the inventory opened the game menu on top of it (fixed after 0.60.7)
 
 Owner, 2026-11-13: "Opening your inventory currently opens the menu too, on top of your inventory. Which isn't correct.

@@ -294,7 +294,7 @@ dwell_world::both_faces!(
             // (the climate's district noise, climate.json `variety`): at most one in 200.
             assert!(
                 wrong.len() * 200 <= sampled.max(200),
-                "seed {world}: {} floors wrong (x, z, top, arid, biome): {:?}",
+                "seed {world}: {} of {sampled} floors wrong (x, z, top, arid, biome): {:?}",
                 wrong.len(),
                 &wrong[..wrong.len().min(8)]
             );
