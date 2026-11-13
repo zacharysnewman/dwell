@@ -44,8 +44,9 @@ export interface TripHost {
   moon(): MoonReport | null;
   /** local.rs `moon_approach` JSON; null outside a local world. */
   approach(marginM: number, face: number): Promise<string | null>;
-  /** local.rs `moon_land` JSON (the dev teleport onto the moon); null outside a local world. */
-  land(face: number): Promise<string | null>;
+  /** local.rs `moon_land` JSON (the dev teleport onto the moon); null outside a local world.
+   * `river`: the sun's `sunLand` beside a river head (local.rs `grid_land_by_river`). */
+  land(face: number, river?: boolean): Promise<string | null>;
   /** local.rs `place_home` JSON; null outside a local world. */
   placeHome(feet: Vec3): Promise<string | null>;
   press(code: string, down: boolean): void;
@@ -60,6 +61,9 @@ export interface TripHost {
 export interface TripOptions {
   /** The moon's face to land on: `a` (default) or `b`. */
   face?: 'a' | 'b';
+  /** `sunLand` only: beside the river head nearest the sun's stand point, on dry ground, where
+   * its lava field runs (BUGS.md #146), not on the stand point's crust away from lava. */
+  river?: boolean;
   /** How far outside the capture sphere the dev move puts the player (m; default 2000). */
   marginM?: number;
   /** The height over the moon's ground where flight stops and the fall is measured (m; 40). */
@@ -186,6 +190,16 @@ async function until(
 /** On the home grid, the chunk under the feet held, and outside the moon's release sphere. */
 export function onHomeGround(m: MoonReport): boolean {
   return m.grid === 'home' && m.groundHeld && m.distance > m.releaseM;
+}
+
+/**
+ * Where a trip starting now would come back to (`flyTo('home')`): the feet when on home ground,
+ * else null. Taken before the trip starts, so a trip that fails still leaves the way home (BUGS.md
+ * #147: a `moonLand` that timed out left none, and `flyTo('home')` then went back to the feet out
+ * in space, waiting for ground there that never came).
+ */
+export function tripStartOf(m: MoonReport | null): Vec3 | null {
+  return m !== null && onHomeGround(m) ? m.feet : null;
 }
 
 /** How long `flyHome` asks again while the server hasn't released the player yet (s). */
@@ -360,7 +374,7 @@ export async function flyHome(host: TripHost, home: Vec3, o: TripOptions = {}): 
  */
 export async function teleportToMoon(
   host: TripHost,
-  o: Pick<TripOptions, 'face' | 'maxS'> = {},
+  o: Pick<TripOptions, 'face' | 'maxS' | 'river'> = {},
   grid: 'moon' | 'sun' = 'moon',
 ): Promise<MoonLanding> {
   const to = grid === 'sun' ? 'sunLand' : 'moonLand';
@@ -368,7 +382,9 @@ export async function teleportToMoon(
   const start = report(host);
   if (start.grid !== 'home') throw new Error(`${to}: not at home`);
   host.fly(false);
-  const land = answer(to, await host.land(o.face === 'b' ? -1 : 1));
+  if (o.river && grid !== 'sun') throw new Error(`${to}: river is the sun's (sunLand)`);
+  const face = o.face === 'b' ? -1 : 1;
+  const land = answer(to, await (o.river ? host.land(face, true) : host.land(face)));
   const t = host.now();
   const down = await until(
     host,

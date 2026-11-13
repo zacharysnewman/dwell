@@ -555,6 +555,65 @@ face, or the placement check against its shape.
 
 ## Fixed
 
+### 150. The bench's `flyTo` step rejected `marginM` (fixed after 0.63.1)
+
+Brief, 2026-11-13 (browser check on 0.60.16, seed 7, local world, M1): "the bench `flyTo` step rejects `marginM` although
+`__dwell.flyTo` takes it — accept it." The step's key list (`scenarios.ts` `STEP_KEYS.flyTo`) left it out. Now accepted
+for a trip to the moon (0–100 km) and passed through. Test: `scripts/scenarios.test.ts` "flies to the moon and home"
+(red before: the step with `marginM: 500` failed the parse).
+
+### 149. The moon was not drawn from near it on the home grid (fixed after 0.63.1)
+
+Brief, 2026-11-13: "The moon was not drawn from 7–25 km out during a flyTo approach (14 calls, 1.7 k triangles, no near
+mesh), possibly a side effect of 2." Partly #147: after the failed `moonLand` the player was on the home grid inside the
+moon's capture sphere, not captured. There, and anywhere on the home grid inside the moon's `farM` (150 km), the moon is
+its near mesh (M-5), a piece, its far disc off; the far pass's near plane (`render::far_pass_near`) moves out to 0.8 × the
+eye's altitude over home's terrain, ~480 km at the moon's ~600 km, and clipped the whole mesh. On the moon grid the mesh
+is drawn (the eye inside its sphere; `the_moon_up_close_is_its_surface_mesh_then_under_its_chunks`). Fixed: the near
+plane also stays short of the nearest shown piece's bounding sphere (`Renderer::nearest_piece_m`). Test:
+`render::tests::the_far_pass_keeps_the_moons_near_mesh_from_home_high_up` (red before: the plane at 479 km with the moon
+20 km off). **Not checked in a browser** (no GPU in the cloud session): the owner's re-check of a `flyTo` approach.
+
+### 148. A teleport far outside the disc failed silently (fixed after 0.63.1)
+
+Brief, 2026-11-13: "Teleporting to a point far outside the disc fails silently: make it either work or fail with a
+message." `__dwell.teleport` posted the move to the worker and returned true; the local core moved the player past the
+rim, where no world streams (natively the server stood it on 9.5 m and the client on 6.5 m), and a point on the other
+face was dropped with no word. Now `__dwell.teleport` is answered (the worker's `teleport` op, `LocalCore::
+teleport_checked`) and rejects with why: past the rim ("… m from the disc's centre, past its rim (… m): no world there"),
+on the other face ("a teleport keeps the face"), or the player not at home. Test: `game_local`
+`a_teleport_past_the_rim_fails_with_a_message` (red before: the far point was taken).
+
+### 147. `moonLand` from a fresh spawn never landed, and travel stuck after it (fixed after 0.63.1)
+
+Brief, 2026-11-13: "Travel stuck after the spyglass: fresh spawn → spyglass(true, 3) → spyglass(false) → setTime →
+moonLand timed out ('not standing on the moon in 60 s (grid home, chunk held false)'); after that every flyTo('home')
+failed ('home's chunk … not back in 120 s'), sunLand said 'not at home', and the player ended on the moon grid ~17.7 km
+up with its ground not held." Cause: not the spyglass. The dev teleport (`LocalCore::grid_land`) put the player inside
+the capture sphere and left the capture to the next tick, which takes only fliers (`Server::travel_players`);
+`teleportToMoon` turns flight off first, so a player who had never flown stayed on the home grid out in space
+(earlier checks had flown, and won the race with the flight-off input). Then `flyTo('home')` had no trip start
+(`moonLand` threw before keeping one) and fell back to the feet in space, waiting for ground there; a later flight
+caught the player in the capture sphere. Fixed: the teleport carries the player onto the grid itself
+(`Server::carry_onto_grid`, a transfer recorded as a capture's), and the page keeps the way home before each trip starts,
+from home ground only (`moonTrip.ts` `tripStartOf`). Tests: `game_local`
+`moon_land_from_a_fresh_spawn_after_the_spyglass_lands_on_the_moon` (both faces; red before: "client grid 0, server
+Some(0)"), `moonTrip.test.ts` "tripStartOf".
+
+### 146. No lava flowing on the sun (fixed after 0.63.1)
+
+Brief, 2026-11-13: "after sunLand on face A, `d.lava('report')` gives `fields: []` and two frames 4 s apart look the
+same … find why no field runs near a player standing on the sun." Two causes: the report listed home's fields only
+(`Server::lava_report`), and the sun's stand point, where `sunLand` puts the player, is out of reach of the river heads'
+fields (seed 7: the nearest head 390 m off on face A, its field placed but out of sight; 438 m on face B, its field
+never run; a field runs only within lava.json `nearRadiusM`, 96 m, of a player). The vents were placed and run by the
+rules near a head. Fixed: the report lists every grid's fields with a `grid` key (`home`, `dwell:sun`), and
+`sunLand({river: true})` (bench `sunLand {river: true}`, `LocalCore::grid_land_by_river`) stands the player on dry
+ground beside the river head nearest the stand point. Test: `game_local`
+`by_a_sun_river_head_the_report_lists_a_running_field` (both faces, seed 7; red before: no sun field in the report),
+its field's molten columns growing over 20 s.
+
+
 ### 145. The sun draws no terrain past its chunks and has no light but the lava's
 
 Owner, 2026-11-13: "In addition to the moon, the sun doesn't render chunks past high detail. It needs some directional

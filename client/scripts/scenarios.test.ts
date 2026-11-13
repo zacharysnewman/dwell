@@ -196,9 +196,25 @@ describe('scenarios', () => {
 
   it('teleports onto the sun (SUN_WORLD.md, scenario sun-draw)', () => {
     const [s] = parseScenarios(
-      file([{ name: 's', steps: [{ do: 'sunLand' }, { do: 'sunLand', face: 'b', maxS: 30 }] }]),
+      file([
+        {
+          name: 's',
+          steps: [
+            { do: 'sunLand' },
+            { do: 'sunLand', face: 'b', maxS: 30 },
+            { do: 'sunLand', river: true },
+          ],
+        },
+      ]),
     );
-    expect(s.steps).toEqual([{ do: 'sunLand' }, { do: 'sunLand', face: 'b', maxS: 30 }]);
+    expect(s.steps).toEqual([
+      { do: 'sunLand' },
+      { do: 'sunLand', face: 'b', maxS: 30 },
+      { do: 'sunLand', river: true },
+    ]);
+    expect(() =>
+      parseScenarios(file([{ name: 's', steps: [{ do: 'moonLand', river: true }] }])),
+    ).toThrow(/river/);
     expect(() =>
       parseScenarios(file([{ name: 's', steps: [{ do: 'sunLand', face: 'c' }] }])),
     ).toThrow(/face/);
@@ -212,6 +228,7 @@ describe('scenarios', () => {
           steps: [
             { do: 'flyTo', to: 'moon' },
             { do: 'flyTo', to: 'moon', face: 'b', landM: 30, maxS: 90 },
+            { do: 'flyTo', to: 'moon', marginM: 500 },
             { do: 'flyTo', to: 'home' },
           ],
         },
@@ -220,6 +237,7 @@ describe('scenarios', () => {
     expect(s.steps).toEqual([
       { do: 'flyTo', to: 'moon' },
       { do: 'flyTo', to: 'moon', face: 'b', landM: 30, maxS: 90 },
+      { do: 'flyTo', to: 'moon', marginM: 500 },
       { do: 'flyTo', to: 'home' },
     ]);
     const bad = (step: Record<string, unknown>) => () =>
@@ -228,6 +246,8 @@ describe('scenarios', () => {
     expect(bad({ to: 'home', face: 'a' })).toThrow(/face/);
     expect(bad({ to: 'moon', face: 'c' })).toThrow(/face/);
     expect(bad({ to: 'moon', landM: 1 })).toThrow(/landM/);
+    expect(bad({ to: 'moon', marginM: -5 })).toThrow(/marginM/);
+    expect(bad({ to: 'home', marginM: 500 })).toThrow(/marginM/);
   });
 
   it('zooms the spyglass to a step, or out (docs/SPYGLASS.md)', () => {

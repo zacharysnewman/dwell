@@ -6,6 +6,7 @@ import {
   flyToMoon,
   SLOW_LEVEL,
   teleportToMoon,
+  tripStartOf,
   type MoonReport,
   type TripHost,
   type Vec3,
@@ -37,7 +38,7 @@ interface Fake {
   sim: Sim;
   calls: {
     approach: [number, number][];
-    land: number[];
+    land: (number | number[])[];
     placeHome: Vec3[];
     looks: [number, number][];
   };
@@ -127,8 +128,8 @@ function fake(
       sim.d = CAPTURE + margin;
       return Promise.resolve('{"distance":42000}');
     },
-    land: (face) => {
-      calls.land.push(face);
+    land: (face, river) => {
+      calls.land.push(river ? [face, 1] : face);
       if (o.land !== undefined) return Promise.resolve(o.land);
       // Captured on the next tick, 1.5 m over the ground; its chunk arrives `landHeldMs` later.
       sim.grid = 'moon';
@@ -278,6 +279,20 @@ describe('flyHome', () => {
   });
 });
 
+describe('tripStartOf', () => {
+  it('is the feet on home ground, else nothing (BUGS.md #147)', () => {
+    const { host, sim } = fake();
+    expect(tripStartOf(host.moon())).toEqual([600_000, 0, 0]);
+    // Left out in space on the home grid by a teleport that was never captured.
+    sim.d = CAPTURE * 0.5;
+    sim.groundHeld = false;
+    expect(tripStartOf(host.moon())).toBeNull();
+    sim.grid = 'moon';
+    expect(tripStartOf(host.moon())).toBeNull();
+    expect(tripStartOf(null)).toBeNull();
+  });
+});
+
 describe('teleportToMoon', () => {
   it('teleports onto the ground, flight off, and waits for its chunk', async () => {
     const { host, sim, calls } = fake();
@@ -298,6 +313,13 @@ describe('teleportToMoon', () => {
     const { host, calls } = fake();
     await teleportToMoon(host, { face: 'b' });
     expect(calls.land).toEqual([-1]);
+  });
+
+  it('lands on the sun beside a river head when asked (BUGS.md #146)', async () => {
+    const { host, calls } = fake();
+    await teleportToMoon(host, { river: true }, 'sun').catch(() => undefined);
+    expect(calls.land).toEqual([[1, 1]]);
+    await expect(teleportToMoon(fake().host, { river: true })).rejects.toThrow(/sun's/);
   });
 
   it("fails when the moon's chunk under the feet never arrives", async () => {

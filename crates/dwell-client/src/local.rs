@@ -489,8 +489,18 @@ impl LocalCore {
             ("moonApproach", [margin, face]) => self.moon_approach(*margin, *face),
             ("moonLand", [face]) => self.moon_land(*face),
             ("sunLand", [face]) => self.grid_land("dwell:sun", *face),
+            // Beside a river head, where its lava field runs (BUGS.md #146).
+            ("sunLand", [face, river]) if *river != 0.0 => {
+                self.grid_land_by_river("dwell:sun", *face)
+            }
+            ("sunLand", [face, _]) => self.grid_land("dwell:sun", *face),
             ("sunApproach", [margin, face]) => self.grid_approach("dwell:sun", *margin, *face),
             ("placeHome", [x, y, z]) => self.place_home([*x, *y, *z]),
+            // `__dwell.teleport`, answered (BUGS.md #148: it failed silently).
+            ("teleport", [x, y, z]) => match self.teleport_checked([*x, *y, *z]) {
+                Ok(()) => serde_json::json!({ "at": [x, y, z] }).to_string(),
+                Err(e) => serde_json::json!({ "error": e }).to_string(),
+            },
             ("npcsFight", []) => {
                 // Every NPC turns on the local player as if struck by it (its `npc.fight` rules
                 // then block and strike back; DEV_TOOLS.md): a duel without the first blow.
@@ -683,8 +693,7 @@ impl LocalCore {
     /// The bench's `moonLand` (docs/DEV_TOOLS.md "The moon"): a dev teleport onto the moon, no
     /// flight (owner, 2026-11-13: "We should just teleport to the moon to see if ground draws").
     /// The local player, at home, is put 1.5 m over the moon's spawn on face `face` (1 A, −1 B),
-    /// moving with the moon: inside the capture sphere, so the next tick captures it there and it
-    /// stands on the moon's ground. JSON `{"at":[x,y,z],"grid":[x,y,z]}` (world and moon-local),
+    /// carried onto the moon at once (flying or not), so it stands on the moon's ground. JSON `{"at":[x,y,z],"grid":[x,y,z]}` (world and moon-local),
     /// or `{"error":…}`.
     pub fn moon_land(&mut self, face: f64) -> String {
         self.grid_land("dwell:moon", face)
@@ -693,6 +702,18 @@ impl LocalCore {
     /// [`Self::moon_land`] for any grid by name (`dwell:sun`: the bench's `sunLand`, SUN_WORLD.md:
     /// 1.5 m over its stand point, dry crust away from lava).
     pub fn grid_land(&mut self, name: &str, face: f64) -> String {
+        self.grid_land_at(name, face, false)
+    }
+
+    /// [`Self::grid_land`] beside the river head nearest the grid's stand point, on dry ground
+    /// (`moon_probe::grid_river_bank_point`): the bench's `sunLand` with `river`, where the head's
+    /// lava field is placed and runs (BUGS.md #146: from the stand point, 390 m from the nearest
+    /// head on seed 7, none ran).
+    pub fn grid_land_by_river(&mut self, name: &str, face: f64) -> String {
+        self.grid_land_at(name, face, true)
+    }
+
+    fn grid_land_at(&mut self, name: &str, face: f64, river: bool) -> String {
         let Some(id) = self.local_player_id() else {
             return r#"{"error":"no local player"}"#.into();
         };
@@ -706,16 +727,26 @@ impl LocalCore {
         };
         let map = self.server.grids().travel_map();
         let seed = self.server.config().world_seed;
-        let (Some(local), Some(&(index, ..))) = (
-            crate::moon_probe::grid_landing_point(&map, seed, name, f, 1.5),
-            map.grids.iter().find(|g| g.1.name == name),
-        ) else {
-            return format!(r#"{{"error":"this world has no {name}"}}"#);
+        let landing = if river {
+            crate::moon_probe::grid_river_bank_point(seed, name, f, 1.5)
+        } else {
+            crate::moon_probe::grid_landing_point(&map, seed, name, f, 1.5)
+        };
+        let (Some(local), Some(&(index, ..))) =
+            (landing, map.grids.iter().find(|g| g.1.name == name))
+        else {
+            return if river {
+                format!(r#"{{"error":"no river head with a dry bank by {name}'s stand point"}}"#)
+            } else {
+                format!(r#"{{"error":"this world has no {name}"}}"#)
+            };
         };
         let t = f64::from(self.server.tick()) / f64::from(dwell_protocol::SIM_HZ);
-        let (at, v) = map.frame(index, t).release(local, [0.0; 3]);
-        if !self.server.place_on_grid(id, at, v) {
-            return r#"{"error":"could not move the player"}"#.into();
+        let (at, _) = map.frame(index, t).release(local, [0.0; 3]);
+        // Carried onto the grid here, not left to the tick's capture, which takes only fliers
+        // (BUGS.md #147: from a fresh spawn the player stayed at home, out in space).
+        if !self.server.carry_onto_grid(id, index, local, [0.0; 3]) {
+            return format!(r#"{{"error":"could not move the player onto {name}"}}"#);
         }
         serde_json::json!({ "at": at, "grid": local }).to_string()
     }
@@ -756,15 +787,39 @@ impl LocalCore {
     }
 
     pub fn teleport_local_player(&mut self, feet: [f64; 3]) -> bool {
+        self.teleport_checked(feet).is_ok()
+    }
+
+    /// [`Self::teleport_local_player`], saying why when it can't (the dev tools' `teleport`,
+    /// BUGS.md #148: a point far outside the disc was taken, the player left past the rim where
+    /// no world streams, and nothing said so). Refused: no local player at home, feet not finite,
+    /// a point on the other face (a teleport keeps the face), or one past the disc's rim.
+    pub fn teleport_checked(&mut self, feet: [f64; 3]) -> Result<(), String> {
+        if !feet.iter().all(|v| v.is_finite()) {
+            return Err("feet must be finite".into());
+        }
         let Some(p) = self.server.player_of_session(LOCAL_SESSION) else {
-            return false;
+            return Err("no local player".into());
         };
         let (Some(h), Some(now)) = (self.server.player_handle_of(p), self.server.feet_of(p)) else {
-            return false;
+            return Err("no local player at home (on another grid?)".into());
         };
         let f = dwell_world::FaceFrame::at_height(feet[1]);
-        if dwell_world::FaceFrame::at_height(now[1]) != f || !feet.iter().all(|v| v.is_finite()) {
-            return false;
+        if dwell_world::FaceFrame::at_height(now[1]) != f {
+            return Err(format!(
+                "y {:.1} is on face {}, the player on face {} (a teleport keeps the face)",
+                feet[1],
+                if f.is_b() { "B" } else { "A" },
+                if f.is_b() { "A" } else { "B" },
+            ));
+        }
+        let rim = dwell_world::WorldBounds::of(self.server.config().world_size).radius() as f64;
+        let out = feet[0].hypot(feet[2]);
+        if out > rim {
+            return Err(format!(
+                "({:.0}, {:.0}) is {out:.0} m from the disc's centre, past its rim ({rim:.0} m): no world there",
+                feet[0], feet[2]
+            ));
         }
         let (_, physics, players) = self.server.sim();
         let half = f64::from(players.half_height(h));
@@ -775,7 +830,7 @@ impl LocalCore {
             dwell_physics::DVec3::from_array(centre),
             dwell_physics::Vec3::ZERO,
         );
-        true
+        Ok(())
     }
 
     /// The nearest water of `kind` (`water` any, `sea`, `river`, `lake`) on the world map (the
