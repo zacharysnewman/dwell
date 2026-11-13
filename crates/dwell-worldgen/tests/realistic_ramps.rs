@@ -71,8 +71,8 @@ fn census(world: u64, f: FaceFrame) -> Census {
                     c.edge_notched += usize::from(ramps[1] > 0 && ramps[0] == 0);
                 } else {
                     c.off_n += 1;
-                    for k in 0..3 {
-                        c.off[k] += usize::from(ramps[k] > 0);
+                    for (n, r) in c.off.iter_mut().zip(ramps) {
+                        *n += usize::from(r > 0);
                     }
                     c.off_differ += usize::from(ramps[1] != ramps[0]);
                 }

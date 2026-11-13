@@ -142,13 +142,13 @@ fn census(world: u64, f: FaceFrame) -> Census {
                 if s < 0.9 || !(0.0..wall_m).contains(&m) {
                     continue;
                 }
-                for k in 0..2 {
-                    let h = g[k].column_at(x, z).height;
+                for (gk, wall) in g.iter().zip(c.wall.iter_mut()) {
+                    let h = gk.column_at(x, z).height;
                     let steep = [(1, 0), (-1, 0), (0, 1), (0, -1)]
                         .iter()
-                        .any(|&(dx, dz)| h - g[k].column_at(x + dx, z + dz).height >= 2.0);
-                    c.wall[k].0 += usize::from(steep);
-                    c.wall[k].1 += 1;
+                        .any(|&(dx, dz)| h - gk.column_at(x + dx, z + dz).height >= 2.0);
+                    wall.0 += usize::from(steep);
+                    wall.1 += 1;
                 }
             }
         }

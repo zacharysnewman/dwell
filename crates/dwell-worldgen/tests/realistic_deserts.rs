@@ -10,7 +10,7 @@
 
 use std::sync::Arc;
 
-use dwell_world::{FaceFrame, both_faces};
+use dwell_world::both_faces;
 use dwell_worldgen::bifacial::face_seed;
 use dwell_worldgen::biomemap::BiomeField;
 use dwell_worldgen::config::world_config;
