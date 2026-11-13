@@ -614,6 +614,7 @@ export function rocksRust(data) {
   rs.push(`        range_core: [${pp.rangeCore.map(rf).join(", ")}],`);
   rs.push(`        rift_width: ${rf(pp.riftWidth)},`);
   rs.push(`        basin_distance: ${rf(pp.basinDistance)},`);
+  rs.push(`        edge_fade: ${rf(pp.edgeFade ?? 0)},`);
   rs.push("        rules: &[");
   for (const r of pp.rules)
     rs.push(
