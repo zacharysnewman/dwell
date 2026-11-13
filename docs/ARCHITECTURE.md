@@ -3426,8 +3426,8 @@ gems). `shared/inventory/gen.mjs` checks both and emits `dwell_protocol::invento
 the `Inventory` model) and `client/src/ui/inventory.gen.ts`. In a mode without `unlimitedBlocks`
 the server (`dwell-sim` `server/items.rs`) takes one of a block's item (its `cost`: a ramp its base)
 for every place, block, region or body edit (none held: refused; a torch held against dynamite
-lights it and is kept), and drops the broken block's items; a defeated player's slots drop where it
-knelt when it stands up at a shrine (the wallet is kept; CHARACTERS.md §11.13). Loose items (`dwell-sim` `loose_items.rs`) are light server entities,
+lights it and is kept), and drops the broken block's items; a defeated player keeps every item and
+the wallet, nothing dropped (CHARACTERS.md §11.13). Loose items (`dwell-sim` `loose_items.rs`) are light server entities,
 not Rapier bodies: a point that falls toward the midplane through `FaceFrame` and rests on the top
 of the first solid cell. Currency items (a `value`) go to the wallet, whole items up to its
 capacity. The client draws loose items as small turning copies of their block through the pieces'

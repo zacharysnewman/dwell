@@ -16,6 +16,16 @@ Last updated: 2026-11-11 (0.52.108).
 
 ## Queued next, in order (2026-11-12)
 
+- **Space travel bugs from a browser check (brief, 2026-11-13, on 0.60.16, seed 7, local world, M1; BUGS.md
+  #146–#150):** "No lava flowing on the sun: after sunLand on face A, `d.lava('report')` gives `fields: []` … Travel stuck
+  after the spyglass … Teleporting to a point far outside the disc fails silently: make it either work or fail with a
+  message. The moon was not drawn from 7–25 km out during a flyTo approach … Small: the bench `flyTo` step rejects
+  `marginM` although `__dwell.flyTo` takes it — accept it." Fixed on `claude/space-bugs` (each with a red → green test):
+  the lava report lists the sun's fields and `sunLand({river: true})` lands by a river head; `moonLand`/`sunLand` carry
+  the player onto the grid themselves (the capture took only fliers) and the trip keeps its way home before starting;
+  the teleport refuses a point past the rim or on the other face with a message; the far pass's near plane no longer
+  clips the moon's near mesh from home; the `flyTo` step takes `marginM`. **Open:** the owner's browser re-check (the
+  moon's mesh from home inside `farM`; the sun's river by `sunLand({river: true})`).
 - **Realistic spawn without `at` (brief, 2026-11-13; BUGS.md #132):** "a fresh Realistic world never loads without a
   start point … fix (bounded search with a fallback; the whole spawn ≤ ~2 s natively); a test that the Realistic spawn
   resolves within a time/step budget on seeds 1, 7, 42 and stands at a shrine. Also check whether the client shows a
@@ -797,6 +807,13 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    only on steep faces; the red desert and mesas stay red, the tan sand desert a separate biome. **Owner should see:**
    on a typical Realistic seed, at least one big tan sand desert with dunes, in a warm dry region, separate from the
    red mesa country.
+   Owner, 2026-11-13, also added to the 0.64 batch (BUGS.md #153): "Also we might be in process on slopes or something,
+   but I'm noticing at the corners of bowl areas there's these spiky edges where slopes are up against the side of other
+   slopes. I don't mind slopes with edges exposed but I do mind slopes that back up against open air." The rule, for
+   every world and grid, in the shared stored-ramp placement (V2 and notched): a ramp's high side is backed by solid
+   ground at its top height (steep pairs too); else another facing whose back is solid, else a full block; exposed side
+   edges are fine. **Owner should see:** bowls and diagonal slopes with no tall ramp backs standing in open air, so no
+   sawtooth spikes. Ramps meet higher ground at their backs; only their triangular sides may show.
 16. **Phone frame rate (P0)** (owner 2026-11-11, iPhone 17, Safari, setting Low: "I'm only getting ~23 fps on
    mobile, seeing lots of z-fighting on tree trunks with the leaf cards. What might be dropping frames since the
    last while. Used to get 60 fps"). Suspect: leaf cards are on in every tier but CPU, Low included; cards lying
@@ -2723,6 +2740,12 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    `stand`; others see both; the wire change additive; data for the kneel's time, the fade, the camera and
    per-character overrides; tests by data on both faces. Design rule recorded in docs/CHARACTERS.md §1a. Built on
    branch `claude/defeat-kneel` (docs/CHARACTERS.md §11.13, docs/SHRINES.md §5).
+   **Items on defeat** (owner 2026-11-13, asked "When a human is defeated (kneels, then stands at a shrine), what
+   happens to their inventory?"): **"Keep everything"** (Guild Wars style). Before, a defeat dropped your things where
+   you knelt, at the stand. Built (branch `claude/defeat-keeps-items-xqlhag`): a defeated player keeps every item (hotbar,
+   inventory, held slot, wallet) through the kneel and the stand, in every mode and on every grid; nothing drops
+   (`dwell-sim` `items.rs` `a_defeat_in_adventure_keeps_everything_and_drops_nothing`; BUGS.md #151). **Owner should
+   see:** after being defeated and standing up at a shrine, the hotbar and inventory are exactly as before.
 
 56. **Blueprints and builder NPCs** (owner 2026-11-13: **"I also want to add a new version of the human NPC, same looks, no
    sword capable of building blueprints like the ones you can save right now. In adventure you can place "blueprints" but

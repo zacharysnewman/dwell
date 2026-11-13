@@ -884,6 +884,48 @@ impl Server {
         std::mem::take(&mut self.grids.transfers)
     }
 
+    /// Carries home player `player_id` straight into grid `index`'s space at its grid-local `p`
+    /// (capsule centre) with grid-local velocity `v`, flying or not: the dev teleport onto a grid
+    /// (the bench's `moonLand`/`sunLand`). The tick's capture takes only fliers, so a player
+    /// teleported into the capture sphere on foot stayed on the home grid out in space, its ground
+    /// never held (BUGS.md #147). The move is recorded as a capture's is. False when the player is
+    /// not at home, the grid is unknown, or its client may not be on it.
+    pub fn carry_onto_grid(&mut self, player_id: u16, index: u8, p: V3, v: V3) -> bool {
+        let Some(id) = self.session_of_player(player_id) else {
+            return false;
+        };
+        let s = &self.sessions[&id];
+        let (Some(h), None) = (s.handle, s.away) else {
+            return false;
+        };
+        let Some(slot) = self.grids.slots.iter().position(|g| g.index == index) else {
+            return false;
+        };
+        if !self.grids.slots[slot]
+            .space
+            .def
+            .open_to(|c| s.capabilities.has(c))
+        {
+            return false;
+        }
+        let world_s = self.world_s();
+        let (before, v_before) = self.grids.frame(slot, world_s).release(p, v);
+        self.carry_to_grid(id, h, slot, p, v);
+        let (after, v_after) = self.world_state_of(player_id).expect("carried");
+        self.grids.transfers.push((
+            player_id,
+            Transfer {
+                from: 0,
+                to: index.into(),
+                world_before: before,
+                world_after: after,
+                velocity_before: v_before,
+                velocity_after: v_after,
+            },
+        ));
+        true
+    }
+
     /// Puts a player that is on grid `index` (0 home) at grid-local `p` (capsule centre) with
     /// grid-local velocity `v` (tests, tools).
     pub fn place_on_grid(&mut self, player_id: u16, p: V3, v: V3) -> bool {
