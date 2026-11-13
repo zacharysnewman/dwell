@@ -74,6 +74,7 @@ import { rememberServer } from './ui/recentServers';
 import { prefersTouch, TouchControls } from './ui/touchControls';
 import { Hotbar, type HotbarSlot, type InventoryHud } from './ui/hotbar';
 import { Backpack, backpackKey } from './ui/backpack';
+import { Panels, type Panel } from './ui/panels';
 import { CreativeInventory, loadPicks, savePicks, structureEntries } from './ui/creativeInventory';
 import type { BrushPanelState } from './ui/brushPanel';
 import { prefersReducedMotion } from './ui/motionSettings';
@@ -82,6 +83,7 @@ import { Hud, type VitalsHud } from './ui/hud';
 import { MAP_SIZE, MapOverlay } from './ui/mapOverlay';
 import { SettingsMenu, loadSettings } from './ui/settingsMenu';
 import { antialiasFromQuery, antialiasMode } from './ui/antialiasSettings';
+import { BlueprintPanel, blueprintCellsOf } from './ui/blueprints';
 import { StructuresPanel } from './ui/structuresPanel';
 import { opfsStructureDir, StructureStore } from './local/structureStore';
 import { clipboardOf, type Vec3 as Cell } from './local/structures';
@@ -682,6 +684,8 @@ interface App {
   mapShading: boolean;
   /** Theater mode (docs/THEATER_MODE.md): the free camera, paths and recording. */
   theater: TheaterMode | null;
+  /** Which panel is open (the inventory, the game menu, the big map) and the pointer lock with it. */
+  panels: Panels;
 }
 
 /**
@@ -702,6 +706,7 @@ function startMinimap(app: App, world: string): void {
   // While the big map is open the game holds still, as under the game menu (the keys and the
   // controller drive the map).
   ui.onOpenChange = (open) => {
+    app.panels.shown('map', open);
     app.client.setMenuOpen(open || (app.settings?.isOpen ?? false));
     audio().action(open ? 'map_open' : 'map_close');
   };
@@ -712,18 +717,12 @@ function startMinimap(app: App, world: string): void {
     const typing = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement;
     if (typing || e.repeat) return;
     if (e.code === 'KeyM') ui.toggleBig();
-    else if (e.code === 'Escape' && ui.bigOpen) ui.toggleBig();
-    else ui.key(e.code);
+    // Esc closes the big map through the panels (ui/panels.ts), which own it.
+    else if (e.code !== 'Escape') ui.key(e.code);
   });
   window.addEventListener('pagehide', () => {
     ui.save(performance.now() + 1e9, true);
   });
-}
-
-function lockPointer(canvas: HTMLCanvasElement): void {
-  if ('requestPointerLock' in canvas) {
-    Promise.resolve(canvas.requestPointerLock()).catch(() => undefined);
-  }
 }
 
 function displayName(): string {
@@ -802,11 +801,14 @@ function forwardInput(app: App): void {
     client.blur();
   });
   // Not every browser has pointer lock (iOS Safari doesn't); touch looks by dragging instead.
+  // A click on the game locks the pointer (again, after a request the browser refused).
   canvas.addEventListener('click', () => {
-    if (document.pointerLockElement !== canvas) lockPointer(canvas);
+    app.panels.click();
   });
   document.addEventListener('pointerlockchange', () => {
     client.setPointerLocked(document.pointerLockElement === canvas);
+    // A lock lost while playing (Esc, alt-tab) opens the game menu; one a panel freed doesn't.
+    app.panels.lockChanged(performance.now());
   });
   canvas.addEventListener('mousedown', (e) => {
     if (app.theater?.active) return;
@@ -924,6 +926,8 @@ function showHud(app: App, now: number): void {
     /** The burning edge's opacity now (0: none) and colour (shared/fluids/lava.json `burnEdge`). */
     burn?: number;
     burnColor?: string;
+    /** Defeat's fade (0 clear, 1 black; docs/CHARACTERS.md §11.13). */
+    fade?: number;
     region?: string;
     /** The held axe's swing hint (ADR 0067), else null. */
     chop?: string | null;
@@ -939,6 +943,7 @@ function showHud(app: App, now: number): void {
   app.hud.setSpyglass(h.spyglass ?? null);
   if (h.damaged) app.hud.flashDamage(now);
   app.hud.setBurn(h.burn ?? 0, h.burnColor ?? '#ff5a1e');
+  app.hud.setFade(h.fade ?? 0);
   app.hud.setHealth(h.health ?? 0, now);
   app.hud.setVitals(h.vitals ?? null);
   app.hud.setMessage(h.message);
@@ -1097,6 +1102,9 @@ async function start(): Promise<App | null> {
     world: null,
     playing: false,
     theater: null,
+    panels: new Panels(document, canvas, {
+      show: (panel, open) => showPanel(app, panel, open),
+    }),
   };
   // On-screen controls on touch devices (shown on the first touch too, e.g. a tablet with a mouse).
   const touch = new TouchControls(document.body, client);
@@ -1231,6 +1239,8 @@ async function start(): Promise<App | null> {
   app.settings = settings;
   // While the menu is open the touch controls step aside: they would take its taps.
   settings.onOpenChange = (open) => {
+    // The menu's own controls (Back, the backdrop, ☰, Resume) open and close it: the panels follow.
+    app.panels.shown('menu', open);
     touch.visible = touchWanted && !open;
     sfx.action(open ? 'menu_open' : 'menu_close');
     // The speed effects hold still while the menu is open (or the big map).
@@ -1242,18 +1252,16 @@ async function start(): Promise<App | null> {
     client,
     menuOpen: () => settings.isOpen || inventoryOpen(app),
     openMenu: () => {
-      settings.setOpen(true);
+      app.panels.open('menu');
     },
     closeMenu: () => {
-      if (inventoryOpen(app)) setInventoryOpen(app, false);
-      else settings.setOpen(false);
+      app.panels.close();
     },
     back: () => {
-      if (inventoryOpen(app)) setInventoryOpen(app, false);
-      else settings.setOpen(false);
+      app.panels.close();
     },
     inventory: () => {
-      setInventoryOpen(app, !inventoryOpen(app));
+      app.panels.toggle('inventory');
     },
     map: {
       open: () => app.minimap?.bigOpen ?? false,
@@ -1344,7 +1352,39 @@ async function start(): Promise<App | null> {
     close: () => {
       settings.setOpen(false);
     },
+    // Blueprints (docs/BLUEPRINTS.md): a structure placed as ghost blocks at the crosshair.
+    blueprints: {
+      synced: () => client.blueprintsSynced(),
+      catalog: () =>
+        client.blueprintCatalog().map((line) => {
+          const [name = '', ...size] = line.split(' ');
+          return { name, size: size.join(' × ') };
+        }),
+      placeCatalog: (name, turn) =>
+        client.placeBlueprint(name, turn) ? '' : 'Aim where it should stand first.',
+      place: (s, turn) => {
+        try {
+          const { palette, cells } = blueprintCellsOf(s);
+          return client.placeBlueprintCells(
+            s.name,
+            new Uint8Array(s.size),
+            new Uint8Array(s.anchor),
+            palette,
+            cells,
+            turn,
+          )
+            ? ''
+            : 'Aim where it should stand first.';
+        } catch (e) {
+          return e instanceof Error ? e.message : String(e);
+        }
+      },
+      removeAimed: () => client.removeAimedBlueprint(),
+    },
   });
+  // The aimed blueprint's have/need panel (docs/BLUEPRINTS.md §4).
+  const blueprintPanel = new BlueprintPanel();
+  document.body.append(blueprintPanel.element);
   settings.addStructuresPanel(structures.element, () => {
     void structures.refresh();
   });
@@ -1684,6 +1724,7 @@ async function start(): Promise<App | null> {
     handleEvents(app);
     playSounds(app, sounds, beds);
     showHud(app, now);
+    blueprintPanel.update(app.playing && !settings.isOpen ? client.blueprintPanel() : '');
     if (app.minimap) {
       app.minimap.shading = app.mapShading;
       app.minimap.frame(now);
@@ -1817,14 +1858,38 @@ function inventoryOpen(app: App): boolean {
 }
 
 /**
- * Opens or closes the inventory view: the backpack in a world that uses items, else the creative
- * catalogue. While it is open the game holds still and the controller moves its focus.
+ * Opens or closes the inventory view through the panels (ui/panels.ts), which free the mouse on
+ * opening and lock it again on closing.
  */
 function setInventoryOpen(app: App, open: boolean): void {
+  if (open) app.panels.open('inventory');
+  else app.panels.close('inventory');
+}
+
+/** Shows or hides a panel's view; only the panels (ui/panels.ts) call this. False: no view yet. */
+function showPanel(app: App, panel: Exclude<Panel, 'none'>, open: boolean): boolean {
+  if (panel === 'inventory') {
+    if (!app.backpack && !app.creative) return false;
+    showInventory(app, open);
+  } else if (panel === 'menu') {
+    if (!app.settings) return false;
+    app.settings.setOpen(open);
+  } else {
+    if (!app.minimap) return false;
+    app.minimap.setBig(open);
+    if (open && !app.minimap.bigOpen) return false;
+  }
+  return true;
+}
+
+/**
+ * Shows or hides the inventory view: the backpack in a world that uses items, else the creative
+ * catalogue. While it is open the game holds still and the controller moves its focus.
+ */
+function showInventory(app: App, open: boolean): void {
   const usesItems = app.backpack?.usable ?? false;
   if (app.backpack) app.backpack.open = open && usesItems;
   if (app.creative) app.creative.open = open && !usesItems;
-  if (open) document.exitPointerLock();
   // The touch controls step aside but for the bag button, which closes it again.
   document.body.classList.toggle('inventory-open', open);
   app.client.setMenuOpen(
@@ -2232,16 +2297,20 @@ function openMainMenu(app: App | null, message?: string): void {
 }
 
 /**
- * The game menu (the ☰ panel, Phase 5a): opens when the pointer is released (Esc) or on Esc,
- * Resume locks the pointer again, and Quit to main menu saves a local world before leaving.
+ * The game menu (the ☰ panel, Phase 5a): opens when the browser releases the pointer (Esc, alt-tab)
+ * or on Esc, closing it (Resume, Back, Esc) locks the pointer again (ui/panels.ts), and Quit to main
+ * menu saves a local world before leaving.
  */
 function enableGameMenu(app: App, save: (() => Promise<boolean>) | null): void {
+  // Esc closes the open panel (the inventory, the menu, the big map), or opens the menu.
+  window.addEventListener('keydown', (e) => {
+    if (e.code === 'Escape' && app.panels.escape(performance.now())) e.preventDefault();
+  });
   const settings = app.settings;
   if (!settings) return;
   settings.addGameActions(
-    () => {
-      lockPointer(app.canvas);
-    },
+    // Closing the menu already asked for the lock, from Resume's click.
+    () => undefined,
     () => {
       // The world's picture is the player's view as they quit (worldThumbs.ts captureNow).
       const pictured = app.captureThumb ? app.captureThumb() : Promise.resolve();
@@ -2253,21 +2322,6 @@ function enableGameMenu(app: App, save: (() => Promise<boolean>) | null): void {
       });
     },
   );
-  let locked = false;
-  let releasedAt = -Infinity;
-  document.addEventListener('pointerlockchange', () => {
-    const now = document.pointerLockElement === app.canvas;
-    if (locked && !now) {
-      settings.setOpen(true);
-      releasedAt = performance.now();
-    }
-    locked = now;
-  });
-  window.addEventListener('keydown', (e) => {
-    // The Esc that released the pointer (if a browser delivers it at all) doesn't close the menu.
-    if (e.code !== 'Escape' || locked || performance.now() - releasedAt < 300) return;
-    settings.setOpen(!settings.isOpen);
-  });
 }
 
 async function connect(app: App): Promise<void> {

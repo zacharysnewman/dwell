@@ -6,7 +6,9 @@
 
 use super::{Server, SessionId};
 use dwell_protocol::CreaturePoseNet;
-use dwell_protocol::capability_names::{CREATURES_NPCS, CREATURES_POSES, NPCS_SWINGS};
+use dwell_protocol::capability_names::{
+    CREATURES_NPCS, CREATURES_POSES, HUMANS_DEFEAT, NPCS_SWINGS,
+};
 use dwell_protocol::{
     Channel, CreatureNet, CreaturesMessage, MAX_CREATURES_PER_MESSAGE, Message, NpcNet,
 };
@@ -26,6 +28,7 @@ impl Server {
         let npcs = s.capabilities.has(CREATURES_NPCS);
         let poses = npcs && s.capabilities.has(CREATURES_POSES);
         let swings = npcs && s.capabilities.has(NPCS_SWINGS);
+        let defeat = swings && s.capabilities.has(HUMANS_DEFEAT);
         let table = self.creatures.table;
         let all: Vec<CreatureNet> = self.creatures.list.iter().map(|c| c.net(&table)).collect();
         for part in all.chunks(MAX_CREATURES_PER_MESSAGE) {
@@ -35,7 +38,7 @@ impl Server {
                 npcs: None,
                 poses: None,
             };
-            let m = Message::Creatures(self.with_parts(m, npcs, poses, swings));
+            let m = Message::Creatures(self.with_parts(m, npcs, poses, swings, defeat));
             self.send_reliable(id, &m, Channel::World);
         }
     }
@@ -74,8 +77,9 @@ impl Server {
         npcs: bool,
         poses: bool,
         swings: bool,
+        defeat: bool,
     ) -> CreaturesMessage {
-        let mut m = self.with_npcs(m, npcs, swings);
+        let mut m = self.with_npcs(m, npcs, swings, defeat);
         if poses {
             let ids: std::collections::HashSet<u32> = m.creatures.iter().map(|c| c.id).collect();
             m.poses = Some(
@@ -89,14 +93,24 @@ impl Server {
     }
 
     /// `m` with its creatures' NPC part, for a client with `creatures.npcs` (`npcs`); as it is
-    /// for one without.
-    fn with_npcs(&self, mut m: CreaturesMessage, npcs: bool, swings: bool) -> CreaturesMessage {
+    /// for one without. `defeat`: the client has `humans.defeat` (defeated NPCs kneel, §11.13).
+    fn with_npcs(
+        &self,
+        mut m: CreaturesMessage,
+        npcs: bool,
+        swings: bool,
+        defeat: bool,
+    ) -> CreaturesMessage {
         if npcs {
             let table = self.creatures.table;
             let part: Vec<NpcNet> = m
                 .creatures
                 .iter()
-                .filter_map(|c| self.creatures.get(c.id)?.npc_net(&table, swings))
+                .filter_map(|c| {
+                    self.creatures
+                        .get(c.id)?
+                        .npc_net_for(&table, swings, defeat)
+                })
                 .collect();
             m.npcs = Some(part);
         }
@@ -162,6 +176,12 @@ impl Server {
             Some(world.get_voxel_if_loaded(c))
         };
         self.creatures.step_near(&get, &players);
+        // Defeated NPCs whose kneel is over stand up at the shrine nearest where they fell, on
+        // that face (§11.13, docs/SHRINES.md §5); where none is near, where they knelt.
+        for (id, knelt) in self.creatures.take_stand_ups() {
+            let at = self.npc_stand_point(knelt);
+            self.creatures.stand_at(id, at);
+        }
         self.creatures.despawn_far(&near);
         let gone = std::mem::take(&mut self.creatures.removed);
         let spawned = self.creatures.list.len() > before;
@@ -174,7 +194,7 @@ impl Server {
         if moving.is_empty() && gone.is_empty() {
             return;
         }
-        let hello: Vec<(SessionId, bool, bool, bool)> = self
+        let hello: Vec<(SessionId, bool, bool, bool, bool)> = self
             .sessions
             .iter()
             .filter(|(_, s)| s.joined() && s.creatures_hello)
@@ -185,6 +205,7 @@ impl Server {
                     npcs,
                     npcs && s.capabilities.has(CREATURES_POSES),
                     npcs && s.capabilities.has(NPCS_SWINGS),
+                    npcs && s.capabilities.has(HUMANS_DEFEAT),
                 )
             })
             .collect();
@@ -208,12 +229,14 @@ impl Server {
         for m in msgs {
             // Built once each way: with both parts, the NPCs' only, and as older clients read it.
             // Built once each way: with the NPCs' swings too, and each as older clients read it.
-            let swinging = Message::Creatures(self.with_parts(m.clone(), true, true, true));
-            let all = Message::Creatures(self.with_parts(m.clone(), true, true, false));
-            let with = Message::Creatures(self.with_npcs(m.clone(), true, false));
+            let defeated = Message::Creatures(self.with_parts(m.clone(), true, true, true, true));
+            let swinging = Message::Creatures(self.with_parts(m.clone(), true, true, true, false));
+            let all = Message::Creatures(self.with_parts(m.clone(), true, true, false, false));
+            let with = Message::Creatures(self.with_npcs(m.clone(), true, false, false));
             let without = Message::Creatures(m);
-            for &(id, npcs, poses, swings) in &hello {
+            for &(id, npcs, poses, swings, defeat) in &hello {
                 let msg = match (npcs, poses, swings) {
+                    (_, true, true) if defeat => &defeated,
                     (_, true, true) => &swinging,
                     (_, true, false) => &all,
                     (true, false, _) => &with,
@@ -222,6 +245,17 @@ impl Server {
                 self.send_reliable(id, msg, Channel::World);
             }
         }
+    }
+
+    /// Where an NPC defeated at `knelt` (world feet) stands up: the stand point of the shrine
+    /// nearest it on its face, else where it knelt.
+    pub(super) fn npc_stand_point(&self, knelt: [f64; 3]) -> [f64; 3] {
+        let Some(at) = self.shrine_respawn.as_ref().and_then(|f| f(knelt)) else {
+            return knelt;
+        };
+        let f = dwell_world::FaceFrame::at_height(knelt[1]);
+        let [x, y, z] = f.point(at);
+        f.point([x + 1.5, y + dwell_world::CELL_H, z])
     }
 
     // --- for tests and tools ---

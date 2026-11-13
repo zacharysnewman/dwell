@@ -3,6 +3,7 @@
 //! (`dwell-blocks`); built-in ones the engine needs are resolved once into [`M`].
 
 pub mod affinity;
+pub mod blueprint;
 pub mod bounds;
 pub mod brush;
 mod cell;

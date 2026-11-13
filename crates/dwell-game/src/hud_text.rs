@@ -1,5 +1,5 @@
 //! What the HUD says (ARCHITECTURE.md §5): the centre message is for states that stop play
-//! (joining, death); background work such as terrain loading is a small status in a corner.
+//! (joining, defeat); background work such as terrain loading is a small status in a corner.
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct HudTextInput {
@@ -19,7 +19,8 @@ pub struct HudText {
 pub fn hud_text(s: &HudTextInput) -> HudText {
     if s.dead {
         return HudText {
-            center: "You died — respawning…".into(),
+            // Humans never die (CHARACTERS.md §11.13): defeated, they stand up at a shrine.
+            center: "Defeated — you will rise at the nearest shrine…".into(),
             status: String::new(),
         };
     }
@@ -79,7 +80,7 @@ mod tests {
     }
 
     #[test]
-    fn keeps_the_centre_for_what_stops_play_joining_and_death() {
+    fn keeps_the_centre_for_what_stops_play_joining_and_defeat() {
         let joining = HudTextInput {
             active: false,
             terrain_ready: false,
@@ -90,7 +91,12 @@ mod tests {
             dead: true,
             ..playing()
         };
-        assert_eq!(hud_text(&dead).center, "You died — respawning…");
+        // WORK_QUEUE item 55: no death for humans; a defeat, and the shrine to rise at.
+        assert_eq!(
+            hud_text(&dead).center,
+            "Defeated — you will rise at the nearest shrine…"
+        );
+        assert!(!hud_text(&dead).center.contains("died"));
         assert_eq!(hud_text(&playing()), text("", ""));
     }
 }

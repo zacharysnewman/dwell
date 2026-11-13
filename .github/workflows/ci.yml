@@ -35,6 +35,8 @@ jobs:
           node --test shared/modes/gen.test.mjs
           node shared/vitals/gen.mjs
           node --test shared/vitals/gen.test.mjs
+          node shared/defeat/gen.mjs
+          node --test shared/defeat/gen.test.mjs
           node shared/inventory/gen.mjs
           node --test shared/inventory/gen.test.mjs
           node shared/tools/gen.mjs
@@ -46,6 +48,8 @@ jobs:
           node --test shared/ground/gen.test.mjs
           node shared/creatures/gen.mjs
           node --test shared/creatures/gen.test.mjs
+          node shared/blueprints/gen.mjs
+          node --test shared/blueprints/gen.test.mjs
           node shared/ecology/gen.mjs
           node --test shared/ecology/gen.test.mjs
           node --test shared/input/gen.test.mjs
@@ -122,6 +126,7 @@ jobs:
           node shared/models/gen.mjs
           node --test shared/models/gen.test.mjs
           node --test shared/models/painter.test.mjs
+          node --test shared/models/decor.test.mjs
           node shared/sounds/gen.mjs
           node shared/music/gen.mjs
           node shared/worldgen/gen.mjs

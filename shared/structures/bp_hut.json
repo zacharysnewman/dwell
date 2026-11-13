@@ -1,0 +1,65 @@
+{
+  "$comment": "Prototype content (ARCHITECTURE.md \u00a76.1): a test blueprint for builder NPCs and players (docs/BLUEPRINTS.md, WORK_QUEUE item 56). Not Dwell's building design. A 5 \u00d7 5 m hut: a stone floor, log walls 2 m tall with a doorway, a stone roof.",
+  "format": 1,
+  "name": "dwell:bp_hut",
+  "kind": "voxels",
+  "size": [
+    5,
+    6,
+    5
+  ],
+  "anchor": [
+    2,
+    0,
+    2
+  ],
+  "palette": {
+    ".": null,
+    "s": "dwell:stone",
+    "l": "dwell:log"
+  },
+  "layers": [
+    [
+      "sssss",
+      "sssss",
+      "sssss",
+      "sssss",
+      "sssss"
+    ],
+    [
+      "lllll",
+      "l...l",
+      "l...l",
+      "l...l",
+      "ll.ll"
+    ],
+    [
+      "lllll",
+      "l...l",
+      "l...l",
+      "l...l",
+      "ll.ll"
+    ],
+    [
+      "lllll",
+      "l...l",
+      "l...l",
+      "l...l",
+      "ll.ll"
+    ],
+    [
+      "lllll",
+      "l...l",
+      "l...l",
+      "l...l",
+      "lllll"
+    ],
+    [
+      "sssss",
+      "sssss",
+      "sssss",
+      "sssss",
+      "sssss"
+    ]
+  ]
+}

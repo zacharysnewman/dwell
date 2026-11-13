@@ -59,6 +59,10 @@ const VITALS: TableDefinition<&[u8; 32], &[u8]> = TableDefinition::new("vitals")
 /// by device key: each player's own, sent to that player only. Optional and additive: a world
 /// without it has no markers, and an older build on the line never opens it.
 const MARKERS: TableDefinition<&[u8; 32], &[u8]> = TableDefinition::new("markers");
+/// The world's blueprints (docs/BLUEPRINTS.md; `dwell_protocol::blueprints::list_to_bytes`): one
+/// record (key 0), rewritten on each save that carries it. Optional and additive: a world without it
+/// has none, and an older build on the line never opens it.
+const BLUEPRINTS: TableDefinition<u32, &[u8]> = TableDefinition::new("blueprints");
 /// The loose items lying in the world (`dwell_sim::loose_items::LooseItems::to_bytes`; ADR 0066):
 /// one record (key 0), rewritten on each save that carries it. Optional, as `inventories`.
 const LOOSE_ITEMS: TableDefinition<u32, &[u8]> = TableDefinition::new("loose_items");
@@ -255,6 +259,8 @@ pub struct SaveBatch {
     pub markers: Vec<([u8; 32], Vec<u8>)>,
     /// The loose items now, replacing those saved before (None: leave them).
     pub loose_items: Option<Vec<u8>>,
+    /// The world's blueprints now, replacing those saved before (None: leave them; BLUEPRINTS.md).
+    pub blueprints: Option<Vec<u8>>,
     /// The wood cells' cuts now, replacing those saved before (None: leave them; ADR 0067).
     pub cuts: Option<Vec<u8>>,
     /// The ground items gone now, replacing those saved before (None: leave them; ADR 0071).
@@ -775,6 +781,14 @@ impl WorldDb {
         Some(v.value().to_vec())
     }
 
+    /// The world's blueprints as last saved (docs/BLUEPRINTS.md), if any.
+    pub fn blueprints(&self) -> Option<Vec<u8>> {
+        let txn = self.db.begin_read().ok()?;
+        let t = txn.open_table(BLUEPRINTS).ok()?;
+        let v = t.get(0).ok()??;
+        Some(v.value().to_vec())
+    }
+
     /// The loose items as last saved (ADR 0066), if any.
     pub fn loose_items(&self) -> Option<Vec<u8>> {
         let txn = self.db.begin_read().ok()?;
@@ -1160,6 +1174,10 @@ impl WorldDb {
             for (key, record) in &batch.markers {
                 t.insert(key, record.as_slice()).map_err(err)?;
             }
+        }
+        if let Some(b) = &batch.blueprints {
+            let mut t = txn.open_table(BLUEPRINTS).map_err(err)?;
+            t.insert(0, b.as_slice()).map_err(err)?;
         }
         if let Some(items) = &batch.loose_items {
             let mut t = txn.open_table(LOOSE_ITEMS).map_err(err)?;

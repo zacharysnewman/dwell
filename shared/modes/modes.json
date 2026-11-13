@@ -5,15 +5,15 @@
     {
       "name": "creative",
       "label": "Creative",
-      "description": "No damage, flight, brush tools, unlimited blocks, without a tool any block breaks in one hit (held tools keep their hits), the whole map revealed, saved structures placed, the theater camera loads and simulates the world where it is.",
-      "abilities": ["flight", "brushes", "unlimitedBlocks", "map", "mapRevealed", "instantBreaks", "structures", "theaterViewpoint"]
+      "description": "No damage, flight, brush tools, unlimited blocks, without a tool any block breaks in one hit (held tools keep their hits), the whole map revealed, saved structures placed, the theater camera loads and simulates the world where it is, blueprints placed.",
+      "abilities": ["flight", "brushes", "unlimitedBlocks", "map", "mapRevealed", "instantBreaks", "structures", "theaterViewpoint", "blueprints"]
     },
     {
       "name": "adventure",
       "label": "Adventure",
-      "description": "Falls, blasts, crushes and drowning hurt; sprinting and swimming tire you; no flight, no brush tools; blocks you break drop items, placing uses them.",
+      "description": "Falls, blasts, crushes and drowning hurt; sprinting and swimming tire you; no flight, no brush tools; blocks you break drop items, placing uses them; blueprints placed and built from what you carry.",
       "experimental": true,
-      "abilities": ["damage", "map", "stamina", "oxygen"]
+      "abilities": ["damage", "map", "stamina", "oxygen", "blueprints"]
     }
   ]
 }
