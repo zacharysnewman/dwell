@@ -801,6 +801,15 @@ async function step(run: Run, s: Step): Promise<void> {
       );
       return;
     }
+    case 'npcs': {
+      const r = await call<string | null>(
+        page,
+        `d.spawnNpcs(${String(s.count)}, ${String(s.radius ?? 3)})`,
+      );
+      if (r === null) throw new Error('npcs: not a local world');
+      console.log(`  npcs: ${r}`);
+      return;
+    }
     case 'settle': {
       const start = Date.now();
       let quiet: number | null = null;

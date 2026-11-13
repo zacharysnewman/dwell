@@ -6578,6 +6578,48 @@
       ]
     },
     {
+      "name": "player-scale",
+      "notes": "The player model against its collider (BUGS.md: the player floating above the ground): on the flat world, your whole body seen from a placed camera side on at noon, a full-body view and one at the feet, then a villager beside you.",
+      "world": "flat",
+      "settings": { "timeOfDay": 0.45 },
+      "steps": [
+        { "do": "settle", "maxS": 60 },
+        { "do": "look", "yaw": 0, "pitch": 0 },
+        {
+          "do": "camera",
+          "position": [3, 1, 0],
+          "yaw": 270,
+          "pitch": -2,
+          "aroundPlayer": true,
+          "aboveFeet": true
+        },
+        { "do": "wait", "s": 2 },
+        { "do": "shot", "name": "side" },
+        {
+          "do": "camera",
+          "position": [1.4, 0.15, 0],
+          "yaw": 270,
+          "pitch": -3,
+          "aroundPlayer": true,
+          "aboveFeet": true
+        },
+        { "do": "wait", "s": 1.5 },
+        { "do": "shot", "name": "feet" },
+        { "do": "npcs", "count": 1, "radius": 1.5 },
+        { "do": "wait", "s": 3 },
+        {
+          "do": "camera",
+          "position": [4, 1, 0],
+          "yaw": 270,
+          "pitch": -2,
+          "aroundPlayer": true,
+          "aboveFeet": true
+        },
+        { "do": "wait", "s": 2 },
+        { "do": "shot", "name": "villager" }
+      ]
+    },
+    {
       "name": "torch-scale-a",
       "notes": "The 1 m torch (two ½ m cells, docs/LIGHTS.md) placed on the ground ahead at noon, a stand-in player beside it for scale, then at midnight; and the held torch's flame (self-lit) by day and at night.",
       "settings": {

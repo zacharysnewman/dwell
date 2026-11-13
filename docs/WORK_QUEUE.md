@@ -1633,6 +1633,10 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    `tests/weapons.rs`): an unguarded hit hurts and pushes, a raised guard across the blade blocks, creative
    takes none, an older client hears `Fall`. Not yet: the client's own hurt look for a weapon (it shows the
    generic damage flash), wolves biting players.
+   Owner, 2026-11-13: **"I think my player character is floating a bit above the ground now. We didn't talk about
+   scaling for the new player model. It's likely shorter and may need to be scaled up."** (items 37/38: the Peasant
+   is your body, other players' and the villagers'). **Fixed (BUGS.md #140):** its soles were on the ground but its
+   eyes 7.3 cm under the camera's; `models.json` `scale` 1.04 → 1.09 puts them at the camera's 1.62 m eye.
 39. **Livelier animals** (owner 2026-11-12, after the video had no chase or fleeing — on day one every pack is
    kilometres from any herd and players can't scare deer): chose **deer flee from players** (they notice a player
    within a distance by data, closer when crouching, and run off; wolves keep their distance unless hungry),
