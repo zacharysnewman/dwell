@@ -2,6 +2,16 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.60.8",
+      "changes": [
+        "Blueprints: place a structure as ghost blocks from the Structures page; anyone in the world can build it",
+        "Hold Place while aiming into a blueprint to fill its ghost cells with the right blocks, one at a time",
+        "Ghost blocks you don't have show red, and a small panel lists each block you have and need",
+        "Builders, villagers without swords, come and build blueprints near you",
+        "Four simple test blueprints: a hut, a wall, a well and a watchtower"
+      ]
+    },
+    {
       "version": "0.60.7",
       "changes": [
         "Humans no longer die: at 0 health you kneel where you fell, head bowed, your sword planted before you (or your hand on your knee), while the camera pulls out to show it.",

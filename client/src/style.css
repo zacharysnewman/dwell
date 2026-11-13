@@ -4165,3 +4165,30 @@ body.theater-take > #theater-bar {
   font-weight: 500;
   opacity: 0.85;
 }
+
+/* The aimed blueprint's have/need panel (docs/BLUEPRINTS.md §4): compact, right of the crosshair. */
+.blueprint-panel {
+  position: fixed;
+  left: calc(50% + 28px);
+  top: calc(50% - 12px);
+  z-index: 6;
+  padding: 6px 9px;
+  border-radius: 6px;
+  background: rgba(20, 22, 28, 0.62);
+  color: #f2efe6;
+  font:
+    12px/1.35 system-ui,
+    sans-serif;
+  pointer-events: none;
+  white-space: nowrap;
+}
+.blueprint-panel[hidden] {
+  display: none;
+}
+.blueprint-panel-head {
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+.blueprint-panel-row.short {
+  color: #ff8a78;
+}

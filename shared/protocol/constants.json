@@ -157,7 +157,8 @@
     "Capabilities": 105,
     "Swordplay": 106,
     "TheaterViewpoint": 107,
-    "Markers": 108
+    "Markers": 108,
+    "Blueprints": 109
   },
   "rejectReasons": {
     "ProtocolVersion": 1,
