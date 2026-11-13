@@ -759,7 +759,13 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    `treadRelief` 0.08 of a bed's height and the erosion's floors snap to the drainage line's height (dead flat). Change:
    mesa tops undulate (a few metres over a few hundred metres by noise), tilt slightly per mesa (a dip range) and carry
    occasional small buttes or knobs; floors slope gently toward their drainage line with low mounds, talus fans out from
-   the walls and shallow washes; the tread/wall structure, stepping and ledges stay.
+   the walls and shallow washes; the tread/wall structure, stepping and ledges stay. Owner, 2026-11-13, also added to the batch: "Also for mesas aren't we
+   supposed to have a red sand to replace the tan sand since it doesn't really look like a realistic mesa, it just looks
+   like a mess with all the different colors." Today #891 put red sand only on arid red-rock treads (`capBy`); mesas
+   still show plain tan sand from talus, scree and other layers, and many differently coloured beds. Change: in mesa
+   country every sand-type surface (talus, scree, washes, floors, the tops' loose cover) is red sand, plain tan sand
+   only on beaches and non-red areas; the mesa stacks' layers limited to a named red/orange/cream banding (2–3 tones);
+   part B's province mixing must not drop unrelated stacks into a mesa (else mesas take a single-family mix).
 16. **Phone frame rate (P0)** (owner 2026-11-11, iPhone 17, Safari, setting Low: "I'm only getting ~23 fps on
    mobile, seeing lots of z-fighting on tree trunks with the leaf cards. What might be dropping frames since the
    last while. Used to get 60 fps"). Suspect: leaf cards are on in every tier but CPU, Low included; cards lying
