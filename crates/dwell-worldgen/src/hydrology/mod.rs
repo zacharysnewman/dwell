@@ -494,6 +494,12 @@ fn tectonic_map(
     plates: Option<&crate::plate_tectonics::PlateTectonics>,
 ) -> HydrologyMap {
     let (grid, x0, hs) = sample_field(&base, p.cell);
+    // A Realistic world's erosion routing (plates.json `variety.flow`); every other world's D8.
+    let routing = if plates.is_some() {
+        crate::plates::VARIETY.flow
+    } else {
+        crate::plates::FlowRouting::D8
+    };
     // The Realistic world's climate (R3): its rain weights the discharge.
     let climate = h
         .tectonics
@@ -509,6 +515,7 @@ fn tectonic_map(
             p,
             None,
             climate.as_ref(),
+            routing,
         );
     }
     // Tectonics (systemic terrain T5): the boundary's landform and the volcanoes on each cell;
@@ -547,6 +554,7 @@ fn tectonic_map(
         p,
         Some((&extra, &rising, &shield)),
         climate.as_ref(),
+        routing,
     )
 }
 
@@ -586,7 +594,17 @@ pub fn from_heights(
     seed: u64,
     p: &HydrologyParams,
 ) -> HydrologyMap {
-    from_heights_with(grid, cell, x0, h0, seed, p, None, None)
+    from_heights_with(
+        grid,
+        cell,
+        x0,
+        h0,
+        seed,
+        p,
+        None,
+        None,
+        crate::plates::FlowRouting::D8,
+    )
 }
 
 /// [`from_heights`] with the tectonics' landforms (systemic terrain T5, m per cell) added: to the
@@ -607,6 +625,7 @@ pub fn from_heights_with(
     p: &HydrologyParams,
     extra: Option<(&[f64], &[f64], &[f64])>,
     climate: Option<&crate::climate::Climate>,
+    routing: crate::plates::FlowRouting,
 ) -> HydrologyMap {
     assert_eq!(h0.len(), grid.len());
     let lifted: Vec<f64>;
@@ -718,7 +737,17 @@ pub fn from_heights_with(
         (None, Rain::Orographic(o)) => rain::orographic(grid, cell, &h, &sea, seed, o),
     };
     crate::progress::report(crate::progress::MapStep::Uplift, 1.0);
-    erosion::erode(grid, cell, &mut h, &uplift, &erodibility, &rain, &sea, p);
+    erosion::erode(
+        grid,
+        cell,
+        &mut h,
+        &uplift,
+        &erodibility,
+        &rain,
+        &sea,
+        p,
+        routing,
+    );
     if let (Some(s), Some(u)) = (shield, &uneroded) {
         for i in 0..len {
             if s[i] > 0.0 && !sea[i] {

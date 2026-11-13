@@ -516,6 +516,19 @@ test('a plate fixture and new ranges added by data alone are emitted', () => {
   assert.match(rs, /age: 300\.0 \},\n.*age: 10\.0 \},\n {8}\],\n {8}kind: BoundaryKind::Convergent,\n {8}subducts: Some\(0\),/);
 });
 
+test('the erosion\'s routing and the interior relief are chosen by data alone', () => {
+  const p = loadPlates();
+  p.variety.flow.routing = 'd8';
+  p.variety.relief.swells.height = 140;
+  p.variety.relief.lacunarity = 1.87;
+  const rs = platesRust(validatePlates(p));
+  assert.match(rs, /flow: FlowRouting::D8,/);
+  assert.match(rs, /swell_height: 140\.0,/);
+  assert.match(rs, /lacunarity: 1\.87,/);
+  p.variety.flow = { routing: 'random', exponent: 2 };
+  assert.match(platesRust(validatePlates(p)), /flow: FlowRouting::Random \{ exponent: 2\.0 \},/);
+});
+
 test('bad plate entries fail with the key and the problem', () => {
   const cases = [
     [(p) => (p.count = [5, 3]), /plates\.json: count must be \[min, max\]/],
@@ -537,6 +550,11 @@ test('bad plate entries fail with the key and the problem', () => {
     [(p) => (p.uplift.arc.maxCones = 2.5), /uplift\.arc\.maxCones must be a whole number/],
     [(p) => delete p.uplift.hotspot.decay, /uplift\.hotspot\.decay is missing/],
     [(p) => (p.uplift.wobble = 1), /uplift: unknown wobble/],
+    [(p) => (p.variety.flow.routing = 'mfd'), /variety\.flow\.routing must be one of d8, random/],
+    [(p) => (p.variety.relief.lacunarity = 2.0001 - 1), /variety\.relief\.lacunarity must be in \[1\.1, 4\]/],
+    [(p) => (p.variety.relief.hillVary.min = 2), /variety\.relief\.hillVary \[min, max\] must be/],
+    [(p) => (p.variety.relief.swells.octaves = 1.5), /variety\.relief\.swells\.octaves must be a whole number/],
+    [(p) => delete p.variety, /plates\.json: variety is missing/],
     [(p) => (p.fixtures[0].plates[1].kind = 'mantle'), /fixtures\[0\] \(ocean_under_continent\)\.plates\[1\]\.kind must be one of oceanic, continental/],
     [(p) => p.fixtures[0].plates.pop(), /fixtures\[0\] \(ocean_under_continent\)\.plates must be two plates/],
     [(p) => (p.fixtures[0].plates[0].at = [5000, 0]), /plates must not share a centre/],

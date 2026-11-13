@@ -102,10 +102,48 @@ pub struct PlateFixture {
     pub subducts: Option<usize>,
 }
 
+/// How the map's erosion routes each cell's water down (plates.json `variety.flow`, a Realistic
+/// world's; WORK_QUEUE item 15).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum FlowRouting {
+    /// Every cell to the neighbour it was flooded from (the default world's).
+    D8,
+    /// Each erosion step, every cell to one strictly lower neighbour drawn by its slope to the
+    /// power `exponent` (a randomized single-flow direction: the channels leave the grid's lines).
+    Random { exponent: f64 },
+}
+
+/// The base field's interior relief on a Realistic world's land (plates.json `variety.relief`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct InteriorRelief {
+    /// The sample point's domain warp: amplitude (m) and wavelength (m).
+    pub warp_amplitude: f64,
+    pub warp_wavelength: f64,
+    /// Basins and swells: about ±`swell_height` m at `swell_wavelength` m.
+    pub swell_height: f64,
+    pub swell_wavelength: f64,
+    pub swell_octaves: u32,
+    /// The hills' and bumps' amplitude × a regional noise between `hill_min` and `hill_max`, at
+    /// `hill_wavelength` m.
+    pub hill_min: f64,
+    pub hill_max: f64,
+    pub hill_wavelength: f64,
+    /// Each octave turned this far (degrees) from the last, and this much finer.
+    pub rotate: f64,
+    pub lacunarity: f64,
+}
+
+/// The Realistic world's variety (plates.json `variety`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PlateVariety {
+    pub flow: FlowRouting,
+    pub relief: InteriorRelief,
+}
+
 mod table {
     include!("plates.gen.rs");
 }
-pub use table::{FIXTURES, PLATES, UPLIFT};
+pub use table::{FIXTURES, PLATES, UPLIFT, VARIETY};
 
 /// The cell of the coarse scan that finds the boundaries (m): ≥ 500 m, so the layout stays a
 /// function of vectors at any map size (REALISTIC_WORLD.md §4).

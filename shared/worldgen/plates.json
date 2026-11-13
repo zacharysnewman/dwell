@@ -1,6 +1,9 @@
 {
   "$comment": "The plate layout a Realistic world's seed draws (docs/proposals/REALISTIC_WORLD.md §3.1, phase R1; owner 2026-11-11: plates decide land and sea, face B its own plates from its own face seed). Read by crates/dwell-worldgen/src/plates.rs and plate_tectonics.rs; only a world with terrain.json tectonics.plates 1 (the Realistic test world, worlds/realistic.json, R2) reads it, so nothing here changes the default's or the starter's terrain. `count` [min, max]: the seed picks how many plates (3–5 for the first region, the proposal's default; Q1 not answered). `reach`: plates and hotspots lie within this many m of the disc's centre, and the layout covers that disc; `seaMargin`: the outer m of it are sea whatever the plate (the disc must end in sea). `spacing`: the least distance between two plates' centres (m), tried at up to `attempts` seeded points. `kinds`: each plate kind (code vocabulary: oceanic, continental) has a draw `weight` and a `min` count the layout keeps (oceanic plate = sea, continental = land). `speed` [min, max] cm/yr and `age` [min, max] Myr are drawn uniformly per plate. `warp`: the boundaries curve by `amplitude` m of noise at `wavelength` m. `transformBelow`: a boundary is transform where the closing (or opening) rate across it is less than this share of the plates' relative speed, else convergent (closing) or divergent (opening). `hotspots`: `count` [min, max] points fixed in the mantle within `within` m of the centre; the chain's older islands lie along the overlying plate's motion. `fixtures`: two-plate layouts by data with the boundary each must give (`kind`, and `subducts`: the index of the plate that dives, or null) — the tests check every entry. Run `node shared/worldgen/gen.mjs` after editing; CI fails on stale output.",
-  "count": [3, 5],
+  "count": [
+    3,
+    5
+  ],
   "reach": 25000,
   "seaMargin": 2000,
   "spacing": 8000,
@@ -15,21 +18,33 @@
       "min": 1
     }
   },
-  "speed": [1, 10],
-  "age": [5, 200],
+  "speed": [
+    1,
+    10
+  ],
+  "age": [
+    5,
+    200
+  ],
   "warp": {
     "amplitude": 2500,
     "wavelength": 16000
   },
   "transformBelow": 0.4,
   "hotspots": {
-    "count": [0, 2],
+    "count": [
+      0,
+      2
+    ],
     "within": 22000
   },
   "uplift": {
     "$comment": "The uplift from the boundaries (phase R2, plate_tectonics.rs; a world reads it with terrain.json tectonics.plates 1). Each boundary kind's landform by rule: `range` on the overriding side of a subducting boundary (`height` m, `width` m half-wide, centred `distance` m behind the line), `trench` on the diving side (`height` its depth), `collision` astride a convergent boundary of two continents, `rift` along a divergent one (`height` its depth, with shoulders `riftShoulder` of it either side), `transform` a low ridge along a transform. Each is scaled by the boundary's rate (closing, opening or slip, cm/yr) over `speedRef`, clamped to `speedScale` [min, max]. The polylines join scan points within `link` m and keep vertices `segment` m apart; the landforms are summed on a coarse grid of `cell` m (at least 500: no new 100 m whole-map grid) and read bilinearly. `arc`: on a subducting boundary's overriding side, `distance` m behind the line, one dormant cone per `spacing` m of a polyline at least `minLength` m long (at most `maxCones`), `coneHeight` m (× the rate's scale) and `coneRadius` m with a crater `craterRadius` m wide and `craterDepth` m deep, hardened against the erosion by `hardness` (0..1). `hotspot`: each hotspot's chain of `islands` shields `spacing` m apart along its plate's motion (older that way), the youngest `height` m and `radius` m, each older one `decay` of the last's height and `widen` broader.",
     "speedRef": 5,
-    "speedScale": [0.5, 1.6],
+    "speedScale": [
+      0.5,
+      1.6
+    ],
     "link": 1300,
     "segment": 1000,
     "cell": 500,
@@ -79,20 +94,57 @@
       "widen": 0.12
     }
   },
+  "variety": {
+    "$comment": "The Realistic world's variety (WORK_QUEUE item 15, the realistic batch part B; owner, 2026-11-13: \"horizontal slices of noise\", \"the same terrain almost looks tiled\"). `flow`: how the map's erosion routes each cell's water down (the code's vocabulary: `d8`, every cell to the one neighbour it was flooded from, which hatches the slopes along the grid's 45° and 90° lines at 100–300 m; `random`, each erosion step to one strictly lower neighbour drawn by its slope to the power `exponent`, so the channels wander off the grid and the hatching averages out). `relief`: the base field's interior on the plates' land: its sample point warped by a noise `warp.amplitude` m at `warp.wavelength` m; `swells`, basins and swells of about ±`height` m at `wavelength` m (`octaves`); the hills' and bumps' amplitude × a regional noise at `hillVary.wavelength` m between `hillVary.min` and `max`; every octave of the hills, bumps and swells `rotate`° turned from the last and `lacunarity` × finer (not 2: no octave's lattice lines up with the last's).",
+    "flow": {
+      "routing": "random",
+      "exponent": 1.0
+    },
+    "relief": {
+      "warp": {
+        "amplitude": 1200,
+        "wavelength": 7000
+      },
+      "swells": {
+        "height": 90,
+        "wavelength": 5500,
+        "octaves": 2
+      },
+      "hillVary": {
+        "min": 0.35,
+        "max": 1.6,
+        "wavelength": 13000
+      },
+      "rotate": 37,
+      "lacunarity": 2.13
+    }
+  },
   "fixtures": [
     {
       "name": "ocean_under_continent",
       "plates": [
         {
           "kind": "oceanic",
-          "at": [-5000, 0],
-          "motion": [5, 0],
+          "at": [
+            -5000,
+            0
+          ],
+          "motion": [
+            5,
+            0
+          ],
           "age": 80
         },
         {
           "kind": "continental",
-          "at": [5000, 0],
-          "motion": [-1, 0],
+          "at": [
+            5000,
+            0
+          ],
+          "motion": [
+            -1,
+            0
+          ],
           "age": 150
         }
       ],
@@ -106,14 +158,26 @@
       "plates": [
         {
           "kind": "oceanic",
-          "at": [0, -5000],
-          "motion": [0, 3],
+          "at": [
+            0,
+            -5000
+          ],
+          "motion": [
+            0,
+            3
+          ],
           "age": 40
         },
         {
           "kind": "oceanic",
-          "at": [0, 5000],
-          "motion": [0, -3],
+          "at": [
+            0,
+            5000
+          ],
+          "motion": [
+            0,
+            -3
+          ],
           "age": 120
         }
       ],
@@ -127,14 +191,26 @@
       "plates": [
         {
           "kind": "continental",
-          "at": [-5000, 0],
-          "motion": [4, 1],
+          "at": [
+            -5000,
+            0
+          ],
+          "motion": [
+            4,
+            1
+          ],
           "age": 100
         },
         {
           "kind": "continental",
-          "at": [5000, 0],
-          "motion": [-4, 0],
+          "at": [
+            5000,
+            0
+          ],
+          "motion": [
+            -4,
+            0
+          ],
           "age": 100
         }
       ],
@@ -148,14 +224,26 @@
       "plates": [
         {
           "kind": "continental",
-          "at": [-5000, 0],
-          "motion": [-3, 0],
+          "at": [
+            -5000,
+            0
+          ],
+          "motion": [
+            -3,
+            0
+          ],
           "age": 100
         },
         {
           "kind": "oceanic",
-          "at": [5000, 0],
-          "motion": [3, 1],
+          "at": [
+            5000,
+            0
+          ],
+          "motion": [
+            3,
+            1
+          ],
           "age": 20
         }
       ],
@@ -169,14 +257,26 @@
       "plates": [
         {
           "kind": "continental",
-          "at": [-5000, 0],
-          "motion": [0, 4],
+          "at": [
+            -5000,
+            0
+          ],
+          "motion": [
+            0,
+            4
+          ],
           "age": 100
         },
         {
           "kind": "oceanic",
-          "at": [5000, 0],
-          "motion": [0.5, -4],
+          "at": [
+            5000,
+            0
+          ],
+          "motion": [
+            0.5,
+            -4
+          ],
           "age": 60
         }
       ],

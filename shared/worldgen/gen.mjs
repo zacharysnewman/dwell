@@ -2608,8 +2608,11 @@ const PLATES_TOP = [
   "transformBelow",
   "hotspots",
   "uplift",
+  "variety",
   "fixtures",
 ];
+/** plates.json `variety.flow.routing`: the erosion's routing vocabulary (`hydrology/erosion.rs`). */
+const FLOW_ROUTINGS = ["d8", "random"];
 /** plates.json `uplift`'s landforms (R2, `plate_tectonics.rs`): each a height, half-width, distance. */
 const UPLIFT_LANDFORMS = ["range", "trench", "collision", "rift", "transform"];
 const UPLIFT_ARC = [
@@ -2738,6 +2741,27 @@ export function validatePlates(data) {
   num("uplift.hotspot.radius", u.hotspot.radius, 1, 20_000);
   num("uplift.hotspot.decay", u.hotspot.decay, 0, 1);
   num("uplift.hotspot.widen", u.hotspot.widen, 0, 2);
+  // The Realistic world's variety (WORK_QUEUE item 15, part B): the erosion's routing, the relief.
+  const v = data.variety;
+  obj("variety", v, ["flow", "relief"]);
+  obj("variety.flow", v.flow, ["routing", "exponent"]);
+  if (!FLOW_ROUTINGS.includes(v.flow.routing))
+    fail(`variety.flow.routing must be one of ${FLOW_ROUTINGS.join(", ")}`);
+  num("variety.flow.exponent", v.flow.exponent, 0, 8);
+  const r = v.relief;
+  obj("variety.relief", r, ["warp", "swells", "hillVary", "rotate", "lacunarity"]);
+  obj("variety.relief.warp", r.warp, ["amplitude", "wavelength"]);
+  num("variety.relief.warp.amplitude", r.warp.amplitude, 0, 20_000);
+  num("variety.relief.warp.wavelength", r.warp.wavelength, 100, 100_000);
+  obj("variety.relief.swells", r.swells, ["height", "wavelength", "octaves"]);
+  num("variety.relief.swells.height", r.swells.height, 0, 2000);
+  num("variety.relief.swells.wavelength", r.swells.wavelength, 100, 100_000);
+  num("variety.relief.swells.octaves", r.swells.octaves, 1, 8, true);
+  obj("variety.relief.hillVary", r.hillVary, ["min", "max", "wavelength"]);
+  range("variety.relief.hillVary [min, max]", [r.hillVary.min, r.hillVary.max], 0, 4);
+  num("variety.relief.hillVary.wavelength", r.hillVary.wavelength, 100, 100_000);
+  num("variety.relief.rotate", r.rotate, 0, 180);
+  num("variety.relief.lacunarity", r.lacunarity, 1.1, 4);
   if (!Array.isArray(data.fixtures)) fail("fixtures must be a list");
   const seen = new Set();
   data.fixtures.forEach((f, i) => {
@@ -2782,6 +2806,7 @@ export function platesRust(data) {
     "",
     "use crate::plate_tectonics::{ArcRule, ChainRule, Landform, PlateUplift};",
     "use crate::plates::{BoundaryKind, FixturePlate, KindRule, PlateFixture, PlateKind, PlateRules};",
+    "use crate::plates::{FlowRouting, InteriorRelief, PlateVariety};",
     "",
     "/// The plate layout's rules (shared/worldgen/plates.json).",
     "pub const PLATES: PlateRules = PlateRules {",
@@ -2838,6 +2863,32 @@ export function platesRust(data) {
     ],
   ])
     rs.push(`    ${k}: ${v},`);
+  rs.push("};");
+  rs.push("");
+  const v = data.variety;
+  const rr = v.relief;
+  const flow =
+    v.flow.routing === "d8"
+      ? "FlowRouting::D8"
+      : `FlowRouting::Random { exponent: ${rf(v.flow.exponent)} }`;
+  rs.push("/// The Realistic world's variety (plates.json `variety`, WORK_QUEUE item 15).");
+  rs.push("pub const VARIETY: PlateVariety = PlateVariety {");
+  rs.push(`    flow: ${flow},`);
+  rs.push("    relief: InteriorRelief {");
+  for (const [k, val] of [
+    ["warp_amplitude", rf(rr.warp.amplitude)],
+    ["warp_wavelength", rf(rr.warp.wavelength)],
+    ["swell_height", rf(rr.swells.height)],
+    ["swell_wavelength", rf(rr.swells.wavelength)],
+    ["swell_octaves", `${rr.swells.octaves}`],
+    ["hill_min", rf(rr.hillVary.min)],
+    ["hill_max", rf(rr.hillVary.max)],
+    ["hill_wavelength", rf(rr.hillVary.wavelength)],
+    ["rotate", rf(rr.rotate)],
+    ["lacunarity", rf(rr.lacunarity)],
+  ])
+    rs.push(`        ${k}: ${val},`);
+  rs.push("    },");
   rs.push("};");
   rs.push("");
   rs.push("/// Two-plate layouts and the boundary each must give (plates.json `fixtures`).");
