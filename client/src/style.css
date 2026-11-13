@@ -4093,6 +4093,83 @@ body.theater-take > #theater-bar {
 }
 
 /* Map markers (docs/MAP_MARKERS.md): the big map's picker and the world waypoints. */
+/* The big map's markers list (docs/MAP_MARKERS.md): a side panel, hidden while the picker is open. */
+#world-map .map-markers {
+  position: absolute;
+  left: 10px;
+  top: 10px;
+  bottom: 48px;
+  width: min(280px, calc(100% - 80px));
+  padding: 8px;
+  border: 1.5px solid rgb(255 255 255 / 35%);
+  border-radius: 10px;
+  background: rgb(30 26 20 / 92%);
+  color: #f4ecd8;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+}
+#world-map .map-markers[hidden],
+#world-map .marker-picker:not([hidden]) ~ .map-markers {
+  display: none;
+}
+#world-map .map-markers h3 {
+  margin: 0 2px;
+  font-size: 15px;
+}
+#world-map .map-markers-rows {
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 0;
+}
+#world-map .map-markers-empty {
+  margin: 4px 2px;
+  opacity: 0.8;
+}
+#world-map .map-marker-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+#world-map .map-marker-go {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+#world-map .map-marker-go:hover,
+#world-map .map-marker-go:focus-visible {
+  background: rgb(255 255 255 / 12%);
+}
+#world-map .map-marker-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#world-map .map-marker-distance {
+  opacity: 0.85;
+  font-variant-numeric: tabular-nums;
+}
+#world-map .map-marker-row .map-button {
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  font-size: 13px;
+}
 #world-map .marker-picker {
   position: absolute;
   left: 10px;

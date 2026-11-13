@@ -280,9 +280,9 @@ export class MarkerList {
       this.changed();
       return m.id;
     }
-    const near = mine.find(
-      (m) => m.face === at.face && Math.hypot(m.x - at.x, m.y - at.y, m.z - at.z) < 2,
-    );
+    // A place within 2 m across the ground is one already seen (its height may be read again
+    // finer: a portal's rim from the map's height, then from the loaded ground).
+    const near = mine.find((m) => m.face === at.face && Math.hypot(m.x - at.x, m.z - at.z) < 2);
     if (near) return near.id;
     if (this.full) return null;
     const id = this.nextId++;
@@ -498,4 +498,94 @@ export function drawIcon(
   ctx.fillStyle = rgb;
   ctx.fill(p, 'evenodd');
   ctx.restore();
+}
+
+/** A height code's metres (`dwell_game::minimap::decode_height`; water's its bed's), null for none
+ * (`NO_HEIGHT`, or a tile's i16 none, −32768). */
+export function heightOfCode(code: number): number | null {
+  if (!Number.isFinite(code) || code === -2147483648 || code === -32768) return null;
+  return (code >> 1) / 2;
+}
+
+/**
+ * The face-local height a marker placed on the big map stands at (docs/MAP_MARKERS.md): the loaded
+ * ground's top there (`Client.markerGround`), else the map's height for its cell (a height code),
+ * else `fallback` (the player's height when on that face).
+ */
+export function markerGroundY(
+  loaded: number | null | undefined,
+  mapCode: number,
+  fallback: number,
+): number {
+  if (typeof loaded === 'number' && Number.isFinite(loaded)) return loaded;
+  return heightOfCode(mapCode) ?? fallback;
+}
+
+/** A row of the big map's markers list. */
+export interface MarkerRow {
+  marker: MapMarker;
+  /** The distance from the player (m, face-local); null on the other face. */
+  distanceM: number | null;
+  /** The way to it on the big map, radians clockwise from the map's up; null on the other face
+   * or at the player's spot. */
+  angle: number | null;
+}
+
+/**
+ * The big map's markers list (docs/MAP_MARKERS.md): each marker with its distance and the way to
+ * it from the player at `me` (as the big map shows it: +z up, face A's +x left, face B's right,
+ * the mirror), nearest first; the other face's after, by label. No player: all by label.
+ */
+export function markerRows(markers: readonly MapMarker[], me: MarkerSpot | null): MarkerRow[] {
+  const rows = markers.map((m): MarkerRow => {
+    if (!me || m.face !== me.face) return { marker: m, distanceM: null, angle: null };
+    const [dx, dy, dz] = [m.x - me.x, m.y - me.y, m.z - me.z];
+    const right = (me.face === 1 ? 1 : -1) * dx;
+    const flat = Math.hypot(dx, dz);
+    return {
+      marker: m,
+      distanceM: Math.hypot(dx, dy, dz),
+      angle: flat < 1e-6 ? null : Math.atan2(right, dz),
+    };
+  });
+  return rows.sort((a, b) => {
+    if (a.distanceM !== null && b.distanceM !== null) return a.distanceM - b.distanceM;
+    if (a.distanceM !== null) return -1;
+    if (b.distanceM !== null) return 1;
+    return a.marker.label.localeCompare(b.marker.label) || a.marker.id - b.marker.id;
+  });
+}
+
+const DIRECTION_WORDS = [
+  'up',
+  'up right',
+  'right',
+  'down right',
+  'down',
+  'down left',
+  'left',
+  'up left',
+] as const;
+
+/** A row's way in words, as the map shows it ("up right"), for its arrow's label. */
+export function directionWord(angle: number): string {
+  const n = Math.round(angle / (Math.PI / 4));
+  return DIRECTION_WORDS[((n % 8) + 8) % 8] ?? 'up';
+}
+
+/**
+ * The portals to note as seen (`Client.seenPortals`' flat [face, x, y, z]*, y NaN where the rim
+ * isn't loaded), each standing at `groundY(face, x, z)` when its rim's height is unknown.
+ */
+export function seenPortalSpots(
+  flat: ArrayLike<number>,
+  groundY: (face: number, x: number, z: number) => number,
+): MarkerSpot[] {
+  const out: MarkerSpot[] = [];
+  for (let n = 0; n + 3 < flat.length; n += 4) {
+    const face = flat[n] === 1 ? 1 : 0;
+    const [x = 0, y = Number.NaN, z = 0] = [flat[n + 1], flat[n + 2], flat[n + 3]];
+    out.push({ face, x, y: Number.isFinite(y) ? y : groundY(face, x, z), z });
+  }
+  return out;
 }

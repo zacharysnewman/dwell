@@ -26,9 +26,9 @@ fails on stale output (`shared/ui/gen.test.mjs`).
 - `palette`: the colours offered. A marker saves its colour itself (#rrggbb), so a changed palette
   leaves placed markers as they are.
 - `auto`: the kinds the game places — `spawn` (where the player first came into the world), `death`
-  (where they last died, moved on each death), `portal` (each portal once seen; there are no portals
-  yet, so nothing notes one) — each `on`, `keep` (`one`: a single marker moved to the newest place;
-  `each`: one per place, a place within 2 m counting as seen), its icon, colour and label.
+  (where they last died, moved on each death), `portal` (each portal opening once seen, on its
+  face; "The rest" below) — each `on`, `keep` (`one`: a single marker moved to the newest place;
+  `each`: one per place, a place within 2 m across the ground counting as seen), its icon, colour and label.
 - `limits`: the most markers per player per world (auto ones included), a label's most characters
   (code points, as Rust's `chars`), the most bytes of an icon or kind name, the big map's pick radius.
 - `world`: the waypoint's size, its fade (full to `nearM`, `fadedAlpha` from `farM`), the edge margin
@@ -36,7 +36,7 @@ fails on stale output (`shared/ui/gen.test.mjs`).
   this near the eye or across the ground, at or under the camera, shows no waypoint; BUGS.md #116).
 
 What stays code: the path vocabulary, the two keep rules, where the auto kinds are noted (the shell
-notes `spawn` and `death`; a portal system would call `MarkerList.noteAuto('portal', …)`).
+notes `spawn`, `death` and the portals the client crate sees, `map_markers::seen_portals`).
 
 ## Filters (0.58)
 
@@ -94,9 +94,29 @@ label, Save / Delete / Cancel; `PickerDraft` its rules); `minimap.ts` draws them
   the auto kinds (one moved, one each, a kind by data alone), the picker's draft, the minimap offset
   on both faces, picking, the waypoint's fade and edge clamp.
 
+## The rest (0.61)
+
+- **The markers list:** the big map's list button opens a side panel (hidden while the picker is open)
+  of the markers the filters show (`markerRows`): each its icon, label, distance from the player and an
+  arrow the way to it as the big map shows it (+z up; face A's +x left, face B's right), nearest first,
+  the other face's after ("other side"). A row centres the map on its marker (`BigMapState.centerOn`);
+  its buttons edit (the picker) or delete it.
+- **Portals:** the client crate's `map_markers::seen_portals` (`Client.seenPortals`) gives each portal
+  opening on the player's face within the render radius (`RENDER_RADIUS_CHUNKS` chunks, across the
+  ground), standing on its rim's top (the loaded column beside the opening; NaN while not loaded, when
+  the shell takes the map's height). The shell notes each, a few times a second, as `noteAuto('portal',
+  …)`; `each` counts a place within 2 m **across the ground** as seen, so a height read again finer
+  makes no second marker. A portal's two openings are two markers, one per face.
+- **The ground under a placed marker:** a marker placed or dragged on the big map stands at
+  `markerGroundY`: the loaded column's top there (`Client.markerGround`, `dwell_game::minimap::ground_at`
+  read round the eye, face-local), else the map's height for its cell (the finest level's, else the
+  explored cell's; a water cell's is its bed's), else the player's height on that face. The waypoint
+  then floats 1.5 m over the ground there.
+
+Tests: `dwell-game` `a_columns_ground_is_its_top_blocks_top_face_locally` and `dwell-client`
+`map_markers` (both faces); `markers.test.ts`' list rows against the big map's `toScreen` on both
+faces, the ground's fallbacks, and seen portals noted once per opening.
+
 ## Left for later
 
-- A list view of the markers (search, jump to one) on the big map.
-- Portals: the `portal` kind is data and `noteAuto` handles it; nothing notes one until portals exist.
-- A placed marker's height on the big map is the player's when on that face (else 0): the waypoint
-  floats 1.5 m over that. Reading the ground's height under a click would need the map tile's height.
+- Searching the list by label.
