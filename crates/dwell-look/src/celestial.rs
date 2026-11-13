@@ -212,6 +212,21 @@ impl Celestial {
         std::array::from_fn(|i| f[0][i] * v[0] + f[1][i] * v[1] + f[2][i] * v[2])
     }
 
+    /// The sun world's centre from the home disc's centre (m, world; docs/SUN_WORLD.md): today's
+    /// sun direction `sun.distance_m` out, so the sky's sun disc is the sun world, at its size.
+    pub fn sun_position(&self, world_s: f64) -> V3 {
+        scale(self.sun_direction(world_s), self.day.sun.distance_m)
+    }
+
+    /// The sun grid's axes in the world (x, y, z; orthonormal, right-handed), its face A toward
+    /// home as the moon's is: y points at the home disc's centre, x along the sun's path.
+    pub fn sun_axes(&self, world_s: f64) -> [V3; 3] {
+        let [toward, along, _] = self.sky_frame(world_s);
+        let y = scale(unit(toward), -1.0);
+        let x = unit(sub(along, scale(y, dot(along, y))));
+        [x, y, cross(x, y)]
+    }
+
     /// Toward the moon's centre from the home disc's centre (unit, world).
     pub fn moon_direction(&self, world_s: f64) -> V3 {
         let f = self.sky_frame(world_s);

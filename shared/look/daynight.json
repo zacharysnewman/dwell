@@ -12,14 +12,16 @@
     "noonElevationDeg": 60
   },
   "sun": {
-    "$comment": "The disc's angular radius, how much larger it looks on the horizon, its limb darkening (0 none, 1 dark edge), and its halo: a tight bloom and a broad glow (Gaussian widths in degrees, strengths 0\u20131, scaled by each keyframe's glow).",
+    "$comment": "The disc's angular radius, how much larger it looks on the horizon, its limb darkening (0 none, 1 dark edge), and its halo: a tight bloom and a broad glow (Gaussian widths in degrees, strengths 0\u20131, scaled by each keyframe's glow). distanceM: from the home disc's centre to the sun world's (shared/worldgen/grids.json `dwell:sun`, docs/SUN_WORLD.md), toward today's sun direction, keeping its radius at radiusDeg (checked to 1%). surface: how much the sun world's baked ground (its face A: lava bright, basalt and obsidian crusts darker) shades the disc (0 today's plain disc, 1 the crusts as dark as their colours); the glow and the sunlight are unchanged (owner: \"The sun's doesn't really light the earth world or moon world, just conceptually.\").",
     "radiusDeg": 1.5,
     "horizonScale": 1.4,
     "limbDarkening": 0.35,
     "bloomDeg": 2.5,
     "bloom": 0.2,
     "glowDeg": 28,
-    "glow": 0.3
+    "glow": 0.3,
+    "distanceM": 954700,
+    "surface": 0.45
   },
   "moon": {
     "$comment": "The disc, its phases (a cycle of cycleDays in-game days; startPhase at day 0: 0 new, 0.5 full), its surface (maria darkness, earthshine on the unlit part) and its cool halo (a bloom and a glow, as the sun's, scaled by each keyframe's moonGlow and the lit share). newMoonLight is the share of the moonlight left at new moon, so every night stays readable. relief scales the slopes of the moon's baked normals (its real terrain, MOON_WORLD.md §5) as the sky draws them: its craters are a few degrees steep, too shallow to see from home at 1:1. domeBias is how much of a sphere's shape the disc takes (1 a ball), its normals then tilted by the baked slopes (owner, 2026-11-12: \"You mentioned a dome something, maybe do that\"), so its phases read as crescents, halves and gibbous with the craters on top; the lit share, the halo and the moonlight follow the same blended disc (celestial::disc_lit). lunarLambert is how the disc reflects: 0 Lambert (a ball darkens toward its limb even at full, so the full moon's bright part read smaller than the old flat disc), 1 Lommel-Seeliger, the regolith's law (lit evenly to its edge where it faces the sun, dark only past the terminator; owner, 2026-11-12: \"The moon looks smaller I think compared to the old moon?\").",

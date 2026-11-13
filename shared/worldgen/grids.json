@@ -63,6 +63,39 @@
         },
         "bake": { "size": 256 }
       }
+    },
+    {
+      "name": "dwell:sun",
+      "frame": "sunPath",
+      "radiusM": 25000,
+      "seedSalt": 1398099489,
+      "gravityScale": 1,
+      "captureM": 60000,
+      "farM": 300000,
+      "surfaceM": 420,
+      "generator": {
+        "kind": "volcanic",
+        "$comment": "The sun as a volcano world (docs/SUN_WORLD.md, WORK_QUEUE item 42; owner 2026-11-12: \"The sun is a volcano world. Constant flowing lava, oceans of lava.\"). Face-local heights over its midplane, each face from its own seed stream. The ground is `datumM` + fbm `plains` + broad fbm `basins`; wherever it lies under `lava.seaM` it is a lava ocean's floor, lava (`lava.fluid`, the lava fields' block) up to that level. Rifts follow ridged noise's zero lines, carved `rifts.depthM` deep across `width` of the noise's range, their bottom `fill` of that depth a lava river (its surface follows the land, so it runs downhill). Cones: one candidate a jittered `cones.cellM` cell (`chance`), radius and height drawn in their ranges, the flank `(1 - d/R)^profile` over the ground at its centre, a summit crater `craterRatio` x R wide and `craterDepthM` deep holding a lava lake `lakeBelowRimM` under its rim. The ground is `crust` (basalt), and a dry column at most `shore.bandM` over the lava it borders is `shore.block` (obsidian, the quench glass). Heights never go under `minM`. Generated still: the always-flowing lava simulation on the sun is a later slice. `bake.size` is the far bake's texels a side per face (the sky's sun disc is drawn from face A's).",
+        "crust": "dwell:basalt",
+        "datumM": 100,
+        "minM": 16,
+        "plains": { "amplitudeM": 8, "wavelengthM": 700, "octaves": 4 },
+        "basins": { "amplitudeM": 45, "wavelengthM": 6000, "octaves": 3 },
+        "lava": { "fluid": "dwell:lava", "seaM": 92 },
+        "shore": { "block": "dwell:obsidian", "bandM": 2.5 },
+        "cones": {
+          "cellM": 3200,
+          "chance": 0.55,
+          "radiusM": [350, 1300],
+          "heightM": [60, 240],
+          "profile": 1.6,
+          "craterRatio": 0.18,
+          "craterDepthM": 30,
+          "lakeBelowRimM": 6
+        },
+        "rifts": { "amplitudeM": 0, "wavelengthM": 4500, "octaves": 2, "width": 0.06, "depthM": 16, "fill": 0.45 },
+        "bake": { "size": 256 }
+      }
     }
   ]
 }
