@@ -1751,6 +1751,14 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    feet that didn't line up / seemed to be floating?"** **Fixed (BUGS.md #142):** your first-person body was moved
    back whole (0.1–0.4 m) off its feet and their shadow; it now leans back from its soles, which stand where you do
    on flat ground, ramps and slopes.
+   Owner, 2026-11-13: **"Can you make a collection of skin tone ranges with hair color ranges so it's not completely
+   random. Also, face should always match arms, etc. shouldn't have different skin colors on different skin parts."**
+   **Built (BUGS.md #152):** `shared/creatures/appearance.json` holds the skin tones (ten, porcelain to ebony) and, for
+   each, the hair colours that go with it by weight (light skins blond, ginger, auburn, brown; deep skins mostly black
+   and dark brown); a villager picks a tone from its seed, then a hair colour from that tone's list; clothes keep their
+   own `colours`. Every skin vertex draws the one tone (the neck and jaw had been a ramp darker than the face and
+   arms). No eyebrows exist on the Peasant yet (when they do, they take the hair colour). Owner should see: a lineup
+   of villagers with natural, consistent skin across face, neck, arms and hands, and hair colours that suit each tone.
 39. **Livelier animals** (owner 2026-11-12, after the video had no chase or fleeing — on day one every pack is
    kilometres from any herd and players can't scare deer): chose **deer flee from players** (they notice a player
    within a distance by data, closer when crouching, and run off; wolves keep their distance unless hungry),

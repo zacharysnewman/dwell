@@ -547,6 +547,20 @@ face, or the placement check against its shape.
 
 ## Fixed
 
+### 152. A villager's neck and jaw were another skin colour than its face and arms (fixed after 0.63.3)
+
+Owner, 2026-11-13: "face should always match arms, etc. shouldn't have different skin colors on different skin parts."
+The Peasant's skin part is modelled in two ramps (skin_fair face and arms, a skin_tan neck and jaw), and the recolour
+kept a vertex's whole shade of the part's base, so the neck and jaw drew 0.83 of the tone: a second skin. Skin and
+hair also came from independent random lists (a deep skin with blond hair as often as black). Now the skin and hair
+come from `shared/creatures/appearance.json` (tones, each with its hair colours), and the skin part keeps only the
+set's `shade` share (0.25) of the modelled shading. Tests: `dwell-client`
+`every_skin_vertex_of_a_villager_draws_its_one_skin_tone` (200 villagers, every level; red at a share of 1: "skin
+vertex 693 draws … x0.83"), `dwell-sim` `a_villagers_hair_always_goes_with_its_skin_tone`, `dwell-models`
+`a_tone_by_hex_keeps_its_share_of_the_parts_shading`, `shared/creatures/gen.test.mjs` (bad entries by name). Left: the
+coarser detail levels' part map puts a few sleeve-edge and lip vertices of other colours in the skin part; they draw
+the tone at 0.86–1.0.
+
 ### 151. `dwell-sim` `items.rs` `dying_in_adventure_drops_everything_where_the_player_died` failed on main (fixed after 0.63.1)
 
 Found 2026-11-13 (branch `claude/collision-ahead`, not caused by it: the same failure on main at 0.61.1 and after
