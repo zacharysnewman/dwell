@@ -48,6 +48,7 @@ export class LoopbackTransport implements Transport {
   /** The world's game mode (ADR 0065) as the local server last said ('' before it did). */
   mode = '';
   private readonly modeWaits: ((mode: string) => void)[] = [];
+  private readonly retuneWaits: ((r: { maps: Uint8Array[]; error?: string }) => void)[] = [];
   /** Callers waiting for a save to finish, oldest first (the worker answers in order). */
   private readonly saving: ((ok: boolean) => void)[] = [];
   private readonly reports: ((report: string | null) => void)[] = [];
@@ -188,6 +189,21 @@ export class LoopbackTransport implements Transport {
     });
   }
 
+  /**
+   * The host retunes the world's worldgen config (Chisel in the game, Phase 56 B7): resolves with
+   * faces A's and B's new maps (for the page to install), or the refusal.
+   */
+  retuneWorldgen(
+    worldgen: string,
+    radius: number,
+  ): Promise<{ maps: Uint8Array[]; error?: string }> {
+    if (this.closed) return Promise.resolve({ maps: [], error: 'the world is closed' });
+    return new Promise((resolve) => {
+      this.retuneWaits.push(resolve);
+      this.post({ t: 'retune', worldgen, radius });
+    });
+  }
+
   close(): void {
     if (this.closed) return;
     this.post({ t: 'disconnect', session: SESSION });
@@ -210,6 +226,7 @@ export class LoopbackTransport implements Transport {
     for (const resolve of this.mapFinds.splice(0)) resolve(null);
     for (const resolve of this.lavaAnswers.splice(0)) resolve(null);
     for (const resolve of this.modeWaits.splice(0)) resolve(this.mode);
+    for (const resolve of this.retuneWaits.splice(0)) resolve({ maps: [], error: message });
     this.handlers?.onClose({ message });
     this.handlers = null;
   }
@@ -238,6 +255,9 @@ export class LoopbackTransport implements Transport {
       case 'mode':
         this.mode = msg.mode;
         this.modeWaits.shift()?.(msg.mode);
+        break;
+      case 'retuned':
+        this.retuneWaits.shift()?.(msg);
         break;
       case 'waterReport':
         this.reports.shift()?.(msg.report);

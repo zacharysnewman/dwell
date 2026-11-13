@@ -209,6 +209,28 @@ function handle(msg: ToWorker): void {
       scope.postMessage({ t: 'mode', mode: core.mode });
       void save();
       break;
+    case 'retune': {
+      // Chisel in the game (Phase 56 B7): the server's chunks near the player generated again and
+      // the config saved with the world; the server-jobs worker's generators made again over the
+      // new maps; the page installs them too.
+      let maps: Uint8Array[] = [];
+      let error: string | undefined;
+      try {
+        maps = core.retuneWorldgen(msg.worldgen, msg.radius);
+        jobs?.postMessage({ t: 'start', maps: maps.map((m) => m.slice()) });
+        jobs?.postMessage({
+          t: 'init',
+          generatorVersion: core.generatorVersion,
+          worldSeed: core.worldSeed,
+          radiusScale: core.radiusScale,
+        });
+        void save();
+      } catch (err) {
+        error = err instanceof Error ? err.message : String(err);
+      }
+      scope.postMessage({ t: 'retuned', maps, ...(error ? { error } : {}) });
+      break;
+    }
     case 'save':
       void save().then((ok) => {
         scope.postMessage({ t: 'saved', ok });
