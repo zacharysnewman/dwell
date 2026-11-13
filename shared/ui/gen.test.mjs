@@ -254,7 +254,11 @@ test('bad marker entries fail naming them', () => {
     edit(d);
     assert.throws(() => validateMarkers(d), re);
   };
-  bad((d) => d.icons.push({ ...d.icons[0] }), /icons\[16\]\.id: "home" is listed twice/);
+  const n = markersData().icons.length;
+  bad(
+    (d) => d.icons.push({ ...d.icons[0] }),
+    new RegExp(`icons\\[${n}\\]\\.id: "home" is listed twice`),
+  );
   bad((d) => (d.icons[0].colour = 'mauve'), /icons\[0\]\.colour must name a palette colour/);
   bad((d) => (d.icons[0].path = 'M0 0 L30 4 Z'), /outside the 24 × 24 box/);
   bad((d) => (d.icons[0].path = 'M0 0 l3 4 Z'), /command l is not allowed/);

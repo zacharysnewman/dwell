@@ -81,6 +81,8 @@ and friend worlds), with a small master server for discovery; there are no offic
   follow-ups, the PR and merge flow, what suits the cloud, limits and timings.
 - `docs/ECOLOGY.md` — the far ecology (WORK_QUEUE item 11): deer herds and wolf packs as data records on a
   face's island grid, forage per cell, the day step (`crates/dwell-ecology`, `shared/ecology/ecology.json`).
+- `docs/SHRINES.md` — resurrection shrines (WORK_QUEUE item 54): shrine sites per face from the seed (~2 km grid,
+  `shared/worldgen/shrines.json`), the shrine built from its design, respawn at the nearest, spawns at shrines, the map's layer.
 - `docs/WORK_QUEUE.md` — the owner's ordered work queue with the decisions behind each item; update it in the change that
   starts, finishes or re-orders an item.
 - `docs/BUGS.md` — the open bugs the owner reported, with repros and suspects; fixed ones move to its Fixed list.

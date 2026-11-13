@@ -531,6 +531,13 @@ several metres out of the far opening, fell straight back in and swung between t
   (`the_prediction_agrees_with_the_server_through_a_portal_and_out_of_it`: no replays, and replays
   for a client without the shafts), `portal_shafts.rs`'s unit test, `gen.test.mjs`.
 
+### 12.4 Shrines keep clear of the portals **[built, 0.58]**
+
+Each face's resurrection shrines ([SHRINES.md](SHRINES.md)) are sited like the portals, from the seed and
+the face's height field, in any chunk order, but per face (face B's from its own seed): a shrine stands at
+least `portalClear` (250 m) from every portal's axis, so a portal's monument and a shrine never meet. A
+death respawns at the nearest shrine on the face it happened on.
+
 ### 12.1 The motes at the crossing **[built, Phase 48 M]**
 
 Owner (2026-10-21): "As part of the portals add some blue magical particles at the transition

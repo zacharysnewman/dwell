@@ -26,6 +26,16 @@ import { compatibilityLine } from '../version/semver';
 import { World } from '../protocol/constants.gen';
 import { ExploredChanges, type ExploredStore } from './exploredStore';
 import {
+  MapFilters,
+  SHRINE_MAP,
+  browserStorage,
+  cellsFor,
+  filterLayers,
+  markerLayer,
+  parseShrines,
+  visibleShrines,
+} from './mapShrines';
+import {
   MarkerList,
   type MapMarker,
   decodeMarkers,
@@ -38,7 +48,7 @@ import {
   waypointAlpha,
   waypointOnScreen,
 } from './markers';
-import { MARKER_WORLD } from './markers.gen';
+import { AUTO_MARKERS, MARKER_WORLD } from './markers.gen';
 import { MarkerPicker } from './markerPicker';
 
 /** An explored cell's key: its face (0 A, 1 B) and its index along face-local x and z. */
@@ -994,6 +1004,11 @@ export interface MapClient extends RevealClient, LiveClient, MinimapFeed {
   /** The generator's layer fields by index (`map_layers.rs` `MapField`). */
   mapLayerFields?(): string[];
   /**
+   * The resurrection shrines on face `face` in the grid cells within `cells` of face-local (x, z)'s
+   * (docs/SHRINES.md): [x, z]* face-local m.
+   */
+  mapShrines?(face: number, x: number, z: number, cells: number): Float64Array;
+  /**
    * Map markers (docs/MAP_MARKERS.md): the player's feet, face-local [face, x, y, z, dead, then
    * while dead the death's face, x, y, z].
    */
@@ -1303,6 +1318,11 @@ export class MapUi {
   /** The debug layer shown (an index into `MAP_LAYERS.layers`; −1 none) and its button. */
   private layer = -1;
   private readonly layerButton: HTMLButtonElement;
+  /** The map's filters (the shrines, each marker kind, the player's own; docs/SHRINES.md), their
+   * button and the list it opens. */
+  private readonly filters: MapFilters;
+  private readonly filterButton: HTMLButtonElement;
+  private readonly filterPanel: HTMLDivElement;
   /** Each face's layer images by `face:name` (null: the world has no such field), and those asked. */
   private readonly layerImages = new Map<string, HTMLCanvasElement | null>();
   private readonly layerAsked = new Set<string>();
@@ -1397,7 +1417,33 @@ export class MapUi {
     this.layerButton = this.button('map-layer', '▦', `Map layer (${MAP_LAYERS.key.slice(3)})`);
     this.layerButton.append(doc.createElement('span'));
     this.layerButton.hidden = !client.requestMapLayer;
-    controls.append(this.zoomIn, this.zoomOut, centre, this.layerButton);
+    this.filters = new MapFilters(browserStorage());
+    this.filterButton = this.button('map-filters', '', 'Map filters');
+    this.filterButton.append(iconSvg(doc, SHRINE_MAP.icon, '#f4ecd8', 18));
+    this.filterButton.setAttribute('aria-expanded', 'false');
+    this.filterPanel = doc.createElement('div');
+    this.filterPanel.className = 'map-filters';
+    this.filterPanel.hidden = true;
+    for (const layer of filterLayers(AUTO_MARKERS)) {
+      const row = doc.createElement('label');
+      const box = doc.createElement('input');
+      box.type = 'checkbox';
+      box.dataset.layer = layer.key;
+      box.checked = this.filters.shows(layer.key);
+      box.addEventListener('change', () => {
+        this.setFilter(layer.key, box.checked);
+      });
+      row.append(box, doc.createTextNode(layer.label));
+      this.filterPanel.append(row);
+    }
+    controls.append(
+      this.zoomIn,
+      this.zoomOut,
+      centre,
+      this.layerButton,
+      this.filterButton,
+      this.filterPanel,
+    );
     this.scaleEl = doc.createElement('div');
     this.scaleEl.className = 'map-scale';
     this.scaleLabel = doc.createElement('span');
@@ -1432,6 +1478,9 @@ export class MapUi {
     centre.addEventListener('click', () => {
       this.state.center();
       this.drawBig();
+    });
+    this.filterButton.addEventListener('click', () => {
+      this.toggleFilters();
     });
     this.layerButton.addEventListener('click', () => {
       this.stepLayer();
@@ -1545,6 +1594,39 @@ export class MapUi {
   }
 
   /** Steps to the next debug layer (after the last, none). */
+  /** Opens or closes the filters' list. */
+  toggleFilters(): void {
+    this.filterPanel.hidden = !this.filterPanel.hidden;
+    this.filterButton.setAttribute('aria-expanded', String(!this.filterPanel.hidden));
+  }
+
+  /** Shows or hides a layer of the maps (`filterLayers`: the shrines, a marker kind, the player's
+   * own), remembered in this browser. */
+  setFilter(key: string, on: boolean): void {
+    this.filters.set(key, on);
+    const box = this.filterPanel.querySelector<HTMLInputElement>(`input[data-layer="${key}"]`);
+    if (box) box.checked = on;
+    this.bigStale = true;
+  }
+
+  /** The markers the filters show. */
+  private shownMarkers(): MapMarker[] {
+    return this.markers.all.filter((m) => this.filters.shows(markerLayer(m)));
+  }
+
+  /** The shrines the big map shows in view `v` (the filter, the reveal rule). */
+  shownShrines(v: BigView, w: number, h: number): { x: number; z: number }[] {
+    if (!this.client.mapShrines || !this.filters.shows('shrine')) return [];
+    const [cx, cz] = toWorld(v, 0, 0);
+    const [ax, az] = toWorld(v, -w / 2, -h / 2);
+    const span = Math.hypot(ax - cx, az - cz) * 2;
+    const sites = parseShrines(this.client.mapShrines(v.face, cx, cz, cellsFor(span)));
+    const cell = MAP.explored.cellM;
+    const explored = (x: number, z: number) =>
+      this.cells.has(cellKey(v.face, Math.floor(x / cell), Math.floor(z / cell)));
+    return visibleShrines(sites, true, explored, this.client.mapRevealed());
+  }
+
   stepLayer(): void {
     this.layer = nextLayer(this.layer);
     this.showLayerLabel();
@@ -1770,11 +1852,35 @@ export class MapUi {
     const [face = 0, x = 0, z = 0, yaw = 0] = this.client.mapPose();
     const iconPx = Math.max(8, Math.round(px * 0.09));
     for (const { marker: m, right, up } of markersInRange(
-      this.markers.all,
+      this.shownMarkers(),
       { face, x, z, yaw },
       MAP.minimap.radiusM,
     )) {
       drawIcon(ctx, m.icon, m.rgb, half + right * perM, half - up * perM, iconPx);
+    }
+    // The shrines on the disc (it is explored ground, so each one there shows), under the dot.
+    if (this.client.mapShrines && this.filters.shows('shrine')) {
+      const near = parseShrines(this.client.mapShrines(face, x, z, 1)).map((sh) => ({
+        id: 0,
+        icon: SHRINE_MAP.icon,
+        rgb: SHRINE_MAP.color,
+        label: '',
+        face,
+        x: sh.x,
+        y: 0,
+        z: sh.z,
+        auto: 'shrine',
+      }));
+      for (const { right, up } of markersInRange(near, { face, x, z, yaw }, MAP.minimap.radiusM)) {
+        drawIcon(
+          ctx,
+          SHRINE_MAP.icon,
+          SHRINE_MAP.color,
+          half + right * perM,
+          half - up * perM,
+          iconPx,
+        );
+      }
     }
     dot(half, half, MAP.minimap.playerColor);
   }
@@ -1825,7 +1931,7 @@ export class MapUi {
     const w = this.doc.defaultView?.innerWidth ?? 1000;
     const h = this.doc.defaultView?.innerHeight ?? 1000;
     if (screen && !this.bigOpen) {
-      for (const m of this.markers.all) {
+      for (const m of this.shownMarkers()) {
         if (m.face !== face) continue;
         // The marker's spot, a little over the ground it was placed on.
         const [nx = 0, ny = 0, depth = 0, dist = 0] = Array.from(
@@ -1889,7 +1995,7 @@ export class MapUi {
   private mapClick(px: number, py: number): void {
     const v = this.state.view;
     if (!v) return;
-    const hit = pickMarker(this.markers.all, (m) => this.markerPx(m), px, py);
+    const hit = pickMarker(this.shownMarkers(), (m) => this.markerPx(m), px, py);
     if (hit) {
       this.picker.openFor(hit, (r) => {
         if (r.kind === 'save') this.markers.edit(hit.id, r.look);
@@ -1986,9 +2092,18 @@ export class MapUi {
       ctx.drawImage(layerImg, 0, 0, Math.abs(bx - ax), Math.abs(by - ay));
       ctx.restore();
     }
+    // The shrines (docs/SHRINES.md): their vector icon, glowing, under the markers.
+    for (const sh of this.shownShrines(v, w, h)) {
+      const [sx, sy] = toScreen(v, sh.x, sh.z);
+      ctx.save();
+      ctx.shadowColor = SHRINE_MAP.color;
+      ctx.shadowBlur = SHRINE_MAP.iconPx / 2;
+      drawIcon(ctx, SHRINE_MAP.icon, SHRINE_MAP.color, w / 2 + sx, h / 2 + sy, SHRINE_MAP.iconPx);
+      ctx.restore();
+    }
     this.updateControls();
-    // The markers on this face.
-    for (const m of this.markers.all) {
+    // The markers on this face (those the filters show).
+    for (const m of this.shownMarkers()) {
       const p = this.markerPx(m);
       if (p) drawIcon(ctx, m.icon, m.rgb, p[0], p[1], 22);
     }
@@ -2057,7 +2172,7 @@ export class MapUi {
               x: ax,
               y: ay,
               moved: false,
-              marker: pickMarker(this.markers.all, (m) => this.markerPx(m), ax, ay)?.id ?? null,
+              marker: pickMarker(this.shownMarkers(), (m) => this.markerPx(m), ax, ay)?.id ?? null,
             }
           : null;
       down.set(e.pointerId, { x, y });

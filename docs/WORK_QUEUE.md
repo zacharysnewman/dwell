@@ -2141,6 +2141,27 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    `markers.gen.ts`), a player's markers as one record per device key in the world's optional `markers` table,
    synced to that player only behind the `markers.private` capability.
 
+54. **Resurrection shrines** (owner 2026-11-12: **"And then we want to add 'resurrection shrines' these should work like
+   Guild Wars. You respawn at the nearest shrine when you die."** / **"We'll have to spread these pretty thick across
+   the map likely."**). Answers: shrines **~2 km apart**; respawn at the **nearest shrine to where you died, on the face
+   you died on**; shrines **show on the map**, are **a built structure with a glow**, and the map can **toggle them off
+   (filters)**. Placing a structure changes the terrain a seed generates: a new compatibility line, raised in the same
+   PR (RELEASES.md "Who raises the line"). Status in docs/SHRINES.md. The shrine's design (owner, 2026-11-12): **"The
+   shrine should be a 8x8m terraced and filled stone circle with stepping pillars forming a half circle. Only the
+   tallest pillars (half of them) are connected at the top. Forming a quarter circle."** Built as data
+   (`shrines.json` `design`: radius, steps, pillar count, heights, lintel, light), generated into the structure file:
+   an 8 × 8 m round platform filled to the ground and terraced in ½ m steps, pillars on one half of its rim stepping
+   up toward the arc's middle, the tallest half (a quarter circle) joined by a lintel, the light at the centre; the
+   open half turned by a seeded quarter turn per site. Owner, 2026-11-12: **"Not sure how easy this is to do, but prefer to
+   rotate it so it faces out from hillsides."** So each shrine is turned by its ground: the pillar arc uphill, the open
+   half facing downhill (the height field's gradient over the footprint, snapped to the four quarter turns, the
+   structure being drawn on the block grid), the seeded turn on flat ground (`flatBelowDeg`). Owner, 2026-11-12:
+   **"Perhaps we use the original spawn point we've been setting to then target the nearest shrine to that point for
+   initial spawn, so all spawns are at shrines."** So the spawn search runs as before and the player stands up at the
+   shrine nearest its point on that face (face A's spawn and face B's `?spawn=b`); when none lies within `spawnWithin`
+   m a shrine is built at the search's point itself (deterministic: the point is the seed's), so a spawn always has
+   one. Portal and moon spawns keep theirs (they stand at a portal's rim or on another world by design).
+
 ## Future (needs owner answers)
 
 - **Waterlogging** (owner 2026-11-12: "Eventually we'll want to make it so some blocks if they don't move for a little

@@ -1056,6 +1056,9 @@ pub struct Game<S: Scene> {
     near_ring: Vec<Coord>,
     /// The Welcome's verification chunk: the cell under the world's spawn, where a respawn is.
     spawn_chunk: Option<ChunkCoord>,
+    /// The chunk of the shrine a dead player will stand up at, as this client guesses it (the
+    /// respawn preload's centre; the spawn's when unknown).
+    respawn_chunk: Option<ChunkCoord>,
     /// The respawn preload's priorities (§6.3; off with `?respawnPreload=off`).
     respawn_preload_on: bool,
 }
@@ -1227,6 +1230,7 @@ impl<S: Scene> Game<S> {
             loading: LoadingGate::new(LOADING, false),
             near_ring: near_ring_offsets(LOADING.radius_chunks),
             spawn_chunk: verification,
+            respawn_chunk: None,
             respawn_preload_on: true,
             bodies: Bodies::default(),
             held_sent: None,
@@ -1329,7 +1333,10 @@ impl<S: Scene> Game<S> {
     /// sections hold ground, not air, and waited 14 frames for their outer chunks, meshed last).
     fn respawn_preload(&self) -> Option<SecondCentre> {
         let radius = RESPAWN_PRELOAD_RADIUS_CHUNKS.filter(|_| self.respawn_preload_on)?;
-        let at = self.spawn_chunk.filter(|_| self.dead)?;
+        let at = self
+            .respawn_chunk
+            .or(self.spawn_chunk)
+            .filter(|_| self.dead)?;
         Some(SecondCentre {
             near: LOADING.radius_chunks,
             at: at.to_array(),
@@ -1867,9 +1874,20 @@ impl<S: Scene> Game<S> {
                         .tick(&self.current.eye_state(), 1.0 / SIM_HZ as f64);
                 }
                 self.health = s.local.health;
+                let was_dead = self.dead;
                 self.dead = s.local.flags & player_flags::DEAD != 0;
                 if self.dead {
                     self.death_feet = s.local.position;
+                }
+                // Just died: where the server will stand us up, the shrine nearest the death on its
+                // face (docs/SHRINES.md), so the respawn preload readies the terrain there.
+                if self.dead && !was_dead {
+                    let feet = s.local.position;
+                    self.respawn_chunk = self.far_terrain.as_deref().and_then(|t| {
+                        let face = dwell_world::FaceFrame::at_height(feet[1]).face;
+                        t.nearest_known_shrine(face, feet[0], feet[2])
+                            .map(dwell_world::chunk_of_pos)
+                    });
                 }
                 self.input_buffer = s.local.input_buffer;
                 self.tick_rate = if self.input_buffer <= BUFFER_LOW {

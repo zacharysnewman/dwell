@@ -1,0 +1,59 @@
+{
+  "$comment": "Resurrection shrines (docs/SHRINES.md; owner, 2026-11-12: \"'resurrection shrines' these should work like Guild Wars. You respawn at the nearest shrine when you die\", \"We'll have to spread these pretty thick across the map likely\"; answers: ~2 km apart, the nearest shrine to where you died on the face you died on, shown on the map, a built structure with a glow, the map can toggle them off). Sited from the seed alone, per face (crates/dwell-worldgen/src/shrines.rs): the face's ground is cut into `spacing` m cells, each holding at most one shrine at the first of `attempts` hashed points no more than `jitter` × spacing / 2 from the cell's centre that suits: inside the disc and at least `inland` m from the coast, dry (no river or lake) over its whole footprint, its ground `height` [min, max] m above sea level, the footprint's rise at most `maxSlopeDeg` across it, at least `portalClear` m from every portal. `structure` (shared/structures; `design` builds it) stands there, turned so its open half faces downhill (the quarter turn nearest the height field's fall across the footprint; a seeded one where the ground is flatter than `flatBelowDeg`), as the portals' monuments do (its anchor on the site, its bottom row on the lowest ground under it), drawn in the LOD at levels whose cells are at most `lodCellM` m; no tree stands within `clear` m of it. A dead player stands up at `stand` (x, z from the anchor) on the shrine nearest the death, on the death's face (`searchCells`: how many cells round the death's are searched; none found: the world spawn). The world spawn is a shrine too: the spawn search's point moved to the shrine nearest it, or, with none within `spawnWithin` m, a shrine built at the point itself. `worlds`: overrides of any of these keys by a world setting's name (shared/worldgen/worlds, ADR 0074 B4). `map`: the big map and the minimap show the shrines in explored ground (`reveal` \"explored\", Guild Wars' map reveal; \"all\" every one) as `icon` (a vector icon of shared/ui/markers.json) in `color`, `iconPx` on the big map; the map's filters hide them (and each marker kind). Prototype content. Changing any value but `map`, `stand` and `searchCells` changes the terrain a seed generates: regenerate the goldens and ship it on a new compatibility line. Run `node shared/worldgen/gen.mjs` after editing; CI fails on stale output.",
+  "spacing": 2000,
+  "jitter": 0.6,
+  "attempts": 16,
+  "inland": 80,
+  "height": [
+    2,
+    900
+  ],
+  "maxSlopeDeg": 8,
+  "flatBelowDeg": 2,
+  "portalClear": 250,
+  "clear": 3,
+  "structure": "dwell:shrine",
+  "design": {
+    "$comment": "The shrine's shape (owner, 2026-11-12: \"The shrine should be a 8x8m terraced and filled stone circle with stepping pillars forming a half circle. Only the tallest pillars (half of them) are connected at the top. Forming a quarter circle.\"), built by shared/worldgen/gen.mjs into shared/structures/<structure>.json (CI fails on a stale file): a round platform of `block`, the columns whose centres lie within `radius` m of its centre (an 8 × 8 m circle for 4), `base` m of filled stone, then a ½ m step over the base for each of `steps` (radii in m, shrinking toward the centre: the terraced dais). `pillars.count` pillars (1 more than a multiple of 4) on the back half's arc of `arcRadius` m, standing on the floor, `lowest` m tall at the arc's ends and `rise` m taller each one toward its middle; the middle half of them (the tallest, a quarter circle) are joined at their tops by a `lintel.thickness` m lintel along the arc. `light.block` stands on the dais's top on the columns within `light.radius` m of the centre (its glow). The open half faces +z before the site's quarter turn; `stand` is on it.",
+    "block": "dwell:stone",
+    "radius": 4,
+    "base": 1,
+    "steps": [
+      3,
+      2
+    ],
+    "pillars": {
+      "block": "dwell:stone",
+      "count": 9,
+      "arcRadius": 3.5,
+      "lowest": 1.5,
+      "rise": 0.5
+    },
+    "lintel": {
+      "block": "dwell:stone",
+      "thickness": 0.5
+    },
+    "light": {
+      "block": "dwell:torch",
+      "radius": 1
+    }
+  },
+  "lodCellM": 16,
+  "stand": [
+    0,
+    2
+  ],
+  "searchCells": 3,
+  "spawnWithin": 1500,
+  "worlds": {
+    "test:archipelago": {
+      "inland": 30
+    }
+  },
+  "map": {
+    "reveal": "explored",
+    "icon": "shrine",
+    "color": "#7fd6ff",
+    "iconPx": 18
+  }
+}

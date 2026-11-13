@@ -27,6 +27,7 @@ pub mod plates;
 pub mod portals;
 pub mod progress;
 pub mod ramps;
+pub mod shrines;
 pub mod species;
 pub mod tectonics;
 pub mod terrain;
@@ -212,6 +213,26 @@ pub fn portal_spawn_for(
         dwell_world::FaceFrame::of(face).y(feet),
         f64::from(z) + 0.5,
     ])
+}
+
+/// Where a player who died with its feet at a world point stands up again (docs/SHRINES.md): the
+/// shrine nearest the death on the death's face, as world feet; `None` with none in the search.
+pub type ShrineRespawn = Arc<dyn Fn([f64; 3]) -> Option<[f64; 3]> + Send + Sync>;
+
+/// The shrine respawn of a generator version's world; `None` for a generator without shrines (the
+/// flat world, the sandbox).
+pub fn shrine_respawn_for_sized(
+    version: u32,
+    world_seed: u64,
+    size: WorldSize,
+) -> Option<ShrineRespawn> {
+    let terrain = Arc::new(BifacialTerrain::for_generator_sized(
+        version, world_seed, size,
+    )?);
+    Some(Arc::new(move |[x, y, z]: [f64; 3]| {
+        let face = dwell_world::FaceFrame::at_height(y).face;
+        terrain.nearest_shrine(face, x, z).map(|(_, feet)| feet)
+    }))
 }
 
 /// Feet position players spawn at: near the origin, on open level ground.

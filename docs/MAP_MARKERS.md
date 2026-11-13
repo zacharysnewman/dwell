@@ -37,6 +37,14 @@ fails on stale output (`shared/ui/gen.test.mjs`).
 What stays code: the path vocabulary, the two keep rules, where the auto kinds are noted (the shell
 notes `spawn` and `death`; a portal system would call `MarkerList.noteAuto('portal', …)`).
 
+## Filters (0.58)
+
+The big map's filter button lists the layers the maps show (`client/src/ui/mapShrines.ts`
+`filterLayers`): the resurrection shrines ([SHRINES.md](SHRINES.md), a derived layer drawn with the
+`shrine` icon, not saved markers), each `auto` kind by data, and the player's own markers. A hidden
+layer leaves the big map, the minimap and the world waypoints, and its markers aren't picked;
+the choices are per browser (`dwell.map.filters`).
+
 ## The record and the wire
 
 `dwell_protocol::markers::Markers` (and `client/src/ui/markers.ts`'s codec, both pinned by the golden

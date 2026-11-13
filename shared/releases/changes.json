@@ -2,6 +2,16 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.58.0",
+      "changes": [
+        "Resurrection shrines: when you die you stand up again at the shrine nearest where you fell, on the side of the world you fell on",
+        "Shrines stand about every 2 km: a terraced stone circle with stepping pillars, the tallest joined at the top, and a light at its centre",
+        "Each shrine faces out from its hillside, and every new world's spawn is at a shrine",
+        "The map shows the shrines in ground you have explored; its new filters hide or show the shrines and each kind of marker",
+        "New compatibility line: worlds from 0.57 open in 0.57 builds"
+        ]
+      },
+      {
       "version": "0.57.4",
       "changes": [
         "Map markers: click the big map (M) to place one, with an icon, a colour and a short label; drag to move, click to edit or delete",

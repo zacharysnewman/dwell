@@ -3087,6 +3087,26 @@ impl Client {
         }
         out
     }
+    /// The resurrection shrines on face `face` (0 A, 1 B) in the grid cells within `cells` of
+    /// face-local column (x, z)'s (docs/SHRINES.md), each its anchor [x, z] (face-local m); the
+    /// big map shows the explored ones. Empty for a world without them.
+    #[wasm_bindgen(js_name = mapShrines)]
+    pub fn map_shrines(&self, face: u8, x: f64, z: f64, cells: i32) -> Vec<f64> {
+        let s = self.inner.borrow();
+        let Some(t) = s.game.as_ref().and_then(|g| g.far_terrain.clone()) else {
+            return Vec::new();
+        };
+        let face = if face == 1 {
+            dwell_world::Face::B
+        } else {
+            dwell_world::Face::A
+        };
+        let mut out = Vec::new();
+        for sh in t.shrines_round(face, x.floor() as i32, z.floor() as i32, cells.clamp(0, 4)) {
+            out.extend([f64::from(sh.x) + 0.5, f64::from(sh.z) + 0.5]);
+        }
+        out
+    }
     /// Map markers (docs/MAP_MARKERS.md): the player's place for them, [face (0 A, 1 B), x, y, z
     /// (face-local m, the feet), dead (1/0), then while dead the death's face, x, y, z].
     #[wasm_bindgen(js_name = markerPose)]

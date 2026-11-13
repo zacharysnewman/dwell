@@ -50,6 +50,7 @@ export const MARKER_ICONS: readonly MarkerIcon[] = [
   { id: "tower", name: "Tower", colour: "white", path: "M6 2 H9 V4 H11 V2 H13 V4 H15 V2 H18 V8 L16 10 V22 H8 V10 L6 8 Z M11 13 V17 H13 V13 Z" },
   { id: "mountain", name: "Mountain", colour: "white", path: "M1 21 L9 6 L13 13 L16 9 L23 21 Z" },
   { id: "eye", name: "Lookout", colour: "teal", path: "M1 12 C5 5 19 5 23 12 C19 19 5 19 1 12 Z M12 8 A4 4 0 0 1 12 16 A4 4 0 0 1 12 8 Z M12 10 A2 2 0 0 1 12 14 A2 2 0 0 1 12 10 Z" },
+  { id: "shrine", name: "Shrine", colour: "teal", path: "M2 19 H22 V22 H2 Z M5 17 H19 V19 H5 Z M3 11 H5 V19 H3 Z M19 11 H21 V19 H19 Z M7 6 H9 V17 H7 Z M15 6 H17 V17 H15 Z M7 4 H17 V6 H7 Z M12 9 C10.5 11 10.5 13 12 14 C13.5 13 13.5 11 12 9 Z" },
   { id: "question", name: "Unknown", colour: "purple", path: "M7.5 8.5 C7.5 4.5 16.5 4.5 16.5 8.5 C16.5 11.5 13 12 13 14.5 V15.5 H11 V14 C11 10.5 14.5 10.5 14.5 8.5 C14.5 6.5 9.5 6.5 9.5 8.5 Z M11 17.5 H13 V20.5 H11 Z" },
 ];
 
