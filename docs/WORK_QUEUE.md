@@ -776,9 +776,17 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    color changes." No cream band: walls deep red-brown (darker, sheer, vertical streaks); talus aprons and stepped
    skirts red-brown to red-orange in thin ledges; the valley floor bright red-orange sand with boulders and paler tan
    patches blending in (dune patches, washes, tracks); low rounded red outcrops with rubble; colours change smoothly
-   red ↔ brown ↔ tan over distance, never in hard bands or a checkerboard. **Owner should see:** Monument Valley-like
+   red ↔ brown ↔ tan over distance, never in hard bands or a checkerboard. ~~Owner should see: Monument Valley-like
    country. Dark red-brown buttes with stepped red talus skirts, standing on a red-orange sand floor with paler tan
-   patches blending smoothly, boulders and low rounded red outcrops. No cream bands, no abrupt colour changes.
+   patches blending smoothly, boulders and low rounded red outcrops. No cream bands, no abrupt colour changes.~~
+   Replaced again by the owner (2026-11-13, a dusk Monument Valley photo: red-brown buttes over a flat reddish dirt plain
+   covered in round grey-green sagebrush clumps 1–3 m apart): "Mostly reddish dirt though. Some brush too. Could add
+   some single 'tree' block with brush on top." So the floor is mostly a new natural `dwell:red_dirt` (red sand the
+   patches, washes and dunes, tan the paler blended patches, by the same ordered blend red dirt ↔ red sand ↔ tan), and
+   sagebrush, a small desert shrub in the tree system (a single trunk or stump with a round grey-green brush crown,
+   1–1.5 m), dense on mesa and desert floors (1.5–3 m apart, data), sparser on slopes, none on bare walls.
+   **Owner should see:** a reddish-dirt valley floor dotted with round grey-green sagebrush, with red sand and pale tan
+   patches blending in. Dark red-brown buttes with stepped skirts rise from it. No abrupt colour changes.
    Owner, 2026-11-13, also added to the batch: "Im not seeing any tan deserts is that not a thing yet?" The biome
    exists (`preset:sand_desert`, in realistic.json's list, with dunes: ≥ 14 °C, rain ≤ 250 mm, wetness ≤ 0.25), but on
    seed 2741893632 it did not appear (cold desert 40 %, sand desert ~0 %): the climate's dry ground is too cold. Change:
