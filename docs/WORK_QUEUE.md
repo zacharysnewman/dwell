@@ -32,6 +32,13 @@ time"). Notes ride with real changes (no notes-only PRs; CI skips docs-only chan
   the 0.56 line raised by the owner; (3) the moon's client side M-7c (item 27) — built on `claude/moon-client-m7c-mxftge` (the browser flight a local check);
   (4) ~~browser check of Realistic worlds~~ (done 2026-11-12: R6's exit met, item 15); (5) the forest edge (~9 ms over at
   High on the M1; impostors save ~4 ms, #848); (6) the in-game cloud check (#822 shapes/colour, #790, #801, #823).
+- **Creative hit fixes (brief, 2026-11-13; BUGS.md #127, #128):** (1) "Fix so Creative breaks every block, slopes
+  included, in one hit": not slope-specific, a held tool keeps its hits in creative by the owner's 2026-11-11 rule
+  (BLOCK_DAMAGE.md §7). Orchestrator: "The creative question goes to the owner; until answered keep the rule … and fix
+  only the form text": creative's description now reads "without a tool any block breaks in one hit (held tools keep
+  their hits)". **Open for the owner:** should a held tool also break in one hit in creative? (2) "The pick ray must
+  hit the wedge's sloped face … targetable from every angle its face is visible": not reproduced natively (BUGS.md
+  #128); a both-faces guard test added; needs the screenshot's world, position and look.
 - **Starter pin (brief, 2026-11-13):** "`the_starter_worlds_terrain_is_unchanged` fails on main … find which merge
   after the 0.55 re-pin changed the starter world's terrain … If intended … re-pin with the commit cited; if it was
   NOT meant to change the starter … fix the leak." Done (BUGS.md #114): no merge changed it; the 0.55 line's
