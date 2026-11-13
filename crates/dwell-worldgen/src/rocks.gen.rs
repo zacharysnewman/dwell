@@ -197,7 +197,7 @@ pub const GEOLOGY: Geology = Geology {
     tread: 1.5,
     sheer: 2.0,
     ledge: 2.0,
-    ledge_every: 0.5,
+    ledge_every: 1.0,
     tread_relief: 0.08,
     notched: true,
     erosion: Erosion {

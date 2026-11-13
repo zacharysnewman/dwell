@@ -113,7 +113,7 @@ fn fnv(h: &mut u64, bytes: &[u8]) {
 /// (`shaping.strength` 0.25) the stored ramps notch on diagonal contours and soft beds take ledges.
 /// Both together (the 0.59 line):
 const STARTER_PIN: [(Face, &str); 2] =
-    [(Face::A, "cdbb18b9ed921c34"), (Face::B, "0267ebf61b656e71")];
+    [(Face::A, "65f4d1679ef42d3c"), (Face::B, "83052f693ade43ce")];
 
 #[test]
 fn the_starter_worlds_terrain_is_unchanged() {

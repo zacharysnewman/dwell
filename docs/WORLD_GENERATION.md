@@ -445,12 +445,12 @@ rock overlay). Prototype content (§6.1 of the architecture): today's blocks sta
 
 **Ledges, notched ramps and the red desert (0.59.0; owner, 2026-11-13).** Realistic's bedded slopes read as
 fields of single-cell ½ m stairs and its mesa tops were dead flat. `shaping.ledge` (2 m) and `ledgeEvery`
-(0.5): a soft bedded rock's talus is ramped runs broken by a near-vertical ledge that tall every that share
+(1: one a bed): a soft bedded rock's talus is ramped runs broken by a near-vertical ledge that tall every that share
 of its bed; `treadRelief` (0.08): every tread rises over that share of its bed (a mesa top keeps a little of
 the ground's roll); `notched` 1: where the shaping is on, the stored ramps also top diagonal contours
 (`HALF_HEIGHT_GRID.md` §10). The red-rock mesa's floors are `dwell:red_sand` (its preset's bands) and its own
 stack `dwell:red_desert_beds` (weight 0) is sandstone over a red `dwell:siltstone` whose talus is red sand.
-`tests/realistic_steps.rs` (both faces): bare ½ m steps on bedded ground 61 % → 0 %, ledges of 2 m ~1.6×, red
+`tests/realistic_steps.rs` (both faces): bare ½ m steps on bedded ground 61 % → 0 %, ledges of 2 m ~1.3×, red
 sand and no plain sand on the mesa's surface. Before/after top-down dump: `dump_a_bedded_slope` (ignored test).
 
 ## Tectonics (2026-11-10, ADR 0075 T5)

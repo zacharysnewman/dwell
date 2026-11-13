@@ -657,10 +657,10 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    `rampFamilies`; `shared/worldgen/gen.mjs` `validateSurfaceRamps` fails naming any block a worldgen surface rule can
    place (biome bands, rocks, soils, grids, lava's rock) without ramps. The moon generator (`grids.rs`) doesn't shape
    ramps yet: its dust has them for when it does. (3) Layered steps as ledges (rocks.json `shaping`: `notched` 1,
-   `ledge` 2 m every `ledgeEvery` 0.5 of a soft bed, `treadRelief` 0.08): where the rock shapes the ground the stored
+   `ledge` 2 m every `ledgeEvery` 1 of a soft bed (one a bed), `treadRelief` 0.08): where the rock shapes the ground the stored
    ramps also top diagonal contours (`ramps::top_of_notched`), a soft bedded rock's slope is ramped runs broken by 2 m
    ledges, and treads keep 8 % of a bed's relief. `tests/realistic_steps.rs` (both faces): bare ½ m steps on bedded
-   ground 61 % (0.58) → 0 %, ledges ≥ 2 m ~1.6×. (4) Sand's `"settlesAs": "full"` (blocks gen.mjs, `SETTLES_AS`,
+   ground 61 % (0.58) → 0 %, ledges ≥ 2 m ~1.3×. (4) Sand's `"settlesAs": "full"` (blocks gen.mjs, `SETTLES_AS`,
    `dwell_blocks::settled_state`): a falling block's ramp family falls too and a fallen sand or red sand ramp settles as
    the full block (felling.rs, both faces). Rule chosen: always the full block on settling.
 16. **Phone frame rate (P0)** (owner 2026-11-11, iPhone 17, Safari, setting Low: "I'm only getting ~23 fps on

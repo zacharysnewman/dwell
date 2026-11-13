@@ -223,12 +223,12 @@ dwell_world::both_faces!(
             "the 0.58 shaping stairs (the measure sees it): {old:?}"
         );
         assert!(
-            ledges as f64 > 1.3 * old.3 as f64,
+            ledges as f64 > 1.15 * old.3 as f64,
             "more ledges of at least {ledge} m than 0.58's stairs: {ledges} against {}",
             old.3
         );
         assert!(
-            ledges * 20 > columns,
+            ledges * 25 > columns,
             "ledges of at least {ledge} m break the bedded ground: {ledges} of {columns}"
         );
     }
