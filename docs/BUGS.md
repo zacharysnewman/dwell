@@ -482,6 +482,17 @@ face, or the placement check against its shape.
 
 ## Fixed
 
+### 114. The starter world's terrain pin failed on main since the 0.55 line (fixed after 0.56.4)
+
+Reported by two sessions, 2026-11-13: `cargo test --release -p dwell-worldgen --test starter_memory`
+`the_starter_worlds_terrain_is_unchanged` fails on main (already at 0.55.21). Not a terrain change: bisecting the
+first-parent merges from #841 to #868 natively, every one hashes the starter to the same values, as does the 0.55
+line's own commit (58f72da, "the starter pin regenerated for both together"). Its combined pin never matched the
+code it was committed with, while each branch's own pin (#834's f53b86d, #838's 0416b7b) passes at its commit. So
+no merge since changed 1× or the starter (#861's big-world terrain and #868's Realistic stepping leave it as is),
+and the 0.55 line has shipped this terrain since 0.55.0. Fixed by re-pinning to the hashes those builds generate
+(`5e9869d57483a3a3`, `a55324f4fdc776e2`); red at main, green after; the worldgen goldens pass unchanged.
+
 ### 112. Slopes show no mark when hit with a tool, though they break (fixed after 0.55.13)
 
 Owner, 2026-11-12: "Slopes aren't affected visually by tools when hit, though they do break." A ½ m stored ramp

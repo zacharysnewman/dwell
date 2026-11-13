@@ -32,6 +32,10 @@ time"). Notes ride with real changes (no notes-only PRs; CI skips docs-only chan
   the 0.56 line raised by the owner; (3) the moon's client side M-7c (item 27) — built on `claude/moon-client-m7c-mxftge` (the browser flight a local check);
   (4) ~~browser check of Realistic worlds~~ (done 2026-11-12: R6's exit met, item 15); (5) the forest edge (~9 ms over at
   High on the M1; impostors save ~4 ms, #848); (6) the in-game cloud check (#822 shapes/colour, #790, #801, #823).
+- **Starter pin (brief, 2026-11-13):** "`the_starter_worlds_terrain_is_unchanged` fails on main … find which merge
+  after the 0.55 re-pin changed the starter world's terrain … If intended … re-pin with the commit cited; if it was
+  NOT meant to change the starter … fix the leak." Done (BUGS.md #114): no merge changed it; the 0.55 line's
+  combined pin (58f72da) was wrong from the start, re-pinned to what 0.55.0 onward generates.
 - **Merged today (late):** #857 the axe like the other tools; #858 Realistic in New world; #854 hits at contact;
   #852 sound placement; #853/#855 one-command video re-records (`take.mjs`); #851 big-world placing; #848 far-tree
   impostors fixed (BUGS #106); #845 big-world LOD; #846 portal exit on face B; #847 leaves flush with logs; #841 the
