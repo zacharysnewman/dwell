@@ -1,0 +1,5 @@
+{
+  "changes": [
+    "A Realistic world finds its spawn shrine faster: the spawn search no longer spends time re-reading the whole biome map."
+  ]
+}

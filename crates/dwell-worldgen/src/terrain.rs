@@ -711,6 +711,34 @@ struct SnowLine {
 }
 
 impl BiomeSet {
+    /// The set's configuration as text: everything but its whole-map grids (the biome field and
+    /// the drainage), which are derived from the map and this (`TerrainGenerator::spawn_key`;
+    /// BUGS.md #132: formatting the grids too took ~134 ms a face on the Realistic world).
+    pub fn config_text(&self) -> String {
+        format!(
+            "{:?}",
+            (
+                &self.list,
+                &self.palettes,
+                &self.first,
+                self.field.is_some(),
+                &self.params,
+                &self.geology,
+                &self.biome_stack,
+                (self.rock_first, &self.rock_palette),
+                self.drainage.is_some(),
+                &self.soft_tops,
+                (&self.snow, &self.biome_snow),
+                (
+                    &self.soil_first,
+                    self.soil_types,
+                    self.soil_list,
+                    &self.soil_has_blocks
+                ),
+            )
+        )
+    }
+
     /// The bytes each of its whole-map grids holds (BUGS.md #70; `tests/starter_memory.rs`).
     pub fn grid_bytes(&self) -> Vec<(&'static str, usize)> {
         let mut out = Vec::new();
@@ -4750,7 +4778,7 @@ impl TerrainGenerator {
     pub fn spawn_key(&self) -> String {
         use std::hash::{Hash, Hasher};
         let mut h = std::collections::hash_map::DefaultHasher::new();
-        format!("{:?}", self.biomes).hash(&mut h);
+        self.biomes.config_text().hash(&mut h);
         format!(
             "{}|{}|{:?}|{:016x}",
             self.world_seed,
