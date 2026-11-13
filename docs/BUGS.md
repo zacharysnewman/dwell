@@ -554,6 +554,22 @@ face, or the placement check against its shape.
 
 ## Fixed
 
+### 137. Opening the inventory opened the game menu on top of it (fixed after 0.60.7)
+
+Owner, 2026-11-13: "Opening your inventory currently opens the menu too, on top of your inventory. Which isn't correct.
+Should just open your inventory and free your mouse. Closing it, should immediately lock your mouse again, same for menuz"
+
+Cause: opening the inventory (E, the controller's inventory button, the touch bag) released the pointer lock, and the
+game menu opened on any lock loss (`enableGameMenu`'s `pointerlockchange`), as for the browser's Esc. Closing the
+inventory never asked for the lock again, and the big map (M) had the same menu-on-open path. Fix: one owner of which
+panel is open, `client/src/ui/panels.ts` (`Panels`: playing, the inventory, the game menu, the big map; one at a time).
+Opening a panel frees the mouse and a lock it freed opens nothing; a lock lost while playing (Esc, alt-tab) still opens
+the menu. Closing a panel (its key, Esc, Resume, Back, the backdrop, the controller) asks for the lock from the closing
+gesture; a request the browser refuses (Esc grants no user activation, the cooldown after an Esc) is retried on the next
+click on the game, without opening the menu. Esc goes through the owner too (closes the open panel, else opens the
+menu). Test: `client/src/ui/panels.test.ts` (fake document and pointer lock), red on the reported case (3 tests: the
+inventory and the big map opened the menu) with the old rule (any lock loss opens the menu), green with the fix.
+
 ### 136. Teleported onto the moon, the ground under the player never arrives (fixed after 0.58.9)
 
 Found by the teleport the owner asked for (2026-11-13, below #123's test): put straight onto the moon's ground, the

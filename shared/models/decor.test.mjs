@@ -5,7 +5,12 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { bandSector, decorPlan, facets, validateDecor } from "./decor.mjs";
+import { addPieces, addedVertices, bandSector, decorBase, decorPlan, facets, rayHit, validateDecor } from "./decor.mjs";
+import { resolveColor } from "./gen.mjs";
+import { allLevelParts, readMesh } from "./parts.mjs";
+
+const hexRgb = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255);
+const toLinear = (c) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
 
 const here = dirname(fileURLToPath(import.meta.url));
 const palette = JSON.parse(readFileSync(join(here, "../textures/palette.json"), "utf8"));
@@ -70,7 +75,7 @@ test("a mark paints the facets near its point and its mirror (the nearest if non
 
 test("bad decor fails with a message", () => {
   const bad = (d, re, opts = {}) =>
-    assert.throws(() => validateDecor([d], palette, "decor", opts.parts ?? ["hat"], opts.repaint), re);
+    assert.throws(() => validateDecor([d], palette, "decor", opts.parts ?? ["hat"], opts.repaint, opts.joints), re);
   bad({ ...band, kind: "stripe" }, /kind is one of/);
   bad({ ...band, segments: 7 }, /whole multiple/);
   bad({ ...band, colours: ["bark"] }, /two or more/);
@@ -82,5 +87,120 @@ test("bad decor fails with a message", () => {
     repaint: [{ from: "hair_brown", to: "wool_yellow", part: "hat" }],
   });
   bad({ kind: "mark", colour: "hair_black", at: [0, 1], radius: 0.01 }, /at is \[x, y, z\]/);
+  bad({ ...band, order: true }, /no segments/);
+  bad({ ...band, span: -1 }, /span/);
+  const piece = { kind: "piece", joint: "head", at: [0, 1.6, 0], facing: "+z", quads: [{ colour: "hair_black", at: [0, 0], size: [0.01, 0.01] }] };
+  bad({ ...piece, joint: "tail" }, /no joint tail/, { joints: ["head"] });
+  bad({ ...piece, facing: "up" }, /facing/);
+  bad({ ...piece, quads: [{ colour: "hair_black", at: [0, 0], size: [0, 0.01] }] }, /size/);
   assert.doesNotThrow(() => validateDecor([band], palette, "decor", ["hat"]));
+  assert.doesNotThrow(() => validateDecor([piece], palette, "decor", ["hat"], [], ["head"]));
+});
+
+// The Peasant as checked in (models.json `decor`, applied by `node shared/models/import.mjs --coat`).
+const models = JSON.parse(readFileSync(join(here, "models.json"), "utf8"));
+const peasant = models.models.peasant;
+const glb = readFileSync(join(here, peasant.glb));
+const partsFile = JSON.parse(readFileSync(join(here, peasant.parts), "utf8"));
+const levels = models.detail.levels.map((_, k) => readMesh(glb, `detail_${k}`));
+const levelParts = allLevelParts(glb, Uint8Array.from(partsFile.vertices.join(""), Number));
+const entry = (kind, part) => peasant.decor.find((d) => d.kind === kind && d.part === part);
+const centreOf = (m, vs) => [0, 1, 2].map((k) => vs.reduce((a, v) => a + m.position(v)[k], 0) / vs.length);
+const near = (a, b) => a.every((x, k) => Math.abs(x - b[k]) < 0.004);
+
+test("the Peasant has its eyes at every detail level: dark quads on the head joint, both sides of the face", () => {
+  const eyes = entry("piece");
+  const dark = hexRgb(resolveColor(palette, eyes.quads[0].colour)).map(toLinear);
+  const head = levels[0].jointNames.indexOf(eyes.joint);
+  levels.forEach((m, k) => {
+    const added = addedVertices(glb, `detail_${k}`);
+    assert.equal(added, 4 * eyes.quads.length * 2, `detail_${k}: a quad a side per entry`);
+    const first = m.count - added;
+    const sides = new Set();
+    for (let v = first; v < m.count; v++) {
+      assert.equal(m.joints(v)[0], head, `detail_${k}: on the head joint`);
+      assert.equal(m.weights(v)[0], 1);
+      if (near(m.colour(v), dark)) sides.add(Math.sign(m.position(v)[0]));
+    }
+    assert.deepEqual([...sides].sort(), [-1, 1], `detail_${k}: a dark eye each side`);
+    // Drawn: the quads are in the index list.
+    assert.ok(m.indices.some((i) => i >= first), `detail_${k}: the eyes' triangles are drawn`);
+    // In front of the face: no triangle of the head is nearer the viewer at the eye's centre.
+    const eye = Array.from({ length: 4 }, (_, i) => m.position(first + i));
+    const c = [0, 1, 2].map((a) => eye.reduce((s, p) => s + p[a], 0) / 4);
+    for (let t = 0; t < first * 0 + m.indices.length; t += 3) {
+      if (m.indices[t] >= first) continue;
+      const h = rayHit([c[0], c[1], c[2] + 1], [0, 0, -1], ...[0, 1, 2].map((j) => m.position(m.indices[t + j])));
+      assert.ok(!(h > 0 && h < 1 - 1e-4), `detail_${k}: the face covers an eye`);
+    }
+  });
+  // The part map lists the added vertices, no part.
+  assert.equal(partsFile.vertices.join("").length, levels[0].count);
+  assert.ok(partsFile.vertices.join("").endsWith("0".repeat(addedVertices(glb, "detail_0"))));
+});
+
+test("the Peasant's crown band is on the hat's crown only, never the brim, at every level", () => {
+  const crown = entry("band", "hat");
+  const base = decorBase(glb, partsFile);
+  const hat = partsFile.parts.indexOf("hat") + 1;
+  const brimR = crown.r[1];
+  levels.forEach((m, k) => {
+    const plan = decorPlan([crown], facets(m.indices, m.count), m.position, () => "hat", m.indices);
+    // Every painted facet is the hat's, within the crown's radius.
+    const partPlan = decorPlan([crown], facets(m.indices, m.count), m.position, (p) => {
+      let best = 0;
+      let bd = Infinity;
+      base.positions.forEach((q, i) => {
+        const d = (q[0] - p[0]) ** 2 + (q[1] - p[1]) ** 2 + (q[2] - p[2]) ** 2;
+        if (d < bd) [bd, best] = [d, i];
+      });
+      return base.names[base.parts[best] - 1];
+    });
+    assert.ok(partPlan.length >= 8, `detail_${k}: a ring (${partPlan.length} facets)`);
+    assert.ok(plan.length >= partPlan.length);
+    for (const [vs] of partPlan) {
+      const c = centreOf(m, vs);
+      assert.ok(Math.hypot(c[0], c[2]) <= brimR, `detail_${k}: a brim facet painted`);
+    }
+    // No brim facet (the hat's, beyond the crown) carries a band colour it didn't have.
+    const red = hexRgb(resolveColor(palette, crown.colours[1])).map(toLinear);
+    for (const vs of facets(m.indices, m.count)) {
+      const c = centreOf(m, vs);
+      if (Math.hypot(c[0], c[2]) <= brimR || levelParts[k][vs[0]] !== hat) continue;
+      assert.ok(!near(m.colour(vs[0]), red), `detail_${k}: the brim at [${c.map((x) => x.toFixed(2))}] is banded`);
+    }
+  });
+});
+
+test("the Peasant's waist ring strictly alternates its two colours round the body, no spikes, at every level", () => {
+  const ring = entry("band", undefined);
+  assert.equal(ring.part, undefined);
+  assert.ok(ring.order && ring.span);
+  const cols = ring.colours.map((c) => hexRgb(resolveColor(palette, c)).map(toLinear));
+  levels.forEach((m, k) => {
+    const plan = decorPlan([ring], facets(m.indices, m.count), m.position, () => undefined, m.indices);
+    // The default (60 %) and full levels show a ring; the 35 % and 20 % keep only a few short facets.
+    assert.ok(plan.length >= (k <= 1 ? 8 : 0), `detail_${k}: a ring (${plan.length} facets)`);
+    const round = plan
+      .map(([vs, colour]) => {
+        const c = centreOf(m, vs);
+        return { deg: ((Math.atan2(c[0], c[2]) * 180) / Math.PI + 360) % 360, vs, colour };
+      })
+      .sort((a, b) => a.deg - b.deg);
+    round.forEach(({ vs, colour }, i) => {
+      assert.equal(colour, ring.colours[i % 2], `detail_${k}: facet ${i} round the ring`);
+      // Painted so in the GLB.
+      assert.ok(near(m.colour(vs[0]), cols[i % 2]), `detail_${k}: facet ${i} is painted ${colour}`);
+      const ys = vs.map((v) => m.position(v)[1]);
+      assert.ok(Math.max(...ys) - Math.min(...ys) <= ring.span, `detail_${k}: a spike`);
+    });
+  });
+});
+
+test("pieces are added once: a second run replaces them", () => {
+  const again = addPieces(glb, peasant.decor, palette);
+  assert.ok(Buffer.from(again).equals(Buffer.from(glb)));
+  const none = addPieces(glb, [], palette);
+  assert.equal(addedVertices(none, "detail_0"), 0);
+  assert.equal(readMesh(none, "detail_0").count, levels[0].count - addedVertices(glb, "detail_0"));
 });
