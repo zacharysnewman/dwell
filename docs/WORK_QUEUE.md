@@ -893,7 +893,14 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
 22. **Settings and version buttons look like web links** (owner 2026-11-11: "I thought we had settings and
    version buttons changed queued, is that true?" — it wasn't recorded anywhere; then "The buttons should be
    aligned to match the design of the others instead of looking like web links"). Restyle them as the menu's
-   own buttons, aligned with the others.
+   own buttons, aligned with the others. **Built 2026-11-13** (branch `claude/menu-buttons-goikyd`): Settings
+   and Versions are the home's paper block buttons (`mm-action mm-action-secondary`, since 0.53.x) side by
+   side under Worlds and Play with others; the last link-styled controls are buttons now: Versions' All
+   versions is a page-head button beside Back (`mm-head-button`), About's Third-party notices a small menu
+   button; Back, All versions and the world card's ⋯ gained hover and pressed states; the unused underlined
+   `.menu-link` style is gone. `mainMenuButtons.test.ts` pins that every main-menu button and link carries a
+   class of `MENU_BUTTON_CLASSES` (links only through `linkButton`), that no menu control is underlined, and
+   that each class has hover and pressed rules. Left: the owner's look.
 
 23. **Expandable sections in the main menu** (owner 2026-11-12: "Our main menu has some expandable sections that
    don't have good UI best practices to indicate they can expand and collapse. Improve these."). Built
