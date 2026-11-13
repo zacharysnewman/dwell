@@ -462,6 +462,19 @@ vectors["world_settings_capabilities"] = world_settings(
 # TheaterViewpoint (docs/THEATER_MODE.md §7): u8 0 (cleared) or 1 then three f64.
 vectors["theater_viewpoint"] = struct.pack("<BBddd", T["TheaterViewpoint"], 1, 1200.5, 96.25, -40.0)
 vectors["theater_viewpoint_cleared"] = struct.pack("<BB", T["TheaterViewpoint"], 0)
+# Markers (WORK_QUEUE item 53, docs/MAP_MARKERS.md): u8 version 1, u16 count, each u32 id, str icon,
+# u8 r g b, str label, u8 face, three f32 (face-local), str auto kind ("" the player's own).
+def marker(mid, icon, rgb, label, face, pos, auto):
+    return struct.pack("<I", mid) + s(icon) + bytes(rgb) + s(label) + struct.pack("<B", face) + f32s(*pos) + s(auto)
+
+
+MARKERS = (
+    struct.pack("<BBH", T["Markers"], 1, 2)
+    + marker(1, "home", (0xE8, 0x32, 0x2A), "Base", 0, (12.5, 70.0, -3.0), "")
+    + marker(7, "skull", (0xF4, 0xF1, 0xEA), "Last death", 1, (-40.0, 66.5, 900.25), "death")
+)
+vectors["markers"] = MARKERS
+vectors["markers_none"] = struct.pack("<BBH", T["Markers"], 1, 0)
 vectors["edit_ack"] = edit_ack(7, [])
 vectors["edit_ack_rejected"] = edit_ack(0x01020304, [2, 0x01020303, 0x01020304])
 
@@ -564,6 +577,12 @@ malformed = {
     "!capabilities_bad_name": struct.pack("<B", T["Capabilities"]) + capabilities(["Upper"]),
     "!capabilities_truncated": vectors["capabilities"][:-1],
     "!capabilities_trailing": vectors["capabilities"] + b"\x00",
+    "!markers_bad_version": struct.pack("<BBH", T["Markers"], 2, 0),
+    "!markers_truncated": MARKERS[:-1],
+    "!markers_id_twice": struct.pack("<BBH", T["Markers"], 1, 2)
+    + marker(1, "home", (0, 0, 0), "", 0, (0.0, 0.0, 0.0), "") * 2,
+    "!markers_bad_face": struct.pack("<BBH", T["Markers"], 1, 1)
+    + marker(1, "home", (0, 0, 0), "", 2, (0.0, 0.0, 0.0), ""),
     "!theater_viewpoint_bad_flag": struct.pack("<BB", T["TheaterViewpoint"], 2),
     "!theater_viewpoint_truncated": vectors["theater_viewpoint"][:-1],
     "!theater_viewpoint_not_finite": struct.pack("<BBddd", T["TheaterViewpoint"], 1, float("nan"), 0.0, 0.0),

@@ -656,6 +656,11 @@ pub enum Message {
     /// server adds it to this player's interest only where the world's mode has the
     /// `theaterViewpoint` ability. u8 0 (cleared) or 1 then three f64 (finite).
     TheaterViewpoint(Option<[f64; 3]>),
+    /// Both ways, reliable, control channel, only with the `markers.private` capability on both
+    /// sides (WORK_QUEUE item 53, docs/MAP_MARKERS.md): a player's map markers in this world, the
+    /// whole record (`crate::markers::Markers`). S→C once after the client's `Capabilities`, that
+    /// player's saved record, to that player only; C→S on each change, replacing it.
+    Markers(crate::markers::Markers),
 }
 
 /// Who fights: a player (its id) or a creature (an NPC, its id).
@@ -1034,6 +1039,7 @@ impl Message {
             M::Capabilities(_) => MessageType::Capabilities,
             M::Swordplay(_) => MessageType::Swordplay,
             M::TheaterViewpoint(_) => MessageType::TheaterViewpoint,
+            M::Markers(_) => MessageType::Markers,
             M::SwingHello => MessageType::SwingHello,
             M::BitesHello => MessageType::BitesHello,
             M::Steam(_) => MessageType::Steam,
@@ -1745,6 +1751,7 @@ fn write_body(w: &mut ByteWriter, m: &Message) {
         M::VitalsHello => {}
         M::CausesHello(n) => w.u8(*n),
         M::Capabilities(c) => c.write(w),
+        M::Markers(m) => m.encode_into(w),
         M::TheaterViewpoint(at) => match at {
             None => w.u8(0),
             Some(p) => {
@@ -2371,6 +2378,7 @@ fn read_body(r: &mut ByteReader, t: MessageType) -> Option<Message> {
         T::CausesHello => M::CausesHello(r.u8()),
         T::SteamHello => M::SteamHello,
         T::Capabilities => M::Capabilities(crate::capabilities::Capabilities::read(r)?),
+        T::Markers => M::Markers(crate::markers::Markers::decode_from(r)),
         T::TheaterViewpoint => M::TheaterViewpoint(match r.u8() {
             0 => None,
             1 => {

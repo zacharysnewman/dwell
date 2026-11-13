@@ -55,6 +55,10 @@ const WATER: TableDefinition<u32, &[u8]> = TableDefinition::new("water");
 const INVENTORIES: TableDefinition<&[u8; 32], &[u8]> = TableDefinition::new("inventories");
 /// Players' stamina and oxygen (ADR 0069), keyed by device key; records are the server's.
 const VITALS: TableDefinition<&[u8; 32], &[u8]> = TableDefinition::new("vitals");
+/// Players' map markers (docs/MAP_MARKERS.md; `dwell_protocol::markers::Markers::to_bytes`), keyed
+/// by device key: each player's own, sent to that player only. Optional and additive: a world
+/// without it has no markers, and an older build on the line never opens it.
+const MARKERS: TableDefinition<&[u8; 32], &[u8]> = TableDefinition::new("markers");
 /// The loose items lying in the world (`dwell_sim::loose_items::LooseItems::to_bytes`; ADR 0066):
 /// one record (key 0), rewritten on each save that carries it. Optional, as `inventories`.
 const LOOSE_ITEMS: TableDefinition<u32, &[u8]> = TableDefinition::new("loose_items");
@@ -243,6 +247,8 @@ pub struct SaveBatch {
     pub inventories: Vec<([u8; 32], Vec<u8>)>,
     /// Players' vitals (device key, record), each replacing its saved one (ADR 0069).
     pub vitals: Vec<([u8; 32], Vec<u8>)>,
+    /// Players' map markers (device key, record), each replacing its saved one (MAP_MARKERS.md).
+    pub markers: Vec<([u8; 32], Vec<u8>)>,
     /// The loose items now, replacing those saved before (None: leave them).
     pub loose_items: Option<Vec<u8>>,
     /// The wood cells' cuts now, replacing those saved before (None: leave them; ADR 0067).
@@ -754,6 +760,14 @@ impl WorldDb {
         Some(v.value().to_vec())
     }
 
+    /// A player's saved map markers record (docs/MAP_MARKERS.md), if any.
+    pub fn load_markers(&self, key: &[u8; 32]) -> Option<Vec<u8>> {
+        let txn = self.db.begin_read().ok()?;
+        let t = txn.open_table(MARKERS).ok()?;
+        let v = t.get(key).ok()??;
+        Some(v.value().to_vec())
+    }
+
     /// The loose items as last saved (ADR 0066), if any.
     pub fn loose_items(&self) -> Option<Vec<u8>> {
         let txn = self.db.begin_read().ok()?;
@@ -1128,6 +1142,12 @@ impl WorldDb {
         if !batch.vitals.is_empty() {
             let mut t = txn.open_table(VITALS).map_err(err)?;
             for (key, record) in &batch.vitals {
+                t.insert(key, record.as_slice()).map_err(err)?;
+            }
+        }
+        if !batch.markers.is_empty() {
+            let mut t = txn.open_table(MARKERS).map_err(err)?;
+            for (key, record) in &batch.markers {
                 t.insert(key, record.as_slice()).map_err(err)?;
             }
         }
