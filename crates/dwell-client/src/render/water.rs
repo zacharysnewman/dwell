@@ -11,7 +11,11 @@ use dwell_look::water_tiers::{WATER_TIERS, WaterTier, tier_bits};
 use dwell_look::{hex, srgb_to_linear};
 
 /// vec4s per fluid in the buffer (`Fluid` in the WGSL).
-pub const FLUID_VEC4S: usize = 17;
+pub const FLUID_VEC4S: usize = 19;
+/// How far from the flat surface (m, along the face's up) a pixel's depth may be, seen from below,
+/// and still count as the surface's own mesh (the WGSL's `SURFACE_SLACK_M`; WATER_RENDERING.md
+/// §19): over the mesh's surface drop, under a block's height so what stands above still shows.
+pub const SURFACE_SLACK_M: f32 = 0.3;
 /// Bytes per fluid.
 pub const FLUID_STRIDE: u64 = (FLUID_VEC4S * 16) as u64;
 
@@ -291,7 +295,23 @@ pub fn pack_fluids(fluids: &[FluidInfo]) -> Vec<f32> {
             u.underside_sun_power as f32,
             u.underside_cell_scale as f32,
         ]);
-        out.extend_from_slice(&[u.window_cells as f32, u.window_bodies as f32, 0.0, 0.0]);
+        out.extend_from_slice(&[
+            u.window_cells as f32,
+            u.window_bodies as f32,
+            u.window_sun_glow as f32,
+            u.window_sun_power as f32,
+        ]);
+        // The underwater colour grade (WATER_RENDERING.md §19): the fog's colour (linear) and its
+        // share; the in-scatter's brightness, the mirror's, the floor light's absorption share and
+        // the window rim's glow.
+        let fog = linear_rgb(u.tone_fog_color);
+        out.extend_from_slice(&[fog[0], fog[1], fog[2], u.tone_fog_share as f32]);
+        out.extend_from_slice(&[
+            u.tone_brightness as f32,
+            u.tone_mirror as f32,
+            u.tone_floor_light as f32,
+            u.window_rim_glow as f32,
+        ]);
     }
     if out.is_empty() {
         // A storage binding can't be empty: one zero fluid that nothing indexes.
@@ -1111,6 +1131,20 @@ mod tests {
             ];
             assert_eq!(v[60..64], under.map(|x| x as f32));
             assert_eq!(v[64..66], [u.window_cells as f32, u.window_bodies as f32]);
+            assert_eq!(
+                v[66..68],
+                [u.window_sun_glow as f32, u.window_sun_power as f32]
+            );
+            // The colour grade (WATER_RENDERING.md §19).
+            let fog = linear_rgb(u.tone_fog_color);
+            assert_eq!(v[68..72], [fog[0], fog[1], fog[2], u.tone_fog_share as f32]);
+            let lift = [
+                u.tone_brightness,
+                u.tone_mirror,
+                u.tone_floor_light,
+                u.window_rim_glow,
+            ];
+            assert_eq!(v[72..76], lift.map(|x| x as f32));
         }
         // A fluid with no look of its own takes the default's (fog from the eye, the registry's rates).
         assert_eq!(underwater_look("test:oil"), &DEFAULT_UNDERWATER);
@@ -1572,6 +1606,66 @@ mod tests {
     );
 
     #[test]
+    fn the_underwater_grade_is_data_and_a_fluid_without_a_look_is_as_before() {
+        // both-faces: a source and data check; the composite's face handling is `face_up` and the
+        // face's own sun (`sun_a` / `sun_b`). Owner, 2026-11-12 (ABZÛ reference): a bright,
+        // see-through surface from below, the sun a blown-out disc, turquoise water, a lit floor
+        // (WATER_RENDERING.md §19).
+        use dwell_look::underwater::{DEFAULT_UNDERWATER as d, underwater_look};
+        assert_eq!(
+            (d.window_sun_glow, d.window_rim_glow, d.tone_fog_share),
+            (0.0, 0.0, 0.0)
+        );
+        assert_eq!(
+            (d.tone_brightness, d.tone_mirror, d.tone_floor_light),
+            (1.0, 1.0, 1.0)
+        );
+        let w = underwater_look("dwell:water");
+        assert!(w.window_sun_glow > 0.0 && w.window_rim_glow > 0.0);
+        assert!(w.tone_mirror > 1.0 && w.tone_floor_light < 1.0);
+        let src = super::super::shaders::source(1);
+        let body = |name: &str| {
+            let at = src.find(name).expect(name);
+            src[at..at + src[at..].find("\n}\n").expect("end")].to_string()
+        };
+        let u = body("fn underwater(");
+        assert!(u.contains("mix(f.scatter.rgb, f.tone.rgb, f.tone.a)") && u.contains("* f.lift.x"));
+        let c = body("fn composite_underwater(");
+        assert!(c.contains("* f.lift.y"), "the mirror's brightness");
+        assert!(c.contains("* f.lift.w"), "the window rim's glow");
+        assert!(
+            c.contains("f.window.z") && c.contains("f.window.w"),
+            "the sun's glow"
+        );
+        assert!(
+            c.contains("f.absorption.rgb * f.lift.z"),
+            "the floor's light"
+        );
+    }
+
+    #[test]
+    fn the_surface_mesh_from_below_takes_the_composites_surface() {
+        // both-faces: a source and constant check (depths along the face's up via `face_y`).
+        // Owner, 2026-11-12: a bright see-through surface from below; the mesh's tinted body showed
+        // as flat blue blobs in the brighter mirror (WATER_RENDERING.md §19).
+        let src = super::super::shaders::source(1);
+        assert!(src.contains(&format!(
+            "const SURFACE_SLACK_M: f32 = {SURFACE_SLACK_M:?};"
+        )));
+        let water = dwell_blocks::require_fluid("dwell:water");
+        // The mesh sits `surface_drop` cells (½ m) under a full cell's top.
+        let drop_m = water.surface_drop as f32 * 0.5;
+        assert!(
+            SURFACE_SLACK_M > drop_m && SURFACE_SLACK_M < 0.5,
+            "{drop_m}"
+        );
+        let at = src.find("fn composite_underwater(").expect("composite");
+        let b = &src[at..at + src[at..].find("\n}\n").expect("end")];
+        assert!(b.contains("abs(dist - to_surface) < slack"));
+        assert!(b.contains("if (at_surface || (reaches && !leaves"));
+    }
+
+    #[test]
     fn the_window_shows_the_real_sky_and_bodies_scaled_by_its_light() {
         // both-faces: a source check; the composite's face handling is `face_up`.
         let src = super::super::shaders::source(1);
@@ -1621,7 +1715,7 @@ mod tests {
             "the scene's saturation is the same"
         );
         assert!(
-            b.contains("let window = display(underwater(sky_in * mix(1.0, look.x, f.window.x), to_surface, f));"),
+            b.contains("let window = display(underwater(sky_in * mix(1.0, look.x, f.window.x) + glow, to_surface, f));"),
             "the underside's cells over the window's sky at the look's share"
         );
         let w = dwell_look::underwater::underwater_look("dwell:water");
@@ -1724,8 +1818,9 @@ mod tests {
         // over its distance (underside_contrast), the sun patch along sun_through.
         assert!(src.contains("rim_above = 1.0 + (band_edge(0.0, f) - 1.0) * clamp(1.0 - d / waterline_across(f).x, 0.0, 1.0);"));
         assert!(src.contains(
-            "let mirror = moonlit(display(underwater(underwater(vec3f(0.0), 1e6, f) * light, to_surface, f)));"
+            "let ceiling = underwater(vec3f(0.0), 1e6, f) * light * f.lift.y + zen * near_rim * 0.35;"
         ));
+        assert!(src.contains("let mirror = moonlit(display(underwater(ceiling, to_surface, f)));"));
         assert!(src.contains("let h = (sun - up * face_rise(face, sun)) / max(ior, 1.0);"));
         assert!(src.contains("return h + up * sqrt(max(1.0 - dot(h, h), 0.0));"));
         assert!(src.contains("let d = max(dist - f.under.y, 0.0) * f.under.z;"));

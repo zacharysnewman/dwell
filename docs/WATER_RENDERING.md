@@ -1238,3 +1238,60 @@ corner alone, so a diagonal band's two step cells make one plane. The pool's top
 column's side toward it and the strip below it (§10) are not drawn: they are inside the water. Its sides are drawn
 only against open air that holds no such water (a step at a bank, from the pool's surface up to the slope). Calm pools
 and falls are unchanged. Test: `a_diagonal_staircase_river_is_one_continuous_surface` (both faces).
+
+## 19. Underwater toward the ABZÛ reference (2026-11-12)
+
+Owner, 2026-11-12, with a screenshot from ABZÛ: "Underwater reference photo from the game abzu for pretty underwater
+with transparent surface, light rays etc.", then "This is more what I want from the underwater surface." What the
+reference has: bright saturated turquoise water with a long clear view, a bright see-through surface from below (the
+sky in Snell's window, the sun a blown-out disc with light radiating from it, the ripples lit from above, a soft glow
+round the window), strong shafts fanning from the surface, caustics on a colourful, well-lit floor.
+
+What was off (bench, M1, High, seed 7, midday; `before/` in the PR): the ceiling outside the window was a darker blue
+mirror crossed by a strong dark web of cells, the window a plain sky with no sun glow, the fog a mid blue that closed
+in at ~3 m clear, the sand under 4 m of water a uniform blue-green, the shafts faded out by ~14 m.
+
+**Data (all defaults "as before"; `shared/look/underwater.json`, validated by `underwater.mjs`, packed as the fluid's
+17th–19th vec4s, `FLUID_VEC4S` 19):**
+
+- `window.sunGlow`, `window.sunPower`: a glow of the sun's light round the sun's refracted image in the window
+  (`sun_through`), added before the fog, so the window's sun reads as a blown-out white disc with light radiating
+  from it; gone at night with the sun (`own`). Water: 3, power 24.
+- `window.rimGlow`: a soft glow of the sky's light straight up round the window's rim, spilling into the mirror
+  (from 55 % of the critical cosine to the rim). Water: 0.5.
+- `tone`: the colour grade. `fogColor`/`fogShare` pull the fog's in-scatter toward a colour (water: `#16b2d4` by
+  0.55, a turquoise; the fluid's own scatter still colours the water from above), `brightness` its brightness
+  (1.12), `mirror` the mirror outside the window brighter (1.25: lit water, not a dark lid), `floorLight` the share of
+  the absorption the light down to the floor takes (0.35: sand keeps its warm colour under a few metres).
+- `fog.clearM` 3 → 6, `density` 0.3 → 0.22 (a longer clear view); `underside.texture` 0.6 → 0.45 and `breakup`
+  1 → 0.6 (lighter, more line-like ripple highlights, fewer dark gaps), `sunPatch` 4 → 5.
+- `shafts.json` water: strength 2.0 → 2.6, `reachM` 18 → 24, `fadeM` 14 → 24 (the rays reach the deep floor). The
+  same samples a pixel, so no cost.
+
+**Shader:** `underwater()` takes the grade; `composite_underwater` adds the sun glow, the rim glow, the mirror's lift
+and the floor light's share. Two fixes found on the way: a pixel showing the surface's own mesh (within
+`SURFACE_SLACK_M` 0.3 m of the surface along the face's up) takes the composite's surface; and near the window's rim,
+what the pixel shows past the surface fades into the mirror by the window's share, as the sky does: with the
+brighter mirror, the mesh's opaque (Fresnel) body there showed as hard-edged flat blue blobs. Both faces: the
+composite works in `face_up`/`face_y`, the sun glow uses the eye's face's sun.
+
+**Tiers:** the grade, the glows and the floor light are a few ALU ops in the composite on every tier (Low and the
+CPU's included; the CPU tier has no discs, but the glow is the sun's light, not its disc). Nothing new is sampled.
+
+**Tests:** `underwater.test.mjs` (the new entries validate, a bad one fails by name, a fixture fluid's grade by data
+alone, the default as before, water's direction pinned); `render::water`
+`each_fluid_packs_its_underwater_look_and_one_without_takes_the_default` (the new vec4s),
+`the_underwater_grade_is_data_and_a_fluid_without_a_look_is_as_before`,
+`the_surface_mesh_from_below_takes_the_composites_surface`; the WGSL validates with naga.
+
+**Seen (bench, M1, High, seed 7, midday; a scratch scenario: 4 m under a sea 7 m deep looking up 35°, across 5° and
+straight up; 14 m under an 18 m sea up 40° and level; the 1.5 m shallows looking up 20°):** the water is a brighter
+turquoise and reads farther; the ceiling is light water with soft ripple highlights rather than a dark web; the
+window glows white round the sun's image with the sky and clouds in it; the sand under 4 m keeps a warm green-gold
+with its caustics; the shafts reach the deep floor. **Cost** (`gpu.frame` mean / p95 over 5 s, main → this):
+4 m under looking across 6.74 / 9.45 → 6.73 / 9.83 ms; looking straight up 5.82 / 8.86 → 6.18 / 9.08 ms
+(`gpu.composite` 4.02 → 4.30 ms: the rim glow's zenith look-up on every mirror pixel). **Still off against the
+reference:** the sun's glow is a broad white haze rather than a sharp blown-out disc with radiating spokes; the
+ripple highlights are fainter than the reference's bright cells; the floor is still the prototype sand, not a
+colourful reef; in the 1.5 m shallows a soft blue patch of the surface's mesh still shows near the window's rim.
+Outstanding: the owner's look; both faces checked in code and tests, not on screen.
