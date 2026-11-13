@@ -45,7 +45,7 @@ describe('music data', () => {
     expect(loadMusic()).toEqual(MUSIC_DATA);
   });
 
-  it("plays the casual tracks (Andrew Sitkov) everywhere, shuffled, each small enough to ship", () => {
+  it('plays the casual tracks (Andrew Sitkov) everywhere, shuffled, each small enough to ship', () => {
     const ts = playable(MUSIC_DATA);
     expect(ts.length).toBeGreaterThanOrEqual(10);
     expect(MUSIC_DATA.playlist.order).toBe('shuffle');
@@ -67,9 +67,12 @@ describe('music data', () => {
 
   it('takes a new track by data alone, its published name from its bytes', () => {
     const bytes = new Uint8Array([1, 2, 3, 4]);
-    const dir = fixtureDir([{ namespace: 'test', playlist: PLAYLIST, tracks: { fixture: track } }], {
-      'fixture.mp3': bytes,
-    });
+    const dir = fixtureDir(
+      [{ namespace: 'test', playlist: PLAYLIST, tracks: { fixture: track } }],
+      {
+        'fixture.mp3': bytes,
+      },
+    );
     const data = resolveMusic(readMusicFiles(dir), dir);
     expect(data.tracks).toEqual([
       {

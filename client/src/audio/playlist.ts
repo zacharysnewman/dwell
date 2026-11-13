@@ -4,7 +4,14 @@
 // overlap. Each track is its own MusicPlayer (its element, fades, unlock and routing); this only
 // decides which plays next and when.
 import type { Volumes } from './mixer';
-import { MUSIC_POSITION_KEY, MusicPlayer, POSITION_MAX_AGE_S, type MusicEnv, type MusicHost, type MusicState } from './music';
+import {
+  MUSIC_POSITION_KEY,
+  MusicPlayer,
+  POSITION_MAX_AGE_S,
+  type MusicEnv,
+  type MusicHost,
+  type MusicState,
+} from './music';
 import type { MusicData, MusicWhen, PlaylistDef, TrackDef } from './musicTypes';
 
 /** How often the playlist checks the playing track's time left (ms). */
@@ -32,16 +39,18 @@ export class Shuffler {
   next(): string | null {
     if (this.ids.length === 0) return null;
     if (this.bag.length === 0) {
-      this.bag = [...this.ids];
-      for (let i = this.bag.length - 1; i > 0; i--) {
-        const j = Math.floor(this.random() * (i + 1));
-        [this.bag[i], this.bag[j]] = [this.bag[j], this.bag[i]];
+      const bag = [...this.ids];
+      const swap = (a: number, b: number): void => {
+        const t = bag[a] as string;
+        bag[a] = bag[b] as string;
+        bag[b] = t;
+      };
+      for (let i = bag.length - 1; i > 0; i--) swap(i, Math.floor(this.random() * (i + 1)));
+      // The round's first (popped from the end) must differ from the last round's end.
+      if (bag.length > 1 && bag[bag.length - 1] === this.last) {
+        swap(bag.length - 1, Math.floor(this.random() * (bag.length - 1)));
       }
-      // The round's first must differ from the last round's end (with two or more tracks).
-      if (this.bag.length > 1 && this.bag[this.bag.length - 1] === this.last) {
-        const k = Math.floor(this.random() * (this.bag.length - 1));
-        [this.bag[this.bag.length - 1], this.bag[k]] = [this.bag[k], this.bag[this.bag.length - 1]];
-      }
+      this.bag = bag;
     }
     const id = this.bag.pop() ?? null;
     this.last = id;
@@ -68,7 +77,10 @@ export function playable(data: MusicData, holding: readonly MusicWhen[] = ['alwa
 }
 
 /** The track the previous page was playing, if it saved one recently (the menu → the game). */
-export function resumedTrack(env: Pick<MusicEnv, 'session' | 'wall'>, ids: readonly string[]): string | null {
+export function resumedTrack(
+  env: Pick<MusicEnv, 'session' | 'wall'>,
+  ids: readonly string[],
+): string | null {
   let saved: unknown;
   try {
     saved = JSON.parse(env.session?.getItem(MUSIC_POSITION_KEY) ?? 'null');
@@ -118,7 +130,9 @@ export class MusicPlaylist {
 
   get state(): MusicState | 'between' {
     if (!this.current) return 'idle';
-    return this.current.state === 'stopped' && this.nextAt !== null ? 'between' : this.current.state;
+    return this.current.state === 'stopped' && this.nextAt !== null
+      ? 'between'
+      : this.current.state;
   }
 
   get routed(): boolean {

@@ -88,7 +88,8 @@ export function resolveMusic(files, dir) {
       fail("namespace", `bad namespace ${file.namespace}`);
     const ns = file.namespace;
     if ("playlist" in file) {
-      if (playlist) fail(`namespace ${ns}`, "a second playlist (only one file sets it)");
+      if (playlist)
+        fail(`namespace ${ns}`, "a second playlist (only one file sets it)");
       playlist = resolvePlaylist(`playlist (${ns})`, file.playlist);
     }
     if (!isObject(file.tracks)) fail(ns, "tracks must be an object");
@@ -100,8 +101,7 @@ export function resolveMusic(files, dir) {
       if (!isObject(t)) fail(where, "must be an object");
       for (const k of Object.keys(t))
         if (!TRACK_KEYS.includes(k)) fail(where, `unknown field "${k}"`);
-      for (const k of TRACK_KEYS)
-        if (!(k in t)) fail(where, `missing "${k}"`);
+      for (const k of TRACK_KEYS) if (!(k in t)) fail(where, `missing "${k}"`);
       text(`${where}.title`, t.title);
       text(`${where}.author`, t.author);
       if (typeof t.file !== "string" || !FILE.test(t.file))

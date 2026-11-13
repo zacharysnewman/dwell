@@ -4,7 +4,14 @@
 import { describe, expect, it } from 'vitest';
 import { MUSIC_POSITION_KEY, type MusicElement, type MusicEnv, type MusicHost } from './music';
 import type { MusicData, PlaylistDef, TrackDef } from './musicTypes';
-import { drawGap, MusicPlaylist, nextStartAfterEnd, playable, resumedTrack, Shuffler } from './playlist';
+import {
+  drawGap,
+  MusicPlaylist,
+  nextStartAfterEnd,
+  playable,
+  resumedTrack,
+  Shuffler,
+} from './playlist';
 
 /** A seeded [0, 1) generator (mulberry32). */
 function seeded(seed: number): () => number {
@@ -73,7 +80,9 @@ const host: MusicHost = {
 };
 
 function rig(data: MusicData, o: { seed?: number; session?: Record<string, string> } = {}) {
-  const durations = new Map(data.tracks.map((t) => [t.file, (t as { duration?: number }).duration ?? 10]));
+  const durations = new Map(
+    data.tracks.map((t) => [t.file, (t as { duration?: number }).duration ?? 10]),
+  );
   const clips: Clip[] = [];
   const clock = { now: 0, wall: 5_000_000 };
   const timers = new Map<number, () => void>();
@@ -85,7 +94,7 @@ function rig(data: MusicData, o: { seed?: number; session?: Record<string, strin
     removeEventListener: () => undefined,
   };
   const env: MusicEnv = {
-    doc: doc as unknown as MusicEnv['doc'],
+    doc: doc,
     makeElement: () => {
       const c = new Clip();
       clips.push(c);
@@ -247,7 +256,9 @@ describe('playlist', () => {
 
   it('picks up the track the previous page was playing', () => {
     const data: MusicData = { playlist: playlist(), tracks: [track('a'), track('b'), track('c')] };
-    const saved = { [MUSIC_POSITION_KEY]: JSON.stringify({ id: 'test:c', t: 3, at: 5_000_000 - 2000 }) };
+    const saved = {
+      [MUSIC_POSITION_KEY]: JSON.stringify({ id: 'test:c', t: 3, at: 5_000_000 - 2000 }),
+    };
     const { list } = rig(data, { session: saved });
     list.start();
     expect(list.track?.id).toBe('test:c');
@@ -258,8 +269,12 @@ describe('playlist', () => {
       wall: () => 5_000_000,
       session: { getItem: () => JSON.stringify(v), setItem: () => undefined },
     });
-    expect(resumedTrack(env({ id: 'test:a', t: 1, at: 5_000_000 - 1000 }), ['test:a'])).toBe('test:a');
-    expect(resumedTrack(env({ id: 'test:a', t: 1, at: 5_000_000 - 60_000 }), ['test:a'])).toBeNull();
+    expect(resumedTrack(env({ id: 'test:a', t: 1, at: 5_000_000 - 1000 }), ['test:a'])).toBe(
+      'test:a',
+    );
+    expect(
+      resumedTrack(env({ id: 'test:a', t: 1, at: 5_000_000 - 60_000 }), ['test:a']),
+    ).toBeNull();
     expect(resumedTrack(env({ id: 'test:z', t: 1, at: 5_000_000 }), ['test:a'])).toBeNull();
     expect(resumedTrack(env(null), ['test:a'])).toBeNull();
   });

@@ -1,5 +1,5 @@
 // Types for validate.mjs (the client's Vitest suites import it).
-import type { MusicData } from '../../client/src/audio/musicTypes';
+import type { MusicData } from "../../client/src/audio/musicTypes";
 
 export const WHEN: string[];
 export const MAX_BYTES: number;
