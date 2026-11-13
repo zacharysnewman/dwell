@@ -1078,7 +1078,9 @@ its local frame, physics, players) beside the home world, carries fliers into it
 `captureM` and home past × `releaseFactor` (`travel::carry`, nothing jumps), streams its chunks to an
 away `grid.frames` client and applies an away player's edits to it. Its edited chunks are saved in the
 optional `grid_chunks` world table ((grid name, cx, cy, cz) → (revision, chunk blob); additive). The
-client's side (predicting and drawing another grid) is outstanding.
+client's predictor carries its player across grids as the server does (MOON_WORLD.md §7.3: a
+`GridTravel` hook, `dwell-sim` `TravelMap`, run before each predicted tick; history per grid); the
+game client's drawing of another grid and its `grid.frames` are outstanding.
 
 ### 6.1 Grid & chunks **[in progress]**
 

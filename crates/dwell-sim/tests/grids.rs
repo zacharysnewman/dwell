@@ -320,18 +320,22 @@ struct Client1 {
 impl Client1 {
     fn new(sc: &mut Scene) -> Self {
         let mut p = dwell_physics::predictor::Predictor::new(*sc.server().player_config());
-        let g = sc.server().grids();
-        let map = dwell_sim::travel::TravelMap {
-            celestial: g.celestial.clone(),
-            rules: g.rules,
-            home: g.home,
-            home_radius_m: g.home_radius_m,
-            grids: g
-                .slots
+        let map = sc.server().grids().travel_map();
+        // The client builds the same from what it knows at join: the seed, size and settings.
+        let cfg = flat();
+        let own = dwell_sim::travel::TravelMap::new(
+            cfg.world_seed,
+            dwell_world::WorldBounds::of(cfg.world_size).radius() as f64,
+            map.celestial,
+        );
+        let names = |m: &dwell_sim::travel::TravelMap| -> Vec<(u8, String, f64)> {
+            m.grids
                 .iter()
-                .map(|s| (s.index, s.space.def, s.space.radius_m))
-                .collect(),
+                .map(|g| (g.0, g.1.name.clone(), g.2))
+                .collect()
         };
+        assert_eq!(names(&own), names(&map));
+        assert_eq!(own.home_radius_m, map.home_radius_m);
         p.set_travel(Box::new(map));
         let air: dwell_world::ChunkGenerator = std::sync::Arc::new(|_, _| {});
         Self {

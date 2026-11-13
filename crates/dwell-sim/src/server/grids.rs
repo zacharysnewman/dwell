@@ -116,6 +116,22 @@ impl Grids {
         }
     }
 
+    /// The travel rules without the spaces, as the client's predictor runs them (MOON_WORLD.md
+    /// §7.3): a client builds the same from the world's seed, size and settings (`TravelMap::new`).
+    pub fn travel_map(&self) -> crate::travel::TravelMap {
+        crate::travel::TravelMap {
+            celestial: self.celestial,
+            rules: self.rules,
+            home: self.home,
+            home_radius_m: self.home_radius_m,
+            grids: self
+                .slots
+                .iter()
+                .map(|s| (s.index, s.space.def, s.space.radius_m))
+                .collect(),
+        }
+    }
+
     /// A slot's frame at `world_s`.
     pub fn frame(&self, slot: usize, world_s: f64) -> GridFrame {
         grid_frame_at(&self.celestial, self.slots[slot].space.def, world_s)

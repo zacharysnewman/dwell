@@ -893,26 +893,17 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    hook; PLAYER_CONTROLLER.md §6.6), so the frictionless capsule is pinned, not squeezed out; side hits stay
    frictionless and uncapped. The repro is un-ignored (0.4–0.5 m, was 155–160 m; both faces).
 
-27. **The moon as a real bifacial world** — **M-7c status (WIP, 2026-11-12, branch
-   `claude/moon-m7c-x07vsc`, stopped mid-work when the owner moved work local):** owner, 2026-11-12: "Do we have
-   the real physical moon yet?" (no: the client doesn't follow a player onto the moon, the moon's terrain isn't
-   drawn up close (M-5) and there are no moon spawns (M-8)). **Done:** `carry` moved from `dwell-sim` `travel.rs`
-   into `dwell-physics` `controller.rs` (re-exported from `travel.rs`) so the predictor can carry its player as
-   the server does — **not compiled yet** (a `cargo check -p dwell-sim` was stopped before it finished). **Left
-   (the plan):** (1) a `TravelMap` in `travel.rs` (the grids' frames, capture/release, far speed; no spaces) that
-   the server's `Grids` delegates to and the client uses; (2) the predictor in grid frames: a `grid` byte, a
-   travel hook (`GridTravel` trait: step + gravity scale by grid) run before each predicted tick at world time
-   (seq + the snapshot's `server_tick − 1 − ack`) / 60, a fresh `Players`/`Physics` per grid on a carry (remotes
-   and pieces dropped while away), history entries with their grid, a snapshot in another grid (its `GridView`)
-   re-placing the player there; (3) the client living in its grid's frame while away: the streamer holds that
-   grid's chunks (ChunkData/Unload of another grid dropped), cleared on the predicted switch, the look carried
-   across with `look_across`, the LOD and home-only layers hidden, the sky's sun turned into the grid's frame
-   and the far moon disc hidden; `grid.frames` taken off `CLIENT_PENDING`; (4) the server: another grid's
-   chunks always Explicit (the client generates only home's), and on capture a `grid.frames` client's home
-   `streamed`/`requested` cleared (with a home `ChunkUnload`) so home streams again on release; (5) tests: a
-   `game_local` flight from just outside the capture sphere into the moon and back out, the client's grid the
-   moon's, chunks round the player in moon coordinates, 0 replays at capture and release, ⅙ g, both moon faces;
-   then M-5. **Failing:** nothing run yet. Original item: (owner 2026-11-12: "we're going to make the moon a real bifacial world
+27. **The moon as a real bifacial world** — **M-7c status (2026-11-12, branch `claude/moon-m7c-x07vsc`,
+   local):** owner, 2026-11-12: "Do we have the real physical moon yet?" (no: the client doesn't draw the moon
+   up close yet (M-5) and there are no moon spawns (M-8)). **Built:** `carry` moved into `dwell-physics`; a
+   `TravelMap` in `travel.rs` (the grids' frames and rules without spaces; `Grids::travel_map`); the predictor
+   in grid frames (`GridTravel` hook before each predicted tick at the server tick's clock, a fresh space per
+   carry, history per grid, `regrid` and `grid_misses` on a snapshot in another grid; MOON_WORLD.md §7.3); the
+   test `the_client_predicts_capture_and_release` (both faces: capture and release on the server's inputs,
+   ⅙ g). **Left:** the game client: hold the grid's chunks while away (the moon's generator in the workers),
+   hand the predictor that world, draw it in the moon's local frame (sun turned, LOD and far disc hidden,
+   `look_across`), set the hook and take `grid.frames` off `CLIENT_PENDING`; the `game_local` flight; then
+   M-5. No browser check yet (nothing to see until the client draws the moon). Original item: (owner 2026-11-12: "we're going to make the moon a real bifacial world
    like the current world, with simple gray dirt across the whole thing for now. Farthest LOD, AKA the one you
    can see now, should be a simple lighting normal map based on the actual terrain. It should glow like it is
    now and cast light like it does now, and it should be the same size in the sky as it is now."). Owner's
