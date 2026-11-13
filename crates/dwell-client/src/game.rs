@@ -801,6 +801,9 @@ pub struct Game<S: Scene> {
     /// The grids whose coarse surface mesh the scene holds (`grid_bodies.rs`, MOON_WORLD.md §5
     /// M-5), built the first time each is drawn.
     grid_meshes: std::collections::HashSet<u8>,
+    /// A crossing onto another grid a snapshot's replay made (from, to, the face before): the
+    /// next input tick carries the look across and eases the view upright.
+    pending_cross: Option<(u8, u8, FaceFrame)>,
     /// The server carries players onto other grids and says which (`grid.frames`, MOON_WORLD.md
     /// §7.3): the predictor then runs the grids' travel rules, and the game follows it.
     grid_frames: bool,
@@ -1266,6 +1269,7 @@ impl<S: Scene> Game<S> {
             remote_contacts: Default::default(),
             world_seed: 0,
             grid_meshes: Default::default(),
+            pending_cross: None,
             grid_frames: false,
             travel: None,
             grid_drawn: 0,
@@ -1896,9 +1900,10 @@ impl<S: Scene> Game<S> {
                 telemetry::sample("pieces.standIns", self.predictor.stand_ins() as f64);
                 self.predictor.on_snapshot(self.streamer.store_mut(), &s);
                 // A correction across grids (`regrid`): the view follows the server's grid.
-                if self.follow_grid().is_some() {
+                if let Some((from, to)) = self.follow_grid() {
+                    // The look goes on across (and the view eases upright) at the next tick.
+                    self.pending_cross = Some((from, to, self.current.face));
                     self.current = ClientState::of(&self.predictor);
-                    self.flip.reset(self.current.face);
                     self.previous = None;
                     self.eye = EyeCamera::new();
                     self.eye
@@ -4447,14 +4452,20 @@ impl<S: Scene> Game<S> {
         input.took();
         let before = self.current.face;
         self.predictor.tick(self.streamer.store_mut(), &frame);
-        let crossed = self.follow_grid();
-        if let Some((from, to)) = crossed {
+        // A crossing in this tick, or one a snapshot's replay made (its look carried on here).
+        let crossed = self
+            .follow_grid()
+            .map(|(from, to)| (from, to, before))
+            .or(self.pending_cross.take());
+        if let Some((from, to, before)) = crossed {
             // Onto another grid: the look keeps where it points in the world, now on that grid's
             // face (`look_across`), and the body's face there is no midplane crossing.
             let after = ClientState::of(&self.predictor);
+            let mut residual = 0.0;
             if let Some(m) = &self.travel {
                 let t = f64::from(self.last_snapshot_tick) / SIM_HZ as f64;
                 let (ff, tf) = (m.frame(from, t), m.frame(to, t));
+                let was = (input.look.yaw, input.look.pitch);
                 (input.look.yaw, input.look.pitch) = dwell_sim::travel::look_across(
                     &ff,
                     before,
@@ -4463,8 +4474,17 @@ impl<S: Scene> Game<S> {
                     input.look.yaw,
                     input.look.pitch,
                 );
+                residual = crate::grid_view::crossing_roll(
+                    &ff,
+                    before,
+                    was,
+                    &tf,
+                    after.face,
+                    (input.look.yaw, input.look.pitch),
+                );
             }
-            self.flip.reset(after.face);
+            // The view eases upright from the one drawn before (MOON_WORLD.md §7.3).
+            self.flip.cross_grid(after.face, residual);
         }
         self.recent.push_back(frame);
         while self.recent.len() > MAX_INPUTS_PER_DATAGRAM {

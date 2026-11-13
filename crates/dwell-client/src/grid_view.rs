@@ -6,7 +6,7 @@
 //! the sun white (the atmosphere's space path, docs/DAY_NIGHT.md §15, with no air at all).
 
 use dwell_look::daynight::DayState;
-use dwell_world::GridFrame;
+use dwell_world::{FaceFrame, GridFrame};
 
 /// The day as seen from grid `frame` (its local frame): the sun, the moon's direction and the
 /// sky's axis turned into it; the moon's far disc and home's clouds hidden off home (the viewer is
@@ -29,6 +29,36 @@ pub fn day_on_grid(day: &DayState, frame: &GridFrame, grid: u8) -> DayState {
         airless: !grid_has_air(grid),
         ..*day
     }
+}
+
+/// The roll (radians about the forward, as the camera's `roll`) that takes the view of look
+/// (`yaw`, `pitch`) on grid `to`'s face `tf` back to the view of look (`from_yaw`, `from_pitch`) on
+/// grid `from`'s face `ff` drawn before a crossing, when both point the same way in the world
+/// (`look_across`): the angle from the new up to the old, about the forward. The view then eases
+/// from it upright (`FaceFlip::cross_grid`). 0 looking straight along either up.
+#[allow(clippy::too_many_arguments)]
+pub fn crossing_roll(
+    from: &GridFrame,
+    ff: FaceFrame,
+    (from_yaw, from_pitch): (f64, f64),
+    to: &GridFrame,
+    tf: FaceFrame,
+    (yaw, pitch): (f64, f64),
+) -> f64 {
+    use crate::render::camera::aim;
+    let old = aim(from_yaw, from_pitch, ff, 0.0);
+    let new = aim(yaw, pitch, tf, 0.0);
+    let up_old = from.vector_to_world(old.up);
+    let (up_new, right_new) = (to.vector_to_world(new.up), to.vector_to_world(new.right));
+    let (c, s) = (dot(up_old, up_new), -dot(up_old, right_new));
+    if c.hypot(s) < 1e-9 {
+        return 0.0;
+    }
+    s.atan2(c)
+}
+
+fn dot(a: [f64; 3], b: [f64; 3]) -> f64 {
+    a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
 }
 
 /// Whether grid `grid` (its `grids.json` index) has air (`atmosphere`); an unknown index has.
@@ -141,9 +171,41 @@ mod tests {
         }
     );
 
-    fn dot(a: [f64; 3], b: [f64; 3]) -> f64 {
-        a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
-    }
+    dwell_world::both_faces!(
+        /// Across a crossing from home's face A onto a turned grid's face `f`, the look continued
+        /// with the same world direction and the roll of `crossing_roll` drawn: the first frame's
+        /// view is the one before it (its forward and its up the same in the world); upright
+        /// (roll 0) its up is the new face's.
+        fn the_crossing_roll_draws_the_view_before_then_eases_to_the_new_up(f: FaceFrame) {
+            use crate::render::camera::aim;
+            let to = GridFrame {
+                origin: [400_000.0, 300_000.0, -200_000.0],
+                rotation: dwell_world::quat_axis_angle([0.6, 0.0, 0.8], 1.1),
+                ..GridFrame::HOME
+            };
+            let from = GridFrame::HOME;
+            for (yaw, pitch) in [(10.0, 5.0), (-120.0, -40.0), (75.0, 60.0)] {
+                let (y2, p2) =
+                    dwell_sim::travel::look_across(&from, FaceFrame::A, &to, f, yaw, pitch);
+                let r = crossing_roll(&from, FaceFrame::A, (yaw, pitch), &to, f, (y2, p2));
+                let before = aim(yaw, pitch, FaceFrame::A, 0.0);
+                let after = aim(y2, p2, f, r);
+                let w = |v| to.vector_to_world(v);
+                let close = |a: [f64; 3], b: [f64; 3]| (0..3).all(|k| (a[k] - b[k]).abs() < 1e-6);
+                assert!(close(w(after.back), before.back), "the same forward");
+                assert!(
+                    close(w(after.up), before.up),
+                    "the same up: {:?} vs {:?} (roll {r})",
+                    w(after.up),
+                    before.up
+                );
+                assert!(r.abs() > 1e-3, "a turned grid's up differs");
+                let upright = aim(y2, p2, f, 0.0);
+                let face_up = to.up(f);
+                assert!(dot(w(upright.up), face_up) > 0.0, "upright on the new face");
+            }
+        }
+    );
 
     /// Home's view is the day as it is, bit for bit.
     // both-faces: the sky's directions are world vectors; no face enters.

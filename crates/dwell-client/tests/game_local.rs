@@ -39,6 +39,8 @@ struct Recorder {
     camera: Option<[f64; 3]>,
     /// The face the camera was drawn on (its up), and the last day the scene was given.
     camera_face: Option<dwell_world::FaceFrame>,
+    /// The camera's last roll (radians about its forward).
+    roll: f64,
     day: Option<dwell_look::daynight::DayState>,
     outline: Option<[f64; 3]>,
     fov: Option<f64>,
@@ -129,10 +131,11 @@ impl Scene for Recorder {
         _yaw: f64,
         _pitch: f64,
         face: dwell_world::FaceFrame,
-        _roll: f64,
+        roll: f64,
     ) {
         self.camera = Some(eye);
         self.camera_face = Some(face);
+        self.roll = roll;
     }
     fn set_day(&mut self, day: &dwell_look::daynight::DayState, _seconds: f64) {
         self.day = Some(*day);
@@ -3964,13 +3967,28 @@ dwell_world::both_faces!(
         let fr = rig.core.server().grids().frame(0, t);
         let (wp, wv) = fr.release(moon_ground(rig.seed, f, 200.0), [0.0; 3]);
         assert!(rig.core.server().place_on_grid(id, wp, wv));
-        let captured = rig.run_until(120, |r| {
-            r.game.as_ref().unwrap().grid() == 1
-                && r.core.server().grid_state_of(id).is_some_and(|g| g.0 == 1)
+        let captured = rig.run_until(120, |r| r.game.as_ref().unwrap().grid() == 1);
+        assert!(captured, "captured by the client");
+        // The view eases upright onto the moon's face (motion.json `gridCrossingRollS`), from
+        // the view drawn before: a roll at the crossing, none once eased.
+        let mut rolls = vec![rig.scene.borrow().roll];
+        rig.run_until(60, |r| {
+            rolls.push(r.scene.borrow().roll);
+            false
         });
-        assert!(captured, "captured by the client and the server");
+        assert!(
+            rolls.iter().any(|r| r.abs() > 1e-3),
+            "the view rolls upright at the crossing: {rolls:?}"
+        );
+        assert_eq!(*rolls.last().unwrap(), 0.0, "upright after the ease");
+        assert!(
+            rig.core
+                .server()
+                .grid_state_of(id)
+                .is_some_and(|g| g.0 == 1),
+            "captured by the server"
+        );
         let stats = rig.game.as_ref().unwrap().debug_state().stats;
-        rig.run_until(30, |_| false);
 
         // The moon's chunks, in the moon's coordinates: the dust under its spawn, meshed.
         let ground = moon_ground(rig.seed, f, 0.0);
@@ -4072,10 +4090,17 @@ dwell_world::both_faces!(
             "the release as the server made it"
         );
         assert_eq!(after.snaps, before.snaps, "no snap through the release");
+        // Just past the release sphere (well inside its `farM`) the moon is its surface mesh at
+        // its pose in home's frame (M-5), not the far disc.
+        let scene = rig.scene.borrow();
+        let moon_id = dwell_client::grid_bodies::id(1);
+        let pose = scene.poses.iter().find(|p| p.0 == moon_id);
         assert!(
-            rig.scene.borrow().day.unwrap().moon_shown,
-            "the moon in home's sky again"
+            pose.is_some_and(|p| p.1 != [0.0; 3]),
+            "the moon drawn from home up close"
         );
+        assert!(!scene.day.unwrap().moon_shown, "and not its far disc too");
+        drop(scene);
 
         // Home's chunks stream again: back at the spawn (a dev move), its ground arrives.
         let centre = [home_feet[0], home_feet[1] + 1.0, home_feet[2]];

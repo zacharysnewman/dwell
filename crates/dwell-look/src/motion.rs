@@ -59,6 +59,9 @@ pub struct MotionTunables {
     /// How long the camera's roll takes across the midplane (s; BIFACIAL_WORLD.md §6): the view
     /// keeps pointing the same way and turns upright about its forward axis, eased in and out.
     pub crossing_roll_s: f64,
+    /// How long the view takes to ease upright when the player's frame changes to another grid's
+    /// (s; MOON_WORLD.md §7.3): it keeps pointing the same way, its up turning to the new face's.
+    pub grid_crossing_roll_s: f64,
 }
 
 /// The controller's ground speeds the effects are scaled to (dwell-physics' `movement`).
