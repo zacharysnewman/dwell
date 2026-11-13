@@ -13,7 +13,21 @@ export const WHEN = ["always"];
 export const MAX_BYTES = 20_000_000;
 /** How the playlist picks the next track (client/src/audio/playlist.ts). */
 export const ORDER = ["shuffle"];
-const PLAYLIST_KEYS = ["order", "gapMinS", "gapMaxS", "crossfadeS"];
+/** The times of day a track may play at (a track's `times`, default both). */
+export const TIMES = ["day", "night"];
+/** Where the playlist plays, each with its own wait before the first track (client/src/audio/page.ts). */
+export const CONTEXTS = ["menu", "game"];
+/** The longest gap or first wait (s). */
+export const MAX_WAIT_S = 3600;
+const PLAYLIST_KEYS = [
+  "order",
+  "gapMinS",
+  "gapMaxS",
+  "crossfadeS",
+  "dayAt",
+  "contexts",
+];
+const CONTEXT_KEYS = ["firstDelayMinS", "firstDelayMaxS"];
 const TRACK_KEYS = [
   "title",
   "author",
@@ -24,6 +38,8 @@ const TRACK_KEYS = [
   "fadeOutS",
   "when",
 ];
+/** Fields a track may leave out. */
+const TRACK_OPTIONAL = ["times"];
 
 function fail(where, message) {
   throw new Error(`shared/music: ${where}: ${message}`);
@@ -56,16 +72,47 @@ function resolvePlaylist(where, p) {
   for (const k of PLAYLIST_KEYS) if (!(k in p)) fail(where, `missing "${k}"`);
   if (!ORDER.includes(p.order))
     fail(`${where}.order`, `"${p.order}" is not one of ${ORDER.join(", ")}`);
-  number(`${where}.gapMinS`, p.gapMinS, 0, 600);
-  number(`${where}.gapMaxS`, p.gapMaxS, 0, 600);
+  number(`${where}.gapMinS`, p.gapMinS, 0, MAX_WAIT_S);
+  number(`${where}.gapMaxS`, p.gapMaxS, 0, MAX_WAIT_S);
   if (p.gapMaxS < p.gapMinS)
     fail(`${where}.gapMaxS`, `${p.gapMaxS} is below gapMinS ${p.gapMinS}`);
   number(`${where}.crossfadeS`, p.crossfadeS, 0, 30);
+  number(`${where}.dayAt`, p.dayAt, 0, 1);
+  if (!isObject(p.contexts)) fail(`${where}.contexts`, "must be an object");
+  for (const k of Object.keys(p.contexts))
+    if (!CONTEXTS.includes(k))
+      fail(
+        `${where}.contexts`,
+        `"${k}" is not one of ${CONTEXTS.join(", ")}`,
+      );
+  const contexts = {};
+  for (const name of CONTEXTS) {
+    const w = `${where}.contexts.${name}`;
+    const c = p.contexts[name];
+    if (!(name in p.contexts)) fail(`${where}.contexts`, `missing "${name}"`);
+    if (!isObject(c)) fail(w, "must be an object");
+    for (const k of Object.keys(c))
+      if (!CONTEXT_KEYS.includes(k)) fail(w, `unknown field "${k}"`);
+    for (const k of CONTEXT_KEYS) if (!(k in c)) fail(w, `missing "${k}"`);
+    number(`${w}.firstDelayMinS`, c.firstDelayMinS, 0, MAX_WAIT_S);
+    number(`${w}.firstDelayMaxS`, c.firstDelayMaxS, 0, MAX_WAIT_S);
+    if (c.firstDelayMaxS < c.firstDelayMinS)
+      fail(
+        `${w}.firstDelayMaxS`,
+        `${c.firstDelayMaxS} is below firstDelayMinS ${c.firstDelayMinS}`,
+      );
+    contexts[name] = {
+      firstDelayMinS: c.firstDelayMinS,
+      firstDelayMaxS: c.firstDelayMaxS,
+    };
+  }
   return {
     order: p.order,
     gapMinS: p.gapMinS,
     gapMaxS: p.gapMaxS,
     crossfadeS: p.crossfadeS,
+    dayAt: p.dayAt,
+    contexts,
   };
 }
 
@@ -100,7 +147,8 @@ export function resolveMusic(files, dir) {
       if (tracks.some((x) => x.id === id)) fail(where, "defined twice");
       if (!isObject(t)) fail(where, "must be an object");
       for (const k of Object.keys(t))
-        if (!TRACK_KEYS.includes(k)) fail(where, `unknown field "${k}"`);
+        if (!TRACK_KEYS.includes(k) && !TRACK_OPTIONAL.includes(k))
+          fail(where, `unknown field "${k}"`);
       for (const k of TRACK_KEYS) if (!(k in t)) fail(where, `missing "${k}"`);
       text(`${where}.title`, t.title);
       text(`${where}.author`, t.author);
@@ -125,6 +173,14 @@ export function resolveMusic(files, dir) {
       number(`${where}.fadeOutS`, t.fadeOutS, 0, 60);
       if (!WHEN.includes(t.when))
         fail(`${where}.when`, `"${t.when}" is not one of ${WHEN.join(", ")}`);
+      const times = t.times ?? TIMES;
+      if (!Array.isArray(times) || times.length === 0)
+        fail(`${where}.times`, `must be a non-empty list of ${TIMES.join(", ")}`);
+      for (const x of times)
+        if (!TIMES.includes(x))
+          fail(`${where}.times`, `"${x}" is not one of ${TIMES.join(", ")}`);
+      if (new Set(times).size !== times.length)
+        fail(`${where}.times`, "lists a time twice");
       const dot = t.file.lastIndexOf(".");
       const published = `${t.file.slice(0, dot)}-${contentHash(readFileSync(path))}${t.file.slice(dot)}`;
       tracks.push({
@@ -138,6 +194,7 @@ export function resolveMusic(files, dir) {
         fadeInS: t.fadeInS,
         fadeOutS: t.fadeOutS,
         when: t.when,
+        times: TIMES.filter((x) => times.includes(x)),
       });
     }
   }

@@ -4,9 +4,20 @@ import type { MusicData } from './musicTypes';
 export const MUSIC_DATA: MusicData = {
   "playlist": {
     "order": "shuffle",
-    "gapMinS": 20,
-    "gapMaxS": 60,
-    "crossfadeS": 0
+    "gapMinS": 180,
+    "gapMaxS": 600,
+    "crossfadeS": 0,
+    "dayAt": 0.1,
+    "contexts": {
+      "menu": {
+        "firstDelayMinS": 0,
+        "firstDelayMaxS": 0
+      },
+      "game": {
+        "firstDelayMinS": 30,
+        "firstDelayMaxS": 180
+      }
+    }
   },
   "tracks": [
     {
@@ -19,7 +30,11 @@ export const MUSIC_DATA: MusicData = {
       "loop": false,
       "fadeInS": 2,
       "fadeOutS": 3,
-      "when": "always"
+      "when": "always",
+      "times": [
+        "day",
+        "night"
+      ]
     },
     {
       "id": "dwell:casual_classic_2",
@@ -31,7 +46,11 @@ export const MUSIC_DATA: MusicData = {
       "loop": false,
       "fadeInS": 2,
       "fadeOutS": 3,
-      "when": "always"
+      "when": "always",
+      "times": [
+        "day",
+        "night"
+      ]
     },
     {
       "id": "dwell:casual_classic_3",
@@ -43,7 +62,11 @@ export const MUSIC_DATA: MusicData = {
       "loop": false,
       "fadeInS": 2,
       "fadeOutS": 3,
-      "when": "always"
+      "when": "always",
+      "times": [
+        "day",
+        "night"
+      ]
     },
     {
       "id": "dwell:casual_classic_4",
@@ -55,7 +78,11 @@ export const MUSIC_DATA: MusicData = {
       "loop": false,
       "fadeInS": 2,
       "fadeOutS": 3,
-      "when": "always"
+      "when": "always",
+      "times": [
+        "day",
+        "night"
+      ]
     },
     {
       "id": "dwell:casual_classic_5",
@@ -67,7 +94,11 @@ export const MUSIC_DATA: MusicData = {
       "loop": false,
       "fadeInS": 2,
       "fadeOutS": 3,
-      "when": "always"
+      "when": "always",
+      "times": [
+        "day",
+        "night"
+      ]
     },
     {
       "id": "dwell:casual_theme_1",
@@ -79,7 +110,11 @@ export const MUSIC_DATA: MusicData = {
       "loop": false,
       "fadeInS": 2,
       "fadeOutS": 3,
-      "when": "always"
+      "when": "always",
+      "times": [
+        "day",
+        "night"
+      ]
     },
     {
       "id": "dwell:casual_theme_2",
@@ -91,7 +126,11 @@ export const MUSIC_DATA: MusicData = {
       "loop": false,
       "fadeInS": 2,
       "fadeOutS": 3,
-      "when": "always"
+      "when": "always",
+      "times": [
+        "day",
+        "night"
+      ]
     },
     {
       "id": "dwell:casual_theme_3",
@@ -103,7 +142,11 @@ export const MUSIC_DATA: MusicData = {
       "loop": false,
       "fadeInS": 2,
       "fadeOutS": 3,
-      "when": "always"
+      "when": "always",
+      "times": [
+        "day",
+        "night"
+      ]
     },
     {
       "id": "dwell:casual_theme_4",
@@ -115,7 +158,11 @@ export const MUSIC_DATA: MusicData = {
       "loop": false,
       "fadeInS": 2,
       "fadeOutS": 3,
-      "when": "always"
+      "when": "always",
+      "times": [
+        "day",
+        "night"
+      ]
     },
     {
       "id": "dwell:casual_theme_5",
@@ -127,7 +174,11 @@ export const MUSIC_DATA: MusicData = {
       "loop": false,
       "fadeInS": 2,
       "fadeOutS": 3,
-      "when": "always"
+      "when": "always",
+      "times": [
+        "day",
+        "night"
+      ]
     },
     {
       "id": "dwell:casual_theme_1_acoustic",
@@ -139,7 +190,11 @@ export const MUSIC_DATA: MusicData = {
       "loop": false,
       "fadeInS": 2,
       "fadeOutS": 3,
-      "when": "always"
+      "when": "always",
+      "times": [
+        "day",
+        "night"
+      ]
     },
     {
       "id": "dwell:casual_theme_2_acoustic",
@@ -151,7 +206,11 @@ export const MUSIC_DATA: MusicData = {
       "loop": false,
       "fadeInS": 2,
       "fadeOutS": 3,
-      "when": "always"
+      "when": "always",
+      "times": [
+        "day",
+        "night"
+      ]
     },
     {
       "id": "dwell:casual_theme_3_acoustic",
@@ -163,7 +222,11 @@ export const MUSIC_DATA: MusicData = {
       "loop": false,
       "fadeInS": 2,
       "fadeOutS": 3,
-      "when": "always"
+      "when": "always",
+      "times": [
+        "day",
+        "night"
+      ]
     },
     {
       "id": "dwell:casual_theme_4_acoustic",
@@ -175,7 +238,11 @@ export const MUSIC_DATA: MusicData = {
       "loop": false,
       "fadeInS": 2,
       "fadeOutS": 3,
-      "when": "always"
+      "when": "always",
+      "times": [
+        "day",
+        "night"
+      ]
     },
     {
       "id": "dwell:casual_theme_5_acoustic",
@@ -187,7 +254,11 @@ export const MUSIC_DATA: MusicData = {
       "loop": false,
       "fadeInS": 2,
       "fadeOutS": 3,
-      "when": "always"
+      "when": "always",
+      "times": [
+        "day",
+        "night"
+      ]
     },
     {
       "id": "dwell:simple_positive_1",
@@ -199,7 +270,11 @@ export const MUSIC_DATA: MusicData = {
       "loop": false,
       "fadeInS": 2,
       "fadeOutS": 3,
-      "when": "always"
+      "when": "always",
+      "times": [
+        "day",
+        "night"
+      ]
     },
     {
       "id": "dwell:simple_positive_2",
@@ -211,7 +286,11 @@ export const MUSIC_DATA: MusicData = {
       "loop": false,
       "fadeInS": 2,
       "fadeOutS": 3,
-      "when": "always"
+      "when": "always",
+      "times": [
+        "day",
+        "night"
+      ]
     },
     {
       "id": "dwell:simple_positive_3",
@@ -223,7 +302,11 @@ export const MUSIC_DATA: MusicData = {
       "loop": false,
       "fadeInS": 2,
       "fadeOutS": 3,
-      "when": "always"
+      "when": "always",
+      "times": [
+        "day",
+        "night"
+      ]
     },
     {
       "id": "dwell:simple_positive_4",
@@ -235,7 +318,11 @@ export const MUSIC_DATA: MusicData = {
       "loop": false,
       "fadeInS": 2,
       "fadeOutS": 3,
-      "when": "always"
+      "when": "always",
+      "times": [
+        "day",
+        "night"
+      ]
     },
     {
       "id": "dwell:simple_positive_5",
@@ -247,7 +334,11 @@ export const MUSIC_DATA: MusicData = {
       "loop": false,
       "fadeInS": 2,
       "fadeOutS": 3,
-      "when": "always"
+      "when": "always",
+      "times": [
+        "day",
+        "night"
+      ]
     }
   ]
 };

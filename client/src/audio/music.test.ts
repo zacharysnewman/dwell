@@ -25,6 +25,7 @@ const TRACK: TrackDef = {
   fadeInS: 4,
   fadeOutS: 2,
   when: 'always',
+  times: ['day', 'night'],
 };
 
 /** An element whose `play()` the browser allows or refuses (`allow`). */
