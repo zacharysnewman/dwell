@@ -504,13 +504,40 @@ the moon's unedited chunks never evicted, tier 1 bodies in the moon's space (non
   the moon's ground light (its hemisphere light is home's, its sunlight follows home's keyframes); remote
   players on another grid (sent at world positions); the other systems for away players listed in §7.2.
 
-## 8. Moon spawn, faces A and B [search built, M-1; the choice M-8]
+## 8. Moon spawn, faces A and B [search built, M-1; the choice built, M-8, 2026-11-13]
 
 `CrateredTerrain::spawn_point(face)`: a golden-angle spiral from the disc's centre to the first
 column whose ground is flat (±1 m over 4 m) and clear of every crater ≥ 10 m wide (outside 1.2 radii),
 deterministic per seed, one per face (tested on both). In M-8 the New world form's spawn choice and
 the `?spawn=` link gain `moon` and `moon-b` (beside today's `b`, `portal`, `portal-b`); the player
 starts in the moon's frame with its gravity, and the home world streams in only when they fly back.
+
+**As built (M-8, with the sun's second slice; owner, 2026-11-13: "Im not seeing a moon spawn or sun spawn in my new
+world settings"; orchestrator: "one general system rather than per-world code: a spawn choice for any grid, by
+data"):**
+
+- **The choices are the grids data's.** Every grid of `grids.json` but the home one with a generator of its own
+  offers both faces, keyed by its name after the namespace (`moon`, `moon-b`, `sun`, `sun-b`:
+  `dwell_worldgen::grids::spawn_keys`, `grid_spawn`); the shell's New world Spawn and Play advanced's get the same
+  list from `shared/play/overrides.json`'s `"optionsAlso": "gridSpawns"` (`shared/play/gen.mjs`
+  `gridSpawnOptions`, labelled "Moon (face A)", …), and `?spawn=` takes the same values (`local/world.ts`
+  `GRID_SPAWNS`, `spawnGrid`; each its own world file, `<name>-moon`). A grid added to `grids.json` appears in both
+  by itself (tested with a fixture grid in each).
+- **The stand point** (`grids::stand_point`): the moon's spawn search above; the sun's `VolcanicTerrain::spawn_point`,
+  a bounded ring search from the centre (8 m apart, out to 4 km) for dry, level crust at least 2 m over any lava it
+  borders and no molten column within 16 m.
+- **The server** (`ServerConfig::spawn_grid`, saved in the world meta's optional `spawn_grid`; a saved world keeps
+  its own unless a spawn link opens it): a player spawned at the world's spawn, or up again after a death on another
+  grid, starts at home's spawn and is carried to the grid's stand point as soon as its client says `grid.frames` and
+  the grid's `capability` (`Server::spawn_on_grids`), within 10 s (`GRID_SPAWN_GRACE_TICKS`). A client that doesn't
+  (an older build, or one of the moon's line in a sun world) stays at home's spawn, and an older build opening the
+  world ignores the key and spawns at home.
+- **Shrines:** none on the other grids yet (shrines are home's worldgen), so a death on another grid respawns at the
+  world's spawn grid's stand point, or at home's spawn without one; a death at home follows home's shrine rules.
+- **Tests** (both faces): `dwell-sim` `tests/grid_spawn.rs` (a moon world starts its player standing on the moon; a
+  sun world on dry crust, and back there after a defeat; an older client at home; a saved world keeps its choice),
+  `dwell-worldgen` `tests/sun.rs` (`the_spawn_choices_come_from_the_grids_data`, the sun's stand point),
+  `shared/play/gen.test.mjs` and `playAdvanced.test.ts` / `world.test.ts` (the list and the link).
 
 ## 9. Memory and cost
 

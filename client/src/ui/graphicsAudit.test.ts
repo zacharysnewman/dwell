@@ -34,6 +34,7 @@ const TIERS: Record<string, Audit> = {
   water: { setting: 'water' },
   pixel_ratio: { setting: 'renderScale' },
   bake: { fixed: "the moon's terrain bake for a world seed, not a cost tier" },
+  sun_bake: { fixed: "the sun world's far-body bake for a world seed, not a cost tier" },
   player: { fixed: 'a clip player lookup (characters), not a cost tier' },
   pixel_art: { fixed: 'a dev preview (`?pixelart=`), off unless asked for' },
   moon_normals: { fixed: "the CPU adapter's cheapest tier only; a GPU always draws it (one disc)" },

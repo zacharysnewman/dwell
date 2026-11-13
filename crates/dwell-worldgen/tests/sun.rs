@@ -302,3 +302,109 @@ both_faces!(
         assert!(molten > 100 && dry > 100, "lava {molten}, crust {dry}");
     }
 );
+
+/// The sun's `flow` rules (SUN_WORLD.md §6) are its data: a bad entry fails with a message, and
+/// without them the sun has no river heads.
+#[test]
+fn the_sun_s_flow_rules_validate_and_are_optional() {
+    let cases: [(&str, &str, &str); 4] = [
+        (
+            "\"minRift\": 0.8",
+            "\"minRift\": 0",
+            "`minRift` must be > 0",
+        ),
+        (
+            "\"probes\": 12",
+            "\"probes\": 1.5",
+            "`probes` must be a whole number",
+        ),
+        ("\"rateM3s\": 1.5", "\"rateM3s\": -1", "rateM3s"),
+        (
+            "\"vent\": { \"fluid\": \"dwell:lava\"",
+            "\"vent\": { \"fluid\": \"dwell:magma\"",
+            "vent: `fluid` names no block",
+        ),
+    ];
+    for (from, to, want) in cases {
+        let err = edited(&[(from, to)]).expect_err(&format!("`{to}` is rejected"));
+        assert!(err.contains(want), "`{err}` mentions {want}");
+        assert!(err.contains("dwell:sun"), "`{err}` names the grid");
+    }
+    let none = edited(&[("\"flow\": {", "\"flowOff\": {")]).unwrap();
+    let t = sun_of(&none, 7);
+    assert!(t.rules().flow.is_none());
+    assert!(t.river_heads(Face::A, 0.0, 0.0, 5_000.0).is_empty());
+}
+
+both_faces!(
+    /// Each river head is in a river (molten, over the sea, deep in a rift) and the highest river
+    /// lava of its cell's samples; the heads are deterministic and one a cell at most.
+    fn the_sun_s_river_heads_are_in_its_rivers(f: FaceFrame) {
+        let t = sun(7);
+        let fl = t.rules().flow.clone().unwrap();
+        let heads = t.river_heads(f.face, 0.0, 0.0, 6_000.0);
+        assert!(heads.len() >= 5, "rivers near the middle: {}", heads.len());
+        let mut cells = std::collections::HashSet::new();
+        for h in &heads {
+            assert!(cells.insert(h.cell), "one head a cell");
+            let c = t.column(f.face, h.x, h.z);
+            assert!(c.molten() && c.lava > t.rules().lava.sea_m, "{h:?} {c:?}");
+            assert!(t.rift_weight(f.face, h.x, h.z) >= fl.min_rift);
+            assert!((c.lava - h.lava).abs() < 1e-9);
+        }
+        assert_eq!(heads, t.river_heads(f.face, 0.0, 0.0, 6_000.0));
+        // Nearest first.
+        let d: Vec<f64> = heads.iter().map(|h| h.x.hypot(h.z)).collect();
+        assert!(d.windows(2).all(|w| w[0] <= w[1] + 1e-9));
+    }
+);
+
+both_faces!(
+    /// The sun's stand point (MOON_WORLD.md §8's spawns) is dry, level crust with no lava within 16 m.
+    fn the_sun_s_stand_point_is_dry_crust_away_from_lava(f: FaceFrame) {
+        for seed in [0, 7, 42] {
+            let t = sun(seed);
+            let s = t.spawn_point(f.face);
+            let c = t.column(f.face, s[0], s[2]);
+            assert!(c.ground >= c.lava + 2.0, "seed {seed}: {c:?}");
+            assert!((c.ground - s[1]).abs() < 1e-9);
+            for k in 0..16 {
+                let a = f64::from(k) * std::f64::consts::TAU / 16.0;
+                let o = t.column(f.face, s[0] + 16.0 * a.cos(), s[2] + 16.0 * a.sin());
+                assert!(!o.molten(), "seed {seed}: lava 16 m off");
+            }
+        }
+    }
+);
+
+/// The spawn choices are the grids data's: both faces of each grid with its own generator (the
+/// moon's and the sun's), and a fixture grid added by data alone appears with them.
+// both-faces: each grid offers its two faces' keys, compared here.
+#[test]
+fn the_spawn_choices_come_from_the_grids_data() {
+    use dwell_worldgen::grids::{grid_spawn, grids, spawn_keys, stand_point};
+    assert_eq!(spawn_keys(grids()), ["moon", "moon-b", "sun", "sun-b"]);
+    let g = grid_spawn("sun-b").unwrap();
+    assert_eq!((g.def.name.as_str(), g.face), ("dwell:sun", Face::B));
+    assert!(grid_spawn("home").is_none() && grid_spawn("b").is_none());
+    // A fixture grid: the moon's entry again under another name, by data alone.
+    let at = GRIDS_JSON
+        .find("{\n      \"name\": \"dwell:moon\"")
+        .unwrap();
+    let end = GRIDS_JSON[at..].find("\n    },\n").unwrap() + at + "\n    }".len();
+    let moon = &GRIDS_JSON[at..end];
+    let comet = moon
+        .replace("\"name\": \"dwell:moon\"", "\"name\": \"test:comet\"")
+        .replace("\"seedSalt\": 1297040974", "\"seedSalt\": 77");
+    let text = format!("{},\n    {comet}{}", &GRIDS_JSON[..end], &GRIDS_JSON[end..]);
+    let list = parse_grids(&text).unwrap();
+    assert_eq!(
+        spawn_keys(&list),
+        ["moon", "moon-b", "comet", "comet-b", "sun", "sun-b"]
+    );
+    let comet = list.iter().find(|g| g.name == "test:comet").unwrap();
+    assert!(
+        stand_point(comet, 7, Face::B).is_some(),
+        "it has a stand point"
+    );
+}

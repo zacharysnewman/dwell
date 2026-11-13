@@ -80,7 +80,7 @@
       "capability": "grid.sun",
       "generator": {
         "kind": "volcanic",
-        "$comment": "The sun as a volcano world (docs/proposals/SUN_WORLD.md, WORK_QUEUE item 42; owner 2026-11-12: \"The sun is a volcano world. Constant flowing lava, oceans of lava.\"). Face-local heights over its midplane, each face from its own seed stream. The ground is `datumM` + fbm `plains` + broad fbm `basins`; wherever it lies under `lava.seaM` it is a lava ocean's floor, lava (`lava.fluid`, the lava fields' block) up to that level. Rifts follow ridged noise's zero lines, carved `rifts.depthM` deep across `width` of the noise's range, their bottom `fill` of that depth a lava river (its surface follows the land, so it runs downhill). Cones: one candidate a jittered `cones.cellM` cell (`chance`), radius and height drawn in their ranges, the flank `(1 - d/R)^profile` over the ground at its centre, a summit crater `craterRatio` x R wide and `craterDepthM` deep holding a lava lake `lakeBelowRimM` under its rim. The ground is `crust` (basalt), and a dry column at most `shore.bandM` over the lava it borders is `shore.block` (obsidian, the quench glass). Heights never go under `minM`. Generated still: the always-flowing lava simulation on the sun is a later slice. `bake.size` is the far bake's texels a side per face (the sky's sun disc is drawn from face A's).",
+        "$comment": "The sun as a volcano world (docs/proposals/SUN_WORLD.md, WORK_QUEUE item 42; owner 2026-11-12: \"The sun is a volcano world. Constant flowing lava, oceans of lava.\"). Face-local heights over its midplane, each face from its own seed stream. The ground is `datumM` + fbm `plains` + broad fbm `basins`; wherever it lies under `lava.seaM` it is a lava ocean's floor, lava (`lava.fluid`, the lava fields' block) up to that level. Rifts follow ridged noise's zero lines, carved `rifts.depthM` deep across `width` of the noise's range, their bottom `fill` of that depth a lava river (its surface follows the land, so it runs downhill). Cones: one candidate a jittered `cones.cellM` cell (`chance`), radius and height drawn in their ranges, the flank `(1 - d/R)^profile` over the ground at its centre, a summit crater `craterRatio` x R wide and `craterDepthM` deep holding a lava lake `lakeBelowRimM` under its rim. The ground is `crust` (basalt), and a dry column at most `shore.bandM` over the lava it borders is `shore.block` (obsidian, the quench glass). Heights never go under `minM`. `flow` keeps its rivers running (the server's lava fields, below). `bake.size` is the far bake's texels a side per face (the sky's sun disc is drawn from face A's).",
         "crust": "dwell:basalt",
         "datumM": 100,
         "minM": 16,
@@ -99,6 +99,16 @@
           "lakeBelowRimM": 6
         },
         "rifts": { "amplitudeM": 0, "wavelengthM": 4500, "octaves": 2, "width": 0.06, "depthM": 16, "fill": 0.45 },
+        "flow": {
+          "$comment": "Constant flowing lava (owner, 2026-11-12; SUN_WORLD.md §6): the server's lava fields (VOLCANOES.md, the same flow, cooling, burn and damage as home's) kept running on the sun's rivers. One source a `cellM` cell at its river head (of `probes` x `probes` samples, the one with the highest river lava: at least `minRift` in a rift, molten, over the sea, not a crater's lake), a `vent` of `fluid` at `rateM3s` whose field starts `radius` columns each way. Bounded as the water is: sources are placed only within `nearM` of a player on the sun, at most `maxFields` fields (the farthest from every player dropped first), each grown to at most `maxTiles` tiles of 8 x 8 columns, and a field with no player within lava.json `nearRadiusM` of it is not run (no fast-forward: a steady river).",
+          "cellM": 512,
+          "probes": 12,
+          "minRift": 0.8,
+          "vent": { "fluid": "dwell:lava", "rateM3s": 1.5, "radius": 12 },
+          "nearM": 384,
+          "maxFields": 12,
+          "maxTiles": 192
+        },
         "bake": { "size": 256 }
       }
     }

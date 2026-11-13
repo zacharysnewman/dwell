@@ -51,6 +51,92 @@ pub struct GridSlot {
     pub space: GridSpace,
     /// Chunks edited since the last save.
     dirty: HashSet<ChunkCoord>,
+    /// Its lava fields (docs/proposals/SUN_WORLD.md §6): the sun's rivers kept flowing near its
+    /// players. Not saved: their cells are in the grid's chunks, and the fields are placed again.
+    pub lava: crate::lava::Lava,
+    /// Each field's river head (face B, flow cell), in `lava.fields`' order.
+    lava_heads: Vec<(bool, [i32; 2])>,
+    /// Every river head placed (or tried) since the server started.
+    heads_tried: HashSet<(bool, [i32; 2])>,
+    /// The generator its river heads come from, and its `flow` rules (a `volcanic` grid with
+    /// them; `None` places no source).
+    flow: Option<(
+        dwell_worldgen::volcanic::VolcanicTerrain,
+        dwell_worldgen::volcanic::FlowRule,
+    )>,
+}
+
+impl GridSlot {
+    /// Puts a source at each river head (`flow`) within `nearM` of a player (grid-local points)
+    /// not placed yet, while there is room under `maxFields`: a full grid drops its farthest field
+    /// with no player near for it, or places no more.
+    fn place_river_heads(&mut self, players: &[V3]) {
+        let Some((terrain, fl)) = &self.flow else {
+            return;
+        };
+        let rules = dwell_lava::LavaData {
+            max_tiles: fl.max_tiles,
+            near_radius_m: fl.near_m as f32,
+            ..dwell_lava::DATA
+        };
+        for &p in players {
+            let f = FaceFrame::at_height(p[1]);
+            let l = f.point(p);
+            for h in terrain.river_heads(f.face, l[0], l[2], fl.near_m) {
+                let key = (f.is_b(), h.cell);
+                if self.heads_tried.contains(&key) {
+                    continue;
+                }
+                if self.lava.fields.len() >= fl.max_fields as usize {
+                    let far = (0..self.lava.fields.len())
+                        .filter(|&i| {
+                            let q = &self.lava.fields[i];
+                            !q.field.is_near(q.face, players)
+                        })
+                        .max_by(|&a, &b| {
+                            let d = |i: usize| {
+                                let o = self.lava.fields[i].field.origin;
+                                players
+                                    .iter()
+                                    .map(|p| (p[0] - f64::from(o[0])).hypot(p[2] - f64::from(o[1])))
+                                    .fold(f64::INFINITY, f64::min)
+                            };
+                            d(a).total_cmp(&d(b))
+                        });
+                    let Some(i) = far else {
+                        return;
+                    };
+                    self.lava.remove(i);
+                    let gone = self.lava_heads.remove(i);
+                    self.heads_tried.remove(&gone);
+                }
+                self.heads_tried.insert(key);
+                let spot = crate::lava::VentSpot {
+                    fluid: fl.fluid.clone(),
+                    kind: dwell_lava::VentKind::River,
+                    rate_m3s: fl.rate_m3s as f32,
+                    depth_m: 0.0,
+                    radius: fl.radius as usize,
+                };
+                let world = &mut self.space.world;
+                let column = [h.x.floor() as i32, h.z.floor() as i32];
+                if self
+                    .lava
+                    .place(
+                        &rules,
+                        f,
+                        column,
+                        dwell_world::row_of_m(h.lava),
+                        &spot,
+                        |[x, y, z]| world.get_voxel(x, y, z),
+                    )
+                    .is_ok()
+                {
+                    self.lava_heads.push(key);
+                }
+            }
+        }
+    }
 }
 
 /// The grids beside the home world.
@@ -101,10 +187,16 @@ impl Grids {
                     space.world.put(saved.coord, chunk);
                 }
             }
+            let flow = dwell_worldgen::volcanic::VolcanicTerrain::new(def, world_seed)
+                .and_then(|t| t.rules().flow.clone().map(|f| (t, f)));
             slots.push(GridSlot {
                 index: i as u8,
                 space,
                 dirty: HashSet::default(),
+                lava: Default::default(),
+                lava_heads: Vec::new(),
+                heads_tried: HashSet::default(),
+                flow,
             });
         }
         Self {
@@ -243,6 +335,7 @@ impl Server {
         if self.grids.slots.is_empty() {
             return;
         }
+        self.spawn_on_grids();
         let world_s = self.world_s();
         let ids: Vec<SessionId> = self
             .sessions
@@ -265,24 +358,8 @@ impl Server {
                         .to_array();
                     if let Some(slot) = self.grids.capturing(p, world_s, &s.capabilities) {
                         let (lp, lv) = self.grids.frame(slot, world_s).capture(p, v);
-                        let space = &mut self.grids.slots[slot].space;
-                        let scale = space.def.gravity_scale as f32;
-                        let nh = carry(
-                            (&mut self.players, &mut self.physics),
-                            h,
-                            (&mut space.players, &mut space.physics),
-                            scale,
-                            lp,
-                            lv,
-                        );
-                        let s = self.sessions.get_mut(&id).expect("session");
-                        s.handle = None;
-                        s.away = Some(Away { slot, handle: nh });
-                        s.grid_streamed.clear();
-                        if s.capabilities.has(GRID_FRAMES) {
-                            s.forget_home_stream();
-                        }
-                        let pid = s.player_id;
+                        self.carry_to_grid(id, h, slot, lp, lv);
+                        let pid = self.sessions[&id].player_id;
                         let (after, v_after) = self.world_state_of(pid).expect("carried");
                         let to = self.grids.slots[slot].index.into();
                         self.grids.transfers.push((
@@ -329,6 +406,87 @@ impl Server {
                 _ => {}
             }
         }
+    }
+
+    /// The world's spawn grid (`ServerConfig::spawn_grid`, MOON_WORLD.md §8): its slot and face, and
+    /// the stand point there (grid-local capsule centre), if the build has that grid.
+    pub fn grid_spawn_point(&self) -> Option<(usize, FaceFrame, V3)> {
+        let key = self.config.spawn_grid.as_deref()?;
+        let gs = dwell_worldgen::grids::grid_spawn(key)?;
+        let slot = self
+            .grids
+            .slots
+            .iter()
+            .position(|s| usize::from(s.index) == gs.index)?;
+        let feet = dwell_worldgen::grids::stand_point(gs.def, self.config.world_seed, gs.face)?;
+        let f = FaceFrame::of(gs.face);
+        let half = f64::from(self.config.player_config.half_height(false));
+        Some((slot, f, f.point([feet[0], feet[1] + half + 0.05, feet[2]])))
+    }
+
+    /// Players just spawned at home in a world whose spawn is on another grid go there once their
+    /// client says it can be on it (`grid.frames` and the grid's `capability`); a client that
+    /// hasn't within `GRID_SPAWN_GRACE_TICKS` (an older build) stays at home's spawn.
+    fn spawn_on_grids(&mut self) {
+        let due: Vec<SessionId> = self
+            .sessions
+            .iter()
+            .filter(|(_, s)| s.grid_spawn_due.is_some() && s.handle.is_some())
+            .map(|(id, _)| *id)
+            .collect();
+        if due.is_empty() {
+            return;
+        }
+        let point = self.grid_spawn_point();
+        for id in due {
+            let s = &self.sessions[&id];
+            let open = point.is_some_and(|(slot, ..)| {
+                s.capabilities.has(GRID_FRAMES)
+                    && self.grids.slots[slot]
+                        .space
+                        .def
+                        .open_to(|c| s.capabilities.has(c))
+            });
+            let late = s.grid_spawn_due.is_some_and(|t| self.tick >= t);
+            let (Some((slot, _, at)), true) = (point, open) else {
+                if late || point.is_none() {
+                    self.sessions.get_mut(&id).expect("session").grid_spawn_due = None;
+                }
+                continue;
+            };
+            let h = s.handle.expect("filtered");
+            self.sessions.get_mut(&id).expect("session").grid_spawn_due = None;
+            self.carry_to_grid(id, h, slot, at, [0.0; 3]);
+        }
+    }
+
+    /// Carries home player `h` of session `id` into slot `slot`'s space at grid-local `lp`, `lv`.
+    fn carry_to_grid(
+        &mut self,
+        id: SessionId,
+        h: PlayerHandle,
+        slot: usize,
+        lp: V3,
+        lv: V3,
+    ) -> PlayerHandle {
+        let space = &mut self.grids.slots[slot].space;
+        let scale = space.def.gravity_scale as f32;
+        let nh = carry(
+            (&mut self.players, &mut self.physics),
+            h,
+            (&mut space.players, &mut space.physics),
+            scale,
+            lp,
+            lv,
+        );
+        let s = self.sessions.get_mut(&id).expect("session");
+        s.handle = None;
+        s.away = Some(Away { slot, handle: nh });
+        s.grid_streamed.clear();
+        if s.capabilities.has(GRID_FRAMES) {
+            s.forget_home_stream();
+        }
+        nh
     }
 
     /// Carries an away player back into the home space at its world position and velocity, and
@@ -571,6 +729,8 @@ impl Server {
         }
         world.set_voxel(cell[0], cell[1], cell[2], state);
         slot.dirty.insert(chunk);
+        // A field over the cell reads its bed again (a dug channel, a dam).
+        slot.lava.touch(cell);
         let generated = false;
         let m = self.grid_chunk_message(a.slot, chunk, generated);
         let to: Vec<SessionId> = self
@@ -585,6 +745,116 @@ impl Server {
             self.send_reliable(to, &Message::ChunkData(m.clone()), Channel::World);
         }
         true
+    }
+
+    /// Every lava tick, each grid's lava fields (docs/proposals/SUN_WORLD.md §6): sources placed at
+    /// the river heads near its players, the fields near them run (no other), and the cells they
+    /// changed written into the grid's chunks, each changed chunk sent whole to that grid's clients
+    /// that hold it (as an away player's edit is).
+    pub(super) fn flow_grid_lava(&mut self) {
+        let every = dwell_lava::DATA.tick_every.max(1);
+        if self.grids.slots.is_empty() || !self.tick.is_multiple_of(every) {
+            return;
+        }
+        let real_s = every as f32 / SIM_HZ as f32;
+        for slot in 0..self.grids.slots.len() {
+            let players: Vec<V3> = {
+                let sp = &self.grids.slots[slot].space;
+                self.sessions
+                    .values()
+                    .filter_map(|s| s.away.filter(|a| a.slot == slot))
+                    .map(|a| sp.players.position(&sp.physics, a.handle).to_array())
+                    .collect()
+            };
+            if players.is_empty() {
+                continue;
+            }
+            let g = &mut self.grids.slots[slot];
+            g.place_river_heads(&players);
+            if g.lava.is_empty() {
+                continue;
+            }
+            let world = &mut g.space.world;
+            // Steam needs water, which no other grid has yet: dropped.
+            let out = g.lava.tick_with(real_s, &players, false, |[x, y, z]| {
+                world.get_voxel(x, y, z)
+            });
+            if out.writes.is_empty() {
+                continue;
+            }
+            let mut chunks = HashSet::default();
+            for ([x, y, z], m) in out.writes {
+                world.set_voxel(x, y, z, m);
+                chunks.insert(chunk_of(x, y, z));
+            }
+            g.dirty.extend(chunks.iter().copied());
+            let mut chunks: Vec<ChunkCoord> = chunks.into_iter().collect();
+            chunks.sort_by_key(|c| (c.x, c.y, c.z));
+            for c in chunks {
+                let m = self.grid_chunk_message(slot, c, false);
+                let to: Vec<SessionId> = self
+                    .sessions
+                    .iter()
+                    .filter(|(_, s)| {
+                        s.away.is_some_and(|o| o.slot == slot) && s.grid_streamed.contains(&c)
+                    })
+                    .map(|(id, _)| *id)
+                    .collect();
+                for to in to {
+                    self.send_reliable(to, &Message::ChunkData(m.clone()), Channel::World);
+                }
+            }
+        }
+    }
+
+    /// The hot fluid an away player's feet stand in on its grid: a field's lava, or any cell of a
+    /// hot fluid's block at the feet (the sun's generated oceans and rivers), by lava.json's names.
+    pub(super) fn away_hot_fluid(&mut self, a: Away) -> Option<&'static dwell_lava::HotFluid> {
+        let g = &mut self.grids.slots[a.slot];
+        let sp = &mut g.space;
+        let p = sp.players.position(&sp.physics, a.handle).to_array();
+        let feet = [p[0], sp.players.feet(&sp.physics, a.handle), p[2]];
+        if let Some(h) = g.lava.fluid_at(feet) {
+            return Some(h);
+        }
+        // Just inside the feet (face-local up a little: they rest on a cell's top).
+        let f = FaceFrame::at_height(feet[1]);
+        let l = f.point(feet);
+        let cell = f.cell([
+            l[0].floor() as i32,
+            dwell_world::row_of_m(l[1] + 0.1),
+            l[2].floor() as i32,
+        ]);
+        crate::lava::hot_fluid_of(sp.world.get_voxel(cell[0], cell[1], cell[2]))
+    }
+
+    /// Takes an away player out of its grid's space (its death there) and unloads that grid's
+    /// chunks on its client: the feet's world position, where it died.
+    pub(super) fn remove_away(&mut self, id: SessionId) -> Option<V3> {
+        let a = self.sessions.get(&id).and_then(|s| s.away)?;
+        let frame = self.grids.frame(a.slot, self.world_s());
+        let sp = &mut self.grids.slots[a.slot].space;
+        let p = sp.players.position(&sp.physics, a.handle).to_array();
+        let feet = [p[0], sp.players.feet(&sp.physics, a.handle), p[2]];
+        sp.players.despawn(&mut sp.physics, a.handle);
+        let (death, _) = frame.release(feet, [0.0; 3]);
+        let index = self.grids.slots[a.slot].index;
+        let s = self.sessions.get_mut(&id).expect("session");
+        s.away = None;
+        let mut gone: Vec<ChunkCoord> = s.grid_streamed.drain().collect();
+        gone.sort_by_key(|c| (c.x, c.y, c.z));
+        if s.capabilities.has(GRID_FRAMES) && !gone.is_empty() {
+            for part in gone.chunks(0xFFFF) {
+                let m = Message::ChunkUnload(ChunkUnload {
+                    coords: part.iter().map(|c| c.to_array()).collect(),
+                    grid: index,
+                });
+                self.send_reliable(id, &m, Channel::World);
+            }
+        }
+        let s = self.sessions.get_mut(&id).expect("session");
+        s.stream_center = None;
+        Some(death)
     }
 
     /// The grids' chunks edited since the last save, for the batch.

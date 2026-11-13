@@ -1863,6 +1863,14 @@ impl Client {
         let s = self.inner.borrow();
         s.game.as_ref()?.moon_report().map(|r| r.json())
     }
+    /// A grid from the player as JSON, by name (`__dwell.sun()` is `dwell:sun`'s; the moon report's
+    /// fields, SUN_WORLD.md), or None before playing, from a server without `grid.frames`, or in a
+    /// world without that grid (or one this build's session can't be on).
+    #[wasm_bindgen(js_name = gridReport)]
+    pub fn grid_report(&self, name: String) -> Option<String> {
+        let s = self.inner.borrow();
+        s.game.as_ref()?.grid_report(&name).map(|r| r.json())
+    }
     pub fn voxel(&self, x: i32, y: i32, z: i32) -> u16 {
         self.inner
             .borrow_mut()

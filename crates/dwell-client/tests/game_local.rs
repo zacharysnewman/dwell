@@ -4484,6 +4484,108 @@ dwell_world::both_faces!(
 );
 
 dwell_world::both_faces!(
+    /// SUN_WORLD.md §5's capture speed: the sun goes round its path at 3.7–7.5 km/s (the moon's
+    /// ~1 km/s), so the carry's clock slip on a jittery, laggy device turns positions by several
+    /// times the moon's distance. A far flier steered at the sun from just outside its capture
+    /// sphere (`sunApproach`, moving with it) is captured, flown down and landed on its dry crust
+    /// with no snap (#879's carry smoothing).
+    fn a_sun_trip_on_a_jittery_device_makes_no_snap(f: FaceFrame) {
+        let mut rig = Rig::with_generator(GENERATOR_SANDBOX);
+        rig.latency_steps = 6;
+        assert!(rig.run_until(60 * 20, |r| {
+            r.game
+                .as_ref()
+                .is_some_and(|g| g.debug_state().terrain_ready)
+        }));
+        rig.input.flight.set_allowed(true);
+        rig.input.flight.set(true);
+        rig.run_until(30, |_| false);
+        let face = if f == dwell_world::FaceFrame::A {
+            1.0
+        } else {
+            -1.0
+        };
+        let r = rig.core.grid_approach("dwell:sun", 300.0, face);
+        assert!(!r.contains("error"), "{r}");
+        rig.run_until(60, |_| false);
+        let snaps = |r: &Rig| r.game.as_ref().unwrap().debug_state().stats.snaps;
+        let report = |r: &Rig| r.game.as_ref().unwrap().grid_report("dwell:sun").unwrap();
+        let before = snaps(&rig);
+        let mut n = 0usize;
+        let mut step = |r: &mut Rig| {
+            n += 1;
+            if n.is_multiple_of(7) {
+                r.slow_frame(4);
+            } else {
+                r.frame();
+            }
+        };
+        let mut captured = false;
+        for _ in 0..60 * 60 {
+            let m = report(&rig);
+            if m.grid == "sun" {
+                captured = true;
+                break;
+            }
+            rig.input.look.yaw = m.look.0;
+            rig.input.look.pitch = m.look.1;
+            rig.input.set_key("KeyW", m.look.1.abs() < 70.0);
+            rig.input.set_key("Space", m.look.1 > 20.0);
+            rig.input.set_key("KeyC", m.look.1 < -20.0);
+            step(&mut rig);
+        }
+        for k in ["KeyW", "Space", "KeyC"] {
+            rig.input.set_key(k, false);
+        }
+        assert!(captured, "captured by the sun");
+        // The sun's speed on its path at the capture: several times the moon's.
+        let index = report(&rig).index;
+        let t = f64::from(rig.core.server().tick()) / 60.0;
+        let grids = rig.core.server().grids();
+        let slot = grids.slots.iter().position(|s| s.index == index).unwrap();
+        let frame = grids.frame(slot, t);
+        let v = frame.point_velocity(frame.to_world(dwell_sim::travel::GRID_CENTRE));
+        let speed = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
+        assert!(speed > 3_000.0, "the sun moves {speed} m/s");
+        assert_eq!(
+            snaps(&rig),
+            before,
+            "no snap at a capture at {speed:.0} m/s"
+        );
+        // Down to 40 m, then flight off and the landing.
+        rig.input.look.pitch = 0.0;
+        rig.input.set_key("KeyC", true);
+        for _ in 0..60 * 120 {
+            let g = report(&rig).ground_m.unwrap();
+            if g < 40.0 {
+                break;
+            }
+            rig.input
+                .flight
+                .set_speed_level(if g < 600.0 { 6.0 } else { 11.0 });
+            step(&mut rig);
+        }
+        rig.input.set_key("KeyC", false);
+        rig.input.flight.set(false);
+        let mut landed = false;
+        for _ in 0..60 * 30 {
+            let m = report(&rig);
+            if m.ground_m.unwrap() < 0.3 && m.up_mps.abs() < 0.1 {
+                landed = true;
+                break;
+            }
+            step(&mut rig);
+        }
+        assert!(landed, "landed: {:?}", report(&rig).ground_m);
+        assert_eq!(
+            snaps(&rig),
+            before,
+            "no snap through the capture and landing on the sun"
+        );
+    }
+);
+
+dwell_world::both_faces!(
     /// BUGS.md #125: a capture, the descent, the landing and the release on a device with uneven
     /// frames and a laggy link make no snap. The server runs an input a few ticks off the client's
     /// guess (`server_tick − 1 − ack`), so the carry turned positions at another moment of the
