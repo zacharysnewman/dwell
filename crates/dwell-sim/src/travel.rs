@@ -29,9 +29,8 @@
 use std::sync::Arc;
 
 use dwell_look::celestial::Celestial;
-use dwell_physics::config::PlayerControllerConfig;
+use dwell_physics::Physics;
 use dwell_physics::controller::{PlayerHandle, Players};
-use dwell_physics::{DVec3, Physics, Vec3};
 use dwell_world::{
     AirChunkTest, CELL_H, CHUNK_SIZE, ChunkCoord, ChunkGenerator, FaceFrame, GridFrame, MIDPLANE_M,
     VoxelWorld,
@@ -185,33 +184,116 @@ pub fn grid_generator(def: &GridDef, world_seed: u64) -> Option<(ChunkGenerator,
     }
 }
 
-/// Moves a player from one space's players to another's (MOON_WORLD.md §7.1): despawned from
-/// `src`, spawned in `dst` at the grid-local `p`, `v` (already turned into `dst`'s frame) with its
-/// controller state, its face there settled (the vertical state mirrored as at a midplane crossing)
-/// and `dst`'s gravity scale. Returns its handle in `dst`. The server carries its home players to
-/// and from the other grids' spaces through this too.
-pub fn carry(
-    src: (&mut Players, &mut Physics),
-    h: PlayerHandle,
-    dst: (&mut Players, &mut Physics),
-    gravity_scale: f32,
-    p: V3,
-    v: V3,
-) -> PlayerHandle {
-    let (src_players, src_physics) = src;
-    let (dst_players, dst_physics) = dst;
-    let state = *src_players.controller(h);
-    let cfg: PlayerControllerConfig = *src_players.config(h);
-    src_players.despawn(src_physics, h);
-    let nh = dst_players.spawn(dst_physics, cfg, DVec3::from(p), state.input.look_yaw);
-    let (pd, vd) = (
-        DVec3::from(p),
-        Vec3::new(v[0] as f32, v[1] as f32, v[2] as f32),
-    );
-    dst_players.restore(dst_physics, nh, &state, pd, vd);
-    dst_players.settle_face(dst_physics, nh);
-    dst_players.set_gravity_scale(nh, gravity_scale);
-    nh
+pub use dwell_physics::controller::carry;
+
+/// The grids' frames and travel rules without their spaces (MOON_WORLD.md §7.3): what the client's
+/// predictor runs before each tick (`dwell_physics::predictor::GridTravel`) to carry its player as
+/// the server's `Grids` does: the same grids (those with a generator of their own), capture,
+/// release and far flight.
+pub struct TravelMap {
+    pub celestial: Celestial,
+    pub rules: TravelRules,
+    pub home: &'static GridDef,
+    /// The home disc's radius (m).
+    pub home_radius_m: f64,
+    /// The other grids: their `grids.json` index, data and radius.
+    pub grids: Vec<(u8, &'static GridDef, f64)>,
+}
+
+impl TravelMap {
+    /// The grids the server builds for a world of `world_seed` (`Grids::new`'s).
+    pub fn new(world_seed: u64, home_radius_m: f64, celestial: Celestial) -> Self {
+        let all = dwell_worldgen::grids::grids();
+        let grids = all
+            .iter()
+            .enumerate()
+            .skip(1)
+            .filter_map(|(i, def)| {
+                grid_generator(def, world_seed)?;
+                Some((i as u8, def, def.radius_m?))
+            })
+            .collect();
+        Self {
+            celestial,
+            rules: dwell_worldgen::grids::travel(),
+            home: &all[0],
+            home_radius_m,
+            grids,
+        }
+    }
+
+    fn def(&self, grid: u8) -> Option<&(u8, &'static GridDef, f64)> {
+        self.grids.iter().find(|g| g.0 == grid)
+    }
+
+    /// A grid's frame at `world_s` (home's at rest).
+    pub fn frame(&self, grid: u8, world_s: f64) -> GridFrame {
+        self.def(grid).map_or(GridFrame::HOME, |g| {
+            grid_frame_at(&self.celestial, g.1, world_s)
+        })
+    }
+
+    /// The far-flight speed at world point `p` (0 near every grid's slab).
+    pub fn far_speed_at(&self, p: V3, world_s: f64) -> f64 {
+        let home = slab_distance(self.home_radius_m, self.home.surface_m, p);
+        let d = self
+            .grids
+            .iter()
+            .map(|&(i, def, r)| slab_distance(r, def.surface_m, self.frame(i, world_s).to_grid(p)))
+            .fold(home, f64::min);
+        self.rules.far_speed(d)
+    }
+}
+
+impl dwell_physics::predictor::GridTravel for TravelMap {
+    fn carry(
+        &self,
+        grid: u8,
+        p: V3,
+        v: V3,
+        flying: bool,
+        world_s: f64,
+    ) -> Option<dwell_physics::predictor::GridCarry> {
+        use dwell_physics::predictor::GridCarry;
+        if grid == 0 {
+            if !flying {
+                return None;
+            }
+            let &(to, def, _) = self.grids.iter().find(|&&(i, def, _)| {
+                let local = self.frame(i, world_s).to_grid(p);
+                def.capture_m
+                    .is_some_and(|c| len(sub(local, GRID_CENTRE)) < c)
+            })?;
+            let (position, velocity) = self.frame(to, world_s).capture(p, v);
+            return Some(GridCarry {
+                to,
+                position,
+                velocity,
+                gravity_scale: def.gravity_scale as f32,
+            });
+        }
+        let &(_, def, _) = self.def(grid)?;
+        let release = def.capture_m.unwrap_or(f64::INFINITY) * self.rules.release_factor;
+        if len(sub(p, GRID_CENTRE)) <= release {
+            return None;
+        }
+        let (position, velocity) = self.frame(grid, world_s).release(p, v);
+        Some(GridCarry {
+            to: 0,
+            position,
+            velocity,
+            gravity_scale: 1.0,
+        })
+    }
+
+    fn far_speed(&self, grid: u8, p: V3, world_s: f64) -> f32 {
+        let (w, _) = self.frame(grid, world_s).release(p, [0.0; 3]);
+        self.far_speed_at(w, world_s) as f32
+    }
+
+    fn gravity_scale(&self, grid: u8) -> f32 {
+        self.def(grid).map_or(1.0, |g| g.1.gravity_scale as f32)
+    }
 }
 
 /// One grid's simulation space: its chunks, physics and players, in its local frame.

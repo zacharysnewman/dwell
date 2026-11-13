@@ -3021,3 +3021,33 @@ impl Players {
         c.vitals.step(&VITALS, rules, activity, head_under, DT);
     }
 }
+
+/// Moves a player from one space's players to another's (MOON_WORLD.md §7.1): despawned from
+/// `src`, spawned in `dst` at the grid-local `p`, `v` (already turned into `dst`'s frame) with its
+/// controller state, its face there settled (the vertical state mirrored as at a midplane crossing)
+/// and `dst`'s gravity scale. Returns its handle in `dst`. The server carries its home players to
+/// and from the other grids' spaces through this too, and the client's predictor its own player
+/// (`Predictor`, MOON_WORLD.md §7.3), so both carry it alike.
+pub fn carry(
+    src: (&mut Players, &mut Physics),
+    h: PlayerHandle,
+    dst: (&mut Players, &mut Physics),
+    gravity_scale: f32,
+    p: [f64; 3],
+    v: [f64; 3],
+) -> PlayerHandle {
+    let (src_players, src_physics) = src;
+    let (dst_players, dst_physics) = dst;
+    let state = *src_players.controller(h);
+    let cfg: crate::config::PlayerControllerConfig = *src_players.config(h);
+    src_players.despawn(src_physics, h);
+    let nh = dst_players.spawn(dst_physics, cfg, DVec3::from(p), state.input.look_yaw);
+    let (pd, vd) = (
+        DVec3::from(p),
+        Vec3::new(v[0] as f32, v[1] as f32, v[2] as f32),
+    );
+    dst_players.restore(dst_physics, nh, &state, pd, vd);
+    dst_players.settle_face(dst_physics, nh);
+    dst_players.set_gravity_scale(nh, gravity_scale);
+    nh
+}
