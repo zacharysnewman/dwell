@@ -40,6 +40,11 @@ Stylized NPC - Peasant Nolant (Winged Boots), converted to GLB Asset Store pack 
   Used in: shared/models/glb/props (model viewer); web client (the tool items' looks: shared/models/glb/props/stone_axes, metal_axe, stone_pickaxes, metal_pickaxes, wooden_shovel and metal_shovel .glb)
   Source:  https://assetstore.unity.com/
 
+Total Music Collection (Andrew Sitkov), 20 casual tracks converted to stereo AAC Asset Store pack
+  License: Unity Asset Store EULA (Standard), Andrew Sitkov, Total Music Collection
+  Used in: web client (the music, shared/music)
+  Source:  https://assetstore.unity.com/
+
 aead 0.5.2
   License: MIT
   Used in: native server (Rust crate)
@@ -1345,7 +1350,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 
 -------------------------------------------------------------------------------
-Applies to: Animals FREE - Animated Low Poly 3D Models (ithappy), 7 animals converted to GLB Asset Store pack, Universal Sound FX (Imphenzia), selected sounds converted to mono AAC Asset Store pack, Stylized NPC - Peasant Nolant (Winged Boots), converted to GLB Asset Store pack (DEMO), 3D Low Poly Tools Weapons Containers (NexusArcadeStudios), 53 static models converted to GLB Asset Store pack
+Applies to: Animals FREE - Animated Low Poly 3D Models (ithappy), 7 animals converted to GLB Asset Store pack, Universal Sound FX (Imphenzia), selected sounds converted to mono AAC Asset Store pack, Stylized NPC - Peasant Nolant (Winged Boots), converted to GLB Asset Store pack (DEMO), 3D Low Poly Tools Weapons Containers (NexusArcadeStudios), 53 static models converted to GLB Asset Store pack, Total Music Collection (Andrew Sitkov), 20 casual tracks converted to stereo AAC Asset Store pack
 -------------------------------------------------------------------------------
 
 Licensed to the Dwell project's owner under the Unity Asset Store End User License Agreement

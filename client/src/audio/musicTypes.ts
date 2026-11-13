@@ -20,7 +20,21 @@ export interface TrackDef {
   when: MusicWhen;
 }
 
+/** How the next track is picked (validate.mjs `ORDER`). */
+export type MusicOrder = 'shuffle';
+
+/** The playlist (shared/music/music.json `playlist`): the order and what lies between tracks. */
+export interface PlaylistDef {
+  order: MusicOrder;
+  /** The silence after a track ends before the next starts: drawn in [gapMinS, gapMaxS] (s). */
+  gapMinS: number;
+  gapMaxS: number;
+  /** The next track starts this much earlier (s): with a gap of 0 the two overlap and cross-fade. */
+  crossfadeS: number;
+}
+
 export interface MusicData {
-  /** In priority order: the first whose `when` matches plays. */
+  playlist: PlaylistDef;
+  /** As listed; the playlist plays those whose `when` holds. */
   tracks: TrackDef[];
 }

@@ -3,7 +3,6 @@
 // the routing into the mixer, the fades and the position carried from the previous page.
 import { describe, expect, it } from 'vitest';
 import {
-  chooseTrack,
   GESTURES,
   MUSIC_KEY,
   MUSIC_POSITION_KEY,
@@ -232,12 +231,6 @@ describe('music: autoplay', () => {
       },
     };
     expect(musicEnabled('', throwing)).toBe(true);
-  });
-
-  it('picks the first track that plays everywhere', () => {
-    const other = { ...TRACK, id: 'test:other' };
-    expect(chooseTrack({ tracks: [TRACK, other] })?.id).toBe('test:song');
-    expect(chooseTrack({ tracks: [] })).toBeNull();
   });
 });
 

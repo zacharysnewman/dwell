@@ -1243,6 +1243,13 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    (AAC/Opus at a music bitrate, loudness-matched), a music list as data (tracks, moods, gain, fade), a prototype
    page to audition the set, the game's music player shuffling them (no repeats back to back, gaps and fades as
    data) in place of the current tracks; licence notes as for the Imphenzia samples (AUDIO.md §2b).
+   Owner (2026-11-12): "Did you give me a sample of the music yet". **Built (branch `claude/casual-music`):**
+   20 candidates from the casual packs (Mega *Casual Game Music*, Massive *Casual Game Music Pack* and its
+   acoustic versions, *Simple and Positive*), AAC 96 kbps at −18 LUFS, 24.2 MB; the playlist as data
+   (`shared/music/music.json` `playlist`: shuffle, 20–60 s gaps, cross-fade 0) played by
+   `client/src/audio/playlist.ts`; Starry Sunshine removed; the audition page
+   `docs/prototypes/music-audition.html` (https://claude.ai/artifact/Ccdtsp5eiQYF4b9uzspyYe). **Waiting on the owner:** the
+   picks (the page's JSON), the level and the gap.
 
 34. **The in-game Chisel editor and the Textures tab extras** (owner 2026-11-12: "these all seem solid yes"): open
    Chisel's biome sliders inside a running world with the terrain around the player regenerating as they tune
