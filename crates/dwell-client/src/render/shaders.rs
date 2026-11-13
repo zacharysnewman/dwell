@@ -716,17 +716,17 @@ fn scene_out(albedo: vec3f, n: vec3f, rel: vec3f, alpha: f32, light: TerrainLigh
 const TERRAIN: &str = r"
 struct TerrainIn {
     @location(0) position: vec3f,
-    @location(1) normal: vec3f,
+    // snorm8x4, w 0 (render/mod.rs `packed_lit`).
+    @location(1) normal: vec4f,
     @location(2) color: vec3f,
     @location(3) uv: vec2f,
     @location(4) tile: vec4f,
-    // The baked ambient light (dwell-mesh sky.rs): corner occlusion × sky visibility.
-    @location(5) light: f32,
-    // The flood light (dwell-mesh flood.rs): sky and block level as shares of 15.
-    @location(6) flood: vec2f,
+    // unorm8x4: x the baked ambient light (dwell-mesh sky.rs: corner occlusion × sky visibility),
+    // yz the flood light (dwell-mesh flood.rs: sky and block level as shares of 15).
+    @location(5) lit: vec4f,
     // The crack overlay (docs/BLOCK_DAMAGE.md §6.3; dwell-mesh `CrackLayer::pack`, unorm8x4): the
     // crack tile's s and t over [−½, 1½], its atlas slot + 1 (/255; 0: none) and strength.
-    @location(7) crack: vec4f,
+    @location(6) crack: vec4f,
 };
 struct TerrainOut {
     @builtin(position) clip: vec4f,
@@ -750,12 +750,12 @@ fn terrain_vs(v: TerrainIn, @builtin(instance_index) k: u32) -> TerrainOut {
     o.draw = k;
     o.rel = tree_lean(draw.offset.xyz + qrot(draw.quat, v.position * draw.offset.w));
     o.clip = frame.view_proj * vec4f(o.rel, 1.0);
-    o.normal = qrot(draw.quat, v.normal);
+    o.normal = qrot(draw.quat, v.normal.xyz);
     o.color = v.color;
     o.uv = v.uv;
     o.tile = v.tile;
-    o.light = v.light;
-    o.flood = v.flood;
+    o.light = v.lit.x;
+    o.flood = v.lit.yz;
     o.crack = vec4f(v.crack.xy * CRACK_UV_RANGE + CRACK_UV_MIN, v.crack.z * 255.0, v.crack.w);
     return o;
 }
@@ -876,16 +876,16 @@ fn terrain_fs(i: TerrainOut, @builtin(front_facing) front: bool) -> SceneOut {
 // Cutout geometry (docs/TRANSPARENT_BLOCKS.md): the terrain vertex and a `plant` vec4 — how far
 // wind sways the vertex (m; 0 at a plant's base and on ladders), the wind's speed, and the distance
 // fade's start and end (m; end 0: no fade).
+// The normal (snorm8x4, w 0) and `lit` (unorm8x4: light, flood sky, flood block, bare) are four
+// bytes each (render/mod.rs `packed_cutout`: the forest's leaves are bound by their vertices).
 struct CutoutIn {
     @location(0) position: vec3f,
-    @location(1) normal: vec3f,
+    @location(1) normal: vec4f,
     @location(2) color: vec3f,
     @location(3) uv: vec2f,
     @location(4) tile: vec4f,
     @location(5) plant: vec4f,
-    @location(6) bare: f32,
-    @location(7) light: f32,
-    @location(8) flood: vec2f,
+    @location(6) lit: vec4f,
 };
 struct CutoutOut {
     @builtin(position) clip: vec4f,
@@ -1004,14 +1004,14 @@ fn cutout_vs(v: CutoutIn, @builtin(instance_index) k: u32) -> CutoutOut {
         // nothing (one past the fade's margin only where all of it is faded out anyway).
         o.clip = vec4f(0.0, 0.0, -1.0, 1.0);
     }
-    o.normal = qrot(draw.quat, v.normal);
+    o.normal = qrot(draw.quat, v.normal.xyz);
     o.color = v.color;
     o.uv = v.uv;
     o.tile = v.tile;
     o.fade = v.plant.zw;
-    o.bare = v.bare;
-    o.light = v.light;
-    o.flood = v.flood;
+    o.bare = v.lit.w;
+    o.light = v.lit.x;
+    o.flood = v.lit.yz;
     return o;
 }
 
@@ -4492,7 +4492,7 @@ mod tests {
             let at = src.find(&format!("fn {name}(")).expect(name);
             src[at..at + src[at..].find("\n}\n").expect("end")].to_string()
         };
-        assert!(body("cutout_vs").contains("o.bare = v.bare;"));
+        assert!(body("cutout_vs").contains("o.bare = v.lit.w;"));
         assert!(
             body("cutout_fs").contains("frame_depth(lit.depth, i.bare < 0.5 && fade_inked(draw))")
         );

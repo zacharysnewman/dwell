@@ -1,0 +1,5 @@
+{
+  "changes": [
+    "Smoother frames in forests and everywhere: the world's blocks and leaves take less memory on the graphics card (about 2 ms a frame faster at a forest's edge on High)"
+  ]
+}

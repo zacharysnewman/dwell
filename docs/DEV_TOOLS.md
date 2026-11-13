@@ -1219,6 +1219,12 @@ its box. The real view (M1 Air, High, `--unthrottled`, p50 / p95 ms), covered �
 inside 3.0 / 6.1 → 0.7 / 1.2, edge 1.0 / 9.0 → 0.8 / 1.1, above 0.4 / 2.8 → 0.3 / 0.5. The edge's frame is
 now `gpu.near` 16.0, `composite` 6.5, `clouds` 5.4 (p50): the sun shadows are not its cost.
 
+**Packed vertices** (2026-11-13, WORK_QUEUE item 32): terrain and cutout vertices carry their normal (snorm8x4)
+and light and flood light (unorm8x4) in one float's slot each (84 → 64 and 92 → 72 bytes). `gpu.frame` p50 / p95
+ms: inside 13.4 / 14.1 → 12.6 / 13.0, edge 20.5 / 21.1 → 18.7 / 19.3, above 12.4 / 12.8 → 12.0 / 12.4. The M1's
+pass timestamps overlap (the passes sum to well over the frame), so a pass's own cost is measured by switching it
+off, not read from its time.
+
 **Far tree impostors** (2026-11-12, WORK_QUEUE item 31): the configuration `impostors-off` (`?impostors=0`)
 draws the far trees as before (the LOD sections' tree cells, near leaves to the full-detail distance); `npm run
 bench -- --warm --compare --configs impostors-off forest-perf` is the before/after. `gpu.frame` p95, off → on (48 m
