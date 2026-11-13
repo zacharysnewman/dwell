@@ -22,6 +22,7 @@ import {
   heightOfCode,
   markerGroundY,
   markerRows,
+  regroundMarkers,
   seenPortalSpots,
 } from './markers';
 import { toScreen } from './minimap';
@@ -357,15 +358,91 @@ describe('the markers list, portals and the ground under a placed marker', () =>
         (f, x, z) => (f === face && x === -200.5 && z === 4.5 ? 66 : -1),
       );
       expect(spots).toEqual([
-        { face, x: 10.5, y: 72, z: 0.5 },
-        { face, x: -200.5, y: 66, z: 4.5 },
+        { face, x: 10.5, y: 72, z: 0.5, settled: true },
+        { face, x: -200.5, y: 66, z: 4.5, settled: false },
       ]);
       const l = new MarkerList();
-      for (const at of spots) l.noteAuto('portal', at);
-      for (const at of spots) l.noteAuto('portal', { ...at, y: at.y + 3 }); // seen again
+      for (const at of spots) l.noteAuto('portal', at, at.settled);
+      // Seen again with only the map's guess: no second marker, the height kept.
+      for (const at of spots) l.noteAuto('portal', { ...at, y: at.y + 3 }, false);
       const portal = AUTO_MARKERS.find((a) => a.kind === 'portal');
       expect(l.all).toHaveLength(2);
       expect(l.all[0]).toMatchObject({ auto: 'portal', face, icon: portal?.icon, y: 72 });
+      expect(l.all[1]).toMatchObject({ y: 66 });
+      // Its opening's height known at last: the guess is corrected.
+      l.noteAuto('portal', { face, x: -200.5, y: 70.5, z: 4.5 }, true);
+      expect(l.all[1]).toMatchObject({ y: 70.5 });
+    }
+  });
+
+  // both-faces: BUGS.md #153 on each face.
+  it('never notes a portal at the player height while flying high over it (BUGS.md #153)', () => {
+    for (const face of [0, 1]) {
+      // 400 m up: the opening's height comes from the generator, the marker stands there.
+      expect(seenPortalSpots([face, 10.5, 72, 0.5], () => null)).toEqual([
+        { face, x: 10.5, y: 72, z: 0.5, settled: true },
+      ]);
+      // Nothing known (no opening height, no map height): none noted yet, not one at the eye.
+      expect(seenPortalSpots([face, 10.5, Number.NaN, 0.5], () => null)).toEqual([]);
+      expect(markerGroundY(undefined, -2147483648, null)).toBeNull();
+    }
+  });
+
+  // both-faces: BUGS.md #153 on each face.
+  it('corrects a saved portal marker far above its opening when the portal is seen again', () => {
+    for (const face of [0, 1]) {
+      const l = new MarkerList();
+      l.load([
+        {
+          id: 1,
+          icon: 'portal',
+          rgb: '#ffffff',
+          label: 'Portal',
+          face,
+          x: 10.5,
+          y: 472,
+          z: 0.5,
+          auto: 'portal',
+        },
+      ]);
+      l.noteAuto('portal', { face, x: 10.5, y: 72, z: 0.5 }, true);
+      expect(l.all).toHaveLength(1);
+      expect(l.all[0]).toMatchObject({ y: 72 });
+    }
+  });
+
+  // both-faces: BUGS.md #153 on each face.
+  it('puts placed markers back on their ground once it loads (BUGS.md #153)', () => {
+    for (const face of [0, 1]) {
+      const other = 1 - face;
+      const m = (id: number, f: number, y: number, auto = ''): MapMarker => ({
+        id,
+        icon: 'flag',
+        rgb: '#ffffff',
+        label: `m${String(id)}`,
+        face: f,
+        x: id * 10,
+        y,
+        z: 0,
+        auto,
+      });
+      const list = [
+        m(1, face, 66), // placed on the map's height, provisional
+        m(2, face, 470), // saved at the player's height 400 m up
+        m(3, face, 73), // a few metres over: kept
+        m(4, face, 470, 'death'), // an auto marker: kept
+        m(5, other, 470), // the other face: not read here
+        m(6, face, 470), // its column not loaded yet: waits
+      ];
+      const ground = (x: number) => (x === 60 ? undefined : 70);
+      expect(regroundMarkers(list, face, new Set([1]), ground, 8)).toEqual([
+        [1, 70],
+        [2, 70],
+      ]);
+      // Nothing provisional, nothing far over: nothing to do.
+      expect(regroundMarkers([m(1, face, 70), m(3, face, 73)], face, new Set(), ground, 8)).toEqual(
+        [],
+      );
     }
   });
 });

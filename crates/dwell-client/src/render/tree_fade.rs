@@ -1,4 +1,4 @@
-//! The far trees' hand-over in time, not distance (BUGS.md #146, owner 2026-11-13: "it shouldn't
+//! The far trees' hand-over in time, not distance (BUGS.md #154, owner 2026-11-13: "it shouldn't
 //! ever be partial transitions over distance, but over time"). Each tree about the eye is in one
 //! state, its real leaves or its impostor, switched by its crown's distance with hysteresis
 //! (`impostors.json` `far.tiers` `inM`/`outM`, `Far::near_after`); a switch cross-fades over
@@ -397,7 +397,7 @@ mod tests {
     }
 
     dwell_world::both_faces! {
-        /// BUGS.md #146: a still eye at any distance sees every tree fully near or fully its
+        /// BUGS.md #154: a still eye at any distance sees every tree fully near or fully its
         /// impostor once the fade time is past, the old fade band included (48–64 m, where both
         /// drew half each before).
         fn a_still_eye_sees_no_half_faded_tree_at_any_distance(face: FaceFrame) {

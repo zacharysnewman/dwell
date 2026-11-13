@@ -923,7 +923,9 @@ export function generate() {
  */
 export function checkCreatureParts(creatures, models) {
   for (const c of creatures.creatures ?? []) {
-    for (const slot of c.npc?.colours ?? []) {
+    const app = c.npc?.appearance;
+    const slots = [...(c.npc?.colours ?? []), ...(app ? [app.skin, app.hair] : [])];
+    for (const slot of slots) {
       const names = models[c.model]?.partMap?.names;
       if (!names)
         throw new Error(

@@ -13,7 +13,7 @@
 //!   tier's `toM` of the eye ([`tiles_within`]) and the buffer is rebuilt when they change.
 //! - **The view:** per pixel, `Config::dither`'s pick of the baked views (the WGSL twin
 //!   `imp_pick`), each sampled at the quad point projected into that view.
-//! - **The hand-over:** per tree, in time (render/tree_fade.rs, BUGS.md #146): each tree is its
+//! - **The hand-over:** per tree, in time (render/tree_fade.rs, BUGS.md #154): each tree is its
 //!   real leaves or its impostor by its distance with hysteresis, a switch cross-fading over the
 //!   tier's `fadeS`; the near leaves keep the pixels whose noise is under their tree's share
 //!   (`cutout_fs`, `TREE_LEAF_FADE`) and the impostor the rest, so no pixel draws both; past the
@@ -1437,7 +1437,7 @@ mod tests {
         let (desk, phone) = (atlas_bytes(c, Tier::Desktop), atlas_bytes(c, Tier::Phone));
         assert!(c.px(Tier::Phone) < c.px(Tier::Desktop));
         assert_eq!(desk, phone * 4, "half the side: a quarter of the bytes");
-        // 16 MB: 25 views since BUGS.md #146 (6 azimuths × 4 elevations + the top, 1.25× the 17).
+        // 16 MB: 25 views since BUGS.md #154 (6 azimuths × 4 elevations + the top, 1.25× the 17).
         assert!(phone <= 16 << 20, "the phone's atlas {} MB", phone >> 20);
     }
 }

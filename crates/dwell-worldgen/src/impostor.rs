@@ -355,7 +355,7 @@ impl Config {
 }
 
 /// Where far trees become impostors for one Far trees tier (`far.tiers`). A tree is either near
-/// (its real leaves) or an impostor, never a steady blend (BUGS.md #146, owner 2026-11-13: "it
+/// (its real leaves) or an impostor, never a steady blend (BUGS.md #154, owner 2026-11-13: "it
 /// shouldn't ever be partial transitions over distance, but over time"): it turns into an
 /// impostor once farther than `out_m`, back into the real tree once nearer than `in_m` (the gap
 /// between them keeps a tree at the boundary from flickering), and each switch cross-fades over
@@ -1401,7 +1401,7 @@ mod tests {
         assert_eq!((n.in_m, n.out_m, n.fade_s, n.to), (30.0, 34.0, 0.5, 400.0));
     }
 
-    /// BUGS.md #146: a tree switches by distance with hysteresis, never blends by it.
+    /// BUGS.md #154: a tree switches by distance with hysteresis, never blends by it.
     #[test]
     fn a_tree_switches_past_out_and_back_inside_in_only() {
         // face-a-only: distances only.
@@ -1569,7 +1569,7 @@ mod crown_match {
         assert!(iou > 0.7, "impostor crown overlap {iou:.2}");
     }
 
-    /// BUGS.md #146 (owner, 2026-11-13): the far trees drew as two offset copies that split and
+    /// BUGS.md #154 (owner, 2026-11-13): the far trees drew as two offset copies that split and
     /// joined as the eye flew up and down. Each pixel dithers between the baked views about the
     /// eye's direction ([`Config::dither`]); with views 40° apart in elevation (8 azimuths at 0°
     /// and 40°) the two see different silhouettes and the dither interleaved two crowns, up to
@@ -1662,7 +1662,7 @@ mod crown_match {
     }
 
     /// The least overlap (intersection over union) of the impostor's and the real crown's
-    /// silhouettes at any eye height (BUGS.md #146).
+    /// silhouettes at any eye height (BUGS.md #154).
     const REGISTER_IOU: f32 = 0.66;
     /// How far (m) the impostor's silhouette centre may sit above or below the real crown's.
     const REGISTER_M: f32 = 0.3;

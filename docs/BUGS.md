@@ -6,14 +6,6 @@ pins it.
 
 ## Open
 
-### 142. `dwell-sim` `items.rs` `dying_in_adventure_drops_everything_where_the_player_died` fails on main
-
-Found 2026-11-13 (branch `claude/collision-ahead`, not caused by it: the same failure on main at 0.61.1 and after
-merging main): both faces fail at `items.rs:202`, `a stack a slot: []`: `kill_player` in adventure leaves no loose
-items (4 expected: the starting axe, two stacks of dirt, the sticks). Suspect: the defeat kneel (WORK_QUEUE item 55,
-"humans don't die") changed what a kill does, and the test still expects the old death drop. Not investigated
-further; the owner decides whether a defeated player drops their items.
-
 ### 135. Flat ground on a plateau can show a sandstone wall's face (red sandstone) instead of a tread
 
 Found 2026-11-13 while fixing #134 (Realistic, seed 42 face A, e.g. (−6000, −3500) and (−4250, 0)): a few wide, flat
@@ -555,7 +547,7 @@ face, or the placement check against its shape.
 
 ## Fixed
 
-### 146. Far trees drew doubled and half faded at the hand-over, splitting as the eye flew up and down
+### 154. Far trees drew doubled and half faded at the hand-over, splitting as the eye flew up and down
 
 Owner, 2026-11-13, with two screenshots: "There seems to be doubled partially faded imposters, they can't fade
 slowly based on distance alone because they are obviously faded. Not sure why there's 2 and they seem to split and
@@ -585,6 +577,106 @@ is gone and a tier naming `fadeM` fails to parse. (2) The view layout is 6 azimu
 before (0.55 m off, overlap 0.65), 0.27 m and 0.68 after. Tried and dropped (each measured worse or no better): an
 upright proxy plane per view, a depth-refined reprojection, a narrower blend between views. Left: during the
 0.3 s fade the impostor is a baked seed variant, not the tree itself, so the two shapes differ for that moment.
+### 153. A portal's marker floated hundreds of metres above the portal (fixed after 0.63.3)
+
+Owner, 2026-11-13: "Another bug, Im not sure if it's because I was flying high at the time, but the portal indicator
+showed up several hundred meters in the air over the portal." Cause: a seen portal's marker took its rim's loaded top,
+read only within 256 m of the eye (`map_markers::ground`); flying higher, nothing was found (NaN), and the shell's
+fallback chain (`markerGroundY`: the map's height, else **the player's height**) put the marker at the player's
+altitude; `noteAuto` never moved a portal marker once noted, so it stayed there for good. Now `seen_portals` gives the
+opening's height from the generator's shafts (`world.portals`, the same the controller's exit push uses), known from
+the seed wherever the player is; an unknown height takes only the map's (provisional) or waits, never the player's; a
+portal seen again at its known height corrects its marker (the saved bad ones too); a marker placed on the map over
+unloaded ground is put back on its ground once the column loads, and one saved more than `regroundAboveM` (8 m,
+`shared/ui/markers.json`) above its loaded ground is corrected (`regroundMarkers`). Tests: `dwell-client`
+`a_portal_seen_from_far_overhead_stands_at_its_openings_height` (both faces; red: `[1.0, 10.5, NaN, 0.5]`),
+`markers.test.ts` "never notes a portal at the player height while flying high over it", "corrects a saved portal
+marker far above its opening when the portal is seen again", "puts placed markers back on their ground once it loads"
+(red on the old code: 472 kept, `regroundMarkers` missing).
+
+### 152. A villager's neck and jaw were another skin colour than its face and arms (fixed after 0.63.3)
+
+Owner, 2026-11-13: "face should always match arms, etc. shouldn't have different skin colors on different skin parts."
+The Peasant's skin part is modelled in two ramps (skin_fair face and arms, a skin_tan neck and jaw), and the recolour
+kept a vertex's whole shade of the part's base, so the neck and jaw drew 0.83 of the tone: a second skin. Skin and
+hair also came from independent random lists (a deep skin with blond hair as often as black). Now the skin and hair
+come from `shared/creatures/appearance.json` (tones, each with its hair colours), and the skin part keeps only the
+set's `shade` share (0.25) of the modelled shading. Tests: `dwell-client`
+`every_skin_vertex_of_a_villager_draws_its_one_skin_tone` (200 villagers, every level; red at a share of 1: "skin
+vertex 693 draws … x0.83"), `dwell-sim` `a_villagers_hair_always_goes_with_its_skin_tone`, `dwell-models`
+`a_tone_by_hex_keeps_its_share_of_the_parts_shading`, `shared/creatures/gen.test.mjs` (bad entries by name). Left: the
+coarser detail levels' part map puts a few sleeve-edge and lip vertices of other colours in the skin part; they draw
+the tone at 0.86–1.0.
+
+### 151. `dwell-sim` `items.rs` `dying_in_adventure_drops_everything_where_the_player_died` failed on main (fixed after 0.63.1)
+
+Found 2026-11-13 (branch `claude/collision-ahead`, not caused by it: the same failure on main at 0.61.1 and after
+merging main): both faces failed at `items.rs:202`, `a stack a slot: []`: `kill_player` in adventure left no loose
+items at once (4 expected: the starting axe, two stacks of dirt, the sticks). Cause: the defeat kneel (WORK_QUEUE
+item 55, "humans don't die") moved the drop to the stand, and the test still expected the old death drop at once.
+(Numbered 142 at first, a duplicate of the first-person feet's #142.) The owner decided (2026-11-13, "Keep
+everything"): a defeat drops nothing. Fixed: the stand's drop is gone (`drop_on_stand`, `drop_inventory`); the test is
+now `a_defeat_in_adventure_keeps_everything_and_drops_nothing` (both faces: the inventory, held slot and wallet
+exactly as before the defeat, at the shrine, no loose items), red on the old code (the axe, dirt and sticks dropped
+at the stand) and green after.
+### 150. The bench's `flyTo` step rejected `marginM` (fixed after 0.63.1)
+
+Brief, 2026-11-13 (browser check on 0.60.16, seed 7, local world, M1): "the bench `flyTo` step rejects `marginM` although
+`__dwell.flyTo` takes it — accept it." The step's key list (`scenarios.ts` `STEP_KEYS.flyTo`) left it out. Now accepted
+for a trip to the moon (0–100 km) and passed through. Test: `scripts/scenarios.test.ts` "flies to the moon and home"
+(red before: the step with `marginM: 500` failed the parse).
+
+### 149. The moon was not drawn from near it on the home grid (fixed after 0.63.1)
+
+Brief, 2026-11-13: "The moon was not drawn from 7–25 km out during a flyTo approach (14 calls, 1.7 k triangles, no near
+mesh), possibly a side effect of 2." Partly #147: after the failed `moonLand` the player was on the home grid inside the
+moon's capture sphere, not captured. There, and anywhere on the home grid inside the moon's `farM` (150 km), the moon is
+its near mesh (M-5), a piece, its far disc off; the far pass's near plane (`render::far_pass_near`) moves out to 0.8 × the
+eye's altitude over home's terrain, ~480 km at the moon's ~600 km, and clipped the whole mesh. On the moon grid the mesh
+is drawn (the eye inside its sphere; `the_moon_up_close_is_its_surface_mesh_then_under_its_chunks`). Fixed: the near
+plane also stays short of the nearest shown piece's bounding sphere (`Renderer::nearest_piece_m`). Test:
+`render::tests::the_far_pass_keeps_the_moons_near_mesh_from_home_high_up` (red before: the plane at 479 km with the moon
+20 km off). **Not checked in a browser** (no GPU in the cloud session): the owner's re-check of a `flyTo` approach.
+
+### 148. A teleport far outside the disc failed silently (fixed after 0.63.1)
+
+Brief, 2026-11-13: "Teleporting to a point far outside the disc fails silently: make it either work or fail with a
+message." `__dwell.teleport` posted the move to the worker and returned true; the local core moved the player past the
+rim, where no world streams (natively the server stood it on 9.5 m and the client on 6.5 m), and a point on the other
+face was dropped with no word. Now `__dwell.teleport` is answered (the worker's `teleport` op, `LocalCore::
+teleport_checked`) and rejects with why: past the rim ("… m from the disc's centre, past its rim (… m): no world there"),
+on the other face ("a teleport keeps the face"), or the player not at home. Test: `game_local`
+`a_teleport_past_the_rim_fails_with_a_message` (red before: the far point was taken).
+
+### 147. `moonLand` from a fresh spawn never landed, and travel stuck after it (fixed after 0.63.1)
+
+Brief, 2026-11-13: "Travel stuck after the spyglass: fresh spawn → spyglass(true, 3) → spyglass(false) → setTime →
+moonLand timed out ('not standing on the moon in 60 s (grid home, chunk held false)'); after that every flyTo('home')
+failed ('home's chunk … not back in 120 s'), sunLand said 'not at home', and the player ended on the moon grid ~17.7 km
+up with its ground not held." Cause: not the spyglass. The dev teleport (`LocalCore::grid_land`) put the player inside
+the capture sphere and left the capture to the next tick, which takes only fliers (`Server::travel_players`);
+`teleportToMoon` turns flight off first, so a player who had never flown stayed on the home grid out in space
+(earlier checks had flown, and won the race with the flight-off input). Then `flyTo('home')` had no trip start
+(`moonLand` threw before keeping one) and fell back to the feet in space, waiting for ground there; a later flight
+caught the player in the capture sphere. Fixed: the teleport carries the player onto the grid itself
+(`Server::carry_onto_grid`, a transfer recorded as a capture's), and the page keeps the way home before each trip starts,
+from home ground only (`moonTrip.ts` `tripStartOf`). Tests: `game_local`
+`moon_land_from_a_fresh_spawn_after_the_spyglass_lands_on_the_moon` (both faces; red before: "client grid 0, server
+Some(0)"), `moonTrip.test.ts` "tripStartOf".
+
+### 146. No lava flowing on the sun (fixed after 0.63.1)
+
+Brief, 2026-11-13: "after sunLand on face A, `d.lava('report')` gives `fields: []` and two frames 4 s apart look the
+same … find why no field runs near a player standing on the sun." Two causes: the report listed home's fields only
+(`Server::lava_report`), and the sun's stand point, where `sunLand` puts the player, is out of reach of the river heads'
+fields (seed 7: the nearest head 390 m off on face A, its field placed but out of sight; 438 m on face B, its field
+never run; a field runs only within lava.json `nearRadiusM`, 96 m, of a player). The vents were placed and run by the
+rules near a head. Fixed: the report lists every grid's fields with a `grid` key (`home`, `dwell:sun`), and
+`sunLand({river: true})` (bench `sunLand {river: true}`, `LocalCore::grid_land_by_river`) stands the player on dry
+ground beside the river head nearest the stand point. Test: `game_local`
+`by_a_sun_river_head_the_report_lists_a_running_field` (both faces, seed 7; red before: no sun field in the report),
+its field's molten columns growing over 20 s.
+
 
 ### 145. The sun draws no terrain past its chunks and has no light but the lava's
 
