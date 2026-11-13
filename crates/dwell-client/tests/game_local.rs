@@ -4080,8 +4080,8 @@ dwell_world::both_faces!(
 );
 
 dwell_world::both_faces!(
-    /// BUGS.md #123, #124 (MOON_WORLD.md §7.3): with the LOD on, home's section meshes are dropped
-    /// at the capture (they stayed uploaded while away, the mesh memory growing each trip), and the
+    /// BUGS.md #123, #124, #132 (MOON_WORLD.md §7.3): teleported onto the moon (`moon_land`) with the LOD
+    /// on, home's section meshes are dropped at the capture (they stayed uploaded while away, the mesh memory growing each trip), and the
     /// moon's chunks under the player are drawn: `Game::chunk_fade` (the renderer's draw decision
     /// for a chunk) is not asked of home's LOD selection, made in home's coordinates, for the
     /// moon's grid-local chunks (the browser drew 16 of 232).
@@ -4113,29 +4113,28 @@ dwell_world::both_faces!(
         rig.input.flight.set(true);
         rig.run_until(30, |_| false);
 
-        // Captured over the moon's face `f` (a dev move 200 m over its ground, moving with it).
-        let t = f64::from(rig.core.server().tick()) / 60.0;
-        let fr = rig.core.server().grids().frame(0, t);
-        let (wp, wv) = fr.release(moon_ground(rig.seed, f, 200.0), [0.0; 3]);
-        assert!(rig.core.server().place_on_grid(id, wp, wv));
+        // A dev teleport onto the moon's ground on face `f`, no flight (owner, 2026-11-13: "We
+        // should just teleport to the moon to see if ground draws").
+        let face = if f == dwell_world::FaceFrame::A {
+            1.0
+        } else {
+            -1.0
+        };
+        let r = rig.core.moon_land(face);
+        assert!(!r.contains("error"), "{r}");
         assert!(
             rig.run_until(120, |r| r.game.as_ref().unwrap().grid() == 1),
             "captured"
         );
         let held_at_capture = rig.scene.borrow().held.len();
 
-        // Down onto the moon's ground: its chunk under the player meshed and drawn.
+        // The moon's chunk under the player meshed and drawn.
         let cell = dwell_world::GridFrame::HOME.cell_of(moon_ground(
             rig.seed,
             f,
             -0.5 * dwell_world::CELL_H,
         ));
         let chunk = dwell_world::chunk_of(cell[0], cell[1], cell[2]);
-        assert!(
-            rig.core
-                .server()
-                .place_on_grid(id, moon_ground(rig.seed, f, 6.0), [0.0; 3])
-        );
         assert!(
             rig.run_until(60 * 30, |r| r.scene.borrow().chunks.len() > 8
                 && r.scene.borrow().chunks.contains(&chunk)),

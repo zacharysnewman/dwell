@@ -125,7 +125,9 @@ import {
 import {
   flyHome,
   flyToMoon,
+  teleportToMoon,
   type HomeTrip,
+  type MoonLanding,
   type MoonReport,
   type MoonTrip,
   type TripHost,
@@ -336,6 +338,12 @@ interface DwellDebug {
    * chunks. Rejects with what failed.
    */
   flyTo(to: 'moon' | 'home', options?: TripOptions): Promise<MoonTrip | HomeTrip>;
+  /**
+   * Teleports onto the moon's ground (debug/moonTrip.ts `teleportToMoon`; a local world), no
+   * flight, and waits until standing there with its chunk held: the quick check that the moon's
+   * ground draws (bench `moonLand`). `flyTo('home')` comes back.
+   */
+  moonLand(options?: Pick<TripOptions, 'face' | 'maxS'>): Promise<MoonLanding>;
   /** Plants' wind scale (0 still, 1 the data's) and whether cutout meshes draw (cost A/B). */
   plants(wind: number, shown: boolean): void;
   /** The last frame's draw calls and triangles. */
@@ -1420,6 +1428,11 @@ async function start(): Promise<App | null> {
       if (!start) throw new Error('flyTo home: no start (fly to the moon first)');
       return flyHome(host, start, options);
     },
+    moonLand: async (options) => {
+      const trip = await teleportToMoon(tripHost(app), options);
+      if (trip.home) tripStart = trip.home;
+      return trip;
+    },
     plants: (wind, shown) => {
       client.setPlants(wind, shown);
     },
@@ -1690,6 +1703,7 @@ function tripHost(app: App): TripHost {
     moon: () => moonOf(app),
     approach: (margin, face) =>
       app.loopback?.lavaDev('moonApproach', [margin, face]) ?? Promise.resolve(null),
+    land: (face) => app.loopback?.lavaDev('moonLand', [face]) ?? Promise.resolve(null),
     placeHome: (feet) => app.loopback?.lavaDev('placeHome', [...feet]) ?? Promise.resolve(null),
     press: (code, down) => {
       client.press(code, down);

@@ -5,6 +5,7 @@ import {
   flyHome,
   flyToMoon,
   SLOW_LEVEL,
+  teleportToMoon,
   type MoonReport,
   type TripHost,
   type Vec3,
@@ -34,7 +35,12 @@ interface Sim {
 interface Fake {
   host: TripHost;
   sim: Sim;
-  calls: { approach: [number, number][]; placeHome: Vec3[]; looks: [number, number][] };
+  calls: {
+    approach: [number, number][];
+    land: number[];
+    placeHome: Vec3[];
+    looks: [number, number][];
+  };
 }
 
 /**
@@ -46,6 +52,9 @@ function fake(
     g?: number;
     speed?: number;
     approach?: string | null;
+    land?: string | null;
+    /** When the moon's chunk under the feet arrives after `land` (ms), or never. */
+    landHeldMs?: number | null;
     returnMs?: number | null;
     /** The server releases the player this long after the client shows it home (ms). */
     serverLagMs?: number;
@@ -65,7 +74,7 @@ function fake(
     heldAt: null,
     serverHomeAt: 0,
   };
-  const calls: Fake['calls'] = { approach: [], placeHome: [], looks: [] };
+  const calls: Fake['calls'] = { approach: [], land: [], placeHome: [], looks: [] };
   const step = (dt: number): void => {
     if (sim.heldAt !== null && sim.t >= sim.heldAt) sim.groundHeld = true;
     if (sim.grid === 'home') {
@@ -117,6 +126,18 @@ function fake(
       if (o.approach !== undefined) return Promise.resolve(o.approach);
       sim.d = CAPTURE + margin;
       return Promise.resolve('{"distance":42000}');
+    },
+    land: (face) => {
+      calls.land.push(face);
+      if (o.land !== undefined) return Promise.resolve(o.land);
+      // Captured on the next tick, 1.5 m over the ground; its chunk arrives `landHeldMs` later.
+      sim.grid = 'moon';
+      sim.ground = 1.5;
+      sim.d = sim.ground + 100;
+      sim.groundHeld = false;
+      const r = o.landHeldMs === undefined ? 500 : o.landHeldMs;
+      sim.heldAt = r === null ? null : sim.t + r;
+      return Promise.resolve('{"grid":[0,90,0]}');
     },
     placeHome: (feet) => {
       calls.placeHome.push(feet);
@@ -254,5 +275,43 @@ describe('flyHome', () => {
     const { host } = fake({ returnMs: null });
     await flyToMoon(host);
     await expect(flyHome(host, [0, 40, 0], { maxS: 30 })).rejects.toThrow(/not back in 30 s/);
+  });
+});
+
+describe('teleportToMoon', () => {
+  it('teleports onto the ground, flight off, and waits for its chunk', async () => {
+    const { host, sim, calls } = fake();
+    sim.flying = true;
+    const trip = await teleportToMoon(host);
+    expect(calls.land).toEqual([1]);
+    expect(calls.approach).toEqual([]);
+    expect(sim.grid).toBe('moon');
+    expect(sim.flying).toBe(false);
+    expect(sim.ground).toBe(0);
+    expect(sim.groundHeld).toBe(true);
+    expect(trip.home).toEqual([600_000, 0, 0]);
+    expect(trip.landS).toBeGreaterThanOrEqual(0.5);
+    expect(trip.landS).toBeLessThan(3);
+  });
+
+  it('lands on face B when asked', async () => {
+    const { host, calls } = fake();
+    await teleportToMoon(host, { face: 'b' });
+    expect(calls.land).toEqual([-1]);
+  });
+
+  it("fails when the moon's chunk under the feet never arrives", async () => {
+    const { host } = fake({ landHeldMs: null });
+    await expect(teleportToMoon(host, { maxS: 5 })).rejects.toThrow(/chunk held false/);
+  });
+
+  it('fails outside a local world, on the dev move error and away from home', async () => {
+    await expect(teleportToMoon(fake({ land: null }).host)).rejects.toThrow(/not a local world/);
+    await expect(teleportToMoon(fake({ land: '{"error":"no moon"}' }).host)).rejects.toThrow(
+      /no moon/,
+    );
+    const { host } = fake();
+    await teleportToMoon(host);
+    await expect(teleportToMoon(host)).rejects.toThrow(/not at home/);
   });
 });
