@@ -1214,6 +1214,18 @@ impl Server {
                 )
             })
             .flatten();
+        // Town sites (docs/BLUEPRINTS.md §6) on the generated world's height field.
+        let town_ground = config
+            .generator_override
+            .is_none()
+            .then(|| {
+                dwell_worldgen::town_ground_for_sized(
+                    config.generator_version,
+                    config.world_seed,
+                    config.world_size,
+                )
+            })
+            .flatten();
         let mut server = Self {
             shrine_respawn,
             edit_log: std::collections::VecDeque::new(),
@@ -1370,6 +1382,7 @@ impl Server {
                 server.config.world_size,
             );
         }
+        server.blueprints.town_ground = town_ground;
         server.init_storage();
         server.place_world_vents();
 
