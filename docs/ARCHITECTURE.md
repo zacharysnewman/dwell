@@ -1686,6 +1686,13 @@ player on face B stands upside down in the world.
   loop, chunks and snapshots per grid (the `grid.frames` capability) are the follow-up. The both-faces check's rule 3 fails
   on a world point turned into a grid's space by hand (`inverse * (p − origin)`) outside `grid.rs`
   unless marked `// grid-boundary: <reason>`.
+- **The sun's grid [built natively, S-1..S-3, 2026-11-13] ([`proposals/SUN_WORLD.md`](./proposals/SUN_WORLD.md)).**
+  `grids.json` `dwell:sun`: frame kind `sunPath` (`Celestial::sun_position`/`sun_axes`: today's sun
+  direction × `daynight.json` `sun.distanceM`, face A toward home), the `volcanic` generator
+  (`dwell-worldgen` `volcanic.rs`: lava oceans, rift rivers, crater lakes, basalt and obsidian), held by the
+  same travel, server grids and `TravelMap` as the moon (grid index 2). Its face A's bake shares the moon's
+  storage buffer (`render/moon.rs` `SUN_BASE`) and shades the sky's sun disc by `sun.surface`; the disc's
+  size, glow and the sunlight are unchanged.
 - **Generation.** `dwell_worldgen::BifacialTerrain` (`bifacial.rs`) holds two `TerrainGenerator`s working
   in face-local coordinates: face A's is seeded by the world seed as ever, face B's by
   `face_seed(seed, B)`, a hash through streams no stage uses — its own island and hills. A chunk of

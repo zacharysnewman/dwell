@@ -98,7 +98,7 @@ pub fn quat_of_axes(axes: [V3; 3]) -> [f64; 4] {
 }
 
 /// A grid's frame at `world_s` (MOON_WORLD.md §6): the home grid at rest; an orbiting grid at the
-/// celestial model's moon position and tidally locked axes; the sun's (`sunPath`, docs/SUN_WORLD.md)
+/// celestial model's moon position and tidally locked axes; the sun's (`sunPath`, docs/proposals/SUN_WORLD.md)
 /// at the sun's place on its path, face A toward home. A moving grid moves with its path (its
 /// velocity and spin by a central difference over ½ s, smooth to well under a µm/s at these speeds).
 pub fn grid_frame_at(celestial: &Celestial, def: &GridDef, world_s: f64) -> GridFrame {

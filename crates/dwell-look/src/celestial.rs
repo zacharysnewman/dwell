@@ -212,7 +212,7 @@ impl Celestial {
         std::array::from_fn(|i| f[0][i] * v[0] + f[1][i] * v[1] + f[2][i] * v[2])
     }
 
-    /// The sun world's centre from the home disc's centre (m, world; docs/SUN_WORLD.md): today's
+    /// The sun world's centre from the home disc's centre (m, world; docs/proposals/SUN_WORLD.md): today's
     /// sun direction `sun.distance_m` out, so the sky's sun disc is the sun world, at its size.
     pub fn sun_position(&self, world_s: f64) -> V3 {
         scale(self.sun_direction(world_s), self.day.sun.distance_m)

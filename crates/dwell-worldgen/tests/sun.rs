@@ -1,4 +1,4 @@
-//! The sun world's `volcanic` generator (docs/SUN_WORLD.md S-1, S-2; WORK_QUEUE item 42): the sun
+//! The sun world's `volcanic` generator (docs/proposals/SUN_WORLD.md S-1, S-2; WORK_QUEUE item 42): the sun
 //! grid's data parses and validates, and its terrain is deterministic per seed and face, holds lava
 //! oceans, lava rivers in its rifts and crater lakes in its cones, basalt crusts and obsidian
 //! shores, all by data (a rule changed in the data changes the terrain), on both faces.

@@ -23,7 +23,7 @@ pub const GRIDS_JSON: &str = include_str!("../../../shared/worldgen/grids.json")
 /// Where a grid sits and how it moves (MOON_WORLD.md §3): the home world `Rest`s (the frame the
 /// others are placed against); `Orbit` follows the sky's moon path (docs/DAY_NIGHT.md); `SunPath`
 /// sits on the sky's sun path (`sun.distanceM` out toward today's sun direction, its face A toward
-/// home; docs/SUN_WORLD.md).
+/// home; docs/proposals/SUN_WORLD.md).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum GridFrameKind {
     Rest,
@@ -39,7 +39,7 @@ pub enum GridGenerator {
     Terrain { bake_size: usize },
     /// The moon rules ([`CraterRules`]).
     Cratered(Arc<CraterRules>),
-    /// The sun's rules ([`crate::volcanic::VolcanicRules`], docs/SUN_WORLD.md).
+    /// The sun's rules ([`crate::volcanic::VolcanicRules`], docs/proposals/SUN_WORLD.md).
     Volcanic(Arc<crate::volcanic::VolcanicRules>),
 }
 

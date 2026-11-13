@@ -3681,6 +3681,10 @@ impl Inner {
         if let Some(bake) = crate::render::moon::bake_for(world_seed) {
             self.renderer.borrow_mut().set_moon(&bake);
         }
+        // The sun's disc from the sun world's face A (docs/proposals/SUN_WORLD.md S-3; ~60 ms natively).
+        if let Some(bake) = crate::render::moon::sun_bake_for(world_seed) {
+            self.renderer.borrow_mut().set_sun(&bake);
+        }
         game.vent_plumes = crate::vent_plumes::VentPlumes::from_worldgen(
             self.session.as_ref().map_or("", |s| s.worldgen_config()),
         );

@@ -221,7 +221,7 @@ export function checkMoonDistance(data, grids) {
 }
 
 /**
- * The sun world (shared/worldgen/grids.json `dwell:sun`, docs/SUN_WORLD.md) sits sun.distanceM out
+ * The sun world (shared/worldgen/grids.json `dwell:sun`, docs/proposals/SUN_WORLD.md) sits sun.distanceM out
  * on the sun's path, its radius at the sky's sun.radiusDeg: radiusM / distanceM = tan(radiusDeg), to
  * 1%, so the disc keeps today's size.
  */

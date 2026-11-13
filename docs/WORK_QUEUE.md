@@ -1826,6 +1826,16 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    **"Players can land there."**; **"Lava has the same function on the sun as the earth world."** (same damage,
    burn, flow and cooling rules); **"Its gravity will be the same as earth world for now."** Queued after the moon's
    client side (M-7c) so it reuses the finished travel.
+   **First slice S-1..S-3 built (2026-11-13, brief: "the sun as a grid in the grids data with its own frame, size
+   and place on the sun's existing path … a volcanic generator by data … the far-body bake so the sky's sun disc
+   is drawn from the sun world's surface (its glow kept) … capture/release and travel by the moon's rules if
+   they generalise by data (say what doesn't)"; docs/proposals/SUN_WORLD.md):** `dwell:sun` in grids.json
+   (`sunPath` frame on today's sun path at 954.7 km, 25 km radius at the disc's 1.5°, gravity 1), the `volcanic`
+   generator (lava oceans, rift rivers, cones with crater lakes, basalt and obsidian; both faces), its bake
+   shading the sky's sun disc (`sun.surface`; size, glow and sunlight unchanged), travel by the moon's rules
+   natively. **Left:** the sky disc's look on a GPU (a local check); constant lava flow on the sun (lava fields
+   on its rivers and lakes, damage there), its sky, spawns, its LOD; older clients on the line and grid 2
+   (SUN_WORLD.md §5).
 
 ## Done
 

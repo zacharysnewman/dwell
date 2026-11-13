@@ -12,7 +12,7 @@
     "noonElevationDeg": 60
   },
   "sun": {
-    "$comment": "The disc's angular radius, how much larger it looks on the horizon, its limb darkening (0 none, 1 dark edge), and its halo: a tight bloom and a broad glow (Gaussian widths in degrees, strengths 0\u20131, scaled by each keyframe's glow). distanceM: from the home disc's centre to the sun world's (shared/worldgen/grids.json `dwell:sun`, docs/SUN_WORLD.md), toward today's sun direction, keeping its radius at radiusDeg (checked to 1%). surface: how much the sun world's baked ground (its face A: lava bright, basalt and obsidian crusts darker) shades the disc (0 today's plain disc, 1 the crusts as dark as their colours); the glow and the sunlight are unchanged (owner: \"The sun's doesn't really light the earth world or moon world, just conceptually.\").",
+    "$comment": "The disc's angular radius, how much larger it looks on the horizon, its limb darkening (0 none, 1 dark edge), and its halo: a tight bloom and a broad glow (Gaussian widths in degrees, strengths 0\u20131, scaled by each keyframe's glow). distanceM: from the home disc's centre to the sun world's (shared/worldgen/grids.json `dwell:sun`, docs/proposals/SUN_WORLD.md), toward today's sun direction, keeping its radius at radiusDeg (checked to 1%). surface: how much the sun world's baked ground (its face A: lava bright, basalt and obsidian crusts darker) shades the disc (0 today's plain disc, 1 the crusts as dark as their colours); the glow and the sunlight are unchanged (owner: \"The sun's doesn't really light the earth world or moon world, just conceptually.\").",
     "radiusDeg": 1.5,
     "horizonScale": 1.4,
     "limbDarkening": 0.35,

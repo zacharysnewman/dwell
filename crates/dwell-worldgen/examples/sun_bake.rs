@@ -1,4 +1,4 @@
-//! The sun world's far-body bake (docs/SUN_WORLD.md S-3), timed, with previews: both faces'
+//! The sun world's far-body bake (docs/proposals/SUN_WORLD.md S-3), timed, with previews: both faces'
 //! normal/height and albedo maps at the data's size, written as PPM images (the normal map lit by a
 //! low sun from +x, and the albedo) for a look without the game.
 //!

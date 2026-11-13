@@ -1,4 +1,4 @@
-//! The sun's `volcanic` generator (docs/SUN_WORLD.md, slice S-2; WORK_QUEUE item 42): a volcano
+//! The sun's `volcanic` generator (docs/proposals/SUN_WORLD.md, slice S-2; WORK_QUEUE item 42): a volcano
 //! world, all from `grids.json` data. Face-local heights (m over the grid's midplane), each face
 //! from its own seed stream (`bifacial::face_seed`), as the moon's and home's are.
 //!
