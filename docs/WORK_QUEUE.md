@@ -2350,6 +2350,21 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    Good to move on to the next."** The shrine gaps branch (`claude/shrine-gaps`) is merged into the 0.59 batch (branch
    `claude/terrain-059-batch-v81i64`), so its shrine change ships on the new line.
 
+55. **Blueprints and builder NPCs** (owner 2026-11-13: **"I also want to add a new version of the human NPC, same looks, no
+   sword capable of building blueprints like the ones you can save right now. In adventure you can place "blueprints" but
+   not as actual blocks as an entity that shows ghost blocks. When you hold build, it auto places only within the correct
+   placement, only the correct blocks where you're aiming like our drag building today. If you don't have a block, it
+   won't place it, it will show blocks you don't have as red. Should also show n/n logs, etc all required blocks on hover
+   in a compact UI. NPCs will use this to build towns and cities from blueprints I provide. Feel free to add simple test
+   ones."**). Answers (2026-11-13): builder NPCs have **unlimited blocks for now** (gathering later); towns at **worldgen
+   sites for now** (**"Eventually both, but just world gen sites for now"** — player-placed later); a placed blueprint is
+   **visible to and buildable by everyone in the world**, saved with it. Phases: B1 blueprint entities (a saved structure
+   placed as a ghost entity: position, face, turn; saved with the world; synced behind a capability), B2 building from one
+   (held Place fills only ghost cells with the ghost's block, missing blocks red, a have/need panel on hover), B3 builder
+   NPCs (the villager without a sword, data-defined, steady pace, unlimited blocks, foundation up), B4 town sites from
+   worldgen (deterministic per face, a town plan of blueprints, builders spawning; a new compatibility line). Test
+   blueprints as structure data: a hut, a wall segment, a well, a watchtower. Design and status in docs/BLUEPRINTS.md.
+
 ## Future (needs owner answers)
 
 - **Waterlogging** (owner 2026-11-12: "Eventually we'll want to make it so some blocks if they don't move for a little
