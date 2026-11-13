@@ -6,6 +6,22 @@ pins it.
 
 ## Open
 
+### 116. A cliff-edge ramp can't be aimed at from above at some angles
+
+Brief, 2026-11-13 (screenshot pass on 0.58, after #856): "Aiming at a cliff-edge ramp: from 2 m back, pitches −35° to
+−45° target nothing — the ray passes over the wedge into the drop. The pick ray must hit the wedge's sloped face (its
+real shape), so the ramp is targetable from every angle its face is visible." In progress on
+`claude/creative-hit-fixes-th5974`.
+
+### 115. In creative a stone pickaxe only damaged a red sandstone steep ramp
+
+Brief, 2026-11-13 (screenshot pass on 0.58): "the New world form says Creative breaks 'any block … in one hit', but in a
+Creative world 4 stone-pickaxe hits only damaged a red_sandstone steep ramp (slopes take damage like Adventure). Fix so
+Creative breaks every block, slopes included, in one hit (both faces)." Found so far: not slope-specific. The owner's
+2026-11-11 rule (BLOCK_DAMAGE.md §7) keeps a tool's hits in creative (a stone pickaxe takes 5 on stone cubes too,
+pinned by `hits_to_break_come_from_the_tool_held_in_both_modes`); the form says "without a tool". Waiting on the
+owner: change the rule (tools one hit in creative too) or keep it.
+
 ### 100. Volumetric clouds look like "crazy triangles"
 
 Owner, 2026-11-12: "the clouds look ridiculous at least the volumetric ones. Look like crazy triangles. Find a
