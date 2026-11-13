@@ -1,6 +1,0 @@
-{
-  "changes": [
-    "The moon trip test tool waits for the server to release you before flying you home, and never saves a spot in space as home.",
-    "Crossing to or from the moon no longer counts as a huge position correction in the debug stats."
-  ]
-}
