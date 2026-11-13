@@ -50,6 +50,8 @@ pub struct MapTunables {
     /// The zoom levels, closest first: (cell side m, span across the panel m).
     pub big_map_levels: &'static [(f64, f64)],
     pub big_map_start_level: f64,
+    /// The zoom's step between the levels' spans (the shell's zoom stops, BUGS.md #120).
+    pub big_map_zoom_ratio: f64,
     pub big_map_wheel_step_px: f64,
     pub big_map_pinch_step: f64,
     pub big_map_fog_color: u32,

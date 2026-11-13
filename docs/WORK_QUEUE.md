@@ -2190,6 +2190,12 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    the marker picker is open: draw a temporary pin at the clicked spot until saved/cancelled"; (4) "New world → More
    options repeats World type, Seed and Spawn (already shown above) and that copy has no Realistic choice: remove the
    duplicates (one source of each field)".
+   **Follow-ups from a browser check of those fixes (2026-11-13, brief, M1 GPU, seed 0):** BUGS.md #119–122, fixed on branch
+   `claude/map-fixes-2`: (1) "Shrine clusters (#115) not seen: zoomed fully out (whole disc, 20 km scale) no shrine
+   icons or cluster counts appear at all … at that zoom show clusters with counts instead of nothing"; (2) "The zoom
+   buttons jump between 20 m, 500 m and 20 km — too coarse; steps of ~2× (data), wheel too"; (3) "After 'Center on
+   me' and a zoom, the player arrow was off the view: zoom about the centred player"; (4) "The picker shows 'Delete'
+   for a marker not yet saved: hide it (Cancel only)".
 
 ## Future (needs owner answers)
 

@@ -3774,6 +3774,10 @@ body.inventory-open #touch-controls {
   gap: 6px;
   touch-action: manipulation;
 }
+/* A hidden map button (the picker's Delete for a marker not yet placed; BUGS.md #122). */
+#world-map .map-button[hidden] {
+  display: none;
+}
 #world-map .map-button:hover:not(:disabled) {
   background: rgb(60 52 40 / 95%);
 }

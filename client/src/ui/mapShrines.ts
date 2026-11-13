@@ -16,8 +16,6 @@ export interface ShrineMapRules {
   iconPx: number;
   /** Icons nearer than this on screen (px, each axis) merge into one with a count. */
   clusterPx: number;
-  /** None show when the grid's spacing draws under this many px (zoomed far out). */
-  minSpacingPx: number;
   /** The most time (ms) a draw spends siting cells not sited before; the rest the next draws. */
   siteMsPerDraw: number;
 }
@@ -75,13 +73,17 @@ export function shrineCellsIn(
   return out;
 }
 
-/** Whether the map shows shrines at `pxPerM`: the grid's spacing draws at least `minSpacingPx`. */
-export function shrinesShownAt(
-  pxPerM: number,
+/**
+ * The shrine icons the big map draws at `pxPerM` for shrines at screen points `points`: merged
+ * into clusters with counts (`clusterShrines`) at every zoom, the whole disc's included, where the
+ * 2 km grid draws a few pixels apart (BUGS.md #119: once none were drawn there at all).
+ */
+export function shrineIcons(
+  _pxPerM: number,
+  points: readonly { x: number; y: number }[],
   rules: ShrineMapRules = SHRINE_MAP,
-  spacing: number = SHRINE_SPACING,
-): boolean {
-  return spacing * pxPerM >= rules.minSpacingPx;
+): ShrineCluster[] {
+  return clusterShrines(points, rules.clusterPx);
 }
 
 /** An icon the map draws for one shrine or several merged (`count`), at screen pixel (x, y). */

@@ -268,3 +268,12 @@ describe('the big map pins', () => {
     expect(bigMapPins([placed], 1, { ...pending, face: 0 })).toEqual([]);
   });
 });
+
+// BUGS.md #122: the picker for a marker not yet placed showed Delete (its `hidden` lost to the map
+// buttons' `display: inline-flex`): a hidden map button is not drawn.
+describe("the picker's hidden buttons", () => {
+  it('a hidden map button is display: none (the new marker shows Save and Cancel only)', () => {
+    const css = readFileSync(new URL('../style.css', import.meta.url), 'utf8').replace(/\s+/g, ' ');
+    expect(css).toMatch(/#world-map \.map-button\[hidden\] \{ display: none;? \}/);
+  });
+});
