@@ -2,6 +2,13 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.58.7",
+      "changes": [
+        "The New world form now says what Creative's breaks do: without a tool any block breaks in one hit, and a held tool keeps its hits",
+        "Behind the scenes: a test that ramps at a cliff edge can be aimed at from every angle, on both faces"
+      ]
+    },
+    {
       "version": "0.58.6",
       "changes": [
         "On the moon its ground is drawn: you no longer see only sky and stars after landing.",
