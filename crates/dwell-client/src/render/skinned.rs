@@ -1485,6 +1485,7 @@ mod tests {
                     grip: None,
                     remap: NO_REMAP,
                     idle_pose: None,
+                    tint: NO_TINT,
                 };
                 let place = body_matrix(&d, data, eye);
                 let p = Player::new(data, model, "idle");
