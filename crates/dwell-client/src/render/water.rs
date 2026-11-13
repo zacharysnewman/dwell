@@ -312,12 +312,13 @@ pub fn pack_fluids(fluids: &[FluidInfo]) -> Vec<f32> {
             u.tone_floor_light as f32,
             u.window_rim_glow as f32,
         ]);
-        // The shore foam's softness (shared/look/waterflow.json `shore`, WATER_RENDERING.md §20).
+        // The shore foam's softness and corners (shared/look/waterflow.json `shore`,
+        // WATER_RENDERING.md §20, §21).
         match dwell_look::waterflow::flow_look(f.name) {
             Some(l) => out.extend_from_slice(&[
                 l.shore_feather_m as f32,
                 l.shore_band_softness as f32,
-                0.0,
+                l.shore_corner_radius_m as f32,
                 0.0,
             ]),
             None => out.extend_from_slice(&[0.0; 4]),
@@ -644,7 +645,7 @@ pub fn inverse_aces(display: [f32; 3], exposure: f32) -> [f32; 3] {
 /// The water's cost-isolation switches (a dev tool, `?waterdbg=`; docs/WATER_RENDERING.md §8): each
 /// name turns one piece of the water's shading off, so its GPU time (`gpu.*.water`) can be told
 /// apart. Carried to the shader as a bit mask in the frame uniform (`wrap.z`); 0 draws everything.
-pub const DEBUG_SWITCHES: [(&str, u32); 14] = [
+pub const DEBUG_SWITCHES: [(&str, u32); 15] = [
     ("ripple0", 1),
     ("ripple1", 2),
     ("ripple2", 4),
@@ -659,6 +660,8 @@ pub const DEBUG_SWITCHES: [(&str, u32); 14] = [
     ("flat", 2048),
     ("ssr", 4096),
     ("clouds", 8192),
+    // the shore foam's round corners (WATER_RENDERING.md §21): off draws §20's foam by depth alone
+    ("corners", 16384),
 ];
 
 /// The mask for a `?waterdbg=` value: names (`DEBUG_SWITCHES`) separated by commas; `all` sets
@@ -1156,10 +1159,14 @@ mod tests {
             ];
             assert_eq!(v[72..76], lift.map(|x| x as f32));
             // the shore foam's softness (its feather, its bands' sides)
-            let soft = dwell_look::waterflow::flow_look(f.name).map_or([0.0; 2], |l| {
-                [l.shore_feather_m as f32, l.shore_band_softness as f32]
+            let soft = dwell_look::waterflow::flow_look(f.name).map_or([0.0; 3], |l| {
+                [
+                    l.shore_feather_m as f32,
+                    l.shore_band_softness as f32,
+                    l.shore_corner_radius_m as f32,
+                ]
             });
-            assert_eq!(v[76..78], soft);
+            assert_eq!(v[76..79], soft);
         }
         // A fluid with no look of its own takes the default's (fog from the eye, the registry's rates).
         assert_eq!(underwater_look("test:oil"), &DEFAULT_UNDERWATER);

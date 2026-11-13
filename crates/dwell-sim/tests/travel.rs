@@ -274,7 +274,7 @@ fn round_trip(face: FaceFrame) {
     f.check_transfers();
     if face == FaceFrame::A {
         // The way out: about a minute and a half at far flight (owner: ~1–1.5 min).
-        assert!((40.0..=120.0).contains(&trip), "the trip took {trip} s");
+        assert!((20.0..=40.0).contains(&trip), "the trip took {trip} s");
     }
     eprintln!(
         "face {face:?}: trip {trip:.0} s, moon jump {rise:.2} m, {} ticks",

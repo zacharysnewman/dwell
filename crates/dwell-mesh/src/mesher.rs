@@ -475,8 +475,16 @@ impl Builder {
 
     /// Tags the vertices added since the last tag with `fluid` (the transparent mesh's `fluids`).
     fn tag_fluid(&mut self, fluid: Option<dwell_blocks::FluidId>) {
+        self.tag_fluid_shore(fluid, 0);
+    }
+
+    /// [`Self::tag_fluid`] with a water top's shore mask ([`shore_mask`]) packed over the id
+    /// ([`crate::fluid_with_shore`]).
+    fn tag_fluid_shore(&mut self, fluid: Option<dwell_blocks::FluidId>, shore: u32) {
         let n = self.vertex_count() as usize;
-        self.m.fluids.resize(n, fluid_value(fluid));
+        self.m
+            .fluids
+            .resize(n, crate::fluid_with_shore(fluid_value(fluid), shore));
     }
 
     fn push_tile(&mut self, tile: &TileRect) {
@@ -680,6 +688,30 @@ const SURFACE_BIT: i32 = 1 << 30;
 /// Merge-mask flag: a face drawn on its own, merged with none (a fluid's top by a step,
 /// [`top_on_step`]).
 const ALONE_BIT: i32 = 1 << 29;
+
+/// A liquid top cell's solid neighbours in its own row (WATER_RENDERING.md §21): the bits of
+/// `dwell_look::waterflow::SHORE_W`…, face-local (the padded volume is). A top with any is drawn
+/// alone (merged with none), so its quad carries its own mask to the shore foam.
+fn shore_mask(cells: &Cells<'_>, [x, y, z]: [i32; 3]) -> u32 {
+    use dwell_look::waterflow as w;
+    let solid = |dx: i32, dz: i32| {
+        let k = cells.kind(x + dx, y, z + dz);
+        !k.liquid && !k.flooded && k.shape != Shape::Empty && k.style.look != Look::Cross
+    };
+    [
+        (-1, 0, w::SHORE_W),
+        (1, 0, w::SHORE_E),
+        (0, -1, w::SHORE_S),
+        (0, 1, w::SHORE_N),
+        (-1, -1, w::SHORE_SW),
+        (1, -1, w::SHORE_SE),
+        (-1, 1, w::SHORE_NW),
+        (1, 1, w::SHORE_NE),
+    ]
+    .iter()
+    .filter(|(dx, dz, _)| solid(*dx, *dz))
+    .fold(0, |m, (_, _, b)| m | b)
+}
 
 /// The side-tile rule (an index into `k.style.side_under`, block data `sideUnder`) that side face
 /// `face` of the cell at (x, y, z) takes: the first naming the block in the cell above, unless that
@@ -2356,6 +2388,8 @@ fn mesh_cells(
     let mut light_mask: Vec<CornerKeys> = vec![[0; 4]; n * n];
     // The slice's sky rays per vertex ((n + 1)², u fastest), computed once a face needs them.
     let mut vertex_rays: Vec<u8> = vec![u8::MAX; (n + 1) * (n + 1)];
+    // Each masked liquid top's shore mask ([`shore_mask`]; 0 elsewhere).
+    let mut shores = vec![0u32; n * n];
 
     for (face, &(axis, sign)) in FACES.iter().enumerate() {
         let u = (axis + 1) % 3;
@@ -2513,9 +2547,16 @@ fn mesh_cells(
                         continue;
                     }
                     let rule = side_rule(&cells, &k, cx, cy, cz, face).map_or(0, |r| r as i32 + 1);
+                    let shore = if face == 2 && k.liquid {
+                        shore_mask(&cells, cell)
+                    } else {
+                        0
+                    };
+                    shores[i as usize + n * j as usize] = shore;
                     let alone = if face == 2
                         && k.liquid
-                        && top_on_step(&cells, &k, k.fill * (1.0 - k.style.surface_drop), cell)
+                        && (shore != 0
+                            || top_on_step(&cells, &k, k.fill * (1.0 - k.style.surface_drop), cell))
                     {
                         ALONE_BIT
                     } else {
@@ -2613,7 +2654,8 @@ fn mesh_cells(
                         lkey.map(key_flood),
                     );
                     if see_through {
-                        target.tag_fluid(style.fluid);
+                        let shore = if face == 2 { shores[i + n * j] } else { 0 };
+                        target.tag_fluid_shore(style.fluid, shore);
                     }
                     i += w;
                 }

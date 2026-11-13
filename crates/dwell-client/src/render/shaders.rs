@@ -200,7 +200,8 @@ struct Fluid {
     // absorption the light down to the floor takes, w the window rim's glow (× the zenith's light)
     lift: vec4f,
     // The shore foam's softness (WATER_RENDERING.md §20): x the contact line's feather into the
-    // water (m), y how soft a band's sides are (0..1)
+    // water (m), y how soft a band's sides are (0..1); its corners (§21): z an inner corner's
+    // fillet radius (m)
     shore_soft: vec4f,
 };
 @group(0) @binding(4) var<storage, read> fluids: array<Fluid>;
@@ -2654,6 +2655,11 @@ struct FluidOut {
     @location(4) @interpolate(flat) fluid: u32,
     @location(5) @interpolate(flat) draw: u32,
     @location(6) flood: vec2f,
+    // A water top's solid neighbours (dwell_look::waterflow::SHORE_W…, packed over the fluid id
+    // by dwell_mesh::fluid_with_shore; 0: none, or a mesh without them) and the fragment's place
+    // in the mesh's cells (x, z), whose fraction is its place in its cell (WATER_RENDERING.md §21).
+    @location(7) @interpolate(flat) shore: u32,
+    @location(8) cell_xz: vec2f,
 };
 
 // Fluid meshes: chunk water and LOD water alike (the draw's offset.w scales cells to metres;
@@ -2668,7 +2674,10 @@ fn fluid_vs(v: FluidIn, @builtin(instance_index) k: u32) -> FluidOut {
     o.normal = v.normal;
     o.color = v.color;
     o.wrapped = draw.rotation.zw + v.position.xz * draw.offset.w;
-    o.fluid = u32(v.fluid + 0.5);
+    let packed = u32(v.fluid + 0.5);
+    o.fluid = packed & 255u;
+    o.shore = packed >> 8u;
+    o.cell_xz = v.position.xz;
     o.flood = v.flood;
     return o;
 }
@@ -3452,7 +3461,7 @@ fn water_scene_fs(i: FluidOut, @builtin(front_facing) front: bool) -> @location(
     // Shoreline foam where the water is thin.
     var foam = 0.0;
     if (!water_off(DBG_FOAM)) {
-        foam = foam_amount(i.wrapped, min(under, length_in), f);
+        foam = foam_amount(i.wrapped, min(min(under, length_in), shore_of(i, f)), f);
     }
     if (foam > 0.0) {
         let lit = lambert_lit(f.foam.rgb, vec3f(0.0, s.up, 0.0), s.frag_y, TerrainLight(s.light.ambient, s.shadow, s.light.glow, s.light.points));
@@ -3467,6 +3476,51 @@ fn water_scene_fs(i: FluidOut, @builtin(front_facing) front: bool) -> @location(
 }
 
 const DEEP_M: f32 = 1e4;
+
+// The distance across the surface to the shore a water top's mask names (WATER_RENDERING.md §21;
+// owner, 2026-11-13: 'smoother or thicker around corners, so it doesn't looks so squared off'):
+// round an outer corner, filleted into an inner one. DEEP_M where the quad has no mask (open
+// water, LOD water, the heightfield) or the switch is off (`?waterdbg=corners`).
+fn shore_of(i: FluidOut, f: Fluid) -> f32 {
+    if (i.shore == 0u || water_off(DBG_CORNERS)) {
+        return DEEP_M;
+    }
+    return shore_xz(i.shore, fract(i.cell_xz), f.shore_soft.z);
+}
+
+// dwell_look::waterflow::shore_xz's mirror (its tests pin it): the Euclidean distance from `p`
+// (0..1 in the cell) to the solid neighbours `mask` names, with inner corners filleted by `r`.
+fn shore_xz(mask: u32, p: vec2f, r_in: f32) -> f32 {
+    let w = p.x;
+    let e = 1.0 - p.x;
+    let s = p.y;
+    let n = 1.0 - p.y;
+    var d = DEEP_M;
+    if ((mask & 1u) != 0u) { d = min(d, w); }
+    if ((mask & 2u) != 0u) { d = min(d, e); }
+    if ((mask & 4u) != 0u) { d = min(d, s); }
+    if ((mask & 8u) != 0u) { d = min(d, n); }
+    if ((mask & 16u) != 0u) { d = min(d, length(vec2f(w, s))); }
+    if ((mask & 32u) != 0u) { d = min(d, length(vec2f(e, s))); }
+    if ((mask & 64u) != 0u) { d = min(d, length(vec2f(w, n))); }
+    if ((mask & 128u) != 0u) { d = min(d, length(vec2f(e, n))); }
+    let r = clamp(r_in, 0.0, 0.5);
+    if (r > 0.0) {
+        d = min(d, fillet(mask, 1u, 4u, w, s, r));
+        d = min(d, fillet(mask, 2u, 4u, e, s, r));
+        d = min(d, fillet(mask, 1u, 8u, w, n, r));
+        d = min(d, fillet(mask, 2u, 8u, e, n, r));
+    }
+    return d;
+}
+
+// An inner corner's fillet: the land filled out by a quarter circle of radius r.
+fn fillet(mask: u32, a: u32, b: u32, u: f32, v: f32, r: f32) -> f32 {
+    if ((mask & a) == 0u || (mask & b) == 0u || u >= r || v >= r) {
+        return DEEP_M;
+    }
+    return max(r - length(vec2f(r - u, r - v)), 0.0);
+}
 
 // Shore foam (WATER_RENDERING.md §14, §20; owner, 2026-11-10: 'more like pulsing bands'; 2026-11-13:
 // the old soft edge with the new even one): by `shore`, the distance to the shore (the depth over a

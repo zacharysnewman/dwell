@@ -136,6 +136,11 @@ export type Step =
    * own, holding the hotbar's first block when `held`; 0 removes them.
    */
   | { do: 'puppets'; count: number; at?: Vec3; face?: number; held?: boolean }
+  /**
+   * Villagers (`__dwell.spawnNpcs`, docs/CHARACTERS.md §11.11): `count` NPCs within `radius` m
+   * (3) of the player, a local world only.
+   */
+  | { do: 'npcs'; count: number; radius?: number }
   /** Your first-person arms shown or hidden (the Show your arms setting, for this page only). */
   | { do: 'arms'; on: boolean }
   /** Waits (at most `maxS`) until the LOD has nothing to generate, mesh or ask for, for 1 s. */
@@ -456,6 +461,7 @@ const STEP_FIELDS: Record<Step['do'], readonly string[]> = {
   brush: ['command'],
   region: ['op', 'from', 'to', 'up'],
   puppets: ['count', 'at', 'face', 'held'],
+  npcs: ['count', 'radius'],
   arms: ['on'],
   settle: ['maxS'],
   until: ['what', 'maxS'],
@@ -677,6 +683,15 @@ export function parseStep(where: string, v: unknown): Step {
         ...(o.at === undefined ? {} : { at: vec3(at('at'), o.at) }),
         ...(o.face === undefined ? {} : { face: o.face }),
         ...(o.held === undefined ? {} : { held: bool(at('held'), o.held) }),
+      };
+    }
+    case 'npcs': {
+      const count = num(at('count'), o.count, 1, 64);
+      if (!Number.isInteger(count)) throw new ViewError(`${at('count')}: expected a whole number`);
+      return {
+        do: d,
+        count,
+        ...(o.radius === undefined ? {} : { radius: num(at('radius'), o.radius, 0, 64) }),
       };
     }
     case 'probe': {

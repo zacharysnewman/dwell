@@ -118,6 +118,17 @@ pub fn grid_report(
     })
 }
 
+/// The top of the generated ground the feet stand on at face-local (x, z): its column's top cell's
+/// top (`top_row`, the height rounded to the ½ m cells), not the smooth height, which lies up to
+/// a quarter cell over or under it (BUGS.md: a landing read 0.11–0.24 m under the ground).
+fn ground_top(t: &dwell_worldgen::grids::CrateredTerrain, f: FaceFrame, x: f64, z: f64) -> f64 {
+    t.top_row(f.face, x.floor() as i64, z.floor() as i64)
+        .map_or_else(
+            || t.height(f.face, x, z),
+            |top| (top + 1) as f64 * dwell_world::CELL_H,
+        )
+}
+
 impl MoonReport {
     /// The report as `__dwell.moon()` returns it (JSON).
     pub fn json(&self) -> String {
@@ -151,11 +162,14 @@ fn ground_height(
     let l = f.point(feet);
     let h = match &def.generator {
         dwell_worldgen::grids::GridGenerator::Cratered(_) => {
-            dwell_worldgen::grids::CrateredTerrain::new(def, world_seed)?.height(f.face, l[0], l[2])
+            let t = dwell_worldgen::grids::CrateredTerrain::new(def, world_seed)?;
+            ground_top(&t, f, l[0], l[2])
         }
+        // The ground's top cell, as the generator rounds it (`VolcanicTerrain::rows`).
         dwell_worldgen::grids::GridGenerator::Volcanic(_) => {
-            dwell_worldgen::volcanic::VolcanicTerrain::new(def, world_seed)?
-                .height(f.face, l[0], l[2])
+            let t = dwell_worldgen::volcanic::VolcanicTerrain::new(def, world_seed)?;
+            let h = t.height(f.face, l[0].floor() + 0.5, l[2].floor() + 0.5);
+            (h / dwell_world::CELL_H).round() * dwell_world::CELL_H
         }
         _ => return None,
     };
@@ -231,6 +245,38 @@ mod tests {
             gravity: 9.81,
         }
     }
+
+    dwell_world::both_faces!(
+        /// Standing on the moon's generated ground on face `f` reads 0 m over it: the ground is
+        /// the column's top cell, not the smooth height (which a landing read as up to a quarter
+        /// cell over the feet: −0.11 m on face A, −0.24 m on face B).
+        fn standing_on_the_moons_ground_reads_zero(f: FaceFrame) {
+            let m = map();
+            let def = dwell_worldgen::grids::grid("dwell:moon").unwrap();
+            let t = dwell_worldgen::grids::CrateredTerrain::new(def, SEED).unwrap();
+            let mut off = 0;
+            for k in 0..200 {
+                let (x, z) = (f64::from(k) * 37.3 - 3700.0, f64::from(k) * -21.7 + 900.0);
+                let top = t
+                    .top_row(f.face, x.floor() as i64, z.floor() as i64)
+                    .unwrap();
+                let stand = (top + 1) as f64 * dwell_world::CELL_H;
+                off += usize::from((stand - t.height(f.face, x, z)).abs() > 0.05);
+                let feet = f.point([x, stand, z]);
+                let index = m.grids[0].0;
+                let r = moon_report(&m, SEED, viewer(f, index, feet)).unwrap();
+                let g = r.ground_m.unwrap();
+                assert!(
+                    g.abs() < 1e-9,
+                    "({x}, {z}): {g} m over the ground it stands on"
+                );
+            }
+            assert!(
+                off > 50,
+                "the smooth height is not the cells' top ({off} of 200)"
+            );
+        }
+    );
 
     dwell_world::both_faces!(
         /// From home the moon is where its frame puts it: the direction and distance reach its

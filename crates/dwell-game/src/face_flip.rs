@@ -36,6 +36,10 @@ pub fn ease_over(elapsed_seconds: f64, seconds: f64) -> f64 {
     0.5 - 0.5 * (PI * x).cos()
 }
 
+/// How long the view takes to ease upright at a crossing onto another grid (s, data:
+/// `shared/look/motion.json` `gridCrossingRollS`; MOON_WORLD.md §7.3).
+pub const GRID_ROLL_SECONDS: f64 = dwell_look::motion::MOTION.grid_crossing_roll_s;
+
 /// The longest roll the experiment switch takes (s), as `motion.json`'s validation allows.
 pub const MAX_ROLL_SECONDS: f64 = 5.0;
 
@@ -81,6 +85,9 @@ pub struct FaceFlip {
     elapsed: f64,
     /// How long the roll takes (s; [`ROLL_SECONDS`] unless the experiment switch set it; 0 snaps).
     seconds: f64,
+    /// How long the roll under way takes (s): `seconds` from a midplane crossing,
+    /// [`GRID_ROLL_SECONDS`] from a crossing onto another grid.
+    this_roll: f64,
 }
 
 impl Default for FaceFlip {
@@ -90,6 +97,7 @@ impl Default for FaceFlip {
             start: 0.0,
             elapsed: ROLL_SECONDS,
             seconds: ROLL_SECONDS,
+            this_roll: ROLL_SECONDS,
         }
     }
 }
@@ -105,6 +113,7 @@ impl FaceFlip {
             face: Some(face),
             elapsed: self.seconds,
             seconds: self.seconds,
+            this_roll: self.seconds,
             ..Self::default()
         };
     }
@@ -116,6 +125,7 @@ impl FaceFlip {
             return false;
         };
         self.seconds = s;
+        self.this_roll = s;
         self.elapsed = self.elapsed.min(s);
         true
     }
@@ -136,17 +146,30 @@ impl FaceFlip {
         }
         self.start = wrap(residual() + self.angle());
         self.elapsed = 0.0;
+        self.this_roll = self.seconds;
         FaceFrame::look_across(yaw, pitch)
+    }
+
+    /// The player's frame changed to another grid's, onto its face `face`, the look continued
+    /// with the same world direction (`look_across`): `residual` is the roll (radians about the
+    /// forward) that takes the new view back to the one drawn before (`grid_view::crossing_roll`),
+    /// and the view eases from it upright over [`GRID_ROLL_SECONDS`] (owner's brief, 2026-11-13:
+    /// "The view eases upright at a crossing (today it turns at once)"), from the view drawn now.
+    pub fn cross_grid(&mut self, face: FaceFrame, residual: f64) {
+        self.start = wrap(residual + self.angle());
+        self.face = Some(face);
+        self.elapsed = 0.0;
+        self.this_roll = GRID_ROLL_SECONDS;
     }
 
     /// The roll drawn now (radians about the camera's forward axis; 0 at rest).
     pub fn angle(&self) -> f64 {
-        self.start * (1.0 - ease_over(self.elapsed, self.seconds))
+        self.start * (1.0 - ease_over(self.elapsed, self.this_roll))
     }
 
     /// Per drawn frame, `dt_seconds` after the last: the camera's roll about its forward axis.
     pub fn draw(&mut self, dt_seconds: f64) -> f64 {
-        self.elapsed = self.seconds.min(self.elapsed + dt_seconds);
+        self.elapsed = self.this_roll.min(self.elapsed + dt_seconds);
         self.angle()
     }
 }
@@ -261,6 +284,32 @@ mod tests {
         flip.reset(A);
         assert_eq!(flip.seconds(), 0.25);
     }
+
+    dwell_world::both_faces!(
+        /// A crossing onto another grid's face `f` eases from the roll that keeps the view drawn
+        /// before to upright over the data's `gridCrossingRollS`, monotonically; no look change.
+        fn a_grid_crossing_eases_the_view_upright_over_the_data(f: FaceFrame) {
+            assert_eq!(GRID_ROLL_SECONDS, 0.6);
+            let json = include_str!("../../../shared/look/motion.json");
+            assert!(json.contains("\"gridCrossingRollS\": 0.6"));
+            let mut flip = FaceFlip::new();
+            flip.reset(FaceFrame::A);
+            flip.cross_grid(f, 0.9);
+            assert!((flip.draw(0.0) - 0.9).abs() < 1e-12);
+            let mut last = 0.9;
+            let mut t = 0.0;
+            while t + 0.016 < GRID_ROLL_SECONDS {
+                let r = flip.draw(0.016);
+                assert!(r < last && r > 0.0, "{t}: {r}");
+                last = r;
+                t += 0.016;
+            }
+            assert_eq!(flip.draw(0.016), 0.0);
+            // The face is the new grid's: the next tick there is no midplane crossing.
+            assert_eq!(flip.tick(f, 12.0, 30.0), (12.0, 30.0));
+            assert_eq!(flip.draw(0.1), 0.0);
+        }
+    );
 
     // both-faces: placed on face A after face B.
     #[test]
