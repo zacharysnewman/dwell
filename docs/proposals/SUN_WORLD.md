@@ -104,9 +104,17 @@ world position (≤ 1 cm) and velocity (≤ 1 cm/s) kept.
 - **The sky on the sun:** the client turns home's sky into the grid's frame (`grid_view.rs`
   `day_on_grid`) and hides only the moon's disc while on the moon; on the sun the sun's own disc and
   sunlight would still be drawn from its direction. Its sky is a later slice (out of scope here).
-- **Older clients on the line:** a client from before this build knows two grids; a server of this build
-  could carry it into grid 2, which its `TravelMap` doesn't hold. The moon's travel line is new, so the
-  owner decides whether the sun ships with a line raise.
+- **Older clients on the line: gated, built** (orchestrator, 2026-11-13: "gate the sun's travel on the
+  client … have the server never capture a client that doesn't declare it into the sun's grid (it flies
+  on as before, the sun stays a far body for it)"). A grid's optional `capability` in grids.json (the sun's
+  `grid.sun`, a capability of `shared/protocol/capabilities.json`, validated): the server captures a
+  session into that grid only when it said the capability (`Grids::capturing`), and counts the grid's
+  slab in its far flight only then (`Grids::far_speed`), so an older client's own prediction (two grids)
+  stays right; the client's `TravelMap` holds only the grids its session opens (`TravelMap::open_to`,
+  `Game::set_grid_capabilities`), so a newer client never predicts a capture by an older server. No new
+  line. Tested (`sun_travel.rs` `only_a_client_saying_grid_sun_is_captured_by_the_sun`: a `grid.frames`-only
+  client held inside the capture sphere stays home, gets no sun chunk or sun grid id; this build's is
+  captured; red without the server's filter).
 - **Capture speed:** the sun moves 3.7–7.5 km/s, so a flier is captured with that relative speed; far
   flight (≤ 20 km/s) steers it in the sun's frame within seconds, as at the moon's ~1 km/s.
 - **Away players' systems** (the moon's §7.2 list): lava damage is the server's lava fields', which
@@ -117,8 +125,10 @@ world position (≤ 1 cm) and velocity (≤ 1 cm/s) kept.
 - **Constant lava flow on the sun** ("Constant flowing lava"): VOLCANOES.md's lava fields placed on the
   sun's rivers and lakes (vents as data), kept molten by the world's heat, with the earth's damage, burn
   and cooling rules ("Lava has the same function on the sun as the earth world").
-- **Its sky:** what a player on the sun sees (home and the moon as far bodies, no sun disc overhead, a
-  lava glow).
+- **Its sky:** owner, 2026-11-13: "Sun and moon should be space, the same as night sky. Could perhaps
+  just make space a more general skybox and have 'day' be a closer atmosphere skybox so it can fade out as
+  you leave earth." The general sky is the moon session's work (M-5 branch); the sun then only declares in
+  its grid data that it has no atmosphere (no such field in grids.json yet when this slice merged main).
 - **Spawns** on the sun's faces (`?spawn=sun`, `sun-b`), as the moon's M-8.
 - The sun's LOD terrain inside `farM` (with the moon's M-5).
 
@@ -127,4 +137,5 @@ world position (≤ 1 cm) and velocity (≤ 1 cm/s) kept.
 - Adding the grid and its blocks changes no home terrain and no saved world (the sun's chunks go to the
   optional `grid_chunks` table, as the moon's).
 - The sky change is a look.
-- Travel to the sun puts grid index 2 on the `grid.frames` wire: see §5 on older clients.
+- Travel to the sun puts grid index 2 on the `grid.frames` wire only for clients that say `grid.sun`
+  (§5), so the slice is additive on the current line.
