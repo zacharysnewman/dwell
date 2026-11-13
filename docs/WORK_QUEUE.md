@@ -2364,6 +2364,13 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    NPCs (the villager without a sword, data-defined, steady pace, unlimited blocks, foundation up), B4 town sites from
    worldgen (deterministic per face, a town plan of blueprints, builders spawning; a new compatibility line). Test
    blueprints as structure data: a hut, a wall segment, a well, a watchtower. Design and status in docs/BLUEPRINTS.md.
+   **B1–B3 built (2026-11-13, cloud, branch `claude/builder-npcs-blueprints-rs25zj`):** blueprints as world entities
+   (`blueprints.world`, the world's `blueprints` table, the `blueprints` mode ability in creative and adventure),
+   placed from the Structures page (catalog or library, a turn) at the crosshair; held Place into one fills only its
+   ghost cells with their block from what the player has (red ghosts where not), a compact have/need panel; a
+   completed blueprint disappears (the blocks are the record). Builders (`dwell:builder`) come to a blueprint with a
+   player near and build it foundation up, unlimited blocks, from outside its box, skipping occupied cells. Left:
+   B4 (towns at worldgen sites, a new compatibility line), a placing preview ghost; BLUEPRINTS.md §7.
 
 ## Future (needs owner answers)
 

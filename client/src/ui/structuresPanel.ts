@@ -36,6 +36,15 @@ export interface StructuresDeps {
   load(structure: ValidStructure): string;
   /** Closes the menu (to aim the paste). */
   close(): void;
+  /** Blueprints (docs/BLUEPRINTS.md): a structure placed as ghost blocks at the crosshair; none in
+   * a build or world without them. Each place returns an error message, or '' when sent. */
+  blueprints?: {
+    synced(): boolean;
+    catalog(): { name: string; size: string }[];
+    placeCatalog(name: string, turn: number): string;
+    place(s: ValidStructure, turn: number): string;
+    removeAimed(): boolean;
+  };
 }
 
 /** How far around the player "everything built" looks: x and z either way, y down and up. */
@@ -175,6 +184,8 @@ export class StructuresPanel {
   private readonly cornerB = el('input');
   private readonly cornersRow = el('div', 'st-corners');
   private readonly paste = el('textarea', 'st-paste');
+  private readonly blueprintList = el('div', 'st-list');
+  private readonly turn = el('select');
 
   constructor(private readonly deps: StructuresDeps) {
     this.element.id = 'structures-panel';
@@ -251,11 +262,56 @@ export class StructuresPanel {
 
     this.status.setAttribute('role', 'status');
     this.status.id = 'structure-status';
-    this.element.append(lead, this.status, save, library, importing);
+    // Blueprints: the repository's and, on each saved structure, "Blueprint".
+    const blueprints = el('div', 'gm-group');
+    blueprints.id = 'blueprints-group';
+    blueprints.append(
+      el('h2', undefined, 'Blueprints'),
+      el(
+        'p',
+        'gm-lead',
+        'Place one where you aim: ghost blocks anyone in the world can build by holding Place into them.',
+      ),
+    );
+    for (const deg of [0, 90, 180, 270]) {
+      const o = el('option', undefined, `Turned ${String(deg)}°`);
+      o.value = String(deg / 90);
+      this.turn.append(o);
+    }
+    this.turn.id = 'blueprint-turn';
+    const removeAimed = button('Remove the aimed blueprint', () => {
+      if (this.deps.blueprints?.removeAimed()) this.deps.close();
+      else this.say('Aim into a blueprint first.');
+    });
+    const row2 = el('div', 'st-row');
+    row2.append(this.turn, removeAimed);
+    blueprints.append(row2, this.blueprintList);
+    blueprints.hidden = !this.deps.blueprints;
+    this.element.append(lead, this.status, save, library, blueprints, importing);
+  }
+
+  /** The repository's blueprints, each a button placing it where the crosshair aims. */
+  private drawBlueprints(): void {
+    const bp = this.deps.blueprints;
+    this.blueprintList.replaceChildren();
+    if (!bp?.synced()) {
+      this.blueprintList.append(el('p', 'st-empty', 'This world’s server keeps no blueprints.'));
+      return;
+    }
+    for (const { name, size } of bp.catalog()) {
+      const b = button(`${name.slice(name.indexOf(':') + 1)} (${size})`, () => {
+        const err = bp.placeCatalog(name, Number(this.turn.value));
+        if (err) this.say(err);
+        else this.deps.close();
+      });
+      b.dataset.blueprint = name;
+      this.blueprintList.append(b);
+    }
   }
 
   /** Called as the page opens: the source the save defaults to, and the list. */
   async refresh(): Promise<void> {
+    this.drawBlueprints();
     this.source.value = this.deps.selection() ? 'selection' : 'built';
     this.cornersRow.hidden = true;
     await this.renderList();
@@ -376,6 +432,12 @@ export class StructuresPanel {
       },
       'st-button st-primary',
     );
+    const asBlueprint = button('Blueprint', () => {
+      const err = this.deps.blueprints?.place(s, Number(this.turn.value)) ?? 'No blueprints here.';
+      if (err) this.say(err);
+      else this.deps.close();
+    });
+    asBlueprint.hidden = !this.deps.blueprints?.synced();
     const rename = button('Rename', () => {
       const to = prompt('New name', s.name);
       if (to === null) return;
@@ -403,7 +465,7 @@ export class StructuresPanel {
         })
         .then(() => this.renderList());
     });
-    actions.append(load, download_, copy, rename, remove);
+    actions.append(load, asBlueprint, download_, copy, rename, remove);
     row.append(info, actions);
     return row;
   }

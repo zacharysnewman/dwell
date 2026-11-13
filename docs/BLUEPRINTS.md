@@ -1,6 +1,6 @@
 # Blueprints and builder NPCs
 
-**[in progress]** WORK_QUEUE item 55. Owner, 2026-11-13: **"I also want to add a new version of the human
+**[in progress: B1–B3 built (2026-11-13, branch `claude/builder-npcs-blueprints-rs25zj`); B4 planned]** WORK_QUEUE item 55. Owner, 2026-11-13: **"I also want to add a new version of the human
 NPC, same looks, no sword capable of building blueprints like the ones you can save right now. In adventure
 you can place "blueprints" but not as actual blocks as an entity that shows ghost blocks. When you hold
 build, it auto places only within the correct placement, only the correct blocks where you're aiming like
@@ -39,10 +39,11 @@ build doesn't know leave their cells out (kept).
 
 ## 3. Placing one (B1)
 
-Where the world's mode has the `blueprints` ability (adventure and creative), a structure picked from the
-inventory's **Blueprints** list (the repository's test blueprints and the player's own library) follows the
-crosshair as the paste ghost does; **R** turns it, a **right click** places it as a blueprint (a `Blueprints`
-`Place` message), **Delete** while aiming into one removes it. The server checks the mode, the limits
+Where the world's mode has the `blueprints` ability (adventure and creative), the game menu's **Structures**
+page lists the repository's blueprints (`catalog`) under **Blueprints**, and each saved structure of the
+player's library has a **Blueprint** button: picked with a turn (0°, 90°, 180°, 270°), it is placed with its
+anchor on the cell a place would fill at the crosshair (a `Blueprints` `Place` message). **Remove the aimed
+blueprint** on the same page removes the one the view aims into. The server checks the mode, the limits
 (`limits.perWorld`, the size) and that the box lies in the world, gives it an id, saves it in the world's
 optional `blueprints` table and sends it to every client with the **`blueprints.world`** capability. A client
 without it sees nothing (an older client), and an older server is never sent one.
@@ -78,7 +79,22 @@ SHRINES.md), each a town plan (blueprints laid out by data) whose builders spawn
 Siting changes nothing a seed generates by itself (the blueprints are entities and the blocks are edits), but
 the owner asked for a new compatibility line with it.
 
-## 7. Tests
+## 7. Built, and left
+
+Built (B1–B3): the data and its generator, the four test blueprints, the record and message behind the
+capability, the ghost geometry (`dwell_world::blueprint`), the world's list on the server (placed, removed,
+completed, saved), the builders, the client's ghost (drawn in the brush preview's slot while no brush is
+active), the held Place, the panel, and the Structures page's Blueprints list.
+
+Left:
+- **B4, towns** (§6), with its compatibility line.
+- A ghost preview while choosing where to place one (it is placed straight at the crosshair, as a turn picked
+  on the page; the paste ghost box could follow the crosshair first, as for a structure).
+- A blueprint's ghost is drawn only while aimed into (within four reaches); a brush in use hides it.
+- A builder shows no building pose of its own (it stands; the place swing is the players').
+- Gathering for builders (the owner: later); player-placed towns (later).
+
+## 8. Tests
 
 `shared/blueprints/gen.test.mjs` (the data, a fixture entry by data alone, bad entries named);
 `dwell-protocol` (the record round-trips, bad records refused); `dwell-world` `blueprint` (both faces: the

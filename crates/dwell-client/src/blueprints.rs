@@ -182,8 +182,7 @@ pub fn ghost_faces(
             }
             let a = f / 2;
             let (u, v) = ((a + 1) % 3, (a + 2) % 3);
-            let lo: [f32; 3] =
-                std::array::from_fn(|i| (p[i] - origin[i]) as f32 * size[i] - INSET);
+            let lo: [f32; 3] = std::array::from_fn(|i| (p[i] - origin[i]) as f32 * size[i] - INSET);
             let hi: [f32; 3] =
                 std::array::from_fn(|i| (p[i] - origin[i] + 1) as f32 * size[i] + INSET);
             let mut base = lo;
@@ -202,9 +201,19 @@ pub fn ghost_faces(
             };
             // e_u × e_v = e_a: (0, u, u+v, v) turns anticlockwise about +a.
             let quad = if d[a] > 0 {
-                [at(false, false), at(true, false), at(true, true), at(false, true)]
+                [
+                    at(false, false),
+                    at(true, false),
+                    at(true, true),
+                    at(false, true),
+                ]
             } else {
-                [at(false, false), at(false, true), at(true, true), at(true, false)]
+                [
+                    at(false, false),
+                    at(false, true),
+                    at(true, true),
+                    at(true, false),
+                ]
             };
             out.push((quad, k));
         }
@@ -242,7 +251,10 @@ mod tests {
             bp.update_outline(Some(0), &get, &none, 0);
             let o = bp.outline().unwrap();
             assert!(!o.faces.is_empty());
-            assert!(o.faces.iter().all(|(_, k)| *k == GhostKind::Remove), "all red");
+            assert!(
+                o.faces.iter().all(|(_, k)| *k == GhostKind::Remove),
+                "all red"
+            );
             let all = |_: StateId| true;
             bp.update_outline(Some(0), &get, &all, 1);
             let o = bp.outline().unwrap();
@@ -256,7 +268,10 @@ mod tests {
                 .iter()
                 .flat_map(|(q, _)| q.iter().map(|v| v[1]))
                 .fold(0.0f32, f32::max);
-            assert!((tops - (7.0 * CELL_H as f32 + INSET)).abs() < 1e-4, "{tops}");
+            assert!(
+                (tops - (7.0 * CELL_H as f32 + INSET)).abs() < 1e-4,
+                "{tops}"
+            );
             // Removed: no ghost.
             bp.apply(BlueprintsMessage::Removed(3));
             assert!(bp.ghosts.is_empty());
@@ -283,8 +298,16 @@ mod tests {
         assert_eq!(
             p.rows,
             vec![
-                Need { block: "dwell:log", have: 12, need: 61 },
-                Need { block: "dwell:stone", have: 3, need: 50 }
+                Need {
+                    block: "dwell:log",
+                    have: 12,
+                    need: 61
+                },
+                Need {
+                    block: "dwell:stone",
+                    have: 3,
+                    need: 50
+                }
             ]
         );
         assert_eq!(p.more, 0);
