@@ -91,6 +91,15 @@ pub const FIXTURES: &[PlateFixture] = &[
         subducts: None,
     },
     PlateFixture {
+        name: "continents_part",
+        plates: [
+            FixturePlate { kind: PlateKind::Continental, at: [-5000.0, 0.0], motion: [-3.0, 0.0], age: 100.0 },
+            FixturePlate { kind: PlateKind::Continental, at: [5000.0, 0.0], motion: [3.0, 0.5], age: 100.0 },
+        ],
+        kind: BoundaryKind::Divergent,
+        subducts: None,
+    },
+    PlateFixture {
         name: "plates_slide_past",
         plates: [
             FixturePlate { kind: PlateKind::Continental, at: [-5000.0, 0.0], motion: [0.0, 4.0], age: 100.0 },
@@ -98,5 +107,14 @@ pub const FIXTURES: &[PlateFixture] = &[
         ],
         kind: BoundaryKind::Transform,
         subducts: None,
+    },
+    PlateFixture {
+        name: "oceans_converge_far",
+        plates: [
+            FixturePlate { kind: PlateKind::Oceanic, at: [-12000.0, 0.0], motion: [3.0, 0.0], age: 150.0 },
+            FixturePlate { kind: PlateKind::Oceanic, at: [12000.0, 0.0], motion: [-3.0, 0.0], age: 40.0 },
+        ],
+        kind: BoundaryKind::Convergent,
+        subducts: Some(0),
     },
 ];

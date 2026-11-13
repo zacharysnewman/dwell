@@ -116,7 +116,17 @@ fn main() {
             .interiors()
             .iter()
             .zip(&layout.plates)
-            .map(|(d, p)| format!("{}{:.1}", if p.kind == PlateKind::Continental { "C" } else { "o" }, d / 1000.0))
+            .map(|(d, p)| {
+                format!(
+                    "{}{:.1}",
+                    if p.kind == PlateKind::Continental {
+                        "C"
+                    } else {
+                        "o"
+                    },
+                    d / 1000.0
+                )
+            })
             .collect();
         println!(
             "seed {s}: plates {kinds} interiors(km) [{}]; land {:.1} %; longest lake {longest:.1} km ({big} lakes ≥ 20 cells, {} in all); land reaches {:.1} km; outer coast spread {:.2} km over {} of 144 angles",

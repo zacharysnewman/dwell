@@ -310,6 +310,27 @@
       }
     },
     {
+      "name": "continents_part",
+      "plates": [
+        {
+          "kind": "continental",
+          "at": [-5000, 0],
+          "motion": [-3, 0],
+          "age": 100
+        },
+        {
+          "kind": "continental",
+          "at": [5000, 0],
+          "motion": [3, 0.5],
+          "age": 100
+        }
+      ],
+      "expect": {
+        "kind": "divergent",
+        "subducts": null
+      }
+    },
+    {
       "name": "plates_slide_past",
       "plates": [
         {
@@ -328,6 +349,27 @@
       "expect": {
         "kind": "transform",
         "subducts": null
+      }
+    },
+    {
+      "name": "oceans_converge_far",
+      "plates": [
+        {
+          "kind": "oceanic",
+          "at": [-12000, 0],
+          "motion": [3, 0],
+          "age": 150
+        },
+        {
+          "kind": "oceanic",
+          "at": [12000, 0],
+          "motion": [-3, 0],
+          "age": 40
+        }
+      ],
+      "expect": {
+        "kind": "convergent",
+        "subducts": 0
       }
     }
   ]

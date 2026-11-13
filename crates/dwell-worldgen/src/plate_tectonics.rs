@@ -305,10 +305,7 @@ impl Line {
         if segs.is_empty() {
             return (1.0, 1.0, 0.0);
         }
-        let i = segs
-            .iter()
-            .position(|g| s < g.to)
-            .unwrap_or(segs.len() - 1);
+        let i = segs.iter().position(|g| s < g.to).unwrap_or(segs.len() - 1);
         let g = &segs[i];
         let t = ((s - g.from) / (g.to - g.from).max(1.0)).clamp(0.0, 1.0);
         let wave = (std::f64::consts::PI * t).sin();
@@ -649,7 +646,7 @@ impl PlateTectonics {
     /// arc) or `distance` m behind the line (an island arc). Where that site is off the overriding
     /// plate (a narrow plate, a junction) the cone comes nearer the line in steps of a fifth, down
     /// to `min_distance`; a cone with no site on the plate, or none inside the rim's coast, is left
-    /// out.
+    /// out (a site's whole cone stands clear of the rim's fade).
     fn place_arcs(&self) -> Vec<Volcano> {
         let a = &self.uplift.arc;
         let mut out = Vec::new();
@@ -700,7 +697,8 @@ impl PlateTectonics {
                             })
                             .find(|c| {
                                 self.layout.plate_at(c[0], c[1]) == over
-                                    && self.layout.land_edge(c[0], c[1]) > 0.0
+                                    && self.layout.land_edge(c[0], c[1])
+                                        > self.layout.rules.rim.edge_sea + 0.5 * a.cone_radius
                             });
                         if dist <= a.min_distance {
                             break;
@@ -784,39 +782,180 @@ mod tests {
         assert!(mono, "ordered along the boundary");
     }
 
+    /// The first landform on `side` of the pair, by data.
+    fn form(kind: BoundaryKind, a: PlateKind, b: PlateKind, side: Side) -> PairForm {
+        *UPLIFT
+            .pair(kind, a, b)
+            .landforms
+            .iter()
+            .find(|f| f.side == side)
+            .expect("the pair's landform")
+    }
+
+    #[test]
+    fn every_boundary_and_plate_pair_has_its_landforms_by_data() {
+        use PlateKind::{Continental as C, Oceanic as O};
+        for kind in [
+            BoundaryKind::Convergent,
+            BoundaryKind::Divergent,
+            BoundaryKind::Transform,
+        ] {
+            for (a, b) in [(C, C), (C, O), (O, C), (O, O)] {
+                let p = UPLIFT.pair(kind, a, b);
+                assert_eq!(p.boundary, kind);
+                assert!(!p.landforms.is_empty(), "{kind:?} {a:?} {b:?}");
+            }
+        }
+        // The pairs the brief names: rifts only between continents, a passive margin (no trough on
+        // land) between a continent and an ocean, an island arc between oceans.
+        let rift = |a, b| {
+            UPLIFT
+                .pair(BoundaryKind::Divergent, a, b)
+                .landforms
+                .iter()
+                .any(|f| f.shape == Shape::Rift)
+        };
+        assert!(rift(C, C) && !rift(C, O) && !rift(O, O));
+        assert!(
+            UPLIFT
+                .pair(BoundaryKind::Divergent, C, O)
+                .landforms
+                .iter()
+                .filter(|f| f.side != Side::Oceanic)
+                .all(|f| f.distance >= f.width),
+            "no trough at a passive margin's coast"
+        );
+        assert_eq!(
+            UPLIFT.pair(BoundaryKind::Convergent, O, O).arc,
+            ArcMode::Island
+        );
+        assert_eq!(
+            UPLIFT.pair(BoundaryKind::Convergent, C, O).arc,
+            ArcMode::Crest
+        );
+    }
+
     #[test]
     fn each_boundary_kind_shapes_the_ground_by_its_rule() {
+        use PlateKind::{Continental as C, Oceanic as O};
         let u = &UPLIFT;
+        let along = 1.0 - u.along.height;
         // Subduction: the continent (plate 1, +x) rides over; its range stands behind the line,
-        // the trench on the ocean's side, the arc's cones on the continent's side.
+        // the trench on the ocean's side, the arc's cones on its crest.
         let t = fixture("ocean_under_continent");
-        let range = t.boundary(u.range.distance, 0.0);
-        assert!(range > 0.5 * u.range.height * u.speed_scale[0], "{range}");
-        assert!(t.boundary(-u.trench.distance, 0.0) < 0.0, "a trench");
-        assert!(t.boundary(-u.range.distance, 0.0) < 0.5 * range);
+        let range = form(BoundaryKind::Convergent, C, O, Side::Over);
+        let trench = form(BoundaryKind::Convergent, C, O, Side::Under);
+        let up = t.boundary(range.distance, 0.0);
+        assert!(up > 0.5 * along * range.height * u.speed_scale[0], "{up}");
+        assert!(t.boundary(-trench.distance, 0.0) < 0.0, "a trench");
+        assert!(t.boundary(-range.distance, 0.0) < 0.5 * up);
         let arc: Vec<_> = t.volcanoes.iter().filter(|v| v.chain == 0).collect();
         assert!(!arc.is_empty(), "an arc");
         for v in &arc {
             assert!(v.x > 0.0, "on the overriding side: {v:?}");
-            assert!((v.x - u.arc.distance).abs() < 600.0, "{v:?}");
+            assert!((v.x - range.distance).abs() < 600.0, "on the crest: {v:?}");
         }
         // Collision: a range astride the line, no arc.
         let t = fixture("continents_collide");
-        assert!(t.boundary(u.collision.distance, 0.0) > 0.0);
+        assert!(t.boundary(0.0, 0.0) > 0.0);
         assert!(t.volcanoes.iter().all(|v| v.chain != 0), "no arc");
-        // Divergent: a rift below.
+        // Two continents opening: a rift below the plain along the line.
+        let t = fixture("continents_part");
+        let rift = form(BoundaryKind::Divergent, C, C, Side::Astride);
+        let low = (-30..=30)
+            .map(|k| t.boundary(0.0, f64::from(k) * 1000.0))
+            .fold(f64::INFINITY, f64::min);
+        assert!(low < 0.5 * rift.height * u.speed_scale[0], "{low}");
+        // A continent and an ocean opening: a passive margin, no trough on the land side.
         let t = fixture("rift_opens");
-        assert!(t.boundary(0.0, 0.0) < -0.5 * u.rift.height * u.speed_scale[0]);
+        let margin = (0..=40)
+            .map(|k| t.boundary(-f64::from(k) * 250.0, 0.0))
+            .fold(f64::INFINITY, f64::min);
+        let cut = form(BoundaryKind::Divergent, C, O, Side::Continental);
+        assert!(margin >= cut.height * u.speed_scale[1] - 1.0, "{margin}");
+        assert!(t.boundary(-500.0, 0.0) > -5.0, "no trough at the coast");
         // Transform: little relief.
         let t = fixture("plates_slide_past");
+        let ridge = form(BoundaryKind::Transform, C, O, Side::Astride);
         let most = (-40..=40)
             .map(|k| t.boundary(f64::from(k) * 250.0, 0.0).abs())
             .fold(0.0, f64::max);
         assert!(
-            most <= u.transform.height * u.speed_scale[1] + 1.0,
+            most <= ridge.height * (1.0 + u.along.height) * u.speed_scale[1] + 1.0,
             "{most}"
         );
-        assert!(most < 0.5 * u.range.height * u.speed_scale[0]);
+        assert!(most < 0.5 * range.height * u.speed_scale[0]);
+        // Two oceans closing: an island arc behind the trench, a back-arc basin behind that.
+        let t = fixture("oceans_converge_far");
+        let arc: Vec<_> = t.volcanoes.iter().filter(|v| v.chain == 0).collect();
+        assert!(!arc.is_empty(), "an island arc");
+        let over = t.lines[0].over.expect("one dives");
+        for v in &arc {
+            assert_eq!(t.layout.plate_at(v.x, v.z), over, "{v:?}");
+        }
+    }
+
+    #[test]
+    fn a_rift_is_cut_into_basins_with_sills_and_steps() {
+        let r = &UPLIFT.rift;
+        let t = fixture("continents_part");
+        let line = &t.lines[0];
+        assert!(line.has_rift());
+        let segs = line.segments.iter().max_by_key(|s| s.len()).unwrap();
+        assert!(segs.len() >= 3, "{} segments", segs.len());
+        for (i, g) in segs.iter().enumerate() {
+            let len = g.to - g.from;
+            assert!(
+                len <= r.segment_length[1] + 0.5 * r.segment_length[0] + 1.0,
+                "{len}"
+            );
+            assert!((r.depth[0]..=r.depth[1]).contains(&g.depth));
+            if i + 1 < segs.len() {
+                // Neighbours share their sill, and step to opposite sides.
+                assert_eq!(g.sill_to, segs[i + 1].sill_from);
+                assert_eq!(g.step, -segs[i + 1].step);
+                let sill = g.sill_to.expect("an inner sill");
+                assert!(sill < g.depth && sill < segs[i + 1].depth);
+            }
+        }
+        // Along the line: deepest mid-segment, shallower at each sill.
+        let k = line
+            .segments
+            .iter()
+            .position(|s| s.len() == segs.len())
+            .unwrap();
+        for g in &segs[1..segs.len() - 1] {
+            let mid = line.rift_at(r, k, 0.5 * (g.from + g.to)).0;
+            let end = line.rift_at(r, k, g.to).0;
+            assert!(mid > end, "{mid} {end}");
+        }
+        // The sills step one way, down toward one end.
+        let sills: Vec<f64> = segs.windows(2).filter_map(|w| w[0].sill_to).collect();
+        let up = sills.windows(2).all(|w| w[1] >= w[0]);
+        let down = sills.windows(2).all(|w| w[1] <= w[0]);
+        assert!(up || down, "{sills:?}");
+    }
+
+    #[test]
+    fn a_ranges_height_varies_along_its_line() {
+        // Saddles and peaks: along a 100 km subducting line the range's crest varies by more than
+        // a fifth of its height.
+        let t = fixture("ocean_under_continent");
+        let d = UPLIFT
+            .pair(
+                BoundaryKind::Convergent,
+                PlateKind::Continental,
+                PlateKind::Oceanic,
+            )
+            .landforms[0]
+            .distance;
+        let crest: Vec<f64> = (-40..=40)
+            .map(|k| t.landform_exact(d, f64::from(k) * 1000.0))
+            .collect();
+        let (lo, hi) = crest
+            .iter()
+            .fold((f64::INFINITY, 0.0f64), |(a, b), &h| (a.min(h), b.max(h)));
+        assert!(hi - lo > 0.2 * hi, "{lo:.0}..{hi:.0}");
     }
 
     #[test]

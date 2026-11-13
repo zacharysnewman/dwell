@@ -509,8 +509,16 @@ impl PlateLayout {
             _ => rim.shelf[0],
         };
         let noise = if rim.noise_amplitude > 0.0 {
-            let n = fbm2(self.rim_seed, x as i64, z as i64, rim.noise_wavelength, 2, None);
-            (rim.noise_amplitude * 2.0 * f64::from(n)).clamp(-rim.noise_amplitude, rim.noise_amplitude)
+            let n = fbm2(
+                self.rim_seed,
+                x as i64,
+                z as i64,
+                rim.noise_wavelength,
+                2,
+                None,
+            );
+            (rim.noise_amplitude * 2.0 * f64::from(n))
+                .clamp(-rim.noise_amplitude, rim.noise_amplitude)
         } else {
             0.0
         };
@@ -768,8 +776,9 @@ mod tests {
             for seed in SEEDS {
                 let l = PlateLayout::for_face(seed, f.face);
                 assert_eq!(l, PlateLayout::for_face(seed, f.face), "seed {seed}");
+                // The draw's count less the slivers removed.
                 let n = l.plates.len() as u32;
-                assert!((PLATES.count_min..=PLATES.count_max).contains(&n), "{n}");
+                assert!(n >= 2 && n <= PLATES.count_max, "{n}");
                 let h = l.hotspots.len() as u32;
                 assert!(
                     (PLATES.hotspots_min..=PLATES.hotspots_max).contains(&h),
@@ -787,7 +796,7 @@ mod tests {
                     let s = (p.motion[0] * p.motion[0] + p.motion[1] * p.motion[1]).sqrt();
                     assert!((PLATES.speed[0] - 1e-9..=PLATES.speed[1] + 1e-9).contains(&s));
                     assert!((PLATES.age[0]..=PLATES.age[1]).contains(&p.age));
-                    assert!(dist2(p.centre, [0.0, 0.0]) <= PLATES.reach * PLATES.reach);
+                    assert!(dist2(p.centre, [0.0, 0.0]) <= PLATES.centres * PLATES.centres);
                 }
                 assert!(!l.boundaries.is_empty(), "seed {seed}: plates meet");
                 for b in &l.boundaries {
@@ -798,13 +807,26 @@ mod tests {
                 for hs in &l.hotspots {
                     assert_eq!(hs.plate, l.plate_at(hs.at[0], hs.at[1]));
                 }
-                let edge = PLATES.reach - PLATES.sea_margin;
+                let band = PLATES.reach - PLATES.rim.edge_sea;
                 for (x, z) in [(0.0, 0.0), (5000.0, -3000.0), (-12000.0, 9000.0)] {
                     let kind = l.plates[l.plate_at(x, z)].kind;
                     assert_eq!(l.is_land(x, z), kind == PlateKind::Continental, "{x} {z}");
                 }
-                assert!(!l.is_land(edge + 1.0, 0.0), "the sea margin is sea");
+                for a in 0..72 {
+                    let th = f64::from(a) * std::f64::consts::TAU / 72.0;
+                    let (x, z) = (band * th.cos(), band * th.sin());
+                    assert!(!l.is_land(x, z), "the outer band is sea");
+                    assert!(l.coast_distance(x * 1.01, z * 1.01) <= -PLATES.rim.edge_coast);
+                }
                 assert!(!l.is_land(0.0, -PLATES.reach - 1000.0));
+                // No sliver plates: each plate has its kind's interior.
+                for (d, p) in l.interiors().iter().zip(&l.plates) {
+                    let need = match p.kind {
+                        PlateKind::Oceanic => PLATES.oceanic.interior,
+                        PlateKind::Continental => PLATES.continental.interior,
+                    };
+                    assert!(*d >= need, "seed {seed}: {p:?} interior {d:.0}");
+                }
             }
         }
     );

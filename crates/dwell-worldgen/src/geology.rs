@@ -971,12 +971,18 @@ mod plate_province_tests {
         for x in [-0.5 * pp.core_width, 0.5 * pp.core_width] {
             assert_eq!(stack_at(&r, x, 2000.0), rule(PlateSetting::Core), "x {x}");
         }
-        // A rift: its fill along the line.
-        let t = fixture("rift_opens");
+        // A rift (two continents opening): its fill along the line.
+        let t = fixture("continents_part");
         let r = resolved(GEOLOGY, &t);
         for x in [-0.5 * pp.rift_width, 0.5 * pp.rift_width] {
             assert_eq!(stack_at(&r, x, 2000.0), rule(PlateSetting::Rift), "x {x}");
         }
+        // A passive margin (a continent and an ocean opening) is no rift.
+        let t = fixture("rift_opens");
+        assert!(
+            !pp.settings(&t, -0.5 * pp.rift_width, 2000.0)
+                .has(PlateSetting::Rift)
+        );
     }
 
     #[test]
