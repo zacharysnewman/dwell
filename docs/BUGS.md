@@ -554,22 +554,27 @@ face, or the placement check against its shape.
 
 ## Fixed
 
-### 134. Red sand wasn't on the red desert's floors (fixed after 0.59.1)
+### 134. Red sand wasn't on the red desert's floors (fixed in 0.60.0)
 
 Browser check of 0.59 (#888) on a022b0d0, brief 2026-11-13: "Red sand isn't where the owner asked ('We need a red
 brown sand for the red desert areas'): in a Realistic world (seed 42 face A around (−6000, −9000)) the red mesa floors
 are red_sandstone, and the nearest red_sand surface is a small patch 23 km away at a grass edge." Cause: 0.59.0 gave
 red sand to the red rock mesa preset's bands and its own stack (`dwell:red_desert_beds`), but Realistic's red mesas
-are the basins' `dwell:red_beds` (plate provinces) under steppe, meadow and cold desert, and the Starter's badlands and
-mesa tops are sandstone treads: a rock's tread shows its `cap`, and sandstone's was red sandstone. Fix (data):
-`shared/worldgen/rocks.json` sandstone `cap` → `dwell:red_sand`, so every red rock floor (sandstone treads, the soft
-beds' talus) is red sand and its walls stay red sandstone; mesa tops are treads, so red sand too. Pinned by
-`dwell-worldgen` `tests/realistic_rocks.rs` `the_red_desert_floors_are_red_sand` (both faces, seeds 1, 7, 42: every
-red-rock floor column is red sand or its ramp; red before: 1,139 and 3,127 sandstone floors on seed 1). Realistic's
-golden rewritten, the Starter re-pinned (`starter_memory.rs`), the Starter mesa test now looks for red sand tops.
-Follow-up: #135.
+are the basins' `dwell:red_beds` (plate provinces) under steppe, cold desert, meadow and forest, and the Starter's
+badlands and mesa tops are sandstone treads: a rock's tread shows its `cap`, and sandstone's was red sandstone.
+Orchestrator, 2026-11-13: red sand only in the red *desert*, not under forest, by a climate rule on the cap as data.
+Fix: a rock's optional `capBy` (`[{"arid": "dwell:red_sand"}]` on sandstone, its `cap` red sandstone) and the
+geology's `arid` (rocks.json: rain ≤ 450 mm where the world has a climate, wetness ≤ 0.3, the red rock mesa's `where`
+values, and ≥ 6 °C so the tundra's and the boreal's dry ground is not desert), validated by `biomes.mjs`
+`validateRocks` and read by `config.rs` for world edits. Arid red rock floors are red sand, the rest red sandstone;
+the walls red sandstone everywhere. At the reported spot the steppe's and cold desert's floors are red sand, the
+meadows' and forests' red sandstone. Pinned by `dwell-worldgen` `tests/realistic_rocks.rs`
+`the_red_desert_floors_are_red_sand` (both faces, seeds 1, 7, 42: every flat sandstone tread is red sand where arid
+and not in a forest, red sandstone otherwise; red before: 283 and 1,345 arid floors of red sandstone on seed 1),
+`gen.test.mjs` (the field's validation) and `worldgen_config.rs` `a_geology_edit_reads_cap_by_and_arid`. Realistic's
+golden rewritten, the Starter re-pinned, the 0.60 line raised. Follow-up: #135.
 
-### 133. Red sand drew as the magenta and black checker (fixed after 0.59.1)
+### 133. Red sand drew as the magenta and black checker (fixed in 0.60.0)
 
 Browser check of 0.59 (#888) on a022b0d0, brief 2026-11-13: "Every red_sand cell (and likely red_sand_ramp) draws as
 the magenta/black missing checker: `redSand` is baked (painterly.gen.rs) but not in the atlas layout TILE_ORDER, so

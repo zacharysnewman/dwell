@@ -548,10 +548,14 @@ pub fn geology_from_json(v: &Value) -> Result<Geology, String> {
             solubility: num(r, "solubility").map_err(at)?,
             face: text(r, "face").map_err(at)?,
             cap: text(r, "cap").map_err(at)?,
+            cap_by: cap_by_from_json(r.get("capBy")).map_err(at)?,
             scree: text(r, "scree").map_err(at)?,
             color,
         };
-        for id in [rock.face, rock.cap, rock.scree] {
+        for id in [rock.face, rock.cap, rock.scree]
+            .into_iter()
+            .chain(rock.cap_by.iter().map(|c| c.cap))
+        {
             if dwell_blocks::state(id).is_none() {
                 return Err(at(format!("{id} is not in the registry")));
             }
@@ -629,7 +633,41 @@ pub fn geology_from_json(v: &Value) -> Result<Geology, String> {
             .and_then(Value::as_str)
             .map_or(GEOLOGY.ice_block, leak),
         plate_provinces: plate_provinces_from_json(v.get("plateProvinces"))?,
+        // Absent (an edit stored before 0.60): the build's.
+        arid: match v.get("arid") {
+            None => GEOLOGY.arid,
+            Some(a) => crate::geology::Arid {
+                rain: num(a, "rain").map_err(|e| format!("rocks.json: arid.{e}"))?,
+                wetness: num(a, "wetness").map_err(|e| format!("rocks.json: arid.{e}"))?,
+                celsius: num(a, "celsius").map_err(|e| format!("rocks.json: arid.{e}"))?,
+            },
+        },
     })
+}
+
+/// A rock's `capBy` (its treads' block by the climate; BUGS.md #134): absent, none.
+fn cap_by_from_json(v: Option<&Value>) -> Result<&'static [crate::geology::CapRule], String> {
+    use crate::geology::{CapClimate, CapRule};
+    let Some(v) = v else { return Ok(&[]) };
+    let list = v.as_array().ok_or("capBy must be a list")?;
+    let mut out = Vec::new();
+    for e in list {
+        let o = e
+            .as_object()
+            .filter(|o| o.len() == 1)
+            .ok_or("a capBy entry must be one {\"<climate>\": block}")?;
+        let (k, b) = o.iter().next().expect("one entry");
+        let climate = match k.as_str() {
+            "arid" => CapClimate::Arid,
+            _ => return Err(format!("capBy: unknown climate {k} (arid)")),
+        };
+        let cap = b.as_str().ok_or("a capBy block must be a name")?;
+        out.push(CapRule {
+            climate,
+            cap: leak(cap),
+        });
+    }
+    Ok(Box::leak(out.into_boxed_slice()))
 }
 
 /// The rock provinces from plate history (rocks.json `plateProvinces`, R5); absent (an edit

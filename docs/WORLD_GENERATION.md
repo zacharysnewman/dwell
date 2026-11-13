@@ -433,7 +433,8 @@ hillside (0.52.8).
 ## Rock types and shaping (2026-11-10, ADR 0075 T2)
 
 Systemic terrain's geology layer: `shared/worldgen/rocks.json` holds the rock types (hardness, jointing
-`bedded`/`vertical`/`massive`, bed thickness, solubility, the `face`/`cap`/`scree` blocks they show, a
+`bedded`/`vertical`/`massive`, bed thickness, solubility, the `face`/`cap`/`scree` blocks they show,
+an optional `capBy` (the treads' block by the climate, against the geology's `arid`; 0.60), a
 colour), the strata stacks (layers top to bottom, repeating with height from sea level), the provinces
 (a stack per region by a noise of `provinces.wavelength` m, by the stacks' weights) and the shaping. A
 biome may name its own `rockStack` (the red-rock mesa and badlands presets). Each stack is a monotone

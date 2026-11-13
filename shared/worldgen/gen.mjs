@@ -101,6 +101,8 @@ export function surfaceBlocks(files = {}) {
   const rocks = read("rocks.json");
   for (const r of rocks.rocks ?? []) {
     for (const k of ["face", "cap", "scree"]) out.push([r[k], `rocks.json rock ${r.name} ${k}`]);
+    for (const e of r.capBy ?? [])
+      for (const [k, b] of Object.entries(e)) out.push([b, `rocks.json rock ${r.name} capBy ${k}`]);
   }
   for (const k of ["snow", "ice"]) {
     if (rocks.tectonic?.[k]) out.push([rocks.tectonic[k], `rocks.json tectonic.${k}`]);
@@ -545,6 +547,7 @@ export {
   WHERE_FIELDS,
   validateBiomeMap,
   validateRocks,
+  CAP_CLIMATES,
 } from "./biomes.mjs";
 
 /** Checks vegetation.json against the checked-in rocks and placements (biomes.mjs `validateVegetation`). */
@@ -618,7 +621,8 @@ export function rocksRust(data) {
     `// ${rocksHeader}`,
     "",
     "use crate::geology::{",
-    "    Erosion, Geology, Jointing, Layer, PlateProvinces, PlateRule, PlateSetting, Rock, Stack,",
+    "    Arid, CapClimate, CapRule, Erosion, Geology, Jointing, Layer, PlateProvinces, PlateRule,",
+    "    PlateSetting, Rock, Stack,",
     "};",
     "",
   ];
@@ -634,6 +638,11 @@ export function rocksRust(data) {
     rs.push(`        solubility: ${rf(r.solubility)},`);
     rs.push(`        face: ${JSON.stringify(r.face)},`);
     rs.push(`        cap: ${JSON.stringify(r.cap)},`);
+    const capBy = (r.capBy ?? []).map((e) => {
+      const [k, b] = Object.entries(e)[0];
+      return `CapRule { climate: CapClimate::${k[0].toUpperCase() + k.slice(1)}, cap: ${JSON.stringify(b)} }`;
+    });
+    rs.push(capBy.length ? `        cap_by: &[${capBy.join(", ")}],` : "        cap_by: &[],");
     rs.push(`        scree: ${JSON.stringify(r.scree)},`);
     rs.push(`        color: 0x${r.color.slice(1).toLowerCase()},`);
     rs.push("    },");
@@ -702,6 +711,10 @@ export function rocksRust(data) {
     );
   rs.push("        ],");
   rs.push("    },");
+  const arid = data.arid ?? { rain: 0, wetness: 0, celsius: 100 };
+  rs.push(
+    `    arid: Arid { rain: ${rf(arid.rain)}, wetness: ${rf(arid.wetness)}, celsius: ${rf(arid.celsius)} },`,
+  );
   rs.push("};");
   rs.push("");
   return rs.join("\n");

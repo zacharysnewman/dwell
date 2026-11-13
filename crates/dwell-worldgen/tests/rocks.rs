@@ -16,6 +16,7 @@ const CAP: Rock = Rock {
     solubility: 0.0,
     face: "dwell:stone",
     cap: "dwell:stone",
+    cap_by: &[],
     scree: "dwell:sand",
     color: 0xaa3322,
 };
@@ -27,6 +28,7 @@ const SOFT: Rock = Rock {
     solubility: 0.0,
     face: "dwell:dirt",
     cap: "dwell:dirt",
+    cap_by: &[],
     scree: "dwell:sand",
     color: 0x886655,
 };
@@ -38,6 +40,7 @@ const DOME: Rock = Rock {
     solubility: 0.0,
     face: "dwell:stone",
     cap: "dwell:stone",
+    cap_by: &[],
     scree: "dwell:stone",
     color: 0xbbbbbb,
 };

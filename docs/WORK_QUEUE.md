@@ -673,13 +673,18 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    red_sand cell (and likely red_sand_ramp) draws as the magenta/black missing checker … Fix, and make the guard real
    … Better still: derive TILE_ORDER from the texture data so it can't drift" and "Red sand isn't where the owner
    asked … Make the red desert floors (the arid sedimentary/mesa areas of Realistic and the default world's red mesas)
-   surface as red_sand, by data". **Done:** the atlas layout is the texture set's list (BUGS.md #133); sandstone's
-   `cap` is red sand, so every red rock tread (Realistic's red-bed basins, the badlands, mesa floors and tops) is red
-   sand under red sandstone walls (#134). Open for the owner: (a) red sand shows wherever sandstone treads do, in any
-   climate (they showed red sandstone there before); limiting it to arid climates needs a climate rule on a rock's
-   cap (new vocabulary); (b) mesa tops are treads, so they are red sand too, not bare caprock; (c) the default
-   world (`dwell:default` only) has no red rock at the surface, so nothing changed there; the Starter's and
-   Realistic's terrain did (Starter re-pinned, Realistic golden rewritten): a terrain change on the 0.59 line.
+   surface as red_sand, by data". **Done:** the atlas layout is the texture set's list (BUGS.md #133); red rock
+   floors are red sand where arid (#134). Orchestrator, 2026-11-13, before merge: **"Climate: the owner asked for red
+   sand in the red DESERT areas, so don't put it under forest. Add a small climate rule on a rock's cap as data …
+   Red-rock floors in arid places become red sand; elsewhere they stay red sandstone. Keep mesa tops red sand only
+   where it's arid."** and **"Line: this changes worldgen after 0.59.0 shipped, so raise 0.60 yourself in this PR
+   (the owner delegated minor bumps)."** Built: sandstone `cap` red sandstone with `capBy: [{"arid":
+   "dwell:red_sand"}]`, rocks.json `arid` (rain ≤ 450 mm, wetness ≤ 0.3, ≥ 6 °C: the mesa preset's `where` plus a
+   temperature floor so dry tundra and boreal ground stays rock); the 0.60 line (the Realistic and Starter terrain
+   changed; the default world, `dwell:default` only, has no red rock at the surface and is unchanged). Open for the
+   owner: the 6 °C floor counts the steppe's and cold desert's red rock floors as desert (the reported spot's red
+   mesas are steppe at ~8 °C); the mesa's own 12 °C would keep red sand to hot deserts (face B of seeds 1, 7, 42
+   then has none).
 16. **Phone frame rate (P0)** (owner 2026-11-11, iPhone 17, Safari, setting Low: "I'm only getting ~23 fps on
    mobile, seeing lots of z-fighting on tree trunks with the leaf cards. What might be dropping frames since the
    last while. Used to get 60 fps"). Suspect: leaf cards are on in every tier but CPU, Low included; cards lying

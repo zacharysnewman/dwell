@@ -14,6 +14,7 @@ import {
   placementsRust,
   rocksRust,
   validateRocks,
+  CAP_CLIMATES,
   vegetationRust,
   validateVegetation,
   registryBlocks,
@@ -707,6 +708,38 @@ test('the checked-in rocks are valid, generate the checked-in Rust, and take a r
   bad((x) => (x.erosion.threshold = 0.5), /erosion.threshold must be/);
   bad((x) => delete x.erosion.wall, /erosion.wall must be/);
   bad((x) => (x.erosion.flow = 1), /erosion: unknown flow/);
+});
+
+test('a rock\'s capBy picks its treads\' block by the climate, by data alone; bad entries fail naming them (BUGS.md #134)', () => {
+  const rocks = () => JSON.parse(readFileSync(join(here, 'rocks.json'), 'utf8'));
+  const sandstone = rocks().rocks.find((r) => r.name === 'dwell:sandstone');
+  assert.equal(sandstone.cap, 'dwell:red_sandstone', 'red sandstone treads away from the desert');
+  assert.deepEqual(sandstone.capBy, [{ arid: 'dwell:red_sand' }], 'red sand on arid treads');
+  assert.deepEqual(CAP_CLIMATES, ['arid']);
+  // A rock gains a capBy by data alone.
+  const d = rocks();
+  d.rocks.find((r) => r.name === 'dwell:shale').capBy = [{ arid: 'dwell:sand' }];
+  d.arid.rain = 300;
+  const out = rocksRust(validateRocks(d, blocks));
+  assert.match(out, /cap: "dwell:dirt",\n {8}cap_by: &\[CapRule \{ climate: CapClimate::Arid, cap: "dwell:sand" \}\],/);
+  assert.match(out, /arid: Arid \{ rain: 300\.0, wetness: 0\.3, celsius: 6\.0 \},/);
+  const bad = (f, msg) => {
+    const x = rocks();
+    f(x);
+    assert.throws(() => validateRocks(x, blocks), msg);
+  };
+  const ss = (x) => x.rocks.find((r) => r.name === 'dwell:sandstone');
+  bad((x) => (ss(x).capBy = []), /rock dwell:sandstone: capBy must be a list of at least one/);
+  bad((x) => (ss(x).capBy = { arid: 'dwell:red_sand' }), /rock dwell:sandstone: capBy must be a list/);
+  bad((x) => (ss(x).capBy = [{ humid: 'dwell:red_sand' }]), /rock dwell:sandstone: capBy: unknown climate humid \(one of arid\)/);
+  bad((x) => (ss(x).capBy = [{ arid: 'dwell:red_sand', humid: 'dwell:sand' }]), /a capBy entry must be one/);
+  bad((x) => (ss(x).capBy = [{ arid: 'dwell:nothing' }]), /capBy arid "dwell:nothing" is not in the registry/);
+  bad((x) => (ss(x).capBy = [{ arid: 'dwell:red_sand_ramp' }]), /capBy arid dwell:red_sand_ramp must be a full block/);
+  bad((x) => delete x.arid, /rock dwell:sandstone: capBy needs the geology's arid/);
+  bad((x) => (x.arid.wetness = 2), /arid.wetness must be in \[0, 1\]/);
+  bad((x) => delete x.arid.rain, /arid.rain must be in/);
+  bad((x) => (x.arid.celsius = 'warm'), /arid.celsius must be in/);
+  bad((x) => (x.arid.snow = 1), /arid: unknown snow/);
 });
 
 test('R5: plateProvinces map plate settings to stacks by name, by data alone; bad entries fail naming them', () => {

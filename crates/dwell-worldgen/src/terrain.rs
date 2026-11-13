@@ -680,6 +680,8 @@ pub struct BiomeSet {
     /// `rock_first` in order; a rock only in stacks of weight 0 (R5's plate provinces) after
     /// every other palette, so adding one leaves the others' palettes where they were.
     rock_palette: Vec<u16>,
+    /// Per rock, the palette of its first `capBy` tread (the rest follow in order; BUGS.md #134).
+    cap_by_palette: Vec<u16>,
     /// The drainage seen from above (T4), built only where a biome erodes.
     drainage: Option<crate::geology::DrainageField>,
     /// Each stack's lowest soft layer's top (m within its period; T4's base level).
@@ -725,7 +727,7 @@ impl BiomeSet {
                 &self.params,
                 &self.geology,
                 &self.biome_stack,
-                (self.rock_first, &self.rock_palette),
+                (self.rock_first, &self.rock_palette, &self.cap_by_palette),
                 self.drainage.is_some(),
                 &self.soft_tops,
                 (&self.snow, &self.biome_snow),
@@ -949,6 +951,24 @@ impl BiomeSet {
                 rock_palette[i] = push_rock(&mut palettes, r);
             }
         }
+        // The rocks' treads by the climate (`capBy`, BUGS.md #134), after all those.
+        let cap_by_palette = geology
+            .rocks
+            .iter()
+            .map(|r| {
+                let first = palettes.len() as u16;
+                for c in r.cap_by {
+                    let cap = dwell_blocks::require(c.cap);
+                    palettes.push(Bands {
+                        ground: cap,
+                        under: cap,
+                        rock: dwell_blocks::require(r.face),
+                        shore: dwell_blocks::require(r.scree),
+                    });
+                }
+                first
+            })
+            .collect();
         Self {
             list: list.to_vec(),
             palettes,
@@ -960,6 +980,7 @@ impl BiomeSet {
             biome_stack,
             rock_first,
             rock_palette,
+            cap_by_palette,
             drainage: (geology.erosion.strength > 0.0
                 && list.iter().any(|b| b.erosion > 0.0 || b.gullies > 0.0))
             .then(|| crate::geology::DrainageField::of(map, geology.erosion.threshold)),
@@ -1535,6 +1556,40 @@ impl TerrainGenerator {
             Cut::Standing => rock.or(own.map(|r| (r, Part::Tread))),
         };
         (out, rock)
+    }
+
+    /// The palette rock `r`'s tread shows at face-local (x, z) over `base` m: its first `capBy`
+    /// entry whose climate holds there (BUGS.md #134), else its `cap`'s. A world with one biome has
+    /// no geography: the `cap`.
+    fn tread_palette(&self, r: usize, x: i64, z: i64, base: f64) -> u16 {
+        let set = &self.biomes;
+        let cap = set.rock_palette[r] + 1;
+        let rules = set.geology.geology.rocks[r].cap_by;
+        if rules.is_empty() {
+            return cap;
+        }
+        let Some(geo) = set.geography(x, z, base) else {
+            return cap;
+        };
+        let arid = &set.geology.geology.arid;
+        rules
+            .iter()
+            .position(|c| c.climate.holds(arid, geo.celsius, geo.wetness, geo.rain))
+            .map_or(cap, |k| set.cap_by_palette[r] + k as u16)
+    }
+
+    /// Whether ground at face-local (x, z) is arid by the geology's `arid` (rocks.json; BUGS.md
+    /// #134): None in a world with one biome (no geography).
+    pub fn arid_at(&self, x: i64, z: i64) -> Option<bool> {
+        let (base, _, _) = self.map.height_at(x as f64, z as f64);
+        let geo = self.biomes.geography(x, z, base)?;
+        Some(
+            self.biomes
+                .geology
+                .geology
+                .arid
+                .holds(geo.celsius, geo.wetness, geo.rain),
+        )
     }
 
     /// Whether column `col`'s top shows a rock's blocks (the stack's wall, tread or talus: the
@@ -2449,7 +2504,7 @@ impl TerrainGenerator {
             match part {
                 Part::Wall => (palette, band) = (scree, Band::Rock),
                 Part::Talus => (palette, band) = (scree, Band::Ground),
-                Part::Tread => (palette, band) = (scree + 1, Band::Ground),
+                Part::Tread => (palette, band) = (self.tread_palette(r, x, z, base), Band::Ground),
                 Part::Plain if band == Band::Rock => palette = scree,
                 Part::Plain => {}
             }
