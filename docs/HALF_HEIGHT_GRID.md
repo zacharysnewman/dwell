@@ -243,8 +243,11 @@ blocks they should transform into flat blocks".
 - **Every surface block has ramps.** `rampFamilies` now also lists basalt, obsidian, moon dust, moon mare
   dust and the new red sand. `shared/worldgen/gen.mjs` `validateSurfaceRamps` fails, naming the block and
   where it is placed, when a block a worldgen surface rule can place (a biome band, a rock's face/cap/scree,
-  the snow line's covers, a soil type, a grid world's ground, lava's rock) has no `<m>_ramp`. The moon's
-  grid generator doesn't shape ramps yet; its dust has them for when it does.
+  the snow line's covers, a soil type, a grid world's ground, lava's rock) has no `<m>_ramp`. A grid
+  world's generator shapes them by its data (`grids.json` `generator.ramps`: `none`, `strict` §4 or `notched`;
+  BUGS.md #144): the moon's is `notched`, home's Realistic rule, since on its rolling craters the strict rule
+  left 36–43 % of ½ m edges bare (diagonal contours) and the notched rule leaves under 1 %
+  (`dwell-worldgen` `tests/grids.rs` `moon_slopes_are_ramps_not_bare_half_metre_stairs`, both faces).
 - **Notched ramps** (`ramps::top_of_notched`): where the rock shapes the ground (rocks.json
   `shaping.strength` > 0, i.e. Realistic worlds, and `shaping.notched` 1), a column the §4 rule leaves flat
   over a lower edge neighbour on a diagonal contour takes a cardinal ramp toward its lowest such neighbour
