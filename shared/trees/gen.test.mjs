@@ -12,7 +12,7 @@ const fixture = () => JSON.parse(readFileSync(join(here, "fixtures/shrub.json"),
 
 test("the species and the fixture validate", () => {
   const names = loadSpecies(here, blocks).map((s) => s.name);
-  assert.deepEqual(names, ["dwell:oak", "dwell:old_oak", "dwell:old_pine", "dwell:palm", "dwell:pine", "dwell:tall_broadleaf"]);
+  assert.deepEqual(names, ["dwell:oak", "dwell:old_oak", "dwell:old_pine", "dwell:palm", "dwell:pine", "dwell:sagebrush", "dwell:tall_broadleaf"]);
   assert.equal(loadSpecies(join(here, "fixtures"), blocks)[0].name, "test:shrub");
 });
 
@@ -38,12 +38,13 @@ test("a bad entry fails naming the species and the field", () => {
 
 test("every species names its own sapling, a block of the registry (ADR 0079 S4)", () => {
   // The old-growth species (WORK_QUEUE item 32) and the rainforest's tall broadleaf are wild only: no sapling of their own yet.
+  // So is sagebrush (0.62), the mesa floors' shrub.
   const species = loadSpecies(here, blocks).filter((s) => s.sapling);
   const items = species.map((s) => s.sapling.item);
   assert.deepEqual(items, ["dwell:oak_sapling", "dwell:palm_sapling", "dwell:pine_sapling"]);
   for (const s of species) for (const g of s.sapling.plantOn) assert.ok(blocks.has(g), g);
   const wild = loadSpecies(here, blocks).filter((s) => !s.sapling).map((s) => s.name);
-  assert.deepEqual(wild, ["dwell:old_oak", "dwell:old_pine", "dwell:tall_broadleaf"]);
+  assert.deepEqual(wild, ["dwell:old_oak", "dwell:old_pine", "dwell:sagebrush", "dwell:tall_broadleaf"]);
   // A species without a sapling is still valid (it is not planted).
   const s = fixture();
   delete s.sapling;
