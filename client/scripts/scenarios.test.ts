@@ -174,6 +174,32 @@ describe('scenarios', () => {
     ).toThrow(/kind/);
   });
 
+  it('flies to the moon and home (docs/DEV_TOOLS.md "The moon")', () => {
+    const [s] = parseScenarios(
+      file([
+        {
+          name: 'm',
+          steps: [
+            { do: 'flyTo', to: 'moon' },
+            { do: 'flyTo', to: 'moon', face: 'b', landM: 30, maxS: 90 },
+            { do: 'flyTo', to: 'home' },
+          ],
+        },
+      ]),
+    );
+    expect(s.steps).toEqual([
+      { do: 'flyTo', to: 'moon' },
+      { do: 'flyTo', to: 'moon', face: 'b', landM: 30, maxS: 90 },
+      { do: 'flyTo', to: 'home' },
+    ]);
+    const bad = (step: Record<string, unknown>) => () =>
+      parseScenarios(file([{ name: 'm', steps: [{ do: 'flyTo', ...step }] }]));
+    expect(bad({ to: 'mars' })).toThrow(/to/);
+    expect(bad({ to: 'home', face: 'a' })).toThrow(/face/);
+    expect(bad({ to: 'moon', face: 'c' })).toThrow(/face/);
+    expect(bad({ to: 'moon', landM: 1 })).toThrow(/landM/);
+  });
+
   it('zooms the spyglass to a step, or out (docs/SPYGLASS.md)', () => {
     const [s] = parseScenarios(
       file([

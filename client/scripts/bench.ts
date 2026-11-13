@@ -279,6 +279,8 @@ interface Run {
   spots: Spot[];
   /** Each placed `shot`'s camera and how long its view took to settle. */
   shots: ShotResult[];
+  /** Each `flyTo` step's trip (`__dwell.flyTo`: debug/moonTrip.ts `MoonTrip`, `HomeTrip`). */
+  trips: Record<string, unknown>[];
 }
 
 interface ShotResult {
@@ -887,6 +889,24 @@ async function step(run: Run, s: Step): Promise<void> {
       await page.waitForTimeout(500);
       return;
     }
+    case 'flyTo': {
+      const options = Object.fromEntries(
+        Object.entries(s).filter(([k]) => k !== 'do' && k !== 'to'),
+      );
+      const r = await call<{ ok?: Record<string, unknown>; error?: string } | null>(
+        page,
+        `d.flyTo(${JSON.stringify(s.to)}, ${JSON.stringify(options)}).then((ok) => ({ ok }), (e) => ({ error: String(e?.message ?? e) }))`,
+      );
+      if (!r?.ok) throw new Error(`flyTo ${s.to}: ${r?.error ?? 'not playing'}`);
+      run.trips.push(r.ok);
+      const n = (k: string): string => (typeof r.ok?.[k] === 'number' ? f(r.ok[k]) : '–');
+      console.log(
+        s.to === 'moon'
+          ? `  flyTo moon: captured after ${n('captureS')} s, down in ${n('descentS')} s, landed in ${n('landS')} s; fell at ${n('fallMps2')} m/s² (the moon's ${n('gravity')})`
+          : `  flyTo home: released after ${n('releaseS')} s, home's ground back in ${n('returnS')} s`,
+      );
+      return;
+    }
     case 'give': {
       const ok = await call<boolean | null>(
         page,
@@ -1166,6 +1186,7 @@ async function runScenario(
     gotos: [],
     spots: runWide.spots,
     shots: [],
+    trips: [],
   };
   for (const s of sc.steps) await step(run, s);
   const report: ScenarioReport = {
@@ -1181,6 +1202,7 @@ async function runScenario(
     gotos: run.gotos,
     servers: run.servers,
     shots: run.shots,
+    trips: run.trips,
     stalls,
     url,
   };

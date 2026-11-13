@@ -464,6 +464,8 @@ impl LocalCore {
                     Err(e) => format!(r#"{{"error":{e:?}}}"#),
                 }
             }
+            ("moonApproach", [margin, face]) => self.moon_approach(*margin, *face),
+            ("placeHome", [x, y, z]) => self.place_home([*x, *y, *z]),
             ("npcsFight", []) => {
                 // Every NPC turns on the local player as if struck by it (its `npc.fight` rules
                 // then block and strike back; DEV_TOOLS.md): a duel without the first blow.
@@ -605,6 +607,80 @@ impl LocalCore {
             r#"{{"id":{},"species":{:?},"size":{:.1},"distance":{:.1},"at":[{:.1},{:.1},{:.1}]}}"#,
             h.id, h.species, h.size, h.distance, at[0], at[1], at[2]
         )
+    }
+
+    /// The bench's `flyTo: "moon"` (docs/DEV_TOOLS.md "The moon"): the local player, at home,
+    /// placed `margin_m` outside the moon's capture sphere over its spawn on face `face` (1 A, −1
+    /// B), moving with the moon, so a short real flight at it is captured (MOON_WORLD.md §7.3).
+    /// JSON `{"at":[x,y,z],"grid":[x,y,z],"distance":m}` (world and moon-local), or `{"error":…}`.
+    pub fn moon_approach(&mut self, margin_m: f64, face: f64) -> String {
+        let Some(id) = self.local_player_id() else {
+            return r#"{"error":"no local player"}"#.into();
+        };
+        if self.server.grid_state_of(id).is_some_and(|g| g.0 != 0) {
+            return r#"{"error":"not at home: on another grid already"}"#.into();
+        }
+        let f = if face < 0.0 {
+            dwell_world::FaceFrame::B
+        } else {
+            dwell_world::FaceFrame::A
+        };
+        let map = self.server.grids().travel_map();
+        let seed = self.server.config().world_seed;
+        let Some(local) = crate::moon_probe::approach_point(&map, seed, f, margin_m) else {
+            return r#"{"error":"this world has no moon"}"#.into();
+        };
+        let Some(&(index, ..)) = map.grids.iter().find(|g| g.1.name == "dwell:moon") else {
+            return r#"{"error":"this world has no moon"}"#.into();
+        };
+        let t = f64::from(self.server.tick()) / f64::from(dwell_protocol::SIM_HZ);
+        let (at, v) = map.frame(index, t).release(local, [0.0; 3]);
+        if !self.server.place_on_grid(id, at, v) {
+            return r#"{"error":"could not move the player"}"#.into();
+        }
+        let c = dwell_sim::travel::GRID_CENTRE;
+        let d = [0, 1, 2].map(|k| local[k] - c[k]);
+        serde_json::json!({
+            "at": at,
+            "grid": local,
+            "distance": (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt(),
+        })
+        .to_string()
+    }
+
+    /// The local player, at home, stood with its feet at `feet` (world m, either face), at rest:
+    /// the bench's way back to where a trip started (`flyTo: "home"`). JSON `{"at":…}` or an error.
+    pub fn place_home(&mut self, feet: [f64; 3]) -> String {
+        let Some(id) = self.local_player_id() else {
+            return r#"{"error":"no local player"}"#.into();
+        };
+        if self.server.grid_state_of(id).is_some_and(|g| g.0 != 0) {
+            return r#"{"error":"not at home"}"#.into();
+        }
+        let Some(h) = self
+            .server
+            .player_of_session(LOCAL_SESSION)
+            .and_then(|p| self.server.player_handle_of(p))
+        else {
+            return r#"{"error":"no local player"}"#.into();
+        };
+        if !feet.iter().all(|v| v.is_finite()) {
+            return r#"{"error":"feet must be finite"}"#.into();
+        }
+        let f = dwell_world::FaceFrame::at_height(feet[1]);
+        let half = {
+            let (_, _, players) = self.server.sim();
+            f64::from(players.half_height(h))
+        };
+        let centre = [feet[0], f.y(f.y(feet[1]) + half), feet[2]];
+        if !self.server.place_on_grid(id, centre, [0.0; 3]) {
+            return r#"{"error":"could not move the player"}"#.into();
+        }
+        serde_json::json!({ "at": feet }).to_string()
+    }
+
+    fn local_player_id(&self) -> Option<u16> {
+        self.server.player_of_session(LOCAL_SESSION)
     }
 
     pub fn teleport_local_player(&mut self, feet: [f64; 3]) -> bool {

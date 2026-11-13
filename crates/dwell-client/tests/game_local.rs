@@ -4109,3 +4109,123 @@ fn the_target_outline_can_be_hidden_for_recordings() {
         "outlined again"
     );
 }
+
+dwell_world::both_faces!(
+    /// DEV_TOOLS.md "The moon": the bench's moon trip natively. `__dwell.moon()`'s report
+    /// (`Game::moon_report`) from home after the dev move (`LocalCore::moon_approach`) puts the
+    /// player just outside the capture sphere over the moon's face `f`: its grid home, the moon's
+    /// centre the approach's distance off, home's gravity now and the moon's ⅙; flying along the
+    /// report's look (as `flyTo` steers: level by the yaw, crouch or Space for the pitch) is
+    /// captured, and then the report says the moon, its gravity, and a height over its ground on
+    /// that face.
+    fn the_moon_report_steers_a_flight_into_its_capture(f: FaceFrame) {
+        let mut rig = Rig::with_generator(GENERATOR_SANDBOX);
+        assert!(rig.run_until(60 * 20, |r| {
+            r.game
+                .as_ref()
+                .is_some_and(|g| g.debug_state().terrain_ready)
+        }));
+        rig.input.flight.set_allowed(true);
+        rig.input.flight.set(true);
+        rig.run_until(30, |_| false);
+        let at_home = rig.game.as_ref().unwrap().moon_report().expect("a moon");
+        assert_eq!(at_home.grid, "home");
+        assert!(at_home.ground_held, "home's chunk under the spawn held");
+
+        let face = if f == dwell_world::FaceFrame::A {
+            1.0
+        } else {
+            -1.0
+        };
+        let r = rig.core.moon_approach(2000.0, face);
+        let j: serde_json::Value = serde_json::from_str(&r).unwrap();
+        assert!(j.get("error").is_none(), "{r}");
+        rig.run_until(30, |_| false);
+        let m = rig.game.as_ref().unwrap().moon_report().unwrap();
+        assert_eq!(m.grid, "home", "outside the capture sphere");
+        assert!(
+            (m.capture_m..m.capture_m + 4000.0).contains(&m.distance),
+            "just outside the capture ({} m): {} m",
+            m.capture_m,
+            m.distance
+        );
+        let home_g = f64::from(PlayerControllerConfig::default().body.gravity);
+        assert!((m.gravity_now - home_g).abs() < 1e-6);
+        assert!((m.moon_gravity / home_g - 0.1667).abs() < 1e-4);
+        assert_eq!(m.ground_m, None);
+
+        // Steer by the report, as `flyTo` does (moonTrip.ts `aim`).
+        let mut captured = false;
+        for _ in 0..60 * 60 {
+            let m = rig.game.as_ref().unwrap().moon_report().unwrap();
+            if m.grid == "moon" {
+                captured = true;
+                break;
+            }
+            let (yaw, pitch) = m.look;
+            rig.input.look.yaw = yaw;
+            rig.input.look.pitch = pitch;
+            rig.input.set_key("KeyW", pitch.abs() < 70.0);
+            rig.input.set_key("Space", pitch > 20.0);
+            rig.input.set_key("KeyC", pitch < -20.0);
+            rig.run_until(6, |_| false);
+        }
+        for k in ["KeyW", "Space", "KeyC"] {
+            rig.input.set_key(k, false);
+        }
+        assert!(captured, "captured flying along the report's look");
+        let m = rig.game.as_ref().unwrap().moon_report().unwrap();
+        assert_eq!(rig.game.as_ref().unwrap().grid(), m.index);
+        assert!(
+            (m.gravity_now - m.moon_gravity).abs() < 1e-9,
+            "the moon's gravity now"
+        );
+        assert!(m.distance <= m.capture_m + 50.0, "{} m", m.distance);
+        let g = m.ground_m.expect("a height over the moon's ground");
+        assert!(
+            (0.0..m.capture_m).contains(&g),
+            "over the moon's ground on this face: {g} m"
+        );
+        assert_eq!(
+            rig.scene.borrow().camera_face,
+            Some(f),
+            "on the moon's face {f:?}"
+        );
+
+        // Down as `flyTo` goes (crouch held, slower under 600 m) to 40 m, then the fall at ⅙ g.
+        rig.input.look.pitch = 0.0;
+        rig.input.set_key("KeyC", true);
+        let mut down = false;
+        for _ in 0..60 * 60 {
+            let g = rig.game.as_ref().unwrap().moon_report().unwrap().ground_m;
+            let g = g.unwrap();
+            if g < 40.0 {
+                down = true;
+                break;
+            }
+            rig.input
+                .flight
+                .set_speed_level(if g < 600.0 { 6.0 } else { 11.0 });
+            rig.run_until(6, |_| false);
+        }
+        rig.input.set_key("KeyC", false);
+        assert!(down, "down to 40 m over the moon's ground");
+        rig.run_until(60, |_| false);
+        rig.input.flight.set(false);
+        rig.run_until(15, |_| false);
+        let v0 = rig.game.as_ref().unwrap().moon_report().unwrap().up_mps;
+        rig.run_until(60, |_| false);
+        let m = rig.game.as_ref().unwrap().moon_report().unwrap();
+        let fall = v0 - m.up_mps;
+        assert!(
+            (fall / m.moon_gravity - 1.0).abs() < 0.1,
+            "fell {fall} m/s in 1 s (the moon's {} m/s²)",
+            m.moon_gravity
+        );
+        let landed = rig.run_until(60 * 30, |r| {
+            let m = r.game.as_ref().unwrap().moon_report().unwrap();
+            m.ground_m.unwrap() < 0.3 && m.up_mps.abs() < 0.1
+        });
+        assert!(landed, "landed on the moon's ground");
+    }
+);
