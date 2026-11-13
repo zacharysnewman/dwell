@@ -4833,7 +4833,13 @@ impl<S: Scene> Game<S> {
             scene.set_own_shadow(c.active.then_some(own));
             // And you see it from the neck down, in first person (CHARACTERS.md §5.1); from a
             // placed camera (theater mode, the bench's camera) your whole body, as others see it.
-            let (neck_down, whole) = own_body_draw(c.active, self.view.is_some());
+            let placed = self.view.as_ref().map(|v| {
+                (0..3)
+                    .map(|k| (v.eye[k] - eye[k]).powi(2))
+                    .sum::<f64>()
+                    .sqrt()
+            });
+            let (neck_down, whole) = own_body_draw(c.active, placed);
             scene.set_own_body(neck_down.then_some(own));
             if whole {
                 drop(scene);
@@ -6038,11 +6044,19 @@ struct DeathCamera {
     face: FaceFrame,
 }
 
+/// How near your own eyes a placed camera is still in your head (m): drawn as first person.
+const PLACED_AT_EYES_M: f64 = 1.0;
+
 /// How your own (living) body is drawn this frame: `(neck_down, whole)`. In first person from the
 /// neck down (CHARACTERS.md §5.1); from a placed camera (theater mode, the bench's camera: the
 /// record skill's third-person shots) whole, as others see it; not at all while inactive.
-fn own_body_draw(active: bool, placed_camera: bool) -> (bool, bool) {
-    (active && !placed_camera, active && placed_camera)
+/// `placed_from_eyes`: the placed camera's distance from your own eyes (none: no placed camera).
+/// One within `PLACED_AT_EYES_M` of them (the bench's `spot` shots stand you at the camera) is
+/// first person: your whole body drawn there filled the frame with its insides (grey, every
+/// `test:forest` shot, WORK_QUEUE item 32).
+fn own_body_draw(active: bool, placed_from_eyes: Option<f64>) -> (bool, bool) {
+    let whole = placed_from_eyes.is_some_and(|d| d > PLACED_AT_EYES_M);
+    (active && !whole, active && whole)
 }
 
 /// The camera over a dead body at `feet`, looking along `yaw`: on the face the body lies on (the
@@ -6208,10 +6222,26 @@ mod tests {
     fn a_placed_camera_draws_your_whole_body() {
         // The record skill's third-person shots (theater mode on the player) showed no player: a
         // placed camera drew neither the first-person body nor the whole one. face-a-only: no face.
-        assert_eq!(own_body_draw(true, false), (true, false));
-        assert_eq!(own_body_draw(true, true), (false, true));
-        assert_eq!(own_body_draw(false, true), (false, false));
-        assert_eq!(own_body_draw(false, false), (false, false));
+        assert_eq!(own_body_draw(true, None), (true, false));
+        assert_eq!(own_body_draw(true, Some(4.0)), (false, true));
+        assert_eq!(own_body_draw(false, Some(4.0)), (false, false));
+        assert_eq!(own_body_draw(false, None), (false, false));
+    }
+
+    #[test]
+    fn a_placed_camera_at_your_eyes_draws_you_as_first_person() {
+        // Every `test:forest` bench shot came out flat grey (WORK_QUEUE item 32): the `spot` shot
+        // stands you at the camera, and your whole body drawn around it filled the frame.
+        // face-a-only: no face involved.
+        assert_eq!(own_body_draw(true, Some(0.0)), (true, false));
+        assert_eq!(
+            own_body_draw(true, Some(PLACED_AT_EYES_M * 0.5)),
+            (true, false)
+        );
+        assert_eq!(
+            own_body_draw(true, Some(PLACED_AT_EYES_M + 0.5)),
+            (false, true)
+        );
     }
 
     #[test]

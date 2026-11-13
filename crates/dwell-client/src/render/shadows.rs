@@ -412,14 +412,16 @@ impl Cache {
 
     /// Why each far cascade wants drawing again this frame (the nearest is always drawn; its
     /// entry is `Missing`). `casters(i, kept)` is the signature of the casters touching kept
-    /// cascade `i`'s box now; `moving` whether moving casters (other players) are about.
+    /// cascade `i`'s box now; `moving(kept)` whether moving casters (other players, falling
+    /// pieces) touch a kept cascade's box now: one anywhere else in the world doesn't draw it
+    /// again (until 0.58.x any player anywhere redrew every far cascade every `refreshFrames`).
     pub fn wants(
         &self,
         t: &ShadowTunables,
         plan: &Plan,
         eye: V3,
         frame: u64,
-        moving: bool,
+        moving: &dyn Fn(&Cascade) -> bool,
         casters: &mut dyn FnMut(usize, &Cascade) -> u64,
     ) -> Vec<Want> {
         let same = self.light == Some((plan.caster.moon, plan.tier));
@@ -444,7 +446,9 @@ impl Cache {
                     Want::Turned
                 } else if casters(i, &k.cascade.rebased(eye)) != k.casters {
                     Want::Changed
-                } else if moving && frame >= k.frame + u64::from(plan.tier.refresh_frames) {
+                } else if frame >= k.frame + u64::from(plan.tier.refresh_frames)
+                    && moving(&k.cascade.rebased(eye))
+                {
                     Want::Moving
                 } else {
                     Want::Nothing
@@ -1145,7 +1149,7 @@ mod tests {
         moving: bool,
         sig: &dyn Fn(usize) -> u64,
     ) -> (Vec<Want>, Frame) {
-        let wants = cache.wants(&SHADOWS, p, eye, n, moving, &mut |i, _| sig(i));
+        let wants = cache.wants(&SHADOWS, p, eye, n, &|_| moving, &mut |i, _| sig(i));
         let f = cache.schedule(p, &wants, eye);
         cache.drew(p, &f, n, sig);
         (wants, f)
@@ -1217,6 +1221,29 @@ mod tests {
     }
 
     #[test]
+    fn a_moving_caster_outside_a_far_cascade_does_not_draw_it_again() {
+        // WORK_QUEUE item 32: any player anywhere (the bench's own whole body included) redrew a
+        // far cascade every `refreshFrames`, the canopy's leaves with it (`gpu.shadows` p95 9 ms
+        // at the forest edge). Only a moving caster touching the kept box draws it again.
+        // face-a-only: the schedule has no face (the boxes are the light's).
+        let eye = [0.0, 60.0, 0.0];
+        let p = noon_plan(ShadowQuality::High, eye);
+        let n = p.cascades.len();
+        let mut cache = Cache::default();
+        for k in 0..n as u64 {
+            step(&mut cache, &p, eye, k, false, &|_| 1);
+        }
+        let later = n as u64 + u64::from(p.tier.refresh_frames) * 2;
+        let far_away = |c: &Cascade| c.touches([5000.0, 0.0, 5000.0], [1.0, 2.0, 1.0]);
+        let wants = cache.wants(&SHADOWS, &p, eye, later, &far_away, &mut |_, _| 1);
+        assert!(wants[1..].iter().all(|w| *w == Want::Nothing), "{wants:?}");
+        // One beside the eye touches every far cascade's box: drawn again, as before.
+        let beside = |c: &Cascade| c.touches([3.0, 0.0, 0.0], [1.0, 2.0, 1.0]);
+        let wants = cache.wants(&SHADOWS, &p, eye, later, &beside, &mut |_, _| 1);
+        assert!(wants[1..].iter().all(|w| *w == Want::Moving), "{wants:?}");
+    }
+
+    #[test]
     fn moving_out_of_the_slack_or_turning_the_light_draws_again_the_most_urgent_first() {
         let eye = [0.0, 60.0, 0.0];
         let p = noon_plan(ShadowQuality::High, eye);
@@ -1230,7 +1257,7 @@ mod tests {
         let slack1 = p.cascades[1].radius - p.cascades[1].far;
         let moved = [eye[0] + slack1 * 1.1, eye[1], eye[2]];
         let q = noon_plan(ShadowQuality::High, moved);
-        let wants = cache.wants(&SHADOWS, &q, moved, 10, false, &mut |_, _| 1);
+        let wants = cache.wants(&SHADOWS, &q, moved, 10, &|_| false, &mut |_, _| 1);
         assert_eq!(wants[1], Want::Moved);
         assert_eq!(wants[n - 1], Want::Nothing);
         // The light turned past the threshold: every far one wants it, the moved one first.
@@ -1238,7 +1265,7 @@ mod tests {
         let tilt = (SHADOWS.cascades.light_turn_deg * 2.0).to_radians();
         let d = p.caster.dir;
         turned.caster.dir = normalize([d[0] + tilt, d[1], d[2]]);
-        let wants = cache.wants(&SHADOWS, &turned, moved, 10, false, &mut |_, _| 1);
+        let wants = cache.wants(&SHADOWS, &turned, moved, 10, &|_| false, &mut |_, _| 1);
         assert_eq!(wants[1], Want::Moved);
         assert!(wants[2..].iter().all(|w| *w == Want::Turned), "{wants:?}");
         let f = cache.schedule(&turned, &wants, moved);
@@ -1249,7 +1276,7 @@ mod tests {
         // The light changed (the moon) or the tier: nothing kept counts.
         let mut moon = q.clone();
         moon.caster.moon = true;
-        let wants = cache.wants(&SHADOWS, &moon, moved, 10, false, &mut |_, _| 1);
+        let wants = cache.wants(&SHADOWS, &moon, moved, 10, &|_| false, &mut |_, _| 1);
         assert!(wants.iter().all(|w| *w == Want::Missing));
     }
 

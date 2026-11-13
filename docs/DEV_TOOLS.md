@@ -1208,6 +1208,17 @@ distance). `forest-edge` is the edge alone (6 s) for quick A/Bs. (2026-11-13: ch
 their leaves, the edge's triangles ~5.4 M → 4.0 M, its frame unchanged within noise: 23.4 / 25.4 ms p50 / p95;
 WORK_QUEUE item 32.)
 
+**Every number above was of a covered view** (found 2026-11-13, WORK_QUEUE item 32): the `spot` shot stands
+the player at the camera, and a placed camera drew your whole body around it, so every `test:forest` shot (and
+the frame recorded after it) was the inside of your body: grey, the scene mostly hidden by it (cheaper `near`,
+`composite` and `clouds`), and your body a moving shadow caster, which redrew a far cascade every
+`refreshFrames` (`gpu.shadows` p95 9 ms at the edge). A placed camera within 1 m of your eyes now draws you as
+first person (`game.rs` `own_body_draw`), and a far cascade is drawn again only for the moving casters touching
+its box. The real view (M1 Air, High, `--unthrottled`, p50 / p95 ms), covered → real: `gpu.frame` inside
+13.6 / 17.0 → 14.1 / 15.4, edge 21.5 / 25.7 → 20.6 / 25.4, above 10.3 / 12.6 → 12.5 / 14.2; `gpu.shadows`
+inside 3.0 / 6.1 → 0.7 / 1.2, edge 1.0 / 9.0 → 0.8 / 1.1, above 0.4 / 2.8 → 0.3 / 0.5. The edge's frame is
+now `gpu.near` 16.0, `composite` 6.5, `clouds` 5.4 (p50): the sun shadows are not its cost.
+
 **Far tree impostors** (2026-11-12, WORK_QUEUE item 31): the configuration `impostors-off` (`?impostors=0`)
 draws the far trees as before (the LOD sections' tree cells, near leaves to the full-detail distance); `npm run
 bench -- --warm --compare --configs impostors-off forest-perf` is the before/after. `gpu.frame` p95, off → on (48 m
