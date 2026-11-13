@@ -10,10 +10,10 @@ use std::sync::Arc;
 
 use dwell_worldgen::bifacial::face_seed;
 use dwell_worldgen::config::world_config;
-use dwell_worldgen::geology::{GEOLOGY, PlateSetting};
+use dwell_worldgen::geology::{GEOLOGY, Part, PlateSetting};
 use dwell_worldgen::plate_tectonics::PlateTectonics;
 use dwell_worldgen::plates::{BoundaryKind, PLATES};
-use dwell_worldgen::terrain::TerrainGenerator;
+use dwell_worldgen::terrain::{Band, TerrainGenerator};
 use dwell_worldgen::worldmap::WorldMap;
 
 const NAME: &str = "test:realistic";
@@ -176,5 +176,81 @@ dwell_world::both_faces!(
             }
         }
         assert!(seen > 0, "the noise's provinces are met");
+    }
+);
+
+dwell_world::both_faces!(
+    /// BUGS.md #134 (owner, 2026-11-13: "We need a red brown sand for the red desert areas"): the
+    /// red desert's floors — the sandstone's flat treads (the basins' red beds, the badlands, the
+    /// mesas, their tops too) where the ground is arid (rocks.json `arid`, the biomes' climate
+    /// values) — are red sand; elsewhere, forests included, they stay red sandstone (sandstone's
+    /// `capBy`). Its walls are red sandstone everywhere. Before 0.60 every tread was red sandstone
+    /// and on seed 42 the nearest red sand lay 23 km from its mesas.
+    fn the_red_desert_floors_are_red_sand(f: FaceFrame) {
+        let sand = ["dwell:red_sand", "dwell:red_sand_ramp"];
+        let stone = ["dwell:red_sandstone", "dwell:red_sandstone_ramp"];
+        let forest =
+            |b: &str| b.contains("forest") || b.contains("boreal") || b.contains("old_growth");
+        let (mut arid, mut humid, mut forests) = (0, 0, 0);
+        for world in SEEDS {
+            let g = generator(face_seed(world, f.face));
+            let r = g.world().radius() as i32;
+            let mut wrong = Vec::new();
+            for x in (-r..=r).step_by(250) {
+                for z in (-r..=r).step_by(250) {
+                    let col = g.column_at(x, z);
+                    // A floor: a rock's ground (a wall is the rock band), flat to its neighbours.
+                    if col.outside
+                        || col.wet()
+                        || !g.is_rock_palette(&col)
+                        || col.band != Band::Ground
+                    {
+                        continue;
+                    }
+                    let (rock, part) = g.rock_at_surface(i64::from(x), i64::from(z));
+                    if rock.name != "dwell:sandstone" || part != Part::Tread {
+                        continue;
+                    }
+                    let Some(y) = g.ground_y(x, z) else { continue };
+                    let flat = [(1, 0), (-1, 0), (0, 1), (0, -1)]
+                        .iter()
+                        .all(|(dx, dz)| g.ground_y(x + dx, z + dz) == Some(y));
+                    let top = dwell_blocks::info(g.state_at(x, y, z)).name;
+                    let block = top.split('[').next().unwrap_or(top);
+                    if !flat || !(sand.contains(&block) || stone.contains(&block)) {
+                        continue;
+                    }
+                    let dry = g.arid_at(i64::from(x), i64::from(z)).expect("a geography");
+                    let biome = g.biomes()
+                        [usize::from(g.biome_mix(i64::from(x), i64::from(z)).chosen)]
+                    .name;
+                    if dry {
+                        arid += 1;
+                    } else {
+                        humid += 1;
+                    }
+                    let in_forest = forest(biome);
+                    forests += usize::from(in_forest);
+                    let want_sand = dry && !in_forest;
+                    if sand.contains(&block) != want_sand {
+                        wrong.push((x, z, block, dry, biome));
+                    }
+                }
+            }
+            assert!(
+                wrong.is_empty(),
+                "seed {world}: {} floors wrong (x, z, top, arid, biome): {:?}",
+                wrong.len(),
+                &wrong[..wrong.len().min(8)]
+            );
+        }
+        println!(
+            "{:?}: arid {arid}, humid {humid}, forest {forests} floors",
+            f.face
+        );
+        assert!(
+            arid >= 50 && humid >= 50 && forests >= 10,
+            "arid {arid}, humid {humid}, forest {forests} floors sampled"
+        );
     }
 );

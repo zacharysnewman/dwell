@@ -35,12 +35,57 @@ pub struct Rock {
     pub solubility: f64,
     /// The block its walls show.
     pub face: &'static str,
-    /// The block its treads show.
+    /// The block its treads show where no `cap_by` rule holds.
     pub cap: &'static str,
+    /// The treads' block by the climate (rocks.json `capBy`, the first whose climate holds; BUGS.md
+    /// #134): red sand on a sandstone's treads where it is arid, its `cap` elsewhere.
+    pub cap_by: &'static [CapRule],
     /// The block its talus shows.
     pub scree: &'static str,
     /// Its colour (0xrrggbb), Chisel's rock overlay's.
     pub color: u32,
+}
+
+/// A climate a rock's tread block depends on (rocks.json `capBy`; the code's vocabulary).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CapClimate {
+    /// Dry ground: [`Arid`]'s rain and wetness or less.
+    Arid,
+}
+
+/// One `capBy` entry: in `climate`, a tread shows `cap`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct CapRule {
+    pub climate: CapClimate,
+    pub cap: &'static str,
+}
+
+/// What arid ground is (rocks.json `arid`): the biomes' climate values (as a preset's `where`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Arid {
+    /// Annual rain (mm) at most, where the world has a climate (a world without one: any).
+    pub rain: f64,
+    /// The geography's wetness (0..1: the rain shadow's rainfall and the rivers') at most.
+    pub wetness: f64,
+    /// °C at least: a hot desert's, not a cold one's (the tundra and the boreal's dry ground).
+    pub celsius: f64,
+}
+
+impl Arid {
+    /// Whether ground of `celsius` °C, `wetness` and `rain` (mm; None without a climate) is arid.
+    pub fn holds(&self, celsius: f64, wetness: f64, rain: Option<f64>) -> bool {
+        celsius >= self.celsius && wetness <= self.wetness && rain.is_none_or(|r| r <= self.rain)
+    }
+}
+
+impl CapClimate {
+    /// Whether this climate holds on ground of `celsius` °C, `wetness` and `rain` (mm, None
+    /// without a climate).
+    pub fn holds(self, arid: &Arid, celsius: f64, wetness: f64, rain: Option<f64>) -> bool {
+        match self {
+            CapClimate::Arid => arid.holds(celsius, wetness, rain),
+        }
+    }
 }
 
 /// One layer of a stack: a rock and its thickness (m).
@@ -93,6 +138,8 @@ pub struct Geology {
     pub ice_block: &'static str,
     /// The rock provinces from plate history (`rocks.json` `plateProvinces`, R5).
     pub plate_provinces: PlateProvinces,
+    /// What arid ground is, for the rocks' `capBy` (`rocks.json` `arid`).
+    pub arid: Arid,
 }
 
 /// A column's setting on its face's plate layout (R5; the code's vocabulary, `plateProvinces`

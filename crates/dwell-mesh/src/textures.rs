@@ -44,83 +44,17 @@ pub const ATLAS_SIZE: usize = CELL * ATLAS_CELLS;
 /// Tile slots in the atlas (cells × cells), the length of [`tile_grids`].
 pub const ATLAS_TILES: usize = ATLAS_CELLS * ATLAS_CELLS;
 
-/// The tiles in atlas order (the registry's texture names).
-pub const TILE_ORDER: [&str; 55] = [
-    "plain",
-    "grass",
-    "grassSide",
-    "dirt",
-    "stone",
-    "sand",
-    "water",
-    "ladder",
-    "grid",
-    "logSide",
-    "logTop",
-    "leaves",
-    "tallGrass",
-    // A dirt side under grass (dirt's `sideUnder`): the turf's skirt over the dirt's top edge.
-    "dirtSkirt",
-    // The torch's plain stick, its two cells (docs/LIGHTS.md; its flame is the flame effect, §6).
-    "torch",
-    "torchTop",
-    // The bedrock between the faces (docs/BIFACIAL_WORLD.md §2).
-    "bedrock",
-    // Snowy grass (its top, its side's fringe, dirt's skirt under it) and snowy leaves (ADR 0049).
-    "snow",
-    "snowSide",
-    "dirtSnowSkirt",
-    "snowyLeavesTop",
-    "snowyLeavesSide",
-    // The build platform's boards (docs/BUILT_BODIES.md §3).
-    "planks",
-    // Dynamite's sides and ends (docs/EXPLOSIVES.md).
-    "dynamite",
-    "dynamiteTop",
-    // The blue and green dynamites (docs/EXPLOSIVES.md §4).
-    "dynamiteBlue",
-    "dynamiteBlueTop",
-    "dynamiteGreen",
-    "dynamiteGreenTop",
-    "dynamiteYellow",
-    "dynamiteYellowTop",
-    // Fresh wood inside an axe's cut (a wood's `cut.tile`, shared/tools/tools.json; ADR 0067).
-    "logCut",
-    // The end grain inside an octagonal log's bark ring (its `crossSection.heart`, ADR 0072).
-    "logHeart",
-    // Lava's rocks and its molten surface (docs/proposals/VOLCANOES.md §6, WATER_RENDERING.md §17).
-    "basalt",
-    "obsidian",
-    "lava",
-    // Glacier ice's top and sides (0.52.45; plain snow takes `snow` on every face).
-    "glacierIceTop",
-    "glacierIceSide",
-    // Red sandstone, the mesa's bedded rock (0.52.66).
-    "redSandstone",
-    // The moon's gray dust (docs/proposals/MOON_WORLD.md M-1).
-    "moonDust",
-    // The moon's darker mare dust (MOON_WORLD.md §12 Q1).
-    "moonMareDust",
-    // The leaf cards' painted clump (shared/look/leaves.json `cards.tile`).
-    "leafCard",
-    // The crack stages a damaged block's faces are multiplied by (shared/textures/cracks.json,
-    // docs/BLOCK_DAMAGE.md §6.3): stone, soil and wood, hairline to branching.
-    "crackStone1",
-    "crackStone2",
-    "crackStone3",
-    "crackStone4",
-    "crackSoil1",
-    "crackSoil2",
-    "crackSoil3",
-    "crackSoil4",
-    "crackWood1",
-    "crackWood2",
-    "crackWood3",
-    "crackWood4",
-    // The fallback look of a state whose look or textures this build lacks (synced from a server,
-    // ADR 0038): a magenta and black checker, never content.
-    MISSING_TILE,
-];
+/// The tiles in atlas order: the texture set's own list (`PAINTERLY_TILES`, materials.json's
+/// `tiles` order), so the atlas lays out every tile the set paints and can't drift from it (0.59.1
+/// baked `redSand` but left it out of a hand-kept list, and red sand drew as the checker, BUGS.md
+/// #133). The registry's texture names, the utility tiles (`plain`, `grid`, `missing`), the crack
+/// stages and the looks' tiles are all in the set: `shared/textures/gen.mjs` fails on a name a
+/// block asks for that it doesn't paint.
+pub const TILE_ORDER: [&str; PAINTERLY_TILES.len()] = PAINTERLY_TILES;
+const _: () = assert!(
+    TILE_ORDER.len() <= ATLAS_TILES,
+    "the atlas holds every tile"
+);
 
 /// The fallback tile (ADR 0038 decision 7).
 pub const MISSING_TILE: &str = "missing";
@@ -388,7 +322,8 @@ mod tests {
 
     #[test]
     fn tiles_sit_in_the_atlas_with_wrapped_gutters() {
-        let r = tile_rect("grass");
+        // The second tile: the atlas's second cell of the bottom row.
+        let r = tile_rect(TILE_ORDER[1]);
         assert_eq!(r.u0, (CELL + GUTTER) as f64 / ATLAS_SIZE as f64);
         assert_eq!(r.v0, GUTTER as f64 / ATLAS_SIZE as f64);
         let atlas = build_atlas();

@@ -19,6 +19,8 @@ export interface BiomeRefs {
 }
 export const GEOLOGY: Record<string, Record<string, Range>>;
 export const JOINTING: readonly string[];
+/** The climates a rock's `capBy` may name (geology.rs `CapClimate`). */
+export const CAP_CLIMATES: readonly string[];
 export function validateRocks<T>(data: T, blocks: Map<string, BlockInfo>): T;
 export const VEGETATION: Record<string, Record<string, Range>>;
 export function validateVegetation<T>(

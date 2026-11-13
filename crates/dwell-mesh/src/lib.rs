@@ -104,6 +104,60 @@ mod fallback_tests {
         }
     }
 
+    /// Every texture tile a state asks for (its faces', its `sideUnder` skirts' and its log
+    /// heart's) that the atlas layout lacks, as (state, tile).
+    fn tiles_missing_from_atlas(
+        states: &[dwell_blocks::StateInfo],
+    ) -> Vec<(&'static str, &'static str)> {
+        let mut out = Vec::new();
+        for s in states {
+            let mut asks: Vec<&'static str> = Vec::new();
+            if let Some(t) = s.textures {
+                asks.extend([t.top, t.side, t.bottom]);
+            }
+            asks.extend(s.side_under.iter().map(|r| r.side));
+            asks.extend(s.cross_section.and_then(|c| c.heart));
+            for tile in asks {
+                if !has_tile(tile) && !out.contains(&(s.name, tile)) {
+                    out.push((s.name, tile));
+                }
+            }
+        }
+        out
+    }
+
+    /// BUGS.md #133: 0.59.0 baked `redSand` but the hand-kept atlas layout lacked it, so every red
+    /// sand cell and its ramps drew as the checker. Every tile any block (and its ramp family) asks
+    /// for is in the layout.
+    #[test]
+    fn every_tile_a_block_asks_for_is_in_the_atlas_layout() {
+        assert_eq!(tiles_missing_from_atlas(&STATES), []);
+        for name in ["dwell:red_sand", "dwell:red_sand_ramp"] {
+            let states = STATES
+                .iter()
+                .filter(|s| s.name.split('[').next() == Some(name));
+            assert!(states.clone().count() > 0, "{name}");
+            for s in states {
+                assert_eq!(s.textures.map(|t| t.top), Some("redSand"), "{}", s.name);
+                assert!(style::drawable(s, &FLUIDS), "{}", s.name);
+            }
+        }
+    }
+
+    /// The guard catches a block by data alone: the fixture's `test:glow`
+    /// (`shared/blocks/fixtures/test.json`) asks for `testGlow`, a tile the set doesn't paint.
+    #[test]
+    fn a_fixture_block_with_an_unpainted_tile_fails_the_atlas_guard() {
+        let missing = tiles_missing_from_atlas(&dwell_blocks::fixture::STATES);
+        assert!(!missing.is_empty());
+        assert!(
+            missing
+                .iter()
+                .all(|(s, t)| s.starts_with("test:glow") && *t == "testGlow"),
+            "{missing:?}"
+        );
+    }
+
     #[test]
     fn a_state_this_build_cannot_draw_gets_the_checker_on_its_own_shape() {
         let stone = *dwell_blocks::info(dwell_blocks::require("dwell:stone"));
