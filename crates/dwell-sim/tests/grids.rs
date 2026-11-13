@@ -467,3 +467,47 @@ dwell_world::both_faces!(
         assert_eq!(c.p.stats().snaps, snaps, "no snap through the release");
     }
 );
+
+dwell_world::both_faces!(
+    /// The owner (2026-11-13): "If you can actually fly to the moon/sun, we need a much faster fly
+    /// speed for creative. But only in space." Far flight's least speed on face `f`, as the server
+    /// sets it and as the client's travel rules predict it (the same data, the same numbers): none
+    /// at the ground or in the air under the atmosphere's base, the data's space speed far out
+    /// between home and the moon, easing down to none toward the moon's ground.
+    fn far_flight_is_space_speed_in_space_only_and_server_and_client_agree(f: FaceFrame) {
+        let mut sc = Scene::new(flat());
+        let grids = sc.server().grids();
+        let map = grids.travel_map();
+        let caps = Capabilities::this_build();
+        let rules = dwell_worldgen::grids::travel();
+        let t = 1234.0;
+        let both = |p: [f64; 3]| {
+            let server = grids.far_speed(p, t, &caps);
+            let client = map.far_speed_at(p, t);
+            assert_eq!(server, client, "server and client at {p:?}");
+            server
+        };
+        let over = |h: f64| f.point([300.0, h, -200.0]);
+        assert_eq!(both(over(40.0)), 0.0, "the ground's fly speed unchanged");
+        assert_eq!(both(over(2900.0)), 0.0, "in the air (under the base)");
+        assert!(
+            both(over(20_000.0)) < rules.far_max_mps * 0.6,
+            "the air thinning"
+        );
+        // Half way to the moon: space, far from every slab.
+        let moon = map.frame(1, t).to_world(GRID_CENTRE);
+        let mid = std::array::from_fn(|k| moon[k] * 0.5);
+        assert_eq!(both(mid), rules.far_max_mps, "the space speed");
+        // Toward the moon's ground on its face `f`: easing down, none within `aboveM`.
+        let mf = map.frame(1, t);
+        let mut last = f64::INFINITY;
+        for h in [60_000.0, 30_000.0, 10_000.0, 4000.0, 1000.0] {
+            let p = mf.to_world(f.point([0.0, 100.0 + h, 0.0]));
+            let v = both(p);
+            assert!(v <= last, "slower nearer: {v} at {h} m after {last}");
+            assert!(v <= rules.far_per_s * (h + 200.0), "{v} at {h} m");
+            last = v;
+        }
+        assert_eq!(last, 0.0, "a landing's own speed near the ground");
+    }
+);

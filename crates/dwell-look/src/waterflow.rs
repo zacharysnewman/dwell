@@ -76,6 +76,10 @@ pub struct LiquidFlowLook {
     pub shore_band_softness: f64,
     pub shore_strength: f64,
     pub shore_wobble: f64,
+    /// The shore's corners (WATER_RENDERING.md §21; owner, 2026-11-13: 'smoother or thicker around
+    /// corners, so it doesn't looks so squared off'): an inner corner's fillet radius (m); an
+    /// outer corner is always round (the Euclidean distance to it).
+    pub shore_corner_radius_m: f64,
 }
 
 /// Liquid `fluid`'s flow look, if it has one (none: its water shows no flow).
@@ -121,9 +125,124 @@ pub fn shore_foam(l: &LiquidFlowLook, reach: f64, shore: f64, t: f64, n: f64) ->
     (foam * most).clamp(0.0, 1.0)
 }
 
+/// A water top cell's solid neighbours at its surface's row, one bit each (face-local; the mesher's
+/// `shore_mask`, the WGSL `shore_xz`): −x, +x, −z, +z, then the diagonals −x−z, +x−z, −x+z, +x+z.
+pub const SHORE_W: u32 = 1;
+pub const SHORE_E: u32 = 2;
+pub const SHORE_S: u32 = 4;
+pub const SHORE_N: u32 = 8;
+pub const SHORE_SW: u32 = 16;
+pub const SHORE_SE: u32 = 32;
+pub const SHORE_NW: u32 = 64;
+pub const SHORE_NE: u32 = 128;
+/// What [`shore_xz`] returns where no neighbour is solid (no shore within the cell's reach).
+pub const SHORE_FAR: f64 = 1.0e4;
+
+/// The distance across the surface (m) from `p`, a point in a water cell (0..1 on x and z), to the
+/// shore its `mask` names ([`SHORE_W`]…): the Euclidean distance to the nearest solid
+/// neighbour, so an outer corner (only a diagonal solid) is a quarter circle round its corner, and
+/// an inner corner (two sides solid) filleted with radius `r` (at most ½), so the foam's band
+/// rounds and thickens into it instead of a sharp L. The WGSL `shore_xz` mirrors this.
+pub fn shore_xz(mask: u32, p: [f64; 2], r: f64) -> f64 {
+    if mask == 0 {
+        return SHORE_FAR;
+    }
+    let [x, z] = p;
+    let (ex, wx, sz, nz) = (1.0 - x, x, z, 1.0 - z);
+    let on = |b: u32| mask & b != 0;
+    let mut d = SHORE_FAR;
+    let side = |d: &mut f64, b: u32, v: f64| {
+        if on(b) {
+            *d = d.min(v);
+        }
+    };
+    side(&mut d, SHORE_W, wx);
+    side(&mut d, SHORE_E, ex);
+    side(&mut d, SHORE_S, sz);
+    side(&mut d, SHORE_N, nz);
+    let corner = |d: &mut f64, b: u32, a: f64, c: f64| {
+        if on(b) {
+            *d = d.min(a.hypot(c));
+        }
+    };
+    corner(&mut d, SHORE_SW, wx, sz);
+    corner(&mut d, SHORE_SE, ex, sz);
+    corner(&mut d, SHORE_NW, wx, nz);
+    corner(&mut d, SHORE_NE, ex, nz);
+    // inner corners: the land filled out by a quarter circle of radius r
+    let r = r.clamp(0.0, 0.5);
+    let fillet = |d: &mut f64, a: u32, b: u32, u: f64, v: f64| {
+        if r > 0.0 && on(a) && on(b) && u < r && v < r {
+            *d = d.min((r - (r - u).hypot(r - v)).max(0.0));
+        }
+    };
+    fillet(&mut d, SHORE_W, SHORE_S, wx, sz);
+    fillet(&mut d, SHORE_E, SHORE_S, ex, sz);
+    fillet(&mut d, SHORE_W, SHORE_N, wx, nz);
+    fillet(&mut d, SHORE_E, SHORE_N, ex, nz);
+    d
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// An outer corner (owner, 2026-11-13: 'smoother or thicker around corners'): only the
+    /// diagonal is solid, and the distance is the same at the same Euclidean distance from the
+    /// corner in every direction, so the foam's band is a quarter circle, not a square.
+    #[test]
+    fn an_outer_corner_is_round() {
+        let r = flow_look("dwell:water").unwrap().shore_corner_radius_m;
+        for k in 0..=16 {
+            let a = std::f64::consts::FRAC_PI_2 * f64::from(k) / 16.0;
+            for &rho in &[0.05, 0.15, 0.3] {
+                let p = [rho * a.cos(), rho * a.sin()];
+                let d = shore_xz(SHORE_SW, p, r);
+                assert!((d - rho).abs() < 1e-9, "at angle {a}: {d} vs {rho}");
+                let foam = |d| shore_foam(flow_look("dwell:water").unwrap(), 0.5, d, 0.0, 0.0);
+                assert!((foam(d) - foam(rho)).abs() < 1e-9);
+            }
+        }
+        // on the diagonal, √2 × each side's distance (a square band's edge read the side's alone)
+        let p = [0.1, 0.1];
+        assert!((shore_xz(SHORE_SW, p, r) - 0.1 * 2f64.sqrt()).abs() < 1e-9);
+    }
+
+    /// An inner corner: two sides solid, filleted, so the distance has no step anywhere near the
+    /// corner (across its bisector or where the fillet meets the straight sides), it is smaller
+    /// along the bisector than either side's alone (the band thickens into the corner), and its
+    /// contours there are arcs (equal at equal distance from the fillet's centre).
+    #[test]
+    fn an_inner_corner_is_filleted_without_a_step() {
+        let r = flow_look("dwell:water").unwrap().shore_corner_radius_m;
+        assert!(r > 0.0 && r <= 0.5);
+        let m = SHORE_W | SHORE_S | SHORE_SW;
+        let step = 0.002;
+        let n = (0.8 / step) as i32;
+        let mut worst = 0.0f64;
+        for i in 0..n {
+            for j in 0..n {
+                let p = [f64::from(i) * step, f64::from(j) * step];
+                let d = shore_xz(m, p, r);
+                for q in [[p[0] + step, p[1]], [p[0], p[1] + step]] {
+                    worst = worst.max((shore_xz(m, q, r) - d).abs());
+                }
+                // mirrored across the bisector, the same
+                assert!((shore_xz(m, [p[1], p[0]], r) - d).abs() < 1e-9);
+            }
+        }
+        assert!(worst <= step * 1.0001, "a step of {worst} over {step}");
+        let b = 0.1;
+        assert!(shore_xz(m, [b, b], r) < b - 1e-3, "thicker into the corner");
+        for k in 0..=8 {
+            let a = std::f64::consts::FRAC_PI_2 * f64::from(k) / 8.0;
+            let p = [r - 0.6 * r * a.cos(), r - 0.6 * r * a.sin()];
+            assert!((shore_xz(m, p, r) - 0.4 * r).abs() < 1e-9);
+        }
+        // no solid neighbour: no shore; the sides alone are their distances
+        assert_eq!(shore_xz(0, [0.5, 0.5], r), SHORE_FAR);
+        assert!((shore_xz(SHORE_E, [0.7, 0.2], r) - 0.3).abs() < 1e-9);
+    }
 
     /// The shore foam across the edge (owner, 2026-11-13: 'the softness of the old version was
     /// better and the consistency of the new one along the edge is better'): soft, no step over

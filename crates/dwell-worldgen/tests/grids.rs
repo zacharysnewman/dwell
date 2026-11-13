@@ -47,7 +47,7 @@ fn the_build_s_grids_are_home_at_rest_and_a_cratered_moon() {
 /// A bad entry fails with a message naming it.
 #[test]
 fn bad_grids_fail_with_a_message() {
-    let cases: [(&str, &str, &str); 9] = [
+    let cases: [(&str, &str, &str); 12] = [
         ("\"frame\": \"orbit\"", "\"frame\": \"spin\"", "`frame`"),
         ("\"dwell:moon_dust\"", "\"dwell:no_such\"", "names no block"),
         (
@@ -65,6 +65,9 @@ fn bad_grids_fail_with_a_message() {
         ),
         ("\"seedSalt\": 1297040974,", "", "seedSalt"),
         ("\"captureM\": 40000,", "", "needs a `captureM`"),
+        ("\"atmosphere\": false", "\"atmosphere\": 0", "atmosphere"),
+        ("\"cells\": 96", "\"cells\": 2", "nearMesh.cells"),
+        ("\"sinkM\": 8", "\"sinkM\": -1", "nearMesh.sinkM"),
     ];
     for (from, to, want) in cases {
         assert!(
@@ -513,3 +516,27 @@ both_faces!(
         );
     }
 );
+
+/// Home has air and no coarse mesh (its far view is the LOD's); the moon has no air (its sky is
+/// space at its ground) and a coarse mesh of its surface (MOON_WORLD.md §5 M-5, §7.3).
+// both-faces: the grids' data; no face enters.
+#[test]
+fn the_moon_is_airless_and_has_a_near_mesh() {
+    let list = parse_grids(GRIDS_JSON).unwrap();
+    let home = list.iter().find(|g| g.name == "dwell:home").unwrap();
+    let moon = list.iter().find(|g| g.name == "dwell:moon").unwrap();
+    assert!(home.atmosphere && home.near_mesh.is_none());
+    assert!(!moon.atmosphere);
+    let near = moon.near_mesh.expect("the moon's near mesh");
+    assert!(near.cells >= 64 && near.sink_m > 0.0, "{near:?}");
+    // A grid that declares no atmosphere has none (the sun's, by data alone).
+    let bare = GRIDS_JSON.replacen("\"atmosphere\": false,", "", 1);
+    let list = parse_grids(&bare).unwrap();
+    assert!(
+        !list
+            .iter()
+            .find(|g| g.name == "dwell:moon")
+            .unwrap()
+            .atmosphere
+    );
+}

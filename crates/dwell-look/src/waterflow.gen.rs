@@ -45,5 +45,6 @@ pub static LIQUID_FLOWS: [LiquidFlowLook; 1] = [
         shore_band_softness: 0.75,
         shore_strength: 0.8,
         shore_wobble: 0.5,
+        shore_corner_radius_m: 0.4,
     },
 ];

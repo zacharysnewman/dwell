@@ -5429,8 +5429,12 @@ impl Renderer {
             }
         }
         // The falling pieces: moving casters (`piece_shadow_tag`), a kept map holding one drawn
-        // again every `refreshFrames` while they move (docs/FELLING.md §3).
+        // again every `refreshFrames` while they move (docs/FELLING.md §3). The grids' coarse
+        // meshes (grid_bodies.rs) cast none: under the chunks, or far off.
         for &(id, origin, quat) in &self.piece_poses {
+            if crate::grid_bodies::is_grid_body(id) {
+                continue;
+            }
             let Some(p) = self.terrain.pieces.get(&id) else {
                 continue;
             };

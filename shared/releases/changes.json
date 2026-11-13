@@ -4,9 +4,33 @@
     {
       "version": "0.61.0",
       "changes": [
+        "Hold Break with an empty hand (or holding a block or any non-tool item) to keep punching: dig dirt by hand without clicking every hit",
+        "Punches land at a steady rate, the same whether clicked or held, and the controller's trigger holds them too",
         "Towns: hamlets of blueprints are sited across both faces of every world, and builders come to build them when you are near",
         "A hamlet: a well, two huts, a watchtower and a wall, laid out from data, kept clear of the shrines and portals",
         "New compatibility line: generated worlds now hold towns, so worlds from 0.60 open in 0.60 builds"
+      ]
+    },
+    {
+      "version": "0.60.16",
+      "changes": [
+        "Shore foam now rounds outer corners and curves into inner ones instead of squaring off at blocky edges."
+      ]
+    },
+    {
+      "version": "0.60.15",
+      "changes": [
+        "Your character and the villagers stand a little taller: their eyes now sit at your camera's height, so the body no longer looks small beside you."
+      ]
+    },
+    {
+      "version": "0.60.14",
+      "changes": [
+        "On the moon the sky is space: black, the stars out by day, the sun white; the sky is now space with home's day as a layer of its air, fading as you climb.",
+        "Approaching the moon you see its real cratered surface up close instead of a flat disc, and it stays under the ground as you land.",
+        "Crossing onto or off the moon, the view eases upright instead of turning at once.",
+        "On the moon the map is hidden with a note (home's map shows home only).",
+        "Creative flight speeds up in space only, so the moon is about half a minute away, and slows as you near the ground to land."
       ]
     },
     {
