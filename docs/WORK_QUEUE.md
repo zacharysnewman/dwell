@@ -1446,6 +1446,14 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    showcase with recordings. Ideally recordings are 1 minute or less. Don't include any text or anything in the
    video."). Made with the `record` skill (`.claude/skills/record/`): 9:16 at 1080×1920, h264 30 fps, a minute or
    less, no text of any kind, no music, clouds off unless the shot is about clouds, footage deleted after sending.
+   **Showcase audio** (owner, 2026-11-13: "showcases shouldn't have music, but sound effects and ambiance are good";
+   asked whether that meant the recordings: "Yes it's for the recordings"). Built 2026-11-13: every take records the
+   game's own sound, effects and ambience, never the music or the UI (`__dwell.audioTap({ music: false })`, a parallel
+   tap of the mix, the speakers unchanged); the record driver saves it beside the frames, take.mjs muxes it into each
+   clip (aligned to the first frame, 48 kHz AAC), splice.py cuts, cross-fades and fades it with the picture
+   (time-stretched on slow-motion parts, muted on time-lapses past 2×); a manifest's `audio` is on by default, per
+   shot and per part overrides; theater mode's take takes `audio: true`. Outstanding: the first re-record with sound
+   on the owner's machine (a browser check; the cloud session that built it had none), and the owner's listen.
    Video 1, the bifacial world (16), recorded 2026-11-12 (55 s, 7 clips; at the rim of seed 7 the edge is open sea on
    both faces, so the player flies over the edge rather than walking; BUGS.md #99 fixed for the third-person shots).
    Waiting on the owner to pick which come first. The list (suggested first: 1, 10, 3, 6, 11, 2 — the most striking

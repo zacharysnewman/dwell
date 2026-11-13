@@ -41,18 +41,43 @@ export interface Take {
   readonly mime: string;
 }
 
-/** Starts recording `canvas` at `fps` (the browser must have MediaRecorder). */
+/** A take's sound: the mix's tap (`AudioEngine.tapStream`), its MIME types and bit rate. */
+export interface TakeAudio {
+  stream: MediaStream;
+  mimeTypes: readonly string[];
+  bitsPerSecond: number;
+  /** Disconnects the tap when the take ends. */
+  close(): void;
+}
+
+/** The tracks a take records: the canvas's video, and the tap's audio when the take has sound. */
+export function takeTracks<T>(
+  video: { getTracks(): T[] },
+  audio: { getAudioTracks(): T[] } | null,
+): T[] {
+  return [...video.getTracks(), ...(audio ? audio.getAudioTracks() : [])];
+}
+
+/**
+ * Starts recording `canvas` at `fps` (the browser must have MediaRecorder), with `audio`'s track
+ * when given (the game's effects and ambience, never the music: docs/THEATER_MODE.md §6).
+ */
 export function startTake(
   canvas: HTMLCanvasElement,
   fps: number,
   mimeTypes: readonly string[],
   bitsPerSecond: number,
+  audio: TakeAudio | null = null,
 ): Take {
-  const stream = canvas.captureStream(fps);
-  const mime = pickMime(mimeTypes, (t) => MediaRecorder.isTypeSupported(t));
+  const video = canvas.captureStream(fps);
+  const stream = new MediaStream(takeTracks(video, audio?.stream ?? null));
+  const mime = pickMime(audio ? audio.mimeTypes : mimeTypes, (t) =>
+    MediaRecorder.isTypeSupported(t),
+  );
   const rec = new MediaRecorder(stream, {
     ...(mime ? { mimeType: mime } : {}),
     videoBitsPerSecond: bitsPerSecond,
+    ...(audio ? { audioBitsPerSecond: audio.bitsPerSecond } : {}),
   });
   const chunks: Blob[] = [];
   rec.ondataavailable = (e) => {
@@ -64,7 +89,8 @@ export function startTake(
     stop: () =>
       new Promise((resolve) => {
         rec.onstop = () => {
-          for (const t of stream.getTracks()) t.stop();
+          for (const t of video.getTracks()) t.stop();
+          audio?.close();
           resolve(new Blob(chunks, { type: mime || rec.mimeType || 'video/webm' }));
         };
         rec.stop();

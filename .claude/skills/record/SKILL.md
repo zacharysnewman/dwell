@@ -5,8 +5,9 @@ description: Record a showcase video of Dwell in Chrome on the GPU — cinematic
 
 # Record a showcase video
 
-Owner's format (2026-11-12): **portrait 9:16, 1080×1920, h264, 30 fps**, **1 minute or less**, no music,
-and **no text of any kind in the video** (no title card, captions or labels — owner: "Don't include any text
+Owner's format (2026-11-12): **portrait 9:16, 1080×1920, h264, 30 fps**, **1 minute or less**, **no music, but
+the game's sound effects and ambience on** (owner, 2026-11-13: "showcases shouldn't have music, but sound effects and
+ambiance are good"; §0b), and **no text of any kind in the video** (no title card, captions or labels — owner: "Don't include any text
 or anything in the video"). One exception: text that is part of an in-world effect, like a measuring
 line's height numbers (owner: "Text could be in that as part of the 'measure' effect, just no description or
 titles"). Send it with SendUserFile: the upload limit is **30 MB**, so re-encode
@@ -48,12 +49,44 @@ and missing files).
 **Footage policy:** raw frames are deleted as soon as a shot is encoded; the per-shot clips stay in the cache until
 the owner approves the video (so a re-record of one shot is minutes), then `--clean`. Never commit footage.
 
+## 0b. Sound: effects and ambience, never music
+
+Every take records **the game's own sound** — the effects bus (footsteps, chops, splashes, the room's reverb) and the
+ambience beds — and **never the music or the UI** (owner, WORK_QUEUE item 40: "showcases shouldn't have music, but sound
+effects and ambiance are good"; "Yes it's for the recordings"). How it works:
+
+- **The tap** (`__dwell.audioTap({ music: false })`, `client/src/audio/mixer.ts` `Mixer.tap`): a MediaStream of the
+  master mix built as a **parallel graph** — the effects and ambience buses also feed the tap's own master level,
+  underwater muffle and limiter — so the speakers are unchanged and the music and UI buses never reach it (music and UI
+  only with `{ music: true }` / `{ ui: true }`). The driver also starts Chrome with
+  `--autoplay-policy=no-user-gesture-required`, so the AudioContext runs without a click.
+- **The driver** (`/rec/start?name=…&audio=1`) records the tap with MediaRecorder from just before the screencast starts
+  to just after it stops, and saves `<shot>.webm` beside the frame folder with `<shot>.audio.json` (its start in epoch
+  seconds: the screencast frames' clock).
+- **take.mjs** muxes each shot's sound into its clip when it encodes the frames (`scripts/audio.mjs` `encodeArgs`):
+  aligned to the first frame (delayed or its head trimmed by the start difference), padded and cut to the clip's
+  length, resampled to **48 kHz stereo AAC**.
+- **splice.py** cuts the sound with each part, **concatenates it on hard cuts, cross-fades it with the picture**
+  (`acrossfade`, the same 0.8 s as `xfade`) and fades it out with the last second. A part's speed: by default (`"auto"`)
+  the sound is kept at 1×, **time-stretched** (pitch kept, `atempo`) for a speed from 0.25 to 2 (slow motion, a gentle
+  speed-up) and **muted** on a time-lapse past 2× (or a crawl under ¼).
+- **The manifest:** `"audio"` on the video (default `true`), on a shot (`false`: that shot's parts are silent; it
+  changes the recipe, so the shot re-records), and on a splice part (`"auto"`, `"keep"`, `"stretch"`, `"mute"`). Mute a
+  part whose sound is wrong for it (a dev knob's noise, a time-lapse that you want stretched instead: `"stretch"`).
+- `node --test scripts/take.test.mjs` checks the alignment, the mux arguments and the splice's audio graph
+  (`splice.py plan.json --dry-run` prints its ffmpeg commands) without a browser; with ffmpeg it also splices a
+  test clip end to end and checks the sound lasts as long as the picture.
+- **Check it by ear** before sending: a take whose page had no AudioContext (an old build without `audioTap`) records
+  no `.webm`, and its clip is silent in the splice (the driver's `/rec/start` reply says "with sound (effects,
+  ambience)" when it taps).
+
 ## 1. Run the game (new camera spots)
 
 Use the warm bench preview (`docs/DEV_TOOLS.md`, the `bench` skill): `npm run bench:warm` from `client/`
 builds once and serves on :4174 (stop it after with `--stop`). Open a local world by link (never menu
 clicks): `?fresh=1&world=…&seed=…&at=x,y,z` — **`at`'s y must be above the ground** (a y inside the ground
-drops you through to face B, BUGS.md #82). Music off: `localStorage['dwell.music'] = '"off"'` before load.
+drops you through to face B, BUGS.md #82). Music off: `localStorage['dwell.music'] = '"off"'` before load (the driver
+sets it; the recording tap leaves the music out anyway, §0b).
 
 ## 2. Drive Chrome and record
 
@@ -105,7 +138,8 @@ The bench's `theater` step plays one inside a scenario.
 
 **The in-game recorder** (theater mode T-3, docs/DEV_TOOLS.md "Theater"): for a quick clip of one path, skip the
 screencast — `await d.theaterMode('record', { path, aspect: '9:16', height: 1080, fps: 30, download: false })`
-returns `{ bytes (base64 MP4 on Chrome), mime, width, height }` (write the bytes to a file from the driver; with
+returns `{ bytes (base64 MP4 on Chrome), mime, width, height }`; add `audio: true` for the game's sound on the take
+(effects and ambience through the same tap, never the music: theater.json `audioMimeTypes`) (write the bytes to a file from the driver; with
 `download: true` the browser downloads it). The canvas renders at the take's size (9:16 at 1080 is 608×1080; the owner's
 1080×1920 is `height: 1920`) with the HUD switched off. It is real time: on a slow page use
 the screencast, which is frame-exact. First tried 2026-11-12: a 10 s orbit at 9:16 1080p/30 fps → a 7 MB MP4.
@@ -150,7 +184,8 @@ python3 .claude/skills/record/scripts/splice.py plan.json
 `plan.json`: `{"out": "…/video.mp4", "size": [1080, 1920], "fps": 30, "clips": [{"src": "OUT_DIR/c1_dolly", "from": 0, "to": 15}, …]}` — `src` is a frame
 folder from the driver (or an mp4). Per clip: `"speed": 0.35` (slow motion; 4 a time-lapse), `"vf": "eq=gamma=1.5"`
 (a grade, e.g. to lift a night), `"cut": true` (a hard cut from the clip before, no cross-fade: split one take into
-parts at different speeds or grades). A frame folder is encoded once and reused. Then check the size; re-encode with
+parts at different speeds or grades). With `"audio": true` on the plan each clip carries `"audio": "keep" | "stretch" |
+"mute"` (take.mjs fills these from the manifest, §0b) and the sound follows the cuts, fades and speeds. A frame folder is encoded once and reused. Then check the size; re-encode with
 `crf 28` if over 30 MB.
 
 **Helpers:** `scripts/ev.mjs` posts JS to the driver (`node ev.mjs file.js` or `node ev.mjs -e 'expr' [/path]`; the

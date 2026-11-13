@@ -15,7 +15,8 @@ import { existsSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, stat
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { SKILL, clipPath, fingerprint, loadVideo, metaPath, selectShots, splicePlan } from './videos.mjs';
+import { SKILL, clipPath, fingerprint, loadVideo, metaPath, selectShots, shotAudio, splicePlan } from './videos.mjs';
+import { audioAlignment, encodeArgs } from './audio.mjs';
 
 const DRIVER = `http://localhost:${process.env.RECORD_PORT || 4999}`;
 const REPO = resolve(SKILL, '../../..');
@@ -55,17 +56,23 @@ function args(argv) {
   return o;
 }
 
-/** A driver frame folder (f00000.jpg … + times.json) → an h264 mp4 at the measured rate (splice.py's timeline). */
+/**
+ * A driver frame folder (f00000.jpg … + times.json) → an h264 mp4 at the measured rate (splice.py's timeline),
+ * with the shot's sound (the driver's `<dir>.webm` beside the frames) muxed in when it was recorded: aligned
+ * to the first frame, cut to the clip, 48 kHz AAC.
+ */
 export function encodeClip(dir, out, { fps, crf = 16, preset = 'veryfast' } = {}) {
   // an intermediate (splice.py re-encodes it): veryfast at crf 16 is ~3x quicker than medium at 18 and as clean
   const times = JSON.parse(readFileSync(join(dir, 'times.json'), 'utf8'));
   const rate = times.length > 1 ? (times.length - 1) / Math.max(times[times.length - 1] - times[0], 1e-6) : 30;
   const tmp = out.replace(/\.mp4$/, '.part.mp4');
-  const r = spawnSync('ffmpeg', ['-v', 'error', '-y', '-framerate', rate.toFixed(3), '-i', join(dir, 'f%05d.jpg'),
-    ...(fps ? ['-r', String(fps)] : []), '-c:v', 'libx264', '-crf', String(crf), '-preset', preset, '-pix_fmt', 'yuv420p', tmp], { stdio: 'inherit' });
+  const base = dir.replace(/\/$/, '');
+  const audio = existsSync(base + '.webm') && existsSync(base + '.audio.json')
+    ? { file: base + '.webm', ...audioAlignment(times, JSON.parse(readFileSync(base + '.audio.json', 'utf8')), rate) } : null;
+  const r = spawnSync('ffmpeg', encodeArgs({ frames: join(dir, 'f%05d.jpg'), rate, out: tmp, fps, crf, preset, audio }), { stdio: 'inherit' });
   if (r.status !== 0) throw new Error(`ffmpeg failed encoding ${dir}`);
   renameSync(tmp, out);
-  return { frames: times.length, rate };
+  return { frames: times.length, rate, audio: audio ? +audio.offsetS.toFixed(3) : null };
 }
 
 async function ensurePreview(base) {
@@ -121,19 +128,20 @@ async function recordShot(m, shot, o, state) {
     ${s.hud !== undefined ? `d.theater('hud', { shown: ${s.hud} });` : ''}
     ${s.eval ? `await (${s.eval});` : ''} return 'setup'; })()`);
   let log = '';
+  const sound = shotAudio(m, shot) ? '&audio=1' : '';
   if (shot.kind === 'path') {
     const path = JSON.parse(readFileSync(resolve(SKILL, shot.path), 'utf8'));
     const hold = { formatVersion: 1, keyframes: [{ ...path.keyframes[0], t: 0 }, { t: 1000 }], segments: [{ move: 'cut' }] };
     await post('/eval', `(async () => { d.theater('hud', { shown: false });
       d.theater('play', { path: ${JSON.stringify(hold)} }); await new Promise(r => setTimeout(r, ${(s.warmS ?? 10) * 1000})); return 1; })()`);
-    console.log(await post(`/rec/start?name=${shot.id}`));
+    console.log(await post(`/rec/start?name=${shot.id}${sound}`));
     log = await post('/eval', `(async () => { d.theater('play', { path: ${JSON.stringify(path)} });
       while (!d.theater('state', {}).finished) await new Promise(r => setTimeout(r, 100)); await new Promise(r => setTimeout(r, 300)); return 'played'; })()`);
   } else {
     const src = scriptSource(resolve(SKILL, shot.script));
     const a = shot.args ?? {};
     console.log('setup', await post('/eval', `(globalThis.__args=${JSON.stringify({ ...a, phase: 'setup' })}, ${src})`));
-    console.log(await post(`/rec/start?name=${shot.id}`));
+    console.log(await post(`/rec/start?name=${shot.id}${sound}`));
     log = await post('/eval', `(globalThis.__args=${JSON.stringify(a)}, ${src})`);
   }
   const stats = JSON.parse(await post('/rec/stop'));
@@ -176,9 +184,9 @@ async function main() {
         const { stats, log } = await recordShot(m, shot, o, state);
         const frames = join(raw, shot.id);
         const enc = encodeClip(frames, clipPath(o.cache, m, shot.id), { fps: shot.capture?.fps });
-        rmSync(frames, { recursive: true, force: true });
+        for (const f of [frames, frames + '.webm', frames + '.audio.json']) rmSync(f, { recursive: true, force: true });
         writeFileSync(metaPath(o.cache, m, shot.id), JSON.stringify({ fingerprint: fingerprint(m, shot), frames: enc.frames,
-          fps: enc.rate, seconds: stats.seconds, log, recordedAt: new Date().toISOString(),
+          fps: enc.rate, seconds: stats.seconds, audioOffsetS: enc.audio, log, recordedAt: new Date().toISOString(),
           mb: +(statSync(clipPath(o.cache, m, shot.id)).size / 1048576).toFixed(2) }, null, 1));
         console.log(`  → ${clipPath(o.cache, m, shot.id)} (${((Date.now() - t0) / 1000).toFixed(0)} s)`);
       }
