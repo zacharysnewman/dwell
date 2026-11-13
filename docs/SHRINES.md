@@ -35,7 +35,7 @@ the map is per player (their explored cells); the filter is per browser.
 | `stand` | [0, 2] | Where a player stands up: the column 2 m from the anchor on the open side (turned with it), on its floor |
 | `searchCells`, `spawnWithin` | 3, 1500 m | A death searches the cells within 3 of its own; the spawn's shrine lies within 1500 m of the spawn search's point, else one is built at the point |
 | `worlds` | `test:archipelago` | Overrides per world setting name (not `design`) |
-| `map` | explored, `shrine`, `#7fd6ff`, 18 px | The big map's reveal (`explored`: shown once its 8 m explored cell is; `all`), the markers' icon it draws, its colour and size |
+| `map` | explored, `shrine`, `#7fd6ff`, 18 px, 28 px, 8 ms | The big map's reveal (`explored`: shown once its 8 m explored cell is; `all`), the markers' icon it draws, its colour and size; `clusterPx` (icons nearer on screen merge into one with a count, at every zoom), `siteMsPerDraw` (new cells sited a draw) |
 
 `gen.mjs` validates every key (ranges, the structure, the stand on a floor open above, the overrides)
 and emits `crates/dwell-worldgen/src/shrines.gen.rs`; `gen.test.mjs` covers it.
@@ -89,11 +89,16 @@ spawn search) for its meshing priorities, the spawn's when it has no terrain. No
 
 ## 6. The map (`client/src/ui/mapShrines.ts`)
 
-The big map asks the client crate for the shrines in the cells round its view's centre (`mapShrines`,
-from the client's terrain, sited as the server sites them) and draws each one in an explored cell
+The big map asks the client crate for the shrines of every grid cell on its view and the disc (`shrineCellsIn`;
+`mapShrines` one cell at a time; without the reveal only the cells holding explored ground, `ShrineSites`), new cells
+sited within `siteMsPerDraw` ms a draw and the rest the next draws, and draws each one in an explored cell
 (`reveal` `explored`: Guild Wars' map reveal; with the `mapRevealed` ability, creative, or `reveal`
 `all`, every one) as the map markers' vector `shrine` icon (`shared/ui/markers.json`; `map.icon` names
-it, validated), glowing in `map.color`; the minimap draws the ones on its disc (explored ground by
+it, validated), glowing in `map.color`. Icons nearer than `clusterPx` on screen merge into one with a count
+(`clusterShrines`, so none overlap; BUGS.md #115) at every zoom: zoomed out to the whole disc, where the 2 km
+grid draws a few pixels apart, they show as clusters with counts (BUGS.md #119: once none were drawn there).
+In adventure only the shrines in explored ground count, so a fresh world shows the few near the spawn; creative
+(revealed) shows them all. The minimap draws the ones on its disc (explored ground by
 definition). They are a derived layer, not saved markers: the markers' records hold at most 200 a
 player per world (`limits.maxMarkers`) and an island has ~130 shrines a face, all derivable from the
 seed.
@@ -122,8 +127,7 @@ within 1.5 km of its spawn search's point, so its spawn's shrine is built there.
 
 - The spawn's facing: the player stands up at the stand point with the default yaw, not turned out the
   open side.
-- The map's first ask for a wide view sites up to 81 cells on the main thread (~100 ms natively, more
-  in WASM; cached after); a worker could take it.
+- The map sites new cells on the main thread, `siteMsPerDraw` ms a draw (cached after); a worker could take it.
 - A client's job worker that generates a chunk or near LOD section far from every grid shrine (open sea)
   runs the spawn search once (~0.6 s natively) to know whether the spawn's shrine reaches it.
 - A dedicated glowing stone (an emissive block) in place of the torches, once the look is chosen.

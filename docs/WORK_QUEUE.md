@@ -925,6 +925,12 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    voxels and streams home again from nothing after the release), draws in the moon's local frame (the sun turned
    into it, the far moon disc and home's LOD hidden, the look carried with `look_across`); `grid.frames` off
    `CLIENT_PENDING`; the `game_local` scripted flight home → moon → home on both faces (MOON_WORLD.md §7.3).
+   **Bench tool (2026-11-13, branch `claude/moon-bench`):** brief: "a bench hook and scenario for flying to the moon in
+   the browser. A browser pass could not fly to the moon: no `__dwell` hook gives the moon's position or the player's
+   grid … and a sky scan didn't find the moon at clock 0.30." Built: `__dwell.moon()` (position, direction, distance,
+   the player's grid, on-moon gravity), the `flyTo` step (`moon`: dev move near the capture, a real flight in, descent,
+   the fall checked against ⅙ g, landing; `home`: out past the release, home's chunks back) and the `moon-trip`
+   scenario (DEV_TOOLS.md "The moon"). **Left:** running `moon-trip` on a GPU (local).
    **Left:** the browser flight (local, GPU), the roll upright at a crossing, M-5 (the moon's LOD), M-8. Earlier
    **M-7c status (2026-11-12, branch `claude/moon-m7c-x07vsc`, local):** owner, 2026-11-12: "Do we have the real physical moon yet?" (no: the client doesn't draw the moon
    up close yet (M-5) and there are no moon spawns (M-8)). **Built:** `carry` moved into `dwell-physics`; a
@@ -2175,6 +2181,21 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    shrine nearest its point on that face (face A's spawn and face B's `?spawn=b`); when none lies within `spawnWithin`
    m a shrine is built at the search's point itself (deterministic: the point is the seed's), so a spawn always has
    one. Portal and moon spawns keep theirs (they stand at a portal's rim or on another world by design).
+   **Fixes after a browser screenshot pass (2026-11-13, brief):** four bugs, BUGS.md #115–118, fixed on branch
+   `claude/map-shrine-fixes`: (1) "Shrine clutter on the big map: zoomed out, shrine icons are drawn only in a square
+   patch around the view centre, a dense overlapping glowing block … Fix: shrines over the whole visible map, icons
+   thinned/clustered by zoom (no overlap; e.g. hide below a zoom or merge into a count), data-driven thresholds";
+   (2) "The spawn waypoint shows '1 m' stuck to the top screen edge while standing on the spawn: hide a waypoint
+   within a few metres (data), and don't edge-clamp a point that is below/at the camera"; (3) "No pending pin while
+   the marker picker is open: draw a temporary pin at the clicked spot until saved/cancelled"; (4) "New world → More
+   options repeats World type, Seed and Spawn (already shown above) and that copy has no Realistic choice: remove the
+   duplicates (one source of each field)".
+   **Follow-ups from a browser check of those fixes (2026-11-13, brief, M1 GPU, seed 0):** BUGS.md #119–122, fixed on branch
+   `claude/map-fixes-2`: (1) "Shrine clusters (#115) not seen: zoomed fully out (whole disc, 20 km scale) no shrine
+   icons or cluster counts appear at all … at that zoom show clusters with counts instead of nothing"; (2) "The zoom
+   buttons jump between 20 m, 500 m and 20 km — too coarse; steps of ~2× (data), wheel too"; (3) "After 'Center on
+   me' and a zoom, the player arrow was off the view: zoom about the centred player"; (4) "The picker shows 'Delete'
+   for a marker not yet saved: hide it (Cancel only)".
 
 ## Future (needs owner answers)
 

@@ -24,6 +24,9 @@ import {
   Steps,
   levelPxPerM,
   levelCellM,
+  levelForSpan,
+  stopOfLevel,
+  zoomStops,
   tilePrefix,
   type TileStore,
   type ExploredHeights,
@@ -677,16 +680,20 @@ describe('the big map panel (owner, 2026-11-09)', () => {
     expect(s.canZoom(1)).toBe(false);
     expect(s.canZoom(-1)).toBe(true);
     expect(s.zoomStep(1)).toBe(false);
-    // Out a level at a time, to the whole world disc.
+    // Out a stop at a time, to the whole world disc, each drawn with the closest level holding it.
     const seen = [0];
     while (s.zoomStep(-1)) seen.push(s.view?.level ?? -1);
-    expect(seen).toEqual(LEVELS.map((_, l) => l));
+    expect(seen).toEqual(zoomStops().map((span) => levelForSpan(span)));
+    expect([...new Set(seen)]).toEqual(LEVELS.map((_, l) => l));
     expect((s.view?.pxPerM ?? 0) * 2 * World.worldRadius).toBeCloseTo(600, 6);
     // The widest is centred on the world, the whole of it in view.
     expect(s.view).toMatchObject({ cx: 0, cz: 0 });
     expect(s.canZoom(-1)).toBe(false);
-    // A big wheel spin is a few levels at most, never past the ends.
+    // A big wheel spin is a few stops at most (4), never past the ends.
+    const stops = zoomStops();
     s.zoomStep(40);
+    expect((s.view?.pxPerM ?? 0) * (stops[stops.length - 5] ?? 0)).toBeCloseTo(600, 6);
+    while (s.zoomStep(40));
     expect(s.view?.level).toBe(0);
     // The buttons zoom about the centre: the place in the middle stays put.
     s.center();
@@ -697,6 +704,63 @@ describe('the big map panel (owner, 2026-11-09)', () => {
     expect(s.open).toBe(false);
     expect(s.canZoom(1)).toBe(false);
   });
+
+  // BUGS.md #120 (owner's check, M1, seed 0): the buttons jumped 20 m → 500 m → 20 km on the scale
+  // bar, one level's span each (128 m, 3.6 km, 100 km): too coarse.
+  it('zooms in steps of about 2× from the closest to the whole disc, the wheel a step a notch', () => {
+    for (const [w, h] of [
+      [900, 600],
+      [390, 844],
+    ] as const) {
+      const s = new BigMapState(pose(0, 12, -30), () => [w, h]);
+      s.openAt();
+      while (s.zoomStep(1));
+      const spans = [Math.min(w, h) / (s.view?.pxPerM ?? 1)];
+      const wheel = new Steps(MAP.bigMap.wheelStepPx);
+      // A wheel notch out each time (a mouse's 100 px).
+      while (s.zoomStep(-wheel.add(MAP.bigMap.wheelStepPx)))
+        spans.push(Math.min(w, h) / (s.view?.pxPerM ?? 1));
+      expect(spans[0]).toBeCloseTo(LEVELS[0]?.spanM ?? 0, 6);
+      expect(spans.at(-1)).toBeCloseTo(2 * World.worldRadius, 3);
+      for (let n = 1; n < spans.length; n++) {
+        const r = (spans[n] ?? 0) / (spans[n - 1] ?? 1);
+        expect(r, `step ${String(n)}`).toBeGreaterThan(MAP.bigMap.zoomRatio / 1.5);
+        expect(r, `step ${String(n)}`).toBeLessThan(MAP.bigMap.zoomRatio * 1.5);
+      }
+      // Every level's own span is a stop, drawn with that level's tiles.
+      for (const l of LEVELS) expect(spans.some((sp) => Math.abs(sp - l.spanM) < 1e-6)).toBe(true);
+    }
+  });
+
+  for (const face of [0, 1]) {
+    // BUGS.md #121: after "Center on me" a zoom (the wheel at the cursor, or out to the whole disc and
+    // back) left the player's arrow off the view.
+    it(`face ${String(face)}: after "Center on me" every zoom keeps the player in the middle`, () => {
+      const at = [face, 31_000, -12_000, 0];
+      const s = new BigMapState(
+        () => at,
+        () => [900, 600],
+      );
+      s.openAt();
+      if (s.view) s.view = pan(s.view, 400, 250);
+      s.center();
+      const middle = () => {
+        const v = s.view;
+        if (!v) throw new Error('shut');
+        const [sx, sy] = toScreen(v, 31_000, -12_000);
+        return Math.hypot(sx, sy);
+      };
+      // The wheel over a corner, then all the way out (the disc, centred on the world) and back in.
+      s.zoomStep(1, 300, -200);
+      expect(middle()).toBeLessThan(1e-6);
+      while (s.zoomStep(-1, -250, 100));
+      while (s.zoomStep(1)) expect(middle()).toBeLessThan(1e-6);
+      // Dragged away, the wheel zooms about the cursor again.
+      s.drag(120, 0);
+      s.zoomStep(-1, 300, -200);
+      expect(middle()).toBeGreaterThan(1);
+    });
+  }
 
   for (const face of [0, 1]) {
     it(`face ${String(face)}: "Center on me" brings back the player's place, the zoom kept`, () => {
@@ -777,7 +841,7 @@ describe('the big map panel (owner, 2026-11-09)', () => {
     });
 
     for (const face of [0, 1]) {
-      it(`face ${String(face)}: the stick and D-pad pan the way pushed, a zoom button press steps a level`, () => {
+      it(`face ${String(face)}: the stick and D-pad pan the way pushed, a zoom button press steps a zoom stop`, () => {
         const s = new BigMapState(pose(face, 0, 0));
         s.openAt();
         s.padFrame(buttons(), still, 0);
@@ -793,15 +857,16 @@ describe('the big map panel (owner, 2026-11-09)', () => {
         s.padFrame(buttons('up'), still, 200);
         const [, uy] = toScreen(b2, (s.view as BigView).cx, (s.view as BigView).cz);
         expect(uy).toBeLessThan(0);
-        // A press of zoom-in steps one level in (held, no more); zoom-out one out.
-        const l0 = (s.view as BigView).level;
+        // A press of zoom-in steps one stop in (held, no more); zoom-out one out.
+        const z0 = (s.view as BigView).pxPerM;
+        const stepIn = (z0 * (LEVELS[1]?.spanM ?? 1)) / (zoomStops()[stopOfLevel(1) - 1] ?? 1);
         s.padFrame(buttons(MAP.bigMap.padZoomIn), still, 300);
-        expect((s.view as BigView).level).toBe(l0 - 1);
+        expect((s.view as BigView).pxPerM).toBeCloseTo(stepIn, 9);
         s.padFrame(buttons(MAP.bigMap.padZoomIn), still, 350);
-        expect((s.view as BigView).level).toBe(l0 - 1);
+        expect((s.view as BigView).pxPerM).toBeCloseTo(stepIn, 9);
         s.padFrame(buttons(), still, 360);
         s.padFrame(buttons(MAP.bigMap.padZoomOutAlt), still, 400);
-        expect((s.view as BigView).level).toBe(l0);
+        expect((s.view as BigView).pxPerM).toBeCloseTo(z0, 9);
         // Y: back on the player.
         s.padFrame(buttons(MAP.bigMap.padCenter), still, 410);
         expect(s.view).toMatchObject({ cx: 0, cz: 0 });

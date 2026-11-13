@@ -490,6 +490,75 @@ face, or the placement check against its shape.
 
 ## Fixed
 
+### 119. Zoomed out to the whole disc, the big map shows no shrines and no cluster counts (fixed after 0.58.4)
+
+Owner's browser check of #115 (2026-11-13, M1 GPU, seed 0): zoomed fully out (the whole disc, a 20 km scale bar) no
+shrine icons or counts appeared at all after ~5 s; a level in (500 m) ~9 separate icons. Cause: the cutoff
+`minSpacingPx` (16 px) hid every shrine where the 2 km grid draws under it on screen, and the whole disc draws it
+~12 px apart. Fixed: the cutoff is gone (`shrines.json` `map`, `gen.mjs`); at every zoom the shrines are clustered
+with counts (`shrineIcons`, `clusterShrines`). In adventure only explored ground's shrines count (a fresh world shows
+those near the spawn); creative shows all. Test `mapShrines.test.ts` "zoomed out to the whole disc, shows them as
+clusters with counts": red before (no icons), green after.
+
+### 120. The big map's zoom jumps 20 m → 500 m → 20 km (fixed after 0.58.4)
+
+Same check: the zoom buttons stepped one tile level a press (spans 128 m, 3.6 km, 100 km: ×28 a step). Fixed: zoom
+stops about `bigMap.zoomRatio` (2, `shared/ui/map.json`) apart, each level's span an exact stop and the stops between
+spaced geometrically (`zoomStops`, 11 today); a stop is drawn with the closest level whose span holds it
+(`levelForSpan`), so no level is drawn wider than before. The buttons, keys, wheel (a notch a stop), pinch and
+controller all step a stop. Test `minimap.test.ts` "zooms in steps of about 2×": red before (a ×27.95 step), green after.
+
+### 121. After "Center on me" and a zoom, the player's arrow is off the view (fixed after 0.58.4)
+
+Same check. Cause: the wheel zoomed about the cursor, and zooming out to the whole disc recentred the view on the world,
+so zooming back in was about the world's centre. Fixed: opened or after "Center on me", until dragged, the map is
+centred on the player (`BigMapState.centred`) and every zoom (buttons, keys, wheel, pinch, controller) keeps them in
+the middle; the whole disc still shows centred on the world, and zooming in from it returns to the player. Test
+`minimap.test.ts` "after Center on me every zoom keeps the player in the middle" (both faces): red before (the player
+9.7 km off the middle), green after.
+
+### 122. The marker picker shows Delete for a marker not yet saved (fixed after 0.58.4)
+
+Same check. Cause: the picker set `hidden` on Delete for a new marker, but `#world-map .map-button`'s
+`display: inline-flex` overrode the `[hidden]` attribute. Fixed: `#world-map .map-button[hidden] { display: none }`
+(`style.css`), so a new marker shows Save and Cancel only. Test `markers.test.ts` "a hidden map button is display:
+none": red before (no such rule), green after.
+
+### 115. Zoomed out, the big map's shrines are a dense glowing block in a square patch (fixed after 0.58.2)
+
+Found in a browser screenshot pass of the map markers and shrines (2026-11-13; a 4× world and a Realistic world):
+zoomed out, shrine icons are drawn only in a square patch round the view's centre, a dense block of overlapping
+glowing icons. Cause: the big map asked the crate for the shrine cells within at most 4 of the centre's (`cellsFor`,
+an 18 km square) and drew every icon at its spot whatever the zoom. Fixed (`mapShrines.ts`): every shrine cell on
+the visible map and on the disc (`shrineCellsIn`; in adventure only those with explored ground, `ShrineSites`),
+new cells sited within `siteMsPerDraw` ms a draw and the rest the next draws; icons nearer than `clusterPx` on
+screen merged into one with a count (`clusterShrines`); none drawn when the 2 km grid is under `minSpacingPx` on
+screen (shrines.json `map`, validated). Tests `mapShrines.test.ts` (the whole view's cells, clustering without
+overlap, the zoom, the budget): red on the unfixed code (the functions missing, `cellsFor` capped at 4), green after.
+
+### 116. Standing on the spawn, its waypoint reads "1 m" stuck to the top of the screen (fixed after 0.58.2)
+
+Same pass: the spawn's auto marker's waypoint shows "1 m" pinned to the top screen edge while standing on it. Cause:
+the waypoint's spot (1.5 m over the feet) is at the eye, so its projection had no direction and was edge-clamped.
+Fixed: a marker within `world.hideWithinM` (4 m, `markers.json`) of the eye or across the ground (so one at or
+under the camera) shows no waypoint (`waypointShown`). Test `markers.test.ts` "a waypoint at or under the camera":
+red before (no `hideWithinM`), green after.
+
+### 117. No pin at the clicked spot while the marker picker is open (fixed after 0.58.2)
+
+Same pass: a click on the big map opens the picker for a new marker, but nothing marks where it will go until it is
+saved. Fixed: a pending pin (the picker's current icon and colour, ringed) at the clicked spot until it is saved or
+cancelled (`bigMapPins`, the picker's `look` and `onChange`). Test `markers.test.ts` "the big map pins": red before
+(no pending pin), green after.
+
+### 118. New world → More options repeats World type, Seed and Spawn, without a Realistic choice (fixed after 0.58.2)
+
+Same pass: More options (Play advanced's panel) repeats the form's World type, Seed and Spawn, and its World type
+has no Realistic. Fixed: More options shows Play advanced's fields less the form's (`moreOptionsFields`,
+`NEW_WORLD_FORM_PARAMS`); its Play takes the Type or World (Realistic as `worldgen`, with its Sky), Seed and Spawn
+from the form above (`moreOptionsRoute`), so each field has one source. Test `mainMenu.test.ts` "New world → More
+options": red before (the functions missing), green after.
+
 ### 113. First-person recordings show the block-target box; no dev toggle hides it (fixed after 0.57.4)
 
 Found recording showcase video 2 (water, 2026-11-12): wading in off seed 7's beach, the thin black box round the

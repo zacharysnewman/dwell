@@ -1170,6 +1170,9 @@ test('the shrine rules validate, each world\'s overrides too, and the generated 
   // Under the lintel: not open over the floor.
   bad({ stand: [-2, -3] }, /stand \[-2,-3\] must stand on a floor/);
   bad({ map: { ...d.map, reveal: 'sometimes' } }, /map.reveal must be one of/);
+  // The big map's thinning: merged icons must not overlap, and the zoom and budget must be sane.
+  bad({ map: { ...d.map, clusterPx: d.map.iconPx - 1 } }, /map.clusterPx must be a whole number from map.iconPx/);
+  bad({ map: { ...d.map, siteMsPerDraw: 0 } }, /map.siteMsPerDraw must be/);
   bad({ worlds: { x: { design: {} } } }, /worlds.x: unknown design/);
   bad({ lodCellM: 12 }, /power of two/);
   assert.throws(

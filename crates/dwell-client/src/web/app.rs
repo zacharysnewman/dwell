@@ -1853,6 +1853,13 @@ impl Client {
         set(&o, "material", material);
         o.into()
     }
+    /// The moon from the player as JSON (`__dwell.moon()`, docs/DEV_TOOLS.md "The moon";
+    /// `moon_probe::MoonReport`), or None before playing, from a server without `grid.frames`, or
+    /// in a world with no moon.
+    pub fn moon(&self) -> Option<String> {
+        let s = self.inner.borrow();
+        s.game.as_ref()?.moon_report().map(|r| r.json())
+    }
     pub fn voxel(&self, x: i32, y: i32, z: i32) -> u16 {
         self.inner
             .borrow_mut()
