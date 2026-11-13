@@ -9,7 +9,21 @@
         "A continent and an ocean pulling apart make a wide shelf and a gentle coast, not a trench; two oceans a low mid-ocean swell, and closing oceans an island arc",
         "No sliver plates: every continent has room inland, no narrow ocean strait splits two continents, and plates straddle the world's edge",
         "Mountain ranges rise and dip along their length (peaks and saddles); volcanic arcs stand on their range's crest",
-        "The land is no longer ringed by a circle of sea: continents run out toward the world's edge and end in shelves of varied width, with only the last few km always sea"
+        "The land is no longer ringed by a circle of sea: continents run out toward the world's edge and end in shelves of varied width, with only the last few km always sea",
+        "Blueprints: place a structure as ghost blocks from the Structures page; anyone in the world can build it",
+        "Hold Place while aiming into a blueprint to fill its ghost cells with the right blocks, one at a time",
+        "Ghost blocks you don't have show red, and a small panel lists each block you have and need",
+        "Builders, villagers without swords, come and build blueprints near you",
+        "Four simple test blueprints: a hut, a wall, a well and a watchtower"
+      ]
+    },
+    {
+      "version": "0.60.7",
+      "changes": [
+        "Humans no longer die: at 0 health you kneel where you fell, head bowed, your sword planted before you (or your hand on your knee), while the camera pulls out to show it.",
+        "After a few seconds the view fades and you stand up at the nearest resurrection shrine.",
+        "Villagers are defeated the same way: they kneel, then stand up again at the nearest shrine.",
+        "What you carried is left where you knelt, not dropped the moment you fall."
       ]
     },
     {

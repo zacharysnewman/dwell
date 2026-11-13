@@ -14,7 +14,6 @@ export const MAX_INPUTS_PER_DATAGRAM = 4;
 
 export const Players = {
   maxHealth: 100,
-  respawnSeconds: 5,
   reconcileSnapDistance: 1,
   interpDelayMs: 100,
   predictProxyRadius: 16,
@@ -157,6 +156,7 @@ export const MessageType = {
   Swordplay: 106,
   TheaterViewpoint: 107,
   Markers: 108,
+  Blueprints: 109,
 } as const;
 export type MessageType = (typeof MessageType)[keyof typeof MessageType];
 
@@ -341,5 +341,5 @@ export const WorldSizes = {
 export const Capabilities = {
   maxNames: 64,
   maxNameBytes: 48,
-  names: ['structures.place', 'grid.frames', 'damage.chunks', 'creatures.npcs', 'weapons.clash', 'creatures.poses', 'npcs.swings', 'theater.viewpoint', 'hits.at_contact', 'markers.private', 'grid.sun'],
+  names: ['structures.place', 'grid.frames', 'damage.chunks', 'creatures.npcs', 'weapons.clash', 'creatures.poses', 'npcs.swings', 'humans.defeat', 'theater.viewpoint', 'hits.at_contact', 'markers.private', 'grid.sun', 'blueprints.world'],
 } as const;

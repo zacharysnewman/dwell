@@ -51,6 +51,7 @@ pub use grass::{Grass, GrassEnvelope};
 mod grass;
 mod grids;
 pub use grids::{GridSlot, Grids};
+mod blueprints;
 mod ground;
 mod growth;
 mod items;
@@ -483,6 +484,12 @@ pub struct StreamStats {
 
 include!("respawn_preload.gen.rs");
 
+/// Ticks from a defeat to standing up at the shrine for character `name` (its defeat's kneel and
+/// fade, shared/defeat; docs/CHARACTERS.md §11.13).
+pub fn defeat_ticks(name: &str) -> u32 {
+    (dwell_protocol::defeat::of(name).down_s() * f64::from(SIM_HZ)).round() as u32
+}
+
 /// The chunk the body of a player standing at `feet` is centred in (the view's centre), on either
 /// face: `half_height` up from the feet, face-locally.
 fn body_centre_chunk(feet: [f64; 3], half_height: f64) -> ChunkCoord {
@@ -613,9 +620,9 @@ struct Session {
     display_name: String,
     player_id: u16,
     // Player (joined only).
-    handle: Option<PlayerHandle>,   // none while dead
+    handle: Option<PlayerHandle>, // none while defeated (kneeling, CHARACTERS.md §11.13)
     inputs: VecDeque<(u32, Input)>, // ordered by seq
-    primed: bool,                   // jitter buffer: consume only once INPUT_BUFFER are queued
+    primed: bool,                 // jitter buffer: consume only once INPUT_BUFFER are queued
     /// The fewest inputs queued at any tick of this latency window (`MAX_BUFFERED_INPUTS`).
     low_water: usize,
     window_ticks: u32,
@@ -626,7 +633,12 @@ struct Session {
     last_input: Input,
     health: i32,
     respawn_tick: u32,
+    /// Where it was defeated (its feet): it kneels there until it stands up at a shrine.
     death_position: [f64; 3],
+    /// The facing it knelt with (degrees), so the others see it kneel the way it faced.
+    death_yaw: f32,
+    /// A defeat's inventory, left where it knelt when it stands up (a mode with items).
+    drop_on_stand: bool,
     last_knockback_seq: u32,
     rate_window_tick: u32,
     rate_window_count: u32,
@@ -691,6 +703,8 @@ struct Session {
     markers: Option<dwell_protocol::markers::Markers>,
     markers_loaded: bool,
     markers_sent: bool,
+    /// Whether the world's blueprints went to its client (`blueprints.world`, BLUEPRINTS.md).
+    blueprints_sent: bool,
     /// The last damage cause its client understands (`CausesHello`; 0: it never said, so only the
     /// causes every build knows, and `Drown` with `vitals_hello`).
     known_cause: u8,
@@ -797,6 +811,7 @@ impl Session {
             markers: None,
             markers_loaded: false,
             markers_sent: false,
+            blueprints_sent: false,
             burn: dwell_lava::Burn::default(),
             creatures_hello: false,
             damage_hello: false,
@@ -818,6 +833,8 @@ impl Session {
             health: pc::MAX_HEALTH as i32,
             respawn_tick: 0,
             death_position: [0.0; 3],
+            death_yaw: 0.0,
+            drop_on_stand: false,
             last_knockback_seq: 0,
             rate_window_tick: 0,
             rate_window_count: 0,
@@ -1060,6 +1077,8 @@ pub struct Server {
     departed_vitals: Vec<([u8; 32], Vec<u8>)>,
     /// The markers of players who left since the last save (docs/MAP_MARKERS.md).
     departed_markers: Vec<([u8; 32], Vec<u8>)>,
+    /// The world's blueprints and their builders (docs/BLUEPRINTS.md).
+    blueprints: blueprints::Blueprints,
     /// The loose items lying in the world (ADR 0066), and the moved ones not yet sent.
     loose: crate::loose_items::LooseItems,
     loose_moved: HashSet<u32>,
@@ -1274,6 +1293,7 @@ impl Server {
             departed_inventories: Vec::new(),
             departed_vitals: Vec::new(),
             departed_markers: Vec::new(),
+            blueprints: Default::default(),
             loose: Default::default(),
             loose_moved: HashSet::default(),
             creatures: Default::default(),
@@ -1839,9 +1859,11 @@ impl Server {
                 s.capabilities = c;
                 self.swordplay_hello(id);
                 self.send_markers(id);
+                self.send_blueprints(id);
             }
             Message::TheaterViewpoint(at) => self.theater_viewpoint(id, at),
             Message::Markers(m) => self.set_markers(id, m),
+            Message::Blueprints(m) => self.blueprints_message(id, m),
             Message::WorldgenRequest => {
                 let m = Message::WorldgenConfig(self.worldgen_text.clone());
                 self.send_reliable(id, &m, Channel::Control);
@@ -1950,23 +1972,31 @@ impl Server {
         self.players.feet(&self.physics, h)
     }
 
+    /// Defeat, not death (docs/CHARACTERS.md §11.13; owner, 2026-11-13: "Humans won't die in this
+    /// game (general design rule)"): at 0 health the player kneels where it fell, facing as it
+    /// faced, for its defeat's `kneel_s` and `fade_s` (shared/defeat), then stands up at the
+    /// shrine nearest where it fell (the respawn below). Its body leaves the physics while it
+    /// kneels (snapshots carry it as `DEAD` at `death_position`, which clients draw kneeling);
+    /// its inventory stays with it until it stands up, then is left where it knelt.
     fn kill(&mut self, id: SessionId, cause: DamageCause) {
         let Some(h) = self.sessions[&id].handle else {
             return;
         };
         let p = self.players.position(&self.physics, h);
         let death = [p.x, self.feet_y(h), p.z];
+        let yaw = self.players.controller(h).input.look_yaw;
         self.players.despawn(&mut self.physics, h);
-        let respawn_tick = self.tick + (pc::RESPAWN_SECONDS as u32) * SIM_HZ;
+        let respawn_tick = self.tick + defeat_ticks(dwell_protocol::defeat::PLAYER);
         let respawn = self.respawn_after_death(self.sessions[&id].player_id, death);
         let half = f64::from(self.config.player_config.half_height(false));
         let preload = self
             .config
             .respawn_preload_radius_chunks
             .map(|_| body_centre_chunk(respawn, half));
-        self.drop_inventory(id, death);
         let s = self.sessions.get_mut(&id).expect("session");
         s.death_position = death;
+        s.death_yaw = yaw;
+        s.drop_on_stand = true;
         s.handle = None;
         s.health = 0;
         s.inputs.clear();
@@ -2174,6 +2204,8 @@ impl Server {
         // Creatures spawn near players, wander and despawn far away (ADR 0073).
         self.step_creatures();
         self.step_npc_fights();
+        // Blueprints complete, and their builders build (docs/BLUEPRINTS.md).
+        self.step_blueprints();
 
         // 5. Respawns, then snapshots at SNAPSHOT_HZ.
         for &id in &ids {
@@ -2183,12 +2215,14 @@ impl Server {
             if !s.joined() || s.handle.is_some() || s.away.is_some() || self.tick < s.respawn_tick {
                 continue;
             }
-            let at = self
-                .sessions
-                .get_mut(&id)
-                .expect("session")
-                .respawn_at
-                .take();
+            let s = self.sessions.get_mut(&id).expect("session");
+            let at = s.respawn_at.take();
+            // What it carried is left where it knelt (§11.13: kept through the kneel, so a held
+            // sword stays planted before it).
+            if std::mem::take(&mut s.drop_on_stand) {
+                let knelt = s.death_position;
+                self.drop_inventory(id, knelt);
+            }
             self.spawn_player(id, at);
             self.sessions.get_mut(&id).expect("session").preload_center = None;
             let h = self.sessions[&id].handle.expect("spawned");
@@ -4435,7 +4469,7 @@ impl Server {
                 player_id: s.player_id,
                 position: s.death_position,
                 velocity: [0.0; 3],
-                yaw: 0,
+                yaw: quantize_yaw(s.death_yaw),
                 pitch: 0,
                 state: PlayerState::Idle,
                 flags: player_flags::DEAD,
@@ -4812,6 +4846,7 @@ impl Server {
             self.flush_water();
         }
         *self.saved.lock().expect("saved index") = saved;
+        self.blueprints.restore(db.blueprints());
         if let Some(saved) = db
             .loose_items()
             .and_then(|b| crate::loose_items::LooseItems::from_bytes(&b))
@@ -4979,6 +5014,7 @@ impl Server {
             batch.markers.extend(Self::markers_record(s));
         }
         batch.loose_items = Some(self.loose.to_bytes());
+        batch.blueprints = self.blueprints.record_to_save();
         if !self.cuts_unread {
             batch.cuts = Some(self.cuts.to_bytes());
         }
@@ -5198,8 +5234,8 @@ impl Server {
         self.respawn_after_death(player_id, death)
     }
 
-    /// Kills a joined, living player (as a lethal fall would; tools and tests): they respawn after
-    /// `RESPAWN_SECONDS`.
+    /// Defeats a joined, standing player (as a lethal fall would; tools and tests): they kneel, then
+    /// stand up at the nearest shrine after their defeat's kneel and fade (shared/defeat).
     pub fn kill_player(&mut self, player_id: u16) {
         if let Some(id) = self.session_of_player(player_id) {
             self.kill(id, DamageCause::Fall);

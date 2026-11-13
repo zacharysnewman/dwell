@@ -749,6 +749,11 @@ impl Session {
             Message::Markers(m) if self.joined() => {
                 self.game.push_back((Message::Markers(m), bytes.to_vec()));
             }
+            // The world's blueprints (docs/BLUEPRINTS.md): to the game.
+            Message::Blueprints(m) if self.joined() => {
+                self.game
+                    .push_back((Message::Blueprints(m), bytes.to_vec()));
+            }
             Message::Inventory(i) if self.joined() => {
                 self.game.push_back((Message::Inventory(i), bytes.to_vec()));
             }

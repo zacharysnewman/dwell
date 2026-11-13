@@ -32,19 +32,32 @@ pub fn role_for_speed(speed: f32) -> &'static str {
 
 /// The role an NPC plays: its speed's while it moves, else its idle pose's (`stand` plays
 /// `idle`; `look` and `sit` play their own roles, a model without them its fallback).
-pub fn npc_role(speed: f32, pose: u8) -> &'static str {
-    // Its sword's swing (`npcs.swings`): the rig's chop clips, whatever its feet do.
+/// `armed`: it holds a weapon (a defeated one plants it, `kneel_sword`).
+pub fn npc_role(speed: f32, pose: u8, armed: bool) -> &'static str {
+    // Its sword's swing (`npcs.swings`): the rig's chop clips, whatever its feet do; defeated
+    // (`humans.defeat`, CHARACTERS.md §11.13): kneeling, then standing up at a shrine.
+    let r = &dwell_protocol::defeat::ROLES;
     match usize::from(pose).checked_sub(NPC_POSES.len()) {
         Some(0) => return "chop_level",
         Some(1) => return "chop_vertical",
+        Some(2) => return if armed { r.kneel_armed } else { r.kneel },
+        Some(3) => return if armed { r.stand_armed } else { r.stand },
         _ => {}
     }
     debug_assert_eq!(NPC_STRIKE_POSES.len(), 2);
+    debug_assert_eq!(dwell_protocol::NPC_DEFEAT_POSES.len(), 2);
     match (role_for_speed(speed), NPC_POSES.get(usize::from(pose))) {
         ("idle", Some(&"look")) => "look",
         ("idle", Some(&"sit")) => "sit",
         (r, _) => r,
     }
+}
+
+/// Whether an NPC holds a weapon (a tool of kind `Weapon`, shared/tools).
+fn npc_armed(l: &NpcLook) -> bool {
+    l.held
+        .and_then(dwell_protocol::chopping::tool)
+        .is_some_and(|t| t.kind == dwell_protocol::chopping::ToolKind::Weapon)
 }
 
 /// An NPC's looks as drawn: its colours (per part, the model's palette ramp → the one drawn in its
@@ -87,6 +100,8 @@ pub struct CreatureView {
     /// An animal's idle pose while it stands (`graze`, `lie`, ...: `CREATURE_POSES`, WORK_QUEUE
     /// item 39), from a server that sends the poses' part; None: standing, or moving.
     pub pose: Option<&'static str>,
+    /// Seconds in its NPC pose so far (a defeated NPC's kneel and stand play from their start).
+    pub pose_s: f64,
 }
 
 #[derive(Clone, Debug)]
@@ -99,6 +114,8 @@ struct Seen {
     npc: Option<(NpcNet, NpcLook)>,
     /// Its idle pose's index in `CREATURE_POSES` (0 stand).
     pose: u8,
+    /// Its NPC pose last drawn and the seconds since it began.
+    npc_pose: (u8, f64),
 }
 
 #[derive(Debug, Default)]
@@ -128,6 +145,7 @@ impl ClientCreatures {
                 shown: at,
                 yaw: f64::from(c.yaw),
                 npc: None,
+                npc_pose: (0, 0.0),
                 pose: 0,
             });
             if let Some(p) = &poses {
@@ -167,6 +185,12 @@ impl ClientCreatures {
                         s.shown[i] + (to[i] - s.shown[i]) * k
                     }
                 });
+                let now = s.npc.as_ref().map_or(0, |(n, _)| n.pose);
+                s.npc_pose = if now == s.npc_pose.0 {
+                    (now, s.npc_pose.1 + dt.max(0.0))
+                } else {
+                    (now, 0.0)
+                };
                 let dyaw = (f64::from(s.net.yaw) - s.yaw + 540.0).rem_euclid(360.0) - 180.0;
                 s.yaw += dyaw * k;
                 CreatureView {
@@ -176,13 +200,14 @@ impl ClientCreatures {
                     yaw: s.yaw,
                     face: FaceFrame::at_height(s.shown[1]),
                     role: match &s.npc {
-                        Some((n, _)) => npc_role(s.net.speed, n.pose),
+                        Some((n, l)) => npc_role(s.net.speed, n.pose, npc_armed(l)),
                         None => role_for_speed(s.net.speed),
                     },
                     npc: s.npc.as_ref().map(|(_, l)| l.clone()),
                     pose: (s.net.speed < 0.3 && s.pose != 0)
                         .then(|| CREATURE_POSES.get(usize::from(s.pose)).copied())
                         .flatten(),
+                    pose_s: s.npc_pose.1,
                 }
             })
             .collect();
@@ -222,9 +247,19 @@ mod tests {
     // WORK_QUEUE item 35: an NPC sent striking (`npcs.swings`) plays the rig's chop clip.
     #[test]
     fn an_npc_striking_plays_its_swing() {
-        assert_eq!(npc_role(0.0, 3), "chop_level");
-        assert_eq!(npc_role(2.0, 4), "chop_vertical");
-        assert_eq!(npc_role(0.0, 2), "sit");
+        assert_eq!(npc_role(0.0, 3, true), "chop_level");
+        assert_eq!(npc_role(2.0, 4, true), "chop_vertical");
+        assert_eq!(npc_role(0.0, 2, false), "sit");
+    }
+
+    // WORK_QUEUE item 55: a defeated NPC (`humans.defeat`) kneels, its sword planted if it holds
+    // one, then stands up; never a lying death.
+    #[test]
+    fn a_defeated_npc_kneels_then_stands() {
+        assert_eq!(npc_role(0.0, 5, false), "kneel");
+        assert_eq!(npc_role(0.0, 5, true), "kneel_sword");
+        assert_eq!(npc_role(0.0, 6, false), "stand");
+        assert_eq!(npc_role(0.0, 6, true), "stand_sword");
     }
 
     #[test]

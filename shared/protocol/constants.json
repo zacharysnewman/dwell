@@ -14,7 +14,6 @@
   "maxInputsPerDatagram": 4,
   "players": {
     "maxHealth": 100,
-    "respawnSeconds": 5,
     "reconcileSnapDistance": 1.0,
     "interpDelayMs": 100,
     "predictProxyRadius": 16,
@@ -158,7 +157,8 @@
     "Capabilities": 105,
     "Swordplay": 106,
     "TheaterViewpoint": 107,
-    "Markers": 108
+    "Markers": 108,
+    "Blueprints": 109
   },
   "rejectReasons": {
     "ProtocolVersion": 1,

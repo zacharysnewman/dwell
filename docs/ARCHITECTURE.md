@@ -473,8 +473,9 @@ at most 2 ms. Rapier steps on the tick's thread. **Built (Phase 2):** each `Serv
 input per joined player from its jitter-buffered queue (§9.3), runs the player controller pipeline,
 applies its server-side consequences (impact damage; there is no void: a body that leaves the disc
 falls toward the midplane and is carried across the midplane by the flip band, §6.3), steps
-physics, respawns dead players after `RESPAWN_SECONDS` (at the resurrection shrine nearest the death on
-its face since 0.58, [`SHRINES.md`](./SHRINES.md)), and every 3rd tick sends each client a
+physics, stands defeated players up after their defeat's kneel and fade (`shared/defeat`; humans never
+die, CHARACTERS.md §1a, §11.13) at the resurrection shrine nearest where they fell on its face
+([`SHRINES.md`](./SHRINES.md)), and every 3rd tick sends each client a
 `PhysicsSnapshot`. Sessions are kept in id order, so every pass over them is deterministic.
 **Built (Phase 3a):** the world generates from `(worldSeed, generatorVersion)` (§6.3); players
 spawn at the generator's spawn point. **Built (Phase 3b):** each step first integrates the chunks
@@ -638,7 +639,16 @@ waypoint over the spot, faded with distance, clamped to the screen's edge), plus
 (spawn, last death; portals once there are any). The set, palette, auto kinds and limits are data
 (`shared/ui/markers.json` → `shared/ui/gen.mjs` → `markers.gen.ts` and `dwell-protocol`'s
 `markers.gen.rs`); the record is saved per player in the world's `markers` table and synced to that
-player only (`markers.private`). **[built, 0.52.3]** A save (every 10 s while cells
+player only (`markers.private`). **[in progress, WORK_QUEUE item 56] Blueprints**
+([BLUEPRINTS.md](BLUEPRINTS.md)): a structure placed as an entity shown as ghost blocks (the brush
+preview's renderer; red where the player lacks the block), placed from the game menu's Structures page
+where the mode has the `blueprints` ability (creative and adventure), seen and built by everyone in the
+world: Place aimed into one fills only its ghost cells with their own blocks, from what the player has,
+one piece every `player.paceMs` (one-cell region fills), and a compact panel shows each item's have/need.
+Builder NPCs (`dwell:builder`, the villager without a sword) build them on the server with unlimited
+blocks, foundation up. The rules are data (`shared/blueprints/blueprints.json` → `shared/blueprints/gen.mjs`
+→ `dwell-world`'s `blueprints.gen.rs`); the geometry is `dwell_world::blueprint`; the world's list is
+saved in its optional `blueprints` table and synced behind `blueprints.world`. **[built, 0.52.3]** A save (every 10 s while cells
 change) hands the store only the cells changed since the last one (`ExploredChanges`,
 `client/src/ui/exploredStore.ts`), and the store merges them into the record in its own worker
 (`exploredWorker.ts`; on the page only when the page is closing or has no workers): the merge reads
@@ -969,7 +979,8 @@ tests only); CI fails on stale output. Code names characters, looks, items and r
   a faint rim, scaled by the frame's light on the fragment's face (so day, night and face B's own
   lights reach characters as they reach terrain); the held block (`$block`) is its atlas tiles (top,
   side, bottom) lit by `lambert`, cutout texels discarded. A body on face B is turned a half turn
-  about its forward axis (a proper rotation, so the winding holds); a dead one lies on its back.
+  about its forward axis (a proper rotation, so the winding holds); always upright (a defeated one
+kneels by its clip, CHARACTERS.md §11.13; the lying body is gone).
   Bodies draw in the scene passes they reach, after the opaque draws and before see-through water,
   writing colour and view depth, so the composite tone-maps, fogs, inks and edge-blurs them.
 - **The arms pass**: after the world's passes (the last of which then keeps its colour instead of
@@ -2370,7 +2381,7 @@ Server (native), local mode (WASM), and client (WASM) must produce **bit-identic
   (177/179 for 2 s) run slower than its measured rate, so the bar held with the shimmer for ~3 s.
 - **The respawn preload** **[built]** (`dwell-sim` `server.rs`, `dwell-game` `chunk_stream.rs`,
   `dwell-lod` `system.rs`, `dwell-client` `game.rs`). Owner (2026-10-21): *"We could preload terrain
-  at spawn once you die too?"* From a death until the respawn (`RESPAWN_SECONDS`, 5 s) the
+  at spawn once you die too?"* From a defeat until the stand (the defeat's `kneelS` + `fadeS`, 5 s, `shared/defeat`) the
   respawn's near ring is made ready while the death screen shows, so the loading screen on
   respawning opens at once. The respawn point is decided on the server: the world's spawn, spread by
   player id (`respawn_feet`; there are no beds). **Server:** the kill records the chunk the body will
@@ -2428,6 +2439,7 @@ lives in side files. Chunk and LOD blobs are the protocol's palette + RLE compre
 | `inventories` | **[built, 0.50.33]** Keyed by device public key: the player's inventory record (`Inventory::to_bytes`, version 1: held slot, wallet and money, each non-empty slot's index, item name and count; ADR 0066). Optional: older builds leave it; an unreadable record is kept, not overwritten |
 | `vitals` | **[built, 0.50.57]** Keyed by device public key: the player's stamina and oxygen (version 1: f32 stamina, f32 seconds of air, u8 exhausted; ADR 0069), rewritten each save. Optional: older builds leave it; a player without one, or with a record this build can't read, starts rested |
 | `markers` | **[built, WORK_QUEUE item 53]** Keyed by device public key: the player's own map markers (`dwell_protocol::markers::Markers::to_bytes`, version 1: each marker's id, icon name, colour, label, face, face-local point and auto kind; [MAP_MARKERS.md](MAP_MARKERS.md)), rewritten each save for every player who has a record. Optional and additive: a world without it has no markers, older builds on the line never open it; an unreadable record reads as none and is replaced only when the player changes their markers |
+| `blueprints` | **[in progress, WORK_QUEUE item 56]** One record (key 0), rewritten on a save after a change: the world's blueprints (`dwell_protocol::blueprints::list_to_bytes`, version 1: the next id, a count, then each record; BLUEPRINTS.md §2). Optional and additive: older builds leave it; an unreadable record is kept, not overwritten |
 | `loose_items` | **[built, 0.50.33]** One record (key 0), rewritten each save: the loose items lying in the world (version 1: item name, count, point, age each; ADR 0066) |
 | `ground_gone` | **[built, 0.50.68]** One record (key 0), rewritten each save: the ground items gone from the scatter (`dwell_world::ground::GroundGone::to_bytes`, version 1: a count, then each cell as i32×3, sorted; ADR 0071), the scatter's tombstones. Optional: older builds leave it; an unreadable record is kept, not overwritten |
 | `block_damage` | **[built, 0.52.28]** One record (key 0), rewritten each save: the blocks hit short of breaking (`dwell_protocol::damage::Damage::to_bytes`, version 1: each cell, its state, hits and up to four hit marks; ADR 0078). Optional: a world without it loads undamaged, older builds leave it; an unreadable record is kept, not overwritten |
@@ -3362,8 +3374,8 @@ gems). `shared/inventory/gen.mjs` checks both and emits `dwell_protocol::invento
 the `Inventory` model) and `client/src/ui/inventory.gen.ts`. In a mode without `unlimitedBlocks`
 the server (`dwell-sim` `server/items.rs`) takes one of a block's item (its `cost`: a ramp its base)
 for every place, block, region or body edit (none held: refused; a torch held against dynamite
-lights it and is kept), and drops the broken block's items; a dying player's slots drop where it
-died (the wallet is kept). Loose items (`dwell-sim` `loose_items.rs`) are light server entities,
+lights it and is kept), and drops the broken block's items; a defeated player's slots drop where it
+knelt when it stands up at a shrine (the wallet is kept; CHARACTERS.md §11.13). Loose items (`dwell-sim` `loose_items.rs`) are light server entities,
 not Rapier bodies: a point that falls toward the midplane through `FaceFrame` and rests on the top
 of the first solid cell. Currency items (a `value`) go to the wallet, whole items up to its
 capacity. The client draws loose items as small turning copies of their block through the pieces'
@@ -4159,7 +4171,7 @@ in the code yet.
 | Controller tuning | see `PLAYER_CONTROLLER.md` §7 | Capsule, speeds, jump, crouch, climb, swim, push, damage |
 | `RECONCILE_SNAP_DISTANCE` | 1.0 m | Correction above this snaps instead of smoothing |
 | `PREDICT_PROXY_RADIUS` | 16 m | Tier 1 bodies within this use present-time proxies |
-| `RESPAWN_SECONDS` | 5 s | Death → respawn delay |
+| defeat `kneelS`, `fadeS`, `standS` | 4 s, 1 s, 1.4 s | Defeat → kneel, fade, stand at the shrine (`shared/defeat/defeat.json`, per character) |
 | `MAX_HEALTH` | 100 | Player health |
 | `MAX_INPUTS_PER_DATAGRAM` | 4 | Input redundancy per `PlayerInput` |
 | `REACH_DISTANCE` | 5 m | Block break/place reach from the eye (§6.5; the server allows 1 m more for latency) |
@@ -4690,7 +4702,9 @@ poses (above), drawn from `models.json` `poses` (CHARACTERS.md §11.6); without 
 their idle clip. The seventh is `npcs.swings` (WORK_QUEUE item 35): while an NPC swings its sword,
 its NPC part's pose is 3 (level) or 4 (vertical) (`NPC_STRIKE_POSES`), and the client plays the rig's
 chop clip; without it the server sends the NPC's idle pose, as older clients (whose decode refuses a
-pose past 2) read it. The eighth is `theater.viewpoint` (THEATER_MODE.md §7, §5.5): the client sends
+pose past 2) read it. Then `humans.defeat` (WORK_QUEUE item 55, CHARACTERS.md §11.13): a defeated NPC's
+pose is 5 (kneeling where it fell) or 6 (standing up at a shrine; `NPC_DEFEAT_POSES`), played as the
+characters' `kneel` and `stand` clips; without it the server sends pose 0. The eighth is `theater.viewpoint` (THEATER_MODE.md §7, §5.5): the client sends
 `TheaterViewpoint` 0x6B (C→S, control: u8 0 cleared | 1 then f64 × 3, finite) while a camera path plays,
 used by the server only in a mode with `theaterViewpoint`; an older server is never sent one. The ninth
 is `hits.at_contact` (BUGS.md #111, BLOCK_DAMAGE.md §11): a breaking tool's `BlockEditRequest` (one with a
@@ -4700,7 +4714,11 @@ server waits, as before. The message itself is unchanged. The tenth is `markers.
 ([MAP_MARKERS.md](MAP_MARKERS.md), WORK_QUEUE item 53): `Markers` 0x6C (both ways, control: the player's
 whole markers record, `dwell_protocol::markers`) — the server sends a player their own saved record once
 after their `Capabilities`, to them alone, and the client sends its whole record again on each change;
-without it neither is sent and the client's markers last the session.
+without it neither is sent and the client's markers last the session. The eleventh is `blueprints.world`
+([BLUEPRINTS.md](BLUEPRINTS.md), WORK_QUEUE item 56): `Blueprints` 0x6D (both ways: S→C `All` once after the
+client's `Capabilities`, then `Added` / `Removed` to every client with it; C→S `Place` / `Remove`, taken only
+where the mode has the `blueprints` ability) carrying `dwell_protocol::blueprints::Blueprint` records (a
+structure's cells as runs, face-local, turned); without it neither is sent.
 ```
 S→C  WorldSettings field 0x85 (optional): u8 count (≤ 64), each str name (≤ 48 bytes, no repeat)
 C→S  Capabilities 0x69, control: the same form — the client's capabilities, once after Welcome,
@@ -5007,13 +5025,15 @@ animated from `State` and flags in snapshots.
   swimming and climbing exempt; sent with cause `Fall`; PLAYER_CONTROLLER.md §6.10; and falling out
   of the world), crush
   (Phase 20), explosion (Phase 21). `Damage`, `Death`, and `Respawn` are `PlayerEvent`s to every
-  client; a dead player's body leaves the physics world, and snapshots mark it `dead` where it
-  died. The server respawns the player at the spawn point after `RESPAWN_SECONDS`.
-- On death clients currently draw the body lying down (a cosmetic pose), seen from a third-person
-  camera on the face the body lies on (`game.rs` `death_camera`, 0.49.6: the controller has no
-  body while dead and its face is not the body's). The **cosmetic ragdoll**
-  (in the client's local Rapier world, Tier 2 rules — local, unsynchronized, despawned on respawn)
-  arrives with the client debris world in Phase 21.
+  client (`Death` on the wire is the defeat: humans never die, CHARACTERS.md §1a); a defeated
+  player's body leaves the physics world, and snapshots mark it `dead` where it fell, with the yaw
+  it knelt with. The server stands the player up at the nearest shrine after its defeat's `kneelS`
+  and `fadeS` (`shared/defeat`).
+- On a defeat clients draw the body kneeling (the characters' `kneel` / `kneel_sword` clip), the
+  defeated player's own view eased out to a third-person camera on the face the body is on
+  (`game.rs` `defeat_camera`, its distance, height, pitch and ease from the data), fading to black,
+  then standing up at the shrine (`stand` / `stand_sword`, input held for `standS`) as it fades back
+  in (CHARACTERS.md §11.13).
 
 ### 9.7 Anti-cheat implications
 Clients only send inputs, never positions, so speed/teleport/fly hacks are structurally

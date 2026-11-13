@@ -82,6 +82,7 @@ import { Hud, type VitalsHud } from './ui/hud';
 import { MAP_SIZE, MapOverlay } from './ui/mapOverlay';
 import { SettingsMenu, loadSettings } from './ui/settingsMenu';
 import { antialiasFromQuery, antialiasMode } from './ui/antialiasSettings';
+import { BlueprintPanel, blueprintCellsOf } from './ui/blueprints';
 import { StructuresPanel } from './ui/structuresPanel';
 import { opfsStructureDir, StructureStore } from './local/structureStore';
 import { clipboardOf, type Vec3 as Cell } from './local/structures';
@@ -916,6 +917,8 @@ function showHud(app: App, now: number): void {
     /** The burning edge's opacity now (0: none) and colour (shared/fluids/lava.json `burnEdge`). */
     burn?: number;
     burnColor?: string;
+    /** Defeat's fade (0 clear, 1 black; docs/CHARACTERS.md §11.13). */
+    fade?: number;
     region?: string;
     /** The held axe's swing hint (ADR 0067), else null. */
     chop?: string | null;
@@ -931,6 +934,7 @@ function showHud(app: App, now: number): void {
   app.hud.setSpyglass(h.spyglass ?? null);
   if (h.damaged) app.hud.flashDamage(now);
   app.hud.setBurn(h.burn ?? 0, h.burnColor ?? '#ff5a1e');
+  app.hud.setFade(h.fade ?? 0);
   app.hud.setHealth(h.health ?? 0, now);
   app.hud.setVitals(h.vitals ?? null);
   app.hud.setMessage(h.message);
@@ -1336,7 +1340,39 @@ async function start(): Promise<App | null> {
     close: () => {
       settings.setOpen(false);
     },
+    // Blueprints (docs/BLUEPRINTS.md): a structure placed as ghost blocks at the crosshair.
+    blueprints: {
+      synced: () => client.blueprintsSynced(),
+      catalog: () =>
+        client.blueprintCatalog().map((line) => {
+          const [name = '', ...size] = line.split(' ');
+          return { name, size: size.join(' × ') };
+        }),
+      placeCatalog: (name, turn) =>
+        client.placeBlueprint(name, turn) ? '' : 'Aim where it should stand first.',
+      place: (s, turn) => {
+        try {
+          const { palette, cells } = blueprintCellsOf(s);
+          return client.placeBlueprintCells(
+            s.name,
+            new Uint8Array(s.size),
+            new Uint8Array(s.anchor),
+            palette,
+            cells,
+            turn,
+          )
+            ? ''
+            : 'Aim where it should stand first.';
+        } catch (e) {
+          return e instanceof Error ? e.message : String(e);
+        }
+      },
+      removeAimed: () => client.removeAimedBlueprint(),
+    },
   });
+  // The aimed blueprint's have/need panel (docs/BLUEPRINTS.md §4).
+  const blueprintPanel = new BlueprintPanel();
+  document.body.append(blueprintPanel.element);
   settings.addStructuresPanel(structures.element, () => {
     void structures.refresh();
   });
@@ -1670,6 +1706,7 @@ async function start(): Promise<App | null> {
     handleEvents(app);
     playSounds(app, sounds, beds);
     showHud(app, now);
+    blueprintPanel.update(app.playing && !settings.isOpen ? client.blueprintPanel() : '');
     if (app.minimap) {
       app.minimap.shading = app.mapShading;
       app.minimap.frame(now);

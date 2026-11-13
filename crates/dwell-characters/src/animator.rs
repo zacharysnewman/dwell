@@ -35,6 +35,24 @@ impl Swing {
     }
 }
 
+/// Defeat (docs/CHARACTERS.md §11.13; owner, 2026-11-13: "Humans won't die in this game"): a
+/// defeated human kneels where it fell, then stands up at a shrine. The clips are the characters'
+/// roles named in `dwell_protocol::defeat::ROLES` (`kneel`, `stand`, and with a weapon in hand
+/// `kneel_sword`, `stand_sword`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Defeat {
+    /// Down on one knee, head bowed (held while defeated).
+    Kneel,
+    /// Rising from the kneel to idle: plays once from where it is set, then the gait takes over.
+    Stand,
+}
+
+/// Whether `role` is one of defeat's (no hold layer, raised guard, look or foot planting over it).
+pub fn is_defeat_role(role: &str) -> bool {
+    let r = &dwell_protocol::defeat::ROLES;
+    [r.kneel, r.kneel_armed, r.stand, r.stand_armed].contains(&role)
+}
+
 /// What the animator reads each frame: a remote snapshot's controller state (or the local
 /// prediction's, for the arms).
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -62,6 +80,10 @@ pub struct MoveInput {
     /// played in place of the hold while no swing plays (attacking drops the block; WORK_QUEUE
     /// item 35). A character without the role's clip shows its hold.
     pub guard: Option<&'static str>,
+    /// Defeated (kneeling) or standing up again ([`Defeat`]); none while playing.
+    pub defeat: Option<Defeat>,
+    /// A weapon is in hand (a sword: `ToolKind::Weapon`): defeat plants it (`kneel_sword`).
+    pub armed: bool,
 }
 
 impl Default for MoveInput {
@@ -78,6 +100,8 @@ impl Default for MoveInput {
             foot_ground: [0.0; 2],
             jumped: false,
             guard: None,
+            defeat: None,
+            armed: false,
         }
     }
 }
@@ -268,6 +292,35 @@ impl Animator {
                 Space::Arms => arms_role(i, "idle"),
             };
         }
+        // Defeat (§11.13): the kneel held, the stand played once (then the gait), the armed clip
+        // with a weapon in hand where the character has it.
+        let finished = |a: &Self| a.base.is_some_and(|b| b.t >= a.clip(b.clip).duration);
+        let r = &dwell_protocol::defeat::ROLES;
+        let pick = |a: &Self, plain: &'static str, armed: &'static str| {
+            if i.armed && a.clip_of(armed).is_some() {
+                armed
+            } else {
+                plain
+            }
+        };
+        match i.defeat {
+            Some(Defeat::Kneel) => role = pick(self, r.kneel, r.kneel_armed),
+            Some(Defeat::Stand) => {
+                let stand = pick(self, r.stand, r.stand_armed);
+                if !(now == stand && finished(self)) {
+                    role = stand;
+                }
+            }
+            // A stand plays out unless the player moves off.
+            None if (now == r.stand || now == r.stand_armed)
+                && !finished(self)
+                && matches!(role, "idle" | "land") =>
+            {
+                role = now;
+            }
+            None => {}
+        }
+        let defeated = is_defeat_role(role);
         let clip = self
             .clip_of(role)
             .or_else(|| self.clip_of("idle"))
@@ -311,12 +364,14 @@ impl Animator {
         }
         if self.space == Space::Body
             && i.holding
+            && !defeated
             && let Some(hold) = self.clip_of("hold")
         {
             layer(&mut pose, &sample(self.clip(hold), base.t), 1.0);
         }
         // The raised block over the gait (and the hold), on the body and the arms alike.
         if self.action.is_none()
+            && !defeated
             && let Some(guard) = i.guard.and_then(|g| self.clip_of(g))
         {
             layer(&mut pose, &sample(self.clip(guard), base.t), 1.0);
@@ -342,7 +397,7 @@ impl Animator {
                 layer(&mut pose, &sample(c, a.t), weight);
             }
         }
-        if self.space == Space::Body {
+        if self.space == Space::Body && !defeated {
             self.plant_feet(&mut pose, i);
             self.look(&mut pose, i);
         }
@@ -725,5 +780,47 @@ mod tests {
         a.swing(Swing::Place);
         a.update(&input(PlayerState::Running, [0.0, 0.0, 6.0]), 0.1);
         assert_eq!(a.action(), Some("place"));
+    }
+    // WORK_QUEUE item 55 (CHARACTERS.md §11.13): defeat's roles by data: the kneel held (the
+    // sword's with a weapon in hand), no hold layer over it, the stand played once then idle.
+    #[test]
+    fn defeat_kneels_holds_and_stands_up_once() {
+        let r = &dwell_protocol::defeat::ROLES;
+        let mut a = Animator::new(&TABLES, player(), Space::Body);
+        let kneel = MoveInput {
+            defeat: Some(Defeat::Kneel),
+            holding: true,
+            ..MoveInput::default()
+        };
+        a.update(&kneel, 0.0);
+        assert_eq!(a.role(), r.kneel);
+        for _ in 0..300 {
+            a.update(&kneel, 1.0 / 60.0);
+        }
+        assert_eq!(a.role(), r.kneel, "held while defeated");
+        let armed = MoveInput {
+            armed: true,
+            ..kneel
+        };
+        a.update(&armed, 0.0);
+        assert_eq!(a.role(), r.kneel_armed);
+        // The hold layer (the forearm forward) is not laid over the kneel.
+        let hold = TABLES.clip(player().clip("hold").unwrap());
+        let fore = player().bone("forearm_r").unwrap();
+        let p = a.update(&armed, 1.0);
+        assert_ne!(p.rot[fore], crate::anim::sample(hold, 0.0).rot[fore]);
+        let stand = MoveInput {
+            defeat: Some(Defeat::Stand),
+            ..MoveInput::default()
+        };
+        a.update(&stand, 0.0);
+        assert_eq!(a.role(), r.stand);
+        let len = TABLES.clip(player().clip(r.stand).unwrap()).duration;
+        a.update(&MoveInput::default(), len * 0.5);
+        assert_eq!(a.role(), r.stand, "plays out with no input");
+        a.update(&MoveInput::default(), len);
+        a.update(&MoveInput::default(), 0.01);
+        assert_eq!(a.role(), "idle", "then idle");
+        assert!(is_defeat_role(r.kneel_armed) && !is_defeat_role("idle"));
     }
 }

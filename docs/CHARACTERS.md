@@ -49,6 +49,17 @@ recorded here for the owner to correct in §10):
 - *Scope*: per build (the data ships with a release, like the block registry). A player's chosen
   look is per player (§9.4).
 
+## 1a. Design rule: humans never die (owner, 2026-11-13)
+
+> "This is their 'defeat' animation. Humans won't die in this game (general design rule)."
+
+A human — the player and every NPC or villager — is never killed. At 0 health it is **defeated**: it
+kneels where it fell (one knee down, head bowed, a hand on the hilt of its sword planted point-down
+before it; with no sword, the hand on the raised knee), the view fades, and it **stands up at the
+resurrection shrine nearest where it fell**, on that face ([`SHRINES.md`](./SHRINES.md)), playing the
+stand. Nothing about a human is drawn or simulated as a death: no lying body, no "You died", no
+removal. Animals still die. §11.13 has how it is built.
+
 ## 2. Art direction for characters
 
 The world's style ([`ART_DIRECTION.md`](./ART_DIRECTION.md)) applies unchanged: the same palette
@@ -368,6 +379,7 @@ Clips are keyed rotations on the rig (and a root offset for bob), sampled and la
 
 | Character | Base | Hold | Action |
 | --- | --- | --- | --- |
+| Player (body), defeat (§11.13) | `biped_kneel` (1.3 s, one-shot, held: onto the left knee, the right raised, head bowed, the right hand on the raised knee), `biped_kneel_sword` (the same, the fist on the hilt of the sword planted before the knee), `biped_stand` and `biped_stand_sword` (1.4 s: rising to idle, the sword drawn up out of the ground back into the hold) | | |
 | Player (body) | `biped_idle` (breathing, 3 s), `biped_walk` (1 s, 5 m a loop, two footsteps of the sound data's 2.5 m walk stride: ~2 steps a second at the 5 m/s walk; legs, counter-swinging arms, hips and chest twist, bob), `biped_sprint` (0.66 s, 5.6 m, two 2.8 m run strides, ~2.9 steps a second at 8 m/s: chest forward, arms pumping, high knees), `biped_crouch` (a deep squat, chest forward), `biped_crouch_walk` (1 s, 2.2 m, two 1.1 m crouch strides), `biped_slide` (low and leaning back, the lead leg out, the other folded under, the left arm out for balance), `biped_jump` (0.42 s, one-shot: a dip, the push onto the toes with the arms swinging up, then knees tucked), `biped_fall` (legs loose, arms up and out), `biped_land` (0.4 s, one-shot: the squash on touching down, to standing), `biped_climb` (hand over hand, 1.2 m a loop), `biped_swim` (a breaststroke and a frog kick, leaning into it), `biped_fly` (a hover, legs trailing) | `biped_hold` (the right forearm forward) | `biped_break`, `biped_place` |
 | Player (arms) | `fp_idle`, `fp_walk`, `fp_sprint` (a bigger, faster bob and the arm pumping), `fp_slide` (the arm out to the right and lowered), `fp_jump` (a dip on the take-off, the arm lifting with the push), `fp_fall` (raised a little, fluttering), `fp_land` (a dip, back to the hold) | (in the base) | `fp_break`, `fp_place` |
 | Wolf | `wolf_idle` (tail sway, head turns, an ear flick), `wolf_trot` (0.56 s, 1.4 m: diagonal pairs, a suspended bob, the tail up and swaying) | | |
@@ -959,3 +971,58 @@ tunic, the body others see and your shadow casts.
 - **Differs from the rigid body**: the Peasant's legs are shorter than the rig's, so sliding its
   feet reach less far ahead and come into view from 30° down (the rigid legs' from 15°). The in-game
   look is to be checked on a GPU.
+
+### 11.13 Defeat: the kneel and the stand (WORK_QUEUE item 55, 2026-11-13)
+
+The owner (2026-11-13): "Can you setup a kneeling animation for my human characters. Head down, hand
+on sword hilt, sword in the ground. And a stand too." / "This is their 'defeat' animation. Humans
+won't die in this game (general design rule)" (§1a). Answers: after the kneel they respawn at the
+nearest resurrection shrine, where the stand plays; players and NPCs alike; with no sword in hand
+they kneel without one, the hand on the knee.
+
+- **Clips (data)**: the characters' roles `kneel`, `kneel_sword`, `stand`, `stand_sword` (§6's table;
+  `shared/characters/characters.json`, played on the Peasant through the retarget map, §11.9). The
+  kneel is a one-shot held at its end; each stand plays once and hands over to idle (the armed one
+  ends on `biped_hold`'s arm, so the hold takes over without a jump). The sword is **drawn back to
+  hand**, not sheathed: it rises out of the ground with the stand. Fitted with `clip_probe`: the
+  armed kneel's arm by `clip_probe kneel_sword --item dwell:sword --body --fit 1.3/0.1,0.82,0.55/0.1,0,0.6`
+  (`fit_at`: a defeat role is fitted on its own kneeling body, not the rest pose), the legs and body
+  by forward kinematics from the rig's bones; the probe takes body-only roles (`clip_probe kneel
+  --item none --part hand_r,shin_r,head_bone --svg …`; the top, side and front views then show the
+  body from its feet). Tests (`clip_probe::defeat_tests`, both faces through `place_frame`): the
+  grip 0.7–1 m up and ahead of the knee, the sword's tip within 6 cm of the ground and the blade
+  upright, the left knee down and the right up, the head bowed over 45°; unarmed, the right hand
+  within 15 cm of the raised knee; each stand from kneeling to standing, the sword back in hand.
+- **The animator** (`dwell_characters::animator`): `MoveInput::defeat` (`Defeat::Kneel` or
+  `Stand`) and `armed` (a weapon in hand: `Held::is_weapon`, a tool of kind `Weapon`) pick the role
+  by the names in `dwell_protocol::defeat::ROLES`; no hold layer, raised guard, look or foot
+  planting is laid over a defeat role (`is_defeat_role`).
+- **Data** (`shared/defeat/defeat.json`, `shared/defeat/gen.mjs` → `dwell_protocol::defeat`):
+  `kneelS` (4 s on the knee), `fadeS` (1 s to black, and back in after the stand), `standS` (1.4 s:
+  at least every stand clip), the four roles, the `camera` (`backM` 3.2, `upM` 1.5, `pitchDeg` −20,
+  `easeS` 0.8) and per-character overrides by name (`dwell:villager` kneels 5 s). The generator
+  fails a role a biped character has no clip for, a looping kneel, a stand longer than `standS`, an
+  unknown field or name, or a value out of range.
+- **The server** (`dwell-sim` `server.rs` `kill`): at 0 health the player's body leaves the physics
+  and its snapshots carry it `DEAD` (on the wire, now *defeated*) where it fell, with the facing it
+  knelt with; its inventory stays on it while it kneels and is left where it knelt when it stands up
+  (a mode with items), so a held sword is seen planted. After `kneelS + fadeS` (`defeat_ticks`) it
+  stands up at the shrine nearest where it fell (SHRINES.md §5). An NPC hurt to 0 health
+  (`Creatures::hurt`: `Hurt::defeated`, no drops, not removed) kneels still and unhurt for its kind's
+  kneel and fade, then the server stands it up whole at the stand point of the shrine nearest where
+  it fell, on that face (`take_stand_ups`, `stand_at`, `npc_stand_point`; where none is near, where it
+  knelt), still for `standS`, then wandering. An NPC standing up at a far shrine is despawned there
+  like any creature with no player near: its **own shrine respawn**, not a despawn-and-respawn.
+- **The wire** (additive): a defeated player needs nothing new (the `DEAD` flag, now with the yaw it
+  knelt with, which older clients ignore). A defeated NPC is sent pose 5 (kneeling) or 6 (standing
+  up; `NPC_DEFEAT_POSES`) to a client with the `humans.defeat` capability, and pose 0 to one without
+  (its decode refuses a pose past 4).
+- **The client**: other players defeated play the kneel where they fell (`bodies::defeat_input`) and
+  the stand for `STAND_S` once they appear at the shrine; NPCs play the role of their pose from the
+  pose's start (`npc_role`, `CreatureView::pose_s`). Your own defeat: the camera eases out from your
+  eyes to third person over the kneeling body (`defeat_camera`, on the face the body is on), the
+  view fades to black over `fadeS` after `kneelS` (`Game::defeat_fade`, the HUD's `#defeat-fade`),
+  and at the shrine you stand up in third person, input held (no move, jump or crouch), as the view
+  fades back in; then first person again. The HUD says "Defeated — you will rise at the nearest
+  shrine…". The old lying body (`place_frame`'s `dead`) is gone.
+- **Not yet**: the stand's facing at the shrine is the look's (SHRINES.md §9); a sheathe on the back.
