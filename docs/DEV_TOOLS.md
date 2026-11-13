@@ -505,7 +505,7 @@ a server without `grid.frames` or in a world with no moon:
 - `grid` the player's grid now (`home`, `moon`) and `index` the moon's (`grids.json`);
 - `gravity` the moon's (m/s²: home's controller gravity × its `gravityScale`) and `gravityNow` where the player is;
 - `look` `{yaw, pitch}` toward its centre in the player's face-local look (as `look` takes it), `upMps` the
-  velocity along the face's up, `groundM` the feet's height over the moon's generated ground (on the moon; null
+  velocity along the face's up, `groundM` the feet's height over the moon's generated ground, its column's top cell (on the moon; null
   at home), and `groundHeld` whether the client holds the chunk under the feet.
 
 **`__dwell.flyTo('moon' | 'home', options?)`** (`client/src/debug/moonTrip.ts`, node-tested with a fake page in

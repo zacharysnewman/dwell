@@ -468,11 +468,31 @@ the moon's unedited chunks never evicted, tier 1 bodies in the moon's space (non
   `moon-draw` scenario use it (DEV_TOOLS.md "The moon"). It found BUGS.md #136: the server, having captured first,
   streams the moon's chunks before the client crosses, each once; the game now holds another grid's `ChunkData`
   (`other_grid_chunks`) and feeds those of the grid it crosses into to the streamer.
-- **Not yet (after M-7c):** the browser check after #123–#125, #136 (`moon-draw`, then `moon-trip`, on a GPU, a local check; no GPU in cloud sessions); the view's roll upright at the crossing (it is turned at once, keeping the look's direction); the
-  moon's own LOD and home's far disc from the moon (M-5, M-6's drawing); the sky's colours and air on the moon
-  (home's clouds already hidden, #126)
-  (home's face samples, `at_eye` by the grid-local height); remote players on another grid (sent at world
-  positions); the other systems for away players listed in §7.2.
+- **The follow-ups after the first trips (2026-11-13, branch `claude/moon-m5`):**
+  - **The moon's own sky** (BUGS.md #126; owner: "Sun and moon should be space, the same as night sky"): the sky is
+    one layered model, space the base and day a layer of a grid's air (`grids.json` `atmosphere`; DAY_NIGHT.md
+    §15): on the moon the sky is space at every hour, the stars out, the sun white, no fog.
+  - **M-5, the moon up close** (`dwell-client` `grid_bodies.rs`): a grid with a `nearMesh` (`cells` 96 across,
+    `sinkM` 8) is drawn nearer than its `farM` (150 km) as a coarse mesh of its real surface, both faces, from
+    the same `FarSource` as its far bake (heights sampled at a quarter cell, each vertex the lowest over the
+    cells round it less `sinkM`; colours its blocks'), at its pose in the drawn frame (`pose_in`: home's frame
+    at home), the sky's far disc then hidden. On the moon the same mesh is drawn at the identity under the
+    chunks, which cover it where they are; it shows where they are not yet, so nothing is swapped at the
+    capture. Built on the main thread the first time it is shown (~0.3 s natively). Tests: the mesh a metre
+    or more under the ground (99.5 %, never 4 m over), facing out, on both faces; the pose; `game_local`
+    `the_moon_up_close_is_its_surface_mesh_then_under_its_chunks` (both faces). Deviations from §5's plan: a
+    mesh, not the LOD tree per grid, and a switch at `farM`, not a crossfade (the disc and the mesh differ
+    in shading at the switch).
+  - **The roll upright at a crossing**: the view eases from the one drawn before upright onto the new face
+    over `motion.json` `gridCrossingRollS` (0.6 s; BUGS.md #137).
+  - **The maps on the moon**: hidden off home with a label ("No map on the moon", named by the grid): the
+    simpler of the two (the moon's own map would need its generator in the map's workers and tile store).
+  - **Landing under the ground** (BUGS.md #138): the report's `groundM`, not the landing: it read the smooth
+    height, not the cells' top.
+- **Not yet:** the browser checks (`moon-draw`, `moon-trip`, on a GPU, local); home seen from the moon (M-6's
+  drawing: its bake as a far body or a mesh, from the world map the client does not hold on the main thread);
+  the moon's ground light (its hemisphere light is home's, its sunlight follows home's keyframes); remote
+  players on another grid (sent at world positions); the other systems for away players listed in §7.2.
 
 ## 8. Moon spawn, faces A and B [search built, M-1; the choice M-8]
 
@@ -507,7 +527,7 @@ starts in the moon's frame with its gravity, and the home world streams in only 
 | **M-2** [built] | The sky draws the moon from its bake at M-4's position: today's size, glow and brightness (owner: "the moon should look bright"); the baked normals lit by the sun direction; the face from the orbit; moonlight from M-4's `moonlight` | the client bakes in a worker and caches per world; a screenshot per phase angle on both faces; the lit part as bright as today's moon and its halo today's × the lit share (a full moon side by side with today's); CPU-adapter tier |
 | **M-3** [built] | `GridFrame`: the frame abstraction (world ↔ grid ↔ face) for rendering, collision, targeting and gravity; the home grid the identity | the identity frame changes no result (parity tests across physics, targeting, meshing); a moving test grid's points round-trip |
 | **M-4** [built] | The celestial model (§6): the moon's orbit as data, phases from geometry, moonlight by lit share with a night floor; the orbit's phase an optional world setting | `cargo test -p dwell-look --lib celestial` (13 tests, both faces): full when opposite the sun, new when between, lit share monotonic; face A toward home at every phase; both faces' phases equal; the floor kept; the clock and the sun unchanged (golden); `MOON_PHASE` round-trips and is absent by default (`dwell-protocol`) |
-| M-5 | LOD per grid: the moon's LOD terrain inside `farM`, the far body beyond, crossfaded | the moon's LOD from its generator at 150 km; no seam at the switch (screenshot) |
+| M-5 [built as a coarse mesh, 2026-11-13] | LOD per grid: the moon's LOD terrain inside `farM`, the far body beyond, crossfaded. Built: a coarse surface mesh inside `farM` (§7.3), switched, not crossfaded | the moon's mesh from its generator inside 150 km, under its chunks on it (tests ✓); no seam at the switch (screenshot, outstanding: a GPU) |
 | M-6 | The home world's bake from its world map (water mask), drawn from far. **Bake built** (§5); drawing it from the moon outstanding (with M-5/M-7) | `cargo test -p dwell-worldgen --test home_far` (10 tests, both faces): deterministic, the water mask the map's sea, normals out of mountain slopes, block colours, size/cost/memory bounded ✓; a screenshot from 600 km (outstanding: needs the drawing) |
 | M-7 [partial; M-7b server + wire built; M-7c client built] | Streaming the moon's chunks per grid; far flight; capture and release; gravity per grid; the grid id in snapshots (behind `grid.frames`) | a scripted flight home → moon → home with no jump in position (≤ 1 cm) on both of the moon's faces; ⅙ g jump height |
 | M-8 | Moon spawn A and B in the New world form and `?spawn=moon`, `moon-b` | a new world spawned on each face stands on the moon's ground in its frame |

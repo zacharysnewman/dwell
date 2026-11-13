@@ -1095,7 +1095,13 @@ client's predictor carries its player across grids as the server does (MOON_WORL
 game client follows it (M-7c, behind `grid.frames`, which the client now says): its streamer holds the
 chunks of the predictor's grid only (all dropped at a crossing; another grid's chunk messages ignored),
 the view is drawn in that grid's local frame (the look carried across with `look_across`, the sky's
-directions turned into the frame, the moon's far disc hidden, home's LOD hidden while away). The server
+directions turned into the frame, the moon's far disc hidden, home's LOD hidden while away; its sky space, the
+grid having no air: `grids.json` `atmosphere`, DAY_NIGHT.md §15; the view easing upright over `motion.json`
+`gridCrossingRollS` at a crossing; the maps hidden with a label while away). **The moon up close [built,
+M-5, 2026-11-13]:** a grid with a `nearMesh` (`grids.json`) is drawn nearer than its `farM` as a coarse
+mesh of its surface (`dwell-client` `grid_bodies.rs`, from its `FarSource`, both faces) at its pose in the
+drawn frame, a piece the shadows skip, the far disc then hidden; on the grid itself the same mesh at the
+identity, sunk under the ground so its chunks cover it. The server
 sends a `grid.frames` client the moon's chunks as voxels and forgets its home stream at the capture, so
 home streams again from nothing on the release.
 

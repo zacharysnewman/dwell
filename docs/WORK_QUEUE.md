@@ -1008,6 +1008,16 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    #136 (the moon's chunks sent before the client crossed were dropped; now held for the crossing); the bench has a
    `moonLand` step and a `moon-draw` scenario (draw calls, triangles, mesh bytes, shots on both faces). **Left:**
    `npm run bench -- --warm moon-draw` on a GPU (local); the moon's sky.
+   **Moon follow-ups after the first browser trips (2026-11-13, branch `claude/moon-m5`; the brief: "1. The moon's
+   own sky … 2. M-5: the moon seen up close while approaching … 3. The view eases upright at a crossing (today it
+   turns at once) … 4. The minimap/big map on the moon: today a blank grey disc — show the moon's surface … or hide
+   the map off home with a label; choose the simpler, say which. 5. Landing sits slightly below the ground (groundM
+   −0.11 m face A, −0.24 m face B after landing): find why and fix."):** built — the sky as one layered model (space
+   the base, day a layer of a grid's air, `grids.json` `atmosphere`; BUGS.md #126), M-5 as a coarse surface mesh
+   inside `farM` and under the chunks on the moon (`grids.json` `nearMesh`, `grid_bodies.rs`), the view easing
+   upright over `motion.json` `gridCrossingRollS` (#137), the maps hidden off home with a label (the simpler),
+   `groundM` reading the cells' top (#138: the report, not the landing). **Left:** the browser checks on a GPU
+   (local), home seen from the moon (M-6's drawing), the moon's ground light (MOON_WORLD.md §7.3).
    Owner, 2026-11-13: **"Sun and moon should be space, the same as night sky. Could perhaps just make space a more general skybox and have 'day' be a closer atmosphere skybox so it can fade out as you leave earth."** So the sky is one layered model: space (the night sky's stars and space colour) is the base skybox everywhere, home too; day is an atmosphere layer over it, belonging to a world with an atmosphere (home's blue day sky, sunsets, haze), its strength fading with altitude (item 28's thinning) and with day and night; each grid declares its atmosphere as data (home has one; the moon and the sun none), so on the moon or the sun you see space as the night sky, with the sun, home and the moon where they are; one system, no grid-specific branches in the shader. Tests on both faces: on the moon or the sun day colours never show; flying up from home the day layer fades to space; home's day and night look as before.
    **Left:** the browser flight (local, GPU), the roll upright at a crossing, M-5 (the moon's LOD), M-8. Earlier
    **M-7c status (2026-11-12, branch `claude/moon-m7c-x07vsc`, local):** owner, 2026-11-12: "Do we have the real physical moon yet?" (no: the client doesn't draw the moon

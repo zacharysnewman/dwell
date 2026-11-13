@@ -79,13 +79,6 @@ pickaxe takes 5 on stone cubes too, pinned by `hits_to_break_come_from_the_tool_
 tools should also break in one hit is the owner's to decide (asked 2026-11-13); until then the rule stays and only the
 form's wording is checked against it.
 
-### 126. Home's sky shows on the moon (clouds hidden after 0.58.4; the moon's sky not built)
-
-Same flight: home's blue sky and clouds show on the moon. The moon's sky (no air, black) is not built yet
-(MOON_WORLD.md §7.3 "Not yet"). Partly fixed: home's clouds are not drawn off home (`DayState::clouds_shown`,
-false from `grid_view::day_on_grid`; the renderer's `clouds_now` is Off), test `grid_view`
-`on_the_moon_the_sun_is_turned_into_its_frame`. Left: the sky's colours and air on the moon.
-
 ### 100. Volumetric clouds look like "crazy triangles"
 
 Owner, 2026-11-12: "the clouds look ridiculous at least the volumetric ones. Look like crazy triangles. Find a
@@ -553,6 +546,37 @@ shallow ramp, maybe same problem with steep ramps too?" Not investigated yet: ta
 face, or the placement check against its shape.
 
 ## Fixed
+
+### 126. Home's sky shows on the moon (fixed 2026-11-13)
+
+Same flight: home's blue sky and clouds show on the moon. Home's clouds were hidden off home first
+(`DayState::clouds_shown`). Fixed 2026-11-13 with the sky as one layered model (owner: "Sun and moon should be
+space, the same as night sky"): space is the base sky everywhere and day a layer of a grid's air (`grids.json`
+`atmosphere`, none unless declared), thinning with height (DAY_NIGHT.md §15); on the moon (no air) the sky is
+space at every hour, the stars out, the sun white, no fog (`DayState::airless`, `Air::SPACE`). Tests `grid_view`
+`on_a_grid_without_air_day_colours_never_show` (the moon and a sun added by data),
+`flying_up_from_home_the_day_layer_fades_to_space`, `homes_day_and_night_look_as_before` (both faces). Left: the
+ground's ambient on the moon is still home's hemisphere light, and its sunlight follows home's keyframes.
+
+### 138. A moon landing read 0.11–0.24 m under the ground (fixed 2026-11-13)
+
+Owner's brief, 2026-11-13: "Landing sits slightly below the ground (groundM −0.11 m face A, −0.24 m face B after
+landing): find why and fix." Cause: the report, not the landing. `__dwell.moon()`'s `groundM` measured the feet
+against the moon's smooth generated height, but the ground a player stands on is the column's top cell
+(`CrateredTerrain::top_row`, the height rounded to the ½ m cells), up to a quarter cell over or under it. Fixed:
+`groundM` reads the column's top (`moon_probe.rs` `ground_top`). Tests: `moon_probe`
+`standing_on_the_moons_ground_reads_zero` (both faces; red before: 0.12 m off), `game_local`
+`the_moon_report_steers_a_flight_into_its_capture` (the landing stands within 5 cm of it, both faces).
+
+### 137. The view turned at once at a crossing onto the moon (fixed 2026-11-13)
+
+At a capture or release the look kept its world direction but the view's up jumped to the new grid's face up in
+one frame. Now it eases upright from the view drawn before over `shared/look/motion.json` `gridCrossingRollS`
+(0.6 s; `FaceFlip::cross_grid`, `grid_view::crossing_roll`), also when a snapshot's replay made the crossing,
+which before did not carry the look across at all. Tests: `grid_view`
+`the_crossing_roll_draws_the_view_before_then_eases_to_the_new_up`, `face_flip`
+`a_grid_crossing_eases_the_view_upright_over_the_data` (both faces), `game_local`'s flight to the moon (a roll at
+the capture, none after; red before: no roll at all).
 
 ### 136. Teleported onto the moon, the ground under the player never arrives (fixed after 0.58.9)
 
