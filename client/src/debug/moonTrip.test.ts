@@ -27,6 +27,8 @@ interface Sim {
   groundHeld: boolean;
   /** When the home chunk under the feet comes back after `placeHome` (ms), or never. */
   heldAt: number | null;
+  /** When the server released the player (ms), or null while it hasn't. */
+  serverHomeAt: number | null;
 }
 
 interface Fake {
@@ -45,6 +47,8 @@ function fake(
     speed?: number;
     approach?: string | null;
     returnMs?: number | null;
+    /** The server releases the player this long after the client shows it home (ms). */
+    serverLagMs?: number;
   } = {},
 ): Fake {
   const g = o.g ?? MOON_G;
@@ -59,6 +63,7 @@ function fake(
     t: 0,
     groundHeld: true,
     heldAt: null,
+    serverHomeAt: 0,
   };
   const calls: Fake['calls'] = { approach: [], placeHome: [], looks: [] };
   const step = (dt: number): void => {
@@ -67,6 +72,7 @@ function fake(
       if (sim.flying && sim.held.size > 0) sim.d -= (o.speed ?? 1000) * dt;
       if (sim.d < CAPTURE) {
         sim.grid = 'moon';
+        sim.serverHomeAt = null;
         sim.ground = sim.d - 100;
       }
       return;
@@ -80,6 +86,7 @@ function fake(
       if (sim.d > CAPTURE * 1.1) {
         sim.grid = 'home';
         sim.groundHeld = false;
+        sim.serverHomeAt = sim.t + (o.serverLagMs ?? 0);
       }
       return;
     }
@@ -113,6 +120,8 @@ function fake(
     },
     placeHome: (feet) => {
       calls.placeHome.push(feet);
+      if (sim.serverHomeAt === null || sim.t < sim.serverHomeAt)
+        return Promise.resolve('{"error":"not at home"}');
       sim.d = 600_000;
       const r = o.returnMs === undefined ? 2000 : o.returnMs;
       sim.heldAt = r === null ? null : sim.t + r;
@@ -213,6 +222,32 @@ describe('flyHome', () => {
     expect(trip.releaseS).toBeGreaterThan(10);
     expect(trip.returnS).toBeCloseTo(2, 0);
     expect(sim.held.size).toBe(0);
+  });
+
+  it('waits for the server to release the player before moving it home', async () => {
+    // The browser flight (0.58.8, 2 of 4): the client showed the release, `placeHome` asked the
+    // server at once, was told "not at home", and left the player in space.
+    const { host, sim, calls } = fake({ serverLagMs: 250 });
+    const out = await flyToMoon(host);
+    await flyHome(host, out.home ?? [0, 0, 0]);
+    expect(calls.placeHome.length).toBeGreaterThan(1);
+    expect(sim.d).toBe(600_000);
+    expect(sim.groundHeld).toBe(true);
+  });
+
+  it('gives up when the server never releases the player', async () => {
+    const { host } = fake({ serverLagMs: 1e9 });
+    const out = await flyToMoon(host);
+    await expect(flyHome(host, out.home ?? [0, 0, 0])).rejects.toThrow(/not at home/);
+  });
+
+  it('never saves a spot in space as the next trip home', async () => {
+    // Left in space by a failed flight home (on the home grid, nothing under the feet), the next
+    // trip to the moon had saved that spot as "home".
+    const { host, sim } = fake();
+    sim.d = CAPTURE * 1.2;
+    sim.groundHeld = false;
+    expect((await flyToMoon(host)).home).toBeNull();
   });
 
   it('fails when home chunk under the feet never comes back', async () => {

@@ -514,3 +514,75 @@ fn the_prediction_agrees_with_the_server_through_a_portal_and_out_of_it() {
     let (stats, _) = portal_drop(Default::default());
     assert!(stats.replays > 0, "{stats:?}");
 }
+
+/// Grid 1 is home's frame moved `OFFSET` m along x (no rotation), and the client never predicts a
+/// carry: the server's move into grid 1 at the same world point is learnt from a snapshot alone.
+struct Shifted;
+const OFFSET: f64 = 600_000.0;
+impl dwell_physics::predictor::GridTravel for Shifted {
+    fn carry(
+        &self,
+        _: u8,
+        _: [f64; 3],
+        _: [f64; 3],
+        _: bool,
+        _: f64,
+    ) -> Option<dwell_physics::predictor::GridCarry> {
+        None
+    }
+    fn far_speed(&self, _: u8, _: [f64; 3], _: f64) -> f32 {
+        0.0
+    }
+    fn gravity_scale(&self, _: u8) -> f32 {
+        1.0
+    }
+    fn to_world(&self, grid: u8, p: [f64; 3], _: f64) -> [f64; 3] {
+        if grid == 1 {
+            [p[0] + OFFSET, p[1], p[2]]
+        } else {
+            p
+        }
+    }
+}
+
+// face-a-only: the frames' coordinate change is what is checked, not which way is up.
+#[test]
+fn a_crossing_predicted_a_tick_apart_is_no_snap() {
+    // The moon trip (BUGS.md #130): a capture or release the server makes on another tick than
+    // the prediction does moves the player ~600 km in coordinates and nowhere in the world; it
+    // was counted as a snap of 1 732 km, hiding the real ones around a trip.
+    let mut server = Server::new();
+    let mut world = VoxelWorld::flat();
+    let mut p = Predictor::new(PlayerControllerConfig::default());
+    p.set_travel(Box::new(Shifted));
+    p.on_snapshot(&mut world, &server.snapshot(0));
+    let idle = |seq| quantize_input(&Input::default(), seq);
+    for seq in 1..=60 {
+        p.tick(&mut world, &idle(seq));
+        server.step(&idle(seq), None);
+        p.on_snapshot(&mut world, &server.snapshot(seq));
+    }
+    let snaps = p.stats().snaps;
+    // The server carries the player into grid 1 at the same world point; the client, 3 ticks
+    // ahead, still predicts home.
+    for seq in 61..=63 {
+        p.tick(&mut world, &idle(seq));
+        server.step(&idle(seq), None);
+    }
+    let mut s = server.snapshot(61);
+    s.local.position[0] -= OFFSET;
+    s.grid = Some(dwell_protocol::GridView {
+        grid: 1,
+        origin: [OFFSET, 0.0, 0.0],
+        rotation: [0.0, 0.0, 0.0, 1.0],
+    });
+    p.on_snapshot(&mut world, &s);
+    assert_eq!(p.grid(), 1, "in the server's grid");
+    assert_eq!(p.stats().grid_misses, 1);
+    assert!(
+        p.stats().last_correction < 0.05,
+        "{} m corrected for a carry to the same world point",
+        p.stats().last_correction
+    );
+    assert_eq!(p.stats().snaps, snaps, "no snap");
+}
