@@ -53,6 +53,16 @@ pub fn npc_role(speed: f32, pose: u8, armed: bool) -> &'static str {
     }
 }
 
+/// An NPC's swing role (`chop_level`, `chop_vertical` from [`npc_role`]) as its weapon's `clips`
+/// name it (the sword's slashes, WORK_QUEUE item 35); any other role as it is.
+pub fn npc_swing_role(role: &'static str, held: Option<&str>) -> &'static str {
+    match (role, held.and_then(dwell_protocol::chopping::tool)) {
+        ("chop_level", Some(t)) => t.swing_role(false),
+        ("chop_vertical", Some(t)) => t.swing_role(true),
+        _ => role,
+    }
+}
+
 /// Whether an NPC holds a weapon (a tool of kind `Weapon`, shared/tools).
 fn npc_armed(l: &NpcLook) -> bool {
     l.held
@@ -200,7 +210,9 @@ impl ClientCreatures {
                     yaw: s.yaw,
                     face: FaceFrame::at_height(s.shown[1]),
                     role: match &s.npc {
-                        Some((n, l)) => npc_role(s.net.speed, n.pose, npc_armed(l)),
+                        Some((n, l)) => {
+                            npc_swing_role(npc_role(s.net.speed, n.pose, npc_armed(l)), l.held)
+                        }
                         None => role_for_speed(s.net.speed),
                     },
                     npc: s.npc.as_ref().map(|(_, l)| l.clone()),
@@ -249,6 +261,16 @@ mod tests {
     fn an_npc_striking_plays_its_swing() {
         assert_eq!(npc_role(0.0, 3, true), "chop_level");
         assert_eq!(npc_role(2.0, 4, true), "chop_vertical");
+        // The sword's own clips (WORK_QUEUE item 35): its `clips` name the slashes.
+        assert_eq!(
+            npc_swing_role(npc_role(0.0, 3, true), Some("dwell:sword")),
+            "slash_level"
+        );
+        assert_eq!(
+            npc_swing_role(npc_role(0.0, 4, true), Some("dwell:sword")),
+            "slash_overhead"
+        );
+        assert_eq!(npc_swing_role("walk", Some("dwell:sword")), "walk");
         assert_eq!(npc_role(0.0, 2, false), "sit");
     }
 

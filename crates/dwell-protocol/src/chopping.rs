@@ -472,6 +472,10 @@ pub struct ToolDef {
     pub sharpness: f64,
     /// The item a hand shows holding it for a vertical swing (the second hold).
     pub held_vertical: Option<&'static str>,
+    /// The character roles its level and vertical swings play (`clips`; the axe's `chop_level`
+    /// and `chop_vertical` by default; the sword's slashes, WORK_QUEUE item 35).
+    pub clip_level: &'static str,
+    pub clip_vertical: &'static str,
     /// The swing: its timing, its arc, its feel.
     pub swing: SwingDef,
     /// The blocks (by name) its swing goes through, breaking each it touches (owner, 2026-11-09:
@@ -485,6 +489,14 @@ pub struct ToolDef {
 }
 
 impl ToolDef {
+    /// The character role a swing of this tool plays (`clips`), level or vertical.
+    pub fn swing_role(&self, vertical: bool) -> &'static str {
+        if vertical {
+            self.clip_vertical
+        } else {
+            self.clip_level
+        }
+    }
     /// Whether it is a weapon (strikes creatures, chops nothing).
     pub fn is_weapon(&self) -> bool {
         self.kind == ToolKind::Weapon

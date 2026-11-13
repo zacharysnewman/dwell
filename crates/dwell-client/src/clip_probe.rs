@@ -246,14 +246,45 @@ impl Report {
 }
 
 /// The swing the arms and body play for a role (`chop_level` → the level chop).
+/// A tool's `clips` role (the sword's `slash_level`, WORK_QUEUE item 35) is the chop of its kind.
 fn swing_of(role: &str) -> Option<Swing> {
     match role {
         "chop_level" => Some(Swing::ChopLevel),
         "chop_vertical" => Some(Swing::ChopVertical),
         "break" => Some(Swing::Break),
         "place" => Some(Swing::Place),
-        _ => None,
+        _ => tool_of_role(role).map(|(_, vertical)| {
+            if vertical {
+                Swing::ChopVertical
+            } else {
+                Swing::ChopLevel
+            }
+        }),
     }
+}
+
+/// The first tool whose `clips` name `role` (and whether it is its vertical swing's).
+fn tool_of_role(role: &str) -> Option<(&'static dwell_protocol::chopping::ToolDef, bool)> {
+    dwell_protocol::chopping::TOOLS.iter().find_map(|t| {
+        [false, true]
+            .into_iter()
+            .find(|&v| t.swing_role(v) == role)
+            .map(|v| (t, v))
+    })
+}
+
+/// Starts swing `role` on `a` (a tool's clip role plays its own clip).
+fn start_swing(a: &mut Animator, role: &str) -> bool {
+    let Some(s) = swing_of(role) else {
+        return false;
+    };
+    let named = [s.role()]
+        .into_iter()
+        .chain(tool_of_role(role).map(|(t, v)| t.swing_role(v)))
+        .find(|r| *r == role)
+        .unwrap_or(s.role());
+    a.swing_as(s, named);
+    true
 }
 
 /// Defeat's input for one of its roles (`kneel`, `kneel_sword`: kneeling; `stand`, `stand_sword`:
@@ -321,7 +352,13 @@ fn swing_def(item: Option<&str>, role: &str) -> Option<dwell_protocol::chopping:
     if swing_of(role).is_none_or(|s| !matches!(s, Swing::ChopLevel | Swing::ChopVertical)) {
         return None;
     }
-    let tool = dwell_protocol::chopping::tool(item.unwrap_or("dwell:stone_axe"))
+    // A tool's own clip role (the sword's slash) is timed by that tool's swing.
+    let tool = item
+        .and_then(dwell_protocol::chopping::tool)
+        .filter(|t| {
+            role.starts_with("chop_") || t.swing_role(false) == role || t.swing_role(true) == role
+        })
+        .or_else(|| tool_of_role(role).map(|(t, _)| t))
         .or_else(|| dwell_protocol::chopping::tool("dwell:stone_axe"))?;
     Some(tool.swing)
 }
@@ -333,7 +370,7 @@ pub fn held_for(item: Option<&'static str>, role: &str) -> Held {
     };
     let tool = dwell_protocol::chopping::tool(item);
     let hold = tool.and_then(|t| {
-        if role == "chop_vertical" {
+        if swing_of(role) == Some(Swing::ChopVertical) {
             t.held_vertical.or(t.held)
         } else {
             t.held
@@ -411,8 +448,7 @@ fn arms_bones(role: &str, held: Held, t: f32) -> [Affine; MAX_BONES] {
         ..Default::default()
     };
     a.update(&input, 0.0);
-    if let Some(s) = swing_of(role) {
-        a.swing(s);
+    if start_swing(&mut a, role) {
         a.drive_action(Some(t));
     }
     let pose = a.update(&input, 0.0);
@@ -646,8 +682,7 @@ fn body_bones(role: &str, held: Held, t: f32) -> [Affine; MAX_BONES] {
         ..Default::default()
     };
     a.update(&input, 0.0);
-    if let Some(s) = swing_of(role) {
-        a.swing(s);
+    if start_swing(&mut a, role) {
         a.drive_action(Some(t));
     }
     // A defeat role plays from its start: `t` into it.

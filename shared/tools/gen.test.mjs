@@ -204,12 +204,12 @@ test("the axe clears leaves, not the stump's wood ramp (chopped); a fixture tool
   const d = validateTools(...fresh());
   const axe = d.tools.find((t) => t.name === 'dwell:stone_axe');
   assert.deepEqual(axe.clears, ['dwell:leaves', 'dwell:snowy_leaves']);
-  assert.match(toolsRust(d), /rustle: Some\("axe_rustle"\), rustle_leaves: 5 \}, clears: &\["dwell:leaves", "dwell:snowy_leaves"\], chop2_bite: [\d.]+, weapon: None, repeat_on_hold: true \}/);
+  assert.match(toolsRust(d), /rustle: Some\("axe_rustle"\), rustle_leaves: 5 \}, clears: &\["dwell:leaves", "dwell:snowy_leaves"\], chop2_bite: [\d.]+, weapon: None, repeat_on_hold: true, clip_level/);
   const [data, items, blocks] = fresh();
   items.add('test:sickle');
   data.tools.push({ name: 'test:sickle', kind: 'axe', swingSeconds: 0.3, biteM: 0.1, bindM: 0.1, across: 1, along: 0.3, sharpness: 1, clears: ['dwell:tall_grass'] });
   const rs = toolsRust(validateTools(data, items, blocks));
-  assert.match(rs, /name: "test:sickle".*rustle: None, rustle_leaves: 4 \}, clears: &\["dwell:tall_grass"\], chop2_bite: [\d.]+, weapon: None, repeat_on_hold: false \}/);
+  assert.match(rs, /name: "test:sickle".*rustle: None, rustle_leaves: 4 \}, clears: &\["dwell:tall_grass"\], chop2_bite: [\d.]+, weapon: None, repeat_on_hold: false, clip_level/);
   const bad = (edit, re) => {
     const [data, items, blocks] = fresh();
     edit(data);
@@ -471,7 +471,7 @@ test('each tool kind has its own hint, as data; a kind without one fails', () =>
 test('hold to keep swinging (WORK_QUEUE item 17): the axes, sword, pickaxes and shovels repeat; a fixture by data alone; bad entries fail naming them', () => {
   const d = validateTools(...fresh());
   const rs = toolsRust(d);
-  for (const n of ['dwell:stone_axe', 'dwell:metal_axe', 'dwell:sword']) assert.match(rs, new RegExp(`name: "${n}", kind: ToolKind::\\w+, .*repeat_on_hold: true \\},`));
+  for (const n of ['dwell:stone_axe', 'dwell:metal_axe', 'dwell:sword']) assert.match(rs, new RegExp(`name: "${n}", kind: ToolKind::\\w+, .*repeat_on_hold: true, clip_level`));
   for (const n of ['dwell:stone_pickaxe', 'dwell:metal_pickaxe', 'dwell:wooden_shovel', 'dwell:metal_shovel']) assert.match(rs, new RegExp(`item: "${n}", .*contact_s: 0\\.26, repeat_s: Some\\(0\\.5\\) \\}`));
   // A chopping tool's break-table entry never repeats as a break (its swing does).
   assert.match(rs, /item: "dwell:stone_axe", .*repeat_s: None \}/);
@@ -482,7 +482,7 @@ test('hold to keep swinging (WORK_QUEUE item 17): the axes, sword, pickaxes and 
   data.tools.push({ name: 'test:flint_axe', kind: 'axe', swingSeconds: 0.3, biteM: 0.2, bindM: 0.1, across: 1, along: 0.3, sharpness: 1 });
   data.breaking.tools.push({ item: 'test:trowel', class: 'shovel', tier: 'stone', contactS: 0.2, repeatOnHold: true, repeatS: 0.7 });
   const fx = toolsRust(validateTools(data, items, blocks));
-  assert.match(fx, /name: "test:flint_axe", kind: ToolKind::Axe, .*repeat_on_hold: false \},/);
+  assert.match(fx, /name: "test:flint_axe", kind: ToolKind::Axe, .*repeat_on_hold: false, clip_level/);
   assert.match(fx, /item: "test:trowel", .*contact_s: 0\.2, repeat_s: Some\(0\.7\) \}/);
   const bad = (edit, re) => {
     const [d2, i2, b2] = fresh();
@@ -493,4 +493,22 @@ test('hold to keep swinging (WORK_QUEUE item 17): the axes, sword, pickaxes and 
   bad((d2) => (d2.breaking.tools[2].repeatS = 0.1), /breaking\.tools\[2\]: repeatS is seconds in \[max\(contactS, 0\.1\), 5\]/);
   bad((d2) => (delete d2.breaking.tools[2].repeatOnHold), /breaking\.tools\[2\]: repeatS without repeatOnHold/);
   bad((d2) => (d2.breaking.tools[0].repeatOnHold = true), /breaking\.tools: dwell:stone_axe swings as a tool \(tools\.dwell:stone_axe\); its repeatOnHold goes there/);
+});
+
+test("a tool's swing clips (WORK_QUEUE item 35): the sword's slashes, the axe's chops by default, a fixture's by data alone; bad entries fail naming them", () => {
+  const rs = toolsRust(validateTools(...fresh()));
+  assert.match(rs, /name: "dwell:sword", [^\n]*clip_level: "slash_level", clip_vertical: "slash_overhead"/);
+  assert.match(rs, /name: "dwell:stone_axe", [^\n]*clip_level: "chop_level", clip_vertical: "chop_vertical"/);
+  const [data, items, blocks] = fresh();
+  items.add('test:club');
+  data.tools.push({ name: 'test:club', kind: 'weapon', swingSeconds: 0.4, clips: { level: 'club_swing' }, weapon: { damage: 3, knockbackM: 0.2 } });
+  assert.match(toolsRust(validateTools(data, items, blocks)), /name: "test:club", [^\n]*clip_level: "club_swing", clip_vertical: "chop_vertical"/);
+  const bad = (edit, re) => {
+    const [d2, i2, b2] = fresh();
+    edit(d2.tools.find((t) => t.name === 'dwell:sword'));
+    assert.throws(() => validateTools(d2, i2, b2), re);
+  };
+  bad((t) => (t.clips = 'slash'), /tools\.dwell:sword\.clips must be \{ level\?, vertical\? \} role names/);
+  bad((t) => (t.clips = { level: 'Slash Left' }), /tools\.dwell:sword\.clips\.level must be a role name/);
+  bad((t) => (t.clips = { thrust: 'thrust' }), /clips: unknown field thrust/);
 });
