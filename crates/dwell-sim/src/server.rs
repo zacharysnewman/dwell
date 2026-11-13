@@ -61,7 +61,7 @@ mod theater;
 pub use theater::{VIEWPOINT_EVERY_TICKS, VIEWPOINT_MAX_M};
 mod vitals;
 mod weapons;
-pub use weapons::{NpcStrikeLog, StrikeLog, WeaponSwing};
+pub use weapons::{BiteLog, NpcStrikeLog, StrikeLog, WeaponSwing};
 
 use crate::app_version::APP_VERSION;
 use crate::entropy::Entropy;
@@ -1104,6 +1104,8 @@ pub struct Server {
     strike_log: Vec<StrikeLog>,
     /// The last NPCs' strikes on players (`weapons::NpcStrikeLog`; tests, dev tools).
     npc_strike_log: Vec<weapons::NpcStrikeLog>,
+    /// The creatures' latest attacks on players ([`Self::bites`]).
+    bite_log: Vec<weapons::BiteLog>,
     /// The wood cells cut by axes (ADR 0067).
     cuts: dwell_protocol::chopping::Cuts,
     cuts_unread: bool,
@@ -1318,6 +1320,7 @@ impl Server {
             creatures: Default::default(),
             strike_log: Vec::new(),
             npc_strike_log: Vec::new(),
+            bite_log: Vec::new(),
             cuts: Default::default(),
             cuts_unread: false,
             damage: Default::default(),
@@ -2264,6 +2267,7 @@ impl Server {
         // Creatures spawn near players, wander and despawn far away (ADR 0073).
         self.step_creatures();
         self.step_npc_fights();
+        self.step_creature_attacks();
         // Blueprints complete, and their builders build (docs/BLUEPRINTS.md).
         self.step_blueprints();
 

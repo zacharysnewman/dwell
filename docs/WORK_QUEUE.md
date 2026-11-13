@@ -1555,6 +1555,18 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    stance's raised blade is now data (`guard.stances.*.blade`, grip and tip from the feet, fitted to the
    raised clips and kept in step by a `clip_probe` test), and the point is where the swing's arc meets it.
    Not yet seen in game (a duel screencast on the local machine).
+   **Second slice (cloud, 2026-11-13; owner's brief: "sword clips of their own as data … the hurt look on the
+   client … wolves bite players: an attack in reach with a cooldown and damage as data, leading to the defeat
+   kneel at 0 health, not death; animals only remain the sword's targets (no PvP)"):** wolves bite: a
+   creature's `attack` (shared/creatures: reach, cooldown, damage, push, `angryS`, front arc) turns it on the
+   player that struck it, its mind closing on where that player stands, biting through the damage rules
+   (none in creative); at 0 health the player kneels in defeat (§11.13), never dies; only the striker is
+   bitten, and swords still strike animals and NPCs only. The hurt look: a creature hit past its block (the
+   `weapons.clash` outcome) flinches from the blow and flashes its tint by its `hurtLook` data (the file's
+   default, per-creature overrides; the skinned shader's flash). Tests on both faces (`tests/weapons.rs`,
+   `creatures.rs`). SWORD_CLIPS_PLACEHOLDER
+   **Outstanding:** a wolf bite pose/clip on the clients (the bite shows as the player's damage and push only);
+   seen in game (local, a GPU).
 36. **A showcase video of the deer and wolves** (owner 2026-11-12: "have you observed the animals simulation? Make
    some clips of the deer/wolves behavior, really showcase it and try to get good angles. Keep it under 2 minutes
    of video. Splice it together into a single video."). Queued (local, after item 30).

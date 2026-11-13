@@ -74,6 +74,24 @@ pub struct SkinnedDraw {
     /// Its idle pose by name (an animal's `graze`, `lie`, ...: models.json `poses`, WORK_QUEUE
     /// item 39), blended in over the model's `pose_blend_s`; None: its clips as they are.
     pub idle_pose: Option<&'static str>,
+    /// A flash over its colours (sRGB 0..1 and the strength mixed toward it): a hit creature's hurt
+    /// look (shared/creatures `hurtLook`, WORK_QUEUE item 35); [`NO_TINT`]: none.
+    pub tint: [f32; 4],
+}
+
+/// A body drawn without a flash.
+pub const NO_TINT: [f32; 4] = [0.0; 4];
+
+/// A tint packed into one float for the instance's spare `light.w`: the colour at 5 bits a channel
+/// as the whole part (r × 1024 + g × 32 + b), the strength (0..1) as the fraction (`/ 0.998`
+/// keeps it under 1). Exact in an f32 (15 + 9 bits); 0: none.
+pub fn pack_tint(t: [f32; 4]) -> f32 {
+    let s = t[3].clamp(0.0, 1.0);
+    if s <= 0.0 {
+        return 0.0;
+    }
+    let q = |v: f32| (v.clamp(0.0, 1.0) * 31.0).round();
+    q(t[0]) * 1024.0 + q(t[1]) * 32.0 + q(t[2]) + s * 0.998
 }
 
 /// An idle pose's blend (the pose shown and its weight, 0..1) after `dt` seconds wanting `want`:
@@ -211,7 +229,8 @@ struct SkinInstance {
     // Each joint's 3 × 4 matrix to eye-relative world space, as three rows.
     joints: array<vec4f, JOINT_ROWS>,
     // x sky, y block level / 15 (docs/DAY_NIGHT.md §11); z the near margin your own body's
-    // fragments are discarded within (m from the eye; 0 for every other body).
+    // fragments are discarded within (m from the eye; 0 for every other body); w a hurt flash
+    // (`pack_tint`: the colour at 5 bits a channel as the whole part, the strength the fraction).
     light: vec4f,
     // The body's colour remap by part (an NPC's colours, docs/CHARACTERS.md §11.11): a pair of
     // rows a part (part k + 1 at rows 2k, 2k + 1), the model's ramp base and the base drawn in its
@@ -310,6 +329,13 @@ fn skinned_fs(i: SkinnedOut, @builtin(front_facing) front: bool) -> SceneOut {
     let shade = base * vec3f(0.55, 0.58, 0.78);
     let lights = min(base * vec3f(1.18, 1.12, 0.96) + vec3f(0.02, 0.016, 0.0), vec3f(1.0));
     var c = mix(shade, base, smoothstep(0.16, 0.5, w));
+    // A hit creature's flash (shared/creatures `hurtLook`): toward its tint, lit as the body is.
+    let tint_w = skin.light.w;
+    if (tint_w > 0.0) {
+        let q = floor(tint_w);
+        let tint = vec3f(floor(q / 1024.0), floor(q / 32.0) % 32.0, q % 32.0) / 31.0;
+        c = mix(c, tint * mix(0.6, 1.0, smoothstep(0.16, 0.5, w)), min(fract(tint_w) / 0.998, 1.0));
+    }
     c = mix(c, lights, smoothstep(0.66, 0.98, w) * 0.8);
     c = c * mix(0.9, 1.0, face_rise(frame.eye.y, n) * 0.5 + 0.5);
     let rim = pow(1.0 - max(dot(n, normalize(-i.rel)), 0.0), 3.0);
@@ -914,6 +940,7 @@ impl SkinnedRenderer {
                 floats[at + k * 12..at + k * 12 + 12].copy_from_slice(&rows(&mm::mul(&place, j)));
             }
             floats[at + JOINT_FLOATS..at + JOINT_FLOATS + 2].copy_from_slice(&d.light);
+            floats[at + JOINT_FLOATS + 3] = pack_tint(d.tint);
             floats[at + JOINT_FLOATS + 4..at + JOINT_FLOATS + 4 + REMAP_FLOATS]
                 .copy_from_slice(&d.remap);
             self.draws.push(Draw {
@@ -1142,6 +1169,7 @@ mod tests {
                 grip: None,
                 remap: NO_REMAP,
                 idle_pose: None,
+                tint: NO_TINT,
             };
             let place = body_matrix(&d, data, [0.0; 3]);
             let joints: Vec<Mat4> = anim::joint_matrices(model, &anim::rest(model))
@@ -1173,6 +1201,7 @@ mod tests {
             grip: None,
             remap: NO_REMAP,
             idle_pose: None,
+            tint: NO_TINT,
         };
         let place = body_matrix(&d, data, [0.0; 3]);
         let mut p = Player::new(data, model, "walk");
@@ -1371,6 +1400,7 @@ mod tests {
                         grip: None,
                         remap: NO_REMAP,
                         idle_pose: None,
+                        tint: NO_TINT,
                     };
                     let place = body_matrix(&d, data, [0.0; 3]);
                     let p = Player::new(data, model, "idle");
@@ -1457,6 +1487,42 @@ mod tests {
 
 #[cfg(test)]
 mod villager_colour_tests {
+    // The skinned module (with the hurt flash's unpacking) parses and validates.
+    #[test]
+    fn the_skinned_module_parses_and_validates() {
+        let module = naga::front::wgsl::parse_str(&source()).expect("WGSL parses");
+        naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .expect("WGSL validates");
+    }
+
+    // WORK_QUEUE item 35, round 2: the hurt flash's tint survives its packing into one float.
+    #[test]
+    fn a_tint_packs_into_one_float_and_back() {
+        assert_eq!(pack_tint(NO_TINT), 0.0);
+        for t in [
+            [0.878, 0.251, 0.165, 0.6],
+            [1.0, 1.0, 1.0, 1.0],
+            [0.0, 0.0, 0.0, 0.01],
+        ] {
+            let w = pack_tint(t);
+            let q = w.floor();
+            let back =
+                [(q / 1024.0).floor(), (q / 32.0).floor() % 32.0, q % 32.0].map(|v| v / 31.0);
+            for k in 0..3 {
+                assert!(
+                    (back[k] - t[k]).abs() <= 0.5 / 31.0 + 1e-6,
+                    "{t:?} -> {back:?}"
+                );
+            }
+            let s = (w.fract() / 0.998).min(1.0);
+            assert!((s - t[3]).abs() < 0.01, "{t:?}: strength {s}");
+        }
+    }
+
     use super::*;
     use dwell_sim::creatures::{Table, npc_colours};
 
