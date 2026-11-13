@@ -1884,6 +1884,16 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
 
 ## Smaller items, after the queue
 
+- **The full-sky flood test on main (2026-11-13, `claude/flood-sky-test`), done.** Owner: "`cargo test -p dwell-mesh --lib
+  flood_tests::open_terrain_takes_the_full_sky` fails on main (face a: 3 dark vertices) … find which merge broke it, decide
+  whether the 3 dark vertices are a real lighting bug or a fixture made stale by an intended change. Check face b too."
+  A stale fixture, not a lighting bug: a first-parent bisect of #823..#885 puts it at #873 (resurrection shrines), which
+  moved every spawn to a shrine, so the test's window around `spawn_point()` slid onto the shrine's levelled ground. The
+  3 vertices are a ramp at sky 12–13 straight under a tree's crown, correct shade. That window also has no open
+  terraces: with the ramp-corner fix the test was written for (`Flood::shaped`) disabled, every vertex it darkens there
+  is under the same crown, so no filter that lets crown shade through could tell the two apart. The test now centres on `spawn_search_point()`, the open ground it was written for: green on both
+  faces, and red again (face A, 13 dark) with `Flood::shaped` disabled, as face B was before #873. Face B passed on main.
+
 - **Downhill water's steps (BUGS.md #92; owner, 2026-11-12: "I'm seeing some edge triangles and thin lines at slope
   transitions on downhill water.")** — fixed 2026-11-12 (`claude/water-steps`, WATER_RENDERING.md §18): the open
   cells at a river's ½ m steps are step cells whose corners are shared with the reaches above and below, so a river
