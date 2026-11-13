@@ -2,6 +2,17 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.61.0",
+      "changes": [
+        "Realistic worlds: a new compatibility line, their terrain redrawn from the seed (older Realistic worlds open in their own version)",
+        "Rifts between two continents are chains of lakes, each basin with a sill and an outlet, opening as a gulf where they meet the sea; no more one long canal",
+        "A continent and an ocean pulling apart make a wide shelf and a gentle coast, not a trench; two oceans a low mid-ocean swell, and closing oceans an island arc",
+        "No sliver plates: every continent has room inland, no narrow ocean strait splits two continents, and plates straddle the world's edge",
+        "Mountain ranges rise and dip along their length (peaks and saddles); volcanic arcs stand on their range's crest",
+        "The land is no longer ringed by a circle of sea: continents run out toward the world's edge and end in shelves of varied width, with only the last few km always sea"
+      ]
+    },
+    {
       "version": "0.60.6",
       "changes": [
         "Behind the scenes: a tool to paint patterns and marks on character models, ready for outfit bands and eyes"

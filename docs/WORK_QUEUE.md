@@ -685,6 +685,25 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    owner: the 6 °C floor counts the steppe's and cold desert's red rock floors as desert (the reported spot's red
    mesas are steppe at ~8 °C); the mesa's own 12 °C would keep red sand to hot deserts (face B of seeds 1, 7, 42
    then has none).
+   **Realistic batch A: plates and coasts (2026-11-13, the 0.61 line).** Owner, 2026-11-13, on a Realistic world
+   (seed 2741893632, 0.59.3): "What's up with realistic world having an enormous \"river\"? And a separated mountain
+   range from the main continent? It's a very weird geography that doesn't look realistic at all" / "I meant
+   horizontal slices of noise" (large uniform swaths of one terrain type in plan view) / "And noise also seems very
+   uniform at a macro level, where the same terrain almost looks tiled." / "Also are we hardcoding that there's an
+   ocean edge dropoff always around? Or is that just super common?" / after the diagnosis: "Yes make those changes
+   as a realistic batch". Diagnosis (native, seed 2741893632 face A): the "river" a divergent continent–ocean
+   boundary cut as a 256 m rift whose sea-side shoulder closed it into one 45 km lake; the separated range a
+   continental plate centred at the disc's edge, clipped to a 5–7 km sliver of range; plan view one cold desert
+   region of 565 km² and province and biome bands parallel to boundaries; the "tiling" no true periodicity but
+   45°/90° streak hatching at 100–300 m; the rim a circular cap at `reach − seaMargin` for every plate. **Part A
+   built** (this change; docs/proposals/REALISTIC_WORLD.md §6 "Realistic batch A"): landforms by plate pair
+   (`plates.json` `uplift.pairs`), segmented rifts (chains of lakes with sills, gulfs at the sea), no sliver plates
+   (`kinds.*.interior`, plate centres from a disc larger than the reach, spacing 12 km), ranges varied along their
+   line (`uplift.along`) and arcs fitted to narrow plates, and an open rim (`rim`: shelves per sector, coast
+   noise, only the outer 2.5 km always sea). On seed 2741893632 the longest lake 52.7 → 9.2 km, no plate under
+   its interior, land out to 46.8 km of the 50 km radius. **Part B** (variety: the plan-view swaths, the climate
+   on one band and wind, the uniform hatching) is its own branch (`claude/realistic-variety*`) and ships on the
+   same 0.61 line.
 16. **Phone frame rate (P0)** (owner 2026-11-11, iPhone 17, Safari, setting Low: "I'm only getting ~23 fps on
    mobile, seeing lots of z-fighting on tree trunks with the leaf cards. What might be dropping frames since the
    last while. Used to get 60 fps"). Suspect: leaf cards are on in every tier but CPU, Low included; cards lying

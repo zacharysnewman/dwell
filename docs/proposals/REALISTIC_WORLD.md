@@ -13,7 +13,8 @@ plate history (`rocks.json` `plateProvinces`) and soils by rock × climate (`veg
 big map's debug layers (plates, uplift, rain, rocks); created, played and reloaded in the browser on the M1's GPU,
 the phone page's total at load under the starter's (R6 below). Steps by geology (2026-11-13, 0.57.0, WORK_QUEUE item
 15): the global `cliffs` volume off and the rock shaping on in Realistic worlds, so the ground steps only where its rock's
-jointing says (R5 below). §8 (2026-11-12, design only):
+jointing says (R5 below). Realistic batch A (2026-11-13, the 0.61 line): landforms by plate pair, segmented rifts, no
+sliver plates, ranges varied along their line, and an open rim (§6, after R6). §8 (2026-11-12, design only):
 orbits by seed set the latitude band, the sky and later seasons, in place of R3's picked band.
 
 ## 1. The owner's direction
@@ -521,6 +522,61 @@ them: red with the new rocks' palettes among the old, green after). `Resolved::w
   seed 1234 (a subarctic band) is nearly all snow. The phone page's total at load (`npm run bench -- --warm --touch
   --compare memory-phone`, configs `worldgen` `test:starter` and `test:realistic`, seed 0): Realistic **570 MiB**
   against the starter's **655 MiB** at load (−13 %), 532 against 598 MiB 30 s later.
+- **Realistic batch A: plates and coasts (2026-11-13, the 0.61 line; WORK_QUEUE item 15).** The owner, on seed
+  2741893632 (0.59.3): "What's up with realistic world having an enormous \"river\"? And a separated mountain range
+  from the main continent? It's a very weird geography that doesn't look realistic at all", and "are we hardcoding
+  that there's an ocean edge dropoff always around?". The diagnosis: the "river" was a divergent boundary between a
+  continent and an ocean cut as a rift (160 m × 1.6, 77 m shoulders) along all 49 km, its sea-side shoulder closing
+  it into one 45 km lake; the range was a continental plate centred at the disc's edge, clipped to a 5–7 km sliver of
+  range; the coast was a circle at `reach − seaMargin` (23 km) for every seed. **Built** (all data in `plates.json`,
+  checked by `gen.mjs`, tests on both faces):
+  1. **Landforms by plate pair** (`uplift.pairs`): every boundary kind × plate pair once (nine entries, `gen.mjs`
+     fails on a missing or duplicate one), each a list of landforms with a `side` (`over`, `under`, `astride`,
+     `continental`, `oceanic`), a `shape` (`bump`, `rift`, `shoulder`), a signed height, width and distance, and an
+     `arc` mode (`none`, `crest`, `island`). Two continents opening rift; a continent and an ocean opening make a
+     passive margin (a shelf lift on the sea side kept under the sea floor, a lower coastal plain inland, no trough);
+     two oceans a low swell; two oceans closing an island arc with a back-arc basin; an ocean under a continent a
+     trench and a range with its arc on the crest; transforms low ridges. Geology's rift fill only where the pair
+     cuts a rift (`Line::has_rift`).
+  2. **Segmented rifts** (`uplift.rift`): a rift polyline cut into basins `segmentLength` 8–15 km long, each its own
+     depth (0.7–1.3) and width (0.7–1.3), deepest mid-segment, sills between them (0.1–0.45 of the depth) stepping
+     down toward the end nearer the sea, alternate axes `stepOver` 1.5 km apart; an end at sea has no sill and the
+     shoulders are left out at sea (a gulf). Test: no lake on a rift is longer than a segment and a half (19 km), and
+     a continental rift holds a chain of lakes (`rifts_hold_chains_of_lakes_not_canals`).
+  3. **No sliver plates:** `kinds.<kind>.interior` (continental 8 km, oceanic 5 km: no strait under 10 km between two
+     continents) — each plate's farthest point from every other plate and from the rim inside the land
+     (`PlateLayout::interiors`, a 1 km scan); a plate short of it is removed (its ground to its neighbours) while its
+     kind keeps its minimum, else drawn 30 % nearer the centre. `count` 7–11 drawn from a `centres` disc of 56 km
+     (more than the 50 km `reach`, so plates straddle the rim), `spacing` 12 km. Test over 20 seeds both faces.
+  4. **Ranges and arcs:** `uplift.along` varies every landform's height and width ±40 % by 1-D noise at 9 km along its
+     line (saddles and peaks); a crest arc stands on its range's crest (4 km) and any arc's cone comes nearer the line
+     in fifths, down to `arc.minDistance` 2 km, to stand on the overriding plate.
+  5. **The rim** (`rim`, replacing `seaMargin`): the layout covers the whole 50 km disc; a continent reaching the rim
+     ends `shelf` 1–8 km (drawn per each of 10 sectors, cosine-blended) inside the outer `edgeSea` 2.5 km band, its
+     coast moved ±800 m by noise at 7 km; the band is always sea, at least `edgeCoast` 3 km out (deep); every raised
+     landform and cone fades to nothing at the rim's coast. Test: the band is sea all round, the outer coast's radius
+     spreads by more than 1 km over angle, and land comes within 6 km of the edge on some seed.
+
+  Before → after (face A; `cargo run --release -p dwell-worldgen --example realistic_geo -- 1 7 42 2741893632`):
+
+  | seed | plates (interior km, C continental, o oceanic) | land | longest lake | land reaches | outer coast σ |
+  | --- | --- | --- | --- | --- | --- |
+  | 1 | o8.6 o10.1 **C2.3** C7.8 → o11.9 o13.4 o17.0 o13.1 C15.8 o11.7 | 11.1 → 22.6 % | 22.7 → 15.4 km | 31.8 → 43.0 km | 0.40 → 4.63 km |
+  | 7 | C8.5 o9.5 C12.2 → o14.6 o19.1 C14.4 C9.2 | 15.7 → 28.5 % | 2.8 → 10.3 km | 31.8 → 45.8 km | 0.59 → 2.65 km |
+  | 42 | o7.3 **o2.5** o4.3 C10.9 C8.7 → C10.9 o18.7 o14.2 C8.8 o14.6 o13.1 | 17.5 → 16.9 % | 24.2 → 6.2 km | 31.6 → 46.6 km | 0.54 → 3.39 km |
+  | 2741893632 | **C2.7** C13.8 o7.4 → C12.2 o14.1 o7.3 C13.4 C11.5 C17.0 | 21.4 → 57.2 % | **52.7** → 9.2 km | 31.8 → 46.8 km | 0.55 → 4.17 km |
+
+  (Before, "land reaches" past the 23 km cap was ranges and islands standing out of the sea margin; the outer coast's
+  σ is over the angles where land reaches past 30 km.) The longest lake on seed 1 is a sea-level lagoon at the rim, not
+  a rift. *Deviations:* the plate count after the sliver rule can fall under `count`'s min (the test checks ≥ 2 and
+  the kinds' minimums); the island arcs' cones erode to small islands in the wet sea air (the arc test weighs the
+  continental arcs). Tests that pinned a seed's terrain followed it: `realistic_steps` reads seed 7 (42's bedded
+  ground is now on flat plains) with massive ground under 2 % stepped and ledges on 1 in 30 bedded columns;
+  `realistic_biomes`' rain shadow is 2× unless the windward side gets under a tenth of the band's coast rain (an
+  inland range the air reaches dry), and the former fallback climates' presets take 80 % of their climate on low
+  ground; `realistic_climate`'s discharge rain is 1.5× windward; `realistic_rocks` meets a collision on the face's
+  first seed that has one, and allows 1 in 100 red-desert floors off by the arid line. The Realistic golden is
+  rewritten (a new line, 0.61). Part B (variety: plan-view swaths, uniform hatching) is separate.
 - **Later (not phased):** strata tilt near boundaries; lava vents by rule; a 10× Realistic once the
   world map tiles.
 
