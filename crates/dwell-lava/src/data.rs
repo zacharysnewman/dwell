@@ -20,16 +20,16 @@ pub struct HotFluid {
     pub viscosity_m2s: f32,
     /// A depth that never flows (m): a thin front stands still.
     pub yield_depth_m: f32,
-    /// A column at rest, `thin_depth_m` deep, goes from vent heat to rock in this long (s).
-    pub cooling_seconds: f32,
-    /// How much faster a column cools per dry neighbour (its edges).
-    pub edge_cooling: f32,
-    /// The depth (m) that cools in `cooling_seconds`: thinner faster, deeper slower, in proportion
-    /// (it cools from its top).
-    pub thin_depth_m: f32,
-    /// Moving lava keeps its heat under its crust (a tube): its cooling is divided by
-    /// `1 + speed / tube_speed_ms` (speed m/s), so a running river stays molten far from its vent.
-    pub tube_speed_ms: f32,
+    /// A column at rest this long (s) hardens into `rock` (owner, 2026-11-13: lava solidifies when
+    /// it stops moving, not while flowing); its heat runs from 1 to 0 over the rest.
+    pub rest_seconds: f32,
+    /// A column whose lava moves at most this fast (m/s: its throughflow, m³/s through its four
+    /// faces, over twice its depth) is at rest; any faster and it is flowing, its rest clock back
+    /// to the start.
+    pub still_ms: f32,
+    /// Lava joined to a vent (a source) through at most this many metres of lava columns never
+    /// hardens by rest (water still quenches it).
+    pub source_keep_m: f32,
     /// A pond this deep (m) breaks out through the crust dam beside it (the field's own rock,
     /// melted again); 0: never.
     pub breakout_depth_m: f32,

@@ -547,6 +547,18 @@ face, or the placement check against its shape.
 
 ## Fixed
 
+### 141. Lava expired into rock and "all just goes away" (fixed after 0.60.11)
+
+Owner, 2026-11-13: "Another thing I observed, I think Lava needs to not just expire into rock, since it all just goes
+away then, it should solidify when it stops moving, touches water, or is a source block, not while flowing." Cause: lava
+cooled by time (`coolingSeconds`, faster at its edges and when thin), flowing or not, so a river's spreading margins and
+its thinning sheet hardened while it still ran; lava under a quarter metre deep fills no ½ m cell, so a thin sheet
+hardening left no visible rock either, and the flow seemed to vanish. Fixed by hardening by rule (VOLCANOES.md §6.6,
+WORK_QUEUE item 8): flowing lava never hardens, lava at rest hardens after `restSeconds` into rock in the cells it
+filled, sources and lava within `sourceKeepM` of one stay molten, water quenches any. Tests (both faces,
+`crates/dwell-lava/tests/lava.rs`): the river, the tongue and the source-distance tests failed on the old code (the
+channel hardened while flowing; a tongue hardened at 18 s, before a rest; a pool 1 m from a source hardened) and pass.
+
 ### 140. The player character floats a bit above the ground (scaled up, 2026-11-13)
 
 Owner, 2026-11-13: "I think my player character is floating a bit above the ground now. We didn't talk about

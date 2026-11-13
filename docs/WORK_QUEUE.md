@@ -296,6 +296,18 @@ Still open:
    solidifies):** heat stops as data (`lava.json` `heat`), a `heat` property on `dwell:lava` written by the
    server as a column cools past a stop and drawn per cell, orange-red stops that keep their hue; **left:**
    the bloom pass (VOLCANOES.md §6.5).
+   **Lava hardens by rule, not by expiring (owner, 2026-11-13):** "Another thing I observed, I think Lava
+   needs to not just expire into rock, since it all just goes away then, it should solidify when it stops
+   moving, touches water, or is a source block, not while flowing." Clarified: sources never solidify (they
+   stay molten forever unless water touches them); only lava that has stopped moving hardens; flowing lava
+   never hardens; water contact hardens any lava. And (owner, 2026-11-13): "We may need lava to not harden
+   when within a distance of a sourceblock too." **Built (pending release, `claude/lava-solidify`, BUGS.md
+   #141):** `lava.json` `restSeconds` (20), `stillMs` (0.005 m/s), `sourceKeepM` (4 m, along the connected
+   lava columns) replace the timed cooling (`coolingSeconds`, `edgeCooling`, `thinDepthM`, `tubeSpeedMs`);
+   water quenches any lava as before, a source's included (VOLCANOES.md §6.6). **For the owner:** a fed
+   river now always runs on (a weak vent no longer crusts and stops short), which replaces the 2026-11-11
+   outcome "sometimes it may, other times it may not" reach the sea; viscous lava levelling in a pit counts
+   as flowing for a few minutes before it rests and hardens.
    **Next:** heat per cell; the water grid's columns as the fields' water; eruptions.
 9. ~~**Loading-time display bug.**~~ Done (0.52.71): the 10 s was the graphics' start (one long task on the
    main thread making the renderer's pipelines) begun in the same task that ended the game's load, so the
@@ -879,6 +891,9 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    lifts the dark crust's cells toward orange (one number, `intensity`). Left: the crust covering less of hot
    lava (one number, `crust` of the hot stop, waiting on the owner's look); the cooling river not yet seen in
    game.
+   Since 2026-11-13 (item 8, hardening by rule) a column's heat is its rest clock: a flowing river stays at
+   the hot stop its whole length, and resting lava darkens through the stops over `restSeconds` before it
+   hardens.
 20. **Starter world on iPhone, again** (owner 2026-11-11: "iOS can't handle the starter world. It crashes and
    restarts quite often. What's so much heavier about it?"). 0.52.99–0.52.104: ecology 12.5 → 0.9 MB, starter
    biome grids 53.6 → 15.9 MB a process. Re-measured at 0.53.2 on the `--touch` page (BUGS.md #70): the
