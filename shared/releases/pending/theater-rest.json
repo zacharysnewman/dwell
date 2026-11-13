@@ -1,0 +1,9 @@
+{
+  "changes": [
+    "Theater mode's panel is redone: a proper close button, Esc to close, a docked panel on desktop and a bottom or side sheet on phones, grouped sections with an Advanced fold, a recording timer and a pause button, and controller navigation.",
+    "Theater mode can follow a creature or NPC: pick it from a list or under the crosshair, and the camera orbits, tracks or watches it smoothly as it moves.",
+    "Frame-exact recording: a camera path can be recorded frame by frame, so the video plays smoothly even on a slow machine.",
+    "Phones get theater flying controls: a stick and Up and Down buttons, and a drag to look.",
+    "Hosts can turn theater mode off for guests (Host… → Theater for guests); the host can always use it."
+  ]
+}

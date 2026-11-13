@@ -4,6 +4,7 @@
 // records.
 
 import type { Aspect } from './config';
+import { type WebmFrame, muxWebm } from './webm';
 
 /** The canvas size for a take: `height` px tall at `aspect`, both sides even (encoders need it). */
 export function recordSize(aspect: Aspect, height: number): { width: number; height: number } {
@@ -110,4 +111,79 @@ export function download(doc: Document, blob: Blob, name: string): void {
   setTimeout(() => {
     URL.revokeObjectURL(url);
   }, 10_000);
+}
+
+/**
+ * A frame-exact take (docs/THEATER_MODE.md §6): the shell captures the canvas once per drawn
+ * frame and stamps frame i at i / fps, whatever the page's real speed, so a slow machine still
+ * makes a smooth video (the path moves one frame of the rate per captured frame,
+ * `Client.theaterAdvance`). WebCodecs encodes, `muxWebm` writes the file. Silent: the game's sound
+ * runs in real time and wouldn't match.
+ */
+export class ExactTake {
+  readonly mime = 'video/webm';
+  frames = 0;
+  private readonly encoded: WebmFrame[] = [];
+  private readonly encoder: VideoEncoder;
+  private failed: Error | null = null;
+
+  constructor(
+    private readonly size: { width: number; height: number },
+    private readonly fps: number,
+    bitsPerSecond: number,
+  ) {
+    this.encoder = new VideoEncoder({
+      output: (chunk) => {
+        const data = new Uint8Array(chunk.byteLength);
+        chunk.copyTo(data);
+        this.encoded.push({ timestampUs: chunk.timestamp, key: chunk.type === 'key', data });
+      },
+      error: (e) => {
+        this.failed = e instanceof Error ? e : new Error(String(e));
+      },
+    });
+    this.encoder.configure({
+      codec: 'vp8',
+      width: size.width,
+      height: size.height,
+      bitrate: bitsPerSecond,
+      framerate: fps,
+    });
+  }
+
+  /** Whether WebCodecs can make one in this browser. */
+  static supported(): boolean {
+    return typeof VideoEncoder !== 'undefined' && typeof VideoFrame !== 'undefined';
+  }
+
+  /** Whether the encoder keeps up: the next frame may be captured (else the path waits). */
+  get ready(): boolean {
+    return this.failed === null && this.encoder.encodeQueueSize < 4;
+  }
+
+  /** Captures the canvas as the next frame. */
+  capture(canvas: HTMLCanvasElement): void {
+    const timestamp = exactTimestampUs(this.frames, this.fps);
+    const frame = new VideoFrame(canvas, { timestamp, duration: Math.round(1e6 / this.fps) });
+    this.encoder.encode(frame, { keyFrame: this.frames % Math.max(1, this.fps * 2) === 0 });
+    frame.close();
+    this.frames++;
+  }
+
+  async stop(): Promise<Blob> {
+    await this.encoder.flush();
+    this.encoder.close();
+    if (this.failed) throw this.failed;
+    const file = muxWebm(
+      { codec: 'V_VP8', ...this.size },
+      this.encoded,
+      exactTimestampUs(this.frames, this.fps),
+    );
+    return new Blob([file], { type: this.mime });
+  }
+}
+
+/** Frame `i`'s time in a frame-exact take at `fps` (µs). */
+export function exactTimestampUs(i: number, fps: number): number {
+  return Math.round((i * 1e6) / fps);
 }

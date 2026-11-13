@@ -185,6 +185,8 @@ Still open:
    - Next: the owner's iPhone on a build with the cards off. If still slow: the arms pass (its own pass: a store and
      reload on a tile GPU), the composite (~2.2 ms), the caustic tile (0.9 ms every other frame); why 0.52.101+
      releases still 404 under the bench.
+   - Built (branch `claude/collision-ahead`, owner's brief 2026-11-13: "build a newly reached chunk's collision ahead
+     of the player"): see item 16's fps-moving-5 status.
 
 5. **Leaves, option 5, with matching far trees.**
    - Leaf Lab option 5 at its defaults ("#5 looks really good with defaults"): canopy normals 75 %,
@@ -733,6 +735,15 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    (`collisionCellsPerTick`, the cells in reach at once; the player moves the same); the 6× ticks' worst 15.8–19.8 →
    10.9–18.8 ms (BUGS.md #72 round 6); #642's contact hook costs nothing measurable here. Left: building a newly
    reached chunk's collision ahead of the player, a real iPhone check while moving.
+   **Status (fps-moving-5, branch `claude/collision-ahead`):** owner's brief (2026-11-13): "build colliders for chunks
+   in the player's direction of travel before they're entered (a look-ahead by speed and heading, data), spread across
+   frames with a per-frame budget (data), off the critical frame where possible; a test that walking/flying at speed
+   into new chunks never waits on a collider … and that the per-frame budget holds; both faces." Built: the chunks a
+   moving player heads into built a few a tick (`collisionAhead` in `shared/render/streaming.json`: 1 s, ≤ 48 m, the
+   reach + 1 m, ≥ 1 m/s; 2 a tick desktop and server, 1 phone), only once their neighbours are held; natively no chunk
+   reached unbuilt and the phone's worst terrain tick 3.2 → 1.5 ms flying (BUGS.md #72 round 7). Still on the main
+   thread, spread rather than moved off it (the prediction's collider lives in the tick). Left: the `phone-moving`
+   bench at 6× locally, a real iPhone check while moving.
 17. **Axe swing directions and animation tools** (owner 2026-11-11: "The axe animations are still trash. They
    don't swing in the right direction at all. Make yourself some tools to properly observe animations, movement
    directions, positions over time, etc. Should swing right to left for horizontal and up to down for vertical";
@@ -1193,6 +1204,20 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    declare the grid's capability, otherwise fall back to home. The `?spawn=` link takes the same values."): built
    with the sun's second slice (item 42, MOON_WORLD.md §8).
 
+   **Three things on the moon (owner, 0.61, iPhone, 2026-11-13, with screenshots):** "3 things on the moon: it doesn't
+   seem to have real LODs, can't see terrain very far in a meaningful way. Is there a moon visible from the moon? And
+   moon rock should have slopes, seems to only be generating half blocks." Screenshots: the ground ends at the chunk
+   distance in a flat pale band, then black sky; looking up, a cratered disc in the starry sky, home not visible; the
+   ground ½ m steps with no ramps. **And (owner, 2026-11-13):** "In addition to the moon, the sun doesn't render chunks
+   past high detail. It needs some directional lighting, let's make it from the earth and moon reflections." / "Sun
+   should also be glowing generally 'due to the lava'." Brief: (1) no moon disc in the moon's own sky; (2) the moon's
+   generator shapes stored ramps by home's rule, as data on the grid's generator; (3) real LOD on the moon and the
+   sun to their horizons (any grid); (4) M-6: home drawn in the moon's sky at its direction and size; (5) a light rig
+   per grid as data: the bodies that light it (their reflected light by albedo, phase and apparent size), a minimum
+   ambient, and on the sun a warm lava glow from below; home's lighting unchanged. BUGS.md #143–#145. Branch
+   `claude/moon-fixes-3-l0zjdx`.
+   **Built natively (0.63.0, a new line):** all five (BUGS.md #143–#145 say how; MOON_WORLD.md §7.3). **Left:** the
+   browser look on a GPU (`moon-draw`, `sun-draw`); shadows from the rig's lights; the rig on water and characters.
 28. **An atmosphere: the sky thinning to space** (owner 2026-11-12: "We likely need an atmosphere transition now
    between sky thinning to space. Clouds shouldn't extend past the earth atmosphere either."). With flight to the
    moon, climbing should fade the sky's scattering to black space with stars by day, the horizon glow becoming a
@@ -1239,6 +1264,15 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    16:48). **Waiting on the owner:** pick A–D (or a value between); its numbers move to the top of fog.json.
    **Owner, 2026-11-12: "Yeah let's go with D on haze."** Done: fog.json's half distance 6 km (was 16 km) and scale
    height 1 km (was 1.8 km), density 0.95; the pinned fog values updated.
+
+   **A bluer day sky** (owner, 2026-11-13, after sharing a Monument Valley photo — deep saturated blue overhead fading
+   to a lighter, slightly hazy blue at the horizon: **"Also can you make our sky a bit bluer like in that screenshot,
+   with blue to lighter blue gradient on the horizons?"**). **Done (branch `claude/sky-blue`):** daynight.json's
+   morning, noon and afternoon keyframes: zenith #2b68c4 / #2563c6 / #2a66c4 (was #6098d8 / #649ada / #6098d6),
+   horizon #a8c6e6 / #9cc0ea / #a9c5e4 (was a near-white #e2e2d8 / #e5e5e1 / #e6e2d4). The fog takes the sky's colour
+   below the horizon, so far hills now fade into the lighter blue. Sunrise, the golden hours, sunset, dusk, night and
+   the atmosphere's fade to space are unchanged (a test pins both). **Owner should see:** midday at the spawn looking
+   at the horizon and 45° up, and far hills from a height — side-by-sides in the PR.
 30. **Desktop frame rate on the M1 and hidden graphics settings (P0)** (owner 2026-11-12: "It seems like we're
    hiding some performance settings. I don't see 'tree' options in our settings for graphics. I think cards are
    killing my m1 mac too." / "Running 26fps." / "GPU at 31ms"). The desktop default preset is High (leaf cards
@@ -1703,6 +1737,10 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    scaling for the new player model. It's likely shorter and may need to be scaled up."** (items 37/38: the Peasant
    is your body, other players' and the villagers'). **Fixed (BUGS.md #140):** its soles were on the ground but its
    eyes 7.3 cm under the camera's; `models.json` `scale` 1.04 → 1.09 puts them at the camera's 1.62 m eye.
+   Owner, 2026-11-13: **"Is the first person model lined up with the ground though? The feet were first person
+   feet that didn't line up / seemed to be floating?"** **Fixed (BUGS.md #142):** your first-person body was moved
+   back whole (0.1–0.4 m) off its feet and their shadow; it now leans back from its soles, which stand where you do
+   on flat ground, ramps and slopes.
    Owner's brief, 2026-11-13: **"villagers' sit and look-around clips, and BUGS.md #87 (an NPC's held vertical block
    leans back)… Do: a `sit` clip (sitting on the ground or a block edge — say which; the NPC chooses a seat by data)
    and a `look_around` clip (head and torso turn, a slow scan), fitted and checked with clip_probe (SVG sheets in the
@@ -1713,7 +1751,7 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    the body holding its heading, no longer swept by the server); the probe poses NPC roles and follows
    `<bone>_ahead`; sheets in `docs/clip_probe/` (`npc_sit`, `npc_look`, `guard_vertical_before`/`_after`). #87
    fixed (the third-person vertical block fitted upright; the sword's vertical `blade` data with it). Found:
-   #142 (the first-person vertical block leans back; open). Not yet: sitting on a block's edge, a sit-down
+   #146 (the first-person vertical block leans back; open). Not yet: sitting on a block's edge, a sit-down
    transition.
 39. **Livelier animals** (owner 2026-11-12, after the video had no chase or fleeing — on day one every pack is
    kilometres from any herd and players can't scare deer): chose **deer flee from players** (they notice a player
@@ -1955,6 +1993,26 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    body: chunks streamed around it from the same budget, creatures spawned and kept, the near ecology, lava and
    water stepped there; animals don't flee it. Tests on both faces (creative streams and simulates, adventure
    ignores, no capability ignored, a clear ends it). Not yet run in a browser. Next, locally: T-2, T-3.
+   **The rest (owner-approved brief, 2026-11-13):** the host's `theaterGuests` setting (the host can disable theater
+   for guests), following a creature (an animal or NPC: orbit/track it, the target smoothed), offline frame-exact
+   recording (each frame rendered at the chosen rate whatever the page's speed), phone touch controls; T-5's MCP
+   server skipped (a nice-to-have).
+   Owner, 2026-11-13: **"Improve the UI on the theater mode. It's really bad, it doesn't even have a proper X button or
+   responsive layout."** Done first, ahead of the rest: the panel redone in the menu design system (#892, item 23) —
+   a real close X (labelled, focus ring; Esc closes through the Panels owner, #902), responsive (a compact docked
+   panel on desktop, a bottom sheet with large targets on phones in portrait, a side sheet in landscape, no
+   horizontal scroll at 360 px), grouped sections (Presets: target and move, then sliders; Keyframes: list, add,
+   delete, preview, play; Recording: aspect, frame rate, record or stop, download), a collapsible Advanced section,
+   clear states (recording: a red dot and a timer; playing: a pause button), controller navigable.
+   **Built (2026-11-13, cloud; branch `claude/theater-rest`):** the panel (THEATER_MODE.md §2.1: one of the panels
+   `ui/panels.ts` owns, the X and Esc close it, docked / bottom sheet / side sheet by the viewport, 360 px checked in
+   headless Chromium, Advanced folds, a REC badge with a timer, Pause, the d-pad); `theaterGuests` (`WorldSettings`
+   0x87, optional; Host… → Theater for guests; the host — the loopback session or an op — always may; the server
+   ignores a guest's viewpoint while off); following a creature or NPC (a list nearest first or the crosshair, aimed
+   by id, its position smoothed: the path's `followSmoothingS`); frame-exact path takes (one frame of the rate per
+   drawn frame, WebCodecs VP8 in a WebM; `exact: true` on the dev API's take); a phone's stick and Up/Down buttons.
+   Outstanding: the owner's look on a GPU and a phone (the screenshots), a dedicated server's switch for
+   `theaterGuests`, T-5.
 
 42. **The sun as a real world** (owner 2026-11-12: "Add this feature to the queue, the sun is an actual world like
    the moon. Follow similar concepts as the moon. The sun is a volcano world. Constant flowing lava, oceans of
@@ -2003,6 +2061,12 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    jittery device; spawns on the moon and the sun (MOON_WORLD.md §8). **Left:** `sun-draw` and a sun spawn run in a
    browser on a GPU (a local check); shrines on other grids; the sun's sky (the moon session's).
 
+   **The sun's LOD and light (owner, 2026-11-13):** "In addition to the moon, the sun doesn't render chunks past high
+   detail. It needs some directional lighting, let's make it from the earth and moon reflections." / "Sun should also
+   be glowing generally 'due to the lava'." With item 27's three moon things (branch `claude/moon-fixes-3-l0zjdx`):
+   the LOD per grid covers the sun; the sun is lit by home's and the moon's reflected light (each at its true
+   direction, its strength by albedo, phase and apparent size, as data) and a warm lava ambient from below (data), the
+   lava's own glow and bloom kept. BUGS.md #145.
 ## Done
 
 - **Underwater audio (owner 2026-11-12: "swimming underwater sounds like swimming on the water surface, when

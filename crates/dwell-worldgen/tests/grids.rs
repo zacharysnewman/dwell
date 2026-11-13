@@ -47,7 +47,12 @@ fn the_build_s_grids_are_home_at_rest_and_a_cratered_moon() {
 /// A bad entry fails with a message naming it.
 #[test]
 fn bad_grids_fail_with_a_message() {
-    let cases: [(&str, &str, &str); 12] = [
+    let cases: [(&str, &str, &str); 15] = [
+        (
+            "\"ramps\": \"notched\"",
+            "\"ramps\": \"wavy\"",
+            "generator.ramps",
+        ),
         ("\"frame\": \"orbit\"", "\"frame\": \"spin\"", "`frame`"),
         ("\"dwell:moon_dust\"", "\"dwell:no_such\"", "names no block"),
         (
@@ -68,6 +73,8 @@ fn bad_grids_fail_with_a_message() {
         ("\"atmosphere\": false", "\"atmosphere\": 0", "atmosphere"),
         ("\"cells\": 96", "\"cells\": 2", "nearMesh.cells"),
         ("\"sinkM\": 8", "\"sinkM\": -1", "nearMesh.sinkM"),
+        ("\"levels\": 9", "\"levels\": 3", "must reach its disc"),
+        ("\"cells\": 48", "\"cells\": 50", "lod.cells"),
     ];
     for (from, to, want) in cases {
         assert!(
@@ -373,6 +380,12 @@ fn top_cell(t: &CrateredTerrain, f: FaceFrame, x: i64, z: i64) -> dwell_blocks::
     ch.voxels()[local_index(x.rem_euclid(s) as i32, ly, z.rem_euclid(s) as i32)]
 }
 
+/// A state's block name without its ramp family's suffix.
+fn base_of(s: dwell_blocks::StateId) -> String {
+    let n = dwell_blocks::block_of(s).name;
+    n.strip_suffix("_ramp").unwrap_or(n).to_owned()
+}
+
 /// Points of the disc on a coarse grid, split by mare weight: (in a mare, in the highlands).
 type Points = Vec<(f64, f64)>;
 
@@ -414,14 +427,19 @@ both_faces!(
         for &(x, z) in mare.iter().step_by(4) {
             let (cx, cz) = (x.floor() as i64, z.floor() as i64);
             assert_eq!(t.surface_block(f.face, cx, cz), dark);
-            assert_eq!(top_cell(&t, f, cx, cz), f.state(dark), "mare at {x} {z}");
+            // The top may be one of the block's ramps (BUGS.md #144): its base block.
+            assert_eq!(
+                base_of(top_cell(&t, f, cx, cz)),
+                base_of(dark),
+                "mare at {x} {z}"
+            );
         }
         for &(x, z) in high.iter().step_by(8) {
             let (cx, cz) = (x.floor() as i64, z.floor() as i64);
             assert_eq!(t.surface_block(f.face, cx, cz), dust);
             assert_eq!(
-                top_cell(&t, f, cx, cz),
-                f.state(dust),
+                base_of(top_cell(&t, f, cx, cz)),
+                base_of(dust),
                 "highland at {x} {z}"
             );
         }
@@ -517,16 +535,23 @@ both_faces!(
     }
 );
 
-/// Home has air and no coarse mesh (its far view is the LOD's); the moon has no air (its sky is
-/// space at its ground) and a coarse mesh of its surface (MOON_WORLD.md §5 M-5, §7.3).
+/// Home has air, no sky disc and a coarse mesh to be seen by from the moon (M-6), and no grid LOD
+/// (its far view is its own LOD tree); the moon has no air (its sky is space at its ground), a
+/// coarse mesh of its surface (MOON_WORLD.md §5 M-5, §7.3) and a LOD reaching past its disc, as
+/// the sun does (BUGS.md #143, #145).
 // both-faces: the grids' data; no face enters.
 #[test]
 fn the_moon_is_airless_and_has_a_near_mesh() {
     let list = parse_grids(GRIDS_JSON).unwrap();
     let home = list.iter().find(|g| g.name == "dwell:home").unwrap();
     let moon = list.iter().find(|g| g.name == "dwell:moon").unwrap();
-    assert!(home.atmosphere && home.near_mesh.is_none());
-    assert!(!moon.atmosphere);
+    assert!(home.atmosphere && !home.sky_disc && home.near_mesh.is_some() && home.lod.is_none());
+    assert!(!moon.atmosphere && moon.sky_disc);
+    let sun = list.iter().find(|g| g.name == "dwell:sun").unwrap();
+    for g in [moon, sun] {
+        let lod = g.lod.expect("a LOD on the grid");
+        assert!(lod.reach_m() >= g.radius_m.unwrap(), "{}: {lod:?}", g.name);
+    }
     let near = moon.near_mesh.expect("the moon's near mesh");
     assert!(near.cells >= 64 && near.sink_m > 0.0, "{near:?}");
     // A grid that declares no atmosphere has none (the sun's, by data alone).
@@ -540,3 +565,87 @@ fn the_moon_is_airless_and_has_a_near_mesh() {
             .atmosphere
     );
 }
+
+both_faces!(
+    /// The moon's slopes are ramped, not a field of bare ½ m stairs (owner, 0.61: "moon rock should
+    /// have slopes, seems to only be generating half blocks"; BUGS.md #144): over generated chunks
+    /// across the disc, a ½ m edge (a 4-neighbour exactly one row lower) under a flat top is bare;
+    /// few are (the measure of `realistic_steps.rs`), the pieces are the ground's own ramp family,
+    /// placed through the face's frame (hanging on face B). (Its ground is rarely 45° steep, so
+    /// 1 m ramps are few; the rule's steep case is `ramps.rs`'s.)
+    fn moon_slopes_are_ramps_not_bare_half_metre_stairs(f: FaceFrame) {
+        let t = moon(11);
+        let s = CHUNK_SIZE;
+        let (mut edges, mut bare, mut ramps, mut steep) = (0usize, 0usize, 0usize, 0usize);
+        // Patches of open ground, and one down the inner wall of the biggest crater near the
+        // centre (its steepest ground: the 1 m ramps).
+        let wall = t
+            .craters_near(f.face, 0.0, 0.0, 3000.0, 60.0)
+            .into_iter()
+            .max_by(|a, b| a.radius.total_cmp(&b.radius))
+            .expect("a crater");
+        let w = (
+            ((wall.x + 0.6 * wall.radius) / f64::from(s)).floor() as i32,
+            (wall.z / f64::from(s)).floor() as i32,
+        );
+        for (cx, cz) in [(0, 0), (40, -30), (-120, 75), (230, 10), (-310, -260), w] {
+            for (dx, dz) in [(0, 0), (1, 0), (0, 1)] {
+                let (x0, z0) = (i64::from((cx + dx) * s), i64::from((cz + dz) * s));
+                let top = |x: i64, z: i64| t.top_row(f.face, x, z);
+                let mut chunks = std::collections::HashMap::new();
+                for z in z0..z0 + i64::from(s) {
+                    for x in x0..x0 + i64::from(s) {
+                        let Some(tr) = top(x, z) else { continue };
+                        let row_key = tr.div_euclid(i64::from(s));
+                        let ch = chunks.entry(row_key).or_insert_with(|| {
+                            let mut ch = Chunk::default();
+                            t.generate(
+                                f.chunk(ChunkCoord::new(cx + dx, row_key as i32, cz + dz)),
+                                &mut ch,
+                            );
+                            ch
+                        });
+                        let y = tr.rem_euclid(i64::from(s)) as i32;
+                        let ly = if f.is_b() { s - 1 - y } else { y };
+                        let st = ch.voxels()[local_index((x - x0) as i32, ly, (z - z0) as i32)];
+                        let base = dwell_blocks::block_of(st).name;
+                        let ground = dwell_blocks::block_of(t.surface_block(f.face, x, z)).name;
+                        let flat = base == ground;
+                        if !flat {
+                            assert_eq!(
+                                base,
+                                format!("{ground}_ramp"),
+                                "the ground's own ramp family"
+                            );
+                            let half = dwell_blocks::state_property(st, "half");
+                            assert_eq!(half == Some("top"), f.is_b(), "hung on face B: {half:?}");
+                            ramps += 1;
+                            if dwell_blocks::state_property(st, "shape") == Some("steep_upper") {
+                                steep += 1;
+                            }
+                        }
+                        let half = [(1, 0), (-1, 0), (0, 1), (0, -1)]
+                            .iter()
+                            .any(|&(dx, dz)| top(x + dx, z + dz) == Some(tr - 1));
+                        if half {
+                            edges += 1;
+                            if flat {
+                                bare += 1;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        let share = bare as f64 / edges.max(1) as f64;
+        eprintln!(
+            "face {:?}: ½ m edges {edges}, bare {bare} ({share:.3}), ramp tops {ramps}, steep {steep}",
+            f.face
+        );
+        assert!(edges > 300, "enough slope sampled: {edges}");
+        assert!(
+            share < 0.1,
+            "the moon's slopes ramp, not a field of ½ m stairs: {bare} of {edges} bare"
+        );
+    }
+);

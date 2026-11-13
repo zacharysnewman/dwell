@@ -106,11 +106,46 @@ impl Server {
         self.settings.allows(Ability::TheaterViewpoint)
     }
 
-    /// A session's viewpoint as the server uses it: none unless the world's mode has the ability
-    /// and the player is joined on the home grid; held within [`VIEWPOINT_MAX_M`] of the body (or
-    /// of where it died).
+    /// Whether a session is the world's host for theater mode (THEATER_MODE.md §7): the hosting
+    /// page's own player (the loopback session) or an op. The host may always use theater mode.
+    pub(super) fn theater_host(&self, s: &Session) -> bool {
+        s.kind == TransportKind::Loopback || self.config.ops.contains(&s.public_key)
+    }
+
+    /// Whether a session may use theater mode: the host always, a guest while the world's
+    /// `theaterGuests` setting is on.
+    pub(super) fn theater_allowed(&self, s: &Session) -> bool {
+        self.settings.theater_guests || self.theater_host(s)
+    }
+
+    /// The host turns theater mode on or off for guests (`WorldSettings` tag `THEATER_GUESTS`):
+    /// at once, the joined clients get the world's settings again (a guest's client stops offering
+    /// the mode and leaves it), and the world saves it with its next save. Off, a guest's camera
+    /// viewpoint is no longer used.
+    pub fn set_theater_guests(&mut self, on: bool) {
+        if self.settings.theater_guests == on {
+            return;
+        }
+        self.settings.theater_guests = on;
+        self.settings_fields = self.settings_fields.with(self.settings);
+        let bytes = encode(&Message::WorldSettings(self.join_settings()));
+        for (&id, s) in &self.sessions {
+            if s.joined() {
+                self.outbox.push(Outgoing {
+                    session: id,
+                    kind: OutKind::Reliable(Channel::Control),
+                    bytes: bytes.clone(),
+                });
+            }
+        }
+    }
+
+    /// A session's viewpoint as the server uses it: none unless the world's mode has the ability,
+    /// the player may use theater mode (`theater_allowed`) and is joined on the home grid; held
+    /// within [`VIEWPOINT_MAX_M`] of the body (or of where it died).
     pub(super) fn viewpoint_of(&self, s: &Session) -> Option<[f64; 3]> {
-        if !self.viewpoints_allowed() || !s.joined() || s.away.is_some() {
+        if !self.viewpoints_allowed() || !s.joined() || s.away.is_some() || !self.theater_allowed(s)
+        {
             return None;
         }
         let at = s.viewpoint.at?;

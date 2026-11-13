@@ -85,7 +85,8 @@ pub fn near_mesh(src: &(impl FarSource + ?Sized), near: NearMesh) -> (ChunkMeshe
                 let dz = (h(i, j + 1) - h(i, j.saturating_sub(1))) / (2.0 * step);
                 let l = (dx * dx + 1.0 + dz * dz).sqrt();
                 let nrm = f.vector([-dx / l, 1.0 / l, -dz / l]);
-                let c = src.far_albedo(face, x, z);
+                // Its water (home's seas and lakes) in the water block's colour (blocks.json).
+                let c = water_mixed(src.far_albedo(face, x, z), src.far_water(face, x, z, step));
                 o.positions.extend(p.map(|v| v as f32));
                 o.normals.extend(nrm.map(|v| v as f32));
                 o.colors.extend(c.map(|v| v as f32));
@@ -122,6 +123,17 @@ pub fn near_mesh(src: &(impl FarSource + ?Sized), near: NearMesh) -> (ChunkMeshe
     (m, radius)
 }
 
+/// `albedo` with a `share` of the ground under water in the water block's colour.
+fn water_mixed(albedo: [f64; 3], share: f64) -> [f64; 3] {
+    if share <= 0.0 {
+        return albedo;
+    }
+    let c = dwell_blocks::info(dwell_blocks::require("dwell:water")).color;
+    let w = [(c >> 16) & 0xff, (c >> 8) & 0xff, c & 0xff].map(|v| f64::from(v) / 255.0);
+    let k = share.clamp(0.0, 1.0);
+    std::array::from_fn(|i| albedo[i] + (w[i] - albedo[i]) * k)
+}
+
 fn qmul(a: Quat, b: Quat) -> Quat {
     let [ax, ay, az, aw] = a;
     let [bx, by, bz, bw] = b;
@@ -145,25 +157,27 @@ pub fn pose_in(drawn: &GridFrame, g: &GridFrame) -> (V3, [f32; 4]) {
 }
 
 /// Which grids' meshes to draw: each grid `g` with a near mesh (`with_mesh`: its index, its
-/// frame and its `farM`) is drawn when the view is on it (at the identity) or its centre `centre`
-/// (its grid-local point) is nearer the eye than its `farM`. The eye is in the drawn grid's frame.
+/// frame and its `farM`, `None` for a grid the sky draws no disc of, home) is drawn when its
+/// centre `centre` (its grid-local point) is nearer the eye than its `farM`, or at every distance
+/// without one; never the grid the view is on (its own LOD draws it: home's tree, another grid's
+/// rings, `grid_lod.rs`). The eye is in the drawn grid's frame.
 pub fn shown(
     drawn: u8,
     drawn_frame: &GridFrame,
     eye: V3,
-    with_mesh: &[(u8, GridFrame, f64)],
+    with_mesh: &[(u8, GridFrame, Option<f64>)],
     centre: V3,
 ) -> Vec<(u8, V3, [f32; 4])> {
     with_mesh
         .iter()
         .filter_map(|&(g, frame, far_m)| {
             if g == drawn {
-                return Some((g, [0.0; 3], [0.0, 0.0, 0.0, 1.0]));
+                return None;
             }
             let (origin, quat) = pose_in(drawn_frame, &frame);
             let c = drawn_frame.to_grid(frame.to_world(centre));
             let d = (0..3).map(|k| (c[k] - eye[k]).powi(2)).sum::<f64>().sqrt();
-            (d < far_m).then_some((g, origin, quat))
+            far_m.is_none_or(|far| d < far).then_some((g, origin, quat))
         })
         .collect()
 }
@@ -284,18 +298,20 @@ mod tests {
 
     // both-faces: frames only; no face enters.
     #[test]
-    fn the_mesh_shows_nearer_than_far_m_and_always_on_its_grid() {
+    fn the_mesh_shows_nearer_than_far_m_never_on_its_grid_and_home_from_anywhere() {
         let moon = GridFrame {
             origin: [500_000.0, 0.0, 0.0],
             ..GridFrame::HOME
         };
-        let list = [(1u8, moon, 150_000.0)];
+        let list = [(0u8, GridFrame::HOME, None), (1u8, moon, Some(150_000.0))];
         let centre = [0.0, 0.0, 0.0];
         assert!(shown(0, &GridFrame::HOME, [0.0; 3], &list, centre).is_empty());
         let near = shown(0, &GridFrame::HOME, [400_000.0, 0.0, 0.0], &list, centre);
         assert_eq!(near.len(), 1);
         assert_eq!(near[0].1, [500_000.0, 0.0, 0.0]);
+        // On the moon: not its own mesh (its rings draw it), but home, at home's place in the
+        // moon's frame, however far.
         let on = shown(1, &moon, [10.0, 80.0, 0.0], &list, centre);
-        assert_eq!(on, vec![(1, [0.0; 3], [0.0, 0.0, 0.0, 1.0])]);
+        assert_eq!(on, vec![(0, [-500_000.0, 0.0, 0.0], [0.0, 0.0, 0.0, 1.0])]);
     }
 }

@@ -133,7 +133,8 @@ Presets (`shared/theater/presets.json`): `orbit`, `dolly`, `track`, `rise` (a cr
 `seconds`, `fov`, `timeFrom`/`timeTo` (a time-lapse of the light) and its own parameters. For anything else write
 a path: keyframes `{t, position, look | target, fov, timeOfDay, speed}` and segments `{move, easing, …}` (cut,
 linear, ease, orbit, track, dolly with `vertigo`, crane, pan). A target can be `"player"`, a point, or
-`{creature: id}` / `{npc: id}`. Paths are JSON: keep the ones that worked next to the plan for the next video.
+`{creature: id}` / `{npc: id}` (ids from `__dwell` client's `theaterSubjects()`: `[{id, name, npc, at}]`; the camera
+follows a creature smoothed, the path's `followSmoothingS`, default 0.35 s). Paths are JSON: keep the ones that worked next to the plan for the next video.
 The bench's `theater` step plays one inside a scenario.
 
 **The in-game recorder** (theater mode T-3, docs/DEV_TOOLS.md "Theater"): for a quick clip of one path, skip the
@@ -141,8 +142,13 @@ screencast — `await d.theaterMode('record', { path, aspect: '9:16', height: 10
 returns `{ bytes (base64 MP4 on Chrome), mime, width, height }`; add `audio: true` for the game's sound on the take
 (effects and ambience through the same tap, never the music: theater.json `audioMimeTypes`) (write the bytes to a file from the driver; with
 `download: true` the browser downloads it). The canvas renders at the take's size (9:16 at 1080 is 608×1080; the owner's
-1080×1920 is `height: 1920`) with the HUD switched off. It is real time: on a slow page use
-the screencast, which is frame-exact. First tried 2026-11-12: a 10 s orbit at 9:16 1080p/30 fps → a 7 MB MP4.
+1080×1920 is `height: 1920`) with the HUD switched off. It is real time by default; on a slow page add
+**`exact: true`** (a path only): the path then moves one frame of `fps` per drawn frame and each frame is captured
+and encoded by WebCodecs at i / fps, so the WebM it returns (`mime: 'video/webm'`, VP8, silent) is smooth however
+slowly the page draws (THEATER_MODE.md §6; the world itself still runs in real time, so creatures move faster in it
+than the camera on a slow page). Splice it like any clip (`src` an mp4/webm); add the sound from a real-time take or
+leave it silent. Not yet tried on a GPU (built in a cloud session, 2026-11-13): check a still and the length
+(`ffprobe`) the first time. The screencast stays the way to record gameplay (no path). First tried 2026-11-12: a 10 s orbit at 9:16 1080p/30 fps → a 7 MB MP4.
 **The HUD:** use `d.theater('hud', { shown: false })` (or theater mode), not inline-style scripts; the page's CSP
 blocks injected `<style>` (the T-1 rule never applied for that reason).
 

@@ -311,12 +311,17 @@ here is drawn only with `?fparms=rigid` (with the rigid arms, for comparison).
   it: the hood's mantle, the scarf's wrap, whose broad faces came within 13 cm of the eye in the
   sweep). `"view": "arms"` parts are never in it. A part added on a hidden bone is hidden by data
   alone. The arms view stays on top as it was, holding the item; the body holds nothing.
-- **Where it stands.** On your feet, turned to your look's yaw, and moved back along its own −z:
-  `back` (0.1 m) always, `lookDown` (0.3 m) more looking straight down (by the sine of the downward
-  pitch), and then as much more as keeps every vertex `clear` (0.22 m) of the eye
-  (`own::shift`, per frame from the posed vertices: the crouch, whose clip leans the chest forward to
-  the 0.8 m crouched eye, the slide, a swim stroke, the eye lagging a step low while the step view
-  smooths it). The feet stay on the ground; only the horizontal place moves. It is computed in the
+- **Where it stands.** On your feet, turned to your look's yaw, and **leaned back from its soles**
+  (`own::lean`, a shear: each point moved along the body's −z by the offset × its height over the
+  soles ÷ the eye's): `back` (0.1 m at the eye) always, `lookDown` (0.3 m) more looking straight down
+  (by the sine of the downward pitch). The soles stay where you stand, on the ground and on their
+  shadow, on flat ground, ramps and slopes alike (BUGS.md #142: moved back whole, they stood 0.1–0.4 m
+  behind you, off their shadow and over or under a slope, and "seemed to be floating"). A pose that
+  still brings a vertex within `clear` (0.22 m) of the eye (the crouch, whose clip leans the chest
+  forward to the 0.8 m crouched eye, under an eye easing out of it or lagging a step low) is then
+  moved back whole as much more as clears it; a body off its feet (its lowest point 12 cm up, eased
+  from 4 cm) or in a role that stands on nothing (`own::stands`: swim, climb, fly) moves back whole
+  instead of leaning (`own::keep_clear`, per frame from the posed vertices). It is computed in the
   body's own frame (+y up, the feet at the origin), so face B is the same.
 - **Safety net.** Fragments within the camera's near plane (5 cm) plus `near` (0.08 m) of the eye
   are discarded in the shader (`Instance::cfg.x`), for any pose the sweep has not seen.
@@ -978,8 +983,8 @@ tunic, the body others see and your shadow casts.
   arms view's arm and it sharing no triangle (the head and hat are 40 % of the Peasant).
 - **The pose**: the rig's pose your shadow plays (the same clips, times, swings and held-item
   turns, through the retarget map, §11.9); no grip and no held item (the arms view holds it).
-- **Where it stands**: as the rigid body did (§5.1): on your feet, turned to your yaw, moved back
-  along its own −z by `own::shift_points` (`back`, `lookDown`, `clear`) over its kept vertices
+- **Where it stands**: as the rigid body does (§5.1): on your feet, turned to your yaw, leaned back
+  from its soles by `own::keep_clear` (`back`, `lookDown`, `clear`) over its kept vertices
   skinned on the CPU in the body's frame (`skinned::own_joints`), so the same on both faces;
   fragments within `near` past the near plane discarded (the instance's `light.z`).
 - **Tests** (`render::characters` `own_body`, `both_faces!`): the §5.1 sweep (every clip and swing,

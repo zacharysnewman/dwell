@@ -109,8 +109,8 @@ Each keyframe sets, at one solar angle, everything the time of day changes (colo
 | `stars`, `moonGlow` | The stars' visibility; the moon's glow (× its lit share) |
 | `saturation` | The lit scene's saturation (moonlight desaturates: 0.5 at midnight) |
 
-The 14 keyframes: sunrise (0°), golden hour (7°), morning (30°), noon (90°, Phase 7's approved
-sky and lights), afternoon (150°), golden hour (173°), sunset (180°), civil, nautical and
+The 14 keyframes: sunrise (0°), golden hour (7°), morning (30°), noon (90°: Phase 7's lights; since
+2026-11-13 a deep blue zenith over a lighter blue horizon, morning and afternoon alike), afternoon (150°), golden hour (173°), sunset (180°), civil, nautical and
 astronomical dusk (187°, 194°, 201°: the sun 6°, 12° and 18° down), midnight (270°), astronomical,
 nautical and civil dawn (339°, 346°, 353°).
 

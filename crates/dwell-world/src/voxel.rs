@@ -827,6 +827,12 @@ impl VoxelWorld {
         self.chunks.get_mut(&coord).expect("inserted")
     }
 
+    /// Whether a read of the chunk gives its real voxels: it is stored, or this world generates
+    /// its chunks (a streamed world's missing chunk reads as air until it arrives).
+    pub fn holds_or_generates(&self, coord: ChunkCoord) -> bool {
+        self.generator.is_some() || self.chunks.contains_key(&coord)
+    }
+
     pub fn find(&self, coord: ChunkCoord) -> Option<&Chunk> {
         self.chunks.get(&coord).map(|c| &**c)
     }

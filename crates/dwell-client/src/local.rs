@@ -260,6 +260,15 @@ impl LocalCore {
     pub fn set_mode(&mut self, name: &str) -> bool {
         self.server.set_mode(name)
     }
+    /// The host turns theater mode on or off for guests (THEATER_MODE.md §7): at once, saved
+    /// with the world.
+    pub fn set_theater_guests(&mut self, on: bool) {
+        self.server.set_theater_guests(on);
+    }
+    /// Whether guests may use theater mode in this world.
+    pub fn theater_guests(&self) -> bool {
+        self.server.world_settings().theater_guests
+    }
     /// The world's size (BIG_MAP.md M2b): a saved world's own, else the size it was created at.
     pub fn world_size(&self) -> dwell_protocol::world_size::WorldSize {
         self.server.world_settings().size

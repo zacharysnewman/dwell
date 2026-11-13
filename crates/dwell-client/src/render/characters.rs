@@ -814,8 +814,8 @@ pub fn own_discard_m(body: &FirstPersonBody) -> f32 {
     super::NEAR_PLANE as f32 + body.near
 }
 
-/// Your own body's frame in first person (CHARACTERS.md §5.1): its `body_frame` moved back along its
-/// own −z by `own::shift`, from the eye's place and pitch in the body's frame (the eye is the origin
+/// Your own body's frame in first person (CHARACTERS.md §5.1): its `body_frame` leaned back from its
+/// soles and kept clear of the eye by `own::place`, from the eye's place and pitch in the body's frame (the eye is the origin
 /// of eye-relative space). `bones`: the pose's bone transforms in the body's frame; `forward`: the
 /// camera's look. In the body's frame, so the same on both faces.
 pub fn own_frame(
@@ -828,8 +828,7 @@ pub fn own_frame(
 ) -> Affine {
     let frame = body_frame(d, eye);
     let (eye_local, pitch) = eye_in(&frame, forward);
-    let s = own::shift(body, mesh, bones, eye_local, pitch);
-    frame.then(&Affine::translation([0.0, 0.0, -s]))
+    frame.then(&own::place(body, mesh, bones, eye_local, pitch, d.role).0)
 }
 
 /// The eye (the origin of eye-relative space) in a body's `frame`, and the pitch (degrees, up
@@ -2661,7 +2660,13 @@ mod tests {
                             first_person: true,
                             light: [1.0, 0.0],
                             seed: 0,
-                            role: "idle",
+                            // The pose's role: a swimming body stands on nothing (`own::stands`).
+                            role: ch
+                                .clips
+                                .iter()
+                                .map(|&(r, _)| r)
+                                .find(|&r| r == role)
+                                .unwrap_or("idle"),
                         };
                         let r = |v: V3| v.map(|c| c as f32);
                         let (right, up, fwd) = (r(basis.right), r(basis.up), r(basis.forward()));

@@ -346,6 +346,18 @@ meshes keeps the ground (`walking_a_grass_field_across_chunk_seams_never_loses_t
   same way. `ensure_box` puts its box's cells in at once. Counted as `collisionCells`
   (`Server::tick_counts`; `dwell-sim` `tests/teleport_cost.rs`: ≤ 8,829 cells a teleport's tick,
   65,536 before).
+- **[built]** The chunks a moving player is heading into are built before its reach (above) gets
+  there (`TerrainCollision::ahead_chunks` / `ensure_ahead`, `CollisionAhead`, WORK_QUEUE item 16): the
+  chunks within the reach plus `margin_metres` (1 m) of the path `seconds` (1 s) of travel along the
+  velocity (at most `max_metres`, 48 m; within the 2 chunks kept), nearest first, at most
+  `chunks_per_tick` a tick (2; a phone's prediction 1, `shared/render/streaming.json`
+  `collisionAhead`), for a player moving at least `min_speed` (1 m/s). A chunk is built ahead only
+  once the world holds (or generates) the 26 around it: a streamed chunk's shapes read its
+  neighbours, and one built before they arrive is rebuilt in the tick they do. `catch_up` puts those
+  chunks' cells in first from its background budget. What is built ahead only arrives sooner (the
+  reach's cells are all in either way), so the player moves the same (`tests/collision_ahead.rs`,
+  both faces); `CollisionStats` counts the chunks built when reached (`reach_loads`, 0 once a moving
+  player is loaded), built ahead, and the cells the reach put in.
 - Rapier caps body speed at 400 m/s by default; spawning a player raises the world's limit to
   cover creative flight at its top speed (`Physics::raise_max_linear_velocity`, §6.7).
 

@@ -209,6 +209,10 @@ function handle(msg: ToWorker): void {
       scope.postMessage({ t: 'mode', mode: core.mode });
       void save();
       break;
+    case 'theaterGuests':
+      core.setTheaterGuests(msg.on);
+      void save();
+      break;
     case 'retune': {
       // Chisel in the game (Phase 56 B7): the server's chunks near the player generated again and
       // the config saved with the world; the server-jobs worker's generators made again over the
@@ -321,7 +325,12 @@ async function start(
   if (files && !core.persisted) {
     console.warn(`Dwell: the local world file could not be opened (${core.storageError}).`);
   }
-  scope.postMessage({ t: 'ready', persisted: core.persisted, mode: core.mode });
+  scope.postMessage({
+    t: 'ready',
+    persisted: core.persisted,
+    mode: core.mode,
+    theaterGuests: core.theaterGuests,
+  });
   for (const msg of queued.splice(0)) handle(msg);
 
   // Fixed-step simulation clock (the core accumulates real time into 60 Hz steps).

@@ -242,6 +242,12 @@ impl Session {
         }
     }
 
+    /// Whether the world lets guests use theater mode (`WorldSettings` `theater_guests`,
+    /// THEATER_MODE.md §7): true before the settings arrive and on a server that never sets it.
+    pub fn theater_guests(&self) -> bool {
+        self.world.is_none_or(|w| w.theater_guests)
+    }
+
     /// Whether a capability (ARCHITECTURE.md §8.3) is on for this session: the server announced it
     /// and this build has it. False before the settings arrive and on an older server.
     pub fn capability(&self, name: &str) -> bool {
@@ -321,7 +327,13 @@ impl Session {
         let Some(old) = self.world else {
             return;
         };
-        let Ok(new) = f.settings(old) else {
+        // A setting written only when it differs from its default (theater for guests, off)
+        // reads as the default when the field is gone.
+        let defaults = world_settings::WorldSettings {
+            theater_guests: true,
+            ..old
+        };
+        let Ok(new) = f.settings(defaults) else {
             return; // the server's checks still apply; keep predicting with the old ones
         };
         self.world = Some(new);
@@ -871,6 +883,7 @@ mod tests {
             size: dwell_protocol::world_size::WorldSize::DEFAULT,
             moon_phase: None,
             orbit: None,
+            theater_guests: true,
         }
     }
 
@@ -1566,6 +1579,30 @@ mod tests {
                 "creative again, as the policy allows"
             );
         }
+    }
+
+    #[test]
+    fn theater_for_guests_follows_the_worlds_settings_after_join() {
+        // THEATER_MODE.md §7: on until the host turns it off, then off, then on again.
+        let Message::Welcome(w) = welcome(0) else {
+            unreachable!()
+        };
+        let (_, mut s) = setup();
+        assert!(s.theater_guests(), "on before any settings");
+        send_registry(&mut s, &build_registry(), 1 << 16);
+        s.on_reliable(Channel::Control, &Message::Welcome(w).encode(), 1000.0);
+        assert!(s.theater_guests());
+        let off = world_settings::WorldSettings {
+            theater_guests: false,
+            ..settings()
+        };
+        send_settings(&mut s, &world_settings::SettingsFields::default().with(off));
+        assert!(!s.theater_guests(), "the host turned it off");
+        send_settings(
+            &mut s,
+            &world_settings::SettingsFields::default().with(settings()),
+        );
+        assert!(s.theater_guests(), "and on again");
     }
 
     #[test]
