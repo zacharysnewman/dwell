@@ -16,6 +16,9 @@ not drawn (it disabled early depth: the quad writes its own depth, the texel's b
 and fog); no mip-maps yet (texels loaded exactly). Built 2026-11-13: felled trees left out (`impostors::standing_trees`), AO and mips in the bake as opt-in data (`ao`, `mips`, off until the owner approves), the phone tier by `tier_for`. Not yet: shadows cast (I-5), the trunks handed over, the
 LOD ground under far trees (BUGS.md #95), retiring `lod_trees.rs` (I-4), the phone run. Open questions for the
 owner at the end.
+**BUGS.md #146 (2026-11-13, fixed):** the hand-over is per tree and in time, no longer a blend by distance
+(`far.tiers` `inM`/`outM`/`fadeS`, client `render/tree_fade.rs`, ARCHITECTURE.md §6.6), and the views are 6 azimuths ×
+0°, 20°, 40°, 60° + the top (25, was 17): §2's ring of 8 × 2 dithered two crowns 40° apart, 0.55 m off from a steep eye.
 **BUGS.md #106 (2026-11-12, fixed):** on a GPU the far crowns read as bare sticks: the quad stood at its sphere's
 centre, behind the near tree's own still-drawn trunk and branches, and leaf texels were lit as open sky (lighter than
 the near crowns). The quad now stands at the sphere's near side (`render/impostors.rs` `near_side`) and leaf texels

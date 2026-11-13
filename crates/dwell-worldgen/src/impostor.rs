@@ -354,40 +354,37 @@ impl Config {
     }
 }
 
-/// Where far trees become impostors for one Far trees tier (`far.tiers`).
+/// Where far trees become impostors for one Far trees tier (`far.tiers`). A tree is either near
+/// (its real leaves) or an impostor, never a steady blend (BUGS.md #146, owner 2026-11-13: "it
+/// shouldn't ever be partial transitions over distance, but over time"): it turns into an
+/// impostor once farther than `out_m`, back into the real tree once nearer than `in_m` (the gap
+/// between them keeps a tree at the boundary from flickering), and each switch cross-fades over
+/// `fade_s` seconds (render/tree_fade.rs).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Far {
     /// Whether impostors draw at all (`draw: "impostor"`; `"none"` draws no far trees).
     pub impostor: bool,
-    pub from: f32,
-    pub fade: f32,
+    /// A tree nearer than this (m, eye to its crown's centre) turns into the real tree.
+    pub in_m: f32,
+    /// A tree farther than this turns into its impostor.
+    pub out_m: f32,
+    /// How long a switch's cross-fade takes (s).
+    pub fade_s: f32,
     /// Where far trees stop (`f32::INFINITY` for never).
     pub to: f32,
 }
 
 impl Far {
-    /// The impostor's share of a tree `dist` m from the eye: 0 nearer than `from` (the real
-    /// tree), rising linearly across `fade` to 1, and 0 again beyond `to` (nothing drawn).
-    pub fn share(&self, dist: f32) -> f32 {
-        if !self.impostor || dist > self.to {
-            return 0.0;
-        }
-        if self.fade <= 0.0 {
-            return if dist >= self.from { 1.0 } else { 0.0 };
-        }
-        ((dist - self.from) / self.fade).clamp(0.0, 1.0)
-    }
-
-    /// The near tree's share at `dist`: what the impostor leaves, so each pixel of the
-    /// crossfade shows exactly one of them (the shares sum to 1 inside `to`).
-    pub fn near_share(&self, dist: f32) -> f32 {
+    /// Whether a tree `dist` m off that was `near` is near now: the hysteresis.
+    pub fn near_after(&self, near: bool, dist: f32) -> bool {
         if !self.impostor {
-            return 1.0;
+            return true;
         }
-        if dist > self.to {
-            return 0.0;
+        if near {
+            dist <= self.out_m
+        } else {
+            dist < self.in_m
         }
-        1.0 - self.share(dist)
     }
 }
 
@@ -406,26 +403,40 @@ fn parse_far(v: &Value) -> Result<Vec<(String, Far)>, String> {
         let far = match t.get("draw").and_then(Value::as_str) {
             Some("none") => Far {
                 impostor: false,
-                from: 0.0,
-                fade: 0.0,
+                in_m: 0.0,
+                out_m: 0.0,
+                fade_s: 0.0,
                 to: 0.0,
             },
             Some("impostor") => {
-                let num = |k: &str| -> Result<f32, String> {
+                let num = |k: &str, hi: f64| -> Result<f32, String> {
                     t.get(k)
                         .and_then(Value::as_f64)
-                        .filter(|x| (0.0..=100_000.0).contains(x))
+                        .filter(|x| (0.0..=hi).contains(x))
                         .map(|x| x as f32)
-                        .ok_or(format!("`{}` must be a number in [0, 100000]", at(k)))
+                        .ok_or(format!("`{}` must be a number in [0, {hi}]", at(k)))
                 };
-                let (from, fade, to) = (num("fromM")?, num("fadeM")?, num("toM")?);
-                if to != 0.0 && to < from + fade {
-                    return Err(format!("`{}` must be 0 or past fromM + fadeM", at("toM")));
+                let (in_m, out_m) = (num("inM", 100_000.0)?, num("outM", 100_000.0)?);
+                let (fade_s, to) = (num("fadeS", 10.0)?, num("toM", 100_000.0)?);
+                if out_m < in_m {
+                    return Err(format!("`{}` must be at least inM", at("outM")));
+                }
+                if to != 0.0 && to < out_m {
+                    return Err(format!("`{}` must be 0 or past outM", at("toM")));
+                }
+                for k in t.as_object().map(|o| o.keys()).into_iter().flatten() {
+                    if !matches!(
+                        k.as_str(),
+                        "$comment" | "draw" | "inM" | "outM" | "fadeS" | "toM"
+                    ) {
+                        return Err(format!("unknown field `{}`", at(k)));
+                    }
                 }
                 Far {
                     impostor: true,
-                    from,
-                    fade,
+                    in_m,
+                    out_m,
+                    fade_s,
                     to: if to == 0.0 { f32::INFINITY } else { to },
                 }
             }
@@ -1130,13 +1141,13 @@ mod tests {
     #[test]
     fn a_bad_entry_fails_naming_its_field() {
         // face-a-only: data only.
-        let bad = IMPOSTORS_JSON.replace("\"azimuths\": 8", "\"azimuths\": 0");
+        let bad = IMPOSTORS_JSON.replace("\"azimuths\": 6", "\"azimuths\": 0");
         assert!(Config::parse(&bad).unwrap_err().contains("views.azimuths"));
         let bad = IMPOSTORS_JSON.replace("\"leaf.base\"", "\"nope.base\"");
         assert!(Config::parse(&bad).unwrap_err().contains("albedo.leaf"));
         let bad = IMPOSTORS_JSON.replace("\"variants\"", "\"variantz\"");
         assert!(Config::parse(&bad).unwrap_err().contains("variantz"));
-        let bad = IMPOSTORS_JSON.replace("[0, 40]", "[40, 0]");
+        let bad = IMPOSTORS_JSON.replace("[0, 20, 40, 60]", "[0, 40, 20, 60]");
         assert!(Config::parse(&bad).unwrap_err().contains("rise"));
     }
 
@@ -1144,8 +1155,8 @@ mod tests {
     fn a_layout_added_by_data_alone_bakes() {
         // face-a-only: data only.
         let text = IMPOSTORS_JSON
-            .replace("\"azimuths\": 8", "\"azimuths\": 3")
-            .replace("[0, 40]", "[10]")
+            .replace("\"azimuths\": 6", "\"azimuths\": 3")
+            .replace("[0, 20, 40, 60]", "[10]")
             .replace("\"top\": true", "\"top\": false");
         let c = Config::parse(&text).unwrap();
         assert_eq!(c.views.len(), 3);
@@ -1333,7 +1344,8 @@ mod tests {
             assert_eq!(p.len(), 1, "view {i}: {p:?}");
             assert_eq!(p[0].0, i);
         }
-        let between = norm([1.0, 0.0, (std::f32::consts::PI / 8.0).tan()]);
+        let half_step = std::f32::consts::PI / c.azimuths as f32;
+        let between = norm([1.0, 0.0, half_step.tan()]);
         let p = c.pick(between);
         assert_eq!(p.len(), 2);
         assert!(p.iter().all(|&(_, w)| (w - 0.5).abs() < 1e-3), "{p:?}");
@@ -1346,16 +1358,34 @@ mod tests {
         // face-a-only: data only.
         let c = Config::get();
         let on = c.far("on").expect("the `on` tier");
-        assert!(on.impostor && on.from > 0.0 && on.fade > 0.0, "{on:?}");
+        assert!(on.impostor && on.in_m > 0.0 && on.out_m > on.in_m, "{on:?}");
+        assert!(
+            (0.1..=1.0).contains(&on.fade_s),
+            "a short fade in time: {on:?}"
+        );
         assert!(!c.far("off").expect("the `off` tier").impostor);
-        let fade = format!("\"fadeM\": {}", on.fade);
+        let fade = format!("\"fadeS\": {}", on.fade_s);
         assert!(
             IMPOSTORS_JSON.contains(&fade),
             "the `on` tier's fade as written"
         );
-        let bad = IMPOSTORS_JSON.replace(&fade, "\"fadeM\": -1");
+        let bad = IMPOSTORS_JSON.replace(&fade, "\"fadeS\": -1");
         let e = Config::parse(&bad).unwrap_err();
-        assert!(e.contains("far.tiers.on.fadeM"), "{e}");
+        assert!(e.contains("far.tiers.on.fadeS"), "{e}");
+        let out = format!("\"outM\": {}", on.out_m);
+        let bad = IMPOSTORS_JSON.replace(&out, "\"outM\": 1");
+        assert!(
+            Config::parse(&bad)
+                .unwrap_err()
+                .contains("far.tiers.on.outM")
+        );
+        // The distance blend is gone: a tier still naming it fails.
+        let bad = IMPOSTORS_JSON.replace(&fade, "\"fadeM\": 16");
+        assert!(
+            Config::parse(&bad)
+                .unwrap_err()
+                .contains("far.tiers.on.fadeS")
+        );
         let bad = IMPOSTORS_JSON.replace("\"draw\": \"none\"", "\"draw\": \"blob\"");
         assert!(
             Config::parse(&bad)
@@ -1365,27 +1395,33 @@ mod tests {
         // A tier added by data alone.
         let added = IMPOSTORS_JSON.replace(
             "\"off\": { \"draw\": \"none\" }",
-            "\"off\": { \"draw\": \"none\" }, \"near\": { \"draw\": \"impostor\", \"fromM\": 32, \"fadeM\": 8, \"toM\": 400 }",
+            "\"off\": { \"draw\": \"none\" }, \"near\": { \"draw\": \"impostor\", \"inM\": 30, \"outM\": 34, \"fadeS\": 0.5, \"toM\": 400 }",
         );
         let n = Config::parse(&added).unwrap().far("near").unwrap();
-        assert_eq!((n.from, n.fade, n.to), (32.0, 8.0, 400.0));
-        assert_eq!(n.share(401.0), 0.0);
+        assert_eq!((n.in_m, n.out_m, n.fade_s, n.to), (30.0, 34.0, 0.5, 400.0));
     }
 
+    /// BUGS.md #146: a tree switches by distance with hysteresis, never blends by it.
     #[test]
-    fn the_hand_over_crossfades_with_shares_summing_to_one() {
+    fn a_tree_switches_past_out_and_back_inside_in_only() {
         // face-a-only: distances only.
         let f = Config::get().far("on").unwrap();
-        assert_eq!(f.share(f.from - 1.0), 0.0);
-        assert_eq!(f.near_share(f.from - 1.0), 1.0);
-        assert_eq!(f.share(f.from + f.fade + 1.0), 1.0);
-        let mid = f.from + f.fade / 2.0;
-        assert!((f.share(mid) - 0.5).abs() < 1e-5);
-        for d in [0.0, f.from, mid, f.from + f.fade, 5000.0] {
-            assert!((f.share(d) + f.near_share(d) - 1.0).abs() < 1e-5, "at {d}");
-        }
+        let mid = (f.in_m + f.out_m) / 2.0;
+        assert!(
+            f.near_after(true, mid),
+            "a near tree stays near inside the gap"
+        );
+        assert!(
+            !f.near_after(false, mid),
+            "an impostor stays one inside the gap"
+        );
+        assert!(!f.near_after(true, f.out_m + 0.01));
+        assert!(f.near_after(false, f.in_m - 0.01));
         let off = Config::get().far("off").unwrap();
-        assert_eq!((off.share(500.0), off.near_share(500.0)), (0.0, 1.0));
+        assert!(
+            off.near_after(false, 5000.0),
+            "no impostors: every tree is the real one"
+        );
     }
 
     #[test]
@@ -1532,6 +1568,104 @@ mod crown_match {
         );
         assert!(iou > 0.7, "impostor crown overlap {iou:.2}");
     }
+
+    /// BUGS.md #146 (owner, 2026-11-13): the far trees drew as two offset copies that split and
+    /// joined as the eye flew up and down. Each pixel dithers between the baked views about the
+    /// eye's direction ([`Config::dither`]); with views 40° apart in elevation (8 azimuths at 0°
+    /// and 40°) the two see different silhouettes and the dither interleaved two crowns, up to
+    /// 0.55 m apart from a steep eye (overlap 0.65). 6 azimuths at 0°, 20°, 40° and 60° (25 views,
+    /// the atlas 1.25× the bytes): 0.27 m, 0.68. Composited by the
+    /// dither, the impostor must cover the real crown (overlap over [`REGISTER_IOU`]) at every
+    /// height the eye looks from, the worst height included, and its silhouette's centre must stay
+    /// within [`REGISTER_M`] of the real one's.
+    #[test]
+    fn the_impostor_registers_with_the_real_crown_as_the_eye_rises() {
+        // face-a-only: the bake is face-local; the drawer crosses faces (render/impostors.rs).
+        let c = Config::get();
+        let px = 64;
+        let (mut worst_iou, mut worst_off) = ((1.0f32, String::new()), (0.0f32, String::new()));
+        for name in ["dwell:pine", "dwell:oak"] {
+            let sp = crate::species::find(name).expect(name);
+            let real = grow(sp, 3, sp.stages.saturating_sub(1));
+            let b = bake_cells(&real.cells, c, px);
+            let grid: HashMap<[i32; 3], Part> = real.cells.iter().map(|(k, p)| (*k, *p)).collect();
+            let shapes: HashMap<Part, Vec<([f32; 3], f32)>> =
+                real.cells.values().map(|p| (*p, slabs(*p))).collect();
+            let (mut lo, mut hi) = ([i32::MAX; 3], [i32::MIN; 3]);
+            for k in real.cells.keys() {
+                for a in 0..3 {
+                    lo[a] = lo[a].min(k[a]);
+                    hi[a] = hi[a].max(k[a]);
+                }
+            }
+            let r = b.radius;
+            for el_deg in [3.0f32, 10.0, 17.0, 20.0, 24.0, 30.0, 37.0, 48.0, 60.0, 65.0] {
+                for az_deg in [10.0f32, 22.5, 100.0] {
+                    let (el, az) = (el_deg.to_radians(), az_deg.to_radians());
+                    let eye = [el.cos() * az.cos(), el.sin(), el.cos() * az.sin()];
+                    let (right, up) = basis(eye);
+                    let n = 96;
+                    let (mut both, mut either) = (0u32, 0u32);
+                    let (mut truth, mut drawn) = ([0.0f32; 3], [0.0f32; 3]);
+                    for j in 0..n {
+                        for i in 0..n {
+                            let sx = ((i as f32 + 0.5) / n as f32 * 2.0 - 1.0) * r;
+                            let sy = (1.0 - (j as f32 + 0.5) / n as f32 * 2.0) * r;
+                            let local: [f32; 3] =
+                                std::array::from_fn(|a| right[a] * sx + up[a] * sy);
+                            let o: [f32; 3] =
+                                std::array::from_fn(|a| b.centre[a] + local[a] + eye[a] * r);
+                            let t = march(o, eye.map(|x| -x), lo, hi, &grid, &shapes).is_some();
+                            let k = c.dither(eye, pixel_noise(i, j));
+                            let (rk, uk) = basis(c.views[k]);
+                            let (u, v) = (dot(local, rk) / r, dot(local, uk) / r);
+                            let d = u.abs() < 1.0 && v.abs() < 1.0 && {
+                                let q = |x: f32| ((x * px as f32) as u32).min(px - 1);
+                                b.albedo[b.at(k, q(u * 0.5 + 0.5), q(0.5 - v * 0.5))][3] > 127
+                            };
+                            both += u32::from(t && d);
+                            either += u32::from(t || d);
+                            let add = |a: &mut [f32; 3]| *a = [a[0] + sx, a[1] + sy, a[2] + 1.0];
+                            if t {
+                                add(&mut truth);
+                            }
+                            if d {
+                                add(&mut drawn);
+                            }
+                        }
+                    }
+                    let at = format!("{name} from {el_deg}° up, {az_deg}° round");
+                    let iou = both as f32 / either.max(1) as f32;
+                    if iou < worst_iou.0 {
+                        worst_iou = (iou, at.clone());
+                    }
+                    let cy = |a: [f32; 3]| a[1] / a[2].max(1.0);
+                    let off = (cy(drawn) - cy(truth)).abs();
+                    if off > worst_off.0 {
+                        worst_off = (off, at);
+                    }
+                }
+            }
+        }
+        assert!(
+            worst_iou.0 > REGISTER_IOU,
+            "the impostor overlaps the real crown {:.2} ({})",
+            worst_iou.0,
+            worst_iou.1
+        );
+        assert!(
+            worst_off.0 < REGISTER_M,
+            "the impostor's crown sits {:.2} m off the real one's ({})",
+            worst_off.0,
+            worst_off.1
+        );
+    }
+
+    /// The least overlap (intersection over union) of the impostor's and the real crown's
+    /// silhouettes at any eye height (BUGS.md #146).
+    const REGISTER_IOU: f32 = 0.66;
+    /// How far (m) the impostor's silhouette centre may sit above or below the real crown's.
+    const REGISTER_M: f32 = 0.3;
 
     #[test]
     fn ao_is_off_by_default_and_darkens_texels_deep_in_the_crown_when_on() {

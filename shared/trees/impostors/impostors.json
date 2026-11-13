@@ -1,6 +1,6 @@
 {
   "$comment": "Far trees as multi-angle impostors (docs/proposals/TREE_IMPOSTORS.md, WORK_QUEUE item 31; owner, 2026-11-12: billboards from a few angles, from above too, \"like old Mario kart did\"). What the bake (dwell-worldgen `impostor`) makes of a species tree grown by `species::grow(species, seed, stage)`: `views` the view layout (`ring`: `azimuths` evenly spaced around the tree, at each of `elevationsDeg` above the horizon, plus one straight down when `top`), `viewPx` a view's square side in texels per renderer tier (desktop, phone, cpu), `stages` the growth stages baked (clamped to a species' last stage; a tree between them takes the nearest, scaled to its height), `variants` the seeds baked per species and stage (a tree takes variant hash(seed) mod variants), `albedo` the palette colour (shared/textures/palette.json, `ramp.stop` or a ramp's base) a leaf cell and a log are painted (the per-tree leaf tint is applied at draw time), `marginM` metres added to the bounding sphere's radius so no texel at the frame's edge is cut, `mips` whether the atlas is drawn with a mip chain (each view's square halved alone, a texel covered when half its base texels are; off until the owner approves the look). The leaves' lighting normals lean out of the crown by shared/look/leaves.json `canopyBlend`, as the near trees'. Read at load and validated (a bad entry fails naming the field); no generated file.",
-  "views": { "kind": "ring", "azimuths": 8, "elevationsDeg": [0, 40], "top": true },
+  "views": { "kind": "ring", "azimuths": 6, "elevationsDeg": [0, 20, 40, 60], "top": true },
   "viewPx": { "desktop": 64, "phone": 32, "cpu": 16 },
   "stages": [2, 4, 7],
   "variants": 4,
@@ -18,9 +18,9 @@
   },
   "mips": false,
   "far": {
-    "$comment": "Where impostors take over from the full-detail trees, per Far trees setting tier (Settings → Graphics → Far trees; the presets pick the tier by name): `draw` `impostor` (one baked quad a tree, the view nearest the camera dithered with the next) or `none` (no far trees); `fromM` the distance (m, from the eye) the hand-over starts, `fadeM` its width (both draw, each pixel showing one by the screen dither; the impostor's share rises 0 → 1 across it), `toM` where far trees stop (0: never).",
+    "$comment": "Where impostors take over from the full-detail trees, per Far trees setting tier (Settings → Graphics → Far trees; the presets pick the tier by name): `draw` `impostor` (one baked quad a tree, the view nearest the camera dithered with the next) or `none` (no far trees). A tree is either its real leaves or its impostor, never a steady blend by distance (BUGS.md #146, owner 2026-11-13: 'it shouldn't ever be partial transitions over distance, but over time'): it turns into its impostor once farther than `outM` (m, the eye to its crown's centre) and back into the real tree once nearer than `inM` (the gap keeps a tree at the boundary from flickering), each switch cross-fading over `fadeS` seconds (each pixel showing one of the two by the screen dither); `toM` where far trees stop (0: never).",
     "tiers": {
-      "on": { "draw": "impostor", "fromM": 48, "fadeM": 16, "toM": 0 },
+      "on": { "draw": "impostor", "inM": 54, "outM": 58, "fadeS": 0.3, "toM": 0 },
       "off": { "draw": "none" }
     }
   }
