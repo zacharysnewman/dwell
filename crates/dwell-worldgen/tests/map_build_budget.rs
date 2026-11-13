@@ -2,7 +2,7 @@
 //! the world map"): its grid has today's cell count, so no step may grow with the radius. Pinned
 //! by op counts per cell, not wall-clock: the uplift's range-spine segment tests per land cell and
 //! the channel index's entries per segment, each at 10× within a small factor of 1×'s (measured
-//! with seed 3: 205 and 572 segment tests a land cell at 1× and 10×, ~21 000 at 10× before; 10 and
+//! with seed 3: 205 and 572 segment tests a land cell at 1× and 10×, ~1 000 at 10× since #77, ~21 000 before; 10 and
 //! 91 entries a segment, ~6 000 before). And the
 //! build's progress (the loading screen's "Shaping the world map — rivers (5/6)") runs through
 //! every step in order, each to its end.
@@ -54,8 +54,11 @@ both_faces!(
         let one = build(seed, WorldSize::DEFAULT);
         let ten = build(seed, WorldSize::named("10x").expect("a named size"));
         assert_eq!(ten.map.n, one.map.n, "today's cell count");
+        // Since BUGS.md #77's fix a 10× island's ranges rise across it, not in a ring by its
+        // coast, so more of its land lies near a spine: ~1 000 tests a cell (~5× 1×'s; the
+        // whole 10× map still builds in ~2 s natively), against ~21 000 before #91.
         assert!(
-            ten.tests_per_cell <= 4.0 * one.tests_per_cell.max(1.0),
+            ten.tests_per_cell <= 8.0 * one.tests_per_cell.max(1.0),
             "uplift: {:.0} segment tests a land cell at 10×, {:.0} at 1×",
             ten.tests_per_cell,
             one.tests_per_cell

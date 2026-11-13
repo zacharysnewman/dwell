@@ -74,7 +74,7 @@ pub fn erode(
             let d = if is_diagonal(grid, c, r) { diag } else { cell };
             // A coarser grid than the profile's (a bigger world, `HydrologyParams::sized`): the
             // cell's own share of its area is a profile cell's, so its ridges keep their slope.
-            let a = if p.ridge_cell < cell {
+            let a = if p.ridge_cell > 0.0 && p.ridge_cell < cell {
                 area[c] - rain[c] * cell_area + rain[c] * p.ridge_cell * p.ridge_cell
             } else {
                 area[c]

@@ -1494,7 +1494,7 @@ export function hydrologyRust(data) {
     rs.push("    HydrologyParams {");
     rs.push(`        name: ${JSON.stringify(p.name)},`);
     rs.push(`        cell: ${p.grid.cell},`);
-    rs.push(`        ridge_cell: ${rf(p.grid.cell)},`);
+    rs.push("        ridge_cell: 0.0,");
     rs.push(`        iterations: ${e.iterations},`);
     rs.push(`        time_step: ${rf(e.timeStep)},`);
     rs.push(`        erodibility: ${rf(e.erodibility)},`);

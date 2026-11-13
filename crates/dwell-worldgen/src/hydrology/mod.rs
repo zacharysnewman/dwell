@@ -166,9 +166,9 @@ pub struct HydrologyParams {
     pub name: &'static str,
     /// Grid cell size (m).
     pub cell: i32,
-    /// The cell (m) whose own area a ridge cell drains in the erosion: the profile's own cell, so a
-    /// bigger world's coarser grid (`sized`) keeps its ridges' steepness (BUGS.md #77). At the
-    /// profile's cell, `cell`.
+    /// The cell (m) whose own area a ridge cell drains in the erosion: set by `sized` to the
+    /// profile's own cell, so a bigger world's coarser grid keeps its ridges' steepness (BUGS.md
+    /// #77). 0 (every profile, and a 1× world): a cell drains its own whole area.
     pub ridge_cell: f64,
     pub iterations: u32,
     /// Years per iteration.
@@ -260,7 +260,9 @@ impl HydrologyParams {
         let k = size.radius_scale;
         let mut p = *self;
         p.cell = size.hydrology_cell_m(self.cell);
-        p.ridge_cell = self.ridge_cell;
+        if k > 1 {
+            p.ridge_cell = f64::from(self.cell);
+        }
         p.lake_min_area *= BigWorlds::power(k, b.lake_area_exponent);
         p.lake_min_depth *= BigWorlds::power(k, b.lake_depth_exponent);
         if let Some(t) = &mut p.tectonics {

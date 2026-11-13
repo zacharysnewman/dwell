@@ -8,6 +8,9 @@ use super::{NO_LAKE, WorldMap};
 pub const RANGE_ABOVE_M: f32 = 1000.0;
 /// The least area (km²) a range's connected high ground covers.
 pub const RANGE_MIN_KM2: f64 = 20.0;
+/// A peak: land above `RANGE_ABOVE_M` that is the highest within this many metres (in metres, so
+/// a coarse map's merged high ground still counts its summits).
+pub const PEAK_RADIUS_M: f64 = 5000.0;
 
 /// One map's measures.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -20,6 +23,8 @@ pub struct Relief {
     pub above_1500: f64,
     /// Connected high ground (8-neighbour cells above `RANGE_ABOVE_M`) of at least `RANGE_MIN_KM2`.
     pub ranges: u32,
+    /// Summits: land above `RANGE_ABOVE_M`, the highest within `PEAK_RADIUS_M`.
+    pub peaks: u32,
     /// The widest river vertex and the widest carved channel (m).
     pub river_width: f64,
     pub channel_width: f64,
@@ -79,6 +84,36 @@ impl Relief {
                 ranges += 1;
             }
         }
+        let r = (PEAK_RADIUS_M / m.cell).ceil() as i64;
+        let mut peaks = 0;
+        for c in 0..land.len() {
+            let h = m.height[c];
+            if !land[c] || h <= RANGE_ABOVE_M {
+                continue;
+            }
+            let (x, z) = ((c % n) as i64, (c / n) as i64);
+            let mut top = true;
+            'scan: for dz in -r..=r {
+                for dx in -r..=r {
+                    let (nx, nz) = (x + dx, z + dz);
+                    if dx * dx + dz * dz > r * r
+                        || nx < 0
+                        || nz < 0
+                        || nx >= n as i64
+                        || nz >= n as i64
+                    {
+                        continue;
+                    }
+                    let k = nz as usize * n + nx as usize;
+                    let o = m.height[k];
+                    if o > h || (o == h && k < c) {
+                        top = false;
+                        break 'scan;
+                    }
+                }
+            }
+            peaks += u32::from(top);
+        }
         let river_width = m
             .rivers
             .iter()
@@ -100,6 +135,7 @@ impl Relief {
             above_200: a200 as f64 / count.max(1.0),
             above_1500: a1500 as f64 / count.max(1.0),
             ranges,
+            peaks,
             river_width,
             channel_width,
             channel_q,
