@@ -47,7 +47,7 @@ fn the_build_s_grids_are_home_at_rest_and_a_cratered_moon() {
 /// A bad entry fails with a message naming it.
 #[test]
 fn bad_grids_fail_with_a_message() {
-    let cases: [(&str, &str, &str); 9] = [
+    let cases: [(&str, &str, &str); 12] = [
         ("\"frame\": \"orbit\"", "\"frame\": \"spin\"", "`frame`"),
         ("\"dwell:moon_dust\"", "\"dwell:no_such\"", "names no block"),
         (
