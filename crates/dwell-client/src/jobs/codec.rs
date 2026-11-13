@@ -245,10 +245,12 @@ pub fn encode_job(id: u32, job: &Job) -> Vec<u8> {
             step,
             n,
             face,
+            layer,
         } => {
             w.u8(3);
             [*x0, *z0, *step, *n].into_iter().for_each(|v| w.i32(v));
             w.u8(*face);
+            w.u8(*layer);
         }
         Job::MeshChunk {
             padded,
@@ -397,6 +399,7 @@ pub fn decode_job(bytes: &[u8]) -> Result<(u32, Job), DecodeError> {
             step: r.i32()?,
             n: r.i32()?,
             face: r.u8()?,
+            layer: r.u8()?,
         },
         4 => {
             let bits = r.u8()?;
@@ -780,6 +783,7 @@ mod tests {
                 step: 8,
                 n: 4,
                 face: 1,
+                layer: 2,
             },
             Job::Registry {
                 payload: dwell_blocks::sync::extension_payload(),

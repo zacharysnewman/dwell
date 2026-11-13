@@ -24,11 +24,12 @@ test('a murky fluid added by data alone reaches the output', () => {
       breakup: 0, mirror: 0.6, mirrorWarpPx: 0,
     },
     underside: { texture: 0, breakup: 0, sunPatch: 0, sunPower: 8, cellScale: 1 },
-    window: { cells: 0.5, bodies: 0 },
+    window: { cells: 0.5, bodies: 0, sunGlow: 0, sunPower: 64, rimGlow: 0 },
+    tone: { fogColor: '#6a5030', fogShare: 0.8, brightness: 0.7, mirror: 1, floorLight: 1 },
     fog: { clearM: 0, density: 4 },
   };
   const rs = underwaterRust(validateUnderwater(d));
-  assert.match(rs, /fluid: "test:mud",[\s\S]*fog_density: 4\.0,/);
+  assert.match(rs, /fluid: "test:mud",[\s\S]*tone_fog_color: 0x6a5030,[\s\S]*fog_density: 4\.0,/);
 });
 
 test('bad entries fail with their path named', () => {
@@ -43,6 +44,10 @@ test('bad entries fail with their path named', () => {
     [(d) => (d.fluids[w].underside.sunPower = 0), /underside\.sunPower must be a number in \[1, 256\]/],
     [(d) => (d.fluids[w].window.cells = 2), /window\.cells must be a number in \[0, 1\]/],
     [(d) => delete d.fluids[w].window, /window/],
+    [(d) => (d.fluids[w].window.sunGlow = 20), /window\.sunGlow must be a number in \[0, 16\]/],
+    [(d) => (d.fluids[w].tone.fogColor = 'teal'), /tone\.fogColor must be #rrggbb/],
+    [(d) => (d.fluids[w].tone.floorLight = 1.5), /tone\.floorLight must be a number in \[0, 1\]/],
+    [(d) => delete d.fluids[w].tone, /missing entry fluids\.dwell:water\.tone/],
     [(d) => (d.fluids[w].band.mirrorWarpPx = 40), /band\.mirrorWarpPx must be a number in \[0, 32\]/],
     [(d) => ((d.fluids[w].lensM = 0.05), (d.fluids[w].line.amplitudeM = 0.1)), /line\.amplitudeM must be under lensM/],
     [(d) => (d.fluids[w].lensM = 0), /lensM must be a number in \[0\.01, 2\]/],
@@ -75,4 +80,18 @@ test("water's band is half as deep and smoother (owner, 2026-11-07: 'a little sm
   const b = data().fluids['dwell:water'].band;
   assert.equal(b.depthM, 0.021);
   assert.ok(b.breakup <= 0.35 && b.glints <= 0.15 && b.mirrorWarpPx <= 10);
+});
+
+test("water's underwater view reads bright and clear toward the owner's reference (2026-11-12, ABZU)", () => {
+  const w = data().fluids['dwell:water'];
+  // "bright saturated turquoise water with a long, clear view", "a bright see-through surface",
+  // "the sun as a blown-out disc", "a colourful well-lit floor".
+  assert.ok(w.tone.fogShare > 0 && w.tone.brightness > 1, 'a brighter turquoise in-scatter');
+  assert.ok(w.tone.mirror > 1, 'the mirror outside the window picks up the bright water');
+  assert.ok(w.window.sunGlow > 0 && w.window.rimGlow > 0, 'a glowing sun and window');
+  assert.ok(w.tone.floorLight < 1, 'the floor keeps its colour');
+  assert.ok(w.fog.clearM >= 6, 'a long clear view');
+  const d = data().default;
+  assert.ok(d.window.sunGlow === 0 && d.window.rimGlow === 0 && d.tone.fogShare === 0, 'the default is as before');
+  assert.ok(d.tone.brightness === 1 && d.tone.mirror === 1 && d.tone.floorLight === 1, 'the default is as before');
 });

@@ -589,6 +589,14 @@ impl Server {
         let Some(side) = side else {
             return;
         };
+        // A wood with `damage` data (the log; WORK_QUEUE item 51, owner 2026-11-12: "Like the
+        // others, felling on top") takes the hit as every other block does: hits to break by the
+        // tool, a mark where it struck, the break at the count dropping its drops, and the tree
+        // above felled as a body. The chopping prototype keeps its cuts.
+        if !self.config.chop2 && dwell_protocol::damage::takes_damage(block_of(m).name) {
+            self.chop_hit(id, tool, cell, m, grain, side, face, point, eye);
+            return;
+        }
         let s = self.sessions.get_mut(&id).expect("session");
         // A chop wears the axe (owner, 2026-11-11: "It should survive 32 hits of durability").
         if super::wear_tool(&mut s.inventory, uses_items) != inv::Wear::None {
@@ -709,6 +717,106 @@ impl Server {
         }
     }
 
+    /// One axe hit on a wood that takes block damage (WORK_QUEUE item 51; docs/BLOCK_DAMAGE.md
+    /// §12): the axe wears, the cell records the hit (its mark: the edit face struck and the point,
+    /// the bite rule's chunk) toward its hits to break with the axe held (the block's `damage`:
+    /// the stone axe 10, the metal 5), a hit short of the count drops its share of the block's
+    /// drops; the hit that reaches it breaks the block (its drops' rest, as a pickaxe's last hit)
+    /// and what it held up falls: a standing trunk above as one body, tipping toward the side
+    /// struck (the uncut side its hinge, as the notch steered), a lying log's neighbours as after
+    /// a break. An older save's cut on the cell is carried over as hits (its share of the swings
+    /// to fell) and dropped, so the cell is drawn by its damage from then on.
+    #[allow(clippy::too_many_arguments)]
+    fn chop_hit(
+        &mut self,
+        id: SessionId,
+        tool: &str,
+        cell: [i32; 3],
+        m: dwell_blocks::StateId,
+        grain: usize,
+        side: usize,
+        face: u8,
+        point: [f64; 3],
+        eye: [f64; 3],
+    ) {
+        let uses_items = self.uses_items();
+        let block = block_of(m).name;
+        let need = if self.config.one_hit_breaks {
+            Some(1)
+        } else {
+            dwell_protocol::damage::hits_to_break(block, Some(tool))
+        };
+        let Some(n) = need else {
+            return;
+        };
+        let n = n.clamp(1, u32::from(u16::MAX));
+        let s = self.sessions.get_mut(&id).expect("session");
+        if super::wear_tool(&mut s.inventory, uses_items) != inv::Wear::None {
+            s.inventory_dirty = true;
+        }
+        // An older save's cut: its progress carried over as hits, the cut itself gone.
+        let carried = self.cuts.cells.remove(&cell).map(|c| {
+            let wood = chop::chopped_wood(block).expect("a wood");
+            (c.progress(wood, grain) * f64::from(n)).floor() as u16
+        });
+        if carried.is_some() {
+            self.send_cuts(Vec::new(), vec![cell]);
+        }
+        // The mark: the edit face struck (the chopping wire's face is `axis × 2 + positive`, an
+        // edit's `axis × 2 + negative`) and the point in 1/255ths of the cell, world-oriented.
+        let lo = [f64::from(cell[0]), m_of_row(cell[1]), f64::from(cell[2])];
+        let size = [1.0, CELL_H, 1.0];
+        let p = std::array::from_fn(|i| {
+            ((point[i] - lo[i]) / size[i] * 255.0)
+                .round()
+                .clamp(0.0, 255.0) as u8
+        });
+        let mark = dwell_protocol::damage::HitMark {
+            chunk: dwell_protocol::damage::hit_chunk(block, Some(tool)),
+            ..dwell_protocol::damage::HitMark::at(face ^ 1, p)
+        };
+        let mut k = self.damage.hit(cell, m, n as u16, mark);
+        if let Some(extra) = carried
+            && let Some(d) = self.damage.cells.get_mut(&cell)
+        {
+            d.hits = d.hits.saturating_add(extra).min(n as u16);
+            k = d.hits;
+        }
+        let centre = dwell_world::centre_of_cell(cell);
+        if u32::from(k) < n {
+            self.send_damage(&[cell], Vec::new());
+            if uses_items {
+                self.drop_hit(m, centre, n, u32::from(k));
+            }
+            return;
+        }
+        // Broken: the cell's wood is gone (its damage with it, `broadcast_changes`).
+        let mut changes = TickChanges::default();
+        let left = if dwell_blocks::info(m).flooded {
+            M.water
+        } else {
+            M.air
+        };
+        changes.set_and_unsupport(&mut self.world, cell, left);
+        self.broadcast_changes(changes, VoxelModificationReason::Edit);
+        if uses_items {
+            self.drop_destroyed(m, centre, n);
+        }
+        self.knock_ground(&[(cell, m)]);
+        let wood = chop::chopped_wood(block).expect("a wood");
+        let standing = grain == 1 && wood.block == block;
+        if standing {
+            // Toward the side struck: the uncut side is the hinge, so the trunk tips away from a
+            // point out past it (as the notch steered the fall before).
+            let n = chop::side_normal(grain, side);
+            let c = crate::felling::cell_centre(cell);
+            let hinge = c - DVec3::new(f64::from(n[0]), 0.0, f64::from(n[2])) * 2.0;
+            self.fell(&[cell], 0, Some(hinge));
+        } else {
+            self.fell(&[cell], 0, Some(DVec3::from(eye)));
+        }
+    }
+
     /// The cuts of cells whose block changed are gone (the wood broken, cut through or replaced).
     pub(super) fn cuts_dropped(&mut self, cells: &[([i32; 3], u16)]) {
         if self.cuts.cells.is_empty() {
@@ -744,5 +852,11 @@ impl Server {
     /// A wood cell's cut (tests, the bench).
     pub fn cut_of(&self, cell: [i32; 3]) -> Option<Cut> {
         self.cuts.cells.get(&cell).copied()
+    }
+
+    /// Sets a wood cell's cut as an older build's chopping left it (tests: an older save's cuts,
+    /// WORK_QUEUE item 51; new hits on a log take block damage instead).
+    pub fn put_cut(&mut self, cell: [i32; 3], cut: Cut) {
+        self.cuts.cells.insert(cell, cut);
     }
 }

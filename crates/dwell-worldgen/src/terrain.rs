@@ -1531,6 +1531,12 @@ impl TerrainGenerator {
         &self.biomes.geology.geology
     }
 
+    /// The face's plate tectonics, in a world whose tectonics come from plates (R5; the big map's
+    /// layers, `map_layers.rs`).
+    pub fn plate_tectonics(&self) -> Option<&crate::plate_tectonics::PlateTectonics> {
+        self.biomes.geology.plate_tectonics().map(|t| &**t)
+    }
+
     /// The rock province's stack at face-local (x, z): the noise's, or the tectonics' (T5: a
     /// volcano's, the old core's).
     pub fn province_at(&self, x: i64, z: i64) -> &'static str {

@@ -740,6 +740,44 @@ pub fn chop_bite_m3(tool: &ToolDef, wood: &WoodDef) -> f64 {
     crate::damage::bite_m3(crate::damage::CELL_M3, swings_to_fell(tool, wood))
 }
 
+/// A damaged wood cell's hit marks as the axe's bites (WORK_QUEUE item 51: the axe hits a log
+/// through block damage, and the octagonal log's carve is the bites'): each mark on a side (an
+/// edit face, `axis × 2 + negative`, its point in 1/255ths of the cell along each axis, in the
+/// frame the cell is drawn in) recorded where it struck ([`Cut::bite_in`], its band along the grain
+/// and its place across the side), each side weighted by its marks. Drawn at the damage fraction
+/// ([`crate::damage::DamageView::fraction`]) as the progress, so k hits of n carve k bites of the
+/// bite rule. Marks on the end grain are not drawn. The cut's notch only weighs the sides: it is
+/// never sent or saved.
+pub fn cut_of_marks(
+    grain: usize,
+    marks: &[crate::damage::HitMark],
+    look: &BiteLook,
+    span: [f64; 2],
+) -> Cut {
+    let mut cut = Cut::default();
+    for m in marks {
+        let axis = usize::from(m.face / 2);
+        if axis > 2 {
+            continue;
+        }
+        let Some(side) = side_of(grain, axis, m.face % 2 == 0) else {
+            continue;
+        };
+        let at = |a: usize| f64::from(m.point[a]) / 255.0;
+        let band = usize::from(at(grain) >= 0.5);
+        cut.bite_in(
+            grain,
+            side,
+            band,
+            at(side_axis(grain, side ^ 2)),
+            look,
+            span,
+        );
+        cut.notch[side] += 0.01;
+    }
+    cut
+}
+
 /// Sides of a wood cell: the faces across its grain.
 pub const SIDES: usize = 4;
 /// Bands of a side: its halves along the grain.

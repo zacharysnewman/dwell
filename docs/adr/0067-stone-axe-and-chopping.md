@@ -384,6 +384,18 @@ chopped as that wood (`chopped_wood`) and never cleared: a bite and a wear a hit
 fraction with the wood's `buckDrops`; no tool's `clears` may name one (the generator fails it). The
 cut model (§2) and felling at 11 swings are unchanged. BLOCK_DAMAGE.md §6.4 "Round 2".
 
+## Note 2026-11-12: superseded for new hits: the axe like the other tools (WORK_QUEUE item 51)
+
+Owner: "Also the axe doesn't behave like the other tools. I think it should." and, asked how, **"Like the
+others, felling on top"**. A log now takes block damage (ADR 0078, docs/BLOCK_DAMAGE.md §12): its `damage`
+data gives the axe 10 hits (stone) or 5 (metal), each hit a mark, a wear and its share of the drops, the
+last breaking the block. Breaking a standing log fells the trunk above as one body toward the side struck,
+as this ADR's felling did. **Superseded:** the cut model of §2 for new hits (bite, bind, kerfs, bands, the
+grain share, fell and buck fractions, the fell wedges and the gash); the swing, its arc, contact, clears,
+leaves shaken, sounds, chips, durability and felling into a body are kept. **Kept for old data:** the
+`cuts` save table and the `Cuts` wire still load, send and draw; a cell's cut gives way to damage at its
+next hit, its progress carried over. The chopping prototype (`chop2`, behind its switch) is unchanged.
+
 ## Consequences
 
 - A new tool is an item and a `tools` entry; a new wood a block with an `axis` and a `woods` entry;
