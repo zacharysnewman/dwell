@@ -2,6 +2,12 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.55.18",
+      "changes": [
+        "Underwater looks brighter and clearer: turquoise water you can see farther through, a glowing sun and window overhead, a lighter rippled surface from below, longer light rays and a more colourful seabed."
+      ]
+    },
+    {
       "version": "0.55.17",
       "changes": [
         "New world: a Realistic world — tectonic plates, mountain ranges, rain shadows and climates from the seed"
