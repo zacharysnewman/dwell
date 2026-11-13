@@ -113,7 +113,9 @@ directly, without CLAUDE.md's questions; the defaults below are open to change.
 One file per namespace (`music.json`), its audio files beside it; one file sets the `playlist`:
 
 ```json
-"playlist": { "order": "shuffle", "gapMinS": 20, "gapMaxS": 60, "crossfadeS": 0 },
+"playlist": { "order": "shuffle", "gapMinS": 180, "gapMaxS": 600, "crossfadeS": 0, "dayAt": 0.1,
+  "contexts": { "menu": { "firstDelayMinS": 0, "firstDelayMaxS": 0 },
+                "game": { "firstDelayMinS": 30, "firstDelayMaxS": 180 } } },
 "tracks": { "casual_theme_1": { "title": "Casual Theme #1", "author": "Andrew Sitkov",
   "file": "casual-theme-1.m4a", "volume": 0.6, "loop": false, "fadeInS": 2, "fadeOutS": 3,
   "when": "always" } }
@@ -121,14 +123,19 @@ One file per namespace (`music.json`), its audio files beside it; one file sets 
 
 - `playlist` (exactly one file has it): `order` from the vocabulary (`shuffle`: a shuffled bag, each
   track once a round, never the same twice in a row); after a track ends, a gap of silence drawn in
-  [`gapMinS`, `gapMaxS`] (0–600 s); the next starts `crossfadeS` (0–30 s) earlier than that, so with
-  a gap of 0 the two overlap, the old one fading out over its `fadeOutS` as the new one fades in.
+  [`gapMinS`, `gapMaxS`] (0–3600 s; 3–10 minutes, so music comes and goes at random times); the next
+  starts `crossfadeS` (0–30 s) earlier than that, so with a gap of 0 the two overlap, the old one
+  fading out over its `fadeOutS` as the new one fades in. `contexts` (both of the vocabulary `menu`,
+  `game`, `validate.mjs` `CONTEXTS`): each place's wait before its first track, drawn in
+  [`firstDelayMinS`, `firstDelayMaxS`] (0–3600 s): the menu's 0 (music at once), the game's 30–180 s.
+  `dayAt` (0–1): daylight at or above it is day, for the tracks' `times`.
 
 - `file`: a lower-case `.mp3` or `.m4a` (formats every browser streams) of at most 20 MB, beside
   the data; `volume` 0–1 under the Music volume; `loop`; `fadeInS` / `fadeOutS` (0–60 s: the
   fade-in at the start, the fade-out on a stop and over the end of a track that does not loop);
   `when`: where it plays, one of the vocabulary (`always`). The playlist plays every track whose
-  `when` holds.
+  `when` holds. Optional `times`: the times of day it may be drawn at, from `day`, `night`
+  (`validate.mjs` `TIMES`; default both).
 - `shared/music/gen.mjs` validates it (messages name the track) and emits
   `client/src/audio/music.gen.ts`, each track with its published name `<file>-<8 hex of its
   SHA-256>.<ext>`; CI regenerates it and fails on a diff, so a changed audio file without a
@@ -531,7 +538,16 @@ right-handed (right = forward × up, ahead −z), which is the drawn view's righ
   plays twice in a row). Each track is its own player (below); the playlist polls the playing one
   every 250 ms and, once its end is near or past, starts the next at the end + the drawn gap −
   `crossfadeS`. It holds while the tab is hidden. The first track is the one the previous page
-  saved (`dwell.musicAt`, under 30 s old), else the shuffle's first.
+  saved (`dwell.musicAt`, under 30 s old), which plays on at once, else the shuffle's first after
+  the page's context wait (`installPageSounds('menu' | 'game')`: the menu's at once, the game's a
+  random 30–180 s). Owner, 2026-11-12: *"Im following the Minecraft pattern where they play randomly
+  not sequentially"*, *"At random time"*; confirmed *"Yeah 3-10 minutes."*
+- **Day and night**: each draw takes only the tracks whose `times` hold the time of day — day while
+  the listener's daylight (the ambience probe's `day`, 0 with the sun below the face's horizon, 1
+  at 15° up; so both faces) is at least `dayAt`, night below it. The game hands it to the playlist
+  every frame (`setMusicDaylight`); the menu never does, so it plays day tracks. A playing track
+  finishes when day turns to night; with no track for the time, the playlist looks again a gap
+  later.
 - **Streamed**: an `<audio>` element (`preload="auto"`, `loop` from the data) plays the file; it is
   never decoded whole into a buffer, so the 4.9 MB file does not hold up loading. Once the page's
   AudioContext runs, the element is routed into it (`createMediaElementSource` → its own gain →

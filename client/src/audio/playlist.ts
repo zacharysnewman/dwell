@@ -1,7 +1,9 @@
 // The music playlist (docs/AUDIO.md §6a): the tracks whose `when` holds, played one after another
 // in the data's order (`shuffle`: a shuffled bag, never the same track twice in a row), a gap of
-// silence drawn in [gapMinS, gapMaxS] after each, the next starting `crossfadeS` early so the two
-// overlap. Each track is its own MusicPlayer (its element, fades, unlock and routing); this only
+// silence drawn in [gapMinS, gapMaxS] after each (minutes: music comes and goes at random times),
+// the next starting `crossfadeS` early so the two overlap. The first track waits its context's
+// first delay (the menu's none, the game's a random wait), unless the previous page's carries over.
+// Each draw takes only the tracks whose `times` hold the time of day (`dayAt` on the daylight). Each track is its own MusicPlayer (its element, fades, unlock and routing); this only
 // decides which plays next and when.
 import type { Volumes } from './mixer';
 import {
@@ -12,10 +14,23 @@ import {
   type MusicHost,
   type MusicState,
 } from './music';
-import type { MusicData, MusicWhen, PlaylistDef, TrackDef } from './musicTypes';
+import type {
+  MusicContext,
+  MusicData,
+  MusicTime,
+  MusicWhen,
+  PlaylistDef,
+  TrackDef,
+} from './musicTypes';
 
 /** How often the playlist checks the playing track's time left (ms). */
 const POLL_MS = 250;
+
+/** The last index in `xs` that passes `ok` (-1: none). */
+function lastIndex(xs: readonly string[], ok: (x: string) => boolean): number {
+  for (let i = xs.length - 1; i >= 0; i--) if (ok(xs[i] as string)) return i;
+  return -1;
+}
 
 /**
  * A shuffled bag of track ids: each plays once per round, in a random order, and a round never
@@ -36,9 +51,14 @@ export class Shuffler {
     this.bag = this.bag.filter((x) => x !== id);
   }
 
-  next(): string | null {
-    if (this.ids.length === 0) return null;
-    if (this.bag.length === 0) {
+  /**
+   * The next track, among `allowed` (all of them when omitted: the time of day's tracks). A round
+   * holds every track; one with none of `allowed` left starts the next round.
+   */
+  next(allowed?: readonly string[]): string | null {
+    const ok = (id: string): boolean => !allowed || allowed.includes(id);
+    if (!this.ids.some(ok)) return null;
+    if (!this.bag.some(ok)) {
       const bag = [...this.ids];
       const swap = (a: number, b: number): void => {
         const t = bag[a] as string;
@@ -46,21 +66,46 @@ export class Shuffler {
         bag[b] = t;
       };
       for (let i = bag.length - 1; i > 0; i--) swap(i, Math.floor(this.random() * (i + 1)));
-      // The round's first (popped from the end) must differ from the last round's end.
-      if (bag.length > 1 && bag[bag.length - 1] === this.last) {
-        swap(bag.length - 1, Math.floor(this.random() * (bag.length - 1)));
+      // The round's first allowed (taken from the end) must differ from the last round's end.
+      const at = lastIndex(bag, ok);
+      if (bag[at] === this.last) {
+        const others = bag.flatMap((id, i) => (i !== at && ok(id) ? [i] : []));
+        if (others.length > 0)
+          swap(at, others[Math.floor(this.random() * others.length)] as number);
       }
       this.bag = bag;
     }
-    const id = this.bag.pop() ?? null;
+    const at = lastIndex(this.bag, ok);
+    const id = this.bag[at] ?? null;
+    this.bag.splice(at, 1);
     this.last = id;
     return id;
   }
 }
 
+/** The time of day at `daylight` (0 night – 1 day): day at or above the playlist's `dayAt`. */
+export function timeOfDay(p: PlaylistDef, daylight: number): MusicTime {
+  return daylight >= p.dayAt ? 'day' : 'night';
+}
+
+/** The tracks that may be drawn at `time`. */
+export function forTime(tracks: Iterable<TrackDef>, time: MusicTime): string[] {
+  return [...tracks].filter((t) => t.times.includes(time)).map((t) => t.id);
+}
+
 /** The gap after a track (s), drawn in [gapMinS, gapMaxS]. */
 export function drawGap(p: PlaylistDef, random: () => number): number {
   return p.gapMinS + (p.gapMaxS - p.gapMinS) * random();
+}
+
+/** The wait before the first track in `context` (s), drawn in its [firstDelayMinS, firstDelayMaxS]. */
+export function drawFirstDelay(
+  p: PlaylistDef,
+  context: MusicContext,
+  random: () => number,
+): number {
+  const c = p.contexts[context];
+  return c.firstDelayMinS + (c.firstDelayMaxS - c.firstDelayMinS) * random();
 }
 
 /**
@@ -106,6 +151,8 @@ export class MusicPlaylist {
   private gap = 0;
   private timer: unknown = null;
   private started = false;
+  /** The listener's daylight (0 night – 1 day); the menu never sets it, so it plays day tracks. */
+  private daylight = 1;
   /** Tracks started, in order (the debug hook and the tests). */
   readonly history: string[] = [];
 
@@ -116,6 +163,7 @@ export class MusicPlaylist {
     private readonly env: MusicEnv,
     private readonly random: () => number = Math.random,
     holding: readonly MusicWhen[] = ['always'],
+    private readonly context: MusicContext = 'game',
   ) {
     this.playlist = data.playlist;
     for (const t of playable(data, holding)) this.byId.set(t.id, t);
@@ -129,7 +177,7 @@ export class MusicPlaylist {
   }
 
   get state(): MusicState | 'between' {
-    if (!this.current) return 'idle';
+    if (!this.current) return this.started && this.nextAt !== null ? 'between' : 'idle';
     return this.current.state === 'stopped' && this.nextAt !== null
       ? 'between'
       : this.current.state;
@@ -151,19 +199,39 @@ export class MusicPlaylist {
     return this.current?.plays ?? 0;
   }
 
+  /** The listener's daylight (the ambience's `day`): picks day or night tracks for the next draw. */
+  setDaylight(day: number): void {
+    if (Number.isFinite(day)) this.daylight = day;
+  }
+
+  /** The next track for the time of day (a playing one finishes whatever the time). */
+  private draw(): string | null {
+    const time = timeOfDay(this.playlist, this.daylight);
+    return this.shuffler.next(forTime(this.byId.values(), time));
+  }
+
   setVolumes(v: Pick<Volumes, 'master' | 'music'>): void {
     this.volumes = v;
     this.current?.setVolumes(v);
     this.previous?.setVolumes(v);
   }
 
-  /** Starts the first track (the previous page's, if it saved one), then keeps the list going. */
+  /**
+   * Starts the list: the previous page's track at once if it saved one (it plays on), else the
+   * shuffle's first after the context's first delay (at once when that is 0).
+   */
   start(): void {
     if (this.started || this.byId.size === 0) return;
     this.started = true;
     const resumed = resumedTrack(this.env, [...this.byId.keys()]);
-    if (resumed) this.shuffler.played(resumed);
-    this.play(resumed ?? this.shuffler.next());
+    if (resumed) {
+      this.shuffler.played(resumed);
+      this.play(resumed);
+    } else {
+      const delay = drawFirstDelay(this.playlist, this.context, this.random);
+      if (delay <= 0) this.play(this.draw());
+      else this.nextAt = this.env.now() + delay;
+    }
     this.timer = this.env.setInterval(() => {
       this.tick();
     }, POLL_MS);
@@ -171,7 +239,11 @@ export class MusicPlaylist {
 
   private play(id: string | null): void {
     const t = id === null ? undefined : this.byId.get(id);
-    if (!t) return;
+    if (!t) {
+      // Nothing for this time of day: look again a gap later.
+      this.nextAt = this.env.now() + drawGap(this.playlist, this.random);
+      return;
+    }
     this.previous = this.current;
     const p = new MusicPlayer(t, this.url(t), this.host, this.env);
     p.setVolumes(this.volumes);
@@ -184,8 +256,13 @@ export class MusicPlaylist {
 
   /** Every POLL_MS: schedules the next track once the playing one's end is known, starts it on time. */
   private tick(): void {
+    if (this.env.doc.visibilityState === 'hidden') return;
     const p = this.current;
-    if (!p || this.env.doc.visibilityState === 'hidden') return;
+    if (!p) {
+      // Waiting out the first delay.
+      if (this.nextAt !== null && this.env.now() >= this.nextAt) this.play(this.draw());
+      return;
+    }
     if (p.state !== 'playing' && p.state !== 'stopped') return;
     if (this.nextAt === null) {
       const left = p.state === 'stopped' ? 0 : p.duration - p.time;
@@ -195,7 +272,7 @@ export class MusicPlaylist {
       if (p.state === 'stopped' || left <= -lead) this.nextAt = this.env.now() + left + lead;
     }
     if (this.nextAt !== null && this.env.now() >= this.nextAt) {
-      this.play(this.shuffler.next());
+      this.play(this.draw());
     }
     if (this.previous && this.previous.state === 'stopped') this.previous = null;
   }

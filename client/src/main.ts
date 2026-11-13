@@ -127,7 +127,7 @@ import { audio } from './audio/engine';
 import type { TapOptions } from './audio/mixer';
 import { decodeSounds, EventPlayer } from './audio/events';
 import { AmbiencePlayer, decodeSurroundings } from './audio/ambience';
-import { installPageSounds } from './audio/page';
+import { installPageSounds, setMusicDaylight } from './audio/page';
 import { SOUND_DATA } from './audio/sounds.gen';
 import { GamepadInput } from './input/gamepad';
 import { PLAY_ACTIONS } from './input/gamepad.gen';
@@ -719,7 +719,10 @@ function playSounds(app: App, player: EventPlayer, beds: AmbiencePlayer): void {
     audio().setListener(v(0), v(3), v(6));
   }
   player.playAll(decodeSounds(app.client.takeSounds()));
-  beds.update(decodeSurroundings(app.client.ambience()));
+  const around = decodeSurroundings(app.client.ambience());
+  beds.update(around);
+  // The music draws day or night tracks by the listener's daylight (AUDIO.md §6a).
+  if (around) setMusicDaylight(around.day);
   // The eye under water muffles the world's buses (AUDIO.md §3a).
   audio().setUnderwater(app.client.underwater());
 }
@@ -1066,7 +1069,7 @@ async function start(): Promise<App | null> {
   );
   forwardInput(app);
   // Sound (docs/AUDIO.md): started by the first gesture; menus sound by delegation.
-  const sfx = installPageSounds();
+  const sfx = installPageSounds('game');
   const beds = new AmbiencePlayer(SOUND_DATA.ambience, sfx.bedOutput);
   const sounds = new EventPlayer(
     SOUND_DATA,

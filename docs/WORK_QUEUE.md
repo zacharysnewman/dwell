@@ -1266,6 +1266,15 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    `client/src/audio/playlist.ts`; Starry Sunshine removed; the audition page
    `docs/prototypes/music-audition.html` (https://claude.ai/artifact/Ccdtsp5eiQYF4b9uzspyYe). **Waiting on the owner:** the
    picks (the page's JSON), the level and the gap.
+   Owner (2026-11-12): "Im following the Minecraft pattern where they play randomly not sequentially." (the
+   shuffle was already random; the difference is the silence between tracks, ours 20–60 s, Minecraft's minutes)
+   → "At random time." Owner (2026-11-13): "Are there more serious sounding ones we could play at night in the
+   casual set" (the tracks are being picked locally); the gaps confirmed: "Yeah 3-10 minutes." **Built (branch
+   `claude/music-random-times-kf03fi`):** gaps a random 3–10 minutes; the game's first track after a random
+   30–180 s wait (`playlist.contexts`, the menu's 0: music at once; a track carried over from the menu plays on);
+   tracks' optional `times` (`day`, `night`, default both) drawn by the listener's daylight against
+   `playlist.dayAt`, the menu as day, a playing track finishing when day turns to night (AUDIO.md §2a, §6a).
+   **Waiting on the owner:** which tracks are night ones (none is marked yet).
 
 34. **The in-game Chisel editor and the Textures tab extras** (owner 2026-11-12: "these all seem solid yes"): open
    Chisel's biome sliders inside a running world with the terrain around the player regenerating as they tune

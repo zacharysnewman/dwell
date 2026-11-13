@@ -15,7 +15,17 @@ type File = {
   tracks: Record<string, Record<string, unknown>>;
 };
 
-const PLAYLIST = { order: 'shuffle', gapMinS: 5, gapMaxS: 10, crossfadeS: 2 };
+const PLAYLIST = {
+  order: 'shuffle',
+  gapMinS: 5,
+  gapMaxS: 10,
+  crossfadeS: 2,
+  dayAt: 0.1,
+  contexts: {
+    menu: { firstDelayMinS: 0, firstDelayMaxS: 0 },
+    game: { firstDelayMinS: 3, firstDelayMaxS: 9 },
+  },
+};
 
 const files = (): File[] => structuredClone(readMusicFiles()) as File[];
 
@@ -86,6 +96,7 @@ describe('music data', () => {
         fadeInS: 1,
         fadeOutS: 1,
         when: 'always',
+        times: ['day', 'night'],
       },
     ]);
     expect(data.playlist).toEqual(PLAYLIST);
@@ -102,7 +113,110 @@ describe('music data', () => {
     expect(both.tracks[0]?.id).toBe(MUSIC_DATA.tracks[0]?.id);
   });
 
+  it('plays at random times (owner, 2026-11-12): 3–10 minute gaps, the game waiting, the menu not', () => {
+    const p = MUSIC_DATA.playlist;
+    expect([p.gapMinS, p.gapMaxS]).toEqual([180, 600]);
+    expect(p.contexts.menu).toEqual({ firstDelayMinS: 0, firstDelayMaxS: 0 });
+    expect(p.contexts.game.firstDelayMinS).toBeGreaterThan(0);
+    expect(p.contexts.game.firstDelayMaxS).toBeGreaterThanOrEqual(p.contexts.game.firstDelayMinS);
+  });
+
+  it('accepts gaps and first waits up to an hour, and a track for the night by data alone', () => {
+    const dir = fixtureDir([], { 'fixture.mp3': new Uint8Array([1]) });
+    const data = resolveMusic(
+      [
+        {
+          namespace: 'test',
+          playlist: {
+            ...PLAYLIST,
+            gapMinS: 3600,
+            gapMaxS: 3600,
+            contexts: {
+              menu: { firstDelayMinS: 0, firstDelayMaxS: 0 },
+              game: { firstDelayMinS: 3600, firstDelayMaxS: 3600 },
+            },
+          },
+          tracks: {
+            night: { ...track, times: ['night'] },
+            both: { ...track, times: ['night', 'day'] },
+            any: track,
+          },
+        },
+      ],
+      dir,
+    );
+    expect(data.playlist.gapMaxS).toBe(3600);
+    expect(data.playlist.contexts.game.firstDelayMinS).toBe(3600);
+    expect(data.tracks.map((t) => t.times)).toEqual([
+      ['night'],
+      ['day', 'night'],
+      ['day', 'night'],
+    ]);
+  });
+
+  const withContexts = (f: File, contexts: unknown): unknown =>
+    (f.playlist = { ...PLAYLIST, contexts });
   const rejects: [string, (f: File) => void, RegExp][] = [
+    [
+      'a gap over an hour',
+      (f) => (f.playlist = { ...PLAYLIST, gapMaxS: 3601 }),
+      /playlist \(dwell\)\.gapMaxS: 3601 is outside \[0, 3600\]/,
+    ],
+    [
+      'a daylight threshold past 1',
+      (f) => (f.playlist = { ...PLAYLIST, dayAt: 2 }),
+      /playlist \(dwell\)\.dayAt: 2 is outside \[0, 1\]/,
+    ],
+    [
+      'no contexts',
+      (f) => {
+        f.playlist = { ...PLAYLIST };
+        delete f.playlist.contexts;
+      },
+      /playlist \(dwell\): missing "contexts"/,
+    ],
+    [
+      'a missing context',
+      (f) => withContexts(f, { menu: PLAYLIST.contexts.menu }),
+      /playlist \(dwell\)\.contexts: missing "game"/,
+    ],
+    [
+      'an unknown context',
+      (f) => withContexts(f, { ...PLAYLIST.contexts, credits: PLAYLIST.contexts.menu }),
+      /playlist \(dwell\)\.contexts: "credits" is not one of menu, game/,
+    ],
+    [
+      'a first wait whose max is below its min',
+      (f) =>
+        withContexts(f, { ...PLAYLIST.contexts, game: { firstDelayMinS: 60, firstDelayMaxS: 30 } }),
+      /playlist \(dwell\)\.contexts\.game\.firstDelayMaxS: 30 is below firstDelayMinS 60/,
+    ],
+    [
+      'a negative first wait',
+      (f) =>
+        withContexts(f, { ...PLAYLIST.contexts, game: { firstDelayMinS: -1, firstDelayMaxS: 30 } }),
+      /playlist \(dwell\)\.contexts\.game\.firstDelayMinS: -1 is outside \[0, 3600\]/,
+    ],
+    [
+      'a first wait missing a field',
+      (f) => withContexts(f, { ...PLAYLIST.contexts, menu: { firstDelayMinS: 0 } }),
+      /playlist \(dwell\)\.contexts\.menu: missing "firstDelayMaxS"/,
+    ],
+    [
+      'an unknown time of day',
+      (f) => (f.tracks.x = { ...track, file: 'casual-theme-1.m4a', times: ['dusk'] }),
+      /track dwell:x\.times: "dusk" is not one of day, night/,
+    ],
+    [
+      'no times of day',
+      (f) => (f.tracks.x = { ...track, file: 'casual-theme-1.m4a', times: [] }),
+      /track dwell:x\.times: must be a non-empty list of day, night/,
+    ],
+    [
+      'a time of day twice',
+      (f) => (f.tracks.x = { ...track, file: 'casual-theme-1.m4a', times: ['day', 'day'] }),
+      /track dwell:x\.times: lists a time twice/,
+    ],
     [
       'an unknown field',
       (f) => (f.tracks.x = { ...track, file: 'casual-theme-1.m4a', tempo: 1 }),
