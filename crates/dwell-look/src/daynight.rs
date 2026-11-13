@@ -477,6 +477,7 @@ impl DayNight {
             air: crate::atmosphere::Air::GROUND,
             moon_shown: true,
             clouds_shown: true,
+            airless: false,
         }
     }
 }
@@ -510,6 +511,10 @@ pub struct DayState {
     /// Whether the sky draws home's clouds: false for a viewer on another grid, whose sky has no
     /// cloud deck of its own yet (MOON_WORLD.md §7.3; true from [`DayNight::state`]).
     pub clouds_shown: bool,
+    /// Whether the viewer's grid has no air (`grids.json` `atmosphere` false, the moon): its sky is
+    /// space at every height, [`Air::SPACE`](crate::atmosphere::Air::SPACE) (MOON_WORLD.md §7.3;
+    /// false from [`DayNight::state`]).
+    pub airless: bool,
 }
 
 impl Default for DayState {
@@ -559,14 +564,22 @@ impl DayState {
     /// This moment for a viewer `altitude` m above sea level on its own face (face-local): the sky
     /// thinned toward space above the atmosphere's base (docs/DAY_NIGHT.md §15).
     pub fn at_altitude(mut self, altitude: f64) -> Self {
-        self.air = crate::atmosphere::ATMOSPHERE.air(altitude);
+        self.air = if self.airless {
+            crate::atmosphere::Air::SPACE
+        } else {
+            crate::atmosphere::ATMOSPHERE.air(altitude)
+        };
         self
     }
 
     /// [`DayState::at_altitude`] for a viewer `from_axis_m` from the disc's axis in a world of
     /// radius `world_radius_m`: past the rim the limb fades out (BUGS.md #102).
     pub fn at_eye(mut self, altitude: f64, from_axis_m: f64, world_radius_m: f64) -> Self {
-        self.air = crate::atmosphere::ATMOSPHERE.air_at(altitude, from_axis_m, world_radius_m);
+        self.air = if self.airless {
+            crate::atmosphere::Air::SPACE
+        } else {
+            crate::atmosphere::ATMOSPHERE.air_at(altitude, from_axis_m, world_radius_m)
+        };
         self
     }
 

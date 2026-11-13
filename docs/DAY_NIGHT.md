@@ -798,6 +798,19 @@ the earth atmosphere either." With far flight to the moon (~597 km) a player cli
   `sunWhiteness` of the way to white.
 - **The fog** thins with the air: `DayState::fog_density` × (1 − thinning), for the eye's face and
   the other's, so it is gone in space.
+- **One layered sky, per grid's air [built 2026-11-13].** Owner, 2026-11-13: "Sun and moon should be space, the
+  same as night sky. Could perhaps just make space a more general skybox and have 'day' be a closer atmosphere
+  skybox so it can fade out as you leave earth." So the model is two layers: **space** (`spaceColor`, the stars,
+  the sun white, the bodies where they are) is the base sky everywhere, home too, and **day** is a layer over it
+  that belongs to a grid's air: the keyframes' sky (home's blue day, sunsets, the night's deep blue, haze) whose
+  strength is 1 − the thinning (it fades with altitude) and whose transparency to the stars is the keyframes'
+  `stars` (it fades by night). Each grid declares its air as data (`shared/worldgen/grids.json` `atmosphere`:
+  home's true; none unless declared, so the moon and a sun have none); on a grid without air the day layer is
+  gone at every height and hour (`DayState::airless` → `Air::SPACE`: thinning 1, no limb), through the same
+  shader path (`dwell_space`; no grid-specific branch). Home's ground sky is unchanged bit for bit. Tests
+  (`dwell-client` `grid_view`, both faces): no day colour on an airless grid at any hour (the moon, a sun added by
+  data alone), the day layer fading to space flying up from home, home's packed day unchanged at every hour.
+  Left: on the moon the ground's hemisphere light is still home's and its sunlight follows home's keyframes.
 - **Clouds stay inside it.** `clouds.mjs` refuses a deck, a volume top, a data plume's top or a
   source's height above `topM` (and reads it from `atmosphere.json`); run-time plumes are cut at it
   (`PlumeList::pack`). From above the deck is already a layer below to its own horizon (`deck_fade`).
