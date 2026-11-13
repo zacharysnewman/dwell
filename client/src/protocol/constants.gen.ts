@@ -157,6 +157,7 @@ export const MessageType = {
   Swordplay: 106,
   TheaterViewpoint: 107,
   Markers: 108,
+  Blueprints: 109,
 } as const;
 export type MessageType = (typeof MessageType)[keyof typeof MessageType];
 
@@ -341,5 +342,5 @@ export const WorldSizes = {
 export const Capabilities = {
   maxNames: 64,
   maxNameBytes: 48,
-  names: ['structures.place', 'grid.frames', 'damage.chunks', 'creatures.npcs', 'weapons.clash', 'creatures.poses', 'npcs.swings', 'theater.viewpoint', 'hits.at_contact', 'markers.private'],
+  names: ['structures.place', 'grid.frames', 'damage.chunks', 'creatures.npcs', 'weapons.clash', 'creatures.poses', 'npcs.swings', 'theater.viewpoint', 'hits.at_contact', 'markers.private', 'blueprints.world'],
 } as const;

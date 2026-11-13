@@ -208,6 +208,7 @@ pub enum MessageType {
     Swordplay = 106,
     TheaterViewpoint = 107,
     Markers = 108,
+    Blueprints = 109,
 }
 
 impl MessageType {
@@ -277,6 +278,7 @@ impl MessageType {
             106 => Some(Self::Swordplay),
             107 => Some(Self::TheaterViewpoint),
             108 => Some(Self::Markers),
+            109 => Some(Self::Blueprints),
             _ => None,
         }
     }
@@ -685,6 +687,8 @@ pub mod capability_names {
     pub const HITS_AT_CONTACT: &str = "hits.at_contact";
     /// A player's map markers (WORK_QUEUE item 53, docs/MAP_MARKERS.md) go both ways as `Markers` (the record, dwell_protocol::markers): the server sends that player's saved record once, after this client's Capabilities, to that player only; the client sends its whole record again on each change, and the server keeps it for that player's device key in the world's optional `markers` table. Without it neither is sent: the client keeps its markers for this session only.
     pub const MARKERS_PRIVATE: &str = "markers.private";
+    /// Blueprints (WORK_QUEUE item 55, docs/BLUEPRINTS.md) go both ways as `Blueprints` (dwell_protocol::blueprints): the server sends every blueprint in the world once after this client's Capabilities, then each one placed or gone (completed or removed) to every client with it; the client places and removes one with `Place` and `Remove`, which the server keeps in the world's optional `blueprints` table. Without it neither is sent: an older client sees no blueprints and an older server is never sent one.
+    pub const BLUEPRINTS_WORLD: &str = "blueprints.world";
     /// Every capability this build knows, in the table's order.
-    pub const ALL: &[&str] = &[STRUCTURES_PLACE, GRID_FRAMES, DAMAGE_CHUNKS, CREATURES_NPCS, WEAPONS_CLASH, CREATURES_POSES, NPCS_SWINGS, THEATER_VIEWPOINT, HITS_AT_CONTACT, MARKERS_PRIVATE];
+    pub const ALL: &[&str] = &[STRUCTURES_PLACE, GRID_FRAMES, DAMAGE_CHUNKS, CREATURES_NPCS, WEAPONS_CLASH, CREATURES_POSES, NPCS_SWINGS, THEATER_VIEWPOINT, HITS_AT_CONTACT, MARKERS_PRIVATE, BLUEPRINTS_WORLD];
 }

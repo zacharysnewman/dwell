@@ -1,0 +1,24 @@
+{
+  "$comment": "A fixture: the generator test adds a catalog entry and a builder by data alone.",
+  "formatVersion": 1,
+  "limits": {
+    "perWorld": 64
+  },
+  "player": {
+    "paceMs": 150,
+    "panelRows": 6
+  },
+  "ghost": {
+    "faceCap": 24000
+  },
+  "builder": {
+    "creature": "dwell:builder",
+    "paceS": 0.5,
+    "reachM": 4,
+    "nearM": 96,
+    "perBlueprint": 1
+  },
+  "catalog": [
+    "test:ladder_post"
+  ]
+}

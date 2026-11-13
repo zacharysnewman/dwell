@@ -1,0 +1,58 @@
+{
+  "$comment": "Prototype content (ARCHITECTURE.md \u00a76.1): a test blueprint for builder NPCs and players (docs/BLUEPRINTS.md, WORK_QUEUE item 55). Not Dwell's building design. A 3 \u00d7 3 m stone well ring with two log posts and a stone beam across.",
+  "format": 1,
+  "name": "dwell:bp_well",
+  "kind": "voxels",
+  "size": [
+    3,
+    7,
+    3
+  ],
+  "anchor": [
+    1,
+    0,
+    1
+  ],
+  "palette": {
+    ".": null,
+    "s": "dwell:stone",
+    "l": "dwell:log"
+  },
+  "layers": [
+    [
+      "sss",
+      "s.s",
+      "sss"
+    ],
+    [
+      "sss",
+      "s.s",
+      "sss"
+    ],
+    [
+      "...",
+      "l.l",
+      "..."
+    ],
+    [
+      "...",
+      "l.l",
+      "..."
+    ],
+    [
+      "...",
+      "l.l",
+      "..."
+    ],
+    [
+      "...",
+      "l.l",
+      "..."
+    ],
+    [
+      "...",
+      "sss",
+      "..."
+    ]
+  ]
+}

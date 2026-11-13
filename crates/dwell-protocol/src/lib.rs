@@ -3,6 +3,7 @@
 //! vectors in `shared/protocol/vectors.txt`.
 
 pub mod auth;
+pub mod blueprints;
 pub mod bytes;
 pub mod capabilities;
 pub mod chopping;
