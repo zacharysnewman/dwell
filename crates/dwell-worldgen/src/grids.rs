@@ -371,9 +371,9 @@ pub fn parse_grids(text: &str) -> Result<Vec<GridDef>, String> {
                 bake_size: bake_size(gen_, &at)?,
             },
             Some("cratered") => GridGenerator::Cratered(Arc::new(crater_rules(gen_, &at)?)),
-            Some("volcanic") => GridGenerator::Volcanic(Arc::new(
-                crate::volcanic::volcanic_rules(gen_, &at)?,
-            )),
+            Some("volcanic") => {
+                GridGenerator::Volcanic(Arc::new(crate::volcanic::volcanic_rules(gen_, &at)?))
+            }
             _ => {
                 return Err(format!(
                     "{at}: `generator.kind` must be \"terrain\", \"cratered\" or \"volcanic\""
