@@ -500,7 +500,7 @@ the moon's unedited chunks never evicted, tier 1 bodies in the moon's space (non
   - **Landing under the ground** (BUGS.md #139): the report's `groundM`, not the landing: it read the smooth
     height, not the cells' top.
 - **The owner's three moon things and the sun's light (2026-11-13, 0.63.0, branch `claude/moon-fixes-3-l0zjdx`;
-  BUGS.md #142–#144):**
+  BUGS.md #143–#145):**
   - **No moon in the moon's sky:** its halo, glint and moonlight are not packed there either (`DayState::on_moon`);
     the cratered disc the owner saw is most likely the sun (its disc shaded by the sun world's bake, white in space).
   - **Ramps on the moon:** `generator.ramps` (`notched`), home's rule as data (HALF_HEIGHT_GRID.md §10).

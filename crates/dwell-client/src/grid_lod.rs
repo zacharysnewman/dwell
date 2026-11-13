@@ -1,5 +1,5 @@
 //! The distant terrain of a grid while standing on it (docs/proposals/MOON_WORLD.md §5; BUGS.md
-//! #142, #144): the moon and the sun draw past their streamed chunks as `lod.levels` square rings
+//! #143, #145): the moon and the sun draw past their streamed chunks as `lod.levels` square rings
 //! of their real surface (`grids.json` `lod`), centred on the viewer, each `lod.cells` quads a side
 //! with level k's quads `cellM` × 2^k wide and the next finer ring in its middle, out past the
 //! disc's rim (its horizon). Every vertex is its ground from the grid's [`FarSource`] (the same
@@ -342,7 +342,7 @@ mod tests {
     }
 
     dwell_world::both_faces!(
-        /// BUGS.md #142: standing on the moon, its ground is drawn past the chunks out to its
+        /// BUGS.md #143: standing on the moon, its ground is drawn past the chunks out to its
         /// horizon (the disc's rim) every way, under the ground near the eye.
         fn on_the_moon_its_terrain_is_drawn_to_its_horizon(f: FaceFrame) {
             let t = CrateredTerrain::for_grid("dwell:moon", 7).unwrap();
@@ -353,7 +353,7 @@ mod tests {
     );
 
     dwell_world::both_faces!(
-        /// BUGS.md #144: the same on the sun, from its middle and near its rim.
+        /// BUGS.md #145: the same on the sun, from its middle and near its rim.
         fn on_the_sun_its_terrain_is_drawn_to_its_horizon(f: FaceFrame) {
             let t = VolcanicTerrain::new(grid("dwell:sun").unwrap(), 7).unwrap();
             reaches_the_horizon("dwell:sun", &t, f, 0.0, 0.0);

@@ -300,7 +300,7 @@ mod tests {
 
     dwell_world::both_faces!(
         /// The moon is never in its own sky (owner, 0.61: "Is there a moon visible from the
-        /// moon?"; BUGS.md #142): standing on the moon's ground on face `f` at every hour of a
+        /// moon?"; BUGS.md #143): standing on the moon's ground on face `f` at every hour of a
         /// month's days and phases, the sky draws no moon disc (`space.w`), no moon halo (the
         /// viewer's and the other face's `disc.a`) and no moonlight (both faces' `moon_light`), and
         /// home's sky keeps all three.

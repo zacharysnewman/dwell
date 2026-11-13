@@ -2,6 +2,49 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.63.0",
+      "changes": [
+        "On the moon and the sun, the ground is drawn out to the horizon, not only near you",
+        "Home hangs in the moon's sky, lit in its phase by the sun",
+        "Moon slopes are ramps, not stairs of half blocks",
+        "The moon no longer glows in its own sky; on the sun its own disc is gone",
+        "The sun is lit by home's and the moon's reflected light, and glows warm from its lava",
+        "New compatibility line: the moon's terrain changed, so worlds from 0.61 open in 0.61 builds"
+      ]
+    },
+    {
+      "version": "0.61.7",
+      "changes": [
+        "A bluer day sky: deep blue overhead fading to a lighter blue at the horizon, and far hills fade into that blue."
+      ]
+    },
+    {
+      "version": "0.61.6",
+      "changes": [
+        "Smoother frame rate while running or flying into new ground, most on phones: the ground ahead is made solid a little at a time before you reach it"
+      ]
+    },
+    {
+      "version": "0.61.5",
+      "changes": [
+        "In first person your own feet stand where you do, on the ground and on their shadow, on flat ground and ramps (they were drawn behind you and seemed to float)."
+      ]
+    },
+    {
+      "version": "0.61.4",
+      "changes": [
+        "Far trees: a tree you fell no longer stays standing as a distant impostor."
+      ]
+    },
+    {
+      "version": "0.61.3",
+      "changes": [
+        "The big map has a markers list: each marker's distance and direction, nearest first; click one to show it, edit or delete it",
+        "Portals you come near are marked on your map",
+        "A marker placed on the big map now stands on the ground there"
+      ]
+    },
+    {
       "version": "0.61.2",
       "changes": [
         "The sword has its own swings: a level slash and an overhead cut, timed so the blade lands as it hits",

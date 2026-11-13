@@ -63,6 +63,14 @@ pub struct Config {
     /// none of) and the albedo's scale (the painted leaf tile's mean over the palette colour).
     pub leaf_ambient: f32,
     pub leaf_albedo: f32,
+    /// The crown's ambient occlusion baked into each texel (`ao`): how much a texel darkens by
+    /// the share of the tree's cells about its hit (0 none: opt-in until the owner approves the
+    /// look), and the neighbourhood's half-width in metres.
+    pub ao_strength: f32,
+    pub ao_radius: f32,
+    /// Whether the atlas is drawn with a mip chain (`mips`, [`Impostor::mip`]): far impostors read
+    /// the averaged texels instead of one nearest texel (opt-in until the owner approves the look).
+    pub mips: bool,
 }
 
 impl Config {
@@ -89,6 +97,8 @@ impl Config {
                     | "albedo"
                     | "marginM"
                     | "leafShade"
+                    | "ao"
+                    | "mips"
                     | "far"
             ) {
                 return Err(format!("unknown field `{k}`"));
@@ -187,6 +197,34 @@ impl Config {
             0.0,
             2.0,
         )? as f32;
+        let (ao_strength, ao_radius) = match v.get("ao") {
+            None => (0.0, 1.0),
+            Some(ao) => {
+                for k in ao.as_object().ok_or("`ao` must be an object")?.keys() {
+                    if !matches!(k.as_str(), "$comment" | "strength" | "radiusM") {
+                        return Err(format!("unknown field `ao.{k}`"));
+                    }
+                }
+                (
+                    num(
+                        ao.get("strength").unwrap_or(&Value::Null),
+                        "ao.strength",
+                        0.0,
+                        1.0,
+                    )? as f32,
+                    num(
+                        ao.get("radiusM").unwrap_or(&Value::Null),
+                        "ao.radiusM",
+                        0.5,
+                        4.0,
+                    )? as f32,
+                )
+            }
+        };
+        let mips = match v.get("mips") {
+            None => false,
+            Some(m) => m.as_bool().ok_or("`mips` must be true or false")?,
+        };
         let mut out = Config {
             views: Vec::new(),
             azimuths,
@@ -202,6 +240,9 @@ impl Config {
             canopy_blend: canopy_blend(),
             leaf_ambient,
             leaf_albedo,
+            ao_strength,
+            ao_radius,
+            mips,
         };
         out.views = out.layout();
         Ok(out)
@@ -456,6 +497,79 @@ pub struct Impostor {
 }
 
 impl Impostor {
+    /// The mip levels a view's square takes down to one texel (1 when `px` isn't a power of two:
+    /// a view's square must halve exactly, or its levels would bleed into the next view's).
+    pub fn mip_levels(px: u32) -> u32 {
+        if px.is_power_of_two() {
+            px.trailing_zeros() + 1
+        } else {
+            1
+        }
+    }
+
+    /// Mip `level` of the atlas (0 itself): each view's square halved `level` times on its own
+    /// (a texel never takes its neighbour view's), as (albedo, normal + depth) at `size() >> level`.
+    /// A texel is covered when half or more of the base texels under it are, with the commonest
+    /// covered colour (so a leaf texel stays the palette's leaf the draw tells by colour), the
+    /// covered texels' mean occlusion, normal (renormalized) and depth: the far crowns keep their
+    /// coverage instead of thinning to nearest-texel noise (WORK_QUEUE item 31).
+    pub fn mip(&self, level: u32) -> (Vec<[u8; 4]>, Vec<[u8; 4]>) {
+        let (w, h) = self.size();
+        let step = 1u32 << level.min(31);
+        let (lw, lh) = ((w / step).max(1), (h / step).max(1));
+        let mut albedo = vec![[0u8; 4]; (lw * lh) as usize];
+        let mut nd = vec![[128u8, 128, 128, 255]; (lw * lh) as usize];
+        for y in 0..lh {
+            for x in 0..lw {
+                let mut colours: Vec<([u8; 3], u32)> = Vec::new();
+                let (mut ao, mut n, mut depth, mut covered) = (0.0f32, [0.0f32; 3], 0.0f32, 0u32);
+                for sy in 0..step {
+                    for sx in 0..step {
+                        let (bx, by) = (x * step + sx, y * step + sy);
+                        if bx >= w || by >= h {
+                            continue;
+                        }
+                        let i = (by * w + bx) as usize;
+                        let a = self.albedo[i];
+                        if a[3] < 128 {
+                            continue;
+                        }
+                        covered += 1;
+                        let rgb = [a[0], a[1], a[2]];
+                        match colours.iter_mut().find(|(c, _)| *c == rgb) {
+                            Some(e) => e.1 += 1,
+                            None => colours.push((rgb, 1)),
+                        }
+                        ao += texel_ao(a[3]);
+                        let t = self.normal_depth[i];
+                        for k in 0..3 {
+                            n[k] += f32::from(t[k]) / 255.0 * 2.0 - 1.0;
+                        }
+                        depth += f32::from(t[3]);
+                    }
+                }
+                if covered * 2 < step * step {
+                    continue;
+                }
+                let o = (y * lw + x) as usize;
+                let rgb = colours
+                    .iter()
+                    .max_by_key(|(_, k)| *k)
+                    .map_or([0; 3], |c| c.0);
+                albedo[o] = [rgb[0], rgb[1], rgb[2], ao_alpha(ao / covered as f32)];
+                let n = norm(n);
+                let q = |c: f32| ((c * 0.5 + 0.5).clamp(0.0, 1.0) * 255.0).round() as u8;
+                nd[o] = [
+                    q(n[0]),
+                    q(n[1]),
+                    q(n[2]),
+                    (depth / covered as f32).round() as u8,
+                ];
+            }
+        }
+        (albedo, nd)
+    }
+
     /// The atlas's size in texels.
     pub fn size(&self) -> (u32, u32) {
         (self.cols * self.px, self.rows * self.px)
@@ -671,7 +785,8 @@ pub fn bake_cells(
                 };
                 let at = out.at(vi, i, j);
                 let q = |c: f32| (c.clamp(0.0, 1.0) * 255.0).round() as u8;
-                out.albedo[at] = [q(albedo[0]), q(albedo[1]), q(albedo[2]), 255];
+                let ao = occlusion(&grid, p, config);
+                out.albedo[at] = [q(albedo[0]), q(albedo[1]), q(albedo[2]), ao_alpha(ao)];
                 let depth = t / (2.0 * radius);
                 out.normal_depth[at] = [
                     q(normal[0] * 0.5 + 0.5),
@@ -683,6 +798,57 @@ pub fn bake_cells(
         }
     }
     out
+}
+
+/// A covered texel's albedo alpha for its ambient occlusion `ao` (1 open, 0 dark): 128–255, so
+/// coverage stays alpha ≥ ½ and the draw reads the occlusion back as (alpha − ½) × 2
+/// ([`texel_ao`]); an uncovered texel's alpha is 0.
+pub fn ao_alpha(ao: f32) -> u8 {
+    128 + (ao.clamp(0.0, 1.0) * 127.0).round() as u8
+}
+
+/// The ambient occlusion an albedo alpha holds ([`ao_alpha`]; 1 for an uncovered texel).
+pub fn texel_ao(alpha: u8) -> f32 {
+    if alpha < 128 {
+        1.0
+    } else {
+        f32::from(alpha - 128) / 127.0
+    }
+}
+
+/// The baked occlusion at a hit point `p` (m, the tree's frame): 1 − strength × the share of the
+/// cells within `ao.radiusM` of it the tree fills (its own cell left out), so a texel deep in the
+/// crown darkens as the near leaves' corner occlusion and sky light do (WORK_QUEUE item 31). 1
+/// when `ao.strength` is 0.
+fn occlusion(grid: &HashMap<[i32; 3], Part>, p: [f32; 3], config: &Config) -> f32 {
+    if config.ao_strength <= 0.0 {
+        return 1.0;
+    }
+    let r = config.ao_radius;
+    let c: [i32; 3] = std::array::from_fn(|a| (p[a] / CELL[a]).floor() as i32);
+    let reach: [i32; 3] = std::array::from_fn(|a| (r / CELL[a]).ceil() as i32);
+    let (mut filled, mut total) = (0u32, 0u32);
+    for dy in -reach[1]..=reach[1] {
+        for dz in -reach[2]..=reach[2] {
+            for dx in -reach[0]..=reach[0] {
+                if (dx, dy, dz) == (0, 0, 0) {
+                    continue;
+                }
+                let k = [c[0] + dx, c[1] + dy, c[2] + dz];
+                let q = cell_centre(k);
+                let d: [f32; 3] = std::array::from_fn(|a| q[a] - p[a]);
+                if dot(d, d) > r * r {
+                    continue;
+                }
+                total += 1;
+                filled += u32::from(grid.contains_key(&k));
+            }
+        }
+    }
+    if total == 0 {
+        return 1.0;
+    }
+    1.0 - config.ao_strength * filled as f32 / total as f32
 }
 
 fn cell_centre(k: [i32; 3]) -> [f32; 3] {
@@ -764,13 +930,45 @@ pub fn variant_seed(v: u32) -> u32 {
 /// A species tree in a far tree list (proposal I-2): what an impostor instance is built from. Its
 /// anchor is face-local (the voxel above the ground it stands on); `species` indexes
 /// [`crate::species::SPECIES`]; `seed` and `stage` are the placement's (ADR 0079), so the near
-/// tree and its impostor are the same tree.
+/// tree and its impostor are the same tree. `stem` is its stem's bottom cell (face-local) and
+/// `stem_cells` the solid cells standing straight up from it (`Planter::stem`): a client that holds
+/// one of those cells as air sees the tree felled and draws no impostor for it ([`standing`]).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct FarTree {
     pub anchor: [i32; 3],
     pub species: u16,
     pub seed: u32,
     pub stage: u32,
+    pub stem: [i32; 3],
+    pub stem_cells: u8,
+}
+
+/// Whether a far tree still stands, as a client sees it (WORK_QUEUE item 31: felled trees left
+/// out): `held` answers a face-local cell's state where the client holds its chunk (`None` where
+/// it doesn't). `Some(false)`: felled, a stem cell it holds is air (a cut takes the trunk above it
+/// away as a piece, docs/FELLING.md, leaving air over the stump); `Some(true)`: standing, seen (a
+/// stem cell held, none air); `None`: none of its stem held (far away the generator's tree is all
+/// there is).
+pub fn stem_seen(
+    tree: &FarTree,
+    held: impl Fn([i32; 3]) -> Option<dwell_blocks::StateId>,
+) -> Option<bool> {
+    let air = dwell_world::M.air;
+    let [x, y, z] = tree.stem;
+    let mut seen = None;
+    for h in 0..i32::from(tree.stem_cells) {
+        match held([x, y + h, z]) {
+            Some(m) if m == air => return Some(false),
+            Some(_) => seen = Some(true),
+            None => {}
+        }
+    }
+    seen
+}
+
+/// [`stem_seen`] short of felled: the tree is drawn.
+pub fn standing(tree: &FarTree, held: impl Fn([i32; 3]) -> Option<dwell_blocks::StateId>) -> bool {
+    stem_seen(tree, held) != Some(false)
 }
 
 /// One impostor to draw (proposal §6, 16 bytes on the GPU): the face-local foot of the tree
@@ -875,7 +1073,7 @@ mod tests {
         let one = c.bake_layer(0, 8).expect("layer 0");
         assert_eq!(one.px, 8);
         assert!(
-            one.albedo.iter().any(|t| t[3] == 255),
+            one.albedo.iter().any(|t| t[3] >= 128),
             "a tree, not an empty atlas"
         );
     }
@@ -920,6 +1118,8 @@ mod tests {
             species: 1,
             seed: 77,
             stage: 5,
+            stem: [4, 20, -9],
+            stem_cells: 4,
         };
         let i = c.instances(&[t])[0];
         assert_eq!(i.foot, [4.5, 10.0, -8.5]);
@@ -951,7 +1151,7 @@ mod tests {
         assert_eq!(c.views.len(), 3);
         let im = bake(find("dwell:oak").unwrap(), 1, 7, &c, 8);
         assert_eq!((im.cols, im.rows), (2, 2));
-        assert!(im.albedo.iter().any(|a| a[3] == 255));
+        assert!(im.albedo.iter().any(|a| a[3] >= 128));
     }
 
     #[test]
@@ -975,7 +1175,7 @@ mod tests {
         let (mut x0, mut x1, mut y0, mut y1) = (u32::MAX, 0, u32::MAX, 0);
         for j in 0..im.px {
             for i in 0..im.px {
-                if im.albedo[im.at(v, i, j)][3] == 255 {
+                if im.albedo[im.at(v, i, j)][3] >= 128 {
                     (x0, x1, y0, y1) = (x0.min(i), x1.max(i), y0.min(j), y1.max(j));
                 }
             }
@@ -997,7 +1197,7 @@ mod tests {
         // Roughly round: the covered share of the bounding square near π/4.
         let covered = (0..im.px)
             .flat_map(|j| (0..im.px).map(move |i| (i, j)))
-            .filter(|&(i, j)| im.albedo[im.at(top, i, j)][3] == 255)
+            .filter(|&(i, j)| im.albedo[im.at(top, i, j)][3] >= 128)
             .count() as f32;
         let fill = covered / (w * h) as f32;
         assert!((0.55..=0.95).contains(&fill), "top fill {fill}");
@@ -1022,7 +1222,7 @@ mod tests {
                         let cov = |i: i32, j: i32| {
                             (0..im.px as i32).contains(&i)
                                 && (0..im.px as i32).contains(&j)
-                                && im.albedo[im.at(vi, i as u32, j as u32)][3] == 255
+                                && im.albedo[im.at(vi, i as u32, j as u32)][3] >= 128
                         };
                         let (ii, jj) = (i as i32, j as i32);
                         if !cov(ii, jj)
@@ -1077,7 +1277,7 @@ mod tests {
         let im = bake(shrub, 5, shrub.stages - 1, &c, 16);
         let grown = grow(shrub, 5, shrub.stages - 1);
         assert!(!grown.cells.is_empty());
-        assert!(im.albedo.iter().any(|a| a[3] == 255));
+        assert!(im.albedo.iter().any(|a| a[3] >= 128));
         // Smaller than an oak: the bounding sphere follows the tree.
         let oak = bake(find("dwell:oak").unwrap(), 5, 7, &c, 16);
         assert!(im.radius < oak.radius);
@@ -1109,7 +1309,7 @@ mod tests {
         let widths: Vec<usize> = (0..full.px)
             .map(|j| {
                 (0..full.px)
-                    .filter(|&i| full.albedo[full.at(0, i, j)][3] == 255)
+                    .filter(|&i| full.albedo[full.at(0, i, j)][3] >= 128)
                     .count()
             })
             .filter(|&w| w > 0)
@@ -1331,5 +1531,124 @@ mod crown_match {
             "impostor crown area {area:.2} of the real"
         );
         assert!(iou > 0.7, "impostor crown overlap {iou:.2}");
+    }
+
+    #[test]
+    fn ao_is_off_by_default_and_darkens_texels_deep_in_the_crown_when_on() {
+        // face-a-only: the bake's own frame.
+        let c = Config::get();
+        assert_eq!(
+            c.ao_strength, 0.0,
+            "opt-in until the owner approves the look"
+        );
+        let s = &crate::species::SPECIES[0];
+        let plain = bake(s, 3, 7, c, 32);
+        assert!(
+            plain.albedo.iter().all(|a| a[3] == 0 || a[3] == 255),
+            "AO off: every covered texel open"
+        );
+        let text = include_str!("../../../shared/trees/impostors/impostors.json");
+        let mut v: serde_json::Value = serde_json::from_str(text).unwrap();
+        v["ao"] = serde_json::json!({ "strength": 0.6, "radiusM": 1.5 });
+        let on = Config::parse(&v.to_string()).unwrap();
+        // A full block of leaves: its middle is darker than a lone cell (nothing about it).
+        let mut cells = std::collections::BTreeMap::new();
+        for x in 0..5 {
+            for y in 0..10 {
+                for z in 0..5 {
+                    cells.insert([x, y, z], Part::Leaf);
+                }
+            }
+        }
+        let grid: HashMap<[i32; 3], Part> = cells.iter().map(|(k, p)| (*k, *p)).collect();
+        let deep = occlusion(&grid, [2.5, 2.5, 2.5], &on);
+        let lone: HashMap<[i32; 3], Part> = [([0, 0, 0], Part::Leaf)].into_iter().collect();
+        let open = occlusion(&lone, [0.5, 0.25, 0.5], &on);
+        assert_eq!(open, 1.0);
+        assert!(
+            (deep - 0.4).abs() < 1e-4,
+            "{deep}: inside, every neighbour filled"
+        );
+        // The real tree baked with it: some texels darker, coverage unchanged.
+        let dark = bake(s, 3, 7, &on, 32);
+        let covered = |im: &Impostor| im.albedo.iter().filter(|a| a[3] >= 128).count();
+        assert_eq!(covered(&dark), covered(&plain));
+        let mean = dark
+            .albedo
+            .iter()
+            .filter(|a| a[3] >= 128)
+            .map(|a| texel_ao(a[3]))
+            .sum::<f32>()
+            / covered(&dark) as f32;
+        assert!((0.5..0.98).contains(&mean), "mean occlusion {mean}");
+        assert_eq!(texel_ao(ao_alpha(0.37)), (0.37f32 * 127.0).round() / 127.0);
+        v["ao"] = serde_json::json!({ "strength": 2.0, "radiusM": 1.5 });
+        assert!(
+            Config::parse(&v.to_string())
+                .unwrap_err()
+                .contains("ao.strength")
+        );
+        v["ao"] = serde_json::json!({ "strength": 0.5, "radiusM": 1.5, "x": 1 });
+        assert!(Config::parse(&v.to_string()).unwrap_err().contains("ao.x"));
+    }
+
+    #[test]
+    fn a_mip_halves_each_view_alone_keeping_coverage_and_palette_colours() {
+        // face-a-only: the atlas's texels.
+        let c = Config::get();
+        assert!(!c.mips, "opt-in until the owner approves the look");
+        let (leaf, log) = ([10u8, 200, 30], [90u8, 60, 20]);
+        // Two views side by side, 4 px each: view 0 three-quarters covered (3 leaf, 1 log of
+        // each 2×2), view 1 a quarter covered.
+        let mut im = Impostor {
+            px: 4,
+            cols: 2,
+            rows: 1,
+            centre: [0.5, 5.0, 0.5],
+            radius: 5.0,
+            views: vec![[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+            albedo: vec![[0; 4]; 32],
+            normal_depth: vec![[128, 128, 128, 255]; 32],
+        };
+        for j in 0..4 {
+            for i in 0..4 {
+                let (a, b) = (im.at(0, i, j), im.at(1, i, j));
+                let q = (i % 2, j % 2);
+                if q != (1, 1) {
+                    let rgb = if q == (0, 0) { log } else { leaf };
+                    im.albedo[a] = [rgb[0], rgb[1], rgb[2], ao_alpha(0.5)];
+                    im.normal_depth[a] = [255, 128, 128, 100];
+                }
+                if q == (0, 0) {
+                    im.albedo[b] = [leaf[0], leaf[1], leaf[2], 255];
+                }
+            }
+        }
+        assert_eq!(Impostor::mip_levels(4), 3);
+        assert_eq!(Impostor::mip_levels(48), 1, "not a power of two: no chain");
+        let (a1, n1) = im.mip(1);
+        assert_eq!(a1.len(), 8, "4 × 2 texels");
+        for y in 0..2 {
+            for x in 0..4 {
+                let t = a1[y * 4 + x];
+                if x < 2 {
+                    assert_eq!(&t[..3], &leaf, "the commonest colour, a palette leaf");
+                    assert_eq!(t[3], ao_alpha(0.5));
+                    assert_eq!(n1[y * 4 + x], [255, 128, 128, 100]);
+                } else {
+                    assert!(
+                        t[3] < 128,
+                        "a quarter covered: empty, view 0 never bleeds in"
+                    );
+                }
+            }
+        }
+        let (a2, _) = im.mip(2);
+        assert_eq!(a2.len(), 2);
+        assert!(a2[0][3] >= 128 && a2[1][3] < 128);
+        // A real bake's chain ends at one texel a view.
+        let b = bake(&crate::species::SPECIES[0], 3, 7, c, 16);
+        let last = Impostor::mip_levels(16) - 1;
+        assert_eq!(b.mip(last).0.len(), (b.cols * b.rows) as usize);
     }
 }

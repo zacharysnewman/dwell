@@ -523,12 +523,12 @@ pub struct DayState {
     pub airless: bool,
     /// Whether the viewer stands on the sky's moon itself (the `dwell:moon` grid; false from
     /// [`DayNight::state`]): its sky has no moon halo and its ground no moonlight, as well as no
-    /// disc (BUGS.md #142).
+    /// disc (BUGS.md #143).
     pub on_moon: bool,
     /// Whether the viewer stands on the sky's sun itself (`dwell:sun`): its sky draws no sun disc
-    /// or sun halo (BUGS.md #144).
+    /// or sun halo (BUGS.md #145).
     pub on_sun: bool,
-    /// A grid's light rig's lights (`grids.json` `light.bodies`, BUGS.md #144): the bodies that
+    /// A grid's light rig's lights (`grids.json` `light.bodies`, BUGS.md #145): the bodies that
     /// light it by their reflected light, both faces; zero on home.
     pub rig: [RigLight; 2],
     /// The sun lights nothing (`light.sunlit` false: the viewer is on the sun).
@@ -642,7 +642,7 @@ impl DayState {
         let saturation = self.viewer(adapted_a).saturation;
         // The celestial model's moonlight (M-4): the night floor plus the rest by the lit share
         // (each face's own horizon weighs it in the shaders, `own`).
-        // None on the moon itself: it neither glows nor shines in its own sky (BUGS.md #142).
+        // None on the moon itself: it neither glows nor shines in its own sky (BUGS.md #143).
         let moon_light = if self.on_moon {
             0.0
         } else {
@@ -706,7 +706,7 @@ impl DayState {
         put(with(o.glow, o.glow_strength));
         put(with(o.band, o.band_strength));
         put(with(o.sun_disc, o.moon_glow * moon_glow));
-        // z: the viewer is on the sun (its disc and halo not drawn, BUGS.md #144).
+        // z: the viewer is on the sun (its disc and halo not drawn, BUGS.md #145).
         put([
             self.air.stars(o.stars),
             self.fog_density(face.other()),
@@ -718,7 +718,7 @@ impl DayState {
         // w: the moon's far disc drawn (1) or not (0: the viewer is on the moon).
         let shown = if self.moon_shown { 1.0 } else { 0.0 };
         put([self.air.thin, self.air.limb, self.air.limb_weight, shown]);
-        // A grid's light rig (BUGS.md #144): each light's direction and linear light.
+        // A grid's light rig (BUGS.md #145): each light's direction and linear light.
         for r in &self.rig {
             put([r.direction[0], r.direction[1], r.direction[2], 0.0]);
             put([r.light[0], r.light[1], r.light[2], 0.0]);
@@ -801,7 +801,7 @@ struct DaySky {
     // ground's sky, exactly), y the limb's elevation sine in the viewer's face's frame, z how much
     // of the limb shows (0 for a viewer far past the rim), w whether the moon's far disc is drawn.
     space: vec4f,
-    // A grid's light rig (grids.json `light.bodies`, BUGS.md #144): each light's direction (xyz,
+    // A grid's light rig (grids.json `light.bodies`, BUGS.md #145): each light's direction (xyz,
     // toward it) and its linear light (rgb); zero on home.
     rig0_dir: vec4f,
     rig0: vec4f,

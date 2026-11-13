@@ -427,7 +427,7 @@ both_faces!(
         for &(x, z) in mare.iter().step_by(4) {
             let (cx, cz) = (x.floor() as i64, z.floor() as i64);
             assert_eq!(t.surface_block(f.face, cx, cz), dark);
-            // The top may be one of the block's ramps (BUGS.md #143): its base block.
+            // The top may be one of the block's ramps (BUGS.md #144): its base block.
             assert_eq!(
                 base_of(top_cell(&t, f, cx, cz)),
                 base_of(dark),
@@ -538,7 +538,7 @@ both_faces!(
 /// Home has air, no sky disc and a coarse mesh to be seen by from the moon (M-6), and no grid LOD
 /// (its far view is its own LOD tree); the moon has no air (its sky is space at its ground), a
 /// coarse mesh of its surface (MOON_WORLD.md §5 M-5, §7.3) and a LOD reaching past its disc, as
-/// the sun does (BUGS.md #142, #144).
+/// the sun does (BUGS.md #143, #145).
 // both-faces: the grids' data; no face enters.
 #[test]
 fn the_moon_is_airless_and_has_a_near_mesh() {
@@ -568,7 +568,7 @@ fn the_moon_is_airless_and_has_a_near_mesh() {
 
 both_faces!(
     /// The moon's slopes are ramped, not a field of bare ½ m stairs (owner, 0.61: "moon rock should
-    /// have slopes, seems to only be generating half blocks"; BUGS.md #143): over generated chunks
+    /// have slopes, seems to only be generating half blocks"; BUGS.md #144): over generated chunks
     /// across the disc, a ½ m edge (a 4-neighbour exactly one row lower) under a flat top is bare;
     /// few are (the measure of `realistic_steps.rs`), the pieces are the ground's own ramp family,
     /// placed through the face's frame (hanging on face B). (Its ground is rarely 45° steep, so

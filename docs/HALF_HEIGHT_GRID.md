@@ -245,7 +245,7 @@ blocks they should transform into flat blocks".
   where it is placed, when a block a worldgen surface rule can place (a biome band, a rock's face/cap/scree,
   the snow line's covers, a soil type, a grid world's ground, lava's rock) has no `<m>_ramp`. A grid
   world's generator shapes them by its data (`grids.json` `generator.ramps`: `none`, `strict` §4 or `notched`;
-  BUGS.md #143): the moon's is `notched`, home's Realistic rule, since on its rolling craters the strict rule
+  BUGS.md #144): the moon's is `notched`, home's Realistic rule, since on its rolling craters the strict rule
   left 36–43 % of ½ m edges bare (diagonal contours) and the notched rule leaves under 1 %
   (`dwell-worldgen` `tests/grids.rs` `moon_slopes_are_ramps_not_bare_half_metre_stairs`, both faces).
 - **Notched ramps** (`ramps::top_of_notched`): where the rock shapes the ground (rocks.json

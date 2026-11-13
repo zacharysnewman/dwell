@@ -189,6 +189,11 @@ pub trait Scene: TerrainRenderer {
     fn collision_cells_per_tick(&self) -> usize {
         dwell_physics::terrain::COLLISION_CELLS_PER_TICK
     }
+    /// The chunks the prediction builds collision for ahead of the player, and how many a tick
+    /// (shared/render/streaming.json `collisionAhead` by tier; WORK_QUEUE item 16).
+    fn collision_ahead(&self) -> dwell_physics::terrain::CollisionAhead {
+        dwell_physics::terrain::CollisionAhead::default()
+    }
     /// Rewrites chunk `coord`'s heightfield tile alone (none: its water is gone), its meshes kept.
     fn set_water_tile(
         &mut self,
@@ -807,8 +812,8 @@ pub struct Game<S: Scene> {
     /// The grids whose coarse surface mesh the scene holds (`grid_bodies.rs`, MOON_WORLD.md §5
     /// M-5), built the first time each is drawn.
     grid_meshes: std::collections::HashSet<u8>,
-    /// The distant terrain's rings of the grid the view is on (`grid_lod.rs`; BUGS.md #142,
-    /// #144), and that grid's far source.
+    /// The distant terrain's rings of the grid the view is on (`grid_lod.rs`; BUGS.md #143,
+    /// #145), and that grid's far source.
     grid_lod: crate::grid_lod::GridLod,
     grid_lod_src: Option<(
         u8,
@@ -976,6 +981,13 @@ pub struct Game<S: Scene> {
     lod_map: Option<crate::lod_map::LodMap>,
     /// Far trees tiles asked of the workers and not back yet (render/impostors.rs).
     far_tree_jobs: std::collections::HashSet<(u8, i32, i32)>,
+    /// Far trees tiles as the generator lists them (the felled are left out of what is drawn,
+    /// `impostors::standing_trees`), the felled trees seen (face bit, anchor), and the tiles whose
+    /// chunks arrived or changed since they were filtered.
+    far_tree_lists:
+        std::collections::HashMap<(u8, i32, i32), Vec<dwell_worldgen::impostor::FarTree>>,
+    far_tree_felled: std::collections::HashSet<(u8, [i32; 3])>,
+    far_tree_stale: std::collections::HashSet<(u8, i32, i32)>,
     lod_map_on: bool,
     /// The drawing's size in CSS pixels, for LOD selection.
     pub viewport_css: (f64, f64),
@@ -1222,6 +1234,9 @@ impl<S: Scene> Game<S> {
             unloads: Default::default(),
             lod_map: None,
             far_tree_jobs: Default::default(),
+            far_tree_lists: Default::default(),
+            far_tree_felled: Default::default(),
+            far_tree_stale: Default::default(),
             lod_map_on: false,
             viewport_css: (1280.0, 720.0),
             debug_note: String::new(),
@@ -1872,6 +1887,7 @@ impl<S: Scene> Game<S> {
             // that grid's); home streams again whole on the way back.
             Message::VoxelModification(_) if self.grid_drawn != 0 => {}
             Message::ChunkData(d) => {
+                self.far_trees_touched(d.coord);
                 // The server's data for the chunk: predictions in it are its business now.
                 self.prediction.forget_chunk(d.coord);
                 self.streamer.on_chunk_data(ChunkMessage::from(d))
@@ -1886,6 +1902,9 @@ impl<S: Scene> Game<S> {
             Message::VoxelModification(mut v) => {
                 // Cells showing a prediction keep it until their edits' ack (§6.5).
                 self.prediction.filter(&mut v.chunks);
+                for c in &v.chunks {
+                    self.far_trees_touched(c.coord);
+                }
                 if v.reason == dwell_protocol::VoxelModificationReason::Edit {
                     let changes = self.cell_changes(&v.chunks);
                     self.edit_sounds.changes(&changes, now_ms, &mut self.sounds);
@@ -2386,7 +2405,8 @@ impl<S: Scene> Game<S> {
                         Output::FarTrees(t) => t,
                         _ => Vec::new(),
                     };
-                    self.scene.borrow_mut().far_tree_tile((face, i, k), &trees);
+                    self.far_tree_lists.insert((face, i, k), trees);
+                    self.far_tree_stale.insert((face, i, k));
                 }
                 (Purpose::CloudNoise(detail, z0), Output::CloudNoise(texels)) => {
                     self.scene
@@ -3259,6 +3279,11 @@ impl<S: Scene> Game<S> {
             }
             self.send_drag_fill(fill, tries);
         }
+    }
+
+    /// The world's portals' axes (world x, z; the same on both faces; BIFACIAL_WORLD.md §12).
+    pub fn portal_axes(&self) -> &[[f64; 2]] {
+        &self.portals.0
     }
 
     /// The world's portals (BIFACIAL_WORLD.md §12): their axes and mote look, from the generator
@@ -4611,8 +4636,12 @@ impl<S: Scene> Game<S> {
         self.last_frame_ms = Some(now_ms);
         self.accumulator =
             (self.accumulator + elapsed * self.tick_rate).min(MAX_TICKS_PER_FRAME * TICK_MS);
-        let cells = self.scene.borrow().collision_cells_per_tick();
+        let (cells, ahead) = {
+            let scene = self.scene.borrow();
+            (scene.collision_cells_per_tick(), scene.collision_ahead())
+        };
         self.predictor.set_collision_cells_per_tick(cells);
+        self.predictor.set_collision_ahead(ahead);
         let t0 = telemetry::now_ms();
         while self.accumulator >= TICK_MS {
             self.accumulator -= TICK_MS;
@@ -5360,7 +5389,7 @@ impl<S: Scene> Game<S> {
             let frame = m.frame(self.grid_drawn, world_s);
             let sun = self.day.sun;
             self.day = crate::grid_view::day_on_grid(&self.day, &frame, self.grid_drawn);
-            // Its light rig (BUGS.md #144): the bodies lighting it from where they are.
+            // Its light rig (BUGS.md #145): the bodies lighting it from where they are.
             let all = dwell_worldgen::grids::grids();
             if let Some(rig) = all
                 .get(usize::from(self.grid_drawn))
@@ -5718,6 +5747,26 @@ impl<S: Scene> Game<S> {
         let keep: std::collections::HashSet<(u8, i32, i32)> =
             want.iter().map(|&(i, k)| (bit, i, k)).collect();
         scene.retain_far_tree_tiles(&|t| keep.contains(t));
+        self.far_tree_lists.retain(|t, _| keep.contains(t));
+        // The tiles whose trees or chunks changed: drawn short of the felled trees.
+        let store = self.streamer.store();
+        for key in std::mem::take(&mut self.far_tree_stale) {
+            let Some(trees) = self.far_tree_lists.get(&key) else {
+                continue;
+            };
+            let f = if key.0 == 1 {
+                FaceFrame::B
+            } else {
+                FaceFrame::A
+            };
+            let drawn = crate::render::impostors::standing_trees(
+                f,
+                trees,
+                |c| store.voxel_if_held(c),
+                &mut self.far_tree_felled,
+            );
+            scene.far_tree_tile(key, &drawn);
+        }
         let t = f64::from(crate::render::impostors::TILE_M);
         let d2 = |&(i, k): &(i32, i32)| {
             let dx = (f64::from(i) + 0.5) * t - local[0];
@@ -5743,6 +5792,16 @@ impl<S: Scene> Game<S> {
                     size,
                 },
             );
+        }
+    }
+
+    /// A chunk arrived or changed (`coord`, world chunk indices): its far trees tiles are filtered
+    /// for felled trees again at the next update.
+    fn far_trees_touched(&mut self, coord: [i32; 3]) {
+        for key in crate::render::impostors::tiles_of_chunk(coord) {
+            if self.far_tree_lists.contains_key(&key) {
+                self.far_tree_stale.insert(key);
+            }
         }
     }
 

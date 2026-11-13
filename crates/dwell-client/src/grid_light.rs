@@ -1,4 +1,4 @@
-//! A grid's light rig (`grids.json` `light`; BUGS.md #144; owner, 2026-11-13: "It needs some
+//! A grid's light rig (`grids.json` `light`; BUGS.md #145; owner, 2026-11-13: "It needs some
 //! directional lighting, let's make it from the earth and moon reflections" / "Sun should also be
 //! glowing generally 'due to the lava'"): on a grid with a `light`, the sun's light is kept or not
 //! (`sunlit`), each body it lists lights it from its true direction from the viewer with the
@@ -130,7 +130,7 @@ mod tests {
     }
 
     dwell_world::both_faces!(
-        /// On the sun (BUGS.md #144), standing on face `f` with home and the moon in its sky: the
+        /// On the sun (BUGS.md #145), standing on face `f` with home and the moon in its sky: the
         /// ground's lit side faces them (a surface facing home gets home's light, one facing away
         /// none of it), home the brighter; the sun lights nothing; and the strength follows each
         /// body's phase (from the sun every body is full; a viewer off the sun's line sees less).
@@ -230,7 +230,7 @@ mod tests {
     );
 
     dwell_world::both_faces!(
-        /// Home's lighting is unchanged (BUGS.md #144): its day packs every old slot as before,
+        /// Home's lighting is unchanged (BUGS.md #145): its day packs every old slot as before,
         /// the rig's lights zero, at every hour.
         fn homes_lighting_is_unchanged(f: FaceFrame) {
             for k in 0..24 {

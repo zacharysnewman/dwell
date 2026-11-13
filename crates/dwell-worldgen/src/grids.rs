@@ -78,10 +78,10 @@ pub struct GridDef {
     /// moon's and the sun's discs); false (home) draws its `near_mesh` from another grid at every
     /// distance instead (MOON_WORLD.md §5, M-6).
     pub sky_disc: bool,
-    /// The terrain drawn past the chunks while on it (`lod`, MOON_WORLD.md §5; BUGS.md #142):
+    /// The terrain drawn past the chunks while on it (`lod`, MOON_WORLD.md §5; BUGS.md #143):
     /// rings of its surface out to its horizon; `None` draws none (home has its own LOD tree).
     pub lod: Option<GridLodRule>,
-    /// What lights its ground while on it (`light`, BUGS.md #144); `None`: home's keyframes as
+    /// What lights its ground while on it (`light`, BUGS.md #145); `None`: home's keyframes as
     /// they are (home, and a grid that declares none).
     pub light: Option<LightRig>,
     pub generator: GridGenerator,

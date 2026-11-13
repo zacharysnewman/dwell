@@ -827,6 +827,12 @@ impl VoxelWorld {
         self.chunks.get_mut(&coord).expect("inserted")
     }
 
+    /// Whether a read of the chunk gives its real voxels: it is stored, or this world generates
+    /// its chunks (a streamed world's missing chunk reads as air until it arrives).
+    pub fn holds_or_generates(&self, coord: ChunkCoord) -> bool {
+        self.generator.is_some() || self.chunks.contains_key(&coord)
+    }
+
     pub fn find(&self, coord: ChunkCoord) -> Option<&Chunk> {
         self.chunks.get(&coord).map(|c| &**c)
     }
@@ -856,6 +862,18 @@ impl VoxelWorld {
     pub fn get_voxel_if_loaded(&self, [x, y, z]: [i32; 3]) -> StateId {
         let c = chunk_of(x, y, z);
         self.chunks.get(&c).map_or(0, |ch| {
+            ch.get(
+                x - c.x * CHUNK_SIZE,
+                y - c.y * CHUNK_SIZE,
+                z - c.z * CHUNK_SIZE,
+            )
+        })
+    }
+
+    /// The voxel of a stored chunk, `None` where its chunk isn't held: a read that never generates.
+    pub fn voxel_if_held(&self, [x, y, z]: [i32; 3]) -> Option<StateId> {
+        let c = chunk_of(x, y, z);
+        self.chunks.get(&c).map(|ch| {
             ch.get(
                 x - c.x * CHUNK_SIZE,
                 y - c.y * CHUNK_SIZE,

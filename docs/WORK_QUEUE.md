@@ -185,6 +185,8 @@ Still open:
    - Next: the owner's iPhone on a build with the cards off. If still slow: the arms pass (its own pass: a store and
      reload on a tile GPU), the composite (~2.2 ms), the caustic tile (0.9 ms every other frame); why 0.52.101+
      releases still 404 under the bench.
+   - Built (branch `claude/collision-ahead`, owner's brief 2026-11-13: "build a newly reached chunk's collision ahead
+     of the player"): see item 16's fps-moving-5 status.
 
 5. **Leaves, option 5, with matching far trees.**
    - Leaf Lab option 5 at its defaults ("#5 looks really good with defaults"): canopy normals 75 %,
@@ -733,6 +735,15 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    (`collisionCellsPerTick`, the cells in reach at once; the player moves the same); the 6× ticks' worst 15.8–19.8 →
    10.9–18.8 ms (BUGS.md #72 round 6); #642's contact hook costs nothing measurable here. Left: building a newly
    reached chunk's collision ahead of the player, a real iPhone check while moving.
+   **Status (fps-moving-5, branch `claude/collision-ahead`):** owner's brief (2026-11-13): "build colliders for chunks
+   in the player's direction of travel before they're entered (a look-ahead by speed and heading, data), spread across
+   frames with a per-frame budget (data), off the critical frame where possible; a test that walking/flying at speed
+   into new chunks never waits on a collider … and that the per-frame budget holds; both faces." Built: the chunks a
+   moving player heads into built a few a tick (`collisionAhead` in `shared/render/streaming.json`: 1 s, ≤ 48 m, the
+   reach + 1 m, ≥ 1 m/s; 2 a tick desktop and server, 1 phone), only once their neighbours are held; natively no chunk
+   reached unbuilt and the phone's worst terrain tick 3.2 → 1.5 ms flying (BUGS.md #72 round 7). Still on the main
+   thread, spread rather than moved off it (the prediction's collider lives in the tick). Left: the `phone-moving`
+   bench at 6× locally, a real iPhone check while moving.
 17. **Axe swing directions and animation tools** (owner 2026-11-11: "The axe animations are still trash. They
    don't swing in the right direction at all. Make yourself some tools to properly observe animations, movement
    directions, positions over time, etc. Should swing right to left for horizontal and up to down for vertical";
@@ -1203,9 +1214,9 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    generator shapes stored ramps by home's rule, as data on the grid's generator; (3) real LOD on the moon and the
    sun to their horizons (any grid); (4) M-6: home drawn in the moon's sky at its direction and size; (5) a light rig
    per grid as data: the bodies that light it (their reflected light by albedo, phase and apparent size), a minimum
-   ambient, and on the sun a warm lava glow from below; home's lighting unchanged. BUGS.md #142–#144. Branch
+   ambient, and on the sun a warm lava glow from below; home's lighting unchanged. BUGS.md #143–#145. Branch
    `claude/moon-fixes-3-l0zjdx`.
-   **Built natively (0.63.0, a new line):** all five (BUGS.md #142–#144 say how; MOON_WORLD.md §7.3). **Left:** the
+   **Built natively (0.63.0, a new line):** all five (BUGS.md #143–#145 say how; MOON_WORLD.md §7.3). **Left:** the
    browser look on a GPU (`moon-draw`, `sun-draw`); shadows from the rig's lights; the rig on water and characters.
 28. **An atmosphere: the sky thinning to space** (owner 2026-11-12: "We likely need an atmosphere transition now
    between sky thinning to space. Clouds shouldn't extend past the earth atmosphere either."). With flight to the
@@ -1253,6 +1264,15 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    16:48). **Waiting on the owner:** pick A–D (or a value between); its numbers move to the top of fog.json.
    **Owner, 2026-11-12: "Yeah let's go with D on haze."** Done: fog.json's half distance 6 km (was 16 km) and scale
    height 1 km (was 1.8 km), density 0.95; the pinned fog values updated.
+
+   **A bluer day sky** (owner, 2026-11-13, after sharing a Monument Valley photo — deep saturated blue overhead fading
+   to a lighter, slightly hazy blue at the horizon: **"Also can you make our sky a bit bluer like in that screenshot,
+   with blue to lighter blue gradient on the horizons?"**). **Done (branch `claude/sky-blue`):** daynight.json's
+   morning, noon and afternoon keyframes: zenith #2b68c4 / #2563c6 / #2a66c4 (was #6098d8 / #649ada / #6098d6),
+   horizon #a8c6e6 / #9cc0ea / #a9c5e4 (was a near-white #e2e2d8 / #e5e5e1 / #e6e2d4). The fog takes the sky's colour
+   below the horizon, so far hills now fade into the lighter blue. Sunrise, the golden hours, sunset, dusk, night and
+   the atmosphere's fade to space are unchanged (a test pins both). **Owner should see:** midday at the spawn looking
+   at the horizon and 45° up, and far hills from a height — side-by-sides in the PR.
 30. **Desktop frame rate on the M1 and hidden graphics settings (P0)** (owner 2026-11-12: "It seems like we're
    hiding some performance settings. I don't see 'tree' options in our settings for graphics. I think cards are
    killing my m1 mac too." / "Running 26fps." / "GPU at 31ms"). The desktop default preset is High (leaf cards
@@ -1375,6 +1395,25 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    green. Left: the in-game look from high up at night (a local check).
 
    Owner, 2026-11-12, on the 48 m hand-over side-by-sides: **"Distant trees looks solid handover."**
+   **The rest, round 1 (2026-11-13, cloud, `claude/impostors-rest`; brief: felled trees out, trunks handed over,
+   AO + mips in the bake, the phone atlas by data, I-4, I-5 shadows last; any visible change opt-in data until the
+   owner approves it from same-spot before/after shots):** **felled trees left out** — each far tree carries its
+   stem (`Planter::stem`: the trunk column's bottom cell and up to 16 solid cells above), and the game drops a tree
+   whose held stem has air in it, remembers it after its chunk unloads, and re-filters a tile when its chunks arrive
+   or change (`impostors::standing_trees`; tests `a_far_trees_stem_is_its_trunk_and_air_in_it_fells_it`, both faces,
+   and `a_felled_tree_leaves_its_tile_and_stays_out_after_its_chunk_unloads`). Not seen: a tree felled in a chunk
+   the client never held (past the loaded chunks the generator's tree is drawn). **AO and mips baked, opt-in
+   (off):** `impostors.json` `ao.strength` (0 off; try 0.5) and `mips` (false); tests on the bake (occlusion deep in a
+   crown, coverage unchanged, a mip halves each view alone keeping coverage and palette colours) and on the upload's
+   chain. **For the orchestrator (local GPU):** same-spot before/after at `forest:edge` and 80/150 m with
+   `ao.strength` 0.5 and `mips` true (each alone and both); expected: far crowns darker inside (closer to the near
+   crowns' shade at 48 m), less sparkle and noise past ~120 m. **Phone atlas by data:** already `viewPx.phone`
+   (32 px); the pick is now `impostors::tier_for`, with a test that the phone's atlas is a quarter of the
+   desktop's. **Not done:** the trunks' hand-over (logs are in the opaque mesh; handing them over means moving tree
+   logs into the cutout mesh with the leaves' fade marker, and the mesher can't tell a tree's log from a player's
+   log wall, which would vanish past 48 m with no impostor: needs an owner call); I-4 (`lod_trees.rs` still draws
+   the far trees until the impostors are ready, BUGS.md #106's gate, and for `?impostors=0` / the bench's
+   `impostors-off`); I-5 shadows (GPU work, local).
 32. **A tall dense forest for performance reference** (owner 2026-11-12: "We should have a tall dense forest
    biome/climate for performance reference on trees."). A biome preset (tall, closely spaced mature trees — an
    old-growth temperate rainforest of tall pines and broadleaf, thick undergrowth) placed by climate (cool and very
@@ -1698,6 +1737,10 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    scaling for the new player model. It's likely shorter and may need to be scaled up."** (items 37/38: the Peasant
    is your body, other players' and the villagers'). **Fixed (BUGS.md #140):** its soles were on the ground but its
    eyes 7.3 cm under the camera's; `models.json` `scale` 1.04 → 1.09 puts them at the camera's 1.62 m eye.
+   Owner, 2026-11-13: **"Is the first person model lined up with the ground though? The feet were first person
+   feet that didn't line up / seemed to be floating?"** **Fixed (BUGS.md #142):** your first-person body was moved
+   back whole (0.1–0.4 m) off its feet and their shadow; it now leans back from its soles, which stand where you do
+   on flat ground, ramps and slopes.
 39. **Livelier animals** (owner 2026-11-12, after the video had no chase or fleeing — on day one every pack is
    kilometres from any herd and players can't scare deer): chose **deer flee from players** (they notice a player
    within a distance by data, closer when crouching, and run off; wolves keep their distance unless hungry),
@@ -1991,7 +2034,7 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    be glowing generally 'due to the lava'." With item 27's three moon things (branch `claude/moon-fixes-3-l0zjdx`):
    the LOD per grid covers the sun; the sun is lit by home's and the moon's reflected light (each at its true
    direction, its strength by albedo, phase and apparent size, as data) and a warm lava ambient from below (data), the
-   lava's own glow and bloom kept. BUGS.md #144.
+   lava's own glow and bloom kept. BUGS.md #145.
 ## Done
 
 - **Underwater audio (owner 2026-11-12: "swimming underwater sounds like swimming on the water surface, when
@@ -2492,9 +2535,13 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    look in the browser: the picker, the minimap icons and the world waypoints were not drawn on a GPU here).
    Built: the data, generator and validator; the record (`dwell_protocol::markers`, golden vector); the
    world's `markers` table; the `markers.private` capability and `Markers` 0x6C; the big map's place / edit /
-   drag / delete; the minimap; the world waypoints (a HUD part); spawn and last-death auto markers. **Left:**
-   a list view of the markers; portals (the `portal` kind is data, nothing notes one until portals exist);
-   a marker placed on the big map takes the player's height on that face, not the ground's under the click. Owner 2026-11-12:
+   drag / delete; the minimap; the world waypoints (a HUD part); spawn and last-death auto markers. The rest
+   **built 2026-11-13** (branch `claude/markers-rest`, the brief "map markers, the rest"): the big map's
+   **markers list** (a side panel: icon, label, distance and the way from the player, nearest first; a row centres
+   the map on it, edit, delete; the filters apply); **portal auto markers** (each opening the player comes within
+   the render radius of, on its face, standing on its rim); a marker placed or dragged on the big map **stands on
+   the ground there** (the loaded column's top, else the map's height, face-local). Needs the owner's look in the
+   browser (no GPU here). Owner 2026-11-12:
    **"Let's use non-Unicode vector style symbols to let you annotate your own map so you can find your way
    around."** / **"Add that to the queue."** Answers: shown on the **big map (M), the minimap and in the world** (a
    waypoint over its spot with its distance); **private to the player** (saved with the world for that player); a

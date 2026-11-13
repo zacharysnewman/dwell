@@ -4300,7 +4300,7 @@ dwell_world::both_faces!(
         let scene = rig.scene.borrow();
         assert!(
             !scene.poses.iter().any(|p| p.0 == moon_id),
-            "on the moon its coarse mesh gives way to its rings (BUGS.md #142)"
+            "on the moon its coarse mesh gives way to its rings (BUGS.md #143)"
         );
         // Its distant terrain: every ring of its `lod` held and drawn in its own frame.
         let rule = dwell_worldgen::grids::grid("dwell:moon")
