@@ -6,6 +6,14 @@ pins it.
 
 ## Open
 
+### 142. `dwell-sim` `items.rs` `dying_in_adventure_drops_everything_where_the_player_died` fails on main
+
+Found 2026-11-13 (branch `claude/collision-ahead`, not caused by it: the same failure on main at 0.61.1 and after
+merging main): both faces fail at `items.rs:202`, `a stack a slot: []`: `kill_player` in adventure leaves no loose
+items (4 expected: the starting axe, two stacks of dirt, the sticks). Suspect: the defeat kneel (WORK_QUEUE item 55,
+"humans don't die") changed what a kill does, and the test still expects the old death drop. Not investigated
+further; the owner decides whether a defeated player drops their items.
+
 ### 135. Flat ground on a plateau can show a sandstone wall's face (red sandstone) instead of a tread
 
 Found 2026-11-13 while fixing #134 (Realistic, seed 42 face A, e.g. (−6000, −3500) and (−4250, 0)): a few wide, flat
@@ -1638,6 +1646,33 @@ tree trunks with the leaf cards. What might be dropping frames since the last wh
   between frames was tried and parked (on the test's generated world the builds ahead read neighbours that then
   changed, and their rebuilds landed in the ticks; it needs a streamed-world test). Still open: that, and a real
   iPhone check while moving.
+- **Round 7 (branch `claude/collision-ahead`): a newly reached chunk's collision built ahead.** The chunks a
+  moving player (≥ 1 m/s) is heading into are built before its reach gets there, a few a tick
+  (`TerrainCollision::ahead_chunks` / `ensure_ahead`; data: `shared/render/streaming.json` `collisionAhead`, 1 s of
+  travel, ≤ 48 m, the reach + 1 m; 2 chunks a tick on the server and a desktop, 1 on a phone), and their cells go in
+  first from the background budget. Round 6's parked problem is handled: a chunk is built ahead only once the world
+  holds (or generates) the 26 chunks around it, so a streamed neighbour's arrival never rebuilds it. A standing
+  player builds nothing ahead and its cells go in in the old order (the explosives debris test, chaotic, settled in
+  17.95 s instead of 9.75 s while a standing player's chunks were reordered; now the same as main, and the golden
+  five-player trace unchanged). Tests `dwell-physics` `tests/collision_ahead.rs` (both faces, `DWELL_FACE=b`, and
+  far out): sprinting and flying (levels 4 and 6, the phone's 1 a tick) across chunk borders build no chunk on the
+  tick that reaches it and never stand the player in an unbuilt chunk, red without the look-ahead (each test checks
+  its own run without it reaches chunks unbuilt); the budget holds with many chunks ahead; on a streamed world (the
+  client's) every build is the look-ahead's, one a tick, none a rebuild (red with it off: tick 4 built when reached);
+  the feet equal the run without it on every tick. Measured natively (`measure_the_tick_cost_with_and_without_the_look_ahead`,
+  ignored: 600 ticks over the seed-0 terrain, the path pre-generated; `Players::tick_terrain` ms, a cloud container):
+
+  | Run | cells/tick | ahead/tick | reached unbuilt | built ahead | mean | p99 | max | ticks > 2 ms |
+  | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+  | sprint | 8192 | 0 → 2 | 10 → 0 | 0 → 20 | 0.044 → 0.090 | 1.11 → 1.39 | 2.93 → 1.98 | 2 → 0 |
+  | fly 6 | 8192 | 0 → 2 | 62 → 0 | 0 → 66 | 0.172 → 0.192 | 2.38 → 1.84 | 3.35 → 2.67 | 8 → 4 |
+  | fly 6 | 1024 (phone) | 0 → 1 | 62 → 0 | 0 → 66 | 0.145 → 0.152 | 2.36 → 0.92 | 3.25 → 1.49 | 7 → 0 |
+  | fly 8 | 1024 (phone) | 0 → 1 | 94 → 3 | 0 → 95 | 0.120 → 0.138 | 1.83 → 1.19 | 3.21 → 1.60 | 4 → 0 |
+
+  The work is the same or a little more (a chunk beside the path is built too), spread: the phone's worst terrain
+  tick about halves, none over 2 ms. At fly level 8 one a tick lets 3 of ~95 chunks be reached first. Not measured
+  in the browser (no GPU in the cloud session): the `phone-moving` bench at CPU 6× before and after, and a real
+  iPhone check while moving, are left.
 
 ### 71. "Starting the graphics" takes a long time with no elapsed time shown (fixed after 0.52.101)
 

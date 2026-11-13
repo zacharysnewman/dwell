@@ -185,6 +185,8 @@ Still open:
    - Next: the owner's iPhone on a build with the cards off. If still slow: the arms pass (its own pass: a store and
      reload on a tile GPU), the composite (~2.2 ms), the caustic tile (0.9 ms every other frame); why 0.52.101+
      releases still 404 under the bench.
+   - Built (branch `claude/collision-ahead`, owner's brief 2026-11-13: "build a newly reached chunk's collision ahead
+     of the player"): see item 16's fps-moving-5 status.
 
 5. **Leaves, option 5, with matching far trees.**
    - Leaf Lab option 5 at its defaults ("#5 looks really good with defaults"): canopy normals 75 %,
@@ -733,6 +735,15 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    (`collisionCellsPerTick`, the cells in reach at once; the player moves the same); the 6× ticks' worst 15.8–19.8 →
    10.9–18.8 ms (BUGS.md #72 round 6); #642's contact hook costs nothing measurable here. Left: building a newly
    reached chunk's collision ahead of the player, a real iPhone check while moving.
+   **Status (fps-moving-5, branch `claude/collision-ahead`):** owner's brief (2026-11-13): "build colliders for chunks
+   in the player's direction of travel before they're entered (a look-ahead by speed and heading, data), spread across
+   frames with a per-frame budget (data), off the critical frame where possible; a test that walking/flying at speed
+   into new chunks never waits on a collider … and that the per-frame budget holds; both faces." Built: the chunks a
+   moving player heads into built a few a tick (`collisionAhead` in `shared/render/streaming.json`: 1 s, ≤ 48 m, the
+   reach + 1 m, ≥ 1 m/s; 2 a tick desktop and server, 1 phone), only once their neighbours are held; natively no chunk
+   reached unbuilt and the phone's worst terrain tick 3.2 → 1.5 ms flying (BUGS.md #72 round 7). Still on the main
+   thread, spread rather than moved off it (the prediction's collider lives in the tick). Left: the `phone-moving`
+   bench at 6× locally, a real iPhone check while moving.
 17. **Axe swing directions and animation tools** (owner 2026-11-11: "The axe animations are still trash. They
    don't swing in the right direction at all. Make yourself some tools to properly observe animations, movement
    directions, positions over time, etc. Should swing right to left for horizontal and up to down for vertical";
