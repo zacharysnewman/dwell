@@ -95,8 +95,12 @@ fn fnv(h: &mut u64, bytes: &[u8]) {
 /// climate's top stage, so the starter's drier biomes grow shorter grass; a change of the starter's
 /// terrain, so it waits on the owner's next line (0.55) with item 32's.
 /// Re-pinned for both together (the 0.55 line).
+/// Re-pinned 2026-11-13: the combined 0.55 pin (58f72da, merged in #841) never matched the code it was
+/// committed with: at 58f72da itself, and at every first-parent merge from #841 to #868, the starter
+/// hashes to the values below (each branch's own pin, f53b86d's and 0416b7b's, passes at its commit),
+/// so no later merge changed the starter: this is the terrain the 0.55 line has shipped since 0.55.0.
 const STARTER_PIN: [(Face, &str); 2] =
-    [(Face::A, "2b6acef641e7c3c1"), (Face::B, "6bda0e9d7104d279")];
+    [(Face::A, "5e9869d57483a3a3"), (Face::B, "a55324f4fdc776e2")];
 
 #[test]
 fn the_starter_worlds_terrain_is_unchanged() {
