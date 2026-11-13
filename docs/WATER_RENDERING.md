@@ -1309,3 +1309,23 @@ packed in the fluid table's last vec4 (`shore_soft`: x the feather, y the softne
 is the WGSL `foam_amount`'s mirror; its test pins the profile across the edge (no step over 0.08 between samples 5 mm
 apart; 0.52.6's was 0.28) and along it (never under half strength within the feather's first half, whatever the
 noise or time). Same cost: one more smoothstep bound.
+
+## 21. The shore foam's round corners (2026-11-13)
+
+Owner, 2026-11-13: "Can you make it smoother or thicker around corners, so it doesn't looks so squared off." §20's
+distance to the shore is the depth over a slope or the ray's path to a wall, both read from the depth buffer, so on
+blocky land the foam follows each block's outline: a sharp L into an inner corner, and nothing round an outer corner's
+diagonal. The foam now takes the least of those and a distance **across the surface**: the chunk mesher gives each
+liquid top cell with a solid neighbour in its own row (any of the 8; not liquid, not a cross plant) a mask of them
+(`dwell_look::waterflow::SHORE_W`…), draws that top alone (merged with none, so the mask is its own) and packs the mask
+over the vertex's fluid id (`dwell_mesh::fluid_with_shore`: id + 256 × mask; the shader unpacks it into a flat
+`FluidOut.shore` and passes the chunk-local `cell_xz`). The fragment's distance from its place in the cell to those
+neighbours is Euclidean, so an outer corner is a quarter circle, and an inner corner (two sides solid) is filleted with
+radius `shore.cornerRadiusM` (0.4 m, at most ½; `shared/look/waterflow.json`, the fluid table's `shore_soft.z`): the
+land filled out by a quarter circle, so the band rounds and thickens into the corner. Open water, LOD water and the
+heightfield carry no mask and draw §20's foam unchanged. `dwell_look::waterflow::shore_xz` is the WGSL `shore_xz`'s
+mirror; its tests pin an outer corner round (the same distance at the same Euclidean distance in every direction) and an
+inner corner without a step (no jump over a 2 mm grid, symmetric across the bisector, arcs inside the fillet), and a
+mesher test (both faces) the masks. The dev switch `?waterdbg=corners` turns it off for a side by side. Cost: a few
+min/length per foam fragment in shore cells; more, smaller water top quads along shores only.
+

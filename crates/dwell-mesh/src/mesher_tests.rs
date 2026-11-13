@@ -248,7 +248,7 @@ fn a_fluid_added_by_data_alone_is_meshed_with_its_own_surface_drop_and_opacity()
         } else {
             "dwell:water"
         };
-        assert_eq!(FLUIDS[f as usize].name, want, "vertex {v}");
+        assert_eq!(FLUIDS[crate::fluid_id(f) as usize].name, want, "vertex {v}");
     }
     assert!(opaque.fluids.is_empty());
 }
@@ -995,7 +995,7 @@ fn fluid_side_faces_stand_only_over_the_open_part_beside_them_and_under_the_flui
         let [a, b, c] = [t[0], t[1], t[2]].map(|i| vertex(&m.positions, i));
         // Every fluid face carries the water's fluid id (the water shader's parameters).
         for &i in t {
-            assert_eq!(m.fluids[i as usize], water_id);
+            assert_eq!(crate::fluid_id(m.fluids[i as usize]), water_id);
         }
         let n = [
             f64::from(m.normals[t[0] as usize * 3]),
@@ -3333,5 +3333,45 @@ dwell_world::both_faces!(
             leaf_vertices,
             "every leaf face drawn from the split"
         );
+    }
+);
+
+dwell_world::both_faces!(
+    /// The shore foam's corners (WATER_RENDERING.md §21; owner, 2026-11-13: 'smoother or thicker
+    /// around corners'): each water top beside the bank carries its solid neighbours (face-local,
+    /// the same on either face), drawn alone so the mask is its own; open water carries none.
+    fn a_water_top_carries_its_shore_neighbours(f: FaceFrame) {
+        use dwell_look::waterflow::{SHORE_N, SHORE_NW, SHORE_SW, SHORE_W};
+        // face B meshed mirrored: the scene hung from the chunk's top, its sky toward −y
+        let scene: Vec<_> = shore_scene()
+            .into_iter()
+            .map(|(x, y, z, m)| (x, if f.is_b() { N - 1 - y } else { y }, z, m))
+            .collect();
+        let m = mesh(&scene, f.is_b()).transparent;
+        let mut seen = std::collections::HashMap::new();
+        for t in m.indices.chunks_exact(3) {
+            let ny = m.normals[t[0] as usize * 3 + 1];
+            if ny.abs() < 0.9 {
+                continue;
+            }
+            let [a, b, c] = [t[0], t[1], t[2]].map(|i| vertex(&m.positions, i));
+            let cell = (
+                ((a[0] + b[0] + c[0]) / 3.0).floor() as i32,
+                ((a[2] + b[2] + c[2]) / 3.0).floor() as i32,
+            );
+            let v = m.fluids[t[0] as usize];
+            for &i in t {
+                assert_eq!(m.fluids[i as usize], v, "one mask per triangle");
+            }
+            seen.insert(cell, crate::shore_of(v));
+        }
+        assert_eq!(seen.get(&(7, 5)), Some(&SHORE_W));
+        assert_eq!(seen.get(&(7, 4)), Some(&SHORE_NW), "an outer corner");
+        assert_eq!(
+            seen.get(&(6, 4)),
+            Some(&(SHORE_W | SHORE_N | SHORE_NW | SHORE_SW)),
+            "an inner corner"
+        );
+        assert!(seen.iter().any(|(c, &s)| c.0 >= 8 && s == 0), "open water");
     }
 );
