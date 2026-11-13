@@ -2,6 +2,16 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.60.14",
+      "changes": [
+        "On the moon the sky is space: black, the stars out by day, the sun white; the sky is now space with home's day as a layer of its air, fading as you climb.",
+        "Approaching the moon you see its real cratered surface up close instead of a flat disc, and it stays under the ground as you land.",
+        "Crossing onto or off the moon, the view eases upright instead of turning at once.",
+        "On the moon the map is hidden with a note (home's map shows home only).",
+        "Creative flight speeds up in space only, so the moon is about half a minute away, and slows as you near the ground to land."
+      ]
+    },
+    {
       "version": "0.60.13",
       "changes": [
         "New world → Spawn now offers the moon and the sun, each face: start (and respawn) standing on that world.",
