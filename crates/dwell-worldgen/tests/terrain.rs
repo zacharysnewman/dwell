@@ -476,8 +476,17 @@ fn players_spawn_on_level_dry_ground_by_a_river_not_on_a_peak() {
     // near, the suitable land nearest the disc's centre first.
     let rule = dwell_worldgen::terrain::SURFACE;
     let mut by_river = 0;
+    // The spawn search's point (since 0.58 the spawn is the shrine nearest it, tests/shrines.rs).
     for seed in 0..16u64 {
-        let s = spawn_point_for(GENERATOR_TERRAIN, seed);
+        let t = dwell_worldgen::BifacialTerrain::new(seed);
+        let a = t.local(dwell_world::Face::A);
+        let s = a.spawn_search_point();
+        // With no grid shrine near the point, the spawn's own shrine stands on the patch (seed 3):
+        // the patch is then the shrine's floor, not open air (tests/shrines.rs checks its stand).
+        let sh = a.shrines().expect("shrines");
+        let spawn = sh.spawn_shrine(a);
+        let built_here = (f64::from(spawn.x) + 0.5 - s[0]).hypot(f64::from(spawn.z) + 0.5 - s[2])
+            <= f64::from(sh.reach() + 6);
         let mut world = VoxelWorld::new(generator_for(GENERATOR_TERRAIN, seed), None);
         // The feet stand on the top of a level patch's top cell (row g): no ramp tops it.
         let (x, g, z) = (s[0].floor() as i32, row_of_m(s[1]) - 1, s[2].floor() as i32);
@@ -505,6 +514,9 @@ fn players_spawn_on_level_dry_ground_by_a_river_not_on_a_peak() {
             for dx in -4..=4 {
                 assert!(solid(world.get_voxel(x + dx, g, z + dz)), "seed {seed}");
                 // Open: air, or a decoration players walk through (tall grass).
+                if built_here {
+                    continue;
+                }
                 let at = world.get_voxel(x + dx, g + 1, z + dz);
                 assert!(at == M.air || (decoration(at) && !solid(at)), "seed {seed}");
                 // Headroom: 2 m clear above the plant's cell.
@@ -1924,17 +1936,21 @@ dwell_world::both_faces!(
 fn existing_seeds_spawn_where_they_did() {
     // both-faces: pins each face's spawn. WORLD_SCALE.md §3.2's bounded spawn search changes only
     // searches that failed: seeds 0 and 7 spawn where they did before it (0.51.20), on both faces.
+    // Since 0.58 the spawn is the shrine nearest the search's point (tests/shrines.rs): the pin is
+    // the search's, which is unchanged.
     for (seed, a, b) in [
         (0u64, [2128.5, 162.0, 7544.5], [-1567.5, -187.5, 1208.5]),
         (7, [1688.5, 186.0, 7160.5], [-10557.5, -68.5, 2158.5]),
     ] {
+        let t = dwell_worldgen::BifacialTerrain::new(seed);
         assert_eq!(
-            spawn_point_for(GENERATOR_TERRAIN, seed),
+            t.local(dwell_world::Face::A).spawn_search_point(),
             a,
             "seed {seed} face A"
         );
+        let [x, y, z] = t.local(dwell_world::Face::B).spawn_search_point();
         assert_eq!(
-            dwell_worldgen::spawn_point_b_for(GENERATOR_TERRAIN, seed),
+            [x, dwell_world::FaceFrame::B.y(y), z],
             b,
             "seed {seed} face B"
         );

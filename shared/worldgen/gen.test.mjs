@@ -1082,3 +1082,98 @@ test('a bad climate entry fails naming it', () => {
     assert.throws(() => validateClimate(c), message);
   }
 });
+
+// ---- Resurrection shrines (shrines.json, docs/SHRINES.md) -----------------------------------------
+
+import { shrineStructure, shrinesRust, validateShrines } from './gen.mjs';
+
+const loadShrines = () =>
+  JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'shrines.json'), 'utf8'));
+
+test('the shrine design builds the owner\'s shrine: 8 × 8 m, a half circle of stepping pillars, the tallest half joined over a quarter circle', () => {
+  // Owner, 2026-11-12: "a 8x8m terraced and filled stone circle with stepping pillars forming a
+  // half circle. Only the tallest pillars (half of them) are connected at the top. Forming a
+  // quarter circle."
+  const d = loadShrines();
+  const { structure: s, pillars, lintel } = shrineStructure(d.structure, d.design, registryBlocks());
+  assert.equal(s.size[0], 8);
+  assert.equal(s.size[2], 8);
+  // Filled from the bottom row: every column of the circle has stone from row 0 up (no hollow).
+  const at = (x, y, z) => s.layers[y][z][x];
+  let floor = 0;
+  for (let z = 0; z < 8; z++)
+    for (let x = 0; x < 8; x++) {
+      if (at(x, 0, z) === '.') continue;
+      floor++;
+      for (let y = 0; y < d.design.base / 0.5; y++) assert.notEqual(at(x, y, z), '.', `${x},${y},${z}`);
+    }
+  assert.ok(floor >= 48, `${floor} floor columns`);
+  // Terraced: the centre stands higher than the rim by a row a step.
+  const top = (x, z) => {
+    let t = 0;
+    while (t < s.size[1] && at(x, t, z) === 's') t++;
+    return t;
+  };
+  assert.equal(top(4, 4) - top(4, 7), d.design.steps.length);
+  // The pillars: a half circle (180° to 360°, the −z half), all on one side of the axis.
+  const ids = [...new Set(pillars.map((p) => p.i))];
+  assert.equal(ids.length, d.design.pillars.count);
+  const degs = ids.map((i) => pillars.find((p) => p.i === i).deg);
+  assert.equal(Math.min(...degs), 180);
+  assert.equal(Math.max(...degs), 360);
+  for (const p of pillars) assert.ok(p.z <= 4, `${p.x},${p.z} on the back half`);
+  // Heights step up toward the arc's middle and back down: symmetric, strictly rising to it.
+  const h = ids.map((i) => pillars.find((p) => p.i === i).height);
+  const mid = (h.length - 1) / 2;
+  for (let i = 0; i < mid; i++) {
+    assert.ok(h[i + 1] > h[i], `rising ${h}`);
+    assert.equal(h[i], h[h.length - 1 - i], `symmetric ${h}`);
+  }
+  // The joined ones are the tallest half, spanning a quarter circle (90°).
+  const joined = ids.filter((i) => pillars.find((p) => p.i === i).joined);
+  assert.equal(joined.length, (d.design.pillars.count + 1) / 2);
+  const jh = joined.map((i) => h[i]);
+  const rest = ids.filter((i) => !joined.includes(i)).map((i) => h[i]);
+  assert.ok(Math.min(...jh) > Math.max(...rest), 'the joined are the tallest');
+  const jd = joined.map((i) => degs[i]);
+  assert.equal(Math.max(...jd) - Math.min(...jd), 90);
+  // The lintel lies only between joined pillars, at their tops, and every lintel cell is filled.
+  assert.ok(lintel.length > 0);
+  for (const p of pillars.filter((q) => !q.joined)) {
+    assert.ok(!lintel.includes(`${p.x},${p.z}`), 'no lintel over a lower pillar');
+    for (let y = p.top; y < s.size[1]; y++) assert.equal(at(p.x, y, p.z), '.', 'open over it');
+  }
+  const lintelCells = s.layers.flatMap((l) => l.join('')).join('').split('').filter((c) => c === 'l');
+  assert.ok(lintelCells.length > 0);
+  // The light stands at the centre of the dais.
+  assert.equal(at(4, top(4, 4), 4), 't');
+});
+
+test('the shrine rules validate, each world\'s overrides too, and the generated table is current', () => {
+  const d = loadShrines();
+  const v = validateShrines(d);
+  assert.equal(v.rules.spacing, 2000);
+  const rs = shrinesRust(v);
+  assert.equal(
+    rs,
+    readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../../crates/dwell-worldgen/src/shrines.gen.rs'), 'utf8'),
+  );
+  // A fixture world's overrides by data alone.
+  const w = validateShrines({ ...d, worlds: { 'test:fixture': { spacing: 900 } } });
+  assert.equal(w.worlds[0][1].spacing, 900);
+  assert.match(shrinesRust(w), /"test:fixture"/);
+  const bad = (patch, msg) => assert.throws(() => validateShrines({ ...d, ...patch }), msg);
+  bad({ spacing: 10 }, /spacing must be/);
+  bad({ jitter: 2 }, /jitter must be/);
+  bad({ structure: 'dwell:nothing' }, /structure "dwell:nothing" is not in/);
+  bad({ stand: [0, 9] }, /stand \[0,9\] lies outside/);
+  // Under the lintel: not open over the floor.
+  bad({ stand: [-2, -3] }, /stand \[-2,-3\] must stand on a floor/);
+  bad({ map: { ...d.map, reveal: 'sometimes' } }, /map.reveal must be one of/);
+  bad({ worlds: { x: { design: {} } } }, /worlds.x: unknown design/);
+  bad({ lodCellM: 12 }, /power of two/);
+  assert.throws(
+    () => shrineStructure(d.structure, { ...d.design, pillars: { ...d.design.pillars, count: 8 } }, registryBlocks()),
+    /pillars.count must be 1 more than a multiple of 4/,
+  );
+});

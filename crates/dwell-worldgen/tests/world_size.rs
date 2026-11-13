@@ -71,7 +71,9 @@ both_faces!(
         let ten = WorldSize::named("10x").expect("a named size");
         let big = BifacialTerrain::sized(11, ten);
         let g = big.local(f.face);
-        let s = g.spawn_point();
+        // The spawn search's ground (since 0.58 the spawn is the shrine nearest it, standing on its
+        // floor, which the height field's `solid_at` doesn't hold: tests/shrines.rs checks that).
+        let s = g.spawn_search_point();
         assert!(s.iter().all(|v| v.is_finite()), "a finite spawn: {s:?}");
         assert!(
             g.world().inside_disc(s[0] as i64, s[2] as i64),

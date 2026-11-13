@@ -1108,6 +1108,8 @@ pub struct TerrainGenerator {
     /// The portals between the faces (`portals.rs`), shared by both faces' generators; none for a
     /// face's generator on its own.
     portals: Option<Arc<Portals>>,
+    /// This face's resurrection shrines (`shrines.rs`); none for a face's generator on its own.
+    shrines: Option<Arc<crate::shrines::Shrines>>,
     /// How far above the ground decorations and placed structures reach (rows): the sky test
     /// leaves this much room over the highest ground before a chunk is all air.
     rise: f32,
@@ -1271,6 +1273,7 @@ impl TerrainGenerator {
             vegetation: crate::vegetation::VEGETATION,
             biomes,
             portals: None,
+            shrines: None,
             rise: DECORATION_RISE as f32,
             lod_valleys: None,
             volume: None,
@@ -1792,6 +1795,56 @@ impl TerrainGenerator {
         self.volume = Some(Arc::new(v));
         self.cache_id = next_cache_id();
         self
+    }
+
+    /// The generator with this face's resurrection shrines built on it (`BifacialTerrain` gives
+    /// each face its own, sited clear of the portals).
+    pub fn with_shrines(mut self, shrines: Arc<crate::shrines::Shrines>) -> Self {
+        self.shrines = Some(shrines);
+        self.cache_id = next_cache_id();
+        self
+    }
+
+    /// This face's shrines, if this generator has them.
+    pub fn shrines(&self) -> Option<&Arc<crate::shrines::Shrines>> {
+        self.shrines.as_ref()
+    }
+
+    /// A shrine's structure on this face: its anchor on the site, its bottom row on the lowest
+    /// ground under its bottom layer (as a portal's monument stands).
+    pub fn shrine(&self, shrines: &crate::shrines::Shrines, s: crate::shrines::Shrine) -> Placed {
+        let base = shrines
+            .feet(s)
+            .map(|(x, z)| top_voxel(self.column_at(x, z).height))
+            .min()
+            .unwrap_or(0);
+        shrines.placed_at(s, base + 1)
+    }
+
+    /// Where a player stands up at shrine `s` (face-local feet, m): its `stand` column's centre,
+    /// on the floor built there.
+    pub fn shrine_stand(
+        &self,
+        shrines: &crate::shrines::Shrines,
+        s: crate::shrines::Shrine,
+    ) -> [f64; 3] {
+        let placed = self.shrine(shrines, s);
+        let (x, z) = shrines.stand_column(s);
+        let floor = placed
+            .cells()
+            .filter(|(p, _)| p[0] == x && p[2] == z)
+            .map(|(p, _)| p[1])
+            .max()
+            .unwrap_or(placed.min[1] - 1);
+        // The floor stands on the ground; where the ground under the stand column is higher than
+        // the structure's base, a player stands on that ground.
+        let ground = top_voxel(self.column_at(x, z).height);
+        let top = floor.max(ground);
+        [
+            f64::from(x) + 0.5,
+            dwell_world::m_of_row(top + 1),
+            f64::from(z) + 0.5,
+        ]
     }
 
     /// The portals, if this generator has them.
@@ -2847,13 +2900,34 @@ impl TerrainGenerator {
         portals.monument_at(portal, base + 1)
     }
 
-    /// The monuments reaching columns [x0, x1] × [z0, z1], placed.
+    /// The monuments reaching columns [x0, x1] × [z0, z1], placed: the portals' and the shrines'.
     fn monuments_near(&self, lo: (i32, i32), hi: (i32, i32)) -> Vec<Placed> {
+        let mut out = self.portal_monuments_near(lo, hi);
+        out.extend(self.shrines_placed_near(lo, hi));
+        out
+    }
+
+    /// The portals' monuments reaching columns [x0, x1] × [z0, z1], placed.
+    fn portal_monuments_near(&self, lo: (i32, i32), hi: (i32, i32)) -> Vec<Placed> {
         let Some((portals, near)) = self.portals_near(lo, hi) else {
             return Vec::new();
         };
         near.into_iter()
             .filter_map(|p| self.monument(portals, p))
+            .filter(|m| {
+                m.max[0] >= lo.0 && m.min[0] <= hi.0 && m.max[2] >= lo.1 && m.min[2] <= hi.1
+            })
+            .collect()
+    }
+
+    /// The shrines' structures reaching columns [x0, x1] × [z0, z1], placed.
+    fn shrines_placed_near(&self, lo: (i32, i32), hi: (i32, i32)) -> Vec<Placed> {
+        let Some(sh) = self.shrines.as_deref() else {
+            return Vec::new();
+        };
+        sh.near(self, lo, hi)
+            .into_iter()
+            .map(|s| self.shrine(sh, s))
             .filter(|m| {
                 m.max[0] >= lo.0 && m.min[0] <= hi.0 && m.max[2] >= lo.1 && m.min[2] <= hi.1
             })
@@ -3406,6 +3480,13 @@ impl TerrainGenerator {
             trees.retain(|t| {
                 let fp = self.planters[t.planter as usize].footprint(t);
                 !p.box_reaches_clear((fp[0], fp[1]), (fp[2], fp[3]))
+            });
+        }
+        // Nor over a shrine or its clear ground.
+        if let Some(sh) = self.shrines.as_deref() {
+            trees.retain(|t| {
+                let fp = self.planters[t.planter as usize].footprint(t);
+                !sh.box_reaches_clear(self, (fp[0], fp[1]), (fp[2], fp[3]))
             });
         }
         trees
@@ -4444,14 +4525,23 @@ impl TerrainGenerator {
     /// are at most `monument_lod_cell` m.
     fn lod_monuments_near(&self, o: lod::LodOrigin, level: i32) -> Vec<Placed> {
         let cell = lod::cell_size(level);
-        match &self.portals {
-            Some(p) if p.monument.is_some() && cell <= p.rules.monument_lod_cell => {}
-            _ => return Vec::new(),
+        let portals = matches!(&self.portals,
+            Some(p) if p.monument.is_some() && cell <= p.rules.monument_lod_cell);
+        let shrines = matches!(&self.shrines, Some(s) if cell <= s.rules.lod_cell);
+        if !portals && !shrines {
+            return Vec::new();
         }
         let n = i64::from(lod::SECTION_CELLS);
         let lo = ((o.x - cell) as i32, (o.z - cell) as i32);
         let hi = ((o.x + (n + 1) * cell) as i32, (o.z + (n + 1) * cell) as i32);
-        self.monuments_near(lo, hi)
+        let mut out = Vec::new();
+        if portals {
+            out.extend(self.portal_monuments_near(lo, hi));
+        }
+        if shrines {
+            out.extend(self.shrines_placed_near(lo, hi));
+        }
+        out
     }
 
     /// Lifts a section's open bound over the monuments it draws, so a section holding only a
@@ -4640,6 +4730,32 @@ impl TerrainGenerator {
     /// When none of those holds one (a wide island, WORLD_SCALE.md §3.2), a bounded search
     /// (`spawn_wider`); never a mountain top.
     pub fn spawn_point(&self) -> [f64; 3] {
+        // With shrines, every spawn is at one (owner, 2026-11-12: "target the nearest shrine to that
+        // point for initial spawn, so all spawns are at shrines"): the search's point's nearest.
+        if let Some(sh) = self.shrines.as_deref() {
+            return self.shrine_stand(sh, sh.spawn_shrine(self));
+        }
+        self.spawn_search_point()
+    }
+
+    /// What identifies this generator's spawn search beyond the seed (the spawn shrine's cache):
+    /// its worldgen config, its world's bounds and its biomes.
+    pub fn spawn_key(&self) -> String {
+        use std::hash::{Hash, Hasher};
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        format!("{:?}", self.biomes).hash(&mut h);
+        format!(
+            "{}|{}|{:?}|{:016x}",
+            self.world_seed,
+            self.map().worldgen_text(),
+            self.world(),
+            h.finish()
+        )
+    }
+
+    /// The spawn search's point: feet on open level ground near the origin (before the shrines
+    /// move the spawn to the nearest one).
+    pub fn spawn_search_point(&self) -> [f64; 3] {
         let candidates = self.spawn_cells(true);
         for &(x, z) in candidates.iter().take(48) {
             if let Some(p) = self.spawn_near(x, z, 12, 0) {

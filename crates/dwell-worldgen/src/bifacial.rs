@@ -113,9 +113,18 @@ impl BifacialTerrain {
         mirrored: bool,
     ) -> Self {
         let portals = Arc::new(Portals::resolve(world_seed, rules, &a, &b, mirrored));
+        // Each face's resurrection shrines, sited on its own ground clear of the portals.
+        let shrines = |g: &TerrainGenerator| {
+            Arc::new(crate::shrines::Shrines::new(
+                g.seed(),
+                crate::shrines::rules_for(world_setting_name(g).as_deref()),
+                portals.sites.clone(),
+            ))
+        };
+        let (sa, sb) = (shrines(&a), shrines(&b));
         Self {
-            a: a.with_portals(portals.clone()),
-            b: b.with_portals(portals),
+            a: a.with_portals(portals.clone()).with_shrines(sa),
+            b: b.with_portals(portals).with_shrines(sb),
         }
     }
 
@@ -132,6 +141,44 @@ impl BifacialTerrain {
     pub fn mirrored_with_biomes(world_seed: u64, biomes: &[crate::terrain::Biome]) -> Self {
         let a = TerrainGenerator::new(face_seed(world_seed, Face::A)).with_biomes(biomes);
         Self::joined(world_seed, MIDPLANE.portals, a.clone(), a, true)
+    }
+
+    /// The shrine nearest (x, z) (world metres) on `face`, and where a player stands up at it
+    /// (world feet), if any lies within the search (docs/SHRINES.md).
+    pub fn nearest_shrine(
+        &self,
+        face: Face,
+        x: f64,
+        z: f64,
+    ) -> Option<(crate::shrines::Shrine, [f64; 3])> {
+        let g = self.local(face);
+        let sh = g.shrines()?;
+        let s = sh.nearest(g, x, z)?;
+        let feet = dwell_world::FaceFrame { face }.point(g.shrine_stand(sh, s));
+        Some((s, feet))
+    }
+
+    /// [`Self::nearest_shrine`]'s feet without running the spawn search (the client's guess of
+    /// where it will stand up, for the respawn preload).
+    pub fn nearest_known_shrine(&self, face: Face, x: f64, z: f64) -> Option<[f64; 3]> {
+        let g = self.local(face);
+        let sh = g.shrines()?;
+        let s = sh.nearest_known(g, x, z)?;
+        Some(dwell_world::FaceFrame { face }.point(g.shrine_stand(sh, s)))
+    }
+
+    /// The shrines on `face` in the grid cells within `cells` of column (x, z)'s (the map's).
+    pub fn shrines_round(
+        &self,
+        face: Face,
+        x: i32,
+        z: i32,
+        cells: i32,
+    ) -> Vec<crate::shrines::Shrine> {
+        let g = self.local(face);
+        g.shrines()
+            .map(|sh| sh.in_cells_round(g, x, z, cells))
+            .unwrap_or_default()
     }
 
     /// The portals between the faces: their sites and how they are built.
@@ -365,4 +412,12 @@ impl BifacialTerrain {
             Face::B => self.b.solid_at(x, mirror_y(y), z),
         }
     }
+}
+
+/// The world setting's name a face's generator was built from (`shared/worldgen/worlds`, its
+/// `name`), if it was built from one: the shrines' `worlds` overrides are keyed by it.
+fn world_setting_name(g: &TerrainGenerator) -> Option<String> {
+    let w = g.map().worldgen.as_ref()?;
+    let v: serde_json::Value = serde_json::from_str(&w.text).ok()?;
+    v.get("name")?.as_str().map(str::to_owned)
 }

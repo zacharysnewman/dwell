@@ -278,6 +278,13 @@ generated world; the answers and the measurements are in
   `rotate` (the pines declare none), and `choices`, if a placed structure has them, are drawn from
   the tree's priority hash.
 
+### 8.1 Resurrection shrines (0.58)
+
+The resurrection shrine (`dwell:shrine`) is a structure like the others, but generated: `shared/worldgen/gen.mjs`
+builds `shared/structures/shrine.json` from `shared/worldgen/shrines.json` `design` (edit the design, not the
+file; CI fails on a stale one), and the shrines' own siting (a 2 km grid per face, turned downhill) stands it,
+not the placements. See [SHRINES.md](SHRINES.md).
+
 ## 9. The player's structure library (WORK_QUEUE item 12), built 2026-11-12
 
 The owner's answers (2026-11-11): *"Structures are per player, eventually shareable (add to roadmap).

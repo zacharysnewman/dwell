@@ -473,7 +473,8 @@ at most 2 ms. Rapier steps on the tick's thread. **Built (Phase 2):** each `Serv
 input per joined player from its jitter-buffered queue (§9.3), runs the player controller pipeline,
 applies its server-side consequences (impact damage; there is no void: a body that leaves the disc
 falls toward the midplane and is carried across the midplane by the flip band, §6.3), steps
-physics, respawns dead players after `RESPAWN_SECONDS`, and every 3rd tick sends each client a
+physics, respawns dead players after `RESPAWN_SECONDS` (at the resurrection shrine nearest the death on
+its face since 0.58, [`SHRINES.md`](./SHRINES.md)), and every 3rd tick sends each client a
 `PhysicsSnapshot`. Sessions are kept in id order, so every pass over them is deterministic.
 **Built (Phase 3a):** the world generates from `(worldSeed, generatorVersion)` (§6.3); players
 spawn at the generator's spawn point. **Built (Phase 3b):** each step first integrates the chunks
@@ -1588,6 +1589,22 @@ over them coarser; the hydrology prototype ignores them (they don't change the h
 dev link `?spawn=portal` (`portal-b`) spawns a local world's player on the rim over the
 ladder of the portal nearest the centre (`portal_spawn_for`), on every open of its world file, and
 bench scenarios take `portal`; a new world from the menu can start there too (New world's Spawn).
+
+**Resurrection shrines** **[built, 0.58]** ([`SHRINES.md`](./SHRINES.md); owner 2026-11-12: "You respawn at
+the nearest shrine when you die"): `dwell-worldgen` `shrines.rs`, data `shared/worldgen/shrines.json`
+(→ `shrines.gen.rs`, and its `design` → `shared/structures/shrine.json`, both by `shared/worldgen/gen.mjs`;
+CI fails on stale output). Each face's ground is cut into 2 km cells, each holding at most one shrine at
+the first of its seeded points near the centre whose footprint is dry, inland, in the height band, level
+enough and clear of the portals; a cell's shrine is a pure function of the face's seed, the cell and the
+height field, so chunks find the ones reaching them in any order. The structure stands as a monument does
+(the same `monuments_near` path: chunks, the sky test, the LOD at cells ≤ `lodCellM`), turned the quarter
+nearest downhill (the seed's turn on flat ground); no tree grows on it. The spawn is a shrine: the spawn
+search's point moved to the shrine nearest it, or a shrine built at the point when none lies within
+`spawnWithin` (looked for only by chunks with no grid shrine near, so most never run the search). The
+server respawns a dead player at the shrine nearest its death on its face (`ShrineRespawn`,
+`Server::respawn_after_death`; every mode), the respawn preload streaming that shrine's ring; the client
+guesses the same shrine from its own terrain for its preload. The big map shows the explored ones
+(`mapShrines`, `ui/mapShrines.ts`) behind a filter toggle. Generator change: the 0.58 line.
 The rock above the bedrock is ordinary stone and can be dug through, in the flat test world too,
 which has no face B and no bedrock. The flat worlds (the flat test world and
 the structure sandbox) fill the midplane up to `FLAT_TOP_Y` = 32, their surface. The anchor for

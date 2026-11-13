@@ -99,8 +99,12 @@ fn fnv(h: &mut u64, bytes: &[u8]) {
 /// committed with: at 58f72da itself, and at every first-parent merge from #841 to #868, the starter
 /// hashes to the values below (each branch's own pin, f53b86d's and 0416b7b's, passes at its commit),
 /// so no later merge changed the starter: this is the terrain the 0.55 line has shipped since 0.55.0.
+///
+/// Re-pinned 2026-11-13 for the resurrection shrines (docs/SHRINES.md, the 0.58 line): face B's
+/// pinned area gains a shrine (face A's has none, its hash unchanged); with the shrines left out of
+/// `BifacialTerrain::joined` both faces match the earlier pin exactly.
 const STARTER_PIN: [(Face, &str); 2] =
-    [(Face::A, "5e9869d57483a3a3"), (Face::B, "a55324f4fdc776e2")];
+    [(Face::A, "5e9869d57483a3a3"), (Face::B, "3f270f5b83ca4e54")];
 
 #[test]
 fn the_starter_worlds_terrain_is_unchanged() {

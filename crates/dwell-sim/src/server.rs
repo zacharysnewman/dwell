@@ -724,6 +724,8 @@ struct Session {
     /// The respawn preload (§6.3): while dead, the respawn point's chunk, whose ring is streamed
     /// after the view; and whether all of it has been sent.
     preload_center: Option<ChunkCoord>,
+    /// Where a dead player stands up (the shrine nearest its death), until the respawn.
+    respawn_at: Option<[f64; 3]>,
     preload_complete: bool,
     chunk_credit: f64, // bytes the client may still receive this tick
     stream_stats: StreamStats,
@@ -829,6 +831,7 @@ impl Session {
             stream_center: None,
             stream_complete: false,
             preload_center: None,
+            respawn_at: None,
             preload_complete: false,
             chunk_credit: 0.0,
             stream_stats: StreamStats::default(),
@@ -1109,6 +1112,10 @@ pub struct Server {
     lod_unsaved: HashSet<LodCoord>,
     lod_in_flight: HashMap<u64, Vec<LodCoord>>,
     lod_rebuild: bool,
+    /// The resurrection shrines (docs/SHRINES.md): where a player who died stands up again, the
+    /// shrine nearest the death on its face; `None` for a world without them (a test's generator,
+    /// the flat world).
+    shrine_respawn: Option<dwell_worldgen::ShrineRespawn>,
 }
 
 impl Server {
@@ -1163,7 +1170,19 @@ impl Server {
                 config.world_size,
             )
         });
+        let shrine_respawn = config
+            .generator_override
+            .is_none()
+            .then(|| {
+                dwell_worldgen::shrine_respawn_for_sized(
+                    config.generator_version,
+                    config.world_seed,
+                    config.world_size,
+                )
+            })
+            .flatten();
         let mut server = Self {
+            shrine_respawn,
             edit_log: std::collections::VecDeque::new(),
             entropy,
             physics,
@@ -1838,6 +1857,20 @@ impl Server {
         [at[0] + dx, at[1], at[2] + dz]
     }
 
+    /// Where a player who died at `death` stands up: the shrine nearest the death on its face
+    /// (docs/SHRINES.md; owner, 2026-11-12: "You respawn at the nearest shrine when you die"), in
+    /// every game mode, half a metre over its floor (the players' spread round it may stand on a
+    /// higher step of the dais); else the world's spawn.
+    fn respawn_after_death(&self, player_id: u16, death: [f64; 3]) -> [f64; 3] {
+        let Some(at) = self.shrine_respawn.as_ref().and_then(|f| f(death)) else {
+            return self.respawn_feet(player_id);
+        };
+        let f = dwell_world::FaceFrame::at_height(death[1]);
+        let [x, y, z] = f.point(at);
+        let [dx, dz] = spawn_spread(player_id);
+        f.point([x + dx, y + dwell_world::CELL_H, z + dz])
+    }
+
     fn spawn_player(&mut self, id: SessionId, feet: Option<[f64; 3]>) {
         let spawn =
             DVec3::from(feet.unwrap_or_else(|| self.respawn_feet(self.sessions[&id].player_id)));
@@ -1906,7 +1939,7 @@ impl Server {
         let death = [p.x, self.feet_y(h), p.z];
         self.players.despawn(&mut self.physics, h);
         let respawn_tick = self.tick + (pc::RESPAWN_SECONDS as u32) * SIM_HZ;
-        let respawn = self.respawn_feet(self.sessions[&id].player_id);
+        let respawn = self.respawn_after_death(self.sessions[&id].player_id, death);
         let half = f64::from(self.config.player_config.half_height(false));
         let preload = self
             .config
@@ -1922,6 +1955,7 @@ impl Server {
         s.burn = dwell_lava::Burn::default(); // the dead don't burn on into their respawn
         s.preload_center = preload;
         s.preload_complete = false;
+        s.respawn_at = Some(respawn);
         let mut e = self.event(PlayerEventKind::Death, &self.sessions[&id]);
         e.cause = cause;
         self.broadcast_event(e);
@@ -2130,12 +2164,20 @@ impl Server {
             if !s.joined() || s.handle.is_some() || s.away.is_some() || self.tick < s.respawn_tick {
                 continue;
             }
-            self.spawn_player(id, None);
+            let at = self
+                .sessions
+                .get_mut(&id)
+                .expect("session")
+                .respawn_at
+                .take();
+            self.spawn_player(id, at);
             self.sessions.get_mut(&id).expect("session").preload_center = None;
             let h = self.sessions[&id].handle.expect("spawned");
             let p = self.players.position(&self.physics, h);
             let mut e = self.event(PlayerEventKind::Respawn, &self.sessions[&id]);
-            e.position = [p.x, p.y - f64::from(self.players.half_height(h)), p.z];
+            // The feet: under the body's centre on face A, over it on face B (before 0.58 the
+            // centre less half its height on both, 1.8 m off on face B).
+            e.position = [p.x, self.feet_y(h), p.z];
             self.broadcast_world(&Message::PlayerEvent(e));
         }
         self.phase_ms[8] += watch.lap_ms();
@@ -5125,6 +5167,12 @@ impl Server {
             .get(&id)
             .filter(|s| s.joined())
             .map(|s| s.player_id)
+    }
+
+    /// Where player `player_id` would stand up after dying with its feet at `death` (world m): the
+    /// shrine nearest the death on its face, else the spawn (docs/SHRINES.md; tools and tests).
+    pub fn respawn_point_after(&self, player_id: u16, death: [f64; 3]) -> [f64; 3] {
+        self.respawn_after_death(player_id, death)
     }
 
     /// Kills a joined, living player (as a lethal fall would; tools and tests): they respawn after

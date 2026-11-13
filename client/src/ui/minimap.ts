@@ -25,6 +25,14 @@ import { MAP } from './map.gen';
 import { compatibilityLine } from '../version/semver';
 import { World } from '../protocol/constants.gen';
 import { ExploredChanges, type ExploredStore } from './exploredStore';
+import {
+  SHRINE_MAP,
+  ShrineFilter,
+  browserStorage,
+  cellsFor,
+  parseShrines,
+  visibleShrines,
+} from './mapShrines';
 
 /** An explored cell's key: its face (0 A, 1 B) and its index along face-local x and z. */
 export function cellKey(face: number, i: number, k: number): string {
@@ -978,6 +986,11 @@ export interface MapClient extends RevealClient, LiveClient, MinimapFeed {
   takeMapLayer?(): Uint8Array | undefined;
   /** The generator's layer fields by index (`map_layers.rs` `MapField`). */
   mapLayerFields?(): string[];
+  /**
+   * The resurrection shrines on face `face` in the grid cells within `cells` of face-local (x, z)'s
+   * (docs/SHRINES.md): [x, z]* face-local m.
+   */
+  mapShrines?(face: number, x: number, z: number, cells: number): Float64Array;
 }
 
 /** A nice scale bar: the longest 1, 2 or 5 × 10ⁿ metres no wider than `maxPx` at `pxPerM`. */
@@ -1275,6 +1288,9 @@ export class MapUi {
   /** The debug layer shown (an index into `MAP_LAYERS.layers`; −1 none) and its button. */
   private layer = -1;
   private readonly layerButton: HTMLButtonElement;
+  /** The shrine layer's filter toggle (docs/SHRINES.md) and its button. */
+  private readonly shrines: ShrineFilter;
+  private readonly shrineButton: HTMLButtonElement;
   /** Each face's layer images by `face:name` (null: the world has no such field), and those asked. */
   private readonly layerImages = new Map<string, HTMLCanvasElement | null>();
   private readonly layerAsked = new Set<string>();
@@ -1359,7 +1375,12 @@ export class MapUi {
     this.layerButton = this.button('map-layer', '▦', `Map layer (${MAP_LAYERS.key.slice(3)})`);
     this.layerButton.append(doc.createElement('span'));
     this.layerButton.hidden = !client.requestMapLayer;
-    controls.append(this.zoomIn, this.zoomOut, centre, this.layerButton);
+    this.shrineButton = this.button('map-shrines', '✦', 'Shrines on the map');
+    this.shrineButton.hidden = !client.mapShrines;
+    this.shrines = new ShrineFilter(browserStorage());
+    this.shrineButton.classList.toggle('on', this.shrines.on);
+    this.shrineButton.setAttribute('aria-pressed', String(this.shrines.on));
+    controls.append(this.zoomIn, this.zoomOut, centre, this.layerButton, this.shrineButton);
     this.scaleEl = doc.createElement('div');
     this.scaleEl.className = 'map-scale';
     this.scaleLabel = doc.createElement('span');
@@ -1383,6 +1404,9 @@ export class MapUi {
     centre.addEventListener('click', () => {
       this.state.center();
       this.drawBig();
+    });
+    this.shrineButton.addEventListener('click', () => {
+      this.toggleShrines();
     });
     this.layerButton.addEventListener('click', () => {
       this.stepLayer();
@@ -1495,6 +1519,27 @@ export class MapUi {
   }
 
   /** Steps to the next debug layer (after the last, none). */
+  /** Shows or hides the shrines on the big map (the filter, remembered in this browser). */
+  toggleShrines(): void {
+    const on = this.shrines.toggle();
+    this.shrineButton.classList.toggle('on', on);
+    this.shrineButton.setAttribute('aria-pressed', String(on));
+    this.bigStale = true;
+  }
+
+  /** The shrines the big map shows in view `v` (the filter, the reveal rule). */
+  shownShrines(v: BigView, w: number, h: number): { x: number; z: number }[] {
+    if (!this.client.mapShrines || !this.shrines.on) return [];
+    const [cx, cz] = toWorld(v, 0, 0);
+    const [ax, az] = toWorld(v, -w / 2, -h / 2);
+    const span = Math.hypot(ax - cx, az - cz) * 2;
+    const sites = parseShrines(this.client.mapShrines(v.face, cx, cz, cellsFor(span)));
+    const cell = MAP.explored.cellM;
+    const explored = (x: number, z: number) =>
+      this.cells.has(cellKey(v.face, Math.floor(x / cell), Math.floor(z / cell)));
+    return visibleShrines(sites, true, explored, this.client.mapRevealed());
+  }
+
   stepLayer(): void {
     this.layer = nextLayer(this.layer);
     this.showLayerLabel();
@@ -1796,6 +1841,21 @@ export class MapUi {
       ctx.scale(bx > ax ? 1 : -1, by > ay ? 1 : -1);
       ctx.drawImage(layerImg, 0, 0, Math.abs(bx - ax), Math.abs(by - ay));
       ctx.restore();
+    }
+    // The shrines (docs/SHRINES.md): a glowing ring each, under the player's arrow.
+    const r = SHRINE_MAP.iconPx / 2;
+    for (const sh of this.shownShrines(v, w, h)) {
+      const [sx, sy] = toScreen(v, sh.x, sh.z);
+      ctx.beginPath();
+      ctx.arc(w / 2 + sx, h / 2 + sy, r, 0, Math.PI * 2);
+      ctx.fillStyle = SHRINE_MAP.color;
+      ctx.shadowColor = SHRINE_MAP.color;
+      ctx.shadowBlur = r;
+      ctx.fill();
+      ctx.shadowBlur = 0;
+      ctx.strokeStyle = 'white';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
     }
     this.updateControls();
     const [face = 0, x = 0, z = 0, yaw = 0] = this.client.mapPose();
