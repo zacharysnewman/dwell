@@ -626,6 +626,11 @@ impl Client {
                 game.set_structure_ops(
                     session.capability(dwell_protocol::capability_names::STRUCTURES_PLACE),
                 );
+                // The moon (MOON_WORLD.md §7.3): the predictor and the view follow the player
+                // onto another grid only on a server that carries it there.
+                game.set_grid_frames(
+                    session.capability(dwell_protocol::capability_names::GRID_FRAMES),
+                );
                 game.set_swordplay(
                     session.capability(dwell_protocol::capability_names::WEAPONS_CLASH),
                 );
@@ -3581,6 +3586,7 @@ impl Inner {
             game.set_structure_ops(
                 s.capability(dwell_protocol::capability_names::STRUCTURES_PLACE),
             );
+            game.set_grid_frames(s.capability(dwell_protocol::capability_names::GRID_FRAMES));
             game.set_swordplay(s.capability(dwell_protocol::capability_names::WEAPONS_CLASH));
             game.set_hits_at_contact(
                 s.capability(dwell_protocol::capability_names::HITS_AT_CONTACT),

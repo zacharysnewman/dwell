@@ -21,14 +21,12 @@
 //! mod's) is kept and simply never matches a feature here.
 
 use crate::bytes::{ByteReader, ByteWriter};
-use crate::capability_names::{ALL, GRID_FRAMES, MAX_NAME_BYTES, MAX_NAMES};
+use crate::capability_names::{ALL, MAX_NAME_BYTES, MAX_NAMES};
 
-/// Capabilities this build's server has and its client doesn't say yet: the client's side is still
-/// to come. `grid.frames` (docs/proposals/MOON_WORLD.md §7.2): the server sends other grids'
-/// chunks and the player's grid; the client says it once its predictor and renderer follow a
-/// player onto another grid (M-7b's local follow-up). Until then a player off home is sent its
-/// world position, as an older client is.
-pub const CLIENT_PENDING: &[&str] = &[GRID_FRAMES];
+/// Capabilities this build's server has and its client doesn't say yet (the client's side still to
+/// come). None now: `grid.frames` (docs/proposals/MOON_WORLD.md §7.3) left it with M-7c, the game
+/// client following its player onto another grid (its chunks, its frame, its sun).
+pub const CLIENT_PENDING: &[&str] = &[];
 
 /// A set of capability names, in the order they arrived (or the table's).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -125,7 +123,7 @@ impl Capabilities {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::capability_names::STRUCTURES_PLACE;
+    use crate::capability_names::{GRID_FRAMES, STRUCTURES_PLACE};
 
     #[test]
     fn this_build_has_the_tables_names_and_they_round_trip() {
@@ -140,9 +138,13 @@ mod tests {
 
     #[test]
     fn the_client_says_all_but_the_pending_ones() {
+        assert!(!CLIENT_PENDING.contains(&GRID_FRAMES));
         let c = Capabilities::this_client();
         assert!(c.has(STRUCTURES_PLACE));
-        assert!(!c.has(GRID_FRAMES), "the client follows no other grid yet");
+        assert!(
+            c.has(GRID_FRAMES),
+            "the client follows its player onto the moon (M-7c)"
+        );
         assert!(Capabilities::this_build().has(GRID_FRAMES));
         assert!(CLIENT_PENDING.iter().all(|n| ALL.contains(n)));
     }

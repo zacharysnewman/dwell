@@ -741,6 +741,18 @@ struct Session {
 }
 
 impl Session {
+    /// A `grid.frames` client carried off home drops every home chunk it holds (MOON_WORLD.md §7.3:
+    /// it holds the chunks of the grid it is on), so the home view streams again from nothing on
+    /// its release.
+    fn forget_home_stream(&mut self) {
+        self.streamed.clear();
+        self.requested.clear();
+        self.chunk_requests.clear();
+        self.stream_center = None;
+        self.stream_complete = false;
+        self.preload_complete = false;
+    }
+
     /// One more swing the others see (`swing_flags`): a break or place (`broke`), and which it is
     /// (`kind`: a chop steps a break, so an older client plays that).
     fn swung(&mut self, broke: bool, kind: SwingKind) {

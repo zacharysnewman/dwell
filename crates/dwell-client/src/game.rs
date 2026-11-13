@@ -794,6 +794,15 @@ pub struct Game<S: Scene> {
     remote_contacts: dwell_game::sound::RemoteContacts,
     /// The world seed (Welcome), the ground items' scatter's (ADR 0071).
     world_seed: u64,
+    /// The server carries players onto other grids and says which (`grid.frames`, MOON_WORLD.md
+    /// §7.3): the predictor then runs the grids' travel rules, and the game follows it.
+    grid_frames: bool,
+    /// The grids' frames and travel rules (the predictor's own copy is its hook), once the world
+    /// is known and the server has `grid.frames`.
+    travel: Option<dwell_sim::travel::TravelMap>,
+    /// The grid whose chunks the streamer holds and the view is drawn in (0 home): the
+    /// predictor's, followed at each crossing (`follow_grid`).
+    grid_drawn: u8,
     /// The world's disc and build volume (BIG_MAP.md M2b: its `WorldSettings` size): the LOD's
     /// rim, the streamer's volume and the big map's levels follow it.
     world_bounds: dwell_world::WorldBounds,
@@ -1232,6 +1241,9 @@ impl<S: Scene> Game<S> {
             contact_sounds: Default::default(),
             remote_contacts: Default::default(),
             world_seed: 0,
+            grid_frames: false,
+            travel: None,
+            grid_drawn: 0,
             world_bounds: dwell_world::WorldBounds::DEFAULT,
             ground_on: false,
             ground_target: None,
@@ -1751,6 +1763,13 @@ impl<S: Scene> Game<S> {
                 self.predictor
                     .on_vitals(self.streamer.store_mut(), v.seq, vitals);
             }
+            // Another grid's chunk than the one the view is in: sent before the server saw the
+            // crossing the predictor made (MOON_WORLD.md §7.3); the server forgets it there too.
+            Message::ChunkData(d) if d.grid != self.grid_drawn => {}
+            Message::ChunkUnload(u) if u.grid != self.grid_drawn => {}
+            // Home's cells while the view is on another grid: not the store's (whose cells are
+            // that grid's); home streams again whole on the way back.
+            Message::VoxelModification(_) if self.grid_drawn != 0 => {}
             Message::ChunkData(d) => {
                 // The server's data for the chunk: predictions in it are its business now.
                 self.prediction.forget_chunk(d.coord);
@@ -1832,6 +1851,15 @@ impl<S: Scene> Game<S> {
                 // Only the pieces that could touch the player soon are stood in for.
                 telemetry::sample("pieces.standIns", self.predictor.stand_ins() as f64);
                 self.predictor.on_snapshot(self.streamer.store_mut(), &s);
+                // A correction across grids (`regrid`): the view follows the server's grid.
+                if self.follow_grid().is_some() {
+                    self.current = ClientState::of(&self.predictor);
+                    self.flip.reset(self.current.face);
+                    self.previous = None;
+                    self.eye = EyeCamera::new();
+                    self.eye
+                        .tick(&self.current.eye_state(), 1.0 / SIM_HZ as f64);
+                }
                 self.health = s.local.health;
                 self.dead = s.local.flags & player_flags::DEAD != 0;
                 if self.dead {
@@ -3057,6 +3085,63 @@ impl<S: Scene> Game<S> {
         if let Some(lod) = &mut self.lod {
             lod.set_world(self.world_bounds);
         }
+        self.install_travel();
+    }
+
+    /// Whether the server carries players onto other grids and says which (the `grid.frames`
+    /// capability, MOON_WORLD.md §7.3): only then does the predictor run the travel rules.
+    pub fn set_grid_frames(&mut self, on: bool) {
+        self.grid_frames = on;
+        self.install_travel();
+    }
+
+    /// The grids' travel rules for the predictor and the view, from the world's seed, size and
+    /// settings (`TravelMap::new`, as the server builds its own), when the server has `grid.frames`.
+    fn install_travel(&mut self) {
+        if !self.grid_frames {
+            return;
+        }
+        let map = || {
+            dwell_sim::travel::TravelMap::new(
+                self.world_seed,
+                self.world_bounds.radius() as f64,
+                dwell_look::celestial::Celestial::new(self.world_day, None),
+            )
+        };
+        self.predictor.set_travel(Box::new(map()));
+        self.travel = Some(map());
+    }
+
+    /// The grid the view is drawn in (0 home; MOON_WORLD.md §7.3).
+    pub fn grid(&self) -> u8 {
+        self.grid_drawn
+    }
+
+    /// The frame of the grid the view is drawn in, at the latest snapshot's tick.
+    pub fn grid_frame(&self) -> dwell_world::GridFrame {
+        let t = f64::from(self.last_snapshot_tick) / SIM_HZ as f64;
+        self.travel
+            .as_ref()
+            .map_or(dwell_world::GridFrame::HOME, |m| {
+                m.frame(self.grid_drawn, t)
+            })
+    }
+
+    /// Follows the predictor onto the grid it is in now (MOON_WORLD.md §7.3): at a crossing the
+    /// chunks of the grid left are dropped (the server streams the new grid's from nothing, and
+    /// home's again on the way back), the edit predictions with them. The (from, to) grids, at a
+    /// crossing.
+    fn follow_grid(&mut self) -> Option<(u8, u8)> {
+        let to = self.predictor.grid();
+        let from = self.grid_drawn;
+        if to == from {
+            return None;
+        }
+        self.streamer.unload_all();
+        self.prediction = EditPredictor::new();
+        self.grid_drawn = to;
+        telemetry::sample("grid.crossings", 1.0);
+        Some((from, to))
     }
 
     /// The world's disc and build volume (from its size, `set_world`).
@@ -4179,7 +4264,27 @@ impl<S: Scene> Game<S> {
         }
         let frame = quantize_input(&input.sample(touch), self.predictor.next_seq());
         input.took();
+        let before = self.current.face;
         self.predictor.tick(self.streamer.store_mut(), &frame);
+        let crossed = self.follow_grid();
+        if let Some((from, to)) = crossed {
+            // Onto another grid: the look keeps where it points in the world, now on that grid's
+            // face (`look_across`), and the body's face there is no midplane crossing.
+            let after = ClientState::of(&self.predictor);
+            if let Some(m) = &self.travel {
+                let t = f64::from(self.last_snapshot_tick) / SIM_HZ as f64;
+                let (ff, tf) = (m.frame(from, t), m.frame(to, t));
+                (input.look.yaw, input.look.pitch) = dwell_sim::travel::look_across(
+                    &ff,
+                    before,
+                    &tf,
+                    after.face,
+                    input.look.yaw,
+                    input.look.pitch,
+                );
+            }
+            self.flip.reset(after.face);
+        }
         self.recent.push_back(frame);
         while self.recent.len() > MAX_INPUTS_PER_DATAGRAM {
             self.recent.pop_front();
@@ -4192,6 +4297,12 @@ impl<S: Scene> Game<S> {
             })));
         self.previous = Some(self.current);
         self.current = ClientState::of(&self.predictor);
+        if crossed.is_some() {
+            // Positions are the new grid's from here: nothing eases or interpolates from the old
+            // grid's coordinates (the world point is the same; MOON_WORLD.md §7.3).
+            self.previous = None;
+            self.eye = EyeCamera::new();
+        }
         let c = self.current;
         let mut sample = self.mover_sample(
             c.feet(),
@@ -4787,6 +4898,7 @@ impl<S: Scene> Game<S> {
     /// orbit, REALISTIC_WORLD.md §8).
     pub fn set_world_settings(&mut self, s: &dwell_protocol::world_settings::WorldSettings) {
         self.world_day = dwell_look::orbits::day_night_for(s);
+        self.install_travel();
     }
 
     /// The day/night cycle at `now_ms`: world time from the server (none before the first
@@ -4799,6 +4911,12 @@ impl<S: Scene> Game<S> {
         self.day = self
             .world_day
             .state(world_s, self.theater_time.or(o.time), o.moon);
+        // On another grid the view is in its frame: the sky's directions turned into it, its own
+        // far disc not drawn (MOON_WORLD.md §7.3).
+        if let Some(m) = self.travel.as_ref().filter(|_| self.grid_drawn != 0) {
+            let frame = m.frame(self.grid_drawn, world_s);
+            self.day = crate::grid_view::day_on_grid(&self.day, &frame, self.grid_drawn);
+        }
         self.scene
             .borrow_mut()
             .set_day(&self.day, (now_ms - first) / 1000.0);
@@ -5007,6 +5125,14 @@ impl<S: Scene> Game<S> {
     fn update_lod(&mut self, c: &ClientState, now_ms: f64, input: &KeyboardMouseInput) {
         // Dead, the view around the body keeps loading, and the respawn's ring is readied.
         if !(c.active || self.dead) || self.lod.is_none() {
+            return;
+        }
+        // On another grid (MOON_WORLD.md §7.3) home's far terrain isn't drawn: its sections are
+        // home's, and the view is in the other grid's frame (that grid's LOD is M-5).
+        if self.grid_drawn != 0 {
+            let mut view = View(self.scene.clone());
+            LodView::<SectionMeshes>::show_lod_sections(&mut view, &[]);
+            LodView::<SectionMeshes>::show_lod_stand_ins(&mut view, &[]);
             return;
         }
         let second = self.respawn_preload().map(|s| {

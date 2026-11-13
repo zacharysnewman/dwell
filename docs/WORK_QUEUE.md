@@ -25,11 +25,11 @@ time"). Notes ride with real changes (no notes-only PRs; CI skips docs-only chan
   Video 2 (water/underwater, plan in item 40) waits for the owner's look approval.
 - **Next, in order:** (1) PR #856 slopes show tool hits (`claude/ramp-hit-marks-eaj3ru`) — conflicts with main,
   resolve and merge; (2) big-world terrain quick fix (item 52) — built on `claude/notes-batch-2` (also carries the
-  v5 approval and ABZÛ notes), its PR open, not merged: it waits for the owner to raise the 0.56 line; (3) the moon's client side M-7c (item 27) — WIP on `claude/moon-m7c`;
+  v5 approval and ABZÛ notes), its PR open, not merged: it waits for the owner to raise the 0.56 line; (3) the moon's client side M-7c (item 27) — built on `claude/moon-client-m7c-mxftge` (the browser flight a local check);
   (4) browser check of Realistic worlds (R6 merged #858: create, play, reload); (5) the forest edge (~9 ms over at
   resolve and merge; (2) big-world terrain quick fix (item 51) — WIP on `claude/notes-batch-2` (also carries the
   v5 approval and ABZÛ notes; the cloud session was stopped mid-work: read its status note on that branch); needs
-  the 0.56 line raised by the owner; (3) the moon's client side M-7c (item 27) — WIP on `claude/moon-m7c`;
+  the 0.56 line raised by the owner; (3) the moon's client side M-7c (item 27) — built on `claude/moon-client-m7c-mxftge` (the browser flight a local check);
   (4) ~~browser check of Realistic worlds~~ (done 2026-11-12: R6's exit met, item 15); (5) the forest edge (~9 ms over at
   High on the M1; impostors save ~4 ms, #848); (6) the in-game cloud check (#822 shapes/colour, #790, #801, #823).
 - **Merged today (late):** #857 the axe like the other tools; #858 Realistic in New world; #854 hits at contact;
@@ -899,8 +899,14 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    hook; PLAYER_CONTROLLER.md §6.6), so the frictionless capsule is pinned, not squeezed out; side hits stay
    frictionless and uncapped. The repro is un-ignored (0.4–0.5 m, was 155–160 m; both faces).
 
-27. **The moon as a real bifacial world** — **M-7c status (2026-11-12, branch `claude/moon-m7c-x07vsc`,
-   local):** owner, 2026-11-12: "Do we have the real physical moon yet?" (no: the client doesn't draw the moon
+27. **The moon as a real bifacial world** — **M-7c client built (2026-11-13, branch
+   `claude/moon-client-m7c-mxftge`):** the game client sets the travel hook (`Game::set_grid_frames`, from the
+   session's `grid.frames`), holds only its grid's chunks (dropped at a crossing; the server sends the moon's as
+   voxels and streams home again from nothing after the release), draws in the moon's local frame (the sun turned
+   into it, the far moon disc and home's LOD hidden, the look carried with `look_across`); `grid.frames` off
+   `CLIENT_PENDING`; the `game_local` scripted flight home → moon → home on both faces (MOON_WORLD.md §7.3).
+   **Left:** the browser flight (local, GPU), the roll upright at a crossing, M-5 (the moon's LOD), M-8. Earlier
+   **M-7c status (2026-11-12, branch `claude/moon-m7c-x07vsc`, local):** owner, 2026-11-12: "Do we have the real physical moon yet?" (no: the client doesn't draw the moon
    up close yet (M-5) and there are no moon spawns (M-8)). **Built:** `carry` moved into `dwell-physics`; a
    `TravelMap` in `travel.rs` (the grids' frames and rules without spaces; `Grids::travel_map`); the predictor
    in grid frames (`GridTravel` hook before each predicted tick at the server tick's clock, a fresh space per

@@ -180,7 +180,7 @@ fn dwell_moon(dir: vec3f, day: DaySky, px: f32) -> vec4f {
     let p = vec2f(dot(dir, x), dot(dir, y)) / sin(MOON_RADIUS);
     let r = length(p);
     let edge = 1.0 - smoothstep(1.0 - px / MOON_RADIUS, 1.0 + px / MOON_RADIUS, r);
-    if (edge <= 0.0 || dot(dir, z) <= 0.0) {
+    if (edge <= 0.0 || dot(dir, z) <= 0.0 || day.space.w < 0.5) {
         return vec4f(0.0);
     }
     let g = dwell_moon_ground(p / max(r, 1.0), px / MOON_RADIUS);

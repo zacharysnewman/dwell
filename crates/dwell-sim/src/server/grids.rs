@@ -270,6 +270,9 @@ impl Server {
                         s.handle = None;
                         s.away = Some(Away { slot, handle: nh });
                         s.grid_streamed.clear();
+                        if s.capabilities.has(GRID_FRAMES) {
+                            s.forget_home_stream();
+                        }
                         let pid = s.player_id;
                         let (after, v_after) = self.world_state_of(pid).expect("carried");
                         let to = self.grids.slots[slot].index.into();
@@ -454,7 +457,8 @@ impl Server {
         if !s.capabilities.has(GRID_FRAMES) || s.chunk_mode == ChunkMode::AwaitingCheck {
             return;
         }
-        let generated = s.chunk_mode == ChunkMode::Generated;
+        // Always the voxels (or Air): the client's workers generate home's terrain only (M-7c).
+        let generated = false;
         let index = self.grids.slots[a.slot].index;
         let sp = &self.grids.slots[a.slot].space;
         let p = sp.players.position(&sp.physics, a.handle);
