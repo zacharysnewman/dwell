@@ -11,16 +11,17 @@
   "clear": 3,
   "structure": "dwell:shrine",
   "design": {
-    "$comment": "The shrine's shape (owner, 2026-11-12: \"The shrine should be a 8x8m terraced and filled stone circle with stepping pillars forming a half circle. Only the tallest pillars (half of them) are connected at the top. Forming a quarter circle.\"), built by shared/worldgen/gen.mjs into shared/structures/<structure>.json (CI fails on a stale file): a round platform of `block`, the columns whose centres lie within `radius` m of its centre (an 8 × 8 m circle for 4), `base` m of filled stone, then a ½ m step over the base for each of `steps` (radii in m, shrinking toward the centre: the terraced dais). `pillars.count` pillars (1 more than a multiple of 4) on the back half's arc of `arcRadius` m, standing on the floor, `lowest` m tall at the arc's ends and `rise` m taller each one toward its middle; the middle half of them (the tallest, a quarter circle) are joined at their tops by a `lintel.thickness` m lintel along the arc. `light.block` stands on the dais's top on the columns within `light.radius` m of the centre (its glow). The open half faces +z before the site's quarter turn; `stand` is on it.",
+    "$comment": "The shrine's shape (owner, 2026-11-12: \"The shrine should be a 8x8m terraced and filled stone circle with stepping pillars forming a half circle. Only the tallest pillars (half of them) are connected at the top. Forming a quarter circle.\"), built by shared/worldgen/gen.mjs into shared/structures/<structure>.json (CI fails on a stale file): a round platform of `block`, the columns whose centres lie within `radius` m of its centre (an 8 × 8 m circle for 4), `base` m of filled stone, then a ½ m step over the base for each of `steps` (radii in m, shrinking toward the centre: the terraced dais). `pillars.count` pillars (1 more than a multiple of 4), each `width` m square, evenly spaced on the back half's arc of `arcRadius` m, standing on the floor, `lowest` m tall at the arc's ends and `rise` m taller each one toward its middle; they stand apart (owner, 2026-11-13: \"Yes, shrine pillars have gaps.\"): no two pillars' columns touch, side or corner, and gen.mjs fails a count or width that leaves no air between neighbours (9 on a 3.5 m arc do). The middle half of them (the tallest, a quarter circle) are joined at their tops by a `lintel.thickness` m lintel along the arc over the gaps between them, rising from top to top: an arch. `light.block` stands on the dais's top on the columns within `light.radius` m of the centre (its glow). The open half faces +z before the site's quarter turn; `stand` is on it.",
     "block": "dwell:stone",
     "radius": 4,
     "base": 1,
     "steps": [3, 2],
     "pillars": {
       "block": "dwell:stone",
-      "count": 9,
+      "count": 5,
+      "width": 1,
       "arcRadius": 3.5,
-      "lowest": 1.5,
+      "lowest": 2.5,
       "rise": 0.5
     },
     "lintel": {

@@ -8,6 +8,7 @@
         "Every terrain block has ramps now, basalt, obsidian and the moon's dust included.",
         "Realistic's layered rock slopes are smooth ramps broken by ledges, not fields of little stairs, and mesa tops keep a little of the ground's roll.",
         "Sand ramps fall like sand and land as flat sand.",
+        "Resurrection shrines' pillars now stand apart with gaps between them, and the tallest three are joined by an arched lintel.",
         "New compatibility line: the Realistic and starter worlds' terrain changed, so worlds from 0.58 open in 0.58 builds."
         ]
       },

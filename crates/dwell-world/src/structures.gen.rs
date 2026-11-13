@@ -58,12 +58,12 @@ pub static STRUCTURES: [StructureDef; 7] = [
     },
     StructureDef {
         name: "dwell:shrine",
-        hash: 0x6e5797332be45f70,
+        hash: 0xc3ccb406061b01e8,
         body: Body::Voxels {
             size: [8, 9, 8],
             anchor: [4, 0, 4],
             palette: &[('.', None), ('l', Some("dwell:stone[flooded=false]")), ('p', Some("dwell:stone[flooded=false]")), ('s', Some("dwell:stone[flooded=false]")), ('t', Some("dwell:torch")), ('u', Some("dwell:torch_upper"))],
-            cells: "..ssss...ssssss.ssssssssssssssssssssssssssssssss.ssssss...ssss....ssss...ssssss.ssssssssssssssssssssssssssssssss.ssssss...ssss....pppp...pssssp.pssssssp.ssssss.pssssssp.ssssss...ssss............pppp...p....p.p..ss..p..ssss..p.ssss.p...ss.....................pppp...p....p.p......p...tt...p..tt..p..........................pppp...p....p.p......p...uu......uu.............................pppp...p....p...................................................pppp....l..l.....................................................pp...........................................................",
+            cells: "..ssss...ssssss.ssssssssssssssssssssssssssssssss.ssssss...ssss....ssss...ssssss.ssssssssssssssssssssssssssssssss.ssssss...ssss......p....pssssp..ssssss..ssssss.pssssssp.ssssss...ssss..............p....p....p....ss.....ssss..p.ssss.p...ss.......................p....p....p............tt...p..tt..p............................p....p....p............uu...p..uu..p............................p....p....p.................p......p............................p....pl..lp...................................................llpl..........................................................",
         },
         variants: &[],
     },
