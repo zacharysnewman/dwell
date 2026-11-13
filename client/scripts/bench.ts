@@ -919,7 +919,11 @@ async function step(run: Run, s: Step): Promise<void> {
     }
     case 'moonLand':
     case 'sunLand': {
-      const options = { ...(s.face ? { face: s.face } : {}), ...(s.maxS ? { maxS: s.maxS } : {}) };
+      const options = {
+        ...(s.face ? { face: s.face } : {}),
+        ...(s.do === 'sunLand' && s.river ? { river: true } : {}),
+        ...(s.maxS ? { maxS: s.maxS } : {}),
+      };
       const r = await call<{ ok?: Record<string, unknown>; error?: string } | null>(
         page,
         `d.${s.do}(${JSON.stringify(options)}).then((ok) => ({ ok }), (e) => ({ error: String(e?.message ?? e) }))`,

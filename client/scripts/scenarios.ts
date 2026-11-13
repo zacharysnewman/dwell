@@ -180,7 +180,14 @@ export type Step =
    * sphere, back to where the trip started, and waits for home's chunk under the feet. Each leg
    * at most `maxS` (120). Saved in the report's `trips`.
    */
-  | { do: 'flyTo'; to: 'moon' | 'home'; face?: 'a' | 'b'; landM?: number; maxS?: number }
+  | {
+      do: 'flyTo';
+      to: 'moon' | 'home';
+      face?: 'a' | 'b';
+      marginM?: number;
+      landM?: number;
+      maxS?: number;
+    }
   /**
    * Teleports onto the moon's ground on face `face` (`a`, `b`; `__dwell.moonLand`, a local world),
    * no flight, waits until standing there with its chunk held (at most `maxS`, 60) and `waitS`
@@ -191,9 +198,10 @@ export type Step =
   | { do: 'moonLand'; face?: 'a' | 'b'; maxS?: number; waitS?: number }
   /**
    * `moonLand` onto the sun's dry crust instead (`__dwell.sunLand`, SUN_WORLD.md): the same wait,
-   * draw counts and report. Scenario `sun-draw`.
+   * draw counts and report. Scenario `sun-draw`. `river`: beside a river head instead, where its
+   * lava field runs (BUGS.md #146).
    */
-  | { do: 'sunLand'; face?: 'a' | 'b'; maxS?: number; waitS?: number }
+  | { do: 'sunLand'; face?: 'a' | 'b'; river?: boolean; maxS?: number; waitS?: number }
   /**
    * Stands the player on a raft `lift` m (default 1) above its feet and moves the raft at `speed`
    * m/s toward `yaw` (degrees, 0 = +Z, 90 = +X) for `s` seconds at a held height, then waits out
@@ -469,9 +477,9 @@ const STEP_FIELDS: Record<Step['do'], readonly string[]> = {
   give: ['item', 'count'],
   lava: ['op', 'args'],
   herd: ['kind', 'back'],
-  flyTo: ['to', 'face', 'landM', 'maxS'],
+  flyTo: ['to', 'face', 'marginM', 'landM', 'maxS'],
   moonLand: ['face', 'maxS', 'waitS'],
-  sunLand: ['face', 'maxS', 'waitS'],
+  sunLand: ['face', 'river', 'maxS', 'waitS'],
   mark: [],
   record: ['name', 'budget', 'reportOnly'],
   shot: ['name', ...PLACEMENT_FIELDS, 'quietFrames', 'maxS'],
@@ -735,10 +743,16 @@ export function parseStep(where: string, v: unknown): Step {
       if (o.face !== undefined && (o.to !== 'moon' || (o.face !== 'a' && o.face !== 'b'))) {
         throw new ViewError(`${at('face')}: expected "a" or "b" (a trip to the moon)`);
       }
+      if (o.marginM !== undefined && o.to !== 'moon') {
+        throw new ViewError(`${at('marginM')}: only a trip to the moon starts outside its capture`);
+      }
       return {
         do: d,
         to: o.to,
         ...(o.face === undefined ? {} : { face: o.face }),
+        // `__dwell.flyTo`'s `marginM` (moonTrip.ts `TripOptions`): how far outside the capture
+        // sphere the dev move starts the flight (BUGS.md #150: the step rejected it).
+        ...(o.marginM === undefined ? {} : { marginM: num(at('marginM'), o.marginM, 0, 100_000) }),
         ...(o.landM === undefined ? {} : { landM: num(at('landM'), o.landM, 5, 500) }),
         ...(o.maxS === undefined ? {} : { maxS: num(at('maxS'), o.maxS, 1, 600) }),
       };
@@ -748,9 +762,13 @@ export function parseStep(where: string, v: unknown): Step {
       if (o.face !== undefined && o.face !== 'a' && o.face !== 'b') {
         throw new ViewError(`${at('face')}: expected "a" or "b"`);
       }
+      if (o.river !== undefined && (d !== 'sunLand' || typeof o.river !== 'boolean')) {
+        throw new ViewError(`${at('river')}: expected true or false (sunLand only)`);
+      }
       return {
         do: d,
         ...(o.face === undefined ? {} : { face: o.face }),
+        ...(o.river === undefined ? {} : { river: o.river }),
         ...(o.maxS === undefined ? {} : { maxS: num(at('maxS'), o.maxS, 1, 600) }),
         ...(o.waitS === undefined ? {} : { waitS: num(at('waitS'), o.waitS, 0, 60) }),
       };
