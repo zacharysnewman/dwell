@@ -10,6 +10,7 @@ use std::collections::VecDeque;
 use std::rc::Rc;
 
 use dwell_blocks::StateId;
+use dwell_characters::animator::Defeat;
 use dwell_game::block_interaction::{BlockInteraction, BlockTarget, view_direction};
 use dwell_game::brush_tool::{BrushAction, BrushOutline, BrushPanel, BrushTool};
 use dwell_game::chunk_stream::{
@@ -868,8 +869,22 @@ pub struct Game<S: Scene> {
     /// The world's mode breaks every block in one hit without a tool (`instantBreaks`,
     /// creative): the break prediction asks it as the server does.
     instant_breaks: bool,
+    /// Defeated (the server's `DEAD`: kneeling where it fell; CHARACTERS.md §11.13), and where.
     dead: bool,
     death_feet: [f64; 3],
+    /// The defeat's moment (ms), the facing the body kneels with, and the camera it eases out from
+    /// (eye, pitch).
+    defeated_ms: f64,
+    defeat_yaw: Option<f64>,
+    defeat_from: ([f64; 3], f64),
+    /// Seconds left of the stand at the shrine (`STAND_S`): third person, input held, the view
+    /// fading back in from `stood_ms`.
+    stand_left_s: f64,
+    stood_ms: f64,
+    /// The last camera drawn (eye, pitch): where the defeat camera eases out from.
+    last_camera: ([f64; 3], f64),
+    /// How black the view is (0 clear, 1 black): defeat's fade (`defeat_fade`).
+    fade: f64,
     /// The streaming probe's last feet and heading (`probe_stream`).
     probe: ([f64; 3], [f64; 2]),
     /// Fixed points the streaming probe also reports (`probe.target`, `probe.control`).
@@ -1140,6 +1155,13 @@ impl<S: Scene> Game<S> {
                 .allows(dwell_protocol::modes::Ability::InstantBreaks),
             dead: false,
             death_feet: [0.0; 3],
+            defeated_ms: 0.0,
+            defeat_yaw: None,
+            defeat_from: ([0.0; 3], 0.0),
+            stand_left_s: 0.0,
+            stood_ms: 0.0,
+            last_camera: ([0.0; 3], 0.0),
+            fade: 0.0,
             probe: ([0.0; 3], [0.0, 1.0]),
             probe_points: Vec::new(),
             previous: None,
@@ -1908,7 +1930,15 @@ impl<S: Scene> Game<S> {
                 }
                 // Just died: where the server will stand us up, the shrine nearest the death on its
                 // face (docs/SHRINES.md), so the respawn preload readies the terrain there.
+                if !self.dead && was_dead {
+                    // Stood up at the shrine (§11.13): the stand plays, the view fades in.
+                    self.stand_left_s = dwell_protocol::defeat::STAND_S;
+                    self.stood_ms = now_ms;
+                }
                 if self.dead && !was_dead {
+                    self.defeated_ms = now_ms;
+                    self.defeat_yaw = None;
+                    self.defeat_from = self.last_camera;
                     let feet = s.local.position;
                     self.respawn_chunk = self.far_terrain.as_deref().and_then(|t| {
                         let face = dwell_world::FaceFrame::at_height(feet[1]).face;
@@ -2979,7 +3009,18 @@ impl<S: Scene> Game<S> {
         }
     }
 
-    /// Where the player died, while dead (the death camera's feet; world metres).
+    /// How black the view is for defeat's fade (0 clear, 1 black; CHARACTERS.md §11.13): out over
+    /// the kneel's end, back in as you stand up at the shrine. The HUD draws it.
+    pub fn defeat_fade(&self) -> f64 {
+        self.fade
+    }
+
+    /// Whether you are defeated or standing up again (third person, input held; §11.13).
+    pub fn defeated(&self) -> bool {
+        self.dead || self.stand_left_s > 0.0
+    }
+
+    /// Where the player was defeated, while kneeling (the defeat camera's feet; world metres).
     pub fn death_feet(&self) -> Option<[f64; 3]> {
         self.dead.then_some(self.death_feet)
     }
@@ -4382,8 +4423,14 @@ impl<S: Scene> Game<S> {
         if self.holding || self.predictor.unacked() >= UNACKED_HOLD {
             return;
         }
-        let frame = quantize_input(&input.sample(touch), self.predictor.next_seq());
+        let mut frame = quantize_input(&input.sample(touch), self.predictor.next_seq());
         input.took();
+        if self.stand_left_s > 0.0 {
+            // Standing up at the shrine (§11.13): no moving, jumping or crouching until it is over.
+            frame.move_x = 0;
+            frame.move_y = 0;
+            frame.buttons &= dwell_protocol::input_buttons::FLY_SPEED;
+        }
         let before = self.current.face;
         self.predictor.tick(self.streamer.store_mut(), &frame);
         let crossed = self.follow_grid();
@@ -4786,11 +4833,31 @@ impl<S: Scene> Game<S> {
         let camera_eye;
         let held = self.held();
         self.send_held(held);
-        if self.dead {
-            // Third person over the body.
-            // On the face the body lies on, not the controller's (it has no body while dead).
-            let cam = death_camera(self.death_feet, yaw);
-            let mut view = self.bodies.own_dead(self.death_feet, yaw, cam.face, dt);
+        let defeat = dwell_protocol::defeat::of(dwell_protocol::defeat::PLAYER);
+        self.stand_left_s = (self.stand_left_s - dt).max(0.0);
+        self.fade = if self.dead {
+            defeat.fade_out((now_ms - self.defeated_ms) / 1000.0)
+        } else if self.stood_ms > 0.0 {
+            defeat.fade_in((now_ms - self.stood_ms) / 1000.0)
+        } else {
+            0.0
+        };
+        if self.dead || (self.stand_left_s > 0.0 && self.current.active) {
+            // Defeated (§11.13): third person over your body kneeling where you fell, or standing
+            // up at the shrine; on the face the body is on, not the controller's (it has no body
+            // while defeated).
+            let (feet, phase, since) = if self.dead {
+                let body_yaw = *self.defeat_yaw.get_or_insert(yaw);
+                let since = (now_ms - self.defeated_ms) / 1000.0;
+                ((self.death_feet, body_yaw), Defeat::Kneel, since)
+            } else {
+                ((self.current.feet(), yaw), Defeat::Stand, f64::INFINITY)
+            };
+            let (feet, body_yaw) = feet;
+            let cam = defeat_camera(feet, yaw, &defeat.camera, self.defeat_from, since);
+            let mut view = self
+                .bodies
+                .own_defeated(feet, body_yaw, cam.face, phase, held, dt);
             view.light = self.body_light(u32::from(self.player_id), view.feet, view.face, dt);
             let mut scene = self.scene.borrow_mut();
             scene.set_player(u32::from(self.player_id), Some(view));
@@ -4798,6 +4865,7 @@ impl<S: Scene> Game<S> {
             scene.set_own_shadow(None);
             scene.set_own_body(None);
             camera_eye = cam.eye;
+            self.last_camera = (cam.eye, cam.pitch);
             drop(scene);
             // Third person: a blast's shake, no swing's sway (the swing is the body's).
             let (_, (sy, sp)) = self.update_blasts(cam.eye, now_ms);
@@ -4816,6 +4884,7 @@ impl<S: Scene> Game<S> {
             // Eye height is smoothed per tick (steps, crouching; eye.rs), then interpolated.
             let eye = [center[0], self.eye.draw(alpha), center[2]];
             camera_eye = eye;
+            self.last_camera = (eye, pitch);
             // A blast's shake and the swing's sway turn the view drawn, never the aim: the
             // targeting below, the listener and the facing keep `eye`, `yaw` and `pitch`.
             let effects = self.update_blasts(eye, now_ms);
@@ -6065,7 +6134,7 @@ fn sound_event(kind: SoundKind) -> SoundEvent {
 }
 
 /// The audio listener at an eye looking along yaw/pitch on `face`: eye, forward, up.
-/// The third-person camera over your dead body.
+/// The third-person camera over your defeated body.
 struct DeathCamera {
     eye: [f64; 3],
     pitch: f64,
@@ -6087,17 +6156,34 @@ fn own_body_draw(active: bool, placed_from_eyes: Option<f64>) -> (bool, bool) {
     (active && !whole, active && whole)
 }
 
-/// The camera over a dead body at `feet`, looking along `yaw`: on the face the body lies on (the
-/// predictor's controller has no body while dead and falls back to face A's frame: owner,
-/// 2026-11-06, the camera was upside down on face B), 4 m behind it along that face's look and
-/// 2.5 m along its up, 25° down.
-fn death_camera(feet: [f64; 3], yaw: f64) -> DeathCamera {
+/// The camera over a defeated body at `feet` (CHARACTERS.md §11.13), looking along `yaw`: on the
+/// face the body is on (the predictor's controller has no body while defeated and falls back to
+/// face A's frame: owner, 2026-11-06, the camera was upside down on face B), `cam.back_m` behind
+/// it along that face's look and `cam.up_m` along its up, `cam.pitch_deg`; eased out from `from`
+/// (the eye and pitch before the defeat) over `cam.ease_s`, `since` seconds after the defeat.
+fn defeat_camera(
+    feet: [f64; 3],
+    yaw: f64,
+    cam: &dwell_protocol::defeat::DefeatCamera,
+    from: ([f64; 3], f64),
+    since: f64,
+) -> DeathCamera {
     let face = FaceFrame::at_height(feet[1]);
     let ahead = face.look(yaw, 0.0);
     let up = face.up();
+    let out: [f64; 3] = std::array::from_fn(|k| feet[k] - ahead[k] * cam.back_m + up[k] * cam.up_m);
+    let u = if cam.ease_s > 0.0 {
+        (since / cam.ease_s).clamp(0.0, 1.0)
+    } else {
+        1.0
+    };
+    let u = u * u * (3.0 - 2.0 * u);
+    // An eye far from the body (a teleport, the first frame) is no place to ease from.
+    let near = (0..3).map(|k| (from.0[k] - feet[k]).powi(2)).sum::<f64>() < 100.0;
+    let u = if near { u } else { 1.0 };
     DeathCamera {
-        eye: std::array::from_fn(|k| feet[k] - ahead[k] * 4.0 + up[k] * 2.5),
-        pitch: -25.0,
+        eye: std::array::from_fn(|k| from.0[k] + (out[k] - from.0[k]) * u),
+        pitch: from.1 + (cam.pitch_deg - from.1) * u,
         face,
     }
 }

@@ -504,8 +504,6 @@ pub struct PlayerView {
     pub face: FaceFrame,
     /// Degrees; 0 = +Z.
     pub yaw: f64,
-    /// Lying on the ground (cosmetic death pose).
-    pub dead: bool,
     /// The look it wears (a variant of the player character's data; `DEFAULT_LOOK` for everyone
     /// until looks are chosen, CHARACTERS.md §9.4).
     pub look: &'static str,
@@ -4594,7 +4592,6 @@ impl Renderer {
                 feet: v.feet,
                 yaw: v.yaw,
                 face: v.face,
-                dead: v.dead,
                 look: v.look,
                 pose: v.pose,
                 held: v.held,

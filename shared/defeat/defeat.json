@@ -1,0 +1,17 @@
+{
+  "$comment": "Defeat (docs/CHARACTERS.md §11.13, WORK_QUEUE item 55; owner 2026-11-13: \"Humans won't die in this game (general design rule)\"). At 0 health a human (a player or an NPC) is defeated: it kneels where it fell for kneelS (the characters' `kneel` role; `kneelArmed` with a weapon in hand, the sword planted before it), the view fades to black over fadeS, and it stands up at the resurrection shrine nearest where it fell, on that face (docs/SHRINES.md), playing `stand` (`standArmed`, standS: at least each stand clip's duration; held still meanwhile) while the view fades back in over fadeS. camera: the defeated player's view, pulled out to third person over easeS: backM behind the body along its facing, upM above its feet, pitchDeg (down negative); it stays out while they stand. characters: per character (a characters.json character's name, or an NPC kind of shared/creatures/creatures.json) any of kneelS, fadeS and camera's fields over the defaults. Run `node shared/defeat/gen.mjs` after editing; CI fails on stale output.",
+  "formatVersion": 1,
+  "kneelS": 4,
+  "fadeS": 1,
+  "standS": 1.4,
+  "roles": {
+    "kneel": "kneel",
+    "kneelArmed": "kneel_sword",
+    "stand": "stand",
+    "standArmed": "stand_sword"
+  },
+  "camera": { "backM": 3.2, "upM": 1.5, "pitchDeg": -20, "easeS": 0.8 },
+  "characters": {
+    "dwell:villager": { "kneelS": 5 }
+  }
+}

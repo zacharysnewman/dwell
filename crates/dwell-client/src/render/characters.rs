@@ -84,6 +84,21 @@ pub enum Held {
     },
 }
 
+impl Held {
+    /// Whether this is a weapon in hand (a tool of kind `Weapon`, shared/tools, by the characters
+    /// item its hand shows): defeat plants it (CHARACTERS.md §11.13, `kneel_sword`).
+    pub fn is_weapon(self) -> bool {
+        let hold = match self {
+            Held::Tool(h) | Held::Model { hold: h, .. } => h,
+            _ => return false,
+        };
+        dwell_protocol::chopping::TOOLS.iter().any(|t| {
+            t.kind == dwell_protocol::chopping::ToolKind::Weapon
+                && (t.held == Some(hold) || t.held_vertical == Some(hold))
+        })
+    }
+}
+
 /// The hold a model look's tool is held in when no tool names one (a pickaxe, a shovel): the axe's
 /// level hold, a one-handed tool held toward its foot.
 pub const MODEL_HOLD: &str = "tool";
@@ -218,8 +233,6 @@ pub struct BodyDraw {
     pub yaw: f64,
     /// The face it stands on: upside down on face B.
     pub face: FaceFrame,
-    /// Lies on its back (the death pose).
-    pub dead: bool,
     /// The look's name (unknown names draw the default look).
     pub look: &'static str,
     pub pose: Pose,
@@ -666,7 +679,7 @@ fn rows(a: &Affine) -> [f32; 12] {
 /// A body's frame in eye-relative world space: turned to its yaw, upside down on face B (a half
 /// turn about its forward axis, so it stays a proper rotation), lying on its back when dead.
 pub fn body_frame(d: &BodyDraw, eye: V3) -> Affine {
-    place_frame(d.feet, d.yaw, d.face, d.dead, eye)
+    place_frame(d.feet, d.yaw, d.face, eye)
 }
 
 /// A held item on a skinned body (CHARACTERS.md §11.5): what is needed to pose it once the skinned
@@ -734,7 +747,6 @@ pub fn creature_draw(
         feet: c.feet,
         yaw: c.yaw,
         face: c.face,
-        dead: false,
         role: c.role,
         light,
         cast_only: false,
@@ -774,21 +786,16 @@ pub fn npc_rig_pose(
 }
 
 /// [`body_frame`] from its parts (the skinned bodies' too, render/skinned.rs).
-pub fn place_frame(feet: V3, yaw: f64, face: FaceFrame, dead: bool, eye: V3) -> Affine {
+pub fn place_frame(feet: V3, yaw: f64, face: FaceFrame, eye: V3) -> Affine {
     let (s, c) = (yaw.to_radians().sin() as f32, yaw.to_radians().cos() as f32);
     // The face's up (FaceFrame): on face B the body's up and left both turn over.
     let up = face.up();
     let f = up[1] as f32;
-    let place = Affine {
+    // Upright always: humans never die, a defeated one kneels by its clip (CHARACTERS.md §11.13);
+    // before 0.61 a dead body was laid on its back here.
+    Affine {
         m: [[f * c, 0.0, -f * s], [0.0, f, 0.0], [s, 0.0, c]],
         t: std::array::from_fn(|k| (feet[k] - eye[k]) as f32),
-    };
-    if dead {
-        place
-            .then(&Affine::translation([0.0, 0.18, 0.0]))
-            .then(&Affine::euler([-90.0, 0.0, 0.0]))
-    } else {
-        place
     }
 }
 
@@ -1270,7 +1277,6 @@ impl CharacterRenderer {
                         feet: d.feet,
                         yaw: d.yaw,
                         face: d.face,
-                        dead: d.dead,
                         role: d.role,
                         light: d.light,
                         cast_only: false,
@@ -1306,7 +1312,6 @@ impl CharacterRenderer {
                     feet: d.feet,
                     yaw: d.yaw,
                     face: d.face,
-                    dead: d.dead,
                     role: d.role,
                     light: d.light,
                     cast_only: d.cast_only,
@@ -1392,7 +1397,7 @@ impl CharacterRenderer {
                 held_items.push(HeldOnSkin {
                     held,
                     posed: bone_transforms(self.character, &pose),
-                    frame: place_frame(c.feet, c.yaw, c.face, false, eye),
+                    frame: place_frame(c.feet, c.yaw, c.face, eye),
                     seed: c.id,
                     light: *light,
                     far: dist > OUTLINE_M,
@@ -1803,7 +1808,7 @@ mod tests {
             let ch = dwell_characters::player();
             let b = ch.bone("hand_r").unwrap();
             let pose = Pose::default();
-            let frame = place_frame(face.point([1.0, 2.0, 3.0]), 45.0, face, false, [0.0; 3]);
+            let frame = place_frame(face.point([1.0, 2.0, 3.0]), 45.0, face, [0.0; 3]);
             let hand = Affine::translation([5.0, 6.0, 7.0]).then(&Affine::euler([10.0, 20.0, 30.0]));
             let axe = ch.item("stone_axe").expect("the axe is data");
             let held = |h: Held, item: Option<&dwell_characters::Item>| HeldOnSkin {
@@ -1916,7 +1921,6 @@ mod tests {
                         feet,
                         yaw: 30.0,
                         face,
-                        dead: false,
                         role: "idle",
                         light: [1.0, 0.0],
                         cast_only: false,
@@ -1932,7 +1936,7 @@ mod tests {
                         &model_pose(data, model, &p, d.rig_pose.as_ref(), d.grip),
                     );
                     let hand = hand_frame(data, model, &g, &place).unwrap();
-                    let frame = place_frame(feet, 30.0, face, false, [0.0; 3]);
+                    let frame = place_frame(feet, 30.0, face, [0.0; 3]);
                     let h = HeldOnSkin {
                         held,
                         posed: bone_transforms(ch, &posed),
@@ -2345,7 +2349,6 @@ mod tests {
                 feet: face.point([10.0, 5.0, 0.0]),
                 yaw: 90.0,
                 face,
-                dead: false,
                 look: dwell_characters::DEFAULT_LOOK,
                 pose: Pose::REST,
                 held: torch(),
@@ -2376,7 +2379,6 @@ mod tests {
                 feet: face.point([10.0, 5.0, 0.0]),
                 yaw: 90.0,
                 face,
-                dead: false,
                 look: dwell_characters::DEFAULT_LOOK,
                 pose: Pose::REST,
                 held: Held::Empty,
@@ -2631,7 +2633,6 @@ mod tests {
                             feet,
                             yaw,
                             face,
-                            dead: false,
                             look: dwell_characters::DEFAULT_LOOK,
                             pose: *pose,
                             held: Held::Empty,
@@ -2797,7 +2798,6 @@ mod tests {
                 feet: d.feet,
                 yaw: d.yaw,
                 face: d.face,
-                dead: d.dead,
                 role: d.role,
                 light: d.light,
                 cast_only: false,
@@ -2834,7 +2834,6 @@ mod tests {
                                 feet,
                                 yaw: 30.0,
                                 face,
-                                dead: false,
                                 look: dwell_characters::DEFAULT_LOOK,
                                 pose,
                                 held: Held::Empty,

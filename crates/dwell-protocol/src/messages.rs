@@ -824,6 +824,11 @@ pub const NPC_POSES: [&str; 3] = ["stand", "look", "sit"];
 /// `npcs.swings` capability (WORK_QUEUE item 35): `NpcNet::pose` 3 level, 4 vertical.
 pub const NPC_STRIKE_POSES: [&str; 2] = ["strikeLevel", "strikeVertical"];
 
+/// The poses after `NPC_STRIKE_POSES` a defeated NPC is sent in, to a client with the
+/// `humans.defeat` capability (docs/CHARACTERS.md §11.13): `NpcNet::pose` 5 kneeling where it
+/// fell, 6 standing up at a shrine.
+pub const NPC_DEFEAT_POSES: [&str; 2] = ["kneel", "standUp"];
+
 /// The local player's stamina and oxygen as of its input `seq` (`Message::Vitals`).
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct VitalsMessage {

@@ -554,7 +554,7 @@ dwell_world::both_faces!(
             .collect();
         assert_eq!(axe, [11], "the dropped axe keeps its wear");
         // The player respawns where it died (the spawn) and walks over its drops.
-        let ticks = (players::RESPAWN_SECONDS as u32 + 1) * SIM_HZ;
+        let ticks = dwell_sim::server::defeat_ticks(dwell_protocol::defeat::PLAYER) + SIM_HZ;
         for _ in 0..ticks {
             fx.server.step();
         }

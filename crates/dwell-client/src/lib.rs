@@ -246,7 +246,6 @@ pub async fn render_scene(device: wgpu::Device, queue: wgpu::Queue) -> Result<Ve
             feet: [16.0, 9.0, 16.0],
             face: dwell_world::FaceFrame::A,
             yaw: 0.0,
-            dead: false,
             // The red-tunicked look, which the smoke test finds.
             look: "tinker",
             pose: Default::default(),
@@ -256,18 +255,14 @@ pub async fn render_scene(device: wgpu::Device, queue: wgpu::Queue) -> Result<Ve
             light: [1.0, 0.0],
         }),
     );
-    // A dead player lying beside it, and one turned to face the camera's right.
-    for (id, feet, yaw, dead) in [
-        (2, [13.0, 9.0, 15.0], 0.0, true),
-        (3, [19.0, 9.0, 16.0], 90.0, false),
-    ] {
+    // Another player beside it, and one turned to face the camera's right.
+    for (id, feet, yaw) in [(2, [13.0, 9.0, 15.0], 0.0), (3, [19.0, 9.0, 16.0], 90.0)] {
         renderer.set_player(
             id,
             Some(render::PlayerView {
                 feet,
                 face: dwell_world::FaceFrame::A,
                 yaw,
-                dead,
                 look: dwell_characters::DEFAULT_LOOK,
                 pose: Default::default(),
                 role: "idle",

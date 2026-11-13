@@ -157,7 +157,11 @@
         "chop_level": "biped_chop_level",
         "chop_vertical": "biped_chop_vertical",
         "guard_level": "biped_guard_level",
-        "guard_vertical": "biped_guard_vertical"
+        "guard_vertical": "biped_guard_vertical",
+        "kneel": "biped_kneel",
+        "kneel_sword": "biped_kneel_sword",
+        "stand": "biped_stand",
+        "stand_sword": "biped_stand_sword"
       },
       "firstPerson": {
         "bones": ["arm_r", "forearm_r", "hand_r"],
@@ -765,6 +769,62 @@
         { "t": 0, "root": [0, -0.05, 0], "bones": { "hips": [2, 0, 0], "chest": [-4, 0, 0], "head": [6, 0, 0], "arm_l": [-38, 0, 62], "forearm_l": [-30, 0, 0], "arm_r": [-38, 0, -62], "forearm_r": [-30, 0, 0], "thigh_l": [-26, 0, 0], "shin_l": [40, 0, 0], "foot_l": [-16, 0, 0], "thigh_r": [-21, 0, 0], "shin_r": [41, 0, 0], "foot_r": [-23, 0, 0] } },
         { "t": 0.12, "root": [0, -0.297, -0.04], "bones": { "hips": [16, 0, 0], "chest": [20, 0, 0], "head": [-18, 0, 0], "arm_l": [-30, 0, 30], "forearm_l": [-30, 0, 0], "arm_r": [-30, 0, -30], "forearm_r": [-30, 0, 0], "thigh_l": [-78, 0, 0], "shin_l": [101, 0, 0], "foot_l": [-39, 0, 0], "thigh_r": [-71, 0, 0], "shin_r": [107, 0, 0], "foot_r": [-45, 0, 0] } },
         { "t": 0.4, "root": [0, -0.002, 0], "bones": { "hips": [0, 0, 0], "chest": [0, 0, 0], "head": [0, 0, 0], "arm_l": [0, 0, 6], "forearm_l": [-10, 0, 0], "arm_r": [0, 0, -6], "forearm_r": [-10, 0, 0], "thigh_l": [-7, 0, 0], "shin_l": [11, 0, 0], "foot_l": [-4, 0, 0], "thigh_r": [-6, 0, 0], "shin_r": [11, 0, 0], "foot_r": [-6, 0, 0] } }
+      ]
+    },
+    "biped_kneel": {
+      "$comment": "Defeat (docs/CHARACTERS.md §11.13; owner, 2026-11-13: \"Humans won't die in this game\"): dropping onto the left knee, the right knee raised, head bowed, the right hand resting on the raised knee (no weapon in hand); held while defeated.",
+      "rig": "biped",
+      "layer": "base",
+      "duration": 1.3,
+      "loop": false,
+      "ease": "smooth",
+      "blend": 0.2,
+      "keys": [
+        { "t": 0, "root": [0, -0.02, 0], "bones": { "hips": [0, 0, 0], "chest": [6, 0, 0], "head": [8, 0, 0], "thigh_l": [-4, 0, 0], "shin_l": [8, 0, 0], "foot_l": [-4, 0, 0], "thigh_r": [-4, 0, 0], "shin_r": [8, 0, 0], "foot_r": [-4, 0, 0], "arm_l": [0, 0, 6], "forearm_l": [-10, 0, 0], "hand_l": [0, 0, 0], "arm_r": [0, 0, -6], "forearm_r": [-10, 0, 0], "hand_r": [0, 0, 0] } },
+        { "t": 0.55, "root": [0, -0.3, 0.04], "bones": { "hips": [16, 0, 0], "chest": [24, 0, 0], "head": [22, 0, 0], "thigh_l": [-40, 0, 4], "shin_l": [110, 0, 0], "foot_l": [20, 0, 0], "thigh_r": [-90, 0, -6], "shin_r": [88, 0, 0], "foot_r": [2, 0, 0], "arm_r": [-28, 5, 11], "forearm_r": [-66, 0, 0], "hand_r": [30, 0, 0], "arm_l": [-18, 0, -3], "forearm_l": [-7, 0, 0], "hand_l": [0, 0, 0] } },
+        { "t": 1.3, "root": [0, -0.4, 0], "bones": { "hips": [10, 0, 0], "chest": [30, 0, 0], "head": [22, 0, 0], "thigh_l": [-10, 0, 4], "shin_l": [90, 0, 0], "foot_l": [40, 0, 0], "thigh_r": [-100, 0, -6], "shin_r": [90, 0, 0], "foot_r": [0, 0, 0], "arm_r": [-28, 5, 11], "forearm_r": [-66, 0, 0], "hand_r": [30, 0, 0], "arm_l": [-18, 0, -3], "forearm_l": [-7, 0, 0], "hand_l": [0, 0, 0] } }
+      ]
+    },
+    "biped_kneel_sword": {
+      "$comment": "Defeat with a sword in hand (owner, 2026-11-13: \"Head down, hand on sword hilt, sword in the ground\"): biped_kneel's legs, body and head, the right fist on the hilt of the sword planted point-down in the ground before the raised knee (the arm fitted with `clip_probe --body --fit`).",
+      "rig": "biped",
+      "layer": "base",
+      "duration": 1.3,
+      "loop": false,
+      "ease": "smooth",
+      "blend": 0.2,
+      "keys": [
+        { "t": 0, "root": [0, -0.02, 0], "bones": { "hips": [0, 0, 0], "chest": [6, 0, 0], "head": [8, 0, 0], "thigh_l": [-4, 0, 0], "shin_l": [8, 0, 0], "foot_l": [-4, 0, 0], "thigh_r": [-4, 0, 0], "shin_r": [8, 0, 0], "foot_r": [-4, 0, 0], "arm_l": [0, 0, 6], "forearm_l": [-10, 0, 0], "hand_l": [0, 0, 0], "arm_r": [-20, 0, -4], "forearm_r": [-65, 0, 0], "hand_r": [0, 0, 0] } },
+        { "t": 0.55, "root": [0, -0.3, 0.04], "bones": { "hips": [16, 0, 0], "chest": [30, 35, 0], "head": [22, 0, 0], "thigh_l": [-40, 0, 4], "shin_l": [110, 0, 0], "foot_l": [20, 0, 0], "thigh_r": [-90, 0, -6], "shin_r": [88, 0, 0], "foot_r": [2, 0, 0], "arm_r": [-66, 9, 30], "forearm_r": [-138, 0, 0], "hand_r": [-74, -42, -24], "arm_l": [-18, 0, -3], "forearm_l": [-7, 0, 0], "hand_l": [0, 0, 0] } },
+        { "t": 1.3, "root": [0, -0.4, 0], "bones": { "hips": [10, 0, 0], "chest": [30, 35, 0], "head": [22, 0, 0], "thigh_l": [-10, 0, 4], "shin_l": [90, 0, 0], "foot_l": [40, 0, 0], "thigh_r": [-100, 0, -6], "shin_r": [90, 0, 0], "foot_r": [0, 0, 0], "arm_r": [-66, 9, 30], "forearm_r": [-138, 0, 0], "hand_r": [-74, -42, -24], "arm_l": [-18, 0, -3], "forearm_l": [-7, 0, 0], "hand_l": [0, 0, 0] } }
+      ]
+    },
+    "biped_stand": {
+      "$comment": "Rising from biped_kneel to idle, pushing up off the raised knee: played once at the shrine where the defeated stand up (docs/SHRINES.md §5).",
+      "rig": "biped",
+      "layer": "base",
+      "duration": 1.4,
+      "loop": false,
+      "ease": "smooth",
+      "blend": 0.1,
+      "keys": [
+        { "t": 0, "root": [0, -0.4, 0], "bones": { "hips": [10, 0, 0], "chest": [30, 0, 0], "head": [22, 0, 0], "thigh_l": [-10, 0, 4], "shin_l": [90, 0, 0], "foot_l": [40, 0, 0], "thigh_r": [-100, 0, -6], "shin_r": [90, 0, 0], "foot_r": [0, 0, 0], "arm_r": [-28, 5, 11], "forearm_r": [-66, 0, 0], "hand_r": [30, 0, 0], "arm_l": [-18, 0, -3], "forearm_l": [-7, 0, 0], "hand_l": [0, 0, 0] } },
+        { "t": 0.6, "root": [0, -0.24, 0.06], "bones": { "hips": [22, 0, 0], "chest": [22, 0, 0], "head": [14, 0, 0], "thigh_l": [-45, 0, 4], "shin_l": [75, 0, 0], "foot_l": [-5, 0, 0], "thigh_r": [-75, 0, -6], "shin_r": [78, 0, 0], "foot_r": [-5, 0, 0], "arm_r": [-28, 5, 11], "forearm_r": [-66, 0, 0], "hand_r": [30, 0, 0], "arm_l": [-18, 0, -3], "forearm_l": [-7, 0, 0], "hand_l": [0, 0, 0] } },
+        { "t": 1.4, "root": [0, 0, 0], "bones": { "hips": [0, 0, 0], "chest": [0, 0, 0], "head": [0, 0, 0], "thigh_l": [0, 0, 0], "shin_l": [0, 0, 0], "foot_l": [0, 0, 0], "thigh_r": [0, 0, 0], "shin_r": [0, 0, 0], "foot_r": [0, 0, 0], "arm_l": [0, 0, 6], "forearm_l": [-10, 0, 0], "hand_l": [0, 0, 0], "arm_r": [0, 0, -6], "forearm_r": [-10, 0, 0], "hand_r": [0, 0, 0] } }
+      ]
+    },
+    "biped_stand_sword": {
+      "$comment": "Rising from biped_kneel_sword: the sword drawn up out of the ground back into the hand's hold (ending on biped_hold's arm, so the hold takes over without a jump); played once at the shrine.",
+      "rig": "biped",
+      "layer": "base",
+      "duration": 1.4,
+      "loop": false,
+      "ease": "smooth",
+      "blend": 0.1,
+      "keys": [
+        { "t": 0, "root": [0, -0.4, 0], "bones": { "hips": [10, 0, 0], "chest": [30, 35, 0], "head": [22, 0, 0], "thigh_l": [-10, 0, 4], "shin_l": [90, 0, 0], "foot_l": [40, 0, 0], "thigh_r": [-100, 0, -6], "shin_r": [90, 0, 0], "foot_r": [0, 0, 0], "arm_r": [-66, 9, 30], "forearm_r": [-138, 0, 0], "hand_r": [-74, -42, -24], "arm_l": [-18, 0, -3], "forearm_l": [-7, 0, 0], "hand_l": [0, 0, 0] } },
+        { "t": 0.6, "root": [0, -0.24, 0.06], "bones": { "hips": [22, 0, 0], "chest": [30, 35, 0], "head": [14, 0, 0], "thigh_l": [-45, 0, 4], "shin_l": [75, 0, 0], "foot_l": [-5, 0, 0], "thigh_r": [-75, 0, -6], "shin_r": [78, 0, 0], "foot_r": [-5, 0, 0], "arm_r": [-66, 9, 30], "forearm_r": [-138, 0, 0], "hand_r": [-74, -42, -24], "arm_l": [-18, 0, -3], "forearm_l": [-7, 0, 0], "hand_l": [0, 0, 0] } },
+        { "t": 1.4, "root": [0, 0, 0], "bones": { "hips": [0, 0, 0], "chest": [0, 0, 0], "head": [0, 0, 0], "thigh_l": [0, 0, 0], "shin_l": [0, 0, 0], "foot_l": [0, 0, 0], "thigh_r": [0, 0, 0], "shin_r": [0, 0, 0], "foot_r": [0, 0, 0], "arm_l": [0, 0, 6], "forearm_l": [-10, 0, 0], "hand_l": [0, 0, 0], "arm_r": [-20, 0, -4], "forearm_r": [-65, 0, 0], "hand_r": [0, 0, 0] } }
       ]
     },
     "biped_climb": {
