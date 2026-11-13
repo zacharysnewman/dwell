@@ -14,6 +14,7 @@
     "obsidian":    { "shadow": "#07060b", "base": "#16121e", "light": "#6a5c8a" },
     "lava":        { "shadow": "#3a1410", "base": "#ff6a1c", "light": "#ffd25a" },
     "sand":        { "shadow": "#c4a07a", "base": "#ebd39c", "light": "#f8ecc6" },
+    "red_sand":    { "shadow": "#8e4a30", "base": "#c27a4e", "light": "#e6a872" },
     "regolith":    { "shadow": "#6f6d78", "base": "#9a9898", "light": "#c4c0b8" },
     "mare_regolith": { "shadow": "#3a3940", "base": "#555459", "light": "#77746f" },
     "water":       { "shadow": "#1d5ea6", "base": "#2f8fd8", "light": "#96dcf0" },

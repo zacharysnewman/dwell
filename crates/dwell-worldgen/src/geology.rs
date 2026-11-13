@@ -71,6 +71,17 @@ pub struct Geology {
     pub tread: f64,
     /// How narrow a hard wall is: a bed's rise takes (1 − hardness)^sheer of its height as input.
     pub sheer: f64,
+    /// A bedded soft rock's ledges (m, 0: none; owner 2026-11-13): its bed's slope is broken by a
+    /// near-vertical step this tall every `ledge_every` of the bed, ramped between them.
+    pub ledge: f64,
+    /// How often a ledge breaks a bed's slope, as a share of the bed (0.5: two a bed).
+    pub ledge_every: f64,
+    /// The share of a bed's height its tread rises over (0: a dead-flat cap): a mesa's top keeps a
+    /// little of the ground's relief.
+    pub tread_relief: f64,
+    /// Where the rock shapes the ground (`strength` > 0), the stored ramps also top a column on a
+    /// diagonal contour (a notched ramp, `ramps::top_of_notched`), not only on straight edges.
+    pub notched: bool,
     /// The rule-based erosion (T4).
     pub erosion: Erosion,
     /// The tectonic provinces' stacks (T5, `rocks.json` `tectonic`): a volcano's, the old core's.
@@ -289,6 +300,10 @@ pub enum Part {
     Plain,
 }
 
+/// The input height a ledge takes per m of its height: near-vertical (1 m of ledge over 2 cm of
+/// the ground's rise, at most half its run's).
+const LEDGE_INPUT: f64 = 0.02;
+
 /// One piece of a profile: input heights `u0..u1` of the period map to `v0..v1`.
 #[derive(Clone, Copy, Debug)]
 struct Piece {
@@ -330,9 +345,33 @@ impl Profile {
                         (1.0, 0.25)
                     };
                     let dd = d / n;
+                    // The tread keeps `tread_relief` of the bed's height (a cap with a little of
+                    // the ground's relief); the rise takes the rest.
+                    let relief = dd * g.tread_relief.clamp(0.0, 0.5);
+                    let up = dd - relief;
+                    // A soft bedded rock's slope: ramped runs broken by a ledge `ledge` m tall
+                    // every `ledge_every` of the bed (the run and its ledge share the rise's
+                    // input, the ledge near-vertical); hard rock stands as its wall.
+                    let ledges = if r.jointing == Jointing::Bedded && part == Part::Talus {
+                        let m = (1.0 / g.ledge_every.clamp(0.05, 1.0)).round().max(1.0);
+                        let h = g.ledge.min(up / m);
+                        (h > 0.0).then_some((m, h))
+                    } else {
+                        None
+                    };
                     for _ in 0..n as u32 {
-                        raw.push((rise(dd, steep), dd, ri as u16, part));
-                        raw.push((dd * k * k * g.tread, 0.0, ri as u16, Part::Tread));
+                        match ledges {
+                            Some((m, h)) => {
+                                let input = rise(up, steep) / m;
+                                let ledge_in = (h * LEDGE_INPUT).min(input * 0.5);
+                                for _ in 0..m as u32 {
+                                    raw.push((input - ledge_in, up / m - h, ri as u16, part));
+                                    raw.push((ledge_in, h, ri as u16, Part::Wall));
+                                }
+                            }
+                            None => raw.push((rise(up, steep), up, ri as u16, part)),
+                        }
+                        raw.push((dd * k * k * g.tread, relief, ri as u16, Part::Tread));
                     }
                 }
             }

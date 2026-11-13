@@ -233,3 +233,29 @@ removal; smooth steps) and went to `main` as the **0.22.0** compatibility line:
 - **Still deviations:** brushes count cells (a ball is half as tall as wide); a fluid's
   `surfaceDrop` is a fraction of a cell; the chunk view sphere is in chunks; the LOD draws natural
   tops flat; structures carry no cell height.
+
+## 10. Ramps for every terrain block, notched ramps, falling ramps (0.59.0, 2026-11-13)
+
+Owner, 2026-11-13: "we should support ramps for all terrain blocks. Does that change layered steps?" /
+"Notched ramps seems fine." / "gravity blocks like sand settling ... shouldn't settle ramps away from other
+blocks they should transform into flat blocks".
+
+- **Every surface block has ramps.** `rampFamilies` now also lists basalt, obsidian, moon dust, moon mare
+  dust and the new red sand. `shared/worldgen/gen.mjs` `validateSurfaceRamps` fails, naming the block and
+  where it is placed, when a block a worldgen surface rule can place (a biome band, a rock's face/cap/scree,
+  the snow line's covers, a soil type, a grid world's ground, lava's rock) has no `<m>_ramp`. The moon's
+  grid generator doesn't shape ramps yet; its dust has them for when it does.
+- **Notched ramps** (`ramps::top_of_notched`): where the rock shapes the ground (rocks.json
+  `shaping.strength` > 0, i.e. Realistic worlds, and `shaping.notched` 1), a column the §4 rule leaves flat
+  over a lower edge neighbour on a diagonal contour takes a cardinal ramp toward its lowest such neighbour
+  (ties north, east, south, west), steep by rule 2. Its open side at the corner is the notch. The default
+  and starter worlds keep the §4 rule. Bare ½ m steps on Realistic's bedded ground went from 61 % of its
+  ½ m edges to 0 % (`dwell-worldgen` `tests/realistic_steps.rs`, both faces).
+- **Layered steps as ledges** (rocks.json `shaping.ledge`, `ledgeEvery`, `treadRelief`; `geology.rs`
+  `Profile::of`): a soft bedded rock's slope is ramped runs broken by a near-vertical ledge `ledge` m tall
+  every `ledgeEvery` of its bed, and every bed's tread rises over `treadRelief` of the bed's height (a mesa
+  top keeps a little of the ground's roll). Hard beds stay walls (the mesas and scarps).
+- **Falling ramps settle flat** (blocks `settlesAs`): a falling block's shape families fall too
+  (`support` "falls" inherited), and a block with `"settlesAs": "full"` (sand, red sand) settles its
+  family's pieces as the full block, keeping `flooded` (`dwell_blocks::settled_state`, `SETTLES_AS`;
+  `dwell-sim` `felling.rs`, both faces). The rule chosen: always the full block on settling.

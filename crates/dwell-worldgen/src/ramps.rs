@@ -48,6 +48,36 @@ pub fn top_of(n: &Around, steep_rows: i32) -> Top {
     Top::Flat
 }
 
+/// [`top_of`], and where it leaves a column flat over a lower edge neighbour on a diagonal contour
+/// (a corner of the slope: the neighbour toward `d` lower, the one opposite not, a side lower too),
+/// a **notched** ramp (owner, 2026-11-13: "Notched ramps seems fine"): the facing whose neighbour
+/// is lowest, ties in [`RampFacing::ALL`]'s order, steep as rule 2 says. A column with no higher
+/// or level neighbour opposite a lower one (a peak, a one-wide ridge's crest) stays flat. Used where
+/// the rock shapes the ground (rocks.json `shaping.notched`), so its slopes ramp rather than stair.
+pub fn top_of_notched(n: &Around, steep_rows: i32) -> Top {
+    let strict = top_of(n, steep_rows);
+    if strict != Top::Flat {
+        return strict;
+    }
+    let t = n[1][1];
+    let mut best: Option<(i32, RampFacing)> = None;
+    for facing in RampFacing::ALL {
+        let (dx, dz) = facing.step();
+        let toward = at(n, (dx, dz));
+        if toward >= t || at(n, (-dx, -dz)) < t {
+            continue;
+        }
+        if best.is_none_or(|(h, _)| toward < h) {
+            best = Some((toward, facing));
+        }
+    }
+    match best {
+        Some((h, facing)) if h <= t - steep_rows => Top::Steep(facing),
+        Some((_, facing)) => Top::Gentle(facing),
+        None => Top::Flat,
+    }
+}
+
 /// Rule 1 for one facing.
 fn accepts(n: &Around, facing: RampFacing) -> bool {
     let t = n[1][1];
@@ -177,5 +207,25 @@ mod tests {
         let mut n = field(|x, _| if x > 0 { 3 } else { 4 });
         n[0][0] = 3;
         assert_eq!(top_of(&n, 2), Top::Flat);
+    }
+
+    #[test]
+    fn a_diagonal_contour_is_a_notched_ramp_only_where_notched() {
+        // Ground descending toward the north-east: the column's east and north neighbours are a
+        // row lower, west and south level. The strict rule leaves it flat (a bare ½ m stair);
+        // the notched rule ramps it toward the lower side, north first on a tie.
+        let n = field(|x, z| 4 - i32::from(x > 0) - i32::from(z < 0));
+        assert_eq!(top_of(&n, 2), Top::Flat);
+        assert_eq!(top_of_notched(&n, 2), Top::Gentle(RampFacing::North));
+        // The east side a metre lower: the notch faces it, steep.
+        let n = field(|x, z| 4 - 2 * i32::from(x > 0) - i32::from(z < 0));
+        assert_eq!(top_of(&n, 2), Top::Flat);
+        assert_eq!(top_of_notched(&n, 2), Top::Steep(RampFacing::East));
+        // Straight edges and flat ground are the strict rule's; a lone peak stays flat.
+        let edge = field(|x, _| if x > 0 { 3 } else { 4 });
+        assert_eq!(top_of_notched(&edge, 2), top_of(&edge, 2));
+        assert_eq!(top_of_notched(&field(|_, _| 4), 2), Top::Flat);
+        let peak = field(|x, z| if (x, z) == (0, 0) { 5 } else { 4 });
+        assert_eq!(top_of_notched(&peak, 2), Top::Flat);
     }
 }

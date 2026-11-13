@@ -11,6 +11,7 @@
   "rockSoils": [
     { "rock": "dwell:sandstone", "depth": 1, "type": "dwell:sandy" },
     { "rock": "dwell:shale", "depth": 1.6, "type": "dwell:loamy" },
+    { "rock": "dwell:siltstone", "depth": 1, "type": "dwell:sandy" },
     { "rock": "dwell:granite", "depth": 0.3, "type": "dwell:rocky" },
     { "rock": "dwell:basalt", "depth": 0.8, "type": "dwell:loamy" },
     { "rock": "dwell:limestone", "depth": 0.5, "type": "dwell:rocky" },

@@ -794,7 +794,15 @@ export const PLATE_SETTINGS = [
 /** The geology's groups' ranges (rocks.json `provinces`, `shaping`), as `TERRAIN`'s. */
 export const GEOLOGY = {
   provinces: { wavelength: [256, 1_000_000, true] },
-  shaping: { strength: [0, 1], tread: [0, 10], sheer: [0, 10] },
+  shaping: {
+    strength: [0, 1],
+    tread: [0, 10],
+    sheer: [0, 10],
+    ledge: [0, 50],
+    ledgeEvery: [0.05, 1],
+    treadRelief: [0, 0.5],
+    notched: [0, 1, true],
+  },
   erosion: {
     strength: [0, 1],
     reach: [0, 10_000],
