@@ -2,7 +2,9 @@
 // puts the local player just outside the moon's capture sphere with the dev move (local.rs
 // `moon_approach`), flies it in for real until it is captured, down to the moon's ground, measures
 // the fall with flight off and lands; `__dwell.flyTo('home')` flies up and out past the release
-// sphere, moves the player back to where the trip started and waits for home's chunks. The page's
+// sphere, moves the player back to where the trip started and waits for home's chunks.
+// `__dwell.moonLand()` teleports onto the moon's ground instead (local.rs `moon_land`; owner,
+// 2026-11-13: "We should just teleport to the moon to see if ground draws"). The page's
 // side is a host (main.ts `tripHost`), so the steering is tested here without a browser.
 
 export type Vec3 = [number, number, number];
@@ -41,6 +43,8 @@ export interface TripHost {
   moon(): MoonReport | null;
   /** local.rs `moon_approach` JSON; null outside a local world. */
   approach(marginM: number, face: number): Promise<string | null>;
+  /** local.rs `moon_land` JSON (the dev teleport onto the moon); null outside a local world. */
+  land(face: number): Promise<string | null>;
   /** local.rs `place_home` JSON; null outside a local world. */
   placeHome(feet: Vec3): Promise<string | null>;
   press(code: string, down: boolean): void;
@@ -79,6 +83,18 @@ export interface MoonTrip {
   /** The measured fall (m/s²) and the moon's gravity it is checked against. */
   fallMps2: number;
   gravity: number;
+  /** World feet on the moon's ground. */
+  at: Vec3;
+}
+
+export interface MoonLanding {
+  to: 'moonLand';
+  /** Where the teleport started (world feet), for `flyTo('home')`. */
+  home: Vec3 | null;
+  /** The teleport's answer (local.rs `moon_land`). */
+  land: unknown;
+  /** Seconds from the teleport until standing on the moon's ground with its chunk held. */
+  landS: number;
   /** World feet on the moon's ground. */
   at: Vec3;
 }
@@ -334,4 +350,39 @@ export async function flyHome(host: TripHost, home: Vec3, o: TripOptions = {}): 
   } finally {
     hold(host, held, []);
   }
+}
+
+/**
+ * Teleports onto the moon's ground on face `face` (local.rs `moon_land`: put 1.5 m over its spawn,
+ * moving with it, captured on the next tick), flight off, and waits until the player stands on
+ * the ground with its chunk held. Throws with what failed.
+ */
+export async function teleportToMoon(
+  host: TripHost,
+  o: Pick<TripOptions, 'face' | 'maxS'> = {},
+): Promise<MoonLanding> {
+  const maxS = o.maxS ?? 60;
+  const start = report(host);
+  if (start.grid !== 'home') throw new Error('moonLand: not at home');
+  host.fly(false);
+  const land = answer('moonLand', await host.land(o.face === 'b' ? -1 : 1));
+  const t = host.now();
+  const down = await until(
+    host,
+    maxS,
+    (m) => m.grid === 'moon' && m.groundHeld && (m.groundM ?? 1) < 0.5 && Math.abs(m.upMps) < 0.1,
+  );
+  if (!down) {
+    const m = report(host);
+    throw new Error(
+      `moonLand: not standing on the moon in ${String(maxS)} s (grid ${m.grid}, ${String(m.groundM)} m over the ground, chunk held ${String(m.groundHeld)})`,
+    );
+  }
+  return {
+    to: 'moonLand',
+    home: start.feet,
+    land,
+    landS: secondsSince(host, t),
+    at: report(host).feet,
+  };
 }

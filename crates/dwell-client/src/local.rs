@@ -478,6 +478,7 @@ impl LocalCore {
                 }
             }
             ("moonApproach", [margin, face]) => self.moon_approach(*margin, *face),
+            ("moonLand", [face]) => self.moon_land(*face),
             ("placeHome", [x, y, z]) => self.place_home([*x, *y, *z]),
             ("npcsFight", []) => {
                 // Every NPC turns on the local player as if struck by it (its `npc.fight` rules
@@ -659,6 +660,40 @@ impl LocalCore {
             "distance": (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt(),
         })
         .to_string()
+    }
+
+    /// The bench's `moonLand` (docs/DEV_TOOLS.md "The moon"): a dev teleport onto the moon, no
+    /// flight (owner, 2026-11-13: "We should just teleport to the moon to see if ground draws").
+    /// The local player, at home, is put 1.5 m over the moon's spawn on face `face` (1 A, −1 B),
+    /// moving with the moon: inside the capture sphere, so the next tick captures it there and it
+    /// stands on the moon's ground. JSON `{"at":[x,y,z],"grid":[x,y,z]}` (world and moon-local),
+    /// or `{"error":…}`.
+    pub fn moon_land(&mut self, face: f64) -> String {
+        let Some(id) = self.local_player_id() else {
+            return r#"{"error":"no local player"}"#.into();
+        };
+        if self.server.grid_state_of(id).is_some_and(|g| g.0 != 0) {
+            return r#"{"error":"not at home: on another grid already"}"#.into();
+        }
+        let f = if face < 0.0 {
+            dwell_world::FaceFrame::B
+        } else {
+            dwell_world::FaceFrame::A
+        };
+        let map = self.server.grids().travel_map();
+        let seed = self.server.config().world_seed;
+        let (Some(local), Some(&(index, ..))) = (
+            crate::moon_probe::landing_point(&map, seed, f, 1.5),
+            map.grids.iter().find(|g| g.1.name == "dwell:moon"),
+        ) else {
+            return r#"{"error":"this world has no moon"}"#.into();
+        };
+        let t = f64::from(self.server.tick()) / f64::from(dwell_protocol::SIM_HZ);
+        let (at, v) = map.frame(index, t).release(local, [0.0; 3]);
+        if !self.server.place_on_grid(id, at, v) {
+            return r#"{"error":"could not move the player"}"#.into();
+        }
+        serde_json::json!({ "at": at, "grid": local }).to_string()
     }
 
     /// The local player, at home, stood with its feet at `feet` (world m, either face), at rest:

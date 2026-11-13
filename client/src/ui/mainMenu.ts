@@ -135,6 +135,41 @@ export function worldCardData(
   };
 }
 
+/**
+ * The menu's own button classes (owner, 2026-11-11: "The buttons should be aligned to match the
+ * design of the others instead of looking like web links"): every action on the main menu, a
+ * `<button>` or a link to another page, carries one of these, each with its hover, pressed and focus
+ * states in style.css; none is a bare underlined link (mainMenu.test.ts pins both).
+ */
+export const MENU_BUTTON_CLASSES = [
+  'mm-action',
+  'mm-back',
+  'mm-head-button',
+  'mm-disclosure',
+  'block-button',
+  'quiet-button',
+  'menu-button-small',
+  'world-more',
+] as const;
+
+/** A menu button that goes to another page (an `<a>`, so it opens as a link), styled as a button. */
+function linkButton(
+  label: string,
+  href: string,
+  className: string,
+  newTab = false,
+): HTMLAnchorElement {
+  const a = document.createElement('a');
+  a.className = className;
+  a.href = href;
+  a.textContent = label;
+  if (newTab) {
+    a.target = '_blank';
+    a.rel = 'noopener';
+  }
+  return a;
+}
+
 function button(label: string, className: string, onClick: () => void): HTMLButtonElement {
   const b = document.createElement('button');
   b.type = 'button';
@@ -568,11 +603,9 @@ export class MainMenu {
    * (RELEASES.md §5).
    */
   private versionsPage(): HTMLElement {
-    const all = document.createElement('a');
+    // The head's other button, beside Back and alike: not a link-styled pill.
+    const all = linkButton('All versions', this.deps.versionsHref, 'mm-head-button');
     all.id = 'versions-link';
-    all.className = 'quiet-button';
-    all.href = this.deps.versionsHref;
-    all.textContent = 'All versions';
     const card = this.page(
       'versions-card',
       pageHead(
@@ -624,11 +657,13 @@ export class MainMenu {
     const text = document.createElement('p');
     text.className = 'menu-hint';
     text.textContent = `${this.deps.detail} Dwell is not open source: all rights reserved, and the source is public for reference only. `;
-    const notices = document.createElement('a');
-    notices.href = this.deps.noticesHref;
-    notices.target = '_blank';
-    notices.rel = 'noopener';
-    notices.textContent = 'Third-party notices';
+    const notices = linkButton(
+      'Third-party notices',
+      this.deps.noticesHref,
+      'menu-button-small',
+      true,
+    );
+    notices.id = 'about-notices';
     details.append(text, notices);
     section.append(line, details);
     return section;
