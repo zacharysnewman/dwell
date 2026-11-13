@@ -143,20 +143,87 @@ pub struct NpcDef {
     pub fight: FightDef,
     pub idles: &'static [Idle],
     pub colours: &'static [ColourSlot],
+    /// Its skin and hair (shared/creatures/appearance.json, BUGS.md #144); None: none.
+    pub appearance: Option<AppearanceDef>,
+}
+
+/// An NPC's skin and hair (shared/creatures/appearance.json, BUGS.md #144): the model's skin and
+/// hair parts and ramps, the set's skin `tones` (a tone first, by weight, then a hair colour from
+/// that tone's), and `shade`, how much of the model's shading inside the skin part the tone keeps.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct AppearanceDef {
+    pub set: &'static str,
+    pub skin_part: &'static str,
+    pub skin_from: &'static str,
+    pub hair_part: &'static str,
+    pub hair_from: &'static str,
+    pub shade: f32,
+    pub tones: &'static [SkinTone],
+}
+
+/// A skin tone (`base`, `#rrggbb`) and the hair colours that go with it.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SkinTone {
+    pub name: &'static str,
+    pub base: &'static str,
+    pub weight: f64,
+    pub hair: &'static [HairPick],
+}
+
+/// A hair colour (`#rrggbb`) a skin tone may take, by weight.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct HairPick {
+    pub name: &'static str,
+    pub colour: &'static str,
+    pub weight: f64,
+}
+
+/// One part of an NPC's colours: (its part, the model's ramp, the colour drawn in its place — a
+/// ramp's name or `#rrggbb` — and how much of the model's shading inside the part it keeps, 0..1).
+pub type NpcColour = (&'static str, &'static str, &'static str, f32);
+
+/// The entry of `list` a unit roll `h` (0..1) lands on, by `weight`.
+fn by_weight<T>(list: &[T], weight: impl Fn(&T) -> f64, h: f64) -> &T {
+    let total: f64 = list.iter().map(&weight).sum();
+    let mut t = h * total;
+    for x in list {
+        t -= weight(x);
+        if t < 0.0 {
+            return x;
+        }
+    }
+    &list[list.len() - 1]
+}
+
+/// An NPC's skin tone and hair colour from its `variant` seed (BUGS.md #144): a tone by weight,
+/// then a hair colour from that tone's list. Deterministic.
+pub fn npc_appearance(a: &AppearanceDef, variant: u32) -> (&'static SkinTone, &'static HairPick) {
+    let roll = |k: i32| unit(mix(u64::from(variant), [0, k, 0], 0x736b_696e));
+    let tone = by_weight(a.tones, |t| t.weight, roll(1));
+    let hair = by_weight(tone.hair, |h| h.weight, roll(2));
+    (tone, hair)
 }
 
 /// An NPC's colours from its `variant` seed: per part, (the part, the model's ramp, the ramp drawn
 /// in its place; BUGS.md #96: the recolour is by part). Deterministic: the same seed always picks the same.
-pub fn npc_colours(def: &NpcDef, variant: u32) -> Vec<(&'static str, &'static str, &'static str)> {
-    def.colours
+/// Its appearance's skin and hair follow: every skin vertex in the one tone (BUGS.md #144).
+pub fn npc_colours(def: &NpcDef, variant: u32) -> Vec<NpcColour> {
+    let mut out: Vec<NpcColour> = def
+        .colours
         .iter()
         .enumerate()
         .map(|(j, c)| {
             let h = unit(mix(u64::from(variant), [j as i32, 0, 0], 0x636f_6c6f));
             let i = ((h * c.to.len() as f64) as usize).min(c.to.len() - 1);
-            (c.part, c.from, c.to[i])
+            (c.part, c.from, c.to[i], 1.0)
         })
-        .collect()
+        .collect();
+    if let Some(a) = &def.appearance {
+        let (tone, hair) = npc_appearance(a, variant);
+        out.push((a.skin_part, a.skin_from, tone.base, a.shade));
+        out.push((a.hair_part, a.hair_from, hair.colour, 1.0));
+    }
+    out
 }
 
 /// The biome of a face-local column (`[x, z]`), by name; None: the world has no biome map (a
@@ -2231,6 +2298,52 @@ mod tests {
         }
     );
 
+    // BUGS.md #144 (owner, 2026-11-13): "a collection of skin tone ranges with hair color ranges
+    // so it's not completely random." Across 200 seeded villagers the skin is one of the set's
+    // tones, the hair always one of that tone's colours, and both deterministic; the fixture set
+    // (shared/creatures/fixtures/appearance.json) is added by data alone and picked the same way.
+    #[test]
+    fn a_villagers_hair_always_goes_with_its_skin_tone() {
+        for (table, kind) in [
+            (Table::SHIPPED, "dwell:villager"),
+            (Table::SHIPPED, "dwell:builder"),
+            (Table::NPC_FIXTURE, "test:person"),
+        ] {
+            let def = table.npc(kind).unwrap();
+            let a = def.appearance.expect("an appearance set");
+            let mut tones = HashSet::new();
+            for v in 0..200u32 {
+                let seed = v.wrapping_mul(0x9e37_79b9);
+                let c = npc_colours(def, seed);
+                assert_eq!(c, npc_colours(def, seed), "deterministic");
+                let (tone, hair) = npc_appearance(&a, seed);
+                tones.insert(tone.name);
+                assert!(tone.hair.contains(hair), "{kind} {v}: {} with {}", tone.name, hair.name);
+                let skin = c.iter().find(|x| x.0 == a.skin_part).unwrap();
+                assert_eq!((skin.1, skin.2, skin.3), (a.skin_from, tone.base, a.shade));
+                let h = c.iter().find(|x| x.0 == a.hair_part).unwrap();
+                assert_eq!((h.1, h.2), (a.hair_from, hair.colour));
+                assert!(a.tones.iter().any(|t| std::ptr::eq(t, tone)));
+            }
+            assert_eq!(tones.len(), a.tones.len(), "{kind}: every tone turns up");
+        }
+        // The fixture: the dark tone only ever takes jet hair, the pale one either.
+        let def = Table::NPC_FIXTURE.npc("test:person").unwrap();
+        let a = def.appearance.unwrap();
+        assert_eq!(a.set, "test:pair");
+        let (mut silver, mut dark) = (0, 0);
+        for v in 0..200u32 {
+            let (tone, hair) = npc_appearance(&a, v.wrapping_mul(0x9e37_79b9));
+            if tone.name == "dark" {
+                dark += 1;
+                assert_eq!(hair.name, "jet");
+            }
+            silver += usize::from(hair.name == "silver");
+        }
+        assert!(dark > 20 && dark < 90, "weight 3:1: {dark} dark of 200");
+        assert!(silver > 30, "{silver}");
+    }
+
     #[test]
     fn an_npc_s_colours_are_deterministic_per_seed_and_from_its_data() {
         let def = Table::NPC_FIXTURE
@@ -2246,7 +2359,8 @@ mod tests {
                 npc_colours(def, v.wrapping_mul(0x9e37_79b9)),
                 "deterministic"
             );
-            for ((part, from, to), (slot, seen)) in c.iter().zip(def.colours.iter().zip(&mut seen))
+            for ((part, from, to, _), (slot, seen)) in
+                c.iter().zip(def.colours.iter().zip(&mut seen))
             {
                 assert_eq!((*part, *from), (slot.part, slot.from));
                 assert!(slot.to.contains(to));
@@ -2265,7 +2379,9 @@ mod tests {
         let t = Table::SHIPPED;
         let v = t.npc("dwell:villager").expect("the villager");
         let parts: Vec<_> = v.colours.iter().map(|c| c.part).collect();
-        assert_eq!(parts, ["shirt", "trousers", "skin", "hair", "hat"]);
+        assert_eq!(parts, ["shirt", "trousers", "hat"]);
+        let a = v.appearance.expect("its skin and hair from appearance.json");
+        assert_eq!((a.skin_part, a.hair_part), ("skin", "hair"));
         let kind = t
             .creatures
             .iter()

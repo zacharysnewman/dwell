@@ -1,5 +1,5 @@
 {
-  "$comment": "The fixture NPC (tests only): added by data alone, on stone, always spawning one a column, kept 20 m from another of its kind, two colour parts and two idle poses, holding the stone axe and fighting back.",
+  "$comment": "The fixture NPC (tests only): added by data alone, on stone, always spawning one a column, kept 20 m from another of its kind, a colour part, an appearance set of fixtures/appearance.json and two idle poses, holding the stone axe and fighting back.",
   "formatVersion": 1,
   "limits": { "spawnChunks": 1, "despawnM": 40, "max": 16 },
   "creatures": [
@@ -23,9 +23,9 @@
           { "pose": "look", "weight": 1, "seconds": [1, 2] },
           { "pose": "sit", "weight": 1, "seconds": [1, 2] }
         ],
+        "appearance": { "set": "test:pair", "skin": { "part": "skin", "from": "skin_fair" }, "hair": { "part": "hair", "from": "hair_brown" } },
         "colours": [
-          { "part": "shirt", "from": "wool_green", "to": ["wool_red", "wool_blue", "wool_yellow"] },
-          { "part": "hair", "from": "hair_brown", "to": ["hair_black", "hair_ginger"] }
+          { "part": "shirt", "from": "wool_green", "to": ["wool_red", "wool_blue", "wool_yellow"] }
         ]
       }
     }

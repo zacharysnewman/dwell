@@ -1,0 +1,31 @@
+{
+  "$comment": "NPC appearance sets (WORK_QUEUE item 38, BUGS.md #144; owner, 2026-11-13: \"a collection of skin tone ranges with hair color ranges so it's not completely random. Also, face should always match arms\"). `hair`: the hair colours by name (sRGB #rrggbb, a ramp's base). A set (`sets`, named; an NPC's `appearance.set` in creatures.json names one): its skin `tones`, light to deep, each a `name`, a `base` (#rrggbb: the colour every skin vertex of the NPC is drawn in, at its shade), an optional `weight` (default 1) and the `hair` colours that go with it (`colour`: a name in `hair`, `weight`); and `shade` (0..1): how much of the model's own shading inside the skin part (the neck and jaw modelled a ramp darker) the tone keeps, so the face, neck, arms and hands read as one skin. An NPC picks a tone by weight from its variant seed, then a hair colour from that tone's list (dwell-sim `npc_colours`). Clothes keep their own colours (creatures.json `colours`). Prototype content (ARCHITECTURE.md §6.1). Run `node shared/creatures/gen.mjs` after editing.",
+  "formatVersion": 1,
+  "hair": {
+    "flaxen": "#eed9a0",
+    "blonde": "#e2bf6c",
+    "ginger": "#c9652f",
+    "auburn": "#8f3f26",
+    "light_brown": "#9d6c42",
+    "brown": "#6b4329",
+    "dark_brown": "#45291d",
+    "black": "#302a3a"
+  },
+  "sets": {
+    "villagers": {
+      "shade": 0.25,
+      "tones": [
+        { "name": "porcelain", "base": "#f5d7c4", "hair": [{ "colour": "flaxen", "weight": 2 }, { "colour": "blonde", "weight": 3 }, { "colour": "ginger", "weight": 3 }, { "colour": "auburn", "weight": 2 }, { "colour": "light_brown", "weight": 2 }, { "colour": "brown", "weight": 2 }, { "colour": "black", "weight": 1 }] },
+        { "name": "fair", "base": "#f0c6a6", "hair": [{ "colour": "flaxen", "weight": 1 }, { "colour": "blonde", "weight": 3 }, { "colour": "ginger", "weight": 2 }, { "colour": "auburn", "weight": 2 }, { "colour": "light_brown", "weight": 3 }, { "colour": "brown", "weight": 3 }, { "colour": "dark_brown", "weight": 1 }, { "colour": "black", "weight": 1 }] },
+        { "name": "rose", "base": "#e6b394", "hair": [{ "colour": "blonde", "weight": 2 }, { "colour": "ginger", "weight": 1 }, { "colour": "auburn", "weight": 2 }, { "colour": "light_brown", "weight": 3 }, { "colour": "brown", "weight": 3 }, { "colour": "dark_brown", "weight": 2 }, { "colour": "black", "weight": 1 }] },
+        { "name": "golden", "base": "#dcaa78", "hair": [{ "colour": "blonde", "weight": 1 }, { "colour": "light_brown", "weight": 2 }, { "colour": "brown", "weight": 3 }, { "colour": "dark_brown", "weight": 3 }, { "colour": "black", "weight": 2 }] },
+        { "name": "tan", "base": "#c99366", "hair": [{ "colour": "light_brown", "weight": 1 }, { "colour": "brown", "weight": 3 }, { "colour": "dark_brown", "weight": 3 }, { "colour": "black", "weight": 3 }] },
+        { "name": "olive", "base": "#b8875e", "hair": [{ "colour": "brown", "weight": 2 }, { "colour": "dark_brown", "weight": 3 }, { "colour": "black", "weight": 4 }] },
+        { "name": "bronze", "base": "#a2694a", "hair": [{ "colour": "brown", "weight": 1 }, { "colour": "dark_brown", "weight": 3 }, { "colour": "black", "weight": 5 }] },
+        { "name": "umber", "base": "#8a5539", "hair": [{ "colour": "dark_brown", "weight": 2 }, { "colour": "black", "weight": 6 }] },
+        { "name": "deep", "base": "#6b4334", "hair": [{ "colour": "dark_brown", "weight": 1 }, { "colour": "black", "weight": 6 }] },
+        { "name": "ebony", "base": "#4e3027", "hair": [{ "colour": "dark_brown", "weight": 1 }, { "colour": "black", "weight": 7 }] }
+      ]
+    }
+  }
+}

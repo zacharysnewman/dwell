@@ -111,15 +111,16 @@ pub fn blend_pose(
 }
 
 /// A body's remap rows for the shader (`REMAP_FLOATS` floats): per part slot (part `k + 1`) the
-/// model's base and the base in its place (sRGB 0..1), w 1 where used, 0 where not.
-pub fn remap_floats(remap: &[Option<([f32; 3], [f32; 3])>]) -> [f32; REMAP_FLOATS] {
+/// model's base and the base in its place (sRGB 0..1), the first's w 1 where used, 0 where not, the
+/// second's w the share of the part's shading kept (BUGS.md #144).
+pub fn remap_floats(remap: &[Option<dwell_models::PartRemap>]) -> [f32; REMAP_FLOATS] {
     let mut out = [0.0; REMAP_FLOATS];
     for (k, pair) in remap.iter().take(dwell_models::MAX_REMAP).enumerate() {
-        let Some((from, to)) = pair else { continue };
+        let Some((from, to, keep)) = pair else { continue };
         out[k * 8..k * 8 + 3].copy_from_slice(from);
         out[k * 8 + 3] = 1.0;
         out[k * 8 + 4..k * 8 + 7].copy_from_slice(to);
-        out[k * 8 + 7] = 1.0;
+        out[k * 8 + 7] = *keep;
     }
     out
 }
@@ -260,7 +261,8 @@ fn joint_apply(j: u32, p: vec3f, w: f32) -> vec3f {
 
 // A vertex's palette colour (sRGB 0..1) after the body's remap, by its part (the colour's alpha
 // byte: 0 none, k part k): a remapped part's vertex takes the new base at its shade of the old
-// (luminance over the old base's). dwell_models::recolour mirrors it.
+// (luminance over the old base's), keeping the to row's w share of it (BUGS.md #144: one skin).
+// dwell_models::recolour mirrors it.
 fn remap_colour(c: vec4f) -> vec3f {
     let part = u32(round(c.a * 255.0));
     if (part == 0u || part * 2u > REMAP_ROWS) {
@@ -271,8 +273,9 @@ fn remap_colour(c: vec4f) -> vec3f {
         return c.rgb;
     }
     let luma = vec3f(0.2126, 0.7152, 0.0722);
-    let shade = dot(c.rgb, luma) / max(dot(was.rgb, luma), 1e-3);
-    return min(skin.remap[part * 2u - 1u].rgb * shade, vec3f(1.0));
+    let to = skin.remap[part * 2u - 1u];
+    let shade = mix(1.0, dot(c.rgb, luma) / max(dot(was.rgb, luma), 1e-3), to.w);
+    return min(to.rgb * shade, vec3f(1.0));
 }
 
 @vertex
@@ -1716,9 +1719,9 @@ mod villager_colour_tests {
     use super::*;
     use dwell_sim::creatures::{Table, npc_colours};
 
-    /// A palette ramp's base, sRGB 0..1.
+    /// A colour's base (a palette ramp's, or `#rrggbb`), sRGB 0..1.
     fn base(ramp: &str) -> [f32; 3] {
-        let c = dwell_models::ramp_base(ramp).unwrap();
+        let c = dwell_models::colour_base(ramp).unwrap();
         [16, 8, 0].map(|s| ((c >> s) & 0xff) as f32 / 255.0)
     }
 
@@ -1849,6 +1852,51 @@ mod villager_colour_tests {
                             .all(|x| (x - r[0]).abs() < 0.05 || d.iter().any(|&c| c >= 1.0)),
                         "level {level} variant {variant}: hair vertex {i} draws {d:?}, not its hair {}",
                         to("hair")
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn every_skin_vertex_of_a_villager_draws_its_one_skin_tone() {
+        // both-faces: model space at rest (a vertex's colour does not depend on the face).
+        // BUGS.md #144 (owner, 2026-11-13): "face should always match arms, etc. shouldn't have
+        // different skin colors on different skin parts." The Peasant's skin part is modelled in
+        // two ramps (skin_fair face and arms, a skin_tan neck and jaw a ramp darker), and the
+        // recolour kept that whole step, so the neck and jaw read as another skin. Across 200
+        // seeded villagers, at every detail level, every vertex of the skin part draws the
+        // villager's one tone (its appearance pick) at a shade within a few percent of it.
+        let (data, model) = dwell_models::model("peasant").unwrap();
+        let parts = data.parts.expect("the Peasant has a part map");
+        let skin = parts.number("skin").unwrap();
+        let def = Table::SHIPPED.npc("dwell:villager").unwrap();
+        let a = def.appearance.expect("villagers have an appearance set");
+        for level in 0..dwell_models::DETAIL_LEVELS.len() {
+            let (v, _) = vertex_bytes(model, level, &parts.level(level));
+            let n = v.len() / VERTEX_BYTES;
+            for variant in 0..200u32 {
+                let seed = variant.wrapping_mul(0x9e37_79b9);
+                let colours = npc_colours(def, seed);
+                let (tone, _) = dwell_sim::creatures::npc_appearance(&a, seed);
+                let want = base(tone.base);
+                let remap = dwell_models::part_remap(Some(&parts), &colours);
+                for i in 0..n {
+                    let c = &v[i * VERTEX_BYTES + 24..i * VERTEX_BYTES + 28];
+                    if c[3] != skin {
+                        continue;
+                    }
+                    let d = dwell_models::recolour(
+                        [c[0], c[1], c[2]].map(|b| f32::from(b) / 255.0),
+                        c[3],
+                        &remap,
+                    );
+                    let k = [0, 1, 2].map(|j| d[j] / want[j].max(1e-3));
+                    assert!(
+                        k.iter().all(|x| (x - k[0]).abs() < 0.02 || d.iter().any(|&c| c >= 1.0))
+                            && (0.85..1.06).contains(&k[0]),
+                        "level {level} variant {variant}: skin vertex {i} draws {d:?}, not its tone {} {want:?} (x{k:?})",
+                        tone.name
                     );
                 }
             }
