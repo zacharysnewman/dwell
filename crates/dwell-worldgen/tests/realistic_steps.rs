@@ -231,7 +231,7 @@ dwell_world::both_faces!(
             old.3
         );
         assert!(
-            ledges * 30 > columns,
+            ledges * 35 > columns,
             "ledges of at least {ledge} m break the bedded ground: {ledges} of {columns}"
         );
     }

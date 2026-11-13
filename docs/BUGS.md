@@ -562,7 +562,7 @@ erosion snaps a floor down to the stack's soft layer (`Cut::Floor`), the red des
 `dwell:red_sand` with no `capBy`, so its treads were red sand in any climate. Fix (data, `rocks.json`): the siltstone's
 cap is `dwell:red_sandstone` with `capBy` `[{"arid": "dwell:red_sand"}]`, as the sandstone's. Test:
 `tests/realistic_rocks.rs` `the_red_desert_floors_are_red_sand`, red at 14 of 2137 (over its 1 in 200), green after;
-the default and starter goldens unchanged (only the mesa's own stack has siltstone).
+the default's goldens unchanged; the starter's red rock mesa has the same stack, so its terrain pin (`tests/starter_memory.rs`) is re-pinned on this line.
 
 ### 137. Opening the inventory opened the game menu on top of it (fixed after 0.60.7)
 

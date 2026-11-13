@@ -36,11 +36,11 @@
   "variety": {
     "$comment": "Regional and local variety in the climate the biomes read (WORK_QUEUE item 15, the realistic batch part B; owner, 2026-11-13: \"horizontal slices of noise\"), so one latitude band and one wind cannot fill a third of a face with one biome. `rain`: each a noise of `wavelength` m whose ±`amplitude` multiplies the marched rain by e^(amplitude × noise) (a regional rain at ~10 km, sub-biome patches of wetter and drier ground at ~2.5 km); `rainMm`: each adds 0..`amplitude` mm by its noise after that (one-sided: a wetter district, never a drier one), so a rain shadow's near-rainless lee has its wetter districts too. `celsius`: each a noise of ±`amplitude` °C at `wavelength` m added to the latitude's and height's temperature (warmer and cooler districts, cold hollows). The noises' octaves turn off the lattice (no grid-aligned grain).",
     "rain": [
-      { "amplitude": 0.7, "wavelength": 10000 },
+      { "amplitude": 0.7, "wavelength": 7000 },
       { "amplitude": 0.5, "wavelength": 2500 }
     ],
     "rainMm": [
-      { "amplitude": 280, "wavelength": 9000 },
+      { "amplitude": 280, "wavelength": 6500 },
       { "amplitude": 120, "wavelength": 2200 }
     ],
     "celsius": [

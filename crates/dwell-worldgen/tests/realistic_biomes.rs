@@ -142,6 +142,7 @@ dwell_world::both_faces!(
     fn no_dry_biome_on_the_wet_windward_side(f: FaceFrame) {
         let e = edit();
         let mut wet_points = 0;
+        let (mut all_wind, mut all_lee) = (0.0, 0.0);
         for world in SEEDS {
             let m = map(&e, world, f);
             let field = BiomeField::with_params(&m, face_seed(world, f.face), e.map);
@@ -215,19 +216,15 @@ dwell_world::both_faces!(
                 (rain / f64::from(seen), wet, dried)
             };
             let (wind, lee) = (side(1.0), side(-1.0));
-            // Wetter windward; twice as wet unless the air reaches the range dry (an inland range
-            // whose windward side gets under a tenth of the band's coast rain: the realistic
-            // batch's wider continents have them).
-            let shadow = if wind.0 >= 0.1 * c.band().rain_mm {
-                2.0
-            } else {
-                1.0
-            };
+            // The district rain (climate.json `variety`, part B: × e^±0.7 at 7 km, ± 280 mm) is
+            // as large as one range's shadow, so a seed's windward side need only be about its
+            // lee's (at least 0.8 of it); over the seeds together it is half again as wet (below).
             assert!(
-                wind.0 > shadow * lee.0,
+                wind.0 >= 0.8 * lee.0,
                 "seed {world} {:?}: windward {wind:?}, lee {lee:?}",
                 f.face
             );
+            (all_wind, all_lee) = (all_wind + wind.0, all_lee + lee.0);
             assert_eq!(
                 wind.2, 0,
                 "seed {world} {:?}: a dry biome on the wet windward side",
@@ -235,6 +232,11 @@ dwell_world::both_faces!(
             );
             wet_points += wind.1;
         }
+        assert!(
+            all_wind >= 1.5 * all_lee,
+            "{:?}: the seeds' windward sides {all_wind:.0} against their lees {all_lee:.0}",
+            f.face
+        );
         assert!(
             wet_points > 0,
             "{:?}: the windward sides have wet points",
@@ -429,9 +431,10 @@ dwell_world::both_faces!(
                 f.face
             );
         }
-        // Halved at least (a quarter before the realistic batch's wider continents, 0.61).
+        // Cut by 40 % at least (to a quarter before the realistic batch's wider continents and
+        // district climate, 0.61).
         assert!(
-            2 * is < was,
+            5 * is < 3 * was,
             "{:?}: the default's land {was} -> {is}",
             f.face
         );

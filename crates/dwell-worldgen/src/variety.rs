@@ -54,6 +54,11 @@ impl Labels {
         }
     }
 
+    /// The labelled land's area, km².
+    pub fn land_km2(&self) -> f64 {
+        self.at.iter().filter(|a| a.is_some()).count() as f64 * self.cell * self.cell / 1.0e6
+    }
+
     /// The largest 4-connected region of one label, km².
     pub fn largest_region_km2(&self) -> f64 {
         self.largest_region().1

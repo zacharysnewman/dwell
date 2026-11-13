@@ -116,8 +116,12 @@ fn fnv(h: &mut u64, bytes: &[u8]) {
 /// Re-pinned 2026-11-13 for red sand on the red desert's floors (BUGS.md #134; the 0.60 line): the
 /// sandstone's treads show red sand where the ground is arid (its `capBy`, rocks.json `arid`), red
 /// sandstone elsewhere.
+///
+/// Re-pinned 2026-11-13 for BUGS.md #138 (the realistic batch's line): the red desert beds'
+/// siltstone, whose floors the erosion cuts down to, shows red sand only where arid (its `capBy`),
+/// red sandstone elsewhere, as the sandstone does.
 const STARTER_PIN: [(Face, &str); 2] =
-    [(Face::A, "2c9c24b8112e13b3"), (Face::B, "46e36dcadeebe470")];
+    [(Face::A, "6e4f3ec70c730183"), (Face::B, "89dda3d14d454394")];
 
 #[test]
 fn the_starter_worlds_terrain_is_unchanged() {

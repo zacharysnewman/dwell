@@ -74,6 +74,7 @@ dwell_world::both_faces!(
     /// The windward side of each seed's main range gets at least twice its lee's rain, on the coarse
     /// grid and in the discharge's rain.
     fn the_windward_side_of_the_main_range_is_twice_as_wet_as_its_lee(f: FaceFrame) {
+        let (mut all_wq, mut all_lq) = (0.0, 0.0);
         for world in SEEDS {
             let seed = face_seed(world, f.face);
             let m = map(seed);
@@ -99,13 +100,19 @@ dwell_world::both_faces!(
                 "  discharge rain windward {wq:.3} lee {lq:.3} (mean land {:.3})",
                 r.mean_land
             );
-            // Wetter by half again at least (the map's own march over the eroded ground; the
-            // coarse grid's twice, above).
+            // Wetter on every seed, by half again over the seeds together (the map's own march over
+            // the eroded ground, with the climate's district rain, part B's `variety`; the coarse
+            // grid's twice, above).
             assert!(
-                wq >= 1.5 * lq,
+                wq >= 1.3 * lq,
                 "seed {world}: discharge rain windward {wq} lee {lq}"
             );
+            (all_wq, all_lq) = (all_wq + wq, all_lq + lq);
         }
+        assert!(
+            all_wq >= 1.5 * all_lq,
+            "the seeds' discharge rain windward {all_wq} lee {all_lq}"
+        );
     }
 );
 

@@ -42,11 +42,11 @@ pub const CLIMATE: ClimateRules = ClimateRules {
         moisture_share: 0.6,
     },
     rain_variety: &[
-        VarietyNoise { amplitude: 0.7, wavelength: 10000.0 },
+        VarietyNoise { amplitude: 0.7, wavelength: 7000.0 },
         VarietyNoise { amplitude: 0.5, wavelength: 2500.0 },
     ],
     rain_mm_variety: &[
-        VarietyNoise { amplitude: 280.0, wavelength: 9000.0 },
+        VarietyNoise { amplitude: 280.0, wavelength: 6500.0 },
         VarietyNoise { amplitude: 120.0, wavelength: 2200.0 },
     ],
     celsius_variety: &[

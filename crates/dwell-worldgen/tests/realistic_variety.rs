@@ -7,7 +7,8 @@
 //!   one region over 250 km² (seed 2741893632 face A was 553 km², all one basin's red beds) and at
 //!   least 2.8 distinct provinces per 4 km² (was 1.8–2.1).
 //! - **Biome variety** (climate.json `variety`): on the owner's seed no biome over 36 % of the land
-//!   (cold desert was 39.7 %), its largest region at most 320 km² (was 590) and at least 3.5 biomes
+//!   (cold desert was 39.7 %), its largest region at most 18 % of the land (was 590 km², ~30 %; 320 km²
+//!   before part A's wider continents) and at least 3.5 biomes
 //!   per 4 km² (was 3.1); on every seed's face at least 1.9 per 4 km² (a subarctic band's tundra was
 //!   1.5).
 //! - **No grid streaks** (plates.json `variety.flow` `random`): the map's small-scale slopes face
@@ -88,8 +89,16 @@ both_faces!(
                     "{face:?}: {top} on {:.1} % of the land",
                     100.0 * share
                 );
+                // A share of the land: the realistic batch's part A (0.61) runs the continents out
+                // to the rim, so the owner's face A holds 2.7× the land (320 km² was 19 % of it; the largest is 16 %, a red rock mesa on face B).
                 let (big, km2) = m.biomes.largest_region();
-                assert!(km2 <= 320.0, "{face:?}: {big} one region of {km2:.0} km²");
+                let land = m.biomes.land_km2();
+                eprintln!("{face:?}: {big} {km2:.0} km² of {land:.0} km² of land");
+                assert!(
+                    km2 <= 0.18 * land,
+                    "{face:?}: {big} one region of {km2:.0} km² ({:.1} % of the land)",
+                    100.0 * km2 / land
+                );
                 let per = m.biomes.distinct_per_4km2();
                 assert!(per >= 3.5, "{face:?}: {per:.2} biomes per 4 km²");
             }
