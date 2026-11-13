@@ -911,6 +911,9 @@ pub struct Game<S: Scene> {
     held_sent: Option<u16>,
     /// The Show your arms setting (the settings menu; on by default).
     pub show_arms: bool,
+    /// The targeted block's outline drawn (on by default); off for clean recordings (BUGS.md #113,
+    /// `__dwell.setView({ targetOutline: false })`). Targeting itself is unchanged.
+    pub show_outline: bool,
     /// The Camera sway setting (Settings → Motion): the swing's sway on the view.
     pub camera_sway: bool,
     /// Stand-in players for the dev tools (`__dwell.puppets`): the frame cost of N bodies and
@@ -1272,6 +1275,7 @@ impl<S: Scene> Game<S> {
                 &dwell_game::block_interaction::palette(),
             ),
             show_arms: true,
+            show_outline: true,
             camera_sway: true,
             lod_drawn: true,
             puppets: None,
@@ -5430,6 +5434,11 @@ impl<S: Scene> Game<S> {
         self.scene
             .borrow_mut()
             .set_brush_outline(self.brush.outline());
+        // Outlines off (a clean recording, BUGS.md #113): the target stays, nothing is drawn.
+        if !self.show_outline {
+            self.scene.borrow_mut().set_block_outline(None, FULL_CELL);
+            return;
+        }
         // A moving body's cell aimed at: its box outlined, turned with the body.
         if let Some(b) = self.body_target {
             let half = [0.5f32, 0.5 * dwell_world::CELL_H as f32, 0.5];

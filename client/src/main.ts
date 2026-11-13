@@ -403,6 +403,8 @@ interface DwellDebug {
     renderScale?: number;
     /** Torch shadows `off`, `low`, `high`. */
     torchShadows?: 'off' | 'low' | 'high';
+    /** The targeted block's outline drawn (default on); off for clean recordings (BUGS.md #113). */
+    targetOutline?: boolean;
   }): void;
   /** The ink outline's mode (`shared/look/outline.json`, as `?outline=` names it), or `off`. */
   outline(): string;
@@ -1399,6 +1401,7 @@ async function start(): Promise<App | null> {
       const s = app.settings?.current;
       if (!s) return;
       if (v.clouds !== undefined) client.setClouds(v.clouds);
+      if (v.targetOutline !== undefined) client.setTargetOutline(v.targetOutline);
       if (v.speedEffects !== undefined) client.setMotion(v.speedEffects, s.motion.fovBoost);
       if (v.distanceM !== undefined || v.pixelError !== undefined) {
         client.setDetail(

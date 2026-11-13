@@ -1586,6 +1586,14 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    lit floor). Before recording video 2: an underwater look pass toward that reference (WATER_RENDERING.md W4's
    pieces exist: fog, Snell's window and TIR, god rays, caustics — tune and strengthen them), the owner's look
    check, then the video.
+   Video 2 v1 review, owner 2026-11-12: **"Water video for waterline should go straight down slowly into the water.
+   Should do sunset for the water surface fly over. Water should include a river follow. The water video should
+   include sound."** So v2: the wade replaced by a camera going straight down slowly through the surface; the
+   coast fly-over at sunset; a real river follow (a camera tracking down a river through stepped pools); the
+   game's sound (effects and ambience, no music) on every shot. Recorded 2026-11-12 (57 s, 5 shots: sunset coast,
+   a seed-7 hill river followed down its valley — it ends in a lake, no seed-7 river reached the sea in the scan —,
+   the waterline crane, the underwater swim, treading water at sunset; sound lifted 26 dB in the splice). Waits on
+   the owner's review.
    weird", confirmed by the v2 comparison).
    **Built 2026-11-12:** a keyframe `up` ("a" | "b" | "auto", default auto) holds a face's up, roll and look frame
    across the midplane (THEATER_MODE.md §3.1; presets and the keyframe editor's Up take it); the next take uses

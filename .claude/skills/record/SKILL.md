@@ -306,3 +306,19 @@ preview and the driver, remove any `client/node_modules` symlink or built `clien
   third-person treading shot needs no path tuning (target `"player"`, start 3 m behind). The first-person frames show
   the block-target box (BUGS.md #113). Timings: the first full `take.mjs water` 4 min 07 s; re-recording four shots
   2 min 25 s–2 min 49 s.
+- 2026-11-12, water v2 (portrait, 5 shots, 57.1 s, 20.0 MB, with sound; owner on v1: "Water video for waterline should
+  go straight down slowly into the water. Should do sunset for the water surface fly over. Water should include a river
+  follow. The water video should include sound."). **Finding a river follow:** `d.goto(..., {water: 'river'})` only
+  finds the nearest river column; to find one worth following, scan the world map natively (a throwaway
+  `dwell-worldgen` example: `BifacialTerrain::for_generator(GENERATOR_TERRAIN, seed).local(Face::A).column_at(x, z)`
+  on a 64 m grid, trace each river column downstream to the lowest neighbouring water, rank by the drop; ~10 s a seed).
+  Seed 7's best: a hill river in a deep valley from 11645, −11938 (level 153) to 12044, −11548 (108), 70+ level steps
+  over ~1 km, ending in a lake at ~84 m, not the sea (no seed-7 river traced to the sea from a 64 m grid); seeds 0 and
+  42 gave nothing better in the first pass. The camera ~35–45 m over the water, target 2 keyframes ahead
+  (`videos/water/s2_river_follow.json`), clears the valley walls; a camera off the river's line sat inside a cliff.
+  **The waterline:** a vertical path, slow through the surface (a linear 32.5 → 31.5 m over 5 s between eased legs):
+  the frame at the level shows the waterline across it, half sky, half the lit floor. **Sound:** the tap records the
+  mix quietly (clips −49 to −61 dB mean, peaks −28 dB): the manifest's `"splice": {"gainDb": 26}` lifts the whole
+  track with a limiter (→ −26 dB mean, peaks −0.7 dB). **The target box:** `view: {"targetOutline": false}` in a
+  shot's setup (BUGS.md #113 fixed). Timings: the full `take.mjs water` ~4 min; `--only s3` 1 min 52 s; a re-splice
+  1 min 15 s.

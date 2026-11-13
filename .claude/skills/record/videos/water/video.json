@@ -1,64 +1,146 @@
 {
   "formatVersion": 1,
   "name": "water",
-  "description": "Showcase #2, water and underwater (seed 7, the coast ~17 km from spawn at 11700, 19500: a sandy beach, a lagoon and a river channel to the sea): a golden-hour glide to the shore, down the river to the mouth, wading in, the surface crossing, an underwater swim looking up, the player treading water at sunset.",
+  "description": "Showcase #2 v2, water and underwater, with the game's sound (seed 7): a sunset glide over the sea to the coast (~17 km from spawn at 11700, 19500), a camera following a hill river down its valley (11645, -11938 to 12044, -11548), the waterline crossed by a camera going straight down, an underwater swim looking up, the player treading water at sunset.",
   "world": {
     "url": "/dwell/?fresh=1&seed=7&at=11660,40,19440",
-    "storage": { "dwell.clouds": "\"off\"", "dwell.music": "\"off\"" }
+    "storage": {
+      "dwell.clouds": "\"off\"",
+      "dwell.music": "\"off\""
+    }
   },
-  "capture": { "size": [1080, 1920], "fps": 30 },
-  "splice": { "crf": 28 },
+  "capture": {
+    "size": [
+      1080,
+      1920
+    ],
+    "fps": 30
+  },
+  "splice": {
+    "crf": 28,
+    "gainDb": 26
+  },
   "shots": [
     {
       "id": "s1",
-      "note": "golden-hour coast: a slow low glide over the sea toward the beach",
+      "note": "sunset coast: a slow low glide over the sea toward the beach",
       "kind": "path",
       "path": "videos/water/s1_coast_glide.json",
-      "setup": { "timeOfDay": 0.8, "view": { "clouds": "off" }, "warmS": 10 },
-      "splice": [{ "from": 0, "to": 9.5 }]
+      "setup": {
+        "timeOfDay": 0.815,
+        "view": {
+          "clouds": "off",
+          "targetOutline": false
+        },
+        "warmS": 10
+      },
+      "splice": [
+        {
+          "from": 0,
+          "to": 9.5
+        }
+      ]
     },
     {
       "id": "s2",
-      "note": "the river: down its channel through the sand to the lagoon and the sea, sped up",
+      "note": "a river follow: the camera tracks down a hill river through its valley and stepped pools",
       "kind": "path",
-      "path": "videos/water/s2_river_mouth.json",
-      "setup": { "timeOfDay": 0.7, "view": { "clouds": "off" }, "warmS": 10 },
-      "splice": [{ "from": 0, "to": 12, "speed": 1.5 }]
+      "path": "videos/water/s2_river_follow.json",
+      "setup": {
+        "url": "/dwell/?fresh=1&seed=7&at=11780,200,-11850",
+        "timeOfDay": 0.72,
+        "view": {
+          "clouds": "off",
+          "targetOutline": false
+        },
+        "warmS": 10
+      },
+      "splice": [
+        {
+          "from": 0,
+          "to": 15.5
+        }
+      ]
     },
     {
       "id": "s3",
-      "note": "first person walking in off the beach, the surface rising to the camera until the head goes under",
-      "kind": "take",
-      "script": "videos/water/water_take.js",
-      "args": { "mode": "wade", "start": [11660, 34, 19478], "yaw": 0, "timeOfDay": 0.55, "level": 32, "tailMs": 4500, "maxMs": 14000 },
-      "setup": { "view": { "clouds": "off" } },
-      "splice": [{ "from": 0.5, "to": 8.5 }]
-    },
-    {
-      "id": "s4",
-      "note": "the transition: a camera slowly crossing the surface, half above and half below, then under looking up",
+      "note": "the waterline: a camera going straight down slowly from 2 m above the surface to 3 m below, then tilting up at the surface from under",
       "kind": "path",
-      "path": "videos/water/s4_transition.json",
-      "setup": { "timeOfDay": 0.55, "view": { "clouds": "off" }, "warmS": 6 },
-      "splice": [{ "from": 0, "to": 8 }]
+      "path": "videos/water/s3_waterline_crane.json",
+      "setup": {
+        "reload": true,
+        "timeOfDay": 0.55,
+        "view": {
+          "clouds": "off",
+          "targetOutline": false
+        },
+        "warmS": 8
+      },
+      "splice": [
+        {
+          "from": 0,
+          "to": 13.8
+        }
+      ]
     },
     {
       "id": "s5",
       "note": "first person under the water: swimming along the bottom with soft strokes, then looking up at the surface",
       "kind": "take",
       "script": "videos/water/water_take.js",
-      "args": { "mode": "swim", "start": [11660, 29.5, 19560], "yaw": 0, "timeOfDay": 0.55, "swimMs": 4500, "upMs": 3500 },
-      "setup": { "view": { "clouds": "off" } },
-      "splice": [{ "from": 0.5, "to": 10 }]
+      "args": {
+        "mode": "swim",
+        "start": [
+          11660,
+          29.5,
+          19560
+        ],
+        "yaw": 0,
+        "timeOfDay": 0.55,
+        "swimMs": 4500,
+        "upMs": 3500
+      },
+      "setup": {
+        "view": {
+          "clouds": "off",
+          "targetOutline": false
+        }
+      },
+      "splice": [
+        {
+          "from": 0.5,
+          "to": 10
+        }
+      ]
     },
     {
       "id": "s6",
       "note": "surfacing: the player treading water, a third-person pull-back and rise at sunset",
       "kind": "take",
       "script": "videos/water/water_take.js",
-      "args": { "mode": "surface", "start": [11665, 33, 19560], "yaw": 200, "timeOfDay": 0.8, "seconds": 12 },
-      "setup": { "view": { "clouds": "off" } },
-      "splice": [{ "from": 0, "to": 12 }]
+      "args": {
+        "mode": "surface",
+        "start": [
+          11665,
+          33,
+          19560
+        ],
+        "yaw": 200,
+        "timeOfDay": 0.815,
+        "seconds": 12
+      },
+      "setup": {
+        "view": {
+          "clouds": "off",
+          "targetOutline": false
+        }
+      },
+      "splice": [
+        {
+          "from": 0,
+          "to": 12
+        }
+      ]
     }
   ]
 }

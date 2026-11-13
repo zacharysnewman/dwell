@@ -1,0 +1,9 @@
+{ "formatVersion": 1, "name": "water s2: following a hill river down through its stepped pools (seed 7, 11645, -11938 to 12044, -11548, ~45 m down)",
+  "keyframes": [
+    { "t": 0, "position": [11620, 190, -11960], "target": [11730, 140, -11868], "fov": 60, "timeOfDay": 0.72 },
+    { "t": 4, "position": [11700, 178, -11890], "target": [11811, 134, -11790] },
+    { "t": 8, "position": [11780, 170, -11815], "target": [11891, 132, -11710] },
+    { "t": 12, "position": [11860, 166, -11735], "target": [11970, 125, -11631] },
+    { "t": 16, "position": [11940, 160, -11655], "target": [12044, 108, -11548] }
+  ],
+  "segments": [ { "move": "ease", "easing": "inSine" }, { "move": "linear" }, { "move": "linear" }, { "move": "ease", "easing": "outSine" } ] }

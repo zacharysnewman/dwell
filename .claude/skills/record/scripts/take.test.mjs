@@ -248,6 +248,16 @@ test('the splice\'s audio graph: cuts concatenate the sound, speed stretches or 
   assert.equal(seconds, 14.914);
 });
 
+test('the splice lifts the whole sound by the plan\'s gainDb, limited', { skip: !python && 'no python3' }, () => {
+  const plan = { out: '/w/v.mp4', size: [108, 192], fps: 30, audio: true, gainDb: 18, clips: [
+    { src: '/c/a.mp4', from: 0, to: 4, audio: 'keep' }, { src: '/c/b.mp4', from: 0, to: 3, audio: 'keep' }] };
+  const final = dry(plan).commands.at(-1);
+  assert.match(final[final.indexOf('-filter_complex') + 1], /\[ax1\]volume=18dB,alimiter=limit=0\.9,afade=t=out/);
+  delete plan.gainDb;
+  const plain = dry(plan).commands.at(-1);
+  assert.ok(!plain.join(' ').includes('volume='));
+});
+
 test('a plan without audio splices silent, as before', { skip: !python && 'no python3' }, () => {
   const { commands } = dry({ out: '/w/v.mp4', size: [108, 192], fps: 30, clips: [
     { src: '/c/a.mp4', from: 0, to: 4 }, { src: '/c/b.mp4', from: 0, to: 2, cut: true }, { src: '/c/c.mp4', from: 0, to: 3 }] });
