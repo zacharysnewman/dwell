@@ -2,6 +2,20 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.60.13",
+      "changes": [
+        "New world → Spawn now offers the moon and the sun, each face: start (and respawn) standing on that world.",
+        "The sun's lava burns: its rivers and oceans hurt and burn as lava does at home, and dying there brings you back to your spawn.",
+        "The sun's lava rivers flow: near you, each river runs on from its head, glowing and crusting like home's lava."
+      ]
+    },
+    {
+      "version": "0.60.12",
+      "changes": [
+        "Behind the scenes: test fixes."
+      ]
+    },
+    {
       "version": "0.60.11",
       "changes": [
         "The villagers have eyes again",
