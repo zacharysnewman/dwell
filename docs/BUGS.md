@@ -6,6 +6,17 @@ pins it.
 
 ## Open
 
+### 155. The moon's (and sun's) distant terrain jumps from full detail to a blurry mesh, in other colours
+
+Owner, 2026-11-13: "The moon looks really bad. The LODs look like it's either high detail or super duper low detail,
+unlike home world. The LOD colors don't match either." Cause: since #143/#145 a grid's distance is `grid_lod.rs`'s
+rings of its far source's heights (coarse quads, recentred) right past the full-detail chunks: two levels, no graded
+steps or fades between, and the rings' colour is the far source's albedo (`FarSource::far_albedo`, the blocks'
+`color`), not the block looks the chunks are drawn with. Fix (WORK_QUEUE item 27, branch `claude/grid-lod`): a
+`LodSystem` per grid with sections from the grid's generator, meshed and coloured as home's. **Owner should see:**
+on the moon (and sun), distant terrain steps down in detail gradually like at home, with matching colours from near
+to far, no jump from full detail to a blurry low-detail mesh. Open (paused 2026-11-13 before any code).
+
 ### 135. Flat ground on a plateau can show a sandstone wall's face (red sandstone) instead of a tread
 
 Found 2026-11-13 while fixing #134 (Realistic, seed 42 face A, e.g. (−6000, −3500) and (−4250, 0)): a few wide, flat

@@ -1228,6 +1228,14 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    `claude/moon-fixes-3-l0zjdx`.
    **Built natively (0.63.0, a new line):** all five (BUGS.md #143–#145 say how; MOON_WORLD.md §7.3). **Left:** the
    browser look on a GPU (`moon-draw`, `sun-draw`); shadows from the rig's lights; the rig on water and characters.
+   **Real LOD on the moon and the sun (owner, 2026-11-13):** "The moon looks really bad. The LODs look like it's either
+   high detail or super duper low detail, unlike home world. The LOD colors don't match either." (BUGS.md #155.) Brief:
+   a per-grid LOD instance (home's `LodSystem`, graded levels and fades) whose sections come from the grid's own
+   generator, coloured by the same block-look path as home's LOD, dropped and rebuilt at crossings (#879's rule),
+   replacing `grid_lod.rs`'s rings on the grid (the far-body bake kept for seeing the grid from outside). Branch
+   `claude/grid-lod`. **Owner should see:** on the moon (and sun), distant terrain steps down in detail gradually like
+   at home, with matching colours from near to far, no jump from full detail to a blurry low-detail mesh.
+   **Status (2026-11-13): paused by the owner before any code;** the plan is in the draft PR.
 28. **An atmosphere: the sky thinning to space** (owner 2026-11-12: "We likely need an atmosphere transition now
    between sky thinning to space. Clouds shouldn't extend past the earth atmosphere either."). With flight to the
    moon, climbing should fade the sky's scattering to black space with stars by day, the horizon glow becoming a
