@@ -1239,6 +1239,15 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    16:48). **Waiting on the owner:** pick A–D (or a value between); its numbers move to the top of fog.json.
    **Owner, 2026-11-12: "Yeah let's go with D on haze."** Done: fog.json's half distance 6 km (was 16 km) and scale
    height 1 km (was 1.8 km), density 0.95; the pinned fog values updated.
+
+   **A bluer day sky** (owner, 2026-11-13, after sharing a Monument Valley photo — deep saturated blue overhead fading
+   to a lighter, slightly hazy blue at the horizon: **"Also can you make our sky a bit bluer like in that screenshot,
+   with blue to lighter blue gradient on the horizons?"**). **Done (branch `claude/sky-blue`):** daynight.json's
+   morning, noon and afternoon keyframes: zenith #2b68c4 / #2563c6 / #2a66c4 (was #6098d8 / #649ada / #6098d6),
+   horizon #a8c6e6 / #9cc0ea / #a9c5e4 (was a near-white #e2e2d8 / #e5e5e1 / #e6e2d4). The fog takes the sky's colour
+   below the horizon, so far hills now fade into the lighter blue. Sunrise, the golden hours, sunset, dusk, night and
+   the atmosphere's fade to space are unchanged (a test pins both). **Owner should see:** midday at the spawn looking
+   at the horizon and 45° up, and far hills from a height — side-by-sides in the PR.
 30. **Desktop frame rate on the M1 and hidden graphics settings (P0)** (owner 2026-11-12: "It seems like we're
    hiding some performance settings. I don't see 'tree' options in our settings for graphics. I think cards are
    killing my m1 mac too." / "Running 26fps." / "GPU at 31ms"). The desktop default preset is High (leaf cards
