@@ -858,6 +858,13 @@ impl GpuMesh {
     fn part(&self, part: Part) -> std::ops::Range<u32> {
         match part {
             Part::Plants => self.parts.get(1).unwrap_or(&self.parts[0]).clone(),
+            // After the plants: none when the mesh has no split (all of it counts as plants).
+            Part::Leaves => {
+                let all = &self.parts[0];
+                self.parts
+                    .get(1)
+                    .map_or(all.end..all.end, |p| p.end..all.end)
+            }
             _ => self.parts[0].clone(),
         }
     }
@@ -1032,6 +1039,9 @@ enum Part {
     Cutout,
     /// The cutout mesh's plants alone, not its trees' leaves (`impostors::CutoutDraw::Plants`).
     Plants,
+    /// The cutout mesh's trees' leaves alone (the shadow casters past `plantCascades`, which
+    /// plants don't cast into and leaves do: BUGS.md #151).
+    Leaves,
 }
 
 /// A falling piece's meshes (docs/FELLING.md §3): blocks of its cells, opaque and cutout, their
@@ -1332,6 +1342,8 @@ fn shadow_fs(d: &DrawItem) -> bool {
 /// to the eye, half-size) and its identity.
 struct Candidate {
     draw: DrawItem,
+    /// Which cascades it casts into (`shadows::casts`).
+    kind: shadows::CasterKind,
     centre: V3,
     half: V3,
     id: u64,
@@ -1374,10 +1386,11 @@ fn moving_casters(
         .collect()
 }
 
-/// Whether a candidate's kind casts into cascade `i` at all: plants into the nearest
-/// `plantCascades` only (their alpha-tested blades cost the most per texel).
+/// Whether a candidate casts into cascade `i` at all (`shadows::casts`: plants into the nearest
+/// `plantCascades` only, their alpha-tested blades cost the most per texel; a tree's leaves and
+/// everything else into every cascade).
 fn casts_into(c: &Candidate, _cascade: &shadows::Cascade, i: usize, tier: &ShadowTier) -> bool {
-    c.draw.kind != Kind::Cutout || i < tier.plant_cascades as usize
+    shadows::casts(c.kind, i, tier)
 }
 
 /// This frame's dynamic lights and torch shadows (`Renderer::torch_frame`).
@@ -2139,7 +2152,8 @@ impl Renderer {
             let (vs, entry, a) = match kind {
                 Kind::Terrain => ("terrain_vs", "shadow_terrain_fs", &terrain_attrs),
                 Kind::Flat => ("flat_vs", "shadow_flat_fs", &flat_attrs),
-                _ => ("cutout_vs", "shadow_cutout_fs", &cutout_attrs),
+                // Its own vertex stage: no leaf card dropped for the camera's side of it (BUGS.md #151).
+                _ => ("shadow_cutout_vs", "shadow_cutout_fs", &cutout_attrs),
             };
             // Drawn in full (no fragment stage): the depth-only vertex stage, which reads the
             // position alone.
@@ -3889,7 +3903,7 @@ impl Renderer {
             DrawMesh::Piece(id, k, part) => {
                 let (opaque, cutout) = &self.terrain.pieces[id].parts[*k];
                 let m = match part {
-                    Part::Cutout | Part::Plants => cutout.as_ref(),
+                    Part::Cutout | Part::Plants | Part::Leaves => cutout.as_ref(),
                     _ => opaque.as_ref(),
                 }
                 .expect("collected");
@@ -3900,7 +3914,7 @@ impl Renderer {
                 let m = match part {
                     Part::Opaque => chunk.opaque.as_ref(),
                     Part::Water => chunk.water.as_ref(),
-                    Part::Cutout | Part::Plants => chunk.cutout.as_ref(),
+                    Part::Cutout | Part::Plants | Part::Leaves => chunk.cutout.as_ref(),
                 }
                 .expect("collected");
                 (m, vec![m.part(*part)])
@@ -5374,6 +5388,7 @@ impl Renderer {
     /// identity that changes when its mesh, its skirts or whether it is fading change (a kept map
     /// is drawn again when the identities in it change, `caster_signature`). Water casts none.
     fn shadow_candidates(&self, chunk_fade: &dyn Fn(ChunkCoord) -> Option<Fade>) -> Vec<Candidate> {
+        use shadows::CasterKind::Solid;
         let item = |kind, offset, clip, fade, mesh| DrawItem {
             kind,
             water: false,
@@ -5395,7 +5410,7 @@ impl Renderer {
             (std::array::from_fn(|k| f64::from(r[k]) + half[k]), half)
         };
         let mut out = Vec::new();
-        let mut push = |d: DrawItem, (centre, half): (V3, V3), tag: u64| {
+        let mut push = |d: DrawItem, (centre, half): (V3, V3), tag: u64, kind| {
             let (mesh, _) = self.mesh_of(&d.mesh);
             let id = shadows::mix(tag)
                 ^ shadows::mix(
@@ -5406,6 +5421,7 @@ impl Renderer {
                 ^ u64::from(d.kind == Kind::Cutout);
             out.push(Candidate {
                 draw: d,
+                kind,
                 centre,
                 half,
                 id,
@@ -5424,11 +5440,21 @@ impl Renderer {
                 ^ shadows::mix(coord.z as u64).rotate_left(42);
             if c.opaque.is_some() {
                 let mesh = DrawMesh::Chunk(coord, Part::Opaque);
-                push(item(Kind::Terrain, offset, None, fade, mesh), b, tag);
+                push(item(Kind::Terrain, offset, None, fade, mesh), b, tag, Solid);
             }
-            if c.cutout.is_some() && self.cutout_shown {
-                let mesh = DrawMesh::Chunk(coord, Part::Cutout);
-                push(item(Kind::Cutout, offset, None, fade, mesh), b, !tag);
+            // The plants and the trees' leaves apart: plants cast into the nearest
+            // `plantCascades`, leaves into every cascade (BUGS.md #151: past those a crown cast
+            // nothing, and its shadow flipped as the camera moved it between cascades).
+            if let Some(m) = c.cutout.as_ref().filter(|_| self.cutout_shown) {
+                for (part, kind, tag) in [
+                    (Part::Plants, shadows::CasterKind::Plants, !tag),
+                    (Part::Leaves, shadows::CasterKind::Leaves, !tag ^ 0x1eaf),
+                ] {
+                    if m.drawn(part) > 0 {
+                        let mesh = DrawMesh::Chunk(coord, part);
+                        push(item(Kind::Cutout, offset, None, fade, mesh), b, tag, kind);
+                    }
+                }
             }
         }
         // The falling pieces: moving casters (`piece_shadow_tag`), a kept map holding one drawn
@@ -5460,7 +5486,7 @@ impl Renderer {
                     DrawMesh::Piece(id, k, Part::Opaque),
                 );
                 d.quat = quat;
-                push(d, b, piece_shadow_tag(id, k));
+                push(d, b, piece_shadow_tag(id, k), Solid);
             }
         }
         for &(id, mask, fade) in &self.terrain.shown {
@@ -5485,6 +5511,7 @@ impl Renderer {
                 item(Kind::Flat, offset, None, fade.shader_value(), mesh),
                 b,
                 tag,
+                Solid,
             );
         }
         for st in self
@@ -5517,6 +5544,7 @@ impl Renderer {
                 item(Kind::Flat, offset, clip, st.fade.shader_value(), mesh),
                 b,
                 tag,
+                Solid,
             );
         }
         out
@@ -5524,7 +5552,7 @@ impl Renderer {
 
     /// The shadow casters of this frame's drawn cascades (`f.draw`): each candidate with the
     /// cascades it reaches (a bit per cascade in `passes`; plants into the nearest
-    /// `plantCascades` only), in the order they are drawn (by pipeline, then page). A draw in an
+    /// `plantCascades` only, `shadows::casts`), in the order they are drawn (by pipeline, then page). A draw in an
     /// LOD swap casts with its fade, so the two levels share the map (`shadow_terrain_fs`).
     fn collect_casters(
         &self,

@@ -511,6 +511,74 @@ impl Cache {
     }
 }
 
+/// What a shadow caster is, for the cascades it casts into (`casts`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CasterKind {
+    /// Terrain, LOD sections, stand-ins, falling pieces: every cascade.
+    Solid,
+    /// A tree's leaves (their faces and cards): every cascade, as the trunk under them.
+    Leaves,
+    /// Plants (grass, flowers, ladders): the nearest `plantCascades` only.
+    Plants,
+}
+
+/// Whether a caster of `kind` casts into cascade `i` of `tier`. A tree's leaves cast into every
+/// cascade: until 0.63.x they were plants here, so past `plantCascades` (the second cascade at
+/// Low, ~20 m out; the third at High, ~44 m) a crown cast nothing, and walking moved a tree
+/// between a cascade with its crown's shadow and one without (BUGS.md #151).
+pub fn casts(kind: CasterKind, i: usize, tier: &ShadowTier) -> bool {
+    match kind {
+        CasterKind::Plants => i < tier.plant_cascades as usize,
+        CasterKind::Solid | CasterKind::Leaves => true,
+    }
+}
+
+/// The normal offset (m) of a receiver's lookup in cascade `c` (`shadow_lookup` in
+/// `SHADOW_WGSL`): `normalOffsetTexels` of the cascade's texels, and for a tree's leaves at least
+/// `leafNormalOffsetM`, the same in every cascade (BUGS.md #151: at a few centimetres, the fine
+/// near cascade shaded a crown's top with its own cards' and leaf texels' shadows and the coarse
+/// far ones didn't, so a crown flipped between two looks as the camera moved).
+pub fn normal_offset_m(t: &ShadowTunables, c: &Cascade, leaf: bool) -> f64 {
+    let texels = c.texel_m * t.bias.normal_offset_texels;
+    if leaf {
+        texels.max(t.bias.leaf_normal_offset_m)
+    } else {
+        texels
+    }
+}
+
+/// How far out in cascade `c`'s map an eye-relative point is: 0 at its centre, 1 at the filter's
+/// margin across the light, over 1 where the map doesn't hold it (`shadow_edge`).
+pub fn edge(c: &Cascade, tier: &ShadowTier, rel: V3) -> f64 {
+    let p = c.project(rel);
+    let margin = 1.0 - (tier.filter_texels + 2.0) * 2.0 / f64::from(tier.resolution);
+    if !(0.0..=1.0).contains(&p[2]) {
+        return 2.0;
+    }
+    p[0].abs().max(p[1].abs()) / margin
+}
+
+/// The cascades an eye-relative point reads (`shadow_cascade` and `shadow_cascades`): the first
+/// whose map holds it, and the share (0–1) of the next one's lookup it blends toward, over the
+/// outer `blendBand` of the first's box (all of it at the edge), so a cascade's edge shows no step
+/// (BUGS.md #151). None: past every cascade.
+pub fn pick(
+    t: &ShadowTunables,
+    tier: &ShadowTier,
+    cascades: &[Option<Cascade>],
+    rel: V3,
+) -> Option<(usize, f64)> {
+    let holds = |c: &Option<Cascade>| c.as_ref().is_some_and(|c| edge(c, tier, rel) <= 1.0);
+    let i = cascades.iter().position(holds)?;
+    let band = t.cascades.blend_band;
+    if band <= 0.0 || !cascades.get(i + 1).is_some_and(holds) {
+        return Some((i, 0.0));
+    }
+    let e = edge(cascades[i].as_ref().expect("held"), tier, rel);
+    let x = ((e - (1.0 - band)) / band).clamp(0.0, 1.0);
+    Some((i, x * x * (3.0 - 2.0 * x)))
+}
+
 /// An order-free signature of a set of casters: each caster's identity hashed, the hashes summed
 /// (so the casters can be visited in any order, and one added, removed or changed changes it).
 pub fn signature(ids: impl IntoIterator<Item = u64>) -> u64 {
@@ -530,7 +598,8 @@ pub const UNIFORM_FLOATS: usize = MAX_CASCADES * 16 + MAX_CASCADES * 4 + 8;
 /// The shadow uniform block: each cascade's matrix (`NO_CASCADE` for one not drawn yet); per
 /// cascade its texel (m), the normal offset (m), the compare's bias (map depth) and the filter's
 /// radius (texels); then the cascade count (0: no shadows), the strength, the fade's start and
-/// end (distance from the eye); the filter's taps a side, the map's size (texels).
+/// end (distance from the eye); the filter's taps a side, the map's size (texels), the cascades'
+/// blend band and a tree's leaves' least normal offset (m).
 pub fn uniforms(t: &ShadowTunables, plan: Option<(&Plan, &Frame)>) -> [f32; UNIFORM_FLOATS] {
     let mut u = [0.0f32; UNIFORM_FLOATS];
     let Some((p, f)) = plan else {
@@ -560,8 +629,8 @@ pub fn uniforms(t: &ShadowTunables, plan: Option<(&Plan, &Frame)>) -> [f32; UNIF
         p.distance as f32,
         p.tier.filter_taps as f32,
         p.tier.resolution as f32,
-        0.0,
-        0.0,
+        t.cascades.blend_band as f32,
+        t.bias.leaf_normal_offset_m as f32,
     ]);
     u
 }
@@ -789,10 +858,14 @@ struct Shadows {
     texel: array<vec4f, 4>,
     // x cascades (0: none), y strength, z the fade to the stand-in's start, w its end (distance).
     cfg: vec4f,
-    // x the filter's taps a side, y the map's size (texels).
+    // x the filter's taps a side, y the map's size (texels), z the cascades' blend band (share of
+    // a box's half-size), w a tree's leaves' least normal offset (m).
     pcf: vec4f,
 };
 @group(0) @binding(8) var<uniform> shadows: Shadows;
+// The least normal offset (m) of the surface being shaded: `pcf.w` for a tree's leaves (the
+// cutout's fragment stage sets it before `scene_out`), else 0 (each cascade's own).
+var<private> shadow_leaf_m: f32 = 0.0;
 @group(0) @binding(9) var shadow_map: texture_depth_2d_array;
 @group(0) @binding(10) var shadow_sampler: sampler_comparison;
 
@@ -818,17 +891,49 @@ fn shadow_pcf(c: i32, p: vec3f) -> f32 {
     return sum / f32(taps * taps);
 }
 
+// How far out in cascade `c`'s map an eye-relative point is (0 its centre, 1 the filter's margin
+// across the light), or over 1 when the map doesn't hold it (render/shadows.rs `pick`).
+fn shadow_edge(c: i32, rel: vec3f) -> f32 {
+    let p = shadows.cascades[c] * vec4f(rel, 1.0);
+    let margin = 1.0 - (shadows.texel[c].w + 2.0) * 2.0 / shadows.pcf.y;
+    if (p.z < 0.0 || p.z > 1.0) {
+        return 2.0;
+    }
+    return max(abs(p.x), abs(p.y)) / margin;
+}
+
 // The first cascade whose map holds an eye-relative point (with the filter's margin), or −1.
 fn shadow_cascade(rel: vec3f) -> i32 {
     let count = i32(shadows.cfg.x);
     for (var c = 0; c < count; c++) {
-        let p = shadows.cascades[c] * vec4f(rel, 1.0);
-        let margin = 1.0 - (shadows.texel[c].w + 2.0) * 2.0 / shadows.pcf.y;
-        if (all(abs(p.xy) <= vec2f(margin)) && p.z >= 0.0 && p.z <= 1.0) {
+        if (shadow_edge(c, rel) <= 1.0) {
             return c;
         }
     }
     return -1;
+}
+
+// Cascade `c`'s visibility of an eye-relative point with normal `n`, the lookup moved out along
+// it by the cascade's normal offset, or a tree's leaves' (`shadow_leaf_m`) where that is more.
+fn shadow_lookup(c: i32, rel: vec3f, n: vec3f) -> f32 {
+    let at = rel + n * max(shadows.texel[c].y, shadow_leaf_m);
+    return shadow_pcf(c, (shadows.cascades[c] * vec4f(at, 1.0)).xyz);
+}
+
+// The cascades' visibility of a point first held by cascade `c`: its lookup, blended over the
+// box's outer `pcf.z` toward the next cascade's (all of it at the edge), so a cascade's edge
+// shows no step (BUGS.md #151; render/shadows.rs `pick` is this, tested).
+fn shadow_cascades(c: i32, rel: vec3f, n: vec3f) -> f32 {
+    let vis = shadow_lookup(c, rel, n);
+    let band = shadows.pcf.z;
+    if (band <= 0.0 || c + 1 >= i32(shadows.cfg.x) || shadow_edge(c + 1, rel) > 1.0) {
+        return vis;
+    }
+    let w = smoothstep(1.0 - band, 1.0, shadow_edge(c, rel));
+    if (w <= 0.0) {
+        return vis;
+    }
+    return mix(vis, shadow_lookup(c + 1, rel, n), w);
 }
 
 // Clouds' shadows on the terrain (CLOUDS.md §6, a future item, Phase 31's C7): the deck's
@@ -858,12 +963,9 @@ fn shadow_light(rel: vec3f, n: vec3f, stand_in: f32) -> f32 {
     if (near <= 0.0 || c < 0) {
         return shadow_past(rel, n, stand_in) * cloud_shadow(rel);
     }
-    // Normal offset: the lookup moves out along the surface's normal by the cascade's texels.
-    let at = rel + n * shadows.texel[c].y;
-    let p = (shadows.cascades[c] * vec4f(at, 1.0)).xyz;
     // Times the distant terrain's: a hill beyond the casters' reach shades here only through it
     // (docs/BUGS.md 2).
-    let inside = mix(stand_in, shadow_pcf(c, p) * lod_shadow(rel), shadows.cfg.y);
+    let inside = mix(stand_in, shadow_cascades(c, rel, n) * lod_shadow(rel), shadows.cfg.y);
     if (near >= 1.0) {
         return inside * cloud_shadow(rel);
     }
@@ -1494,6 +1596,327 @@ mod tests {
                 !far.touches(f.vector([10.0, -400.0, -30.0]), [8.0; 3]),
                 "under its ground"
             );
+        }
+    );
+
+    // BUGS.md #151: a tree's shadows flipped between two looks as the camera moved (its crown
+    // shaded by itself in one cascade, not in another; a hard step at each cascade's edge). The
+    // GPU can't run here, so the maps and the lookup are modelled on the CPU: each texel's depth
+    // ray-cast against box casters (with the casters' slope-scaled bias), the shader's PCF of
+    // hardware 2×2 compares, its normal offset (`normal_offset_m`) and its cascade pick and blend
+    // (`pick`), over the cascades `plan` fits.
+
+    use dwell_world::FaceFrame;
+
+    /// A box caster (world corners) and its kind.
+    #[derive(Clone, Copy)]
+    struct BoxCaster {
+        lo: V3,
+        hi: V3,
+        kind: CasterKind,
+    }
+
+    fn add(a: V3, b: V3) -> V3 {
+        [a[0] + b[0], a[1] + b[1], a[2] + b[2]]
+    }
+
+    /// The tree, face-local from `at` (the ground under its trunk), placed through `f`: the
+    /// ground, a trunk, a crown of leaf cells 3–6 m up and a grid of leaf cards standing 8 cm off
+    /// the crown's top (the cards' shadows on the crown were the near cascade's second look).
+    fn tree_scene(f: FaceFrame, at: V3) -> Vec<BoxCaster> {
+        use CasterKind::{Leaves, Solid};
+        let mut local = vec![
+            ([-300.0, -2.0, -300.0], [300.0, 0.0, 300.0], Solid),
+            ([-0.25, 0.0, -0.25], [0.25, 4.0, 0.25], Solid),
+            ([-2.5, 3.0, -2.5], [2.5, 6.0, 2.5], Leaves),
+        ];
+        for x in [-1.8, -0.6, 0.6, 1.8] {
+            for z in [-1.8, -0.6, 0.6, 1.8] {
+                local.push((
+                    [x - 0.475, 6.08, z - 0.475],
+                    [x + 0.475, 6.1, z + 0.475],
+                    Leaves,
+                ));
+            }
+        }
+        local
+            .into_iter()
+            .map(|(lo, hi, kind)| {
+                let (a, b) = (f.point(add(at, lo)), f.point(add(at, hi)));
+                BoxCaster {
+                    lo: std::array::from_fn(|k| a[k].min(b[k])),
+                    hi: std::array::from_fn(|k| a[k].max(b[k])),
+                    kind,
+                }
+            })
+            .collect()
+    }
+
+    /// A cascade's map on the CPU: the casters that cast into it (eye-relative boxes).
+    struct CpuMap<'a> {
+        c: &'a Cascade,
+        tier: &'a ShadowTier,
+        boxes: Vec<(V3, V3)>,
+    }
+
+    impl<'a> CpuMap<'a> {
+        fn new(
+            c: &'a Cascade,
+            i: usize,
+            tier: &'a ShadowTier,
+            eye: V3,
+            scene: &[BoxCaster],
+        ) -> Self {
+            let boxes = scene
+                .iter()
+                .filter(|b| casts(b.kind, i, tier))
+                .map(|b| (sub(b.lo, eye), sub(b.hi, eye)))
+                .collect();
+            Self { c, tier, boxes }
+        }
+
+        /// The depth texel (`i`, `j`) holds (clamped to the edge, as the sampler is): the
+        /// nearest caster face along the light through its centre, plus the slope-scaled bias
+        /// (`caster_depth`); 1 (cleared) where nothing casts.
+        fn depth(&self, i: i64, j: i64) -> f64 {
+            let res = f64::from(self.tier.resolution);
+            let n = i64::from(self.tier.resolution);
+            let (i, j) = (i.clamp(0, n - 1), j.clamp(0, n - 1));
+            let x = (i as f64 + 0.5) / res * 2.0 - 1.0;
+            let y = 1.0 - (j as f64 + 0.5) / res * 2.0;
+            let (c, b) = (self.c, self.c.basis);
+            let (r, reach) = (c.radius, c.depth_m - 2.0 * c.radius);
+            let base: V3 = std::array::from_fn(|k| c.origin_rel[k] + (b.x[k] * x + b.y[k] * y) * r);
+            let mut best = 1.0f64;
+            for (lo, hi) in &self.boxes {
+                // The ray base + z·s runs down from the light; it enters the box at the least of
+                // the slabs' upper ends, through that slab's face.
+                let (mut s_in, mut s_out, mut axis) = (f64::INFINITY, f64::NEG_INFINITY, 0);
+                let mut miss = false;
+                for k in 0..3 {
+                    if b.z[k].abs() < 1e-12 {
+                        miss |= base[k] < lo[k] || base[k] > hi[k];
+                        continue;
+                    }
+                    let (u, v) = ((lo[k] - base[k]) / b.z[k], (hi[k] - base[k]) / b.z[k]);
+                    if u.max(v) < s_in {
+                        s_in = u.max(v);
+                        axis = k;
+                    }
+                    s_out = s_out.max(u.min(v));
+                }
+                if miss || s_out > s_in || s_in < -r {
+                    continue;
+                }
+                let s = s_in.min(r + reach);
+                let mut m = [0.0; 3];
+                m[axis] = 1.0;
+                let slope = dot(m, b.x).abs().max(dot(m, b.y).abs()) / dot(m, b.z).abs().max(1e-6)
+                    * c.texel_m
+                    / c.depth_m;
+                best = best.min((r + reach - s) / c.depth_m + SHADOWS.bias.slope_scale * slope);
+            }
+            best.clamp(0.0, 1.0)
+        }
+
+        /// A hardware compare (LessEqual, linear): the 2×2 texels around `uv`, each lit where the
+        /// reference `z` is at or before its depth, weighted bilinearly.
+        fn compare(&self, uv: [f64; 2], z: f64) -> f64 {
+            let res = f64::from(self.tier.resolution);
+            let (tx, ty) = (uv[0] * res - 0.5, uv[1] * res - 0.5);
+            let (i, j) = (tx.floor(), ty.floor());
+            let (fx, fy) = (tx - i, ty - j);
+            let (i, j) = (i as i64, j as i64);
+            let lit = |a: i64, b: i64| f64::from(u8::from(z <= self.depth(a, b)));
+            (1.0 - fy) * ((1.0 - fx) * lit(i, j) + fx * lit(i + 1, j))
+                + fy * ((1.0 - fx) * lit(i, j + 1) + fx * lit(i + 1, j + 1))
+        }
+
+        /// `shadow_pcf`: a grid of `filterTaps`² compares over the filter's radius.
+        fn pcf(&self, p: V3) -> f64 {
+            let size = f64::from(self.tier.resolution);
+            let uv = [p[0] * 0.5 + 0.5, 0.5 - p[1] * 0.5];
+            let z = p[2] - SHADOWS.bias.depth_bias_m / self.c.depth_m;
+            let taps = self.tier.filter_taps as i32;
+            let radius = self.tier.filter_texels / size;
+            if taps <= 1 {
+                return self.compare(uv, z);
+            }
+            let step = 2.0 * radius / f64::from(taps - 1);
+            let mut sum = 0.0;
+            for j in 0..taps {
+                for i in 0..taps {
+                    let o = [f64::from(i) * step - radius, f64::from(j) * step - radius];
+                    sum += self.compare([uv[0] + o[0], uv[1] + o[1]], z);
+                }
+            }
+            sum / f64::from(taps * taps)
+        }
+    }
+
+    /// The maps' shadow factor (1 lit, 0 shadowed) at world point `at` with normal `n` (world),
+    /// seen from `eye`, and the cascade pick (`shadow_cascades` in `SHADOW_WGSL`).
+    fn factor(
+        p: &Plan,
+        eye: V3,
+        scene: &[BoxCaster],
+        at: V3,
+        n: V3,
+        leaf: bool,
+    ) -> (f64, (usize, f64)) {
+        let rel = sub(at, eye);
+        let held: Vec<Option<Cascade>> = p.cascades.iter().copied().map(Some).collect();
+        let (i, w) = pick(&SHADOWS, &p.tier, &held, rel).expect("in the cascades");
+        let look = |c: usize| {
+            let k = &p.cascades[c];
+            let off = normal_offset_m(&SHADOWS, k, leaf);
+            let q = k.project(std::array::from_fn(|a| rel[a] + n[a] * off));
+            CpuMap::new(k, c, &p.tier, eye, scene).pcf(q)
+        };
+        let v = look(i);
+        let v = if w > 0.0 {
+            v + (look(i + 1) - v) * w
+        } else {
+            v
+        };
+        (v, (i, w))
+    }
+
+    /// The sun over face `f` (face-local toward it), and the sky's axis.
+    fn sun_over(f: FaceFrame) -> (Caster, V3) {
+        let c = Caster {
+            dir: f.vector(normalize([0.35, 0.85, 0.25])),
+            moon: false,
+            strength: 1.0,
+        };
+        (c, f.vector([0.0, 0.0, 1.0]))
+    }
+
+    fn plan_at(q: ShadowQuality, f: FaceFrame, eye: V3) -> Plan {
+        let (sun, axis) = sun_over(f);
+        plan(&SHADOWS, q, Some(sun), eye, axis, 1.0, [0.0; 3]).expect("shadows")
+    }
+
+    /// The tree's ground (face-local, from it), along the light from `from` (face-local).
+    fn under(f: FaceFrame, p: &Plan, from: V3) -> V3 {
+        let l = f.vector(p.caster.dir);
+        let t = from[1] / l[1];
+        [from[0] - l[0] * t, 0.0, from[2] - l[2] * t]
+    }
+
+    #[test]
+    fn a_trees_leaves_cast_into_every_cascade_and_plants_into_the_nearest() {
+        for q in [ShadowQuality::Low, ShadowQuality::High] {
+            let tier = SHADOWS.tier(q).unwrap();
+            for i in 0..tier.cascades as usize {
+                assert!(
+                    casts(CasterKind::Leaves, i, tier),
+                    "{q:?} leaves, cascade {i}"
+                );
+                assert!(
+                    casts(CasterKind::Solid, i, tier),
+                    "{q:?} solid, cascade {i}"
+                );
+                assert_eq!(
+                    casts(CasterKind::Plants, i, tier),
+                    i < tier.plant_cascades as usize
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_trees_leaves_take_the_same_normal_offset_in_every_cascade() {
+        // `leafNormalOffsetM` is at least every cascade's own offset (at the spyglass's 1×), so a
+        // leaf's lookup is the same distance out whichever cascade reads it.
+        for q in [ShadowQuality::Low, ShadowQuality::High] {
+            let p = noon_plan(q, [0.0, 60.0, 0.0]);
+            for c in &p.cascades {
+                assert!(
+                    c.texel_m * SHADOWS.bias.normal_offset_texels
+                        <= SHADOWS.bias.leaf_normal_offset_m,
+                    "{q:?}: a {} m texel's offset is over the leaves'",
+                    c.texel_m
+                );
+                assert_eq!(
+                    normal_offset_m(&SHADOWS, c, true),
+                    SHADOWS.bias.leaf_normal_offset_m
+                );
+            }
+        }
+    }
+
+    dwell_world::both_faces!(
+        /// A tree's crown texel (its top, under a leaf card) and the ground under the crown keep
+        /// their shadow as the camera backs away from 4 m to 70 m, through every cascade's edge:
+        /// the crown never shades its own top (the near cascade did, at a few centimetres'
+        /// offset; the owner's second look), and the ground under it is shaded in every cascade
+        /// (past `plantCascades` the leaves cast nothing).
+        fn a_crowns_texel_gets_the_same_shadow_whichever_cascade_reads_it(f: FaceFrame) {
+            for q in [ShadowQuality::Low, ShadowQuality::High] {
+                let at = [0.3, 60.0, 0.2];
+                let scene = tree_scene(f, at);
+                let top = f.point(add(at, [0.6, 6.0, 0.6]));
+                let up = f.vector(normalize([0.2, 1.0, 0.2]));
+                let mut cascades = std::collections::BTreeSet::new();
+                for d in (4..=70).step_by(2) {
+                    let eye = f.point(add(at, [-f64::from(d), 1.7, 0.4]));
+                    let p = plan_at(q, f, eye);
+                    let (crown, (i, _)) = factor(&p, eye, &scene, top, up, true);
+                    cascades.insert(i);
+                    assert!(
+                        crown > 0.95,
+                        "{q:?} {d} m: the crown's top shaded {crown} in cascade {i}"
+                    );
+                    let ground = f.point(add(at, under(f, &p, [0.0, 4.5, 0.0])));
+                    let (shade, (i, _)) = factor(&p, eye, &scene, ground, f.up(), false);
+                    assert!(
+                        shade < 0.05,
+                        "{q:?} {d} m: the ground under the crown lit {shade} in cascade {i}"
+                    );
+                }
+                let all = SHADOWS.tier(q).unwrap().cascades as usize;
+                assert_eq!(cascades.len(), all, "{q:?}: crossed {cascades:?}");
+            }
+        }
+    );
+
+    dwell_world::both_faces!(
+        /// Walking away across the nearest cascade's edge, a fixed receiver on the crown's
+        /// shadow's soft edge (where the cascades' resolutions differ most) changes its shadow by
+        /// the blend's small steps only, not a step at the edge (0.63.x's hard switch).
+        fn a_cascades_edge_changes_a_fixed_receivers_shadow_by_the_blend(f: FaceFrame) {
+            for q in [ShadowQuality::Low, ShadowQuality::High] {
+                let at = [0.3, 60.0, 0.2];
+                let scene = tree_scene(f, at);
+                let eye_at = |d: f64| f.point(add(at, [-d, 1.7, 0.4]));
+                // The receiver: out from the crown's shadow's middle along +x, the first ground
+                // point the nearest cascade sees a fifth lit.
+                let near = eye_at(4.0);
+                let p = plan_at(q, f, near);
+                let mid = under(f, &p, [0.0, 4.5, 0.0]);
+                let receiver = (0..800)
+                    .map(|k| f.point(add(at, [mid[0] + f64::from(k) * 0.005, 0.0, mid[2]])))
+                    .find(|&g| factor(&p, near, &scene, g, f.up(), false).0 > 0.2)
+                    .expect("the shadow's edge");
+                let mut last: Option<(f64, usize)> = None;
+                let mut crossed = false;
+                for k in 0..=400 {
+                    let eye = eye_at(4.0 + f64::from(k) * 0.1);
+                    let p = plan_at(q, f, eye);
+                    let (v, (i, _)) = factor(&p, eye, &scene, receiver, f.up(), false);
+                    if let Some((u, j)) = last {
+                        crossed |= i != j;
+                        assert!(
+                            (v - u).abs() <= 0.06,
+                            "{q:?}: {u} → {v} at {} m (cascade {j} → {i})",
+                            4.0 + f64::from(k) * 0.1
+                        );
+                    }
+                    last = Some((v, i));
+                }
+                assert!(crossed, "{q:?}: the receiver never changed cascade");
+            }
         }
     );
 }
