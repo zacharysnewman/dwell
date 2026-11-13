@@ -547,6 +547,36 @@ face, or the placement check against its shape.
 
 ## Fixed
 
+### 154. Far trees drew doubled and half faded at the hand-over, splitting as the eye flew up and down
+
+Owner, 2026-11-13, with two screenshots: "There seems to be doubled partially faded imposters, they can't fade
+slowly based on distance alone because they are obviously faded. Not sure why there's 2 and they seem to split and
+combine as you fly up and down in front of them. It can be a fade transition but it shouldn't ever be partial
+transitions over distance, but over time. Does that make sense?" The shots: pines at the hand-over distance drew
+both the near leaves (dithered, half faded) and the impostor (dithered, half faded) at once, the two copies offset
+and sliding apart and together as the camera moved up and down. WORK_QUEUE item 31.
+
+Owner should see: flying toward and away from a forest, trees swap between near and far with a brief fade, never a
+steady half-faded or doubled tree, and no copies sliding apart as you fly up and down.
+
+**Cause:** (1) the hand-over was a blend by distance (`fromM` 48 over `fadeM` 16): every tree 48–64 m off drew
+both copies, each on its share of the pixels, for as long as the eye stayed there. (2) The impostor dithered
+between baked views 40° apart in elevation (0° and 40°), which see different silhouettes: from a rising eye two
+crowns up to 0.55 m apart (vertically) were interleaved, their weights shifting with the height.
+
+**Fixed (natively; the browser look a local check on a GPU):** (1) each tree is in one state, its real leaves or its
+impostor, switched by its crown's distance with hysteresis (`impostors.json` `far.tiers.on` `inM` 54, `outM` 58)
+and cross-faded over `fadeS` 0.3 s at each switch (client `render/tree_fade.rs`: per-tree states, a byte map of
+the near share about the eye that the leaves read at their fragment and the impostor at its tree's foot, so a
+tree's leaves and its impostor fade as one). Tests (both faces): `a_still_eye_sees_no_half_faded_tree_at_any_distance`,
+`crossing_the_switch_fades_once_over_time`, `the_gap_between_in_and_out_keeps_a_tree_from_flickering`,
+`a_crown_reads_its_trees_state_and_an_unbaked_tree_stays_real`; the old distance blend (`Far::share`, 0.5 at 56 m)
+is gone and a tier naming `fadeM` fails to parse. (2) The view layout is 6 azimuths × 0°, 20°, 40°, 60° + the top
+(25 views, the atlas 1.25× the bytes; the phone's 14 MB): `impostor`
+`the_impostor_registers_with_the_real_crown_as_the_eye_rises` (pine and oak, the eye from 3° to 65° up) red
+before (0.55 m off, overlap 0.65), 0.27 m and 0.68 after. Tried and dropped (each measured worse or no better): an
+upright proxy plane per view, a depth-refined reprojection, a narrower blend between views. Left: during the
+0.3 s fade the impostor is a baked seed variant, not the tree itself, so the two shapes differ for that moment.
 ### 153. A portal's marker floated hundreds of metres above the portal (fixed after 0.63.3)
 
 Owner, 2026-11-13: "Another bug, Im not sure if it's because I was flying high at the time, but the portal indicator

@@ -37,6 +37,7 @@ pub mod skinned;
 pub mod staged;
 pub mod streaming;
 pub mod timing;
+pub mod tree_fade;
 pub mod upscale;
 pub mod water;
 pub mod water_tiles;
@@ -1847,6 +1848,7 @@ impl Renderer {
             .chain(lod_map::layout_entries())
             .chain([flow::layout_entry()])
             .chain([moon::layout_entry()])
+            .chain([tree_fade::layout_entry()])
             .collect();
         let frame_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("frame"),
@@ -2468,6 +2470,7 @@ impl Renderer {
             light_buffer: lights::buffer(&device),
             flow: flow::FlowGpu::new(&device),
             moon: moon::MoonGpu::new(&device, &queue),
+            tree_fade: tree_fade::TreeFadeGpu::new(&device),
         };
         // No maps until the first frame asks for some (`ensure_shadow_maps`): a 1×1 stand-in.
         let shadow_maps = frame_bindings.shadow_maps(&device, (1, 1));
@@ -3321,6 +3324,30 @@ impl Renderer {
         let i = self.impostors.as_ref()?;
         impostors::drawn(i.far, i.ready(self.face, self.eye))
     }
+    /// The frame uniform's `far_trees` (shaders.rs `tree_near_share`, render/tree_fade.rs): the
+    /// eye from the tree map's corner, the leaves' reach, 1 once the impostors draw; zeros (the
+    /// near trees' leaves to the full-detail distance) before.
+    fn far_uniform(&self) -> [f32; 4] {
+        match (self.far_drawn(), &self.impostors) {
+            (Some(f), Some(i)) if f.impostor => i.fades.uniform(&f, self.face, self.eye),
+            _ => [0.0; 4],
+        }
+    }
+    /// This frame's tree states (render/tree_fade.rs) at `now` (s), and the GPU's map when they
+    /// changed.
+    fn update_tree_fades(&mut self, now: f64) {
+        let Some(far) = self.far_drawn() else {
+            return;
+        };
+        let (face, eye) = (self.face, self.eye);
+        if let Some(i) = self.impostors.as_mut()
+            && i.update_fades(now, face, eye, &far)
+        {
+            self.frame_bindings
+                .tree_fade
+                .write(&self.queue, &i.fades.texels);
+        }
+    }
     /// What the far trees' impostors hold now (`__dwell.impostors()`).
     pub fn impostor_status(&self) -> impostors::Status {
         let ready = self.far_drawn().is_some();
@@ -3753,7 +3780,7 @@ impl Renderer {
         for v in lean_uniforms(self.tree_lean, self.eye) {
             put(&v);
         }
-        put(&impostors::far_uniform(self.far_drawn()));
+        put(&self.far_uniform());
         let pixel_angle = 2.0 * tan_y / f64::from(self.size.1.max(1));
         let mut day =
             self.day_in_air()
@@ -4511,6 +4538,7 @@ impl Renderer {
             timer.begin();
         }
         let collect_start = crate::telemetry::now_ms();
+        self.update_tree_fades(collect_start / 1000.0);
         let basis = aim(self.yaw, self.pitch, self.face, self.roll);
         // Two passes (§6.6): the far one beyond the split (its near plane pushed out with altitude,
         // where nothing is closer), then a depth clear and the near one. Heights are face-local.
@@ -6258,6 +6286,8 @@ struct FrameBindings {
     flow: flow::FlowGpu,
     /// The moon's baked maps (moon.rs), written once a world's bake is done.
     moon: moon::MoonGpu,
+    /// The far trees' near/impostor states about the eye (tree_fade.rs), written when they change.
+    tree_fade: tree_fade::TreeFadeGpu,
 }
 
 impl FrameBindings {
@@ -6357,6 +6387,7 @@ impl FrameBindings {
                 .chain(color_map.group_entries())
                 .chain([self.flow.group_entry()])
                 .chain([self.moon.group_entry()])
+                .chain([self.tree_fade.group_entry()])
                 .collect();
             device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some("frame"),
@@ -7361,7 +7392,7 @@ mod tests {
         assert!(reach > 0.0);
         let unready = |r: &Renderer| {
             (
-                impostors::far_uniform(r.far_drawn()),
+                r.far_uniform(),
                 impostors::cutout_reach(r.far_drawn()),
                 r.draws_far_trees(),
             )
@@ -7403,7 +7434,7 @@ mod tests {
         assert!(!r.impostor_status().last_error.is_empty());
         r.impostor_layer(c.layer_count() - 1, 3.0, 4.0, &bytes, &bytes);
         assert_eq!(r.far_drawn(), Some(far));
-        assert_eq!(impostors::far_uniform(r.far_drawn())[3], 1.0);
+        assert_eq!(r.far_uniform()[3], 1.0);
         assert!(!r.draws_far_trees(), "the impostors draw the far trees");
         let st = r.impostor_status();
         assert!(

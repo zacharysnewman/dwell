@@ -1424,6 +1424,20 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    log wall, which would vanish past 48 m with no impostor: needs an owner call); I-4 (`lod_trees.rs` still draws
    the far trees until the impostors are ready, BUGS.md #106's gate, and for `?impostors=0` / the bench's
    `impostors-off`); I-5 shadows (GPU work, local).
+   **Doubled, half-faded impostors (owner, 2026-11-13, with two screenshots; BUGS.md #154):** "There seems to be
+   doubled partially faded imposters, they can't fade slowly based on distance alone because they are obviously
+   faded. Not sure why there's 2 and they seem to split and combine as you fly up and down in front of them. It can
+   be a fade transition but it shouldn't ever be partial transitions over distance, but over time. Does that make
+   sense?" Owner should see: flying toward and away from a forest, trees swap between near and far with a brief
+   fade, never a steady half-faded or doubled tree, and no copies sliding apart as you fly up and down.
+   **Built (2026-11-13, cloud, `claude/impostor-fade-time-biapw1`):** the hand-over is per tree and in time: near or
+   impostor by distance with hysteresis (`far.tiers.on` `inM` 54 / `outM` 58, replacing `fromM`/`fadeM`), each switch
+   a `fadeS` 0.3 s cross-fade (`render/tree_fade.rs`: a byte map of each tree's near share about the eye, group 0
+   binding 21, read by the leaves per fragment and by the impostor at its foot); the views 6 azimuths × 0/20/40/60°
+   + top (was 8 × 0/40°), the crown's silhouette within 0.27 m of the real one's from any height (was 0.55 m).
+   **For the orchestrator (local GPU):** fly toward, away from and up and down in front of `forest:edge`; expected:
+   no steady half-faded tree at any distance, a ~0.3 s swap as a tree crosses ~56 m, no copy sliding up and down;
+   and a `forest-perf` run (the map adds one storage lookup per leaf fragment and impostor; the atlas 1.25×).
 32. **A tall dense forest for performance reference** (owner 2026-11-12: "We should have a tall dense forest
    biome/climate for performance reference on trees."). A biome preset (tall, closely spaced mature trees — an
    old-growth temperate rainforest of tall pines and broadleaf, thick undergrowth) placed by climate (cool and very
