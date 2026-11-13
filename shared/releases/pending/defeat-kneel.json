@@ -1,8 +1,0 @@
-{
-  "changes": [
-    "Humans no longer die: at 0 health you kneel where you fell, head bowed, your sword planted before you (or your hand on your knee), while the camera pulls out to show it.",
-    "After a few seconds the view fades and you stand up at the nearest resurrection shrine.",
-    "Villagers are defeated the same way: they kneel, then stand up again at the nearest shrine.",
-    "What you carried is left where you knelt, not dropped the moment you fall."
-  ]
-}
