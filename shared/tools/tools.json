@@ -260,7 +260,7 @@
         "guard": {
           "stances": {
             "level": { "rollDeg": 0, "raisedPose": "guard_level", "blade": { "grip": [0.06, 1.3, 0.44], "tip": [-0.72, 1.38, 0.53] } },
-            "vertical": { "rollDeg": 90, "raisedPose": "guard_vertical", "blade": { "grip": [0.5, 1.38, 0.33], "tip": [0.38, 1.73, -0.45] } }
+            "vertical": { "rollDeg": 90, "raisedPose": "guard_vertical", "blade": { "grip": [0.12, 1.19, 0.43], "tip": [0.13, 2.04, 0.47] } }
           },
           "blockWithinDeg": 35,
           "connectWithinDeg": 35,

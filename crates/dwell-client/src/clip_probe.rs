@@ -46,6 +46,9 @@ pub enum Point {
     Bone(&'static str),
     /// A part of the held characters item (`axe_blade`), its centre.
     Part(&'static str),
+    /// 0.3 m ahead of a bone's pivot along its own +z (`head_ahead`: where the head faces), so a
+    /// turn of the bone shows as a path.
+    Ahead(&'static str),
 }
 
 impl Point {
@@ -58,6 +61,13 @@ impl Point {
             // The head bone's pivot (`head` is the tool's head).
             "head_bone" | "neck" => Point::Bone("head"),
             "shoulder" => Point::Bone("arm_r"),
+            other
+                if other.ends_with("_ahead")
+                    && player().bone(&other[..other.len() - 6]).is_some() =>
+            {
+                let bone = &other[..other.len() - 6];
+                Point::Ahead(Box::leak(bone.to_string().into_boxed_str()))
+            }
             other => {
                 let name: &'static str = Box::leak(other.to_string().into_boxed_str());
                 if player().bone(name).is_some() {
@@ -76,6 +86,7 @@ impl Point {
             Point::Grip => "grip".into(),
             Point::Bone("forearm_r") => "elbow".into(),
             Point::Bone(b) | Point::Part(b) => b.into(),
+            Point::Ahead(b) => format!("{b}_ahead"),
         }
     }
 }
@@ -270,6 +281,14 @@ fn defeat_of(role: &str) -> Option<dwell_characters::animator::Defeat> {
     }
 }
 
+/// Whether `role` is one an idle NPC plays for its pose other than standing (`look`, `sit`;
+/// `creatures::npc_role`), which the player's animator has no state for.
+fn npc_idle_of(role: &str) -> bool {
+    (0..dwell_protocol::NPC_POSES.len() as u8)
+        .map(|i| crate::creatures::npc_role(0.0, i, false))
+        .any(|r| r == role && r != "idle")
+}
+
 /// A raised block's role (`guard_level`: a hold-layer clip the animator lays over the gait,
 /// `MoveInput::guard`), if `role` is one; the probe poses it as the game does instead of a swing.
 fn guard_of(role: &str) -> Option<&'static str> {
@@ -349,6 +368,7 @@ pub fn local_point(held: Held, p: Point) -> Option<(usize, [f32; 3])> {
     match p {
         Point::Grip => Some((hand, dwell_models::HAND_GRIP.at)),
         Point::Bone(b) => Some((ch.bone(b)?, [0.0; 3])),
+        Point::Ahead(b) => Some((ch.bone(b)?, [0.0, 0.0, 0.3])),
         Point::ToolHead | Point::ToolTip => {
             let (bone, verts) = held_vertices(held)?;
             // Along the grip's axis from the fist: the head is the far tenth, the tip the end.
@@ -637,6 +657,13 @@ pub fn fit_at(
 /// swing, from the body's animator.
 fn body_bones(role: &str, held: Held, t: f32) -> [Affine; MAX_BONES] {
     let ch = player();
+    // An NPC's idle role (`sit`, `look`: WORK_QUEUE item 38): posed as the game poses an NPC
+    // (`npc_rig_pose`, the role's clip at `t` with the held item's turns), not by the animator.
+    if npc_idle_of(role) {
+        let hold = held.item().and_then(|(n, _)| ch.item(n));
+        let pose = crate::render::characters::npc_rig_pose(ch, role, f64::from(t), hold);
+        return bone_transforms(ch, &pose);
+    }
     let mut a = Animator::new(&TABLES, ch, Space::Body);
     let input = MoveInput {
         holding: held != Held::Empty,
@@ -1377,6 +1404,33 @@ mod chop_swing_tests {
         assert!(d[0] < -0.5, "across the body to its left: {d:?}");
     }
 
+    // BUGS.md #87: the sword's vertical block stands upright ahead of the face (third person): the
+    // blade within 20° of upright, its tip over the grip, both well ahead of the body and the tip
+    // above the eyes, the fist before the chest (not out past the shoulder).
+    // face-a-only: the body's frame (from the feet) is the same on both faces.
+    #[test]
+    fn the_vertical_block_stands_upright_ahead_of_the_face() {
+        let mut p = Probe::new("guard_vertical");
+        p.item = Some("dwell:sword");
+        p.points = vec![Point::Grip, Point::ToolTip];
+        p.samples = 2;
+        let r = probe(&p).expect("probe");
+        let s = &r.samples[0];
+        let (grip, tip) = (s.at[0].body, s.at[1].body);
+        let d: [f32; 3] = std::array::from_fn(|k| tip[k] - grip[k]);
+        let off = d[0].hypot(d[2]).atan2(d[1]).to_degrees();
+        assert!(
+            off < 20.0,
+            "{off:.0}° off upright: grip {grip:?} tip {tip:?}"
+        );
+        assert!(
+            grip[2] > 0.3 && tip[2] > 0.3,
+            "ahead of the body: grip {grip:?} tip {tip:?}"
+        );
+        assert!(tip[1] > 1.65, "the tip above the eyes: {tip:?}");
+        assert!(grip[0].abs() < 0.3, "the fist before the chest: {grip:?}");
+    }
+
     #[test]
     fn the_level_chop_strikes_right_to_left_across_the_screen() {
         // face-a-only: the first-person screen is view space, the same on both faces (the world
@@ -1750,6 +1804,8 @@ mod chop_swing_tests {
         let c = csv(&r);
         assert_eq!(c.lines().count(), 1 + r.samples.len() * r.points.len());
         assert!(Point::parse("elbow").unwrap() == Point::Bone("forearm_r"));
+        assert!(Point::parse("head_ahead").unwrap() == Point::Ahead("head"));
+        assert_eq!(Point::Ahead("head").name(), "head_ahead");
     }
 
     #[test]
@@ -1908,8 +1964,20 @@ mod defeat_tests {
     /// A point of the body's pose at clip time `t` of `role` holding `item`, face-local metres from
     /// feet standing at face-local `feet` on face `f` facing `yaw`: (right, up, ahead of the feet).
     fn at(f: FaceFrame, role: &str, item: Option<&'static str>, t: f32, point: Point) -> [f64; 3] {
+        let (bone, q) = local_point(held_for(item, role), point).expect("a point");
+        at_bone(f, role, item, t, bone, q)
+    }
+
+    /// [`at`] for point `q` in bone `bone`'s frame.
+    fn at_bone(
+        f: FaceFrame,
+        role: &str,
+        item: Option<&'static str>,
+        t: f32,
+        bone: usize,
+        q: [f32; 3],
+    ) -> [f64; 3] {
         let held = held_for(item, role);
-        let (bone, q) = local_point(held, point).expect("a point");
         let bones = body_bones(role, held, t);
         let (feet, yaw) = (f.point([12.5, 70.0, -4.5]), 30.0);
         let frame = place_frame(feet, yaw, f, [0.0; 3]);
@@ -1996,6 +2064,100 @@ mod defeat_tests {
                 Point::ToolTip,
             );
             assert!(tip[1] > 1.0, "the sword back in hand: {tip:?}");
+        }
+    );
+
+    // WORK_QUEUE item 38: an NPC sitting on the ground (shared/creatures `seat` `on: ground`): the
+    // seat (the hips' pivot, inside the pelvis) and both ankles low, the legs out ahead of it, the
+    // torso upright over it, the left hand down behind, and its sword (in the right hand, over the
+    // raised knee) clear of the ground; breathing, the seat never moves.
+    dwell_world::both_faces!(
+        fn an_npc_sits_on_the_ground_legs_out_ahead(f: FaceFrame) {
+            let (role, sword) = ("sit", Some("dwell:sword"));
+            for t in [0.0, 1.0, 2.0, 3.0] {
+                let hips = at(f, role, sword, t, Point::Bone("hips"));
+                let neck = at(f, role, sword, t, Point::Bone("head"));
+                assert!(
+                    hips[1] > 0.05 && hips[1] < 0.2,
+                    "the seat at the ground: {hips:?}"
+                );
+                assert!(
+                    hips[0].abs() < 0.05 && hips[2].abs() < 0.05,
+                    "over its feet' place: {hips:?}"
+                );
+                assert!(neck[1] > 0.6 && neck[2].abs() < 0.2, "sitting up: {neck:?}");
+                for foot in ["foot_l", "foot_r"] {
+                    let a = at(f, role, sword, t, Point::Bone(foot));
+                    assert!(
+                        a[1] < 0.15 && a[2] > 0.5,
+                        "{foot} out ahead on the ground: {a:?}"
+                    );
+                }
+                let knee = at(f, role, sword, t, Point::Bone("shin_r"));
+                let hand = at(f, role, sword, t, Point::Bone("hand_l"));
+                let knee_l = at(f, role, sword, t, Point::Bone("shin_l"));
+                assert!(
+                    knee[1] > 0.22 && knee[1] > knee_l[1] + 0.08,
+                    "the right knee up: {knee:?} (the left {knee_l:?})"
+                );
+                assert!(
+                    hand[1] < 0.2 && hand[2] < 0.0,
+                    "the left hand down behind: {hand:?}"
+                );
+                for p in [Point::Grip, Point::ToolTip] {
+                    let s = at(f, role, sword, t, p);
+                    assert!(s[1] > 0.15, "the sword clear of the ground: {p:?} {s:?}");
+                }
+            }
+        }
+    );
+
+    // WORK_QUEUE item 38: looking around is a slow scan of the head and chest, at least 60° each
+    // way from ahead, feet still and the hips not turning (the body holds its heading).
+    dwell_world::both_faces!(
+        fn an_npc_looking_around_scans_with_its_head_and_chest(f: FaceFrame) {
+            let ch = player();
+            let (h, hips) = (
+                ch.bone("head").expect("head"),
+                ch.bone("hips").expect("hips"),
+            );
+            let (role, sword) = ("look", Some("dwell:sword"));
+            let (mut lo, mut hi) = (0.0f64, 0.0f64);
+            let feet0 = at(f, role, sword, 0.0, Point::Bone("foot_l"));
+            let mut last = None;
+            for i in 0..=40 {
+                let t = end(role) * i as f32 / 40.0;
+                let (n, a) = (
+                    at_bone(f, role, sword, t, h, [0.0; 3]),
+                    at_bone(f, role, sword, t, h, [0.0, 0.0, 0.3]),
+                );
+                let yaw = (a[0] - n[0]).atan2(a[2] - n[2]).to_degrees();
+                (lo, hi) = (lo.min(yaw), hi.max(yaw));
+                if let Some(l) = last {
+                    // Slow: under 60°/s between samples 0.25 s apart.
+                    let d: f64 = yaw - l;
+                    assert!(d.abs() < 15.0, "a slow scan: {d:.0}° in 0.25 s at {t} s");
+                }
+                last = Some(yaw);
+                let (p, q) = (
+                    at_bone(f, role, sword, t, hips, [0.0; 3]),
+                    at_bone(f, role, sword, t, hips, [0.0, 0.0, 0.3]),
+                );
+                let turn = (q[0] - p[0]).atan2(q[2] - p[2]).to_degrees();
+                assert!(
+                    turn.abs() < 1.0,
+                    "the hips hold the heading: {turn:.1}° at {t} s"
+                );
+                let feet = at(f, role, sword, t, Point::Bone("foot_l"));
+                assert!(
+                    (0..3).all(|k| (feet[k] - feet0[k]).abs() < 1e-3),
+                    "the feet still"
+                );
+            }
+            assert!(
+                lo < -60.0 && hi > 60.0,
+                "scans both ways: {lo:.0}°..{hi:.0}°"
+            );
         }
     );
 }

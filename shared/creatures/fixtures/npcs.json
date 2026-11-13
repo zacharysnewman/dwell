@@ -21,7 +21,7 @@
         "combat": "fightBack",
         "idles": [
           { "pose": "look", "weight": 1, "seconds": [1, 2] },
-          { "pose": "sit", "weight": 1, "seconds": [1, 2] }
+          { "pose": "sit", "weight": 1, "seconds": [1, 2], "seat": { "on": "ground", "levelM": 1 } }
         ],
         "colours": [
           { "part": "shirt", "from": "wool_green", "to": ["wool_red", "wool_blue", "wool_yellow"] },

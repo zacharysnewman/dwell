@@ -55,6 +55,9 @@ test('bad entries fail with a message naming them', () => {
   bad((d) => (d.creatures[0].wings = 2), /unknown field wings/);
   const npc = (d) => d.creatures.find((c) => c.npc).npc;
   bad((d) => (npc(d).idles[0].pose = 'dance'), /idles\[0\]: pose "dance" is not one of stand, look, sit/);
+  bad((d) => (npc(d).idles[0].seat = { on: 'ground', levelM: 1 }), /idles\[0\]\.seat: only a sit idle takes a seat/);
+  bad((d) => (npc(d).idles.find((i) => i.pose === 'sit').seat = { on: 'bench', levelM: 1 }), /seat: on "bench" is not one of ground/);
+  bad((d) => (npc(d).idles.find((i) => i.pose === 'sit').seat = { on: 'ground', levelM: 9 }), /seat: levelM must be in \[0, 4\]/);
   bad((d) => (npc(d).colours[0].to = ['neon']), /colours\[0\]\.to\[0\]: "neon" is not a palette ramp/);
   bad((d) => (npc(d).colours[1].from = npc(d).colours[0].from), /is another part's/);
   bad((d) => (npc(d).held = 'dwell:laser'), /held "dwell:laser" is not an item/);

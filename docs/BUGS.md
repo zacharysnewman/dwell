@@ -6,6 +6,15 @@ pins it.
 
 ## Open
 
+### 142. The first-person vertical block leans the blade back toward the eye
+
+Found fixing #87 (2026-11-13), not reported: `clip_probe guard_vertical --item dwell:sword` draws the arms view's
+`fp_guard_vertical` (the sheet's top, side and front panels, `docs/clip_probe/guard_vertical_after.svg`) with the grip
+0.75 m ahead of the eye and the tip at 0.29 m, above the screen's top: the blade leans back over the view, where
+the third-person pose (fixed in #87) stands it upright. Not judged on a GPU yet; it may read fine from first
+person (the blade off screen above), so the owner's call. Fix if wanted: fit `fp_guard_vertical` with `clip_probe
+--fit` (no `--body`) to an upright blade ahead of the view. Open.
+
 ### 135. Flat ground on a plateau can show a sandstone wall's face (red sandstone) instead of a tread
 
 Found 2026-11-13 while fixing #134 (Realistic, seed 42 face A, e.g. (−6000, −3500) and (−4250, 0)): a few wide, flat
@@ -210,15 +219,6 @@ shadows ~2 ms more. Speed effects' motion pass costs ~0.5 ms; bloom and shafts n
 Outstanding: no cut yet (45-minute box). The levers: a Tall grass setting (a mesher flag, #78's outstanding item),
 the far trees as impostors (WORK_QUEUE item 31), and High's sun shadows over forest; a vsync run of `high-fly` for
 the dropped-frame count and a faster flight (level 6+) for the streaming at speed.
-### 87. An NPC's raised vertical block leans the blade back over its shoulder
-
-Found fixing #86 (2026-11-12), not reported: `clip_probe` puts the third-person `guard_vertical` pose's
-sword grip at (0.50, 1.38, 0.33) and its tip at (0.38, 1.73, -0.45) m from the feet (right, up, ahead):
-the blade ~66° off upright, its tip behind the body, where `biped_guard_vertical`'s comment means "the
-blade upright ahead of the face" (a first guess, never fitted). The sword's `guard.stances.vertical.blade`
-follows what is drawn, so a clash's sparks land on the drawn blade. Fix: fit the clip with
-`clip_probe --fit` (as the level block was), then refit the data (the probe test fails until they agree).
-
 ### 85. A dev `look` with an object kicks the player: "refused the connection: Malformed message"
 
 Found 2026-11-12 filming the sword duel. `__dwell.look({yaw: 0, pitch: -5})` (the signature is
@@ -546,6 +546,18 @@ shallow ramp, maybe same problem with steep ramps too?" Not investigated yet: ta
 face, or the placement check against its shape.
 
 ## Fixed
+
+### 87. An NPC's raised vertical block leaned the blade back over its shoulder (fixed after 0.61.1)
+
+Found fixing #86 (2026-11-12), not reported: `clip_probe` put the third-person `guard_vertical` pose's sword grip
+at (0.50, 1.38, 0.33) and its tip at (0.38, 1.73, -0.45) m from the feet (right, up, ahead): the blade ~66° off
+upright, its tip behind the body, where `biped_guard_vertical` meant "the blade upright ahead of the face" (a
+first guess, never fitted). Fixed: the clip fitted with `clip_probe guard_vertical --item dwell:sword --body --fit
+0/0.12,1.2,0.42/0.1,1.97,0.48` (grip now (0.12, 1.19, 0.43), tip (0.13, 2.04, 0.47): the fist before the chest,
+the blade upright ahead of the face), and the sword's `guard.stances.vertical.blade` refitted to it, so a clash's
+sparks stay on the drawn blade. Test (`clip_probe` `the_vertical_block_stands_upright_ahead_of_the_face`): red on
+the old clip ("66° off upright"), green on the new; `the_raised_blades_data_is_where_the_raised_poses_draw_it`
+holds the data to it. Sheets: `docs/clip_probe/guard_vertical_before.svg`, `_after.svg` (the third-person panel).
 
 ### 141. Lava expired into rock and "all just goes away" (fixed after 0.60.11)
 

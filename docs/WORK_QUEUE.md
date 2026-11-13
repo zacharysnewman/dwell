@@ -1672,6 +1672,18 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    scaling for the new player model. It's likely shorter and may need to be scaled up."** (items 37/38: the Peasant
    is your body, other players' and the villagers'). **Fixed (BUGS.md #140):** its soles were on the ground but its
    eyes 7.3 cm under the camera's; `models.json` `scale` 1.04 → 1.09 puts them at the camera's 1.62 m eye.
+   Owner's brief, 2026-11-13: **"villagers' sit and look-around clips, and BUGS.md #87 (an NPC's held vertical block
+   leans back)… Do: a `sit` clip (sitting on the ground or a block edge — say which; the NPC chooses a seat by data)
+   and a `look_around` clip (head and torso turn, a slow scan), fitted and checked with clip_probe (SVG sheets in the
+   PR), used by the NPC behaviour where it now plays idle; fix #87 with red→green. Tests both faces."** **Built
+   (cloud, 2026-11-13; CHARACTERS.md §11.11):** sitting **on the ground** (`biped_sit`, role `sit`), the seat by
+   data (the sit idle's `seat`: `on: ground`, `levelM` 0.6 for the villager: it sits only where the ground round it
+   is level, else stands); looking around (`biped_look`, role `look`: the head ±55° and chest ±20° in a 10 s scan,
+   the body holding its heading, no longer swept by the server); the probe poses NPC roles and follows
+   `<bone>_ahead`; sheets in `docs/clip_probe/` (`npc_sit`, `npc_look`, `guard_vertical_before`/`_after`). #87
+   fixed (the third-person vertical block fitted upright; the sword's vertical `blade` data with it). Found:
+   #142 (the first-person vertical block leans back; open). Not yet: sitting on a block's edge, a sit-down
+   transition.
 39. **Livelier animals** (owner 2026-11-12, after the video had no chase or fleeing — on day one every pack is
    kilometres from any herd and players can't scare deer): chose **deer flee from players** (they notice a player
    within a distance by data, closer when crouching, and run off; wolves keep their distance unless hungry),

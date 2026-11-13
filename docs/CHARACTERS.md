@@ -835,7 +835,7 @@ by default) and a combat hook; the combat AI waits for the sword mechanic.
 
 - **Data**: an NPC is a creature in `shared/creatures/creatures.json` with an `npc` block (the villager,
   model `peasant`): `idles` (`pose` from the fixed vocabulary `stand`, `look`, `sit`; `weight`;
-  `seconds`), `lookAtM` and `turnDegPerS`, `bumpM` and `sidestepM`, `held` (an item of
+  `seconds`; a `sit` idle's `seat`: `on` `ground`, the fixed vocabulary's one kind for now, and `levelM`), `lookAtM` and `turnDegPerS`, `bumpM` and `sidestepM`, `held` (an item of
   `shared/items/items.json`, none for the villager until the sword is an item), `disposition`
   (`neutral`), `combat` (`none` or `fightBack`) and `colours`: per part (`shirt`, `trousers`, `skin`,
   `hair`) the palette ramp the Peasant's mesh has (`from`: `wool_green`, `flint`, `skin_fair`,
@@ -846,7 +846,10 @@ by default) and a combat hook; the combat AI waits for the sword mechanic.
   ramps by vertex count: `hair_brown` 942, `skin_fair` 908, `wool_green` 564, `skin_brown` 501,
   `flint` 440): prototype data to tune by eye.
 - **Server** (`dwell_sim::creatures`): idle in a pose picked by weight; while idle, turn toward the
-  nearest player within `lookAtM`, else (looking around) sweep ±60° over 4 s; a player or another NPC
+  nearest player within `lookAtM`, else hold its heading (looking around is the `look` clip's scan; before
+  item 38's clips the whole body swept ±60° over 4 s, sliding on its feet); sitting only where its sit
+  idle's `seat` holds (`Seat::holds`: on the ground, the columns `levelM` round it at its feet's row, no
+  step or drop; else it stands for that idle, and stands up if the ground beside it goes); a player or another NPC
   within `bumpM` sends it `sidestepM` away (to its side when right on top); `Creatures::attacked` turns
   a `fightBack` NPC on its attacker for its `fight.giveUpS` (each strike starts it again). **Fighting
   with a sword** (round 2 of WORK_QUEUE item 35; `npc.fight`, `Creatures::step_fights`): while the
@@ -942,6 +945,21 @@ by default) and a combat hook; the combat AI waits for the sword mechanic.
   ring round the player, each its own variant (`Server::spawn_npcs_dev`).
 - **Not yet**: sit and look-around clips (the rig has none); the NPC's raised guard and swings drawn
   from the server's fight (item 35).
+
+- **Sit and look-around clips** (WORK_QUEUE item 38, 2026-11-13): the roles `sit` and `look` the client plays
+  for an NPC's poses (`creatures::npc_role`), in `characters.json` (`biped_sit`, `biped_look`, base layer,
+  played on the Peasant through the retarget map as every NPC clip). **Sitting on the ground** where it stands
+  (not on a block's edge: no seat search or path to one yet; a later `seat` `on` value): the seat, the heels and
+  the left hand behind it on the ground, the left leg out, the right knee up with the right forearm (and the
+  sword, upright) over it, breathing; 4 s. **Looking around**: standing still, the head (±55°) and chest (±20°)
+  scanning left, a pause, through the middle to the right, a pause, back; 10 s. Checked with `clip_probe` (an
+  NPC role is posed as the game poses it, `npc_rig_pose`; the point `<bone>_ahead`, 0.3 m ahead of a bone, shows
+  a turn as a path): sheets `docs/clip_probe/npc_sit.svg`, `npc_look.svg`; tests (`clip_probe::defeat_tests`,
+  both faces): the seat, ankles and left hand at the ground, the legs out ahead, the right knee up, the sword
+  clear of the ground; the head scanning past 60° each way under 60°/s, the hips and feet still. The ground
+  test (`gen.test.mjs`, the lowest point within 6 cm of the ground) covers the sit as every grounded clip.
+  Not yet: a sit-down and stand-up (the pose changes with the clips' 0.4 s `blend` where the animator plays
+  them; an NPC's role switches directly, `npc_rig_pose`).
 
 ### 11.12 Your own body from the Peasant (0.54, WORK_QUEUE item 37)
 

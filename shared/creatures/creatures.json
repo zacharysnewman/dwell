@@ -32,7 +32,7 @@
         "idles": [
           { "pose": "stand", "weight": 3, "seconds": [3, 8] },
           { "pose": "look", "weight": 2, "seconds": [4, 8] },
-          { "pose": "sit", "weight": 1, "seconds": [10, 25] }
+          { "pose": "sit", "weight": 1, "seconds": [10, 25], "seat": { "on": "ground", "levelM": 0.6 } }
         ],
         "colours": [
           { "part": "shirt", "from": "wool_green", "to": ["wool_green", "wool_red", "wool_blue", "wool_yellow", "linen", "canvas"] },
