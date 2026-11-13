@@ -728,7 +728,12 @@ pub fn creature_draw(
     // on top, so the sword sits in the hand as in a player's; each NPC at its own phase.
     let rig_pose = npc.map(|_| {
         let item = item_shown(character, held).and_then(|n| character.item(n));
-        let t = now_s + f64::from(c.id % 97) * 0.37;
+        // A defeated NPC's kneel and stand play once from their start (§11.13).
+        let t = if dwell_characters::animator::is_defeat_role(c.role) {
+            c.pose_s
+        } else {
+            now_s + f64::from(c.id % 97) * 0.37
+        };
         match npc.and_then(|n| n.guard).and_then(|g| character.clip(g)) {
             // A raised block over its pose (WORK_QUEUE item 35), as a player's is, the item's
             // turns on top.
@@ -762,7 +767,8 @@ pub fn creature_draw(
 }
 
 /// An NPC's rig pose at `t_s` seconds: the characters rig's clip for `role` (its `idle` for a
-/// role the rig has no clip for: an NPC's `look` and `sit`), looped, with `item`'s turns on.
+/// role the rig has no clip for: an NPC's `look` and `sit`), looped (a one-shot held at its end),
+/// with `item`'s turns on.
 pub fn npc_rig_pose(
     character: &Character,
     role: &str,
@@ -774,7 +780,10 @@ pub fn npc_rig_pose(
         .or_else(|| character.clip("idle"))
         .map(|i| {
             let clip = TABLES.clip(i);
-            let t = if clip.duration > 0.0 {
+            // A one-shot (a defeated NPC's kneel) holds its end; a loop wraps.
+            let t = if !clip.looping {
+                t_s
+            } else if clip.duration > 0.0 {
                 t_s.rem_euclid(f64::from(clip.duration))
             } else {
                 0.0
@@ -1985,6 +1994,7 @@ mod tests {
                 role: "idle",
                 npc,
                 pose: None,
+                pose_s: 0.0,
             };
             let (a, held) = creature_draw(ch, &view(Some(npc(99))), [1.0, 0.0], 0.0);
             assert_eq!(held, Held::Model { hold: "sword", model: "sword" });

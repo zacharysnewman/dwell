@@ -869,3 +869,35 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+mod defeat_input_tests {
+    use super::*;
+    use dwell_characters::animator::Defeat;
+
+    // WORK_QUEUE item 55: a remote player whose snapshots say `DEAD` (defeated) kneels — never the
+    // old lying body — and once it stands up at the shrine it plays the stand for `STAND_S`.
+    #[test]
+    fn a_defeated_remote_kneels_then_stands_for_the_stand() {
+        let (mut was, mut left) = (false, 0.0);
+        assert_eq!(defeat_input(false, &mut was, &mut left, 0.1), None);
+        assert_eq!(
+            defeat_input(true, &mut was, &mut left, 0.1),
+            Some(Defeat::Kneel)
+        );
+        assert_eq!(
+            defeat_input(true, &mut was, &mut left, 2.0),
+            Some(Defeat::Kneel)
+        );
+        let stand = dwell_protocol::defeat::STAND_S;
+        assert_eq!(
+            defeat_input(false, &mut was, &mut left, 0.1),
+            Some(Defeat::Stand)
+        );
+        assert_eq!(
+            defeat_input(false, &mut was, &mut left, stand),
+            Some(Defeat::Stand)
+        );
+        assert_eq!(defeat_input(false, &mut was, &mut left, 0.1), None);
+    }
+}

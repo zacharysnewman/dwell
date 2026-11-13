@@ -35,6 +35,8 @@ jobs:
           node --test shared/modes/gen.test.mjs
           node shared/vitals/gen.mjs
           node --test shared/vitals/gen.test.mjs
+          node shared/defeat/gen.mjs
+          node --test shared/defeat/gen.test.mjs
           node shared/inventory/gen.mjs
           node --test shared/inventory/gen.test.mjs
           node shared/tools/gen.mjs

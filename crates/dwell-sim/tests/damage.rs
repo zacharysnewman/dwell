@@ -545,19 +545,23 @@ dwell_world::both_faces!(
         let mut fx = scene_with(f, config(f, "adventure"));
         assert_eq!(hits_to_break(&mut fx, f, DIRT), 11);
         fx.server.kill_player(1);
-        let axe: Vec<_> = fx
-            .server
-            .loose_items()
-            .iter()
-            .filter(|it| it.stack.item == "dwell:stone_axe")
-            .map(|it| it.stack.wear)
-            .collect();
-        assert_eq!(axe, [11], "the dropped axe keeps its wear");
-        // The player respawns where it died (the spawn) and walks over its drops.
+        // Defeated, it keeps its things while it kneels (CHARACTERS.md §11.13) and leaves them
+        // where it knelt when it stands up at the shrine (here the spawn).
+        let loose_axes = |fx: &Fixture| -> Vec<u16> {
+            fx.server
+                .loose_items()
+                .iter()
+                .filter(|it| it.stack.item == "dwell:stone_axe")
+                .map(|it| it.stack.wear)
+                .collect()
+        };
+        assert!(loose_axes(&fx).is_empty(), "nothing dropped while kneeling");
         let ticks = dwell_sim::server::defeat_ticks(dwell_protocol::defeat::PLAYER) + SIM_HZ;
         for _ in 0..ticks {
             fx.server.step();
         }
+        assert_eq!(loose_axes(&fx), [11], "the dropped axe keeps its wear");
+        // The player stands up where it knelt (the spawn) and walks over its drops.
         fx.move_to_local(f, 0.5, m_of_row(BASE), 0.5);
         for _ in 0..60 {
             fx.server.step();

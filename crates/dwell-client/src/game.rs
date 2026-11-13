@@ -6546,22 +6546,31 @@ mod tests {
 
     dwell_world::both_faces!(
         /// Owner (2026-11-06): dead on face B, the third-person camera was upside down. The body
-        /// leaves the physics world when it dies and the predictor's controller falls back to face
-        /// A's frame, which the camera used; the camera takes the face the body lies on, sits over
-        /// it along that face's up and looks down at it.
-        fn the_death_camera_is_upright_on_the_face_the_body_lies_on(f: FaceFrame) {
+        /// leaves the physics world when it is defeated and the predictor's controller falls back
+        /// to face A's frame, which the camera used; the camera takes the face the body kneels on,
+        /// sits over it along that face's up and looks down at it, `back_m` and `up_m` from the data
+        /// (shared/defeat, WORK_QUEUE item 55), eased out from the eye over `ease_s`.
+        fn the_defeat_camera_is_upright_on_the_face_the_body_kneels_on(f: FaceFrame) {
             let feet = f.point([3.5, 40.0, 7.5]);
-            let cam = death_camera(feet, 30.0);
-            assert_eq!(cam.face, f, "the face the body lies on");
+            let cam_data = dwell_protocol::defeat::DEFAULT.camera;
+            let eye = f.point([3.5, 41.6, 7.5]);
+            let cam = defeat_camera(feet, 30.0, &cam_data, (eye, 0.0), 10.0);
+            assert_eq!(cam.face, f, "the face the body kneels on");
             let up = f.up();
             let rise: f64 = (0..3).map(|k| (cam.eye[k] - feet[k]) * up[k]).sum();
             assert!(
-                (rise - 2.5).abs() < 1e-9,
-                "2.5 m over the body along its up: {rise}"
+                (rise - cam_data.up_m).abs() < 1e-9,
+                "up_m over the body along its up: {rise}"
             );
+            assert!((cam.pitch - cam_data.pitch_deg).abs() < 1e-9);
             let look = f.look(30.0, cam.pitch);
             let toward: f64 = (0..3).map(|k| (feet[k] - cam.eye[k]) * look[k]).sum();
-            assert!(toward > 3.0, "looking at the body: {toward}");
+            assert!(toward > 2.0, "looking at the body: {toward}");
+            // At the defeat it starts from the eye, and is out by `ease_s`.
+            let start = defeat_camera(feet, 30.0, &cam_data, (eye, 0.0), 0.0);
+            assert!((0..3).all(|k| (start.eye[k] - eye[k]).abs() < 1e-9));
+            let half = defeat_camera(feet, 30.0, &cam_data, (eye, 0.0), cam_data.ease_s / 2.0);
+            assert!(half.pitch < 0.0 && half.pitch > cam_data.pitch_deg);
         }
     );
 

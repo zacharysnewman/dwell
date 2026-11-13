@@ -781,4 +781,46 @@ mod tests {
         a.update(&input(PlayerState::Running, [0.0, 0.0, 6.0]), 0.1);
         assert_eq!(a.action(), Some("place"));
     }
+    // WORK_QUEUE item 55 (CHARACTERS.md §11.13): defeat's roles by data: the kneel held (the
+    // sword's with a weapon in hand), no hold layer over it, the stand played once then idle.
+    #[test]
+    fn defeat_kneels_holds_and_stands_up_once() {
+        let r = &dwell_protocol::defeat::ROLES;
+        let mut a = Animator::new(&TABLES, player(), Space::Body);
+        let kneel = MoveInput {
+            defeat: Some(Defeat::Kneel),
+            holding: true,
+            ..MoveInput::default()
+        };
+        a.update(&kneel, 0.0);
+        assert_eq!(a.role(), r.kneel);
+        for _ in 0..300 {
+            a.update(&kneel, 1.0 / 60.0);
+        }
+        assert_eq!(a.role(), r.kneel, "held while defeated");
+        let armed = MoveInput {
+            armed: true,
+            ..kneel
+        };
+        a.update(&armed, 0.0);
+        assert_eq!(a.role(), r.kneel_armed);
+        // The hold layer (the forearm forward) is not laid over the kneel.
+        let hold = TABLES.clip(player().clip("hold").unwrap());
+        let fore = player().bone("forearm_r").unwrap();
+        let p = a.update(&armed, 1.0);
+        assert_ne!(p.rot[fore], crate::anim::sample(hold, 0.0).rot[fore]);
+        let stand = MoveInput {
+            defeat: Some(Defeat::Stand),
+            ..MoveInput::default()
+        };
+        a.update(&stand, 0.0);
+        assert_eq!(a.role(), r.stand);
+        let len = TABLES.clip(player().clip(r.stand).unwrap()).duration;
+        a.update(&MoveInput::default(), len * 0.5);
+        assert_eq!(a.role(), r.stand, "plays out with no input");
+        a.update(&MoveInput::default(), len);
+        a.update(&MoveInput::default(), 0.01);
+        assert_eq!(a.role(), "idle", "then idle");
+        assert!(is_defeat_role(r.kneel_armed) && !is_defeat_role("idle"));
+    }
 }

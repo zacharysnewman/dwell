@@ -2564,7 +2564,10 @@ fn read_body(r: &mut ByteReader, t: MessageType) -> Option<Message> {
                     }
                     let (id, kind) = (r.u32(), r.str(MAX_MODEL_NAME));
                     let pose = r.u8();
-                    r.check(usize::from(pose) < NPC_POSES.len() + NPC_STRIKE_POSES.len());
+                    r.check(
+                        usize::from(pose)
+                            < NPC_POSES.len() + NPC_STRIKE_POSES.len() + NPC_DEFEAT_POSES.len(),
+                    );
                     npcs.push(NpcNet {
                         id,
                         kind,
@@ -3021,8 +3024,15 @@ mod creature_tests {
         assert_eq!(Message::decode(&a), Some(Message::Creatures(plain)));
         assert_eq!(Message::decode(&b), Some(Message::Creatures(with)));
         assert_eq!(Message::decode(&b[..b.len() - 1]), None, "truncated");
+        // A defeated NPC's poses (`humans.defeat`, WORK_QUEUE item 55): kneeling 5, standing up 6.
+        for pose in [5u8, 6] {
+            let mut ok = b.clone();
+            ok[b.len() - 5] = pose;
+            assert!(Message::decode(&ok).is_some(), "pose {pose}");
+        }
         let mut bad = b.clone();
-        bad[b.len() - 5] = (NPC_POSES.len() + NPC_STRIKE_POSES.len()) as u8; // the pose byte, before the u32 variant
+        bad[b.len() - 5] =
+            (NPC_POSES.len() + NPC_STRIKE_POSES.len() + NPC_DEFEAT_POSES.len()) as u8; // the pose byte, before the u32 variant
         assert_eq!(Message::decode(&bad), None, "an unknown pose");
     }
 }
