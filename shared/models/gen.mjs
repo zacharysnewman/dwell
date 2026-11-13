@@ -13,6 +13,7 @@ import {
   validateCoat,
   validateRepaint,
 } from "./coat.mjs";
+import { addPieces, applyDecor, decorBase, validateDecor } from "./decor.mjs";
 import { allLevelParts, readMesh, validateParts } from "./parts.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -238,6 +239,7 @@ export function validate(
     // Its part map (shared/models/parts.mjs, BUGS.md #96): a part a vertex of the full mesh, each
     // detail level's from it.
     let parts;
+    let partsFile;
     if (m.parts !== undefined) {
       if (typeof m.parts !== "string") fail(`${at}: parts is a part map file`);
       const pp = join(dir, m.parts);
@@ -247,6 +249,7 @@ export function validate(
       let vertices;
       try {
         file = JSON.parse(read(pp).toString("utf8"));
+        partsFile = file;
         const first = s.meshNames.includes("detail_0") ? "detail_0" : s.meshNames[0];
         vertices = validateParts(file, m.parts, readMesh(bytes, first).count);
       } catch (e) {
@@ -289,6 +292,24 @@ export function validate(
         fail(
           `${at}: ${m.glb} is not painted by its coat: run node shared/models/import.mjs --coat ${name}`,
         );
+    }
+    // Its decor (shared/models/decor.mjs): pieces added and bands and marks painted, as the
+    // importer's --coat leaves them (running it again changes nothing).
+    if (m.decor !== undefined) {
+      try {
+        validateDecor(m.decor, palette, "decor", parts?.names, m.repaint, s.jointNames);
+      } catch (e) {
+        fail(`${at}: ${e.message}`);
+      }
+      const bytes = read(path);
+      const again = applyDecor(
+        addPieces(bytes, m.decor, palette),
+        m.decor,
+        palette,
+        partsFile && decorBase(bytes, partsFile),
+      );
+      if (!Buffer.from(again).equals(Buffer.from(bytes)))
+        fail(`${at}: ${m.glb} is not decorated: run node shared/models/import.mjs --coat ${name}`);
     }
     const roles = Object.entries(m.roles ?? {});
     if (!roles.length) fail(`${at}: no roles`);

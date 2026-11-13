@@ -23,6 +23,13 @@
         { "$comment": "The hat (owner, 2026-11-12: \"Hat gets its own colours\"): the pack paints it with the hair's colour; the hat part (parts/peasant.json: its crown and brim) takes wool_yellow, a ramp of its own, which the villager's `hat` colour part recolours.", "from": "hair_brown", "to": "wool_yellow", "part": "hat" },
         { "$comment": "BUGS.md #96: the hat's repaint by height (to 0.54.171) caught the hair's fringe; the hair part takes its own ramp back.", "from": "wool_yellow", "to": "hair_brown", "part": "hair" }
       ],
+      "decor": [
+        { "$comment": "The eyes (owner, 2026-11-13: \"I think we lost the eyes\"): the mesh has none and the face is ~10 triangles at 60 %, so they are small quads on the head joint, laid on each detail level's face just under the fringe; a dark eye and a pale glint, both sides.", "kind": "piece", "joint": "spine.006", "at": [0.034, 1.487, 0.1], "facing": "+z", "lift": 0.003, "mirror": true, "quads": [
+          { "colour": "hair_black", "at": [0, 0], "size": [0.016, 0.022] },
+          { "colour": "linen.light", "at": [0.003, 0.005], "size": [0.005, 0.006], "lift": 0.001 } ] },
+        { "$comment": "The hat's crown band (owner, 2026-11-13: \"Alternating patterns around the hat, not on the brim\"): the crown's ring above the brim (the brim is the hat part beyond r 0.19 m), strictly alternating round it.", "kind": "band", "part": "hat", "y": [1.555, 1.635], "r": [0, 0.19], "order": true, "colours": ["bark", "wool_red"] },
+        { "$comment": "The waist ring (owner, 2026-11-13: \"There's a ring that goes around the waist with alternating triangles that already looked pretty good they were just inconsistently colored.\"): the outermost facets at the belt's height, no taller than a hand (no spikes), strictly alternating round the body.", "kind": "band", "y": [0.86, 0.94], "r": [0, 0.2], "span": 0.12, "outer": true, "order": true, "colours": ["leather", "wool_green"] }
+      ],
       "source": {
         "pack": "Stylized_NPC_-_Peasant_Nolant_DEMO",
         "fbx": "Assets/Stylized NPC - Peasant Nolant/Models/Peasant Nolant(Free Version).fbx",
