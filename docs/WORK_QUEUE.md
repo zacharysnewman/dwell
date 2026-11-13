@@ -27,6 +27,10 @@ time"). Notes ride with real changes (no notes-only PRs; CI skips docs-only chan
   resolve and merge; (2) big-world terrain quick fix (item 52) — built on `claude/notes-batch-2` (also carries the
   v5 approval and ABZÛ notes), its PR open, not merged: it waits for the owner to raise the 0.56 line; (3) the moon's client side M-7c (item 27) — WIP on `claude/moon-m7c`;
   (4) browser check of Realistic worlds (R6 merged #858: create, play, reload); (5) the forest edge (~9 ms over at
+  resolve and merge; (2) big-world terrain quick fix (item 51) — WIP on `claude/notes-batch-2` (also carries the
+  v5 approval and ABZÛ notes; the cloud session was stopped mid-work: read its status note on that branch); needs
+  the 0.56 line raised by the owner; (3) the moon's client side M-7c (item 27) — WIP on `claude/moon-m7c`;
+  (4) ~~browser check of Realistic worlds~~ (done 2026-11-12: R6's exit met, item 15); (5) the forest edge (~9 ms over at
   High on the M1; impostors save ~4 ms, #848); (6) the in-game cloud check (#822 shapes/colour, #790, #801, #823).
 - **Merged today (late):** #857 the axe like the other tools; #858 Realistic in New world; #854 hits at contact;
   #852 sound placement; #853/#855 one-command video re-records (`take.mjs`); #851 big-world placing; #848 far-tree
@@ -608,8 +612,11 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    `tests/realistic_golden.rs`; the default's unchanged); the big map's debug layers as data
    (`shared/ui/mapLayers.json`: plates with their outlines and kinds, uplift, rain, rocks; `dwell-worldgen`
    `map_layers.rs`; the map's Layer button and `L`); the memory natively: Realistic's biome sets 14.1 MB both faces
-   against the starter's 15.9 MB. **Not done:** the overlays in Chisel (next with its other overlays); the browser's
-   create → play → reload and the phone page's total at load, for a local session (REALISTIC_WORLD.md R6).
+   against the starter's 15.9 MB. **Browser check done (2026-11-12, the M1's GPU, R6's exit met):** created from
+   New world (seeds 42 and 1234, Sky Day varies and Extreme), played, every map layer shown, reloaded on the same
+   terrain and Sky; the layers' square-past-the-disc overdraw fixed (REALISTIC_WORLD.md R6). The phone page's total at
+   load (bench `--touch`, `memory-phone`): Realistic 570 MiB against the starter's 655 MiB.
+   **Not done:** the overlays in Chisel (next with its other overlays); O3.
 16. **Phone frame rate (P0)** (owner 2026-11-11, iPhone 17, Safari, setting Low: "I'm only getting ~23 fps on
    mobile, seeing lots of z-fighting on tree trunks with the leaf cards. What might be dropping frames since the
    last while. Used to get 60 fps"). Suspect: leaf cards are on in every tier but CPU, Low included; cards lying
@@ -892,7 +899,17 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    hook; PLAYER_CONTROLLER.md §6.6), so the frictionless capsule is pinned, not squeezed out; side hits stay
    frictionless and uncapped. The repro is un-ignored (0.4–0.5 m, was 155–160 m; both faces).
 
-27. **The moon as a real bifacial world** (owner 2026-11-12: "we're going to make the moon a real bifacial world
+27. **The moon as a real bifacial world** — **M-7c status (2026-11-12, branch `claude/moon-m7c-x07vsc`,
+   local):** owner, 2026-11-12: "Do we have the real physical moon yet?" (no: the client doesn't draw the moon
+   up close yet (M-5) and there are no moon spawns (M-8)). **Built:** `carry` moved into `dwell-physics`; a
+   `TravelMap` in `travel.rs` (the grids' frames and rules without spaces; `Grids::travel_map`); the predictor
+   in grid frames (`GridTravel` hook before each predicted tick at the server tick's clock, a fresh space per
+   carry, history per grid, `regrid` and `grid_misses` on a snapshot in another grid; MOON_WORLD.md §7.3); the
+   test `the_client_predicts_capture_and_release` (both faces: capture and release on the server's inputs,
+   ⅙ g). **Left:** the game client: hold the grid's chunks while away (the moon's generator in the workers),
+   hand the predictor that world, draw it in the moon's local frame (sun turned, LOD and far disc hidden,
+   `look_across`), set the hook and take `grid.frames` off `CLIENT_PENDING`; the `game_local` flight; then
+   M-5. No browser check yet (nothing to see until the client draws the moon). Original item: (owner 2026-11-12: "we're going to make the moon a real bifacial world
    like the current world, with simple gray dirt across the whole thing for now. Farthest LOD, AKA the one you
    can see now, should be a simple lighting normal map based on the actual terrain. It should glow like it is
    now and cast light like it does now, and it should be the same size in the sky as it is now."). Owner's

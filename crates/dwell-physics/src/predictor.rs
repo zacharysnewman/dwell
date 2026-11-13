@@ -71,6 +71,9 @@ pub struct PredictorStats {
     /// Position error at ack of the last compared snapshot (m).
     pub last_error: f32,
     pub last_replay_ticks: u32,
+    /// Snapshots whose player was in another grid than predicted at its ack (a capture or release
+    /// mispredicted; MOON_WORLD.md §7.3).
+    pub grid_misses: u32,
 }
 
 #[derive(Clone, Copy, Default)]
@@ -82,6 +85,41 @@ struct Entry {
     velocity: Vec3,
     /// The player touched a remote player's proxy this tick.
     touched: bool,
+    /// The grid it was in after this tick (MOON_WORLD.md §7.3; 0 home).
+    grid: u8,
+}
+
+/// A move between grids the travel rules call for before a tick (MOON_WORLD.md §7.3): the grid
+/// moved to, the player's grid-local position (capsule centre) and velocity there, its gravity.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct GridCarry {
+    pub to: u8,
+    pub position: [f64; 3],
+    pub velocity: [f64; 3],
+    pub gravity_scale: f32,
+}
+
+/// The grids' travel rules as the predictor runs them before each tick, as the server does
+/// (`dwell-sim` `travel.rs` `TravelMap`): capture and release, and far flight's speed. `world_s` is
+/// the world clock of the server tick the input runs in.
+pub trait GridTravel {
+    /// Where a player of `grid` at grid-local `position`, `velocity` is carried before the tick.
+    fn carry(
+        &self,
+        grid: u8,
+        position: [f64; 3],
+        velocity: [f64; 3],
+        flying: bool,
+        world_s: f64,
+    ) -> Option<GridCarry>;
+    /// The far-flight speed of a player of `grid` at grid-local `position` (m/s).
+    fn far_speed(&self, grid: u8, position: [f64; 3], world_s: f64) -> f32;
+    /// A grid's gravity scale (home 1).
+    fn gravity_scale(&self, grid: u8) -> f32;
+    /// The world clock (s) of a server tick.
+    fn world_s(&self, server_tick: i64) -> f64 {
+        server_tick as f64 / 60.0
+    }
 }
 
 /// A falling piece's stand-in in the prediction (docs/FELLING.md §3): at the server's pose as of
@@ -204,6 +242,15 @@ pub struct Predictor {
     water_drag: Option<WaterDragFn>,
     offset: Vec3,
     stats: PredictorStats,
+    /// The grid the player is predicted in (MOON_WORLD.md §7.3; 0 home): `physics` and `players`
+    /// are that grid's space, positions grid-local.
+    grid: u8,
+    /// The travel rules (none: home only, no capture).
+    travel: Option<Box<dyn GridTravel>>,
+    /// The server tick an input runs in, less its seq (from the latest snapshot).
+    tick_of_seq: Option<i64>,
+    vitals_rules: Option<crate::controller::VitalsRules>,
+    collision_cells: Option<usize>,
 }
 
 impl Predictor {
@@ -231,7 +278,91 @@ impl Predictor {
             water_drag: None,
             offset: Vec3::ZERO,
             stats: PredictorStats::default(),
+            grid: 0,
+            travel: None,
+            tick_of_seq: None,
+            vitals_rules: None,
+            collision_cells: None,
         }
+    }
+
+    /// Runs the grids' travel rules before each predicted tick (MOON_WORLD.md §7.3).
+    pub fn set_travel(&mut self, travel: Box<dyn GridTravel>) {
+        self.travel = Some(travel);
+    }
+
+    /// The grid the player is predicted in (0 home): the world passed to `tick` and `on_snapshot`
+    /// must be that grid's, positions are its grid-local ones.
+    pub fn grid(&self) -> u8 {
+        self.grid
+    }
+
+    /// Moves the player into a fresh space of grid `c.to` (the remotes' and pieces' stand-ins
+    /// dropped: they were of the old grid's space).
+    fn carry_to(&mut self, c: GridCarry) {
+        let Some(h) = self.handle else { return };
+        let mut physics = Physics::default();
+        let mut players = Players::new(&mut physics, true);
+        if let Some(r) = self.vitals_rules {
+            players.set_vitals(r);
+        }
+        if let Some(n) = self.collision_cells {
+            players.set_collision_cells_per_tick(n);
+        }
+        let nh = crate::controller::carry(
+            (&mut self.players, &mut self.physics),
+            h,
+            (&mut players, &mut physics),
+            c.gravity_scale,
+            c.position,
+            c.velocity,
+        );
+        self.physics = physics;
+        self.players = players;
+        self.handle = Some(nh);
+        self.remotes.clear();
+        self.pieces.clear();
+        self.grid = c.to;
+    }
+
+    /// The travel rules before the tick of input `seq`: a capture or release, the far speed.
+    fn travel_step(&mut self, seq: u32) {
+        let (Some(travel), Some(off), Some(h)) = (&self.travel, self.tick_of_seq, self.handle)
+        else {
+            return;
+        };
+        let world_s = travel.world_s(i64::from(seq) + off);
+        let p = self.players.position(&self.physics, h).to_array();
+        let v = self
+            .players
+            .velocity(&self.physics, h)
+            .as_dvec3()
+            .to_array();
+        let flying = self.players.controller(h).fly.flying;
+        let carry = travel.carry(self.grid, p, v, flying, world_s);
+        if let Some(c) = carry {
+            self.carry_to(c);
+        }
+        let travel = self.travel.as_ref().expect("travel");
+        let h = self.handle.expect("active");
+        let p = self.players.position(&self.physics, h).to_array();
+        let far = travel.far_speed(self.grid, p, world_s);
+        self.players.set_far_fly_speed(&mut self.physics, h, far);
+    }
+
+    /// Puts the player in grid `grid`'s space at the server's `center`, `velocity` (a snapshot in
+    /// another grid than predicted).
+    fn regrid(&mut self, grid: u8, center: DVec3, velocity: Vec3) {
+        if grid == self.grid || self.handle.is_none() {
+            return;
+        }
+        let gravity_scale = self.travel.as_ref().map_or(1.0, |t| t.gravity_scale(grid));
+        self.carry_to(GridCarry {
+            to: grid,
+            position: center.to_array(),
+            velocity: velocity.as_dvec3().to_array(),
+            gravity_scale,
+        });
     }
 
     /// True once a snapshot has placed the local player (and while alive).
@@ -289,6 +420,7 @@ impl Predictor {
     }
 
     fn simulate(&mut self, world: &mut VoxelWorld, input: &InputFrame, forward: bool) {
+        self.travel_step(input.seq);
         let h = self.handle.expect("active");
         if forward {
             let max_ticks = (MAX_DEAD_RECKONING / DT) as i32;
@@ -353,6 +485,7 @@ impl Predictor {
             position: self.players.position(&self.physics, h),
             velocity: self.players.velocity(&self.physics, h),
             touched: self.touching_remote(),
+            grid: self.grid,
         };
     }
 
@@ -406,7 +539,7 @@ impl Predictor {
     fn reset(&mut self, snapshot: &PhysicsSnapshot) {
         let l = &snapshot.local;
         let center = DVec3::from(l.position);
-        let h = *self.handle.get_or_insert_with(|| {
+        self.handle.get_or_insert_with(|| {
             // The capsule's head points away from the midplane: its feet are above the centre on face B.
             let face = face_of_flags(l.controller.flags, controller_flags::FACE_B);
             let up = DVec3::from(face.up());
@@ -414,6 +547,9 @@ impl Predictor {
             self.players
                 .spawn(&mut self.physics, self.config, feet, 0.0)
         });
+        let grid = snapshot.grid.map_or(0, |g| g.grid);
+        self.regrid(grid, center, Vec3::from(l.velocity));
+        let h = self.handle.expect("spawned");
         let mut c = PlayerController::default();
         from_net(
             &l.controller,
@@ -445,11 +581,14 @@ impl Predictor {
             }
             return;
         }
-        let Some(h) = self.handle else {
+        self.tick_of_seq =
+            Some(i64::from(snapshot.server_tick) - 1 - i64::from(snapshot.ack_input_seq));
+        if self.handle.is_none() {
             self.reset(snapshot);
             return;
-        };
+        }
         let ack = snapshot.ack_input_seq;
+        let server_grid = snapshot.grid.map_or(0, |g| g.grid);
         if ack < self.last_ack {
             return; // an older snapshot, reordered
         }
@@ -464,7 +603,10 @@ impl Predictor {
         let known = e.seq == ack && ack <= self.latest_seq;
         let server_position = DVec3::from(l.position);
         let server_velocity = Vec3::from(l.velocity);
-        if known {
+        if known && e.grid != server_grid {
+            self.stats.grid_misses += 1;
+        }
+        if known && e.grid == server_grid {
             self.stats.last_error = (e.position - server_position).length() as f32;
             let predicted = to_net(&e.controller, |_| 0);
             let matched = self.stats.last_error <= Self::POSITION_TOLERANCE
@@ -483,7 +625,12 @@ impl Predictor {
 
         // Mispredicted (or history lost): restart from the server's state at `ack` and replay.
         self.stats.replays += 1;
+        // A correction across grids is measured in the server's grid (where the player is now).
+        let grid_before = self.grid;
         let before = self.position();
+        self.regrid(server_grid, server_position, server_velocity);
+        let h = self.handle.expect("active");
+        let known = known && e.grid == server_grid;
         let mut c = if known {
             e.controller
         } else {
@@ -512,7 +659,11 @@ impl Predictor {
         self.latest_seq = self.latest_seq.max(ack);
         self.replay(world, ack + 1);
         let bumped = bumped || self.touched_since(ack);
-        let correction = (before - self.position()).as_vec3();
+        let correction = if self.grid == grid_before {
+            (before - self.position()).as_vec3()
+        } else {
+            Vec3::splat(1.0e6) // positions of two grids' frames: snapped
+        };
         self.stats.last_correction = correction.length();
         let snap = RECONCILE_SNAP_DISTANCE
             * if knockback || bumped {
@@ -564,12 +715,14 @@ impl Predictor {
 
     /// The world's stamina and oxygen rules (ADR 0069), from its mode.
     pub fn set_vitals_rules(&mut self, rules: crate::controller::VitalsRules) {
+        self.vitals_rules = Some(rules);
         self.players.set_vitals(rules);
     }
 
     /// The most terrain collider cells a tick puts in outside the player's reach
     /// (`Players::set_collision_cells_per_tick`; the phone's from shared/render/streaming.json).
     pub fn set_collision_cells_per_tick(&mut self, cells: usize) {
+        self.collision_cells = Some(cells);
         self.players.set_collision_cells_per_tick(cells);
     }
 

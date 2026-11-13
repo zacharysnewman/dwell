@@ -1534,6 +1534,8 @@ export class MapUi {
     const field = fields[b[0] ?? 0];
     const face = b[1] ?? 0;
     const grid = parseLayerGrid(b.subarray(2));
+    const radiusM = worldRadiusM();
+    const disc = grid ? { ...layerSpan(radiusM, grid.n), radiusM } : undefined;
     for (const def of MAP_LAYERS.layers) {
       if (def.field !== field) continue;
       const key = `${String(face)}:${def.name}`;
@@ -1545,7 +1547,7 @@ export class MapUi {
       img.width = img.height = grid.n;
       img
         .getContext('2d')
-        ?.putImageData(new ImageData(layerPixels(def, grid), grid.n, grid.n), 0, 0);
+        ?.putImageData(new ImageData(layerPixels(def, grid, disc), grid.n, grid.n), 0, 0);
       this.layerImages.set(key, img);
     }
     this.showLayerLabel();

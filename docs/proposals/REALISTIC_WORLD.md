@@ -9,8 +9,9 @@ and terrain (`shared/worldgen/climate.json`, `dwell-worldgen` `climate.rs`) in t
 feeding the rivers' discharge. R4 built (2026-11-12): biomes chosen by climate alone, the presets' `where` in
 °C and annual rain (mm), the Realistic world listing every preset unchanged. R5 built (2026-11-12): rocks from
 plate history (`rocks.json` `plateProvinces`) and soils by rock × climate (`vegetation.json` `rockSoils`). R6 built
-(2026-11-12) but for its browser check: Realistic in the New world form's World list (`newWorld`), its own golden
-hashes, the big map's debug layers (plates, uplift, rain, rocks); the create/play/reload check is a local session's. §8 (2026-11-12, design only):
+(2026-11-12), its exit met: Realistic in the New world form's World list (`newWorld`), its own golden hashes, the
+big map's debug layers (plates, uplift, rain, rocks); created, played and reloaded in the browser on the M1's GPU,
+the phone page's total at load under the starter's (R6 below). §8 (2026-11-12, design only):
 orbits by seed set the latitude band, the sky and later seasons, in place of R3's picked band.
 
 ## 1. The owner's direction
@@ -459,7 +460,7 @@ them: red with the new rocks' palettes among the old, green after). `Resolved::w
 - **R6 The World option.** `newWorld` on `realistic.json`; its own golden hashes; the memory check on the
   phone tier (the bench `--touch`, BUGS.md #70's table). *Exit:* create, play and reload a Realistic world
   in the browser; a hash file for it; total at load on the phone page within ~10 % of the starter's.
-  **Built (2026-11-12), the browser check outstanding.** Owner, 2026-11-12: **"Do we have realistic worlds yet?"**
+  **Built (2026-11-12); exit met (browser check 2026-11-12, below).** Owner, 2026-11-12: **"Do we have realistic worlds yet?"**
   `realistic.json` carries `newWorld` (label Realistic, "Tectonic plates, mountain ranges, rain shadows and climates
   from the seed."), so New world → World lists it (`worldChoices.ts`, by data) and More options → Sky shows for it
   (it rolls an orbit, §8); the world's entry keeps its worldgen (`test:realistic`), seed and Sky preset, so it
@@ -486,8 +487,18 @@ them: red with the new rocks' palettes among the old, green after). `Resolved::w
   data), `worldChoices.test.ts` (the World list offers Realistic, every orbit world is offered, a Realistic world's
   route and entry keep `test:realistic` and its Sky). **Not done:** the same overlays in Chisel (a view per layer
   over Chisel's map: the field export is here, the view is not; next with Chisel's other overlays); outlines of the
-  boundaries by kind (the plates' outline is one colour); the browser's create → play → reload and the phone
-  page's total at load (a local session, docs/CLOUD_SESSIONS.md).
+  boundaries by kind (the plates' outline is one colour).
+  **Browser check (2026-11-12, the M1 Air's GPU, `claude/realistic-check`):** New world → World → Realistic
+  from the menu's form, seeds 42 (Sky Day varies) and 1234 (Sky Extreme): each created, played (walked, 57–60 fps;
+  flown to a range, a coast and a dry slope), its big map opened with every layer (plates, uplift, rain, rocks), and
+  reloaded: the same `?play=` world reopened with its record's `worldgen` `test:realistic` and `sky`, the same
+  surface blocks at sampled columns and the same view, the clock running on. Found and fixed: the layers were drawn
+  over the whole square around the disc (`layerPixels` now clears samples past the face's edge;
+  `mapLayers.test.ts`, red → green). Noted, not bugs: the plates layer colours a continental plate over open sea
+  beyond `plates.json` `reach` (25 km; the land lies within it, so most of the disc is sea whatever the plate);
+  seed 1234 (a subarctic band) is nearly all snow. The phone page's total at load (`npm run bench -- --warm --touch
+  --compare memory-phone`, configs `worldgen` `test:starter` and `test:realistic`, seed 0): Realistic **570 MiB**
+  against the starter's **655 MiB** at load (−13 %), 532 against 598 MiB 30 s later.
 - **Later (not phased):** strata tilt near boundaries; lava vents by rule; a 10× Realistic once the
   world map tiles.
 
