@@ -107,10 +107,17 @@ export function categoryColor(layer: MapLayerDef, grid: LayerGrid, cat: number):
 
 /**
  * The layer's RGBA pixels, row k of the grid row k (face-local +z down), alpha by `opacity`;
- * a category layer outlined (opaque `outlineColor`) where a neighbour's id differs.
+ * a category layer outlined (opaque `outlineColor`) where a neighbour's id differs. With `disc`
+ * (the grid's `layerSpan` and the face's radius) a sample whose square's centre lies past the disc's
+ * edge is clear, so the layer covers the face and not the square around it.
  */
-export function layerPixels(layer: MapLayerDef, grid: LayerGrid): Uint8ClampedArray<ArrayBuffer> {
+export function layerPixels(
+  layer: MapLayerDef,
+  grid: LayerGrid,
+  disc?: { x0: number; step: number; radiusM: number },
+): Uint8ClampedArray<ArrayBuffer> {
   const { n } = grid;
+  const at = (i: number) => (disc ? disc.x0 + (i + 0.5) * disc.step : 0);
   const out = new Uint8ClampedArray(n * n * 4);
   const alpha = Math.round(255 * layer.opacity);
   const outline = layer.outlineColor ? hex(layer.outlineColor) : null;
@@ -135,6 +142,7 @@ export function layerPixels(layer: MapLayerDef, grid: LayerGrid): Uint8ClampedAr
       out[k * 4] = (c >> 16) & 0xff;
       out[k * 4 + 1] = (c >> 8) & 0xff;
       out[k * 4 + 2] = c & 0xff;
+      if (disc && Math.hypot(at(i), at(j)) > disc.radiusM) a = 0;
       out[k * 4 + 3] = a;
     }
   }

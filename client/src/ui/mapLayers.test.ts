@@ -123,6 +123,25 @@ describe('the big map debug layers (REALISTIC_WORLD.md R6)', () => {
     expect(px(layerPixels(def, g), 0)).toEqual([0, 0, 255, 128]);
   });
 
+  it('draws over the face disc only, not the square around it (R6 browser check)', () => {
+    // A 4 × 4 grid over a disc of radius 2 m, 1 m a sample from (−2, −2): the corner samples'
+    // centres (±1.5, ±1.5) are 2.12 m out, past the edge; the middle ones (±0.5) are inside.
+    const def = MAP_LAYERS.layers.find((l) => l.field === 'rain') as MapLayerDef;
+    const g = parseLayerGrid(
+      encode(
+        [],
+        [],
+        4,
+        Array.from({ length: 16 }, () => [0, 0, 500] as [number, number, number]),
+      ),
+    ) as LayerGrid;
+    const out = layerPixels(def, g, { x0: -2, step: 1, radiusM: 2 });
+    expect(px(out, 0)[3]).toBe(0);
+    expect(px(out, 15)[3]).toBe(0);
+    expect(px(out, 5)[3]).toBe(Math.round(255 * def.opacity));
+    expect(px(out, 1)[3]).toBe(Math.round(255 * def.opacity));
+  });
+
   it('covers the face disc and steps through the layers back to none', () => {
     const { x0, step } = layerSpan(50_000, 256);
     expect(x0).toBeLessThanOrEqual(-50_000);
