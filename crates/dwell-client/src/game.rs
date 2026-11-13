@@ -802,6 +802,10 @@ pub struct Game<S: Scene> {
     /// The server carries players onto other grids and says which (`grid.frames`, MOON_WORLD.md
     /// §7.3): the predictor then runs the grids' travel rules, and the game follows it.
     grid_frames: bool,
+    /// The capabilities on for the session that a grid may ask for (a grid's `capability`,
+    /// docs/proposals/SUN_WORLD.md §5): the travel map holds only the grids they open. `None` (a
+    /// local rig on this build's server): every grid.
+    grid_capabilities: Option<Vec<String>>,
     /// The grids' frames and travel rules (the predictor's own copy is its hook), once the world
     /// is known and the server has `grid.frames`.
     travel: Option<dwell_sim::travel::TravelMap>,
@@ -1285,6 +1289,7 @@ impl<S: Scene> Game<S> {
             remote_contacts: Default::default(),
             world_seed: 0,
             grid_frames: false,
+            grid_capabilities: None,
             travel: None,
             grid_drawn: 0,
             other_grid_chunks: std::collections::HashMap::default(),
@@ -3217,8 +3222,17 @@ impl<S: Scene> Game<S> {
         self.install_travel();
     }
 
+    /// The session's capabilities a grid may ask for (`Session::capability` of each): the travel
+    /// map then holds only the grids they open, as the server captures this client (the sun's
+    /// `grid.sun`, docs/proposals/SUN_WORLD.md §5).
+    pub fn set_grid_capabilities(&mut self, on: Vec<String>) {
+        self.grid_capabilities = Some(on);
+        self.install_travel();
+    }
+
     /// The grids' travel rules for the predictor and the view, from the world's seed, size and
-    /// settings (`TravelMap::new`, as the server builds its own), when the server has `grid.frames`.
+    /// settings (`TravelMap::new`, as the server builds its own), when the server has `grid.frames`;
+    /// only the grids this session's capabilities open (`TravelMap::open_to`).
     fn install_travel(&mut self) {
         if !self.grid_frames {
             return;
@@ -3229,6 +3243,11 @@ impl<S: Scene> Game<S> {
                 self.world_bounds.radius() as f64,
                 dwell_look::celestial::Celestial::new(self.world_day, None),
             )
+            .open_to(|c| {
+                self.grid_capabilities
+                    .as_ref()
+                    .is_none_or(|on| on.iter().any(|n| n == c))
+            })
         };
         self.predictor.set_travel(Box::new(map()));
         self.travel = Some(map());
@@ -5091,6 +5110,10 @@ impl<S: Scene> Game<S> {
 
     /// Uses the world's sky (its settings, DAY_NIGHT.md §2: its clock, its moon's phase and its
     /// orbit, REALISTIC_WORLD.md §8).
+    /// A retuned world's maps for the generation workers (Chisel in the game, Phase 56 B7).
+    pub fn install_maps(&mut self, maps: &[Vec<u8>]) {
+        self.pool.borrow_mut().install_maps(maps);
+    }
     pub fn set_world_settings(&mut self, s: &dwell_protocol::world_settings::WorldSettings) {
         self.world_day = dwell_look::orbits::day_night_for(s);
         self.install_travel();

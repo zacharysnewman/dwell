@@ -46,6 +46,20 @@
       }
     },
     {
+      "name": "shafts-off",
+      "notes": "No light shafts (`?shafts=off`): their share of the composite against the default (WORK_QUEUE item 32: the M1's pass timestamps overlap, so the composite's own time is measured by switching its parts off).",
+      "params": {
+        "shafts": "off"
+      }
+    },
+    {
+      "name": "bloom-off",
+      "notes": "No bloom (`?bloom=off`): its cost against the default (WORK_QUEUE item 32, as `shafts-off`).",
+      "params": {
+        "bloom": "off"
+      }
+    },
+    {
       "name": "raster",
       "notes": "The mesher at full resolution."
     },

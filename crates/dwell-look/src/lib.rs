@@ -275,13 +275,19 @@ pub fn sky_wgsl() -> String {
 }
 
 /// The procedural moon ground (no bake): what [`sky_wgsl`] gives `dwell_moon`.
+/// With it the sun's plain disc (`dwell_sun_ground` 1: no bake, today's sun).
 pub const MOON_GROUND_PROCEDURAL: &str = "fn dwell_moon_ground(p: vec2f, px: f32) -> MoonGround {
     return dwell_moon_ground_procedural(p);
+}
+fn dwell_sun_ground(p: vec2f, px: f32) -> f32 {
+    return 1.0;
 }
 ";
 
 /// [`sky_wgsl`] with the moon's ground from `moon_ground` (a WGSL `fn dwell_moon_ground(p: vec2f,
-/// px: f32) -> MoonGround`: the client's reads the moon's baked maps, MOON_WORLD.md §5).
+/// px: f32) -> MoonGround`: the client's reads the moon's baked maps, MOON_WORLD.md §5) and the
+/// sun's (`fn dwell_sun_ground(p: vec2f, px: f32) -> f32`, the sun world's baked albedo over its
+/// brightest, docs/proposals/SUN_WORLD.md S-3).
 pub fn sky_wgsl_with(moon_ground: &str) -> String {
     let d = &DAY_NIGHT;
     let consts = [
@@ -303,6 +309,7 @@ pub fn sky_wgsl_with(moon_ground: &str) -> String {
         ("SUN_BLOOM_K", gauss_k(d.sun.bloom_deg)),
         ("SUN_GLOW", d.sun.glow),
         ("SUN_GLOW_K", gauss_k(d.sun.glow_deg)),
+        ("SUN_SURFACE", d.sun.surface),
         ("MOON_RADIUS", d.moon.radius_deg.to_radians()),
         ("MOON_MARIA", d.moon.maria),
         ("MOON_EARTHSHINE", d.moon.earthshine),

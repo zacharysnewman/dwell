@@ -21,6 +21,8 @@ pub const DAY_NIGHT: DayNight = DayNight {
         bloom: 0.2,
         glow_deg: 28.0,
         glow: 0.3,
+        distance_m: 954700.0,
+        surface: 0.45,
     },
     moon: MoonLook {
         radius_deg: 1.2,

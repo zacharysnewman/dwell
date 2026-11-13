@@ -21,11 +21,14 @@ use crate::noise::{fbm2, hash2, seed_word, smooth_step, unit};
 pub const GRIDS_JSON: &str = include_str!("../../../shared/worldgen/grids.json");
 
 /// Where a grid sits and how it moves (MOON_WORLD.md §3): the home world `Rest`s (the frame the
-/// others are placed against); `Orbit` follows the sky's moon path (docs/DAY_NIGHT.md).
+/// others are placed against); `Orbit` follows the sky's moon path (docs/DAY_NIGHT.md); `SunPath`
+/// sits on the sky's sun path (`sun.distanceM` out toward today's sun direction, its face A toward
+/// home; docs/proposals/SUN_WORLD.md).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum GridFrameKind {
     Rest,
     Orbit,
+    SunPath,
 }
 
 /// A grid's generator, by kind.
@@ -36,6 +39,8 @@ pub enum GridGenerator {
     Terrain { bake_size: usize },
     /// The moon rules ([`CraterRules`]).
     Cratered(Arc<CraterRules>),
+    /// The sun's rules ([`crate::volcanic::VolcanicRules`], docs/proposals/SUN_WORLD.md).
+    Volcanic(Arc<crate::volcanic::VolcanicRules>),
 }
 
 /// One grid of `grids.json`.
@@ -60,6 +65,18 @@ pub struct GridDef {
     /// its distance from (MOON_WORLD.md §7).
     pub surface_m: f64,
     pub generator: GridGenerator,
+    /// The capability a client must say before the server captures it into this grid
+    /// (`shared/protocol/capabilities.json`; the sun's `grid.sun`, docs/proposals/SUN_WORLD.md §5):
+    /// a client that doesn't flies on through, and the grid stays a far body for it. `None`: any
+    /// `grid.frames` client and older ones (the moon's, as built).
+    pub capability: Option<String>,
+}
+
+impl GridDef {
+    /// Whether a client with the capabilities `has` may be captured into this grid.
+    pub fn open_to(&self, has: impl Fn(&str) -> bool) -> bool {
+        self.capability.as_deref().is_none_or(has)
+    }
 }
 
 impl GridDef {
@@ -154,7 +171,7 @@ pub struct CraterRules {
     pub bake_size: usize,
 }
 
-fn get<'a>(v: &'a Value, path: &str, at: &str) -> Result<&'a Value, String> {
+pub(crate) fn get<'a>(v: &'a Value, path: &str, at: &str) -> Result<&'a Value, String> {
     let mut x = v;
     for k in path.split('.') {
         x = x
@@ -164,14 +181,14 @@ fn get<'a>(v: &'a Value, path: &str, at: &str) -> Result<&'a Value, String> {
     Ok(x)
 }
 
-fn num(v: &Value, path: &str, at: &str) -> Result<f64, String> {
+pub(crate) fn num(v: &Value, path: &str, at: &str) -> Result<f64, String> {
     get(v, path, at)?
         .as_f64()
         .filter(|n| n.is_finite())
         .ok_or_else(|| format!("{at}: `{path}` must be a number"))
 }
 
-fn positive(v: &Value, path: &str, at: &str) -> Result<f64, String> {
+pub(crate) fn positive(v: &Value, path: &str, at: &str) -> Result<f64, String> {
     let n = num(v, path, at)?;
     if n > 0.0 {
         Ok(n)
@@ -180,7 +197,7 @@ fn positive(v: &Value, path: &str, at: &str) -> Result<f64, String> {
     }
 }
 
-fn share(v: &Value, path: &str, at: &str) -> Result<f64, String> {
+pub(crate) fn share(v: &Value, path: &str, at: &str) -> Result<f64, String> {
     let n = num(v, path, at)?;
     if (0.0..=1.0).contains(&n) {
         Ok(n)
@@ -189,7 +206,7 @@ fn share(v: &Value, path: &str, at: &str) -> Result<f64, String> {
     }
 }
 
-fn range(v: &Value, path: &str, at: &str) -> Result<[f64; 2], String> {
+pub(crate) fn range(v: &Value, path: &str, at: &str) -> Result<[f64; 2], String> {
     let a = get(v, path, at)?
         .as_array()
         .filter(|a| a.len() == 2)
@@ -205,7 +222,7 @@ fn range(v: &Value, path: &str, at: &str) -> Result<[f64; 2], String> {
     }
 }
 
-fn noise_rule(v: &Value, at: &str) -> Result<NoiseRule, String> {
+pub(crate) fn noise_rule(v: &Value, at: &str) -> Result<NoiseRule, String> {
     let octaves = num(v, "octaves", at)?;
     if !(1.0..=8.0).contains(&octaves) || octaves.fract() != 0.0 {
         return Err(format!("{at}: `octaves` must be a whole number in 1..=8"));
@@ -218,7 +235,7 @@ fn noise_rule(v: &Value, at: &str) -> Result<NoiseRule, String> {
 }
 
 /// A block name at `path`, which must name a block of the registry.
-fn block_name(v: &Value, path: &str, at: &str) -> Result<String, String> {
+pub(crate) fn block_name(v: &Value, path: &str, at: &str) -> Result<String, String> {
     let block = get(v, path, at)?
         .as_str()
         .ok_or_else(|| format!("{at}: `{path}` must be a block name"))?;
@@ -310,7 +327,7 @@ fn crater_rules(g: &Value, at: &str) -> Result<CraterRules, String> {
 }
 
 /// A generator's `bake.size`: the far-LOD map's texels a side per face.
-fn bake_size(g: &Value, at: &str) -> Result<usize, String> {
+pub(crate) fn bake_size(g: &Value, at: &str) -> Result<usize, String> {
     let bake = num(g, "bake.size", at)?;
     if !(8.0..=2048.0).contains(&bake) || bake.fract() != 0.0 {
         return Err(format!(
@@ -341,7 +358,12 @@ pub fn parse_grids(text: &str) -> Result<Vec<GridDef>, String> {
         let frame = match get(g, "frame", &at)?.as_str() {
             Some("rest") => GridFrameKind::Rest,
             Some("orbit") => GridFrameKind::Orbit,
-            _ => return Err(format!("{at}: `frame` must be \"rest\" or \"orbit\"")),
+            Some("sunPath") => GridFrameKind::SunPath,
+            _ => {
+                return Err(format!(
+                    "{at}: `frame` must be \"rest\", \"orbit\" or \"sunPath\""
+                ));
+            }
         };
         let radius_m = match get(g, "radiusM", &at)? {
             Value::String(s) if s == "world" => None,
@@ -361,9 +383,12 @@ pub fn parse_grids(text: &str) -> Result<Vec<GridDef>, String> {
                 bake_size: bake_size(gen_, &at)?,
             },
             Some("cratered") => GridGenerator::Cratered(Arc::new(crater_rules(gen_, &at)?)),
+            Some("volcanic") => {
+                GridGenerator::Volcanic(Arc::new(crate::volcanic::volcanic_rules(gen_, &at)?))
+            }
             _ => {
                 return Err(format!(
-                    "{at}: `generator.kind` must be \"terrain\" or \"cratered\""
+                    "{at}: `generator.kind` must be \"terrain\", \"cratered\" or \"volcanic\""
                 ));
             }
         };
@@ -392,6 +417,25 @@ pub fn parse_grids(text: &str) -> Result<Vec<GridDef>, String> {
                 "{at}: `captureM` must reach past the disc's radius"
             ));
         }
+        let capability = match g.get("capability") {
+            None => None,
+            Some(c) => {
+                let c = c
+                    .as_str()
+                    .filter(|c| dwell_protocol::capability_names::ALL.contains(c))
+                    .ok_or_else(|| {
+                        format!(
+                            "{at}: `capability` must name a capability of shared/protocol/capabilities.json"
+                        )
+                    })?;
+                if frame == GridFrameKind::Rest {
+                    return Err(format!(
+                        "{at}: the grid at rest is everyone's (no `capability`)"
+                    ));
+                }
+                Some(c.to_owned())
+            }
+        };
         if frame == GridFrameKind::Rest && seed_salt.is_some() {
             return Err(format!(
                 "{at}: the grid at rest keeps the world seed (no `seedSalt`)"
@@ -407,6 +451,7 @@ pub fn parse_grids(text: &str) -> Result<Vec<GridDef>, String> {
             far_m,
             surface_m,
             generator,
+            capability,
         });
     }
     if out

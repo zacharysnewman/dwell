@@ -1064,7 +1064,8 @@ export interface DebugTool {
   on?: () => boolean;
 }
 
-type Page = SettingsPane | 'controller' | 'controls' | 'theater' | 'structures' | 'debug' | 'host';
+type Page =
+  SettingsPane | 'controller' | 'controls' | 'theater' | 'structures' | 'debug' | 'host' | 'chisel';
 
 /** The pages in the order they are listed, whatever order they are added in. */
 const PAGE_ORDER: readonly Page[] = [
@@ -1075,6 +1076,7 @@ const PAGE_ORDER: readonly Page[] = [
   'structures',
   'debug',
   'host',
+  'chisel',
 ];
 
 const PAGE_TITLES: Record<Page, string> = {
@@ -1088,6 +1090,7 @@ const PAGE_TITLES: Record<Page, string> = {
   structures: 'Structures',
   debug: 'Debug',
   host: 'Host',
+  chisel: 'Chisel',
 };
 
 /** A setting's row as the Settings page draws it: its label, the setting it changes, its kind. */
@@ -1402,6 +1405,26 @@ export class SettingsMenu {
     );
     this.addPage('host', page);
     this.pages.get('host')?.tab.setAttribute('id', 'menu-host');
+  }
+
+  /**
+   * Adds the Chisel page (local worlds, Phase 56 B7): `panel` is ui/chiselPanel.ts's; `onShow`
+   * runs each time it is opened (the sliders redrawn for the world's mode then).
+   */
+  addChiselPanel(panel: HTMLElement, onShow: () => void): void {
+    const page = el('section');
+    page.append(
+      el(
+        'p',
+        'gm-lead',
+        "Tune this world's biomes: the terrain around you is generated again, your builds kept.",
+      ),
+      panel,
+    );
+    this.addPage('chisel', page);
+    const tab = this.pages.get('chisel')?.tab;
+    tab?.setAttribute('id', 'menu-chisel');
+    tab?.addEventListener('click', onShow);
   }
 
   /**

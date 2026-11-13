@@ -1064,6 +1064,12 @@ impl VoxelWorld {
         self.chunks.insert(coord, Box::new(chunk));
         self.epoch += 1;
     }
+    /// Replaces the generator chunks are made with on access (a world retuned in the game,
+    /// Phase 56 B7); the chunks held stay as they are.
+    pub fn set_generator(&mut self, generator: ChunkGenerator) {
+        self.generator = Some(generator);
+        self.epoch += 1;
+    }
     pub fn remove(&mut self, coord: ChunkCoord) {
         // A light part way reads the voxels as they were: finished before a change it may read.
         self.settle_light_near(coord);
