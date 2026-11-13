@@ -701,7 +701,7 @@ dwell_world::both_faces!(
     /// The mesa's beds show at every height (0.52.66): its high columns' tops are its own stack's
     /// rock (red sandstone or shale by the bed), not the band's stone over the cut-back's remnants
     /// (before, about 64 % over 300 m: 60 % at 600 m, 20 % at 700 m), and red sand tops some of them
-    /// (the sandstone's treads, its `cap`, since 0.59.2: BUGS.md #133; its walls are red sandstone).
+    /// (the sandstone's treads, its `cap`, since 0.59.2: BUGS.md #134; its walls are red sandstone).
     fn the_mesas_beds_show_at_every_height(f: FaceFrame) {
         let (g, names) = generator(f, 0);
         let mesa = names

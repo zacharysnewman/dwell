@@ -6,14 +6,39 @@ pins it.
 
 ## Open
 
-### 134. Flat ground on a plateau can show a sandstone wall's face (red sandstone) instead of a tread
+### 135. Flat ground on a plateau can show a sandstone wall's face (red sandstone) instead of a tread
 
-Found 2026-11-13 while fixing #133 (Realistic, seed 42 face A, e.g. (−6000, −3500) and (−4250, 0)): a few wide, flat
+Found 2026-11-13 while fixing #134 (Realistic, seed 42 face A, e.g. (−6000, −3500) and (−4250, 0)): a few wide, flat
 patches are the rock band (`Band::Rock`, the rock's `face`, red sandstone) though nothing there is a wall. Suspect: the
 rock shaping (`geology.rs` `Profile::map`) labels a column by the piece its natural height falls in; where the natural
 ground is a plateau whose height lies inside a bedded rock's narrow wall piece, every column maps to the same output
 height, so the plateau is flat yet each column is `Part::Wall`. A fix would label a flat wall column (the shaped slope
 under the tread's) a tread. Rare (2 of ~1,000 sampled red floors on seeds 1, 7, 42); not fixed.
+
+### 132. A fresh Realistic world never loads without a start point (not reproduced; a spawn cost fixed)
+
+Brief, 2026-11-13: "a fresh Realistic world never loads without a start point. On 0.59 (a022b0d0),
+`?worldgen=test:realistic&seed=42&fresh=1` with no `at` showed only sky for over 105 s and `__dwell.state()` stayed
+null; with an `at` it loads in seconds." Suspects named: the spawn search with 0.58's "every spawn at a shrine" rule
+(#873), or the spawn search itself on Realistic.
+
+**Not reproduced (2026-11-13, a022b0d).** Natively (`cargo run --release -p dwell-worldgen --example spawn_cost
+<seed> test:realistic`): seeds 1, 7, 42 resolve the spawn search in 2–57 ms and the spawn's shrine in 118–185 ms a
+face; a local-style server join (single-threaded, jobs remote, the Realistic sky) spawns on its first tick; the native
+client with its local server (`game_local.rs`' rig) reaches `terrainReady` in ~2 s on seed 42. In Chromium (the cloud's
+SwiftShader under Xvfb, the release WASM build): the exact link, the bench's form (`?local=1&seed=42&worldgen=…&fresh=1`),
+and fresh links after an `at` link in one profile all joined in 4.6–7.6 s ("Finding a place to stand" 1.3–1.6 s on the
+loading screen) and reached `terrainReady` in 27–33 s. `state()` null means the page never got its Welcome, so the
+owner's stall was before the join: the map build (`Shaping the world map`), the local worker's start or its spawn.
+**Next, on the owner's Mac:** with the loading screen on, which stage it sits on and the console (a worker's error).
+
+**Fixed along the way (0.59.x):** the spawn's shrine on Realistic cost 134 ms of its 143 ms a face natively in its
+cache key (`TerrainGenerator::spawn_key` hashed the `Debug` text of the whole biome set, its whole-map biome field and
+drainage grids included; several times that in WASM, again in every generator that resolves the spawn's shrine). The
+key now names the set's config (`BiomeSet::config_text`, the grids derived from the map and it): 1 ms, the spawn's
+shrine 5–10 ms. Test: `dwell-worldgen` `tests/realistic_spawn.rs` (`the_spawn_keys_cost_is_small_on_realistic`, red at
+136 ms before the fix; `the_realistic_spawn_resolves_in_budget_at_a_shrine`, seeds 1, 7, 42 on both faces within 2 s
+at the nearest shrine: passed before and after, the hang being unreproduced).
 
 ### 131. After a face B return from the moon the held stone block looked pink (not reproduced natively)
 
@@ -529,7 +554,7 @@ face, or the placement check against its shape.
 
 ## Fixed
 
-### 133. Red sand wasn't on the red desert's floors (fixed after 0.59.1)
+### 134. Red sand wasn't on the red desert's floors (fixed after 0.59.1)
 
 Browser check of 0.59 (#888) on a022b0d0, brief 2026-11-13: "Red sand isn't where the owner asked ('We need a red
 brown sand for the red desert areas'): in a Realistic world (seed 42 face A around (−6000, −9000)) the red mesa floors
@@ -542,9 +567,9 @@ beds' talus) is red sand and its walls stay red sandstone; mesa tops are treads,
 `dwell-worldgen` `tests/realistic_rocks.rs` `the_red_desert_floors_are_red_sand` (both faces, seeds 1, 7, 42: every
 red-rock floor column is red sand or its ramp; red before: 1,139 and 3,127 sandstone floors on seed 1). Realistic's
 golden rewritten, the Starter re-pinned (`starter_memory.rs`), the Starter mesa test now looks for red sand tops.
-Follow-up: #134.
+Follow-up: #135.
 
-### 132. Red sand drew as the magenta and black checker (fixed after 0.59.1)
+### 133. Red sand drew as the magenta and black checker (fixed after 0.59.1)
 
 Browser check of 0.59 (#888) on a022b0d0, brief 2026-11-13: "Every red_sand cell (and likely red_sand_ramp) draws as
 the magenta/black missing checker: `redSand` is baked (painterly.gen.rs) but not in the atlas layout TILE_ORDER, so

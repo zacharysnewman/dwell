@@ -126,7 +126,7 @@ mod fallback_tests {
         out
     }
 
-    /// BUGS.md #132: 0.59.0 baked `redSand` but the hand-kept atlas layout lacked it, so every red
+    /// BUGS.md #133: 0.59.0 baked `redSand` but the hand-kept atlas layout lacked it, so every red
     /// sand cell and its ramps drew as the checker. Every tile any block (and its ramp family) asks
     /// for is in the layout.
     #[test]

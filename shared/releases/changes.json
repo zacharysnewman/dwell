@@ -2,6 +2,18 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.59.3",
+      "changes": [
+        "A Realistic world finds its spawn shrine faster: the spawn search no longer spends time re-reading the whole biome map."
+      ]
+    },
+    {
+      "version": "0.59.2",
+      "changes": [
+        "Behind the scenes: the open-ground lighting test checks open ground again, not the shrine at the spawn"
+      ]
+    },
+    {
       "version": "0.59.1",
       "changes": [
         "Smoother frames in forests and everywhere: the world's blocks and leaves take less memory on the graphics card (about 2 ms a frame faster at a forest's edge on High)"

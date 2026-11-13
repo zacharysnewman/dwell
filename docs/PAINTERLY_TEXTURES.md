@@ -152,7 +152,7 @@ material.
 
 **In the client** (`dwell-mesh` `textures.rs`): the atlas layout (`TILE_ORDER`) is the set's own list
 (`PAINTERLY_TILES`, materials.json's `tiles` order), so a tile the set paints is always in the atlas
-(BUGS.md #132). One texel lookup into the baked tiles serves the
+(BUGS.md #133). One texel lookup into the baked tiles serves the
 atlas (`build_atlas`), cutout detection (`tile_has_alpha`), the tiles' average colours
 (`average_tile_color`, the LOD's flat colours) and the hotbar swatches; a name the set doesn't paint
 takes the `plain` tile. The atlas, its mipmaps and their coverage-preserving alpha (`render/mod.rs`)

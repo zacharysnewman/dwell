@@ -47,7 +47,7 @@ pub const ATLAS_TILES: usize = ATLAS_CELLS * ATLAS_CELLS;
 /// The tiles in atlas order: the texture set's own list (`PAINTERLY_TILES`, materials.json's
 /// `tiles` order), so the atlas lays out every tile the set paints and can't drift from it (0.59.1
 /// baked `redSand` but left it out of a hand-kept list, and red sand drew as the checker, BUGS.md
-/// #132). The registry's texture names, the utility tiles (`plain`, `grid`, `missing`), the crack
+/// #133). The registry's texture names, the utility tiles (`plain`, `grid`, `missing`), the crack
 /// stages and the looks' tiles are all in the set: `shared/textures/gen.mjs` fails on a name a
 /// block asks for that it doesn't paint.
 pub const TILE_ORDER: [&str; PAINTERLY_TILES.len()] = PAINTERLY_TILES;

@@ -113,7 +113,7 @@ fn fnv(h: &mut u64, bytes: &[u8]) {
 /// (`shaping.strength` 0.25) the stored ramps notch on diagonal contours and soft beds take ledges.
 /// Both together (the 0.59 line).
 ///
-/// Re-pinned 2026-11-13 for red sand on the red desert's floors (BUGS.md #133): the sandstone's
+/// Re-pinned 2026-11-13 for red sand on the red desert's floors (BUGS.md #134): the sandstone's
 /// treads show its `cap`, now `dwell:red_sand` (shared/worldgen/rocks.json), not red sandstone.
 const STARTER_PIN: [(Face, &str); 2] =
     [(Face::A, "13cfe2cb0e926f8b"), (Face::B, "603940b3e4fc36fc")];

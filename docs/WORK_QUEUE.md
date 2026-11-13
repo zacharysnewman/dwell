@@ -16,9 +16,15 @@ Last updated: 2026-11-11 (0.52.108).
 
 ## Queued next, in order (2026-11-12)
 
-**State at 16:00 PST 2026-11-12 (orchestrator handover).** Owner: cloud sessions paused until 17:30 PST (the Mac's
-clock); locally **one feature at a time** ("Only run 1 task at a time locally", "Like work on one feature at a
-time"). Notes ride with real changes (no notes-only PRs; CI skips docs-only changes).
+- **Realistic spawn without `at` (brief, 2026-11-13; BUGS.md #132):** "a fresh Realistic world never loads without a
+  start point … fix (bounded search with a fallback; the whole spawn ≤ ~2 s natively); a test that the Realistic spawn
+  resolves within a time/step budget on seeds 1, 7, 42 and stands at a shrine. Also check whether the client shows a
+  stage for it in the loading screen (if a spawn search is slow, the loading screen should say so)." Done on
+  `claude/realistic-spawn-9poyrj` as far as it reproduces: not reproduced natively or in the cloud's Chromium (the
+  spawn ≤ 0.25 s a face natively; the search was already bounded, `spawn_wider`, with a fallback); the spawn's shrine's
+  cache key cost 134 ms a face on Realistic and now 1 ms; the budget test is `tests/realistic_spawn.rs`. The loading
+  screen has the stage: "Finding a place to stand" (the local worker's `spawn`, `shared/look/loading.json`), seen in
+  the browser at 1.3–1.6 s. **Open:** the owner's repro on the Mac (which stage it sits on, the console).
 - **In progress (local):** underwater look pass toward the owner's ABZÛ reference (item 40: the surface seen from
   below first — "This is more what I want from the underwater surface" — then shafts, turquoise fog, caustics);
   branch `claude/underwater-look`; the reference image at the session scratchpad `abzu-ref.jpg` (not in the repo).
@@ -667,9 +673,9 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    red_sand cell (and likely red_sand_ramp) draws as the magenta/black missing checker … Fix, and make the guard real
    … Better still: derive TILE_ORDER from the texture data so it can't drift" and "Red sand isn't where the owner
    asked … Make the red desert floors (the arid sedimentary/mesa areas of Realistic and the default world's red mesas)
-   surface as red_sand, by data". **Done:** the atlas layout is the texture set's list (BUGS.md #132); sandstone's
+   surface as red_sand, by data". **Done:** the atlas layout is the texture set's list (BUGS.md #133); sandstone's
    `cap` is red sand, so every red rock tread (Realistic's red-bed basins, the badlands, mesa floors and tops) is red
-   sand under red sandstone walls (#133). Open for the owner: (a) red sand shows wherever sandstone treads do, in any
+   sand under red sandstone walls (#134). Open for the owner: (a) red sand shows wherever sandstone treads do, in any
    climate (they showed red sandstone there before); limiting it to arid climates needs a climate rule on a rock's
    cap (new vocabulary); (b) mesa tops are treads, so they are red sand too, not bare caprock; (c) the default
    world (`dwell:default` only) has no red rock at the surface, so nothing changed there; the Starter's and
@@ -1944,6 +1950,16 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
   hits; creative doesn't wear, metal tools are unlimited).
 
 ## Smaller items, after the queue
+
+- **The full-sky flood test on main (2026-11-13, `claude/flood-sky-test`), done.** Owner: "`cargo test -p dwell-mesh --lib
+  flood_tests::open_terrain_takes_the_full_sky` fails on main (face a: 3 dark vertices) … find which merge broke it, decide
+  whether the 3 dark vertices are a real lighting bug or a fixture made stale by an intended change. Check face b too."
+  A stale fixture, not a lighting bug: a first-parent bisect of #823..#885 puts it at #873 (resurrection shrines), which
+  moved every spawn to a shrine, so the test's window around `spawn_point()` slid onto the shrine's levelled ground. The
+  3 vertices are a ramp at sky 12–13 straight under a tree's crown, correct shade. That window also has no open
+  terraces: with the ramp-corner fix the test was written for (`Flood::shaped`) disabled, every vertex it darkens there
+  is under the same crown, so no filter that lets crown shade through could tell the two apart. The test now centres on `spawn_search_point()`, the open ground it was written for: green on both
+  faces, and red again (face A, 13 dark) with `Flood::shaped` disabled, as face B was before #873. Face B passed on main.
 
 - **Downhill water's steps (BUGS.md #92; owner, 2026-11-12: "I'm seeing some edge triangles and thin lines at slope
   transitions on downhill water.")** — fixed 2026-11-12 (`claude/water-steps`, WATER_RENDERING.md §18): the open

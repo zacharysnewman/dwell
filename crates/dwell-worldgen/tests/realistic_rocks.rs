@@ -180,7 +180,7 @@ dwell_world::both_faces!(
 );
 
 dwell_world::both_faces!(
-    /// BUGS.md #133 (owner, 2026-11-13: "We need a red brown sand for the red desert areas"): the
+    /// BUGS.md #134 (owner, 2026-11-13: "We need a red brown sand for the red desert areas"): the
     /// red desert's floors (the ground between the walls where a red rock shapes it: the
     /// sandstone's treads in the basins' red beds, the badlands and the mesas, the soft beds'
     /// talus) are red sand, its walls red sandstone (rocks.json sandstone `cap`). Before 0.59.2
