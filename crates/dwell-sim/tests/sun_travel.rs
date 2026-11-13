@@ -2,9 +2,18 @@
 //! path (its frame's centre toward today's sun direction, at the distance that keeps its radius at
 //! the sky disc's size, its face A toward home), the client's `TravelMap` holds it as the server
 //! does, and a flier is captured into its space and released back home by the moon's rules, the
-//! world position and velocity kept at each switch.
+//! world position and velocity kept at each switch. Only a client that says `grid.sun` is captured
+//! (the grid's `capability`, SUN_WORLD.md §5): an older one flies on through, the sun a far body to it.
+
+mod common;
 
 use std::sync::Arc;
+
+use common::{Client, Fixture, flat};
+use dwell_protocol::capabilities::Capabilities;
+use dwell_protocol::capability_names::{GRID_FRAMES, GRID_SUN};
+use dwell_protocol::{InputFrame, Message, PlayerInput, input_buttons};
+use dwell_sim::server::SessionId;
 
 use dwell_look::celestial::Celestial;
 use dwell_look::daynight::DAY_NIGHT;
@@ -76,6 +85,106 @@ fn the_client_s_travel_map_holds_the_sun_as_the_server_builds_it() {
         "the sun is a travel grid"
     );
     assert!(grid_generator(grid("dwell:sun").unwrap(), SEED).is_some());
+    // A client without `grid.sun` holds the moon and not the sun, as the server runs it.
+    let moon_only = TravelMap::new(SEED, 25_000.0, Celestial::new(DAY_NIGHT, None))
+        .open_to(|c| c == GRID_FRAMES);
+    let names: Vec<_> = moon_only.grids.iter().map(|g| g.1.name.as_str()).collect();
+    assert_eq!(names, ["dwell:moon"]);
+    let all =
+        TravelMap::new(SEED, 25_000.0, Celestial::new(DAY_NIGHT, None)).open_to(|c| c == GRID_SUN);
+    assert_eq!(all.grids.len(), map.grids.len(), "grid.sun opens the sun");
+}
+
+const NEW: SessionId = 1;
+const OLD: SessionId = 2;
+
+/// SUN_WORLD.md §5 (orchestrator, 2026-11-13: "have the server never capture a client that doesn't
+/// declare it into the sun's grid (it flies on as before, the sun stays a far body for it)"): two
+/// fliers held inside the sun's capture sphere, moving with it. This build's client (`grid.sun`) is
+/// captured into the sun's space; a client of the moon's line (`grid.frames` only) stays home,
+/// gets no sun chunk and no sun grid in its snapshots, and its far flight doesn't count the sun.
+// face-a-only: the fliers are held over the sun's face A; capture is by distance from its centre.
+#[test]
+fn only_a_client_saying_grid_sun_is_captured_by_the_sun() {
+    let mut fx = Fixture::new(flat());
+    fx.join(NEW, &Client::new(1));
+    fx.join(OLD, &Client::new(2));
+    fx.send(NEW, Message::Capabilities(Capabilities::this_build()));
+    fx.send(OLD, Message::Capabilities(Capabilities::of([GRID_FRAMES])));
+    for id in [NEW, OLD] {
+        fx.send(id, Message::WorldgenCheck(0));
+    }
+    let sun = grid("dwell:sun").unwrap();
+    let sun_index = grids().iter().position(|g| g.name == "dwell:sun").unwrap() as u8;
+    let slot = fx
+        .server
+        .grids()
+        .slots
+        .iter()
+        .position(|s| s.index == sun_index)
+        .expect("the server holds the sun's space");
+    let mut got = Vec::new();
+    for seq in 1..=240u32 {
+        let t = f64::from(fx.server.tick()) / 60.0;
+        let f = fx.server.grids().frame(slot, t);
+        // Held 1 km inside the capture sphere over face A, carried with the sun.
+        let local = [0.0, MIDPLANE_M + sun.capture_m.unwrap() - 1_000.0, 0.0];
+        for pid in [1u16, 2] {
+            if fx.server.grid_state_of(pid).is_some_and(|g| g.0 == 0) {
+                let (wp, wv) = f.release(local, [0.0; 3]);
+                assert!(fx.server.place_on_grid(pid, wp, wv));
+            }
+        }
+        for id in [NEW, OLD] {
+            let m = Message::PlayerInput(PlayerInput {
+                last_snapshot_tick: 0,
+                inputs: vec![InputFrame {
+                    seq,
+                    move_x: 0,
+                    move_y: 0,
+                    buttons: input_buttons::FLY,
+                    yaw: 0,
+                    pitch: 0,
+                }],
+            });
+            fx.server.on_datagram(id, &m.encode());
+        }
+        fx.server.step();
+        for o in fx.server.take_outbox() {
+            if let Some(m) = Message::decode(&o.bytes) {
+                got.push((o.session, m));
+            }
+        }
+    }
+    let grid_of = |pid| fx.server.grid_state_of(pid).unwrap().0;
+    assert_eq!(grid_of(1), sun_index, "this build's client is on the sun");
+    assert_eq!(grid_of(2), 0, "a client without grid.sun flies on at home");
+    let transfers = fx.server.take_transfers();
+    assert!(transfers.iter().all(|(pid, _)| *pid == 1), "{transfers:?}");
+    assert!(
+        transfers
+            .iter()
+            .any(|(pid, x)| *pid == 1 && x.to == usize::from(sun_index)),
+        "{transfers:?}"
+    );
+    let sun_chunks = |id| {
+        got.iter()
+            .filter(|(s, m)| *s == id && matches!(m, Message::ChunkData(c) if c.grid == sun_index))
+            .count()
+    };
+    assert!(
+        sun_chunks(NEW) > 0,
+        "the sun's ground streams to this build's client"
+    );
+    assert_eq!(sun_chunks(OLD), 0, "and never to the older one");
+    let old_grid = got.iter().rev().find_map(|(s, m)| match m {
+        Message::PhysicsSnapshot(p) if *s == OLD => Some(p.grid),
+        _ => None,
+    });
+    assert!(
+        old_grid.expect("a snapshot").is_none_or(|g| g.grid == 0),
+        "the older client is never told it is on the sun"
+    );
 }
 
 fn sun_travel() -> Travel {

@@ -233,6 +233,14 @@ impl TravelMap {
         }
     }
 
+    /// Only the grids a client with the capabilities `has` may be captured into (a grid's
+    /// `capability`, docs/proposals/SUN_WORLD.md §5), as the server runs them for it: the others are
+    /// far bodies to it, passed through and not counted in its far flight.
+    pub fn open_to(mut self, has: impl Fn(&str) -> bool) -> Self {
+        self.grids.retain(|g| g.1.open_to(&has));
+        self
+    }
+
     fn def(&self, grid: u8) -> Option<&(u8, &'static GridDef, f64)> {
         self.grids.iter().find(|g| g.0 == grid)
     }

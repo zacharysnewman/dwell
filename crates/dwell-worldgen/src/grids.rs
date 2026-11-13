@@ -65,6 +65,18 @@ pub struct GridDef {
     /// its distance from (MOON_WORLD.md §7).
     pub surface_m: f64,
     pub generator: GridGenerator,
+    /// The capability a client must say before the server captures it into this grid
+    /// (`shared/protocol/capabilities.json`; the sun's `grid.sun`, docs/proposals/SUN_WORLD.md §5):
+    /// a client that doesn't flies on through, and the grid stays a far body for it. `None`: any
+    /// `grid.frames` client and older ones (the moon's, as built).
+    pub capability: Option<String>,
+}
+
+impl GridDef {
+    /// Whether a client with the capabilities `has` may be captured into this grid.
+    pub fn open_to(&self, has: impl Fn(&str) -> bool) -> bool {
+        self.capability.as_deref().is_none_or(has)
+    }
 }
 
 impl GridDef {
@@ -405,6 +417,25 @@ pub fn parse_grids(text: &str) -> Result<Vec<GridDef>, String> {
                 "{at}: `captureM` must reach past the disc's radius"
             ));
         }
+        let capability = match g.get("capability") {
+            None => None,
+            Some(c) => {
+                let c = c
+                    .as_str()
+                    .filter(|c| dwell_protocol::capability_names::ALL.contains(c))
+                    .ok_or_else(|| {
+                        format!(
+                            "{at}: `capability` must name a capability of shared/protocol/capabilities.json"
+                        )
+                    })?;
+                if frame == GridFrameKind::Rest {
+                    return Err(format!(
+                        "{at}: the grid at rest is everyone's (no `capability`)"
+                    ));
+                }
+                Some(c.to_owned())
+            }
+        };
         if frame == GridFrameKind::Rest && seed_salt.is_some() {
             return Err(format!(
                 "{at}: the grid at rest keeps the world seed (no `seedSalt`)"
@@ -420,6 +451,7 @@ pub fn parse_grids(text: &str) -> Result<Vec<GridDef>, String> {
             far_m,
             surface_m,
             generator,
+            capability,
         });
     }
     if out

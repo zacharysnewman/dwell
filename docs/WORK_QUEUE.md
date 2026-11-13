@@ -1847,8 +1847,17 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    generator (lava oceans, rift rivers, cones with crater lakes, basalt and obsidian; both faces), its bake
    shading the sky's sun disc (`sun.surface`; size, glow and sunlight unchanged), travel by the moon's rules
    natively. **Left:** the sky disc's look on a GPU (a local check); constant lava flow on the sun (lava fields
-   on its rivers and lakes, damage there), its sky, spawns, its LOD; older clients on the line and grid 2
-   (SUN_WORLD.md §5).
+   on its rivers and lakes, damage there), its sky, spawns, its LOD.
+   **Kept additive (orchestrator, 2026-11-13: "to keep this additive (no new line), gate the sun's travel on the
+   client: add a capability (e.g. "grid.sun", or a grid count in the capability exchange) and have the server
+   never capture a client that doesn't declare it into the sun's grid (it flies on as before, the sun stays a far
+   body for it); a test that an old client (no capability) near the sun isn't captured and a new one is"):** a
+   grid's optional `capability` in grids.json (the sun's `grid.sun`); the server captures only sessions that
+   declare it, and the client's travel map holds only those grids.
+   **The sun's sky** (owner, 2026-11-13: "Sun and moon should be space, the same as night sky. Could perhaps just
+   make space a more general skybox and have 'day' be a closer atmosphere skybox so it can fade out as you leave
+   earth."): the general sky is built by the moon session (claude/moon-m5), not here; the sun only declares in its
+   grid data that it has no atmosphere, once that field exists.
 
 ## Done
 

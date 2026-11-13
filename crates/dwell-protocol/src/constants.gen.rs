@@ -685,6 +685,8 @@ pub mod capability_names {
     pub const HITS_AT_CONTACT: &str = "hits.at_contact";
     /// A player's map markers (WORK_QUEUE item 53, docs/MAP_MARKERS.md) go both ways as `Markers` (the record, dwell_protocol::markers): the server sends that player's saved record once, after this client's Capabilities, to that player only; the client sends its whole record again on each change, and the server keeps it for that player's device key in the world's optional `markers` table. Without it neither is sent: the client keeps its markers for this session only.
     pub const MARKERS_PRIVATE: &str = "markers.private";
+    /// The client knows the sun's grid (shared/worldgen/grids.json `dwell:sun`, its `capability`; docs/proposals/SUN_WORLD.md §5): the server may capture it into the sun's space (grid index 2 on the `grid.frames` wire) and counts the sun's slab in its far flight. Without it the server never captures it there: it flies on through as before, and the sun stays a far body for it.
+    pub const GRID_SUN: &str = "grid.sun";
     /// Every capability this build knows, in the table's order.
-    pub const ALL: &[&str] = &[STRUCTURES_PLACE, GRID_FRAMES, DAMAGE_CHUNKS, CREATURES_NPCS, WEAPONS_CLASH, CREATURES_POSES, NPCS_SWINGS, THEATER_VIEWPOINT, HITS_AT_CONTACT, MARKERS_PRIVATE];
+    pub const ALL: &[&str] = &[STRUCTURES_PLACE, GRID_FRAMES, DAMAGE_CHUNKS, CREATURES_NPCS, WEAPONS_CLASH, CREATURES_POSES, NPCS_SWINGS, THEATER_VIEWPOINT, HITS_AT_CONTACT, MARKERS_PRIVATE, GRID_SUN];
 }

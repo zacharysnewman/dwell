@@ -58,6 +58,10 @@ fn the_build_s_sun_is_a_volcanic_grid_on_the_sun_s_path() {
     assert_eq!(s.gravity_scale, 1.0);
     assert!(s.capture_m.unwrap() > 25_000.0);
     assert!(matches!(s.generator, GridGenerator::Volcanic(_)));
+    // Captured only by clients that say `grid.sun` (SUN_WORLD.md §5); the moon is everyone's.
+    assert_eq!(s.capability.as_deref(), Some("grid.sun"));
+    assert!(s.open_to(|c| c == "grid.sun") && !s.open_to(|c| c == "grid.frames"));
+    assert!(grid("dwell:moon").unwrap().open_to(|_| false));
     assert_ne!(s.seed(42), 42);
     assert_ne!(s.seed(42), s.seed(43), "every world its own sun");
     assert_ne!(
@@ -70,7 +74,12 @@ fn the_build_s_sun_is_a_volcanic_grid_on_the_sun_s_path() {
 /// A bad entry fails with a message naming it.
 #[test]
 fn bad_sun_rules_fail_with_a_message() {
-    let cases: [(&str, &str, &str); 8] = [
+    let cases: [(&str, &str, &str); 9] = [
+        (
+            "\"capability\": \"grid.sun\"",
+            "\"capability\": \"grid.nowhere\"",
+            "`capability` must name a capability",
+        ),
         (
             "\"frame\": \"sunPath\"",
             "\"frame\": \"sunpath\"",

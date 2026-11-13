@@ -3699,6 +3699,13 @@ impl Inner {
             game.set_structure_ops(
                 s.capability(dwell_protocol::capability_names::STRUCTURES_PLACE),
             );
+            game.set_grid_capabilities(
+                dwell_protocol::capability_names::ALL
+                    .iter()
+                    .filter(|c| s.capability(c))
+                    .map(|c| c.to_string())
+                    .collect(),
+            );
             game.set_grid_frames(s.capability(dwell_protocol::capability_names::GRID_FRAMES));
             game.set_swordplay(s.capability(dwell_protocol::capability_names::WEAPONS_CLASH));
             game.set_hits_at_contact(
