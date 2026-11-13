@@ -6,6 +6,17 @@ pins it.
 
 ## Open
 
+### 132. A fresh Realistic world never loads without a start point (investigating)
+
+Brief, 2026-11-13: "a fresh Realistic world never loads without a start point. On 0.59 (a022b0d0),
+`?worldgen=test:realistic&seed=42&fresh=1` with no `at` showed only sky for over 105 s and `__dwell.state()` stayed
+null; with an `at` it loads in seconds." Suspects named: the spawn search with 0.58's "every spawn at a shrine" rule
+(#873), or the spawn search itself on Realistic. Natively (2026-11-13, `cargo run --release -p dwell-worldgen --example
+spawn_cost <seed> test:realistic`) not reproduced: seeds 1, 7, 42 resolve the spawn search and the spawn's shrine in
+≤ 250 ms a face; a local-style server join (single-threaded, jobs remote, the Realistic sky) spawns on its first tick, and
+the native client with its local server reaches `terrainReady` in ~2 s on seed 42. `state()` null means the page never
+got its Welcome: the stall is before the join (the page's map build, the local worker's start), browser-only so far.
+
 ### 131. After a face B return from the moon the held stone block looked pink (not reproduced natively)
 
 Second browser moon flight (0.58.8 on facaaaf1, seed 7, M1), brief 2026-11-13: "After a face B return the held stone
