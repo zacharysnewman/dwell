@@ -952,6 +952,7 @@ export function validateRocks(data, blocks) {
       "rangeCore",
       "riftWidth",
       "basinDistance",
+      "edgeFade",
       "rules",
     ];
     const pe = Object.keys(pp).filter((k) => !known.includes(k));
@@ -959,6 +960,9 @@ export function validateRocks(data, blocks) {
     for (const k of ["accretedWidth", "coreWidth", "riftWidth", "basinDistance"]) {
       if (!between(pp[k], 0, 100000)) pf(`${k} must be in [0, 100000] m`);
     }
+    // How far inside a setting's edge the shaping fades in (absent: 0, a sharp edge).
+    if (pp.edgeFade !== undefined && !between(pp.edgeFade, 0, 10000))
+      pf("edgeFade must be in [0, 10000] m");
     const rc = pp.rangeCore;
     if (
       !Array.isArray(rc) ||

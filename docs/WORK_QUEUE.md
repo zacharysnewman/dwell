@@ -626,6 +626,13 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    rises unstepped) with the R5 rock provinces and `shaping`/`erosion` (mesas and scarps in arid sedimentary basins,
    smooth slopes on granite cores and soils), and the global cliffs volume off for Realistic (data: realistic.json's
    terrain volume and its rocks shaping strength). A Realistic-only terrain change (the default world unchanged).
+   **Done (2026-11-13, 0.57.0, a new line):** `realistic.json` `"cliffs": 0` and `geology` shaping and erosion strength
+   1, so Realistic ground steps by its rock's jointing (bedded walls and treads, vertical columns, massive granite
+   smooth) and erodes into mesas and scarps in the arid sedimentary biomes; plate-rule province edges fade the shaping
+   in over `rocks.json` `plateProvinces.edgeFade` (600 m) so no wall runs along them. `tests/realistic_steps.rs` (both
+   faces): massive ground < 1 % stepped (as unshaped), bedded 3–4 %, no column reshaped by the volume. Default world
+   unchanged (goldens); Realistic golden rewritten (REALISTIC_WORLD.md R5). Open for the owner: the collision cores'
+   schist is `bedded` (steps every 10 m); `massive` would make the cores smooth throughout (data).
 16. **Phone frame rate (P0)** (owner 2026-11-11, iPhone 17, Safari, setting Low: "I'm only getting ~23 fps on
    mobile, seeing lots of z-fighting on tree trunks with the leaf cards. What might be dropping frames since the
    last while. Used to get 60 fps"). Suspect: leaf cards are on in every tier but CPU, Low included; cards lying

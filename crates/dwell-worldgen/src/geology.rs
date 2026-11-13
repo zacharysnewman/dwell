@@ -170,6 +170,9 @@ pub struct PlateProvinces {
     pub range_core: [f64; 2],
     pub rift_width: f64,
     pub basin_distance: f64,
+    /// How far (m) inside a setting's edge the shaping fades in (0: a sharp edge), so a rule's
+    /// province meets the next with no wall where the shaping is on (WORK_QUEUE item 15).
+    pub edge_fade: f64,
     pub rules: &'static [PlateRule],
 }
 
@@ -181,11 +184,25 @@ impl PlateProvinces {
         x: f64,
         z: f64,
     ) -> PlateSettings {
+        self.settings_and_edge(t, x, z).0
+    }
+
+    /// [`PlateProvinces::settings`] with how far (m) (x, z) lies from the nearest edge where a
+    /// setting starts or stops holding (a cone's rim, a width's line, the plate's own boundary).
+    pub fn settings_and_edge(
+        &self,
+        t: &crate::plate_tectonics::PlateTectonics,
+        x: f64,
+        z: f64,
+    ) -> (PlateSettings, f64) {
         use crate::plates::BoundaryKind;
         let mut s = PlateSettings::default();
+        let mut edge = f64::INFINITY;
         s.add(PlateSetting::Default);
         for v in &t.volcanoes {
-            if (x - v.x).powi(2) + (z - v.z).powi(2) < (0.85 * v.radius).powi(2) {
+            let r = ((x - v.x).powi(2) + (z - v.z).powi(2)).sqrt();
+            edge = edge.min((r - 0.85 * v.radius).abs());
+            if r < 0.85 * v.radius {
                 s.add(if v.chain == 0 {
                     PlateSetting::Arc
                 } else {
@@ -197,9 +214,14 @@ impl PlateProvinces {
         let mut nearest = f64::INFINITY;
         for (line, d) in t.lines_of(plate, x, z) {
             nearest = nearest.min(d);
+            edge = edge.min(d);
+            let mut near = |w: f64| edge = edge.min((d - w).abs());
             match line.kind {
                 BoundaryKind::Convergent => match line.over {
                     Some(over) if over == plate => {
+                        near(self.accreted_width);
+                        near(self.range_core[0]);
+                        near(self.range_core[1]);
                         if d < self.accreted_width {
                             s.add(PlateSetting::Accreted);
                         }
@@ -208,17 +230,27 @@ impl PlateProvinces {
                         }
                     }
                     Some(_) => {}
-                    None if d < self.core_width => s.add(PlateSetting::Core),
-                    None => {}
+                    None => {
+                        near(self.core_width);
+                        if d < self.core_width {
+                            s.add(PlateSetting::Core);
+                        }
+                    }
                 },
-                BoundaryKind::Divergent if d < self.rift_width => s.add(PlateSetting::Rift),
+                BoundaryKind::Divergent => {
+                    near(self.rift_width);
+                    if d < self.rift_width {
+                        s.add(PlateSetting::Rift);
+                    }
+                }
                 _ => {}
             }
         }
+        edge = edge.min((nearest - self.basin_distance).abs());
         if nearest > self.basin_distance {
             s.add(PlateSetting::Basin);
         }
-        s
+        (s, edge)
     }
 
     /// The first rule whose setting holds in `s`, if any.
@@ -481,9 +513,15 @@ impl Resolved {
     pub fn province(&self, x: i64, z: i64) -> (usize, f64) {
         if let Some((t, stacks)) = &self.plates {
             let pp = &self.geology.plate_provinces;
-            let s = pp.settings(t, x as f64, z as f64);
+            let (s, edge) = pp.settings_and_edge(t, x as f64, z as f64);
             if let Some(k) = pp.rules.iter().position(|r| s.has(r.setting)) {
-                return (stacks[k], 1.0);
+                // The shaping fades in from the setting's edge (rocks.json `edgeFade`).
+                let fade = if pp.edge_fade > 0.0 {
+                    (edge / pp.edge_fade).clamp(0.0, 1.0)
+                } else {
+                    1.0
+                };
+                return (stacks[k], fade);
             }
         }
         if let Some((t, v, volcanic, core)) = &self.tectonic
@@ -851,6 +889,41 @@ mod plate_province_tests {
         for x in [-0.5 * pp.rift_width, 0.5 * pp.rift_width] {
             assert_eq!(stack_at(&r, x, 2000.0), rule(PlateSetting::Rift), "x {x}");
         }
+    }
+
+    #[test]
+    fn a_settings_edge_fades_the_shaping_in() {
+        // WORK_QUEUE item 15: with the shaping on, a rule's province meets the next with no wall.
+        // On the accreted strip's edge (accretedWidth m from the trench) the fade is 0; edgeFade
+        // m inside it, 1; with edgeFade 0 (by data alone), sharp as before.
+        let pp = GEOLOGY.plate_provinces;
+        assert!(pp.edge_fade > 0.0, "the build fades the edges");
+        let t = fixture("ocean_under_continent");
+        let r = resolved(GEOLOGY, &t);
+        let fade = |r: &Resolved, x: f64| r.province(x as i64, 0).1;
+        let edge = pp.accreted_width;
+        assert!(
+            fade(&r, edge - 1.0) < 0.01,
+            "at the edge: {}",
+            fade(&r, edge - 1.0)
+        );
+        let inside = edge - pp.edge_fade - 1.0;
+        assert!(pp.settings(&t, inside, 0.0).has(PlateSetting::Accreted));
+        assert!(fade(&r, inside) > 0.99, "inside: {}", fade(&r, inside));
+        let mid = edge - 0.5 * pp.edge_fade;
+        assert!(
+            (fade(&r, mid) - 0.5).abs() < 0.01,
+            "halfway: {}",
+            fade(&r, mid)
+        );
+        let sharp = Geology {
+            plate_provinces: PlateProvinces {
+                edge_fade: 0.0,
+                ..pp
+            },
+            ..GEOLOGY
+        };
+        assert_eq!(fade(&resolved(sharp, &t), edge - 1.0), 1.0);
     }
 
     #[test]

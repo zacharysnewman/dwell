@@ -11,7 +11,9 @@ feeding the rivers' discharge. R4 built (2026-11-12): biomes chosen by climate a
 plate history (`rocks.json` `plateProvinces`) and soils by rock × climate (`vegetation.json` `rockSoils`). R6 built
 (2026-11-12), its exit met: Realistic in the New world form's World list (`newWorld`), its own golden hashes, the
 big map's debug layers (plates, uplift, rain, rocks); created, played and reloaded in the browser on the M1's GPU,
-the phone page's total at load under the starter's (R6 below). §8 (2026-11-12, design only):
+the phone page's total at load under the starter's (R6 below). Steps by geology (2026-11-13, 0.57.0, WORK_QUEUE item
+15): the global `cliffs` volume off and the rock shaping on in Realistic worlds, so the ground steps only where its rock's
+jointing says (R5 below). §8 (2026-11-12, design only):
 orbits by seed set the latitude band, the sky and later seasons, in place of R3's picked band.
 
 ## 1. The owner's direction
@@ -451,9 +453,29 @@ them: red with the new rocks' palettes among the old, green after). `Resolved::w
   the shelf's and in the quiet interiors on the basin's, each met; the noise's provinces elsewhere),
   `gen.test.mjs` (rules and soil climates by data, bad entries named); default and starter goldens
   unchanged. *Deviations:* a setting's stack is one name, not a list with weights (the noise inside a
-  province is for later); province edges are sharp (the Realistic world's shaping strength is 0, so the
-  rocks show only through the soils, never as a stepped edge); the rock's blocks show on the ground only
-  where the shaping is on (`shaping.strength` > 0; the Realistic world's is 0, as before). No gravel or
+  province is for later); the rock's blocks show on the ground only where the shaping is on
+  (`shaping.strength` > 0; the Realistic world's was 0 until steps by geology, below).
+  **Steps by geology (2026-11-13, 0.57.0; WORK_QUEUE item 15).** Owner, 2026-11-12: "Is all of our terrain still
+  stepped? I like stepped terrain but it should be system driven not across the whole realistic world". Until then
+  the default terrain's `cliffs` volume (volume.json: terraces on every steep hillside and mountainside) shaped
+  Realistic worlds too. Now `realistic.json` sets `"cliffs": 0` (no global terrace volume) and `geology`
+  `shaping.strength` 1 and `erosion.strength` 1 (data), so the ground is mapped through its column's stack
+  (`geology::Profile`, unchanged): `bedded` rock (the basins' red beds, the rifts' fill, the accreted limestone, the
+  cores' schist) steps into a wall and a tread every `bed` m, `vertical` rock (the arcs' andesite, the hotspots'
+  basalt) stands in columns a unit tall, `massive` granite (the collision and range cores) rises unstepped; the
+  mesas and scarps are the erosion's in the arid sedimentary biomes that opt in (red rock mesa, badlands, on their
+  red and badland beds). Province edges, sharp until then, now fade the shaping in over `plateProvinces.edgeFade`
+  (600 m) inside a setting's edge (a cone's rim, a width's line, the plate's boundary; `PlateProvinces::settings_and_edge`;
+  absent 0, sharp, for edits stored before), so no wall runs along a province's edge. Tests:
+  `tests/realistic_steps.rs` on both faces (seed 42; transects every 1 km, a column stepped where a neighbour is 2 m
+  or more above or below it): no column reshaped by the volume; massive ground under 1 % stepped and within 0.5 %
+  of the same land unshaped (A 0.4 %, B 0.8 %: the hills' own steepest ground); bedded ground 2.5 % over unshaped
+  (A 3.2 % from 0, B 4.3 % from 0.7 %); vertical rock at least twice its unshaped count;
+  `geology::plate_province_tests::a_settings_edge_fades_the_shaping_in`; `gen.test.mjs` (the data, a bad
+  `edgeFade`). The Realistic golden rewritten (a Realistic-only terrain change: worlds made from 0.55's and 0.56's
+  menu would change, so the new line 0.57); the default world's goldens unchanged (`tests/golden.rs`). Open for the owner: the
+  cores' schist is `bedded` (bed 10 m), so 40 m of each 100 m of a collision core steps; schist as `massive` or a
+  `foliated` jointing is a data change. No gravel or
   pale stone block exists: the rocky soil and stone stand in. **Not done:** the plates and rock overlay in
   Chisel and on the in-game big map (§7 q8; a WASM export of the layout and the settings and a view in
   each: not quick); moved to R6.
