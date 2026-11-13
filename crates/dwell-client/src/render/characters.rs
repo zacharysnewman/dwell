@@ -2550,7 +2550,8 @@ mod tests {
             }
         }
 
-        /// The poses swept: each base role's clip at six phases, and the swings on the idle and walk
+        /// The poses swept: each base role's clip (but the defeat's, drawn only in third person)
+        /// at six phases, and the swings on the idle and walk
         /// (named `role phase` and `role+swing phase`), and whether the eye is the crouch's.
         fn poses() -> Vec<(String, bool, Pose)> {
             let ch = dwell_characters::player();
@@ -2559,6 +2560,11 @@ mod tests {
             for &(role, c) in ch.clips {
                 let clip = TABLES.clip(c);
                 if clip.layer != dwell_characters::Layer::Base {
+                    continue;
+                }
+                // The defeat's kneel and stand (§11.13, 0.60.7) are never your own body in first
+                // person: defeated, the view is third person over the body (`set_own_body(None)`).
+                if dwell_characters::animator::is_defeat_role(role) {
                     continue;
                 }
                 for k in 0..6 {
