@@ -9,6 +9,10 @@
 //! from `size` down (each `side`² texels row-major, two words a texel: the albedo then the normal,
 //! `pack4x8unorm`). Until a world's bake arrives it holds the header only (`size` 0), and the
 //! shader draws the moon as it did before M-2 (its procedural maria, a flat disc).
+//!
+//! The sun world's face A (docs/proposals/SUN_WORLD.md S-3) shares the buffer: its own header and levels from
+//! word [`SUN_BASE`], its albedo only (`dwell_sun_ground`, the sky's sun disc shaded by its lava and
+//! crusts); `size` 0 there draws today's plain sun.
 
 use dwell_worldgen::grids::FarBake;
 
@@ -20,6 +24,9 @@ pub const MIN_SIDE: usize = 4;
 
 /// The grid the sky's moon is (`shared/worldgen/grids.json`).
 pub const MOON_GRID: &str = "dwell:moon";
+
+/// The grid the sky's sun is (docs/proposals/SUN_WORLD.md).
+pub const SUN_GRID: &str = "dwell:sun";
 
 pub fn layout_entry() -> wgpu::BindGroupLayoutEntry {
     wgpu::BindGroupLayoutEntry {
@@ -124,6 +131,14 @@ pub fn bake_for(world_seed: u64) -> Option<FarBake> {
     Some(terrain.bake_far_default(dwell_world::Face::A))
 }
 
+/// The sun world's bake for a world: its face A (the one home sees) at the grid's data size, or
+/// none for a build without the sun grid.
+pub fn sun_bake_for(world_seed: u64) -> Option<FarBake> {
+    let def = dwell_worldgen::grids::grid(SUN_GRID)?;
+    let terrain = dwell_worldgen::volcanic::VolcanicTerrain::new(def, world_seed)?;
+    Some(terrain.bake_far_default(dwell_world::Face::A))
+}
+
 /// The buffer: room for a full 256² bake's levels (written in place, so the frame group never
 /// changes), the header saying "none yet" until one is written.
 pub struct MoonGpu {
@@ -131,7 +146,7 @@ pub struct MoonGpu {
 }
 
 /// Words a bake of side `size` packs to.
-pub fn words(size: usize) -> usize {
+pub const fn words(size: usize) -> usize {
     let mut w = 4;
     let mut side = size;
     loop {
@@ -146,15 +161,19 @@ pub fn words(size: usize) -> usize {
 /// The side the buffer is sized for (`grids.json`'s moon `bake.size`; 256).
 pub const CAPACITY_SIDE: usize = 256;
 
+/// The word the sun's header and levels start at: after room for the moon's.
+pub const SUN_BASE: usize = words(CAPACITY_SIDE);
+
 impl MoonGpu {
     pub fn new(device: &wgpu::Device, queue: &wgpu::Queue) -> Self {
         let buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("moon maps"),
-            size: words(CAPACITY_SIDE) as u64 * 4,
+            size: (SUN_BASE + words(CAPACITY_SIDE)) as u64 * 4,
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
         queue.write_buffer(&buffer, 0, &[0u8; 16]);
+        queue.write_buffer(&buffer, SUN_BASE as u64 * 4, &[0u8; 16]);
         Self { buffer }
     }
 
@@ -165,13 +184,24 @@ impl MoonGpu {
         }
     }
 
-    /// Writes a packed bake ([`pack`]); one bigger than the buffer is refused (the old moon kept).
+    /// Writes a packed bake ([`pack`]); one bigger than its room is refused (the old moon kept).
     pub fn write(&self, queue: &wgpu::Queue, words: &[u32]) -> bool {
-        if words.len() as u64 * 4 > self.buffer.size() {
+        if words.len() > SUN_BASE {
             return false;
         }
         let bytes: Vec<u8> = words.iter().flat_map(|w| w.to_le_bytes()).collect();
         queue.write_buffer(&self.buffer, 0, &bytes);
+        true
+    }
+
+    /// Writes the sun world's packed bake ([`pack`], its albedo read) at [`SUN_BASE`]; one bigger
+    /// than its room is refused (today's plain sun kept).
+    pub fn write_sun(&self, queue: &wgpu::Queue, packed: &[u32]) -> bool {
+        if packed.len() > words(CAPACITY_SIDE) {
+            return false;
+        }
+        let bytes: Vec<u8> = packed.iter().flat_map(|w| w.to_le_bytes()).collect();
+        queue.write_buffer(&self.buffer, SUN_BASE as u64 * 4, &bytes);
         true
     }
 }
@@ -182,6 +212,7 @@ pub fn wgsl() -> String {
     format!(
         "@group(0) @binding({BINDING}) var<storage, read> moon_maps: array<u32>;
 const MOON_MIN_SIDE: u32 = {MIN_SIDE}u;
+const SUN_BASE: u32 = {SUN_BASE}u;
 {MOON_WGSL}"
     )
 }
@@ -227,6 +258,33 @@ fn dwell_moon_ground(p: vec2f, px: f32) -> MoonGround {
     }
     let n = mix(mix(a[1], b[1], f.x), mix(c[1], d[1], f.x), f.y).xyz * 2.0 - 1.0;
     return MoonGround(al, normalize(vec3f(n.x, -n.y, n.z)));
+}
+
+// The sun world's ground at `p` on its unit disc (as `dwell_moon_ground`'s) for a pixel `px` disc
+// radii wide: its baked albedo over its brightest (lava 1, the crusts darker), 1 with no bake.
+fn dwell_sun_ground(p: vec2f, px: f32) -> f32 {
+    let size = moon_maps[SUN_BASE];
+    if (size == 0u) {
+        return 1.0;
+    }
+    let levels = moon_maps[SUN_BASE + 1u];
+    let per_px = px * f32(size) * 0.5;
+    let lod = min(u32(max(floor(log2(max(per_px, 1.0))), 0.0)), levels - 1u);
+    var base = SUN_BASE + 4u;
+    var side = size;
+    for (var k = 0u; k < lod; k++) {
+        base += 2u * side * side;
+        side = max(side / 2u, MOON_MIN_SIDE);
+    }
+    let uv = vec2f(p.x, -p.y) * 0.5 + 0.5;
+    let t = uv * f32(side) - 0.5;
+    let i = vec2i(floor(t));
+    let f = fract(t);
+    let a = moon_texel(base, side, i)[0].r;
+    let b = moon_texel(base, side, i + vec2i(1, 0))[0].r;
+    let c = moon_texel(base, side, i + vec2i(0, 1))[0].r;
+    let d = moon_texel(base, side, i + vec2i(1, 1))[0].r;
+    return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
 }
 ";
 
@@ -302,6 +360,61 @@ mod tests {
             pack(&b, true, 1.0).len() <= words(CAPACITY_SIDE),
             "bake.size {}",
             b.size
+        );
+    }
+}
+
+#[cfg(test)]
+mod sun_tests {
+    use super::*;
+
+    #[test]
+    fn the_sun_world_s_bake_packs_lava_brightest_and_fits_after_the_moon() {
+        let b = sun_bake_for(1).expect("the sun grid");
+        let w = pack(&b, false, 1.0);
+        assert!(w.len() <= words(CAPACITY_SIDE), "fits its room");
+        assert_eq!(SUN_BASE, words(CAPACITY_SIDE), "after the moon's room");
+        let n = b.size * b.size;
+        let lava = dwell_blocks::info(dwell_blocks::require("dwell:lava")).color;
+        let mut crust = 0;
+        for i in 0..n {
+            let a = &b.albedo[i * 4..i * 4 + 4];
+            if a[3] == 0 {
+                continue;
+            }
+            let rgb = (u32::from(a[0]) << 16) | (u32::from(a[1]) << 8) | u32::from(a[2]);
+            let packed = w[4 + 2 * i] & 0xff;
+            if rgb != lava {
+                assert!(packed < 160, "a crust is darker than the lava ({packed})");
+                crust += 1;
+            }
+        }
+        assert!(crust > 0);
+        assert_eq!(
+            (0..n).map(|i| w[4 + 2 * i] & 0xff).max(),
+            Some(255),
+            "lava full"
+        );
+    }
+
+    #[test]
+    fn the_sun_keeps_its_size_glow_and_light() {
+        // Owner, 2026-11-12: the sun world is drawn as today's disc, "same size in the sky, its glow
+        // and sunlight unchanged"; "The sun's doesn't really light the earth world or moon world,
+        // just conceptually."
+        let s = dwell_look::daynight::DAY_NIGHT.sun;
+        assert_eq!(s.radius_deg, 1.5);
+        assert_eq!(
+            (s.bloom_deg, s.bloom, s.glow_deg, s.glow),
+            (2.5, 0.2, 28.0, 0.3)
+        );
+        let wgsl = dwell_look::sky_wgsl_with(&wgsl());
+        assert!(wgsl.contains("core = core * mix(1.0, ground, SUN_SURFACE);"));
+        assert!(wgsl.contains("fn dwell_sun_ground(p: vec2f, px: f32) -> f32"));
+        // Without a bake the plain sun: the procedural ground is 1.
+        assert!(
+            dwell_look::sky_wgsl()
+                .contains("fn dwell_sun_ground(p: vec2f, px: f32) -> f32 {\n    return 1.0;")
         );
     }
 }

@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { checkMoonDistance, dayNightRust, loadDayNight, pathSkew, validateDayNight } from './daynight.mjs';
+import { checkMoonDistance, checkSunDistance, dayNightRust, loadDayNight, pathSkew, validateDayNight } from './daynight.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const load = () => JSON.parse(readFileSync(join(here, 'daynight.json'), 'utf8'));
@@ -65,4 +65,18 @@ test("the moon's orbit keeps the moon grid at the sky's size", () => {
   far.moonOrbit.distanceM = 12500 / Math.tan((0.6 * Math.PI) / 180);
   assert.ok(checkMoonDistance(validateDayNight(far), grids), 'a smaller moon in the sky by data alone');
   assert.throws(() => checkMoonDistance(validateDayNight(load()), { grids: [] }), /no "dwell:moon" grid/);
+});
+
+test("the sun world sits on the sun's path at the sky's sun size", () => {
+  const grids = JSON.parse(readFileSync(join(here, '../worldgen/grids.json'), 'utf8'));
+  const sun = grids.grids.find((g) => g.name === 'dwell:sun');
+  const d = load();
+  assert.ok(Math.abs(Math.atan(sun.radiusM / d.sun.distanceM) * (180 / Math.PI) - d.sun.radiusDeg) < 0.015, "today's disc size");
+  d.sun.distanceM = 500000;
+  assert.throws(() => checkSunDistance(validateDayNight(d), grids), /sun\.distanceM must keep the sun's 25000 m radius/);
+  const big = load();
+  big.sun.radiusDeg = 3;
+  big.sun.distanceM = 25000 / Math.tan((3 * Math.PI) / 180);
+  assert.ok(checkSunDistance(validateDayNight(big), grids), 'a bigger sun in the sky by data alone');
+  assert.throws(() => checkSunDistance(validateDayNight(load()), { grids: [] }), /no "dwell:sun" grid/);
 });

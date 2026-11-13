@@ -76,7 +76,7 @@ export function registryBlocks() {
  * Every block a worldgen surface rule can place, with where it comes from (`[block, source]`): the
  * biomes' bands (the build's, the presets, the fixture worlds': ground, under, rock, shoreBlock), the
  * rocks' face, cap and scree and the snow line's covers (rocks.json), the soil types' blocks
- * (vegetation.json), the grid worlds' ground (grids.json `block`, `maria.block`) and the rock lava
+ * (vegetation.json), the grid worlds' ground (grids.json `block`, `maria.block`, the sun's `crust` and `shore.block`) and the rock lava
  * cools into (shared/fluids/lava.json). `files` overrides any of them (tests).
  */
 export function surfaceBlocks(files = {}) {
@@ -114,7 +114,7 @@ export function surfaceBlocks(files = {}) {
     if (Array.isArray(v)) v.forEach((x, i) => walk(x, `${at}[${i}]`));
     else if (v && typeof v === "object") {
       for (const [k, x] of Object.entries(v)) {
-        if (k === "block" && typeof x === "string") out.push([x, `grids.json ${at}.block`]);
+        if ((k === "block" || k === "crust") && typeof x === "string") out.push([x, `grids.json ${at}.${k}`]);
         else walk(x, `${at}.${k}`);
       }
     }

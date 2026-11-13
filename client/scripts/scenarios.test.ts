@@ -174,6 +174,26 @@ describe('scenarios', () => {
     ).toThrow(/kind/);
   });
 
+  it('teleports onto the moon (docs/DEV_TOOLS.md "The moon")', () => {
+    const [s] = parseScenarios(
+      file([
+        {
+          name: 'm',
+          steps: [{ do: 'moonLand' }, { do: 'moonLand', face: 'b', maxS: 30, waitS: 1 }],
+        },
+      ]),
+    );
+    expect(s.steps).toEqual([
+      { do: 'moonLand' },
+      { do: 'moonLand', face: 'b', maxS: 30, waitS: 1 },
+    ]);
+    const bad = (step: Record<string, unknown>) => () =>
+      parseScenarios(file([{ name: 'm', steps: [{ do: 'moonLand', ...step }] }]));
+    expect(bad({ face: 'c' })).toThrow(/face/);
+    expect(bad({ maxS: 0 })).toThrow(/maxS/);
+    expect(bad({ to: 'moon' })).toThrow(/to/);
+  });
+
   it('flies to the moon and home (docs/DEV_TOOLS.md "The moon")', () => {
     const [s] = parseScenarios(
       file([

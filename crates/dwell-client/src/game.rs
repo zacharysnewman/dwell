@@ -627,6 +627,10 @@ impl HudVitals {
     }
 }
 
+/// At most this many chunks of another grid are held for the crossing into it (BUGS.md #136): a
+/// few rings of chunks round a capture.
+const OTHER_GRID_CHUNKS_MAX: usize = 4096;
+
 /// A camera a tool places (tests, the views runner, ARCHITECTURE.md §6.6): the renderer and the
 /// LOD view from it while the player stays where it is. Full-detail chunks still stream around the
 /// player only, so away from the player the view is the LOD's.
@@ -797,12 +801,20 @@ pub struct Game<S: Scene> {
     /// The server carries players onto other grids and says which (`grid.frames`, MOON_WORLD.md
     /// §7.3): the predictor then runs the grids' travel rules, and the game follows it.
     grid_frames: bool,
+    /// The capabilities on for the session that a grid may ask for (a grid's `capability`,
+    /// docs/proposals/SUN_WORLD.md §5): the travel map holds only the grids they open. `None` (a
+    /// local rig on this build's server): every grid.
+    grid_capabilities: Option<Vec<String>>,
     /// The grids' frames and travel rules (the predictor's own copy is its hook), once the world
     /// is known and the server has `grid.frames`.
     travel: Option<dwell_sim::travel::TravelMap>,
     /// The grid whose chunks the streamer holds and the view is drawn in (0 home): the
     /// predictor's, followed at each crossing (`follow_grid`).
     grid_drawn: u8,
+    /// Chunks of another grid than the one drawn, held until the crossing into it (BUGS.md #136:
+    /// the server, having moved the player first, streams that grid's chunks before the client
+    /// crosses, and sends each only once), by grid and coordinate.
+    other_grid_chunks: std::collections::HashMap<(u8, [i32; 3]), dwell_protocol::ChunkData>,
     /// The world's disc and build volume (BIG_MAP.md M2b: its `WorldSettings` size): the LOD's
     /// rim, the streamer's volume and the big map's levels follow it.
     world_bounds: dwell_world::WorldBounds,
@@ -1255,8 +1267,10 @@ impl<S: Scene> Game<S> {
             remote_contacts: Default::default(),
             world_seed: 0,
             grid_frames: false,
+            grid_capabilities: None,
             travel: None,
             grid_drawn: 0,
+            other_grid_chunks: std::collections::HashMap::default(),
             world_bounds: dwell_world::WorldBounds::DEFAULT,
             ground_on: false,
             ground_target: None,
@@ -1785,10 +1799,19 @@ impl<S: Scene> Game<S> {
                 self.predictor
                     .on_vitals(self.streamer.store_mut(), v.seq, vitals);
             }
-            // Another grid's chunk than the one the view is in: sent before the server saw the
-            // crossing the predictor made (MOON_WORLD.md §7.3); the server forgets it there too.
-            Message::ChunkData(d) if d.grid != self.grid_drawn => {}
-            Message::ChunkUnload(u) if u.grid != self.grid_drawn => {}
+            // Another grid's chunk than the one the view is in (MOON_WORLD.md §7.3): held for the
+            // crossing into it, which the server made first (BUGS.md #136; a crossing the
+            // predictor made first drops the old grid's, which the server forgets too).
+            Message::ChunkData(d) if d.grid != self.grid_drawn => {
+                if self.other_grid_chunks.len() < OTHER_GRID_CHUNKS_MAX {
+                    self.other_grid_chunks.insert((d.grid, d.coord), d);
+                }
+            }
+            Message::ChunkUnload(u) if u.grid != self.grid_drawn => {
+                for c in &u.coords {
+                    self.other_grid_chunks.remove(&(u.grid, *c));
+                }
+            }
             // Home's cells while the view is on another grid: not the store's (whose cells are
             // that grid's); home streams again whole on the way back.
             Message::VoxelModification(_) if self.grid_drawn != 0 => {}
@@ -3158,8 +3181,17 @@ impl<S: Scene> Game<S> {
         self.install_travel();
     }
 
+    /// The session's capabilities a grid may ask for (`Session::capability` of each): the travel
+    /// map then holds only the grids they open, as the server captures this client (the sun's
+    /// `grid.sun`, docs/proposals/SUN_WORLD.md §5).
+    pub fn set_grid_capabilities(&mut self, on: Vec<String>) {
+        self.grid_capabilities = Some(on);
+        self.install_travel();
+    }
+
     /// The grids' travel rules for the predictor and the view, from the world's seed, size and
-    /// settings (`TravelMap::new`, as the server builds its own), when the server has `grid.frames`.
+    /// settings (`TravelMap::new`, as the server builds its own), when the server has `grid.frames`;
+    /// only the grids this session's capabilities open (`TravelMap::open_to`).
     fn install_travel(&mut self) {
         if !self.grid_frames {
             return;
@@ -3170,6 +3202,11 @@ impl<S: Scene> Game<S> {
                 self.world_bounds.radius() as f64,
                 dwell_look::celestial::Celestial::new(self.world_day, None),
             )
+            .open_to(|c| {
+                self.grid_capabilities
+                    .as_ref()
+                    .is_none_or(|on| on.iter().any(|n| n == c))
+            })
         };
         self.predictor.set_travel(Box::new(map()));
         self.travel = Some(map());
@@ -3232,6 +3269,16 @@ impl<S: Scene> Game<S> {
         }
         self.prediction = EditPredictor::new();
         self.grid_drawn = to;
+        // The new grid's chunks that came before the crossing; any other grid's are stale.
+        let mut held: Vec<_> = std::mem::take(&mut self.other_grid_chunks)
+            .into_iter()
+            .filter(|((g, _), _)| *g == to)
+            .map(|(_, d)| d)
+            .collect();
+        held.sort_by_key(|d| d.coord);
+        for d in held {
+            self.streamer.on_chunk_data(ChunkMessage::from(d));
+        }
         telemetry::sample("grid.crossings", 1.0);
         Some((from, to))
     }
@@ -4994,6 +5041,10 @@ impl<S: Scene> Game<S> {
 
     /// Uses the world's sky (its settings, DAY_NIGHT.md §2: its clock, its moon's phase and its
     /// orbit, REALISTIC_WORLD.md §8).
+    /// A retuned world's maps for the generation workers (Chisel in the game, Phase 56 B7).
+    pub fn install_maps(&mut self, maps: &[Vec<u8>]) {
+        self.pool.borrow_mut().install_maps(maps);
+    }
     pub fn set_world_settings(&mut self, s: &dwell_protocol::world_settings::WorldSettings) {
         self.world_day = dwell_look::orbits::day_night_for(s);
         self.install_travel();

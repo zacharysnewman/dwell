@@ -207,6 +207,17 @@ impl LodPropagation {
         }
     }
 
+    /// Replaces the generator of the sections' generated bases (a world retuned in the game, Phase
+    /// 56 B7): the kept bases and generated sections dropped. Worker threads (a dedicated server's)
+    /// keep the generator they were made with; local worlds run none.
+    pub fn set_generator(&mut self, generator: LodGenerator) {
+        self.generator = generator;
+        self.bases.clear();
+        self.bases_order.clear();
+        self.generated.clear();
+        self.generated_order.clear();
+    }
+
     /// Propagation over a world of these bounds (its size's disc and volume, BIG_MAP.md M2).
     pub fn with_world(mut self, world: dwell_world::WorldBounds) -> Self {
         self.world = world;

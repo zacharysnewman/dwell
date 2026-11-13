@@ -202,14 +202,12 @@ kbd.phrase {
   color: var(--danger);
 }
 
-.menu-link {
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--ink);
-  font: inherit;
-  text-decoration: underline;
-  text-underline-offset: 2px;
+/* A quiet button that is a link to another page: the button's box, never an underlined link. */
+a.quiet-button,
+a.menu-button-small {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
 }
 
 /* ---------- Main menu (ui/mainMenu.ts) ---------- */
@@ -631,7 +629,11 @@ kbd.phrase {
   outline: none;
 }
 
-.mm-back {
+/* A page head's buttons: Back, and an action beside it (Versions' All versions), alike. */
+.mm-back,
+.mm-head-button {
+  display: inline-flex;
+  align-items: center;
   min-height: 44px;
   padding: 0 14px 0 10px;
   border: 1px solid var(--line);
@@ -640,6 +642,23 @@ kbd.phrase {
   color: var(--ink);
   font: 700 16px var(--font-body);
   cursor: pointer;
+}
+
+.mm-head-button {
+  padding: 0 14px;
+  text-decoration: none;
+}
+
+.mm-back:hover,
+.mm-head-button:hover {
+  border-color: rgb(31 43 56 / 30%);
+  background: #fff;
+}
+
+.mm-back:active,
+.mm-head-button:active {
+  transform: translateY(1px);
+  background: rgb(31 43 56 / 7%);
 }
 
 .mm-back::before {
@@ -851,18 +870,6 @@ kbd.phrase {
   line-height: 1.5;
 }
 
-.mm-versions #versions-link {
-  display: inline-flex;
-  align-items: center;
-  min-height: 44px;
-  padding: 0 14px;
-  border-radius: 10px;
-  background: rgb(255 255 255 / 75%);
-  color: var(--ink);
-  font: 700 16px var(--font-body);
-  text-decoration: none;
-}
-
 /* The version line at the foot of the home. */
 #about {
   margin-top: 4px;
@@ -881,9 +888,8 @@ kbd.phrase {
   margin-top: 8px;
 }
 
-#about a,
-#about .menu-link {
-  color: var(--ink);
+#about .menu-button-small {
+  min-height: 36px;
 }
 
 /* A phone: the home sits at the foot, the panorama above it; a page takes the screen. */
@@ -922,7 +928,7 @@ kbd.phrase {
 
   .mm-page-head .block-button,
   .mm-page-head .quiet-button,
-  .mm-versions #versions-link {
+  .mm-head-button {
     padding: 0 12px;
   }
 }
@@ -1282,6 +1288,15 @@ body:has(#main-menu) .game-menu {
   color: var(--ink);
   font: 800 20px/1 var(--font-body);
   cursor: pointer;
+}
+
+.world-more:hover {
+  border-color: rgb(31 43 56 / 30%);
+  background: #fff;
+}
+
+.world-more:active {
+  transform: translateY(1px);
 }
 
 .world-more[aria-expanded='true'] {
