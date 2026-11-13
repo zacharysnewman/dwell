@@ -1,6 +1,6 @@
 # Blueprints and builder NPCs
 
-**[built: B1–B3 0.60.x; B4 towns 0.62.0 (branch `claude/blueprints-towns`)]** WORK_QUEUE item 56. Owner, 2026-11-13: **"I also want to add a new version of the human
+**[built: B1–B3 0.60.x; B4 towns 0.61.0 (branch `claude/blueprints-towns`)]** WORK_QUEUE item 56. Owner, 2026-11-13: **"I also want to add a new version of the human
 NPC, same looks, no sword capable of building blueprints like the ones you can save right now. In adventure
 you can place "blueprints" but not as actual blocks as an entity that shows ghost blocks. When you hold
 build, it auto places only within the correct placement, only the correct blocks where you're aiming like
@@ -72,7 +72,7 @@ in before walls and supports before spans. A cell a player filled with something
 one already holding its block counts as built. The server places its piece as the growers do (an edit
 broadcast to everyone, saved with the world).
 
-## 6. Towns (B4) **[built, 0.62]**
+## 6. Towns (B4) **[built, 0.61]**
 
 The data (`blueprints.json` `towns`):
 
@@ -96,8 +96,8 @@ until then it waits): the blueprints are placed as any blueprint (§2, saved, sy
 the world's `blueprints` record (format 2: the founded sites after the blueprints; format 1, B1–B3's, still read),
 so it is never founded again, built or not. Builders (§5) then come and build them while players are near.
 
-**Compatibility**: the 0.62 line (RELEASES.md "Who raises the line"; the owner asked for a line with towns).
-Seeds' terrain is unchanged (blueprints are entities, the blocks edits), but a world opened in 0.62 gets towns
+**Compatibility**: the 0.61 line (RELEASES.md "Who raises the line"; the owner asked for a line with towns).
+Seeds' terrain is unchanged (blueprints are entities, the blocks edits), but a world opened in 0.61 gets towns
 an older build wouldn't found or save.
 
 **Cost** (release, seed 0): the sites within 3 km of the spawn, 16 on face A and 10 on face B, in 30–130 ms the

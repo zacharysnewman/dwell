@@ -648,7 +648,7 @@ one piece every `player.paceMs` (one-cell region fills), and a compact panel sho
 Builder NPCs (`dwell:builder`, the villager without a sword) build them on the server with unlimited
 blocks, foundation up. The rules are data (`shared/blueprints/blueprints.json` → `shared/blueprints/gen.mjs`
 → `dwell-world`'s `blueprints.gen.rs`); the geometry is `dwell_world::blueprint`; the world's list is
-saved in its optional `blueprints` table and synced behind `blueprints.world`. **[built, 0.62] Towns** (B4): town sites per face from the world seed (`blueprints.json` `towns`; `dwell_world::blueprint::TownRules`, the ground from `dwell_worldgen::town_ground_for_sized`), each a plan of blueprints the server places once a player comes near, recorded in the `blueprints` table so it is founded once. **[built, 0.52.3]** A save (every 10 s while cells
+saved in its optional `blueprints` table and synced behind `blueprints.world`. **[built, 0.61] Towns** (B4): town sites per face from the world seed (`blueprints.json` `towns`; `dwell_world::blueprint::TownRules`, the ground from `dwell_worldgen::town_ground_for_sized`), each a plan of blueprints the server places once a player comes near, recorded in the `blueprints` table so it is founded once. **[built, 0.52.3]** A save (every 10 s while cells
 change) hands the store only the cells changed since the last one (`ExploredChanges`,
 `client/src/ui/exploredStore.ts`), and the store merges them into the record in its own worker
 (`exploredWorker.ts`; on the page only when the page is closing or has no workers): the merge reads

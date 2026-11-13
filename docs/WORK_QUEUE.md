@@ -2498,7 +2498,7 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    completed blueprint disappears (the blocks are the record). Builders (`dwell:builder`) come to a blueprint with a
    player near and build it foundation up, unlimited blocks, from outside its box, skipping occupied cells. Left:
    B4 (towns at worldgen sites, a new compatibility line), a placing preview ghost; BLUEPRINTS.md §7.
-   **B4 built (2026-11-13, cloud, branch `claude/blueprints-towns`, the 0.62 line):** town sites per face from the
+   **B4 built (2026-11-13, cloud, branch `claude/blueprints-towns`, the 0.61 line):** town sites per face from the
    seed (a 1200 m grid, dry land in a height band, gentle slope, clear of shrines and portals; `blueprints.json`
    `towns`), each a plan of blueprints (the hamlet: a well, two huts, a watchtower, a wall) founded once a player is
    within 128 m and its ground is loaded, saved so it is founded once; builders then build it. BLUEPRINTS.md §6.
