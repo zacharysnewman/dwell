@@ -2259,6 +2259,15 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    radius, and marks; by facet, every level; `node --test shared/models/decor.test.mjs`), not yet applied to the
    Peasant. **Left:** eyes as geometry; the hat band and a waist band wired into models.json `decor` once the eyes
    land, with renders for the owner.
+   **The waist ring** (owner, 2026-11-13): **"There's a ring that goes around the waist with alternating triangles
+   that already looked pretty good they were just inconsistently colored."**
+   **Built (branch `claude/outfit-2`, 2026-11-13):** the eyes as geometry (decor `piece`: a dark quad and a glint a
+   side on the head joint, added to every detail level, the part map listing them with no part); the hat's crown
+   band (the hat part inside r 0.19 m, never the brim; bark and wool_red strictly alternating); the waist ring (the
+   outermost facets at the belt's height, no spikes, leather and wool_green strictly alternating: the triangles
+   the paint vote coloured wood, canvas, brass and leaf). CHARACTERS.md §11.14. Renders before/after at 60 % and
+   100 % went to the owner. **Left:** the owner's look at the colours (data in models.json `decor`); at 35 % and
+   20 % the waist is long triangles, so the ring is a few facets or none.
 
 44. **Trees on slopes hang over the edge** (owner 2026-11-12: **"I notice a lot of trees on slopes are hanging out over
    the edge. Perhaps trees should always have flats under them? Don't limit trees to flats, since they might not

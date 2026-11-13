@@ -1026,3 +1026,24 @@ they kneel without one, the hand on the knee.
   fades back in; then first person again. The HUD says "Defeated — you will rise at the nearest
   shrine…". The old lying body (`place_frame`'s `dead`) is gone.
 - **Not yet**: the stand's facing at the shrine is the look's (SHRINES.md §9); a sheathe on the back.
+
+### 11.14 Decor: the eyes, the hat's band, the waist ring (WORK_QUEUE item 43, 2026-11-13)
+
+A model's `decor` (models.json, `shared/models/decor.mjs`) is applied by the importer's `--coat` step after
+`repaint`, to every detail level; `gen.mjs` fails when the checked-in GLB isn't as `--coat` leaves it.
+
+- **Pieces** (`kind: "piece"`): small flat quads **added as geometry**, for features smaller than a face of
+  the mesh (the Peasant's face is ~10 triangles at 60 %, so painted eyes are lost). Each is laid on each
+  level's own surface where a ray along `facing` hits it, `lift` off it, skinned wholly to `joint`. The
+  added vertices follow the mesh's own; the primitive's `extras.decor` counts them so a second run replaces
+  them, and the part map lists them with no part. The Peasant's eyes: a dark quad and a pale glint a side
+  on `spine.006` (16 vertices a level). First person hides them with the head.
+- **Bands**: a ring of alternating colours round the vertical axis, by height and radius (and a part). By
+  `segments` (equal sectors) or `order: true` (the facets sorted round the ring take the colours in turn:
+  strict alternation on irregular triangles); `span` drops tall facets (no spikes), `outer` keeps only the
+  outermost. The Peasant's hat band: the hat part inside r 0.19 m (the crown; the brim is beyond), y
+  1.555–1.635, bark and wool_red in order. The waist ring: the outermost facets at the belt's height, no taller
+  than 0.12 m, leather and wool_green in order (60 % and 100 % show a ring; at 35 % and 20 % the waist is long
+  triangles and only a few short facets, or none, are painted).
+- A villager's colours recolour by part (§11.11), so on a recoloured villager the hat band reads as light and
+  dark of the hat's colour.
