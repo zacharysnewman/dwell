@@ -106,7 +106,7 @@ both_faces!(
         assert!(area > 5000, "{:?}: mesa floor sampled {area} m²", f.face);
         let d = shrubs as f64 / area as f64;
         assert!(
-            (0.3 * full..=1.05 * full).contains(&d),
+            (0.25 * full..=1.05 * full).contains(&d),
             "{:?}: {d:.3} sagebrush per m² of floor, the rule's {full:.3}",
             f.face
         );

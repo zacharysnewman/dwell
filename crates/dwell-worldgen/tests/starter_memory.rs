@@ -126,7 +126,7 @@ fn fnv(h: &mut u64, bytes: &[u8]) {
 /// relief (`mesaRelief`), mesa country's blended red dirt, red sand and tan (`blends`), the red rock
 /// mesa's red dirt bands and its sagebrush, and the boulders on red ground.
 const STARTER_PIN: [(Face, &str); 2] =
-    [(Face::A, "bf64104dba77cf86"), (Face::B, "cb8c22ceed97f947")];
+    [(Face::A, "6f73f8b3cbaec507"), (Face::B, "aa1c445c34fefd3a")];
 
 #[test]
 fn the_starter_worlds_terrain_is_unchanged() {

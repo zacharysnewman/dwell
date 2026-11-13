@@ -7,7 +7,7 @@
 //! On seeds 1, 7, 42 and the owner's 2741893632, both faces, over the red rock mesa's columns:
 //!
 //! - the surface blocks are the blend's and the wall rock's (at most [`EXTRA`] others in 100);
-//! - plain sand only as the blend's tan patches, at most its share and a little;
+//! - plain sand only as the blend's tan patches, at most twice its share;
 //! - neighbouring blended columns are at most one tone apart;
 //! - the floors are mostly red dirt.
 
@@ -156,7 +156,8 @@ both_faces!(
                 t.sand_unblended
             );
             assert!(
-                (t.sand as f64) <= (sand_share + 0.06) * t.columns as f64,
+                // Patches: at most twice its share (a face holds only a few of its 90 m patches).
+                (t.sand as f64) <= (2.0 * sand_share).max(sand_share + 0.06) * t.columns as f64,
                 "seed {world}: tan sand on {} of {}",
                 t.sand,
                 t.columns

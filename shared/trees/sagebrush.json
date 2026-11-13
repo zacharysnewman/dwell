@@ -9,7 +9,7 @@
   "trunk": {
     "height": {
       "sapling": 0.5,
-      "mature": [0.5, 1]
+      "mature": [1, 1.5]
     },
     "heightStep": 0.5,
     "width": {
@@ -23,14 +23,14 @@
   },
   "crown": {
     "shape": "lumpy",
-    "centre": 0.25,
-    "radius": [0.75, 0.5, 0.75],
+    "centre": 0,
+    "radius": [1.1, 0.6, 1.1],
     "lumps": {
       "radius": [0.4, 0.6],
       "height": [0.3, 0.5]
     },
     "roughness": 0.3,
-    "scale": [0.5, 1]
+    "scale": [0.25, 1]
   },
   "variety": {
     "crown": [0.8, 1.2],
