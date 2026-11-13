@@ -1,0 +1,5 @@
+{
+  "changes": [
+    "Forests draw fewer hidden leaves: past the far trees' hand-over, the ground no longer sends the GPU tree leaves that were already faded out."
+  ]
+}

@@ -778,6 +778,20 @@ impl GpuMesh {
         Self::textured_as(arena, m, Kind::Terrain)
     }
 
+    /// The index range a chunk's `part` draws: a cutout's plants alone its second range (all of
+    /// it when it has none), else the whole mesh.
+    fn part(&self, part: Part) -> std::ops::Range<u32> {
+        match part {
+            Part::Plants => self.parts.get(1).unwrap_or(&self.parts[0]).clone(),
+            _ => self.parts[0].clone(),
+        }
+    }
+
+    /// The indices `part` draws.
+    fn drawn(&self, part: Part) -> u32 {
+        self.part(part).len() as u32
+    }
+
     /// A chunk's cutout mesh: the terrain format and its `plants` stream.
     fn cutout(arena: &ArenaRef, m: &MeshArrays) -> Option<Self> {
         Self::textured_as(arena, m, Kind::Cutout)
@@ -941,6 +955,8 @@ enum Part {
     Opaque,
     Water,
     Cutout,
+    /// The cutout mesh's plants alone, not its trees' leaves (`impostors::CutoutDraw::Plants`).
+    Plants,
 }
 
 /// A falling piece's meshes (docs/FELLING.md §3): blocks of its cells, opaque and cutout, their
@@ -1036,12 +1052,18 @@ impl TerrainRenderer for RasterTerrain {
         let mut writes = Vec::new();
         let stage = (m.opaque.byte_len() + m.transparent.byte_len() + m.cutout.byte_len()) as u64
             > self.stage_budget;
+        // Its parts: [0] all, [1] the plants before the trees' leaves (`Part::Plants`).
         let cutout = GpuMesh::textured_staged(
             &self.arena,
             &m.cutout,
             Kind::Cutout,
             stage.then_some(&mut writes),
-        );
+        )
+        .map(|mut g| {
+            g.parts
+                .push(0..dwell_mesh::tree_leaves_from(&m.cutout) as u32);
+            g
+        });
         let opaque = GpuMesh::textured_staged(
             &self.arena,
             &m.opaque,
@@ -3769,7 +3791,7 @@ impl Renderer {
             DrawMesh::Piece(id, k, part) => {
                 let (opaque, cutout) = &self.terrain.pieces[id].parts[*k];
                 let m = match part {
-                    Part::Cutout => cutout.as_ref(),
+                    Part::Cutout | Part::Plants => cutout.as_ref(),
                     _ => opaque.as_ref(),
                 }
                 .expect("collected");
@@ -3780,10 +3802,10 @@ impl Renderer {
                 let m = match part {
                     Part::Opaque => chunk.opaque.as_ref(),
                     Part::Water => chunk.water.as_ref(),
-                    Part::Cutout => chunk.cutout.as_ref(),
+                    Part::Cutout | Part::Plants => chunk.cutout.as_ref(),
                 }
                 .expect("collected");
-                (m, vec![m.parts[0].clone()])
+                (m, vec![m.part(*part)])
             }
             DrawMesh::Section(id, w, mask) => {
                 let s = &self.terrain.sections[id];
@@ -3842,8 +3864,9 @@ impl Renderer {
             u8::from(view.holds_box(origin, size, passes[0].0, passes[0].1))
                 | u8::from(view.holds_box(origin, size, passes[1].0, passes[1].1)) << 1
         };
-        // Past the far trees' hand-over and the plants' fades a chunk's cutout draws nothing.
-        let cutout_reach = impostors::cutout_reach(self.far_drawn());
+        // Past the far trees' hand-over a chunk's cutout draws its plants alone, past the
+        // plants' fades nothing (`impostors::cutout_draw`).
+        let far = self.far_drawn().filter(|f| f.impostor);
         for (&coord, c) in &self.terrain.chunks {
             let fade = chunk_fade(coord).filter(|f| !f.is_hidden());
             let passes = if fade.is_some() {
@@ -3874,8 +3897,8 @@ impl Renderer {
                     mesh: DrawMesh::Chunk(coord, Part::Opaque),
                 });
             }
-            let cutout_near = cutout_reach.is_none_or(|reach| {
-                let r = self.rel(c.origin);
+            // The chunk's nearest point from the eye, for the far trees' hand-over.
+            let cutout_part = if far.is_some() {
                 let d2: f64 = (0..3)
                     .map(|k| {
                         let lo = f64::from(r[k]);
@@ -3883,9 +3906,20 @@ impl Renderer {
                         d * d
                     })
                     .sum();
-                d2 <= f64::from(reach) * f64::from(reach)
-            });
-            if c.cutout.is_some() && self.cutout_shown && cutout_near {
+                match impostors::cutout_draw(far, d2.sqrt() as f32) {
+                    impostors::CutoutDraw::All => Some(Part::Cutout),
+                    impostors::CutoutDraw::Plants => Some(Part::Plants),
+                    impostors::CutoutDraw::Nothing => None,
+                }
+            } else {
+                Some(Part::Cutout)
+            };
+            if let Some(part) = cutout_part
+                && c.cutout
+                    .as_ref()
+                    .is_some_and(|m| part == Part::Cutout || m.drawn(part) > 0)
+                && self.cutout_shown
+            {
                 out.push(DrawItem {
                     kind: Kind::Cutout,
                     water: false,
@@ -3899,7 +3933,7 @@ impl Renderer {
                     page: 0,
                     passes,
                     key: 0,
-                    mesh: DrawMesh::Chunk(coord, Part::Cutout),
+                    mesh: DrawMesh::Chunk(coord, part),
                 });
             }
             if c.water.is_some() {
