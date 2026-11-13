@@ -247,8 +247,14 @@ both_faces!(
             ..FIXTURE
         };
         let mut field = river(&rules);
-        let events = far(&mut field, 1800.0);
-        assert!(field.tiles().len() <= 16, "{} tiles", field.tiles().len());
+        let mut events = Vec::new();
+        // Every tile it held during the run (a tile all rock is dropped, freeing the cap).
+        let mut held = std::collections::BTreeSet::new();
+        for _ in 0..60 {
+            events.extend(far(&mut field, 30.0));
+            assert!(field.tiles().len() <= 16, "{} tiles", field.tiles().len());
+            held.extend(field.tiles().iter().copied());
+        }
         assert!(field.refused > 0, "the cap refused tiles");
         // Its lava stays within the tiles it has: walls at their edges.
         let edge = field
@@ -258,9 +264,10 @@ both_faces!(
             .max()
             .unwrap();
         assert!(reach(&field) < edge);
+        let t = TILE as i32;
         assert!(events.iter().all(|e| match e {
             LavaEvent::Rock { x, z, .. } | LavaEvent::Melt { x, z, .. } =>
-                field.slot_any(*x, *z).is_some() || *x < edge,
+                held.contains(&[x.div_euclid(t), z.div_euclid(t)]),
             LavaEvent::Steam { .. } => true,
         }));
         assert_eq!(field.check_links(), Ok(()));

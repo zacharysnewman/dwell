@@ -149,31 +149,70 @@ dwell_world::both_faces!(
     }
 );
 
-dwell_world::both_faces!(
-    fn cooled_lava_is_basalt_in_the_chunks(f: FaceFrame) {
-        let basalt = require("dwell:basalt");
-        let mut fx = scene(f, "creative", false, None);
-        let river = VentSpot {
-            fluid: "dwell:lava".into(),
-            kind: VentKind::River,
-            rate_m3s: 0.4,
-            depth_m: 0.0,
-            radius: 8,
-        };
-        fx.server
-            .place_lava_vent(f, [0, 0], BASE, &river)
-            .expect("a vent on the stone");
-        step(&mut fx, 90 * SECOND);
-        let all = fx.take_all();
-        let mut rock = 0;
-        for x in -8..=8 {
-            for z in -8..=8 {
-                if at(&mut fx, f, [x, BASE, z]) == f.state(basalt) {
-                    rock += 1;
-                }
+/// The trench: columns x 0..=11, z −1..=1, dug `TRENCH_ROWS` rows (1 m) into the stone.
+const TRENCH_ROWS: i32 = 2;
+
+/// A trench scene with a river vent at its x = 0 end, poured for `secs`, then turned off (rate 0:
+/// the vent stays a source, `sourceKeepM`).
+fn trench(f: FaceFrame, secs: u32) -> Fixture {
+    let mut fx = scene(f, "creative", false, None);
+    for x in 0..=11 {
+        for z in -1..=1 {
+            for r in BASE - TRENCH_ROWS..BASE {
+                let [x, y, z] = f.cell([x, r, z]);
+                fx.server.world().set_voxel(x, y, z, 0);
             }
         }
-        assert!(rock > 0, "basalt on the stone where the flow cooled");
+    }
+    let river = VentSpot {
+        fluid: "dwell:lava".into(),
+        kind: VentKind::River,
+        rate_m3s: 0.5,
+        depth_m: 0.0,
+        radius: 8,
+    };
+    fx.server
+        .place_lava_vent(f, [0, 0], BASE - TRENCH_ROWS, &river)
+        .expect("a vent in the trench");
+    step(&mut fx, secs * SECOND);
+    fx.server.scale_lava_rate(0.0);
+    fx
+}
+
+dwell_world::both_faces!(
+    fn lava_that_stops_is_basalt_in_the_chunks_and_by_its_source_stays_lava(f: FaceFrame) {
+        // Owner, 2026-11-13: lava hardens when it stops moving, not by expiring; lava near a
+        // source block stays molten. The trench's still lava past `sourceKeepM` is basalt where
+        // the lava was; by the vent it is still lava.
+        let basalt = require("dwell:basalt");
+        let lava = require("dwell:lava");
+        let fl = dwell_lava::DATA.fluid("dwell:lava").unwrap();
+        let mut fx = trench(f, 20);
+        fx.take_all();
+        let row = BASE - TRENCH_ROWS;
+        let is = |fx: &mut Fixture, x: i32, b| {
+            let m = at(fx, f, [x, row, 0]);
+            m != 0 && dwell_blocks::info(f.state(m)).block == dwell_blocks::info(b).block
+        };
+        let keep = fl.source_keep_m as i32;
+        // Viscous lava levels along the trench for a few minutes (flowing: molten), then rests
+        // and hardens `restSeconds` later.
+        let mut all = std::collections::BTreeMap::new();
+        let mut rock = 0;
+        for _ in 0..300 {
+            step(&mut fx, SECOND);
+            for (k, v) in fx.take_all() {
+                all.entry(k).or_insert_with(Vec::new).extend(v);
+            }
+            rock = (keep + 1..=11).filter(|&x| is(&mut fx, x, basalt)).count();
+            if rock >= 2 {
+                break;
+            }
+        }
+        assert!(rock >= 2, "basalt where the lava stopped: {rock} columns");
+        for x in 0..=keep {
+            assert!(is(&mut fx, x, lava), "lava by the source at x {x}");
+        }
         assert!(
             sent(&all, 1).contains(&f.state(basalt)),
             "and sent to the client"
@@ -182,33 +221,34 @@ dwell_world::both_faces!(
 );
 
 dwell_world::both_faces!(
-    fn lava_cells_show_their_columns_heat_stop_hot_at_the_vent_cooler_at_the_front(f: FaceFrame) {
+    fn lava_cells_show_their_columns_heat_stop_hot_by_the_source_darker_as_it_rests(f: FaceFrame) {
         // Owner, 2026-11-11: "It should darken as it solidifies." Each column's cells are the
-        // `heat` state of its stop (VOLCANOES.md §6.5), rewritten as it cools past one.
+        // `heat` state of its stop (VOLCANOES.md §6.5), rewritten as it rests toward hardening.
         let stops = dwell_sim::lava::heat_states("dwell:lava");
         assert_eq!(stops.len(), dwell_lava::DATA.heat.len());
         assert!(stops.windows(2).all(|w| w[0] != w[1]), "one state per stop");
-        let mut fx = scene(f, "creative", false, None);
-        let river = VentSpot {
-            fluid: "dwell:lava".into(),
-            kind: VentKind::River,
-            rate_m3s: 0.4,
-            depth_m: 0.0,
-            radius: 8,
-        };
-        fx.server
-            .place_lava_vent(f, [0, 0], BASE, &river)
-            .expect("a vent on the stone");
-        step(&mut fx, 60 * SECOND);
-        // The vent all but stops: the flow it fed slows and cools in place, darkening by stop.
-        fx.server.scale_lava_rate(0.01);
-        step(&mut fx, 30 * SECOND);
-        let all = fx.take_all();
+        let mut fx = trench(f, 20);
+        fx.take_all();
+        // Until the still lava past the source's reach has darkened (rested), not yet hardened.
+        let mut all = std::collections::BTreeMap::new();
+        for _ in 0..300 {
+            step(&mut fx, SECOND);
+            for (k, v) in fx.take_all() {
+                all.entry(k).or_insert_with(Vec::new).extend(v);
+            }
+            let field = &fx.server.lava().fields[0].field;
+            if field
+                .columns()
+                .any(|i| field.depth[i] > 0.25 && field.heat[i] < 0.5)
+            {
+                break;
+            }
+        }
         let mut seen = vec![0; stops.len()];
         let field = fx.server.lava().fields[0].field.clone();
-        for x in -8..=8 {
+        for x in -8..=12 {
             for z in -8..=8 {
-                for r in BASE..BASE + 4 {
+                for r in BASE - TRENCH_ROWS..BASE + 4 {
                     let m = at(&mut fx, f, [x, r, z]);
                     if let Some(k) = stops.iter().position(|&s| f.state(s) == m) {
                         seen[k] += 1;
@@ -234,13 +274,13 @@ dwell_world::both_faces!(
         assert!(seen[0] > 0, "hot lava by the vent: {seen:?}");
         assert!(
             seen[1..].iter().sum::<i32>() > 0,
-            "cooler lava toward the front: {seen:?}"
+            "darker lava where it rests: {seen:?}"
         );
         assert!(
             stops[1..]
                 .iter()
                 .any(|&s| sent(&all, 1).contains(&f.state(s))),
-            "the client was sent a cooler stop"
+            "the client was sent a darker stop"
         );
     }
 );

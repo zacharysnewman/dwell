@@ -29,7 +29,7 @@ export const FLUID_RANGES = {
   viscosityM2s: [0.01, 1000, false],
   yieldDepthM: [0, 2, false],
   restSeconds: [0.1, 86400, false],
-  stillM3s: [0, 10, false],
+  stillMs: [0, 10, false],
   sourceKeepM: [0, 64, false],
   breakoutDepthM: [0, 100, false],
   light: [0, 15, true],

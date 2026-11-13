@@ -23,9 +23,10 @@ pub struct HotFluid {
     /// A column at rest this long (s) hardens into `rock` (owner, 2026-11-13: lava solidifies when
     /// it stops moving, not while flowing); its heat runs from 1 to 0 over the rest.
     pub rest_seconds: f32,
-    /// A column whose throughflow (m³/s through its four faces) is at most this is at rest; any
-    /// more and it is flowing, its rest clock back to the start.
-    pub still_m3s: f32,
+    /// A column whose lava moves at most this fast (m/s: its throughflow, m³/s through its four
+    /// faces, over twice its depth) is at rest; any faster and it is flowing, its rest clock back
+    /// to the start.
+    pub still_ms: f32,
     /// Lava joined to a vent (a source) through at most this many metres of lava columns never
     /// hardens by rest (water still quenches it).
     pub source_keep_m: f32,

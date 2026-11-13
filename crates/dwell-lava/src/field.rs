@@ -10,7 +10,7 @@
 //!
 //! **Hardening by rule** (owner, 2026-11-13: lava solidifies "when it stops moving, touches water,
 //! or is a source block, not while flowing"; sources stay molten). A column's heat is its rest
-//! clock: 1 while its lava flows (more than `stillM3s` through its faces), falling at
+//! clock: 1 while its lava flows (faster than `stillMs`: its throughflow over twice its depth), falling at
 //! `1 / restSeconds` a second while it is still, and at 0 the column turns to the fluid's rock: its
 //! lava is added to its bed and the cells it filled become the rock block, so the lava's volume
 //! stays as land where it stopped. Flowing lava never hardens. A source never hardens by rest: a
@@ -210,7 +210,7 @@ pub struct Field {
     qx: Vec<f32>,
     qz: Vec<f32>,
     scale: Vec<f32>,
-    /// Each visited column's throughflow this substep (m³/s): flowing above `stillM3s`.
+    /// Each visited column's lava speed this substep (m/s): flowing above `stillMs`.
     through: Vec<f32>,
     /// This step's lake columns (held molten by their vent).
     held: Vec<bool>,
@@ -871,7 +871,8 @@ impl Field {
                 };
             }
         }
-        // Each column's throughflow (m³/s through its faces): whether it is flowing.
+        // Each column's throughflow (m³/s through its faces), over twice its depth once moved: its
+        // speed, whether it is flowing.
         for &i in &visit {
             let mut through = self.qx[i].abs() + self.qz[i].abs();
             if let Some(w) = self.link(i, 1) {
@@ -904,6 +905,9 @@ impl Field {
                 self.crust[i] += d.max(0.0);
                 self.depth[i] = 0.0;
                 self.heat[i] = 0.0;
+                self.through[i] = 0.0;
+            } else {
+                self.through[i] /= 2.0 * d;
             }
             self.qx[i] = 0.0;
             self.qz[i] = 0.0;
@@ -932,7 +936,7 @@ impl Field {
                 continue;
             }
             // A source's lava, and flowing lava, stay molten: the rest clock starts over.
-            if self.held[i] || self.through[i] > fl.still_m3s {
+            if self.held[i] || self.through[i] > fl.still_ms {
                 self.heat[i] = 1.0;
                 continue;
             }

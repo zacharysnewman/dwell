@@ -213,7 +213,7 @@ both_faces!(
                 if let LavaEvent::Rock { x, z, rows, rock } = e {
                     assert_eq!(rock, "dwell:basalt");
                     // The rock fills the cells its lava filled the step before (give or take the
-                    // top row: a column still creeping below `stillM3s` can cross one in the step).
+                    // top row: a column still creeping below `stillMs` can cross one in the step).
                     let was = &before[&[x, z]];
                     assert_eq!(rows.start, was.start, "column ({x}, {z})");
                     assert!(
