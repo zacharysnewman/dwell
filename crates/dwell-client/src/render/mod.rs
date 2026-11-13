@@ -3334,13 +3334,7 @@ impl Renderer {
             return None;
         }
         if self.impostors.is_none() {
-            let tier = if is_cpu(self.adapter) {
-                dwell_worldgen::impostor::Tier::Cpu
-            } else if self.phone {
-                dwell_worldgen::impostor::Tier::Phone
-            } else {
-                dwell_worldgen::impostor::Tier::Desktop
-            };
+            let tier = impostors::tier_for(is_cpu(self.adapter), self.phone);
             self.impostors = Some(impostors::Impostors::new(
                 &self.device,
                 &self.impostor_parts.0,
@@ -6624,6 +6618,9 @@ impl crate::game::Scene for Renderer {
     fn collision_cells_per_tick(&self) -> usize {
         streaming::StreamingBudgets::get().collision_cells(self.phone)
     }
+    fn collision_ahead(&self) -> dwell_physics::terrain::CollisionAhead {
+        streaming::StreamingBudgets::get().collision_ahead(self.phone)
+    }
     fn draws_heightfield(&self) -> bool {
         heightfield_drawn(self.water().tier().heightfield, self.heightfield_override)
     }
@@ -7326,6 +7323,8 @@ mod tests {
             species: 0,
             seed: 1,
             stage: 7,
+            stem: [0, 100, 0],
+            stem_cells: 4,
         };
         let local = r.face.point(r.eye);
         for (i, k) in impostors::tiles_within([local[0], local[2]], impostors::ready_radius(&far)) {

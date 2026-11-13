@@ -228,3 +228,54 @@ fn spots() {
         println!("surface at ({x}, {z}): {:?}", g.surface_y_at(x, z));
     }
 }
+
+dwell_world::both_faces!(
+    /// Felled trees leave the far tree lists' impostors (WORK_QUEUE item 31): every listed tree's
+    /// stem (its bottom cell and the cells straight up from it) is solid where the generator puts
+    /// the tree, so a client holding the chunks sees it standing; air in any stem cell (a cut, the
+    /// trunk above taken away as a piece) is a felled tree, and cells the client doesn't hold
+    /// leave it standing.
+    fn a_far_trees_stem_is_its_trunk_and_air_in_it_fells_it(f: FaceFrame) {
+        use dwell_worldgen::impostor::standing;
+        use std::collections::HashMap;
+        let e = edit();
+        let g = generator(&e, f, SEED);
+        let trees = g.far_trees((STAND.0 - 16, STAND.1 - 16), (STAND.0 + 15, STAND.1 + 15));
+        assert!(trees.len() > 5, "{} trees", trees.len());
+        let s = CHUNK_SIZE;
+        let got: std::cell::RefCell<HashMap<ChunkCoord, Chunk>> = Default::default();
+        let at = |[x, y, z]: [i32; 3]| {
+            let c = chunk_of(x, y, z);
+            got.borrow_mut()
+                .entry(c)
+                .or_insert_with(|| {
+                    let mut chunk = Chunk::default();
+                    g.generate(c, &mut chunk);
+                    chunk
+                })
+                .get(x - c.x * s, y - c.y * s, z - c.z * s)
+        };
+        let air = M.air;
+        for t in &trees {
+            assert!(t.stem_cells >= 2, "{t:?}: a stem of {} cells", t.stem_cells);
+            let column = (0..i32::from(t.stem_cells))
+                .map(|h| at([t.stem[0], t.stem[1] + h, t.stem[2]]))
+                .collect::<Vec<_>>();
+            assert!(column.iter().all(|&m| m != air), "{t:?}: {column:?}");
+            assert!(
+                standing(t, |c| Some(at(c))),
+                "{t:?} stands in the generated world"
+            );
+            // A cut a metre up: the stem above it air.
+            let cut = [t.stem[0], t.stem[1] + 2, t.stem[2]];
+            assert!(!standing(t, |c| {
+                if c[1] >= cut[1] && c[0] == cut[0] && c[2] == cut[2] {
+                    Some(air)
+                } else {
+                    Some(at(c))
+                }
+            }));
+            assert!(standing(t, |_| None), "unheld cells: the generator's tree");
+        }
+    }
+);

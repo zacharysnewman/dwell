@@ -468,7 +468,8 @@ pub fn own_body_mesh(
 
 /// Your own body's joints in first person (each skin joint's matrix to eye-relative world space)
 /// and how far back it was moved: the model posed by the rig's pose (as your shadow), its place
-/// (`place_frame`) moved back along its own −z by `own::shift_points` over its kept vertices
+/// (`place_frame`) leaned back from its soles (the soles where they stand) by `own::keep_clear`
+/// over its kept vertices
 /// `verts` at `level`, in the body's frame (so the same on both faces). None: no retarget map or
 /// no rig pose.
 pub fn own_joints(
@@ -499,8 +500,8 @@ pub fn own_joints(
     let d = &own.draw;
     let frame = place_frame(d.feet, d.yaw, d.face, eye);
     let (eye_local, pitch) = super::characters::eye_in(&frame, own.forward);
-    let s = dwell_characters::own::shift_points(&own.body, points, eye_local, pitch);
-    let placed = mat4(&frame.then(&Affine::translation([0.0, 0.0, -s])));
+    let (keep, s) = dwell_characters::own::keep_clear(&own.body, points, eye_local, pitch, d.role);
+    let placed = mat4(&frame.then(&keep));
     Some((in_body.iter().map(|j| mm::mul(&placed, j)).collect(), s))
 }
 
@@ -1518,6 +1519,98 @@ mod tests {
                     (own_sole - remote_sole).abs() < 1e-3,
                     "own body's sole {own_sole:.4}, another player's {remote_sole:.4}"
                 );
+            }
+        }
+    }
+
+    // Owner, 2026-11-13: "Is the first person model lined up with the ground though? The feet were
+    // first person feet that didn't line up / seemed to be floating?" Your own body in first person
+    // was moved back whole (0.1 m, 0.4 m looking straight down) to keep it off the eye: its soles
+    // stood that far behind you, off their shadow (cast where you stand) and, on a ramp or a slope,
+    // over or under the ground there. Now it leans back from its soles: at each look down, idle and
+    // walking, on flat ground, a ½ m ramp and a 1 m slope rising ahead, your own body's lowest sole
+    // is on the ground just where another player's is (1 cm idle; walking 1 cm + 3 cm × the grade, a foot lifted
+    // mid-stride leans a little; it was 5 cm to 40 cm off), and on flat ground at idle within 2 cm of
+    // the feet.
+    dwell_world::both_faces! {
+        fn your_own_bodys_soles_stand_on_the_ground_in_first_person(face: FaceFrame) {
+            use dwell_characters::anim::sample;
+            let (data, model) = dwell_models::player();
+            let ch = dwell_characters::player();
+            let cfg = dwell_physics::config::PlayerControllerConfig::default();
+            let body = ch.first_person.and_then(|f| f.body).unwrap();
+            let level = dwell_models::DETAIL_DEFAULT;
+            let (_, own_verts) = own_body_mesh(data, model, level).unwrap();
+            let feet_l = [4.0, 7.0, -2.0];
+            let feet = face.point(feet_l);
+            let eye = face.point([4.0, 7.0 + f64::from(cfg.body.eye_height), -2.0]);
+            let yaw = 30.0f64;
+            let ahead = [yaw.to_radians().sin(), yaw.to_radians().cos()];
+            // How high each point is over a ground rising `grade` m per m ahead through the feet.
+            let over = |pts: Vec<[f32; 3]>, grade: f64| {
+                pts.into_iter()
+                    .map(|p| {
+                        let l = face.point(std::array::from_fn(|k| f64::from(p[k]) + eye[k]));
+                        let along = (l[0] - feet_l[0]) * ahead[0] + (l[2] - feet_l[2]) * ahead[1];
+                        l[1] - (feet_l[1] + grade * along)
+                    })
+                    .fold(f64::MAX, f64::min)
+            };
+            for (role, samples) in [("idle", 4), ("walk", 8)] {
+                let clip = dwell_characters::TABLES.clip(ch.clip(role).unwrap());
+                for s in 0..samples {
+                    let pose = sample(clip, clip.duration * s as f32 / samples as f32);
+                    let d = SkinnedDraw {
+                        model: dwell_models::PLAYER,
+                        seed: 1,
+                        feet,
+                        yaw,
+                        face,
+                        role,
+                        light: [1.0, 0.0],
+                        cast_only: false,
+                        rig_pose: Some(pose),
+                        grip: None,
+                        remap: NO_REMAP,
+                        idle_pose: None,
+                        tint: NO_TINT,
+                    };
+                    let place = body_matrix(&d, data, eye);
+                    let p = Player::new(data, model, role);
+                    let joints: Vec<Mat4> = anim::joint_matrices(
+                        model,
+                        &model_pose(data, model, &p, d.rig_pose.as_ref(), None),
+                    )
+                    .iter()
+                    .map(|j| mm::mul(&place, j))
+                    .collect();
+                    for pitch in [0.0, -60.0, -89.0] {
+                        let own = SkinnedOwn {
+                            draw: d,
+                            forward: face.look(yaw, pitch),
+                            body,
+                            passes: 1,
+                        };
+                        let (own_joints, back) =
+                            own_joints(data, model, level, &own_verts, &own, eye).unwrap();
+                        assert!(back >= body.back, "{role} {s}: kept back {back}");
+                        let pts = |j: &[Mat4]| {
+                            dwell_models::first_person::skin_points(model, level, j, &own_verts)
+                        };
+                        for grade in [0.0, 0.5, 1.0] {
+                            let mine = over(pts(&own_joints), grade);
+                            let theirs = over(pts(&joints), grade);
+                            assert!(
+                                (mine - theirs).abs() < if role == "idle" { 0.01 } else { 0.01 + 0.03 * grade },
+                                "{role} t {s}/{samples}, pitch {pitch}, grade {grade}: your sole \
+                                 {mine:.3} m over the ground, another player's {theirs:.3}"
+                            );
+                            if role == "idle" && grade == 0.0 {
+                                assert!(mine.abs() < 0.02, "idle: your sole {mine:.3} m over the ground");
+                            }
+                        }
+                    }
+                }
             }
         }
     }
