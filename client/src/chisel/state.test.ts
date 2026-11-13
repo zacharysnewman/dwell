@@ -228,7 +228,7 @@ describe('Chisel state', () => {
 
   it('the red-rock mesa with strong rock shaping round-trips, and a bad rock is named', () => {
     const mesa = PRESETS.find((p) => p.name === 'preset:red_rock_mesa');
-    expect(mesa?.rockStack).toBe('dwell:red_beds');
+    expect(mesa?.rockStack).toBe('dwell:red_desert_beds');
     if (!mesa) throw new Error('the mesa preset');
     const base = addBiome(buildEdit(), mesa);
     const geology = structuredClone(BUILD_GEOLOGY);
@@ -245,7 +245,7 @@ describe('Chisel state', () => {
     bad.rocks[0] = { ...(bad.rocks[0] ?? { name: '?' }), jointing: 'wobbly' };
     expect(validateEdit({ ...e, geology: bad }).join()).toContain('jointing must be one of');
     const lost = structuredClone(geology);
-    lost.stacks = lost.stacks.filter((s) => s.name !== 'dwell:red_beds');
+    lost.stacks = lost.stacks.filter((s) => s.name !== 'dwell:red_desert_beds');
     expect(validateEdit({ ...e, geology: lost }).join()).toContain('rockStack');
   });
   it('the boreal and desert presets opt in to the climate, a tuned tree line round-trips, a bad kind is named', () => {

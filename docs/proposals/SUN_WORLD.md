@@ -2,8 +2,9 @@
 
 **Status:** proposal, written 2026-11-13 (WORK_QUEUE item 42). Built on the moon's systems
 ([MOON_WORLD.md](./MOON_WORLD.md)): grids as data, `GridFrame`, the far-body bake, the celestial
-model, the shared travel. **S-1, S-2 and S-3 built** (this slice; native tests, the sky's disc not yet
-seen on a GPU). Not architecture until an ADR adopts it (with the moon's).
+model, the shared travel. **S-1, S-2 and S-3 built** (the first slice; native tests, the sky's disc not yet
+seen on a GPU); **the second slice built** (§6: lava damage and constant flow on the sun, spawns on it, the dev
+teleport, the capture's speed; native tests). Not architecture until an ADR adopts it (with the moon's).
 
 ## 1. Brief and the owner's answers (2026-11-12)
 
@@ -116,26 +117,88 @@ world position (≤ 1 cm) and velocity (≤ 1 cm/s) kept.
   client held inside the capture sphere stays home, gets no sun chunk or sun grid id; this build's is
   captured; red without the server's filter).
 - **Capture speed:** the sun moves 3.7–7.5 km/s, so a flier is captured with that relative speed; far
-  flight (≤ 20 km/s) steers it in the sun's frame within seconds, as at the moon's ~1 km/s.
-- **Away players' systems** (the moon's §7.2 list): lava damage is the server's lava fields', which
-  aren't placed on other grids, so standing in the sun's generated lava does no harm yet.
+  flight (≤ 20 km/s) steers it in the sun's frame within seconds, as at the moon's ~1 km/s. Checked in the
+  second slice (§6.4).
+- **Away players' systems** (the moon's §7.2 list): lava damage and flow on other grids built in the second
+  slice (§6.1, §6.2); items, vitals, creatures and water still home's only.
 
-## 6. Not in this slice (later)
+## 6. The second slice [built natively, 2026-11-13]
 
-- **Constant lava flow on the sun** ("Constant flowing lava"): VOLCANOES.md's lava fields placed on the
-  sun's rivers and lakes (vents as data), kept molten by the world's heat, with the earth's damage, burn
-  and cooling rules ("Lava has the same function on the sun as the earth world").
+Brief (orchestrator, 2026-11-13): "(1) lava damage on the sun — the server's lava fields/damage apply on any grid
+whose generator places lava (by data), not only home; (2) 'Constant flowing lava, oceans of lava' (owner): the sun's
+lava rivers always flowing — the lava flow of VOLCANOES.md kept running on the sun (a source at each river head, as
+data), bounded in cost (only near players, as the water does); (3) a dev teleport onto the sun (`__dwell.sunLand`)
+and a bench scenario `sun-draw`; (4) the capture's speed". Added mid-slice (owner: "Im not seeing a moon spawn or sun
+spawn in my new world settings"): spawns on any grid, MOON_WORLD.md §8.
+
+### 6.1 Lava damage on any grid
+
+A player on another grid burns by home's rules (`dwell_lava::Burn`, `damagePerSecond`, `burnSeconds`, cause `Burn`):
+in a field's lava there, or in any cell whose block is a hot fluid's of `shared/fluids/lava.json`
+(`dwell_sim::lava::hot_fluid_of`, by name) — so the sun's generated oceans and rivers hurt by data, and any grid
+whose generator writes lava does too. Damage reaches away players (`Server::damage`), and a death there takes the
+player out of the grid's space (`remove_away`, its chunks unloaded on its client): the inventory is kept (items
+aren't on other grids yet) and it stands up at the world's spawn grid (MOON_WORLD.md §8) or home's spawn. Tests:
+`dwell-sim` `tests/sun_lava.rs` `a_player_in_the_sun_s_lava_burns_and_dies_by_home_s_rules` (both faces: hurt,
+`Burn`, burning on after, dies, home again).
+
+### 6.2 Constant flowing lava ("Constant flowing lava, oceans of lava")
+
+The sun's generator gains optional `flow` rules (`grids.json`, `volcanic.rs` `FlowRule`; validated with messages):
+
+| Field | Value | Meaning |
+|---|---|---|
+| `cellM` | 512 | one source a cell |
+| `probes` | 12 | 12 × 12 samples a cell; the river head is the one with the highest river lava |
+| `minRift` | 0.8 | how deep in a rift a sample must be (and molten, over the sea, not a crater's lake) |
+| `vent` | `dwell:lava`, 1.5 m³/s, radius 12 | the source: a river vent of VOLCANOES.md, its field's starting reach |
+| `nearM` | 384 | sources placed within this of a player on the sun; a field runs only with a player this near its tiles |
+| `maxFields` | 12 | at most; the farthest with no player near is dropped for a new one |
+| `maxTiles` | 192 | each field's cap (8 × 8-column tiles) |
+
+The server (`server/grids.rs` `flow_grid_lava`, every lava tick): for each grid with a player on it, places a vent
+at each river head near its players not yet placed (`GridSlot::place_river_heads`), runs the fields near them only
+(`Lava::tick_with(.., far: false)`: no fast-forward, a far river is steady), writes their cells into the grid's
+chunks and sends each changed chunk whole to that grid's clients holding it (as an away player's edit). Same flow,
+cooling (with tubes), crusting and breakouts as home's. The generated rivers and oceans stay as generated where no
+field runs; a field's lava fills its channel from the bed (generated lava cells are open to it) and runs downhill.
+
+Not saved: a grid's fields are placed again at the river heads after a restart; the cells they wrote are in
+`grid_chunks`. Steam is dropped (no water on the sun). Tests (`tests/sun_lava.rs`
+`the_sun_s_rivers_flow_from_their_heads_near_a_player`, both faces): no source before a player is near; a source at
+the head; the river runs on (molten columns grow by > 20 in two lava minutes), still molten at its head, its cells in
+the sun's chunks and sent to the client, within `maxFields` and `maxTiles`, the worst tick under 250 ms in a debug
+build. `dwell-worldgen` `tests/sun.rs`: the rules' validation, no heads without them, heads in rivers (both faces).
+
+### 6.3 The dev teleport and `sun-draw`
+
+`__dwell.sunLand({face?, maxS?})` (`LocalCore::grid_land("dwell:sun", face)`: 1.5 m over the sun's stand point, dry
+crust away from lava, moving with it; captured on the next tick) and `__dwell.sun()` (the moon report's fields for
+the sun, `Game::grid_report`); the bench step `sunLand` and scenario `sun-draw` (face A, a shot across and one down,
+the frame's draw calls and triangles in `trips`). The browser run is a local check (cloud sessions have no GPU).
+
+### 6.4 The capture's speed
+
+`dwell-client` `tests/game_local.rs` `a_sun_trip_on_a_jittery_device_makes_no_snap` (both faces; `sunApproach`
+300 m outside the capture sphere, every 7th frame 4 ticks, 6 ticks of link lag): captured with the sun moving > 3 km/s
+on its path, flown down and landed on its crust, no snap (#879's carry smoothing holds at the sun's speed).
+
+## 7. Not in this slice (later)
+
 - **Its sky:** owner, 2026-11-13: "Sun and moon should be space, the same as night sky. Could perhaps
   just make space a more general skybox and have 'day' be a closer atmosphere skybox so it can fade out as
   you leave earth." The general sky is the moon session's work (M-5 branch); the sun then only declares in
   its grid data that it has no atmosphere (no such field in grids.json yet when this slice merged main).
-- **Spawns** on the sun's faces (`?spawn=sun`, `sun-b`), as the moon's M-8.
+- **Shrines** on the sun and the moon (a death there respawns at the stand point for now).
 - The sun's LOD terrain inside `farM` (with the moon's M-5).
 
-## 7. Compatibility
+## 8. Compatibility
 
 - Adding the grid and its blocks changes no home terrain and no saved world (the sun's chunks go to the
   optional `grid_chunks` table, as the moon's).
 - The sky change is a look.
 - Travel to the sun puts grid index 2 on the `grid.frames` wire only for clients that say `grid.sun`
   (§5), so the slice is additive on the current line.
+- The second slice: no wire change (the sun's lava cells go as whole grid chunks, as edits there do); the world
+  meta's `spawn_grid` key is optional (an older build ignores it and spawns at home); the sun's fields aren't saved;
+  `grids.json`'s `flow` is new data. No new line.

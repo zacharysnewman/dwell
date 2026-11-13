@@ -6578,6 +6578,48 @@
       ]
     },
     {
+      "name": "player-scale",
+      "notes": "The player model against its collider (BUGS.md: the player floating above the ground): on the flat world, your whole body seen from a placed camera side on at noon, a full-body view and one at the feet, then a villager beside you.",
+      "world": "flat",
+      "settings": { "timeOfDay": 0.45 },
+      "steps": [
+        { "do": "settle", "maxS": 60 },
+        { "do": "look", "yaw": 0, "pitch": 0 },
+        {
+          "do": "camera",
+          "position": [3, 1, 0],
+          "yaw": 270,
+          "pitch": -2,
+          "aroundPlayer": true,
+          "aboveFeet": true
+        },
+        { "do": "wait", "s": 2 },
+        { "do": "shot", "name": "side" },
+        {
+          "do": "camera",
+          "position": [1.4, 0.15, 0],
+          "yaw": 270,
+          "pitch": -3,
+          "aroundPlayer": true,
+          "aboveFeet": true
+        },
+        { "do": "wait", "s": 1.5 },
+        { "do": "shot", "name": "feet" },
+        { "do": "npcs", "count": 1, "radius": 1.5 },
+        { "do": "wait", "s": 3 },
+        {
+          "do": "camera",
+          "position": [4, 1, 0],
+          "yaw": 270,
+          "pitch": -2,
+          "aroundPlayer": true,
+          "aboveFeet": true
+        },
+        { "do": "wait", "s": 2 },
+        { "do": "shot", "name": "villager" }
+      ]
+    },
+    {
       "name": "torch-scale-a",
       "notes": "The 1 m torch (two ½ m cells, docs/LIGHTS.md) placed on the ground ahead at noon, a stand-in player beside it for scale, then at midnight; and the held torch's flame (self-lit) by day and at night.",
       "settings": {
@@ -9229,6 +9271,45 @@
         {
           "do": "shot",
           "name": "moon-b-across"
+        }
+      ]
+    },
+    {
+      "name": "sun-draw",
+      "notes": "Does the sun's ground draw (SUN_WORLD.md, the second slice): from the spawn, sunLand teleports onto the sun's dry crust on face A (its stand point, away from lava; no flight), waits until the player stands there with its chunk held, and prints the frame's draw calls, triangles and mesh bytes (saved in report.json's trips); a shot looking across the crust toward the lava and one looking down.",
+      "steps": [
+        {
+          "do": "settle",
+          "maxS": 120
+        },
+        {
+          "do": "sunLand"
+        },
+        {
+          "do": "look",
+          "yaw": 0,
+          "pitch": -10
+        },
+        {
+          "do": "wait",
+          "s": 2
+        },
+        {
+          "do": "shot",
+          "name": "sun-a-across"
+        },
+        {
+          "do": "look",
+          "yaw": 0,
+          "pitch": -60
+        },
+        {
+          "do": "wait",
+          "s": 1
+        },
+        {
+          "do": "shot",
+          "name": "sun-a-down"
         }
       ]
     },

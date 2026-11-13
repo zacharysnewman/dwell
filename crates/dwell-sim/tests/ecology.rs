@@ -190,6 +190,7 @@ fn an_older_world_starts_a_fresh_ecology_and_catches_up_a_thousand_days_in_bound
             app_version_created: "0.50.0".into(),
             app_version_last: "0.50.0".into(),
             settings: None,
+            spawn_grid: None,
         }),
         ..SaveBatch::default()
     })

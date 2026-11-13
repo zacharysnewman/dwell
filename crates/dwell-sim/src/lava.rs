@@ -109,6 +109,19 @@ fn open_for_lava(m: StateId, lava: StateId) -> bool {
     m == 0 || same_block(m, lava) || (s.replaceable && !s.solid && !s.liquid)
 }
 
+/// The hot fluid (`shared/fluids/lava.json`) whose block `m` is, if any: lava in a world's cells,
+/// a field's or generated (the sun's oceans and rivers, SUN_WORLD.md §6), by the data's names.
+pub fn hot_fluid_of(m: StateId) -> Option<&'static HotFluid> {
+    if m == dwell_blocks::AIR {
+        return None;
+    }
+    let block = info(m).block;
+    dwell_lava::DATA
+        .fluids
+        .iter()
+        .find(|f| dwell_blocks::state(f.name).is_some_and(|s| info(s).block == block))
+}
+
 /// Whether two states are of one block (lava's cells are any of its `heat` states).
 fn same_block(a: StateId, b: StateId) -> bool {
     info(a).block == info(b).block
@@ -218,6 +231,18 @@ impl Lava {
         &mut self,
         real_s: f32,
         players: &[[f64; 3]],
+        read: impl FnMut([i32; 3]) -> StateId,
+    ) -> Out {
+        self.tick_with(real_s, players, true, read)
+    }
+
+    /// [`Lava::tick`], with `far` false running only the fields near a player (the sun's rivers,
+    /// docs/proposals/SUN_WORLD.md §6: a far field is not run and owes nothing, its river steady).
+    pub fn tick_with(
+        &mut self,
+        real_s: f32,
+        players: &[[f64; 3]],
+        far: bool,
         mut read: impl FnMut([i32; 3]) -> StateId,
     ) -> Out {
         let mut out = Out::default();
@@ -227,8 +252,11 @@ impl Lava {
             at: HashMap::new(),
         };
         for p in &mut self.fields {
-            p.refresh(&mut view);
             let near = p.field.is_near(p.face, players);
+            if !near && !far {
+                continue;
+            }
+            p.refresh(&mut view);
             let (f, origin) = (p.face, p.field.origin);
             let lava = dwell_blocks::require(p.field.fluid.name);
             // A tile the lava reaches, read from the world round the bed beside it.
@@ -260,6 +288,12 @@ impl Lava {
                 p.dirty.insert([x, z]);
             }
         }
+    }
+
+    /// Drops field `i` (its cells stay in the world as they are; the sun drops its farthest field
+    /// for a new one, SUN_WORLD.md §6).
+    pub fn remove(&mut self, i: usize) -> Placed {
+        self.fields.remove(i)
     }
 
     /// The hot fluid a player's feet (a world point) stand in, if any.

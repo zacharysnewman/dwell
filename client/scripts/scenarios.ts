@@ -136,6 +136,11 @@ export type Step =
    * own, holding the hotbar's first block when `held`; 0 removes them.
    */
   | { do: 'puppets'; count: number; at?: Vec3; face?: number; held?: boolean }
+  /**
+   * Villagers (`__dwell.spawnNpcs`, docs/CHARACTERS.md §11.11): `count` NPCs within `radius` m
+   * (3) of the player, a local world only.
+   */
+  | { do: 'npcs'; count: number; radius?: number }
   /** Your first-person arms shown or hidden (the Show your arms setting, for this page only). */
   | { do: 'arms'; on: boolean }
   /** Waits (at most `maxS`) until the LOD has nothing to generate, mesh or ask for, for 1 s. */
@@ -184,6 +189,11 @@ export type Step =
    * `moon-draw`.
    */
   | { do: 'moonLand'; face?: 'a' | 'b'; maxS?: number; waitS?: number }
+  /**
+   * `moonLand` onto the sun's dry crust instead (`__dwell.sunLand`, SUN_WORLD.md): the same wait,
+   * draw counts and report. Scenario `sun-draw`.
+   */
+  | { do: 'sunLand'; face?: 'a' | 'b'; maxS?: number; waitS?: number }
   /**
    * Stands the player on a raft `lift` m (default 1) above its feet and moves the raft at `speed`
    * m/s toward `yaw` (degrees, 0 = +Z, 90 = +X) for `s` seconds at a held height, then waits out
@@ -451,6 +461,7 @@ const STEP_FIELDS: Record<Step['do'], readonly string[]> = {
   brush: ['command'],
   region: ['op', 'from', 'to', 'up'],
   puppets: ['count', 'at', 'face', 'held'],
+  npcs: ['count', 'radius'],
   arms: ['on'],
   settle: ['maxS'],
   until: ['what', 'maxS'],
@@ -460,6 +471,7 @@ const STEP_FIELDS: Record<Step['do'], readonly string[]> = {
   herd: ['kind', 'back'],
   flyTo: ['to', 'face', 'landM', 'maxS'],
   moonLand: ['face', 'maxS', 'waitS'],
+  sunLand: ['face', 'maxS', 'waitS'],
   mark: [],
   record: ['name', 'budget', 'reportOnly'],
   shot: ['name', ...PLACEMENT_FIELDS, 'quietFrames', 'maxS'],
@@ -673,6 +685,15 @@ export function parseStep(where: string, v: unknown): Step {
         ...(o.held === undefined ? {} : { held: bool(at('held'), o.held) }),
       };
     }
+    case 'npcs': {
+      const count = num(at('count'), o.count, 1, 64);
+      if (!Number.isInteger(count)) throw new ViewError(`${at('count')}: expected a whole number`);
+      return {
+        do: d,
+        count,
+        ...(o.radius === undefined ? {} : { radius: num(at('radius'), o.radius, 0, 64) }),
+      };
+    }
     case 'probe': {
       if (!Array.isArray(o.at) || o.at.length > 2) {
         throw new ViewError(`${at('at')}: expected a list of at most 2 points`);
@@ -722,7 +743,8 @@ export function parseStep(where: string, v: unknown): Step {
         ...(o.maxS === undefined ? {} : { maxS: num(at('maxS'), o.maxS, 1, 600) }),
       };
     }
-    case 'moonLand': {
+    case 'moonLand':
+    case 'sunLand': {
       if (o.face !== undefined && o.face !== 'a' && o.face !== 'b') {
         throw new ViewError(`${at('face')}: expected "a" or "b"`);
       }

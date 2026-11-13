@@ -1106,7 +1106,13 @@ client's predictor carries its player across grids as the server does (MOON_WORL
 game client follows it (M-7c, behind `grid.frames`, which the client now says): its streamer holds the
 chunks of the predictor's grid only (all dropped at a crossing; another grid's chunk messages ignored),
 the view is drawn in that grid's local frame (the look carried across with `look_across`, the sky's
-directions turned into the frame, the moon's far disc hidden, home's LOD hidden while away). The server
+directions turned into the frame, the moon's far disc hidden, home's LOD hidden while away; its sky space, the
+grid having no air: `grids.json` `atmosphere`, DAY_NIGHT.md §15; the view easing upright over `motion.json`
+`gridCrossingRollS` at a crossing; the maps hidden with a label while away). **The moon up close [built,
+M-5, 2026-11-13]:** a grid with a `nearMesh` (`grids.json`) is drawn nearer than its `farM` as a coarse
+mesh of its surface (`dwell-client` `grid_bodies.rs`, from its `FarSource`, both faces) at its pose in the
+drawn frame, a piece the shadows skip, the far disc then hidden; on the grid itself the same mesh at the
+identity, sunk under the ground so its chunks cover it. The server
 sends a `grid.frames` client the moon's chunks as voxels and forgets its home stream at the capture, so
 home streams again from nothing on the release.
 
@@ -1704,6 +1710,20 @@ player on face B stands upside down in the world.
   same travel, server grids and `TravelMap` as the moon (grid index 2). Its face A's bake shares the moon's
   storage buffer (`render/moon.rs` `SUN_BASE`) and shades the sky's sun disc by `sun.surface`; the disc's
   size, glow and the sunlight are unchanged.
+  **Lava on other grids [built natively, the second slice]:** each `GridSlot` holds its own `dwell_sim::lava::Lava`
+  fields (not saved; their cells are in `grid_chunks`); a `volcanic` generator's optional `flow` rules
+  (`FlowRule`) place a river vent at each `cellM` cell's river head (`VolcanicTerrain::river_heads`) within `nearM`
+  of a player on that grid, at most `maxFields` (the farthest unoccupied dropped first), `maxTiles` each, and only
+  fields near a player run (`Lava::tick_with(.., far: false)`); changed chunks go whole to that grid's clients. An
+  away player burns by lava's rules (a field's lava, or any cell of a hot fluid's block, `lava::hot_fluid_of`) and a
+  death there takes it out of the grid (`remove_away`), inventory kept, up again at the world's spawn grid or home.
+- **Spawns on any grid (MOON_WORLD.md §8, M-8) [built].** A spawn key per non-home grid face from `grids.json`
+  (`grids::spawn_keys`: `moon`, `moon-b`, `sun`, `sun-b`; the shell's Spawn choice gets the same list from
+  `shared/play/gen.mjs` `optionsAlso: gridSpawns`). `ServerConfig::spawn_grid`, saved in the world meta's optional
+  `spawn_grid` key (an older build ignores it and spawns at `spawn`): a player spawned at the spawn, or up again
+  after a death on another grid, is carried to the grid's stand point (`grids::stand_point`: the moon's spawn
+  search, the sun's dry crust 16 m from any lava) once its client says `grid.frames` and the grid's capability,
+  within 10 s; otherwise it stays at home's spawn. No shrine on other grids yet: the respawn is the stand point.
 - **Generation.** `dwell_worldgen::BifacialTerrain` (`bifacial.rs`) holds two `TerrainGenerator`s working
   in face-local coordinates: face A's is seeded by the world seed as ever, face B's by
   `face_seed(seed, B)`, a hash through streams no stage uses — its own island and hills. A chunk of

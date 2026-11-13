@@ -1050,6 +1050,18 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    #136 (the moon's chunks sent before the client crossed were dropped; now held for the crossing); the bench has a
    `moonLand` step and a `moon-draw` scenario (draw calls, triangles, mesh bytes, shots on both faces). **Left:**
    `npm run bench -- --warm moon-draw` on a GPU (local); the moon's sky.
+   Owner, 2026-11-13: **"If you can actually fly to the moon/sun, we need a much faster fly speed for creative. But only in space."** So creative flight speeds up in space: by the same atmosphere value the sky uses (how far into space the player is), the normal fly speed inside the air and near any grid's ground, ramping to a space speed set in data (the moon's ~550–640 km in about 20–40 s at full speed, smoothly), slowing by the distance to the nearest grid's surface so landing on the moon or the sun stays controllable; unified with (not beside) the far flight; the predictor and the server reading the same data; a fast capture without a snap.
+   **Moon follow-ups after the first browser trips (2026-11-13, branch `claude/moon-m5`; the brief: "1. The moon's
+   own sky … 2. M-5: the moon seen up close while approaching … 3. The view eases upright at a crossing (today it
+   turns at once) … 4. The minimap/big map on the moon: today a blank grey disc — show the moon's surface … or hide
+   the map off home with a label; choose the simpler, say which. 5. Landing sits slightly below the ground (groundM
+   −0.11 m face A, −0.24 m face B after landing): find why and fix."):** built — the sky as one layered model (space
+   the base, day a layer of a grid's air, `grids.json` `atmosphere`; BUGS.md #126), M-5 as a coarse surface mesh
+   inside `farM` and under the chunks on the moon (`grids.json` `nearMesh`, `grid_bodies.rs`), the view easing
+   upright over `motion.json` `gridCrossingRollS` (#138), the maps hidden off home with a label (the simpler),
+   `groundM` reading the cells' top (#139: the report, not the landing). Then (owner's addition) far flight scaled by how far into space the flier is: the slider's speed in home's air, up to 30 km/s in space, easing toward every body (`grids.json` `farFlight` `perS` 0.8, `maxMps` 30 000; the face A trip 36 s), one system with the server and client agreeing, a fast capture without a snap. **Left:** the browser checks on a GPU
+   (local), home seen from the moon (M-6's drawing), the moon's ground light (MOON_WORLD.md §7.3).
+   Owner, 2026-11-13: **"Sun and moon should be space, the same as night sky. Could perhaps just make space a more general skybox and have 'day' be a closer atmosphere skybox so it can fade out as you leave earth."** So the sky is one layered model: space (the night sky's stars and space colour) is the base skybox everywhere, home too; day is an atmosphere layer over it, belonging to a world with an atmosphere (home's blue day sky, sunsets, haze), its strength fading with altitude (item 28's thinning) and with day and night; each grid declares its atmosphere as data (home has one; the moon and the sun none), so on the moon or the sun you see space as the night sky, with the sun, home and the moon where they are; one system, no grid-specific branches in the shader. Tests on both faces: on the moon or the sun day colours never show; flying up from home the day layer fades to space; home's day and night look as before.
    **Left:** the browser flight (local, GPU), the roll upright at a crossing, M-5 (the moon's LOD), M-8. Earlier
    **M-7c status (2026-11-12, branch `claude/moon-m7c-x07vsc`, local):** owner, 2026-11-12: "Do we have the real physical moon yet?" (no: the client doesn't draw the moon
    up close yet (M-5) and there are no moon spawns (M-8)). **Built:** `carry` moved into `dwell-physics`; a
@@ -1181,6 +1193,12 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    data. Owner's note on the PR: the baked maria were too faint after #682's shading, so the mare block's `color`
    (`#555459`) is 0.55 × the moon dust's luma, the old sky moon's seas (`1 − moon.maria`); a test pins the bake's
    maria/highland contrast at 0.55. Tests on both faces (`--test grids`, 26).
+   **Spawns on any grid (M-8)** (owner, 2026-11-13: "Im not seeing a moon spawn or sun spawn in my new world
+   settings"; orchestrator: "one general system rather than per-world code: a spawn choice for any grid, by data …
+   New world → Spawn lists home face A or B, plus each other grid's faces … generated from the grids data … the
+   player starts on that grid at a safe stand point … with a shrine there if shrines apply … only for clients that
+   declare the grid's capability, otherwise fall back to home. The `?spawn=` link takes the same values."): built
+   with the sun's second slice (item 42, MOON_WORLD.md §8).
 
 28. **An atmosphere: the sky thinning to space** (owner 2026-11-12: "We likely need an atmosphere transition now
    between sky thinning to space. Clouds shouldn't extend past the earth atmosphere either."). With flight to the
@@ -1192,6 +1210,7 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    `dwell_space` and its CPU twin, the fog thinning to none, clouds' and plumes' tops refused above the
    top (clouds.mjs) and run-time plumes cut there; today's sky exactly on the ground (a golden pin), both
    faces. **Left:** the browser check (local, a GPU), the home world drawn from far (M-6's bake).
+   Owner, 2026-11-13: **"Sun and moon should be space, the same as night sky. Could perhaps just make space a more general skybox and have 'day' be a closer atmosphere skybox so it can fade out as you leave earth."** So the sky is one layered model: space (the night sky's stars and space colour) is the base skybox everywhere, home too; day is an atmosphere layer over it, belonging to a world with an atmosphere (home's blue day sky, sunsets, haze), its strength fading with altitude (item 28's thinning) and with day and night; each grid declares its atmosphere as data (home has one; the moon and the sun none), so on the moon or the sun you see space as the night sky, with the sun, home and the moon where they are; one system, no grid-specific branches in the shader. Tests on both faces: on the moon or the sun day colours never show; flying up from home the day layer fades to space; home's day and night look as before.
 
 29. **Thicker, more realistic distance haze** (owner 2026-11-12: "I think our atmospheric distance fog should be a
    little thicker, it doesn't seem quite realistic in farther mountains, hills looking whiter. What do you
@@ -1656,6 +1675,10 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    `tests/weapons.rs`): an unguarded hit hurts and pushes, a raised guard across the blade blocks, creative
    takes none, an older client hears `Fall`. Not yet: the client's own hurt look for a weapon (it shows the
    generic damage flash), wolves biting players.
+   Owner, 2026-11-13: **"I think my player character is floating a bit above the ground now. We didn't talk about
+   scaling for the new player model. It's likely shorter and may need to be scaled up."** (items 37/38: the Peasant
+   is your body, other players' and the villagers'). **Fixed (BUGS.md #140):** its soles were on the ground but its
+   eyes 7.3 cm under the camera's; `models.json` `scale` 1.04 → 1.09 puts them at the camera's 1.62 m eye.
 39. **Livelier animals** (owner 2026-11-12, after the video had no chase or fleeing — on day one every pack is
    kilometres from any herd and players can't scare deer): chose **deer flee from players** (they notice a player
    within a distance by data, closer when crouching, and run off; wolves keep their distance unless hungry),
@@ -1928,6 +1951,21 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    make space a more general skybox and have 'day' be a closer atmosphere skybox so it can fade out as you leave
    earth."): the general sky is built by the moon session (claude/moon-m5), not here; the sun only declares in its
    grid data that it has no atmosphere, once that field exists.
+   **Second slice (orchestrator brief, 2026-11-13: "(1) lava damage on the sun — the server's lava fields/damage
+   apply on any grid whose generator places lava (by data), not only home; (2) 'Constant flowing lava, oceans of
+   lava' (owner): the sun's lava rivers always flowing — the lava flow of VOLCANOES.md kept running on the sun (a
+   source at each river head, as data), bounded in cost (only near players, as the water does); (3) a dev teleport
+   onto the sun (`__dwell.sunLand`, like #883's moonLand) and a bench scenario `sun-draw` (lands on face A, shots
+   across and down, reports draw calls/triangles); (4) the capture's speed: with the sun at 3.7–7.5 km/s, check a
+   far-flight player can be captured without a snap"; the sky stays the moon session's):** SUN_WORLD.md §6.
+   **Spawns on the moon and the sun** (owner, 2026-11-13: "Im not seeing a moon spawn or sun spawn in my new world
+   settings"): one spawn choice for any grid, by the grids data (item 27's M-8), in this slice.
+   **Built natively (2026-11-13, SUN_WORLD.md §6):** lava burns on any grid (a field's or any hot fluid's cell, by
+   lava.json's names; a death there takes the player home or to the spawn grid); the sun's `flow` rules place a river
+   vent at each cell's river head near a player there (at most 12 fields of 192 tiles, run only near players);
+   `__dwell.sunLand` / `sun()` and the `sun-draw` scenario; the capture at the sun's > 3 km/s checked snap-free on a
+   jittery device; spawns on the moon and the sun (MOON_WORLD.md §8). **Left:** `sun-draw` and a sun spawn run in a
+   browser on a GPU (a local check); shrines on other grids; the sun's sky (the moon session's).
 
 ## Done
 

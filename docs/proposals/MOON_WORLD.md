@@ -343,9 +343,18 @@ Proposed: positions as data (`shared/look/sky_bodies.json`, or an `orbit` block 
   scale everywhere the controller applies it, the jump's take-off speed kept, so a jump on the moon
   rises 6× as high and lasts 6× as long (`dwell-physics` `tests/grid_gravity.rs`; scale 1 the same
   bits).
-- **Far flight**: `grids.json` `travel.farFlight` (`aboveM` 2000, `perS` 0.12, `maxMps` 20 000):
-  past `aboveM` from every grid's slab (its disc, `surfaceM` each side of its midplane) the server
-  sets `Players::set_far_fly_speed(perS × d)`, which flight takes as its least speed.
+- **Far flight**: `grids.json` `travel.farFlight` (`aboveM` 2000, `perS` 0.8, `maxMps` 30 000 since
+  2026-11-13): past `aboveM` from every grid's slab (its disc, `surfaceM` each side of its midplane) the
+  server sets `Players::set_far_fly_speed(min(perS × d, maxMps × space))`, which flight takes as its
+  least speed; `space` is how far into space the flier is (`travel::space_at`: the atmosphere's thinning,
+  the sky's value, at its height over home's face and its distance past home's rim). Owner, 2026-11-13:
+  "If you can actually fly to the moon/sun, we need a much faster fly speed for creative. But only in
+  space." So in home's air the speed is the slider's alone, in space up to 30 km/s, easing down toward
+  every body's ground: the face A trip takes 36 s (was ~90 s). The client's `TravelMap` and the server's
+  `Grids` read the same rules (`dwell-sim` `tests/grids.rs`
+  `far_flight_is_space_speed_in_space_only_and_server_and_client_agree`, both faces); a fast arrival
+  (closing over 5 km/s) is captured without a snap (`game_local`
+  `the_moon_report_steers_a_flight_into_its_capture`).
 - **The look across** (`look_across`): a face-local look continued onto another grid's face with the
   same world direction (for the client's view, then rolled upright as at a midplane crossing).
 - **Tests** (`dwell-sim` `tests/travel.rs`): a scripted flight from 300 m over home to the moon's
@@ -468,19 +477,67 @@ the moon's unedited chunks never evicted, tier 1 bodies in the moon's space (non
   `moon-draw` scenario use it (DEV_TOOLS.md "The moon"). It found BUGS.md #136: the server, having captured first,
   streams the moon's chunks before the client crosses, each once; the game now holds another grid's `ChunkData`
   (`other_grid_chunks`) and feeds those of the grid it crosses into to the streamer.
-- **Not yet (after M-7c):** the browser check after #123–#125, #136 (`moon-draw`, then `moon-trip`, on a GPU, a local check; no GPU in cloud sessions); the view's roll upright at the crossing (it is turned at once, keeping the look's direction); the
-  moon's own LOD and home's far disc from the moon (M-5, M-6's drawing); the sky's colours and air on the moon
-  (home's clouds already hidden, #126)
-  (home's face samples, `at_eye` by the grid-local height); remote players on another grid (sent at world
-  positions); the other systems for away players listed in §7.2.
+- **The follow-ups after the first trips (2026-11-13, branch `claude/moon-m5`):**
+  - **The moon's own sky** (BUGS.md #126; owner: "Sun and moon should be space, the same as night sky"): the sky is
+    one layered model, space the base and day a layer of a grid's air (`grids.json` `atmosphere`; DAY_NIGHT.md
+    §15): on the moon the sky is space at every hour, the stars out, the sun white, no fog.
+  - **M-5, the moon up close** (`dwell-client` `grid_bodies.rs`): a grid with a `nearMesh` (`cells` 96 across,
+    `sinkM` 8) is drawn nearer than its `farM` (150 km) as a coarse mesh of its real surface, both faces, from
+    the same `FarSource` as its far bake (heights sampled at a quarter cell, each vertex the lowest over the
+    cells round it less `sinkM`; colours its blocks'), at its pose in the drawn frame (`pose_in`: home's frame
+    at home), the sky's far disc then hidden. On the moon the same mesh is drawn at the identity under the
+    chunks, which cover it where they are; it shows where they are not yet, so nothing is swapped at the
+    capture. Built on the main thread the first time it is shown (~0.3 s natively). Tests: the mesh a metre
+    or more under the ground (99.5 %, never 4 m over), facing out, on both faces; the pose; `game_local`
+    `the_moon_up_close_is_its_surface_mesh_then_under_its_chunks` (both faces). Deviations from §5's plan: a
+    mesh, not the LOD tree per grid, and a switch at `farM`, not a crossfade (the disc and the mesh differ
+    in shading at the switch).
+  - **The roll upright at a crossing**: the view eases from the one drawn before upright onto the new face
+    over `motion.json` `gridCrossingRollS` (0.6 s; BUGS.md #138).
+  - **The maps on the moon**: hidden off home with a label ("No map on the moon", named by the grid): the
+    simpler of the two (the moon's own map would need its generator in the map's workers and tile store).
+  - **Faster flight in space**: far flight scaled by how far into space the flier is (§7.1), one system.
+  - **Landing under the ground** (BUGS.md #139): the report's `groundM`, not the landing: it read the smooth
+    height, not the cells' top.
+- **Not yet:** the browser checks (`moon-draw`, `moon-trip`, on a GPU, local); home seen from the moon (M-6's
+  drawing: its bake as a far body or a mesh, from the world map the client does not hold on the main thread);
+  the moon's ground light (its hemisphere light is home's, its sunlight follows home's keyframes); remote
+  players on another grid (sent at world positions); the other systems for away players listed in §7.2.
 
-## 8. Moon spawn, faces A and B [search built, M-1; the choice M-8]
+## 8. Moon spawn, faces A and B [search built, M-1; the choice built, M-8, 2026-11-13]
 
 `CrateredTerrain::spawn_point(face)`: a golden-angle spiral from the disc's centre to the first
 column whose ground is flat (±1 m over 4 m) and clear of every crater ≥ 10 m wide (outside 1.2 radii),
 deterministic per seed, one per face (tested on both). In M-8 the New world form's spawn choice and
 the `?spawn=` link gain `moon` and `moon-b` (beside today's `b`, `portal`, `portal-b`); the player
 starts in the moon's frame with its gravity, and the home world streams in only when they fly back.
+
+**As built (M-8, with the sun's second slice; owner, 2026-11-13: "Im not seeing a moon spawn or sun spawn in my new
+world settings"; orchestrator: "one general system rather than per-world code: a spawn choice for any grid, by
+data"):**
+
+- **The choices are the grids data's.** Every grid of `grids.json` but the home one with a generator of its own
+  offers both faces, keyed by its name after the namespace (`moon`, `moon-b`, `sun`, `sun-b`:
+  `dwell_worldgen::grids::spawn_keys`, `grid_spawn`); the shell's New world Spawn and Play advanced's get the same
+  list from `shared/play/overrides.json`'s `"optionsAlso": "gridSpawns"` (`shared/play/gen.mjs`
+  `gridSpawnOptions`, labelled "Moon (face A)", …), and `?spawn=` takes the same values (`local/world.ts`
+  `GRID_SPAWNS`, `spawnGrid`; each its own world file, `<name>-moon`). A grid added to `grids.json` appears in both
+  by itself (tested with a fixture grid in each).
+- **The stand point** (`grids::stand_point`): the moon's spawn search above; the sun's `VolcanicTerrain::spawn_point`,
+  a bounded ring search from the centre (8 m apart, out to 4 km) for dry, level crust at least 2 m over any lava it
+  borders and no molten column within 16 m.
+- **The server** (`ServerConfig::spawn_grid`, saved in the world meta's optional `spawn_grid`; a saved world keeps
+  its own unless a spawn link opens it): a player spawned at the world's spawn, or up again after a death on another
+  grid, starts at home's spawn and is carried to the grid's stand point as soon as its client says `grid.frames` and
+  the grid's `capability` (`Server::spawn_on_grids`), within 10 s (`GRID_SPAWN_GRACE_TICKS`). A client that doesn't
+  (an older build, or one of the moon's line in a sun world) stays at home's spawn, and an older build opening the
+  world ignores the key and spawns at home.
+- **Shrines:** none on the other grids yet (shrines are home's worldgen), so a death on another grid respawns at the
+  world's spawn grid's stand point, or at home's spawn without one; a death at home follows home's shrine rules.
+- **Tests** (both faces): `dwell-sim` `tests/grid_spawn.rs` (a moon world starts its player standing on the moon; a
+  sun world on dry crust, and back there after a defeat; an older client at home; a saved world keeps its choice),
+  `dwell-worldgen` `tests/sun.rs` (`the_spawn_choices_come_from_the_grids_data`, the sun's stand point),
+  `shared/play/gen.test.mjs` and `playAdvanced.test.ts` / `world.test.ts` (the list and the link).
 
 ## 9. Memory and cost
 
@@ -507,7 +564,7 @@ starts in the moon's frame with its gravity, and the home world streams in only 
 | **M-2** [built] | The sky draws the moon from its bake at M-4's position: today's size, glow and brightness (owner: "the moon should look bright"); the baked normals lit by the sun direction; the face from the orbit; moonlight from M-4's `moonlight` | the client bakes in a worker and caches per world; a screenshot per phase angle on both faces; the lit part as bright as today's moon and its halo today's × the lit share (a full moon side by side with today's); CPU-adapter tier |
 | **M-3** [built] | `GridFrame`: the frame abstraction (world ↔ grid ↔ face) for rendering, collision, targeting and gravity; the home grid the identity | the identity frame changes no result (parity tests across physics, targeting, meshing); a moving test grid's points round-trip |
 | **M-4** [built] | The celestial model (§6): the moon's orbit as data, phases from geometry, moonlight by lit share with a night floor; the orbit's phase an optional world setting | `cargo test -p dwell-look --lib celestial` (13 tests, both faces): full when opposite the sun, new when between, lit share monotonic; face A toward home at every phase; both faces' phases equal; the floor kept; the clock and the sun unchanged (golden); `MOON_PHASE` round-trips and is absent by default (`dwell-protocol`) |
-| M-5 | LOD per grid: the moon's LOD terrain inside `farM`, the far body beyond, crossfaded | the moon's LOD from its generator at 150 km; no seam at the switch (screenshot) |
+| M-5 [built as a coarse mesh, 2026-11-13] | LOD per grid: the moon's LOD terrain inside `farM`, the far body beyond, crossfaded. Built: a coarse surface mesh inside `farM` (§7.3), switched, not crossfaded | the moon's mesh from its generator inside 150 km, under its chunks on it (tests ✓); no seam at the switch (screenshot, outstanding: a GPU) |
 | M-6 | The home world's bake from its world map (water mask), drawn from far. **Bake built** (§5); drawing it from the moon outstanding (with M-5/M-7) | `cargo test -p dwell-worldgen --test home_far` (10 tests, both faces): deterministic, the water mask the map's sea, normals out of mountain slopes, block colours, size/cost/memory bounded ✓; a screenshot from 600 km (outstanding: needs the drawing) |
 | M-7 [partial; M-7b server + wire built; M-7c client built] | Streaming the moon's chunks per grid; far flight; capture and release; gravity per grid; the grid id in snapshots (behind `grid.frames`) | a scripted flight home → moon → home with no jump in position (≤ 1 cm) on both of the moon's faces; ⅙ g jump height |
 | M-8 | Moon spawn A and B in the New world form and `?spawn=moon`, `moon-b` | a new world spawned on each face stands on the moon's ground in its frame |

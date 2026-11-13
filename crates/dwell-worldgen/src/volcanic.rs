@@ -14,7 +14,8 @@
 //! - **Crusts:** the ground is `crust` (basalt); a dry column whose top is within `shore.bandM` over
 //!   the lava it borders is `shore.block` (obsidian, the quench glass at the edge).
 //! - **Lava** is `lava.fluid` (`dwell:lava`, the same block the lava fields of VOLCANOES.md write),
-//!   generated still: the always-flowing simulation on the sun is a later slice.
+//!   generated; the server keeps it flowing with lava fields fed at each river head (`flow`, the
+//!   second slice: [`VolcanicTerrain::river_heads`]).
 //!
 //! [`VolcanicTerrain::generate`] fills a grid chunk through `FaceFrame` (face B's flipped), and the
 //! far-body bake ([`FarSource`]) shapes the sky's sun disc from the same columns (S-3).
@@ -77,6 +78,36 @@ pub struct RiftRule {
     pub fill: f64,
 }
 
+/// The sun's constant lava flow (SUN_WORLD.md §6, the second slice; owner: "Constant flowing lava"):
+/// where the server's lava fields put a source and how many it runs. One source a `cellM` cell at
+/// its river head (the highest river lava of `probes` × `probes` samples, each at least `minRift`
+/// in a rift and over the sea), placed only within `nearM` of a player on the grid, at most
+/// `maxFields` fields, each grown to at most `maxTiles` tiles; a field with no player near is not run.
+#[derive(Clone, Debug, PartialEq)]
+pub struct FlowRule {
+    pub cell_m: f64,
+    pub probes: u32,
+    pub min_rift: f64,
+    /// The source's hot fluid (`shared/fluids/lava.json`), by name.
+    pub fluid: String,
+    pub rate_m3s: f64,
+    /// The field's starting reach (columns each way).
+    pub radius: u32,
+    pub near_m: f64,
+    pub max_fields: u32,
+    pub max_tiles: u32,
+}
+
+/// A river head: where a source goes (face-local m) and its flow cell (the key it is placed once by).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct RiverHead {
+    pub cell: [i32; 2],
+    pub x: f64,
+    pub z: f64,
+    /// The lava's surface there (face-local m).
+    pub lava: f64,
+}
+
 /// The `volcanic` generator's rules.
 #[derive(Clone, Debug, PartialEq)]
 pub struct VolcanicRules {
@@ -90,6 +121,8 @@ pub struct VolcanicRules {
     pub shore: ShoreRule,
     pub cones: ConeRule,
     pub rifts: RiftRule,
+    /// The lava fields kept running on the grid (optional: none, the lava stays as generated).
+    pub flow: Option<FlowRule>,
     pub bake_size: usize,
 }
 
@@ -151,7 +184,44 @@ pub(crate) fn volcanic_rules(g: &Value, at: &str) -> Result<VolcanicRules, Strin
         },
         cones,
         rifts,
+        flow: match g.get("flow") {
+            Some(f) => Some(flow_rule(f, &format!("{at} flow"))?),
+            None => None,
+        },
         bake_size: bake_size(g, at)?,
+    })
+}
+
+/// A whole number ≥ 1 at `path`.
+fn count(v: &Value, path: &str, at: &str) -> Result<u32, String> {
+    let n = num(v, path, at)?;
+    if n < 1.0 || n.fract() != 0.0 || n > f64::from(u32::MAX) {
+        return Err(format!("{at}: `{path}` must be a whole number ≥ 1"));
+    }
+    Ok(n as u32)
+}
+
+fn flow_rule(f: &Value, at: &str) -> Result<FlowRule, String> {
+    let v = get(f, "vent", at)?;
+    let fluid = block_name(v, "fluid", &format!("{at} vent"))?;
+    let min_rift = share(f, "minRift", at)?;
+    if min_rift <= 0.0 {
+        return Err(format!("{at}: `minRift` must be > 0"));
+    }
+    let probes = count(f, "probes", at)?;
+    if probes > 64 {
+        return Err(format!("{at}: `probes` must be at most 64"));
+    }
+    Ok(FlowRule {
+        cell_m: positive(f, "cellM", at)?,
+        probes,
+        min_rift,
+        fluid,
+        rate_m3s: positive(v, "rateM3s", at)?,
+        radius: count(v, "radius", at)?,
+        near_m: positive(f, "nearM", at)?,
+        max_fields: count(f, "maxFields", at)?,
+        max_tiles: count(f, "maxTiles", at)?,
     })
 }
 
@@ -353,6 +423,118 @@ impl VolcanicTerrain {
     /// The ground's height (face-local m) at (x, z): what a player stands on (lava has no floor).
     pub fn height(&self, face: Face, x: f64, z: f64) -> f64 {
         self.column(face, x, z).ground
+    }
+
+    /// The river heads (`flow`) whose cells lie within `within` m of (x, z) on `face`, nearest
+    /// first: in each `flow.cellM` cell, of `probes` × `probes` samples, the one in a river (at
+    /// least `minRift` in a rift, molten, its lava over the sea's level, not a crater's lake) with
+    /// the highest lava. A cell with no river has none. Empty without `flow` rules.
+    pub fn river_heads(&self, face: Face, x: f64, z: f64, within: f64) -> Vec<RiverHead> {
+        let Some(fl) = &self.rules.flow else {
+            return Vec::new();
+        };
+        let span = (within / fl.cell_m).ceil() as i32 + 1;
+        let (cx, cz) = (
+            (x / fl.cell_m).floor() as i32,
+            (z / fl.cell_m).floor() as i32,
+        );
+        let mut out = Vec::new();
+        for gz in cz - span..=cz + span {
+            for gx in cx - span..=cx + span {
+                let (x0, z0) = (f64::from(gx) * fl.cell_m, f64::from(gz) * fl.cell_m);
+                // The cell's nearest point to (x, z).
+                let dx = (x0 - x).max(0.0).max(x - (x0 + fl.cell_m));
+                let dz = (z0 - z).max(0.0).max(z - (z0 + fl.cell_m));
+                if dx.hypot(dz) > within {
+                    continue;
+                }
+                if let Some(h) = self.river_head_on(face, [gx, gz]) {
+                    out.push(h);
+                }
+            }
+        }
+        out.sort_by(|a, b| {
+            let d = |h: &RiverHead| (h.x - x).hypot(h.z - z);
+            d(a).total_cmp(&d(b))
+        });
+        out
+    }
+
+    /// The river head of flow cell `cell` on `face` (see [`Self::river_heads`]).
+    fn river_head_on(&self, face: Face, cell: [i32; 2]) -> Option<RiverHead> {
+        let fl = self.rules.flow.as_ref()?;
+        let n = fl.probes;
+        let step = fl.cell_m / f64::from(n);
+        let mut best: Option<RiverHead> = None;
+        for j in 0..n {
+            for i in 0..n {
+                let x =
+                    (f64::from(cell[0]) * fl.cell_m + (f64::from(i) + 0.5) * step).floor() + 0.5;
+                let z =
+                    (f64::from(cell[1]) * fl.cell_m + (f64::from(j) + 0.5) * step).floor() + 0.5;
+                if !self.inside(x, z) || self.rift_weight(face, x, z) < fl.min_rift {
+                    continue;
+                }
+                let c = self.column(face, x, z);
+                let in_crater = self
+                    .cones_near(face, x, z, 0.0)
+                    .iter()
+                    .any(|k| (k.x - x).hypot(k.z - z) < self.rules.cones.crater_ratio * k.radius);
+                if !c.molten() || c.lava <= self.rules.lava.sea_m + CELL_H || in_crater {
+                    continue;
+                }
+                if best.is_none_or(|b| c.lava > b.lava) {
+                    best = Some(RiverHead {
+                        cell,
+                        x,
+                        z,
+                        lava: c.lava,
+                    });
+                }
+            }
+        }
+        best
+    }
+
+    /// Spawn points and dev teleports on the sun (MOON_WORLD.md §8): the dry column nearest the
+    /// disc's centre on `face` (a bounded search, rings 8 m apart out to 4 km), its ground at least
+    /// 2 m over any lava it borders, level within 1 m over 4 m each way, and no molten column within
+    /// 16 m (eight ways); face-local (x, ground, z). The centre's surface if none is found.
+    pub fn spawn_point(&self, face: Face) -> [f64; 3] {
+        let clear = |x: f64, z: f64| {
+            (0..8).all(|k| {
+                let a = f64::from(k) * std::f64::consts::FRAC_PI_4;
+                [8.0, 16.0].iter().all(|r| {
+                    let o = self.column(face, x + r * a.cos(), z + r * a.sin());
+                    !o.molten()
+                })
+            })
+        };
+        for ring in 0..500 {
+            let r = f64::from(ring) * 8.0;
+            let n = (r * std::f64::consts::TAU / 8.0).ceil().max(1.0) as i32;
+            for k in 0..n {
+                let a = f64::from(k) / f64::from(n) * std::f64::consts::TAU;
+                let (x, z) = ((r * a.cos()).floor() + 0.5, (r * a.sin()).floor() + 0.5);
+                if !self.inside(x, z) {
+                    continue;
+                }
+                let c = self.column(face, x, z);
+                if c.ground < c.lava + 2.0 {
+                    continue;
+                }
+                let level = [[4.0, 0.0], [-4.0, 0.0], [0.0, 4.0], [0.0, -4.0]]
+                    .iter()
+                    .all(|[dx, dz]| {
+                        let o = self.column(face, x + dx, z + dz);
+                        (o.ground - c.ground).abs() <= 1.0 && o.ground >= o.lava + 1.0
+                    });
+                if level && clear(x, z) {
+                    return [x, c.ground, z];
+                }
+            }
+        }
+        [0.5, self.column(face, 0.5, 0.5).surface(), 0.5]
     }
 
     /// The column's face-local rows: its ground's top cell and its lava's top cell (`None` when

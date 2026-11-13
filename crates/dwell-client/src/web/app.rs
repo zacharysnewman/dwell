@@ -1863,6 +1863,14 @@ impl Client {
         let s = self.inner.borrow();
         s.game.as_ref()?.moon_report().map(|r| r.json())
     }
+    /// A grid from the player as JSON, by name (`__dwell.sun()` is `dwell:sun`'s; the moon report's
+    /// fields, SUN_WORLD.md), or None before playing, from a server without `grid.frames`, or in a
+    /// world without that grid (or one this build's session can't be on).
+    #[wasm_bindgen(js_name = gridReport)]
+    pub fn grid_report(&self, name: String) -> Option<String> {
+        let s = self.inner.borrow();
+        s.game.as_ref()?.grid_report(&name).map(|r| r.json())
+    }
     pub fn voxel(&self, x: i32, y: i32, z: i32) -> u16 {
         self.inner
             .borrow_mut()
@@ -3363,6 +3371,14 @@ impl Client {
     pub fn shade_map(&self, colours: Vec<u32>, codes: Vec<i32>, w: u32, h: u32) -> Vec<u8> {
         let t = &dwell_game::minimap::MAP;
         dwell_game::minimap::shade_grid(t, &colours, &codes, w as usize, h as usize)
+    }
+    /// The maps' label off home (`grid_view::map_away_label`): "" at home; on another grid the
+    /// maps (home's terrain) are hidden and this shows instead.
+    #[wasm_bindgen(js_name = mapAway)]
+    pub fn map_away(&self) -> String {
+        let s = self.inner.borrow();
+        let grid = s.game.as_ref().map_or(0, |g| g.grid());
+        crate::grid_view::map_away_label(grid).unwrap_or_default()
     }
     /// Whether the world's game mode shows the maps (the `map` ability, ADR 0068): a server that
     /// names no mode shows them.

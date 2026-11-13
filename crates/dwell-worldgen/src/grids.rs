@@ -64,6 +64,13 @@ pub struct GridDef {
     /// How high its ground reaches over its midplane (m, face-local): the slab far flight measures
     /// its distance from (MOON_WORLD.md §7).
     pub surface_m: f64,
+    /// Whether the grid has air (`atmosphere`, false when not given): the day sky is a layer over
+    /// space that thins with height (docs/DAY_NIGHT.md §15); without, a viewer on it sees space,
+    /// the night sky's, at every hour (the moon, the sun).
+    pub atmosphere: bool,
+    /// The coarse mesh of its surface drawn nearer than `far_m` and under its chunks while on it
+    /// (`nearMesh`, MOON_WORLD.md §5 M-5); `None` draws none.
+    pub near_mesh: Option<NearMesh>,
     pub generator: GridGenerator,
     /// The capability a client must say before the server captures it into this grid
     /// (`shared/protocol/capabilities.json`; the sun's `grid.sun`, docs/proposals/SUN_WORLD.md §5):
@@ -77,6 +84,15 @@ impl GridDef {
     pub fn open_to(&self, has: impl Fn(&str) -> bool) -> bool {
         self.capability.as_deref().is_none_or(has)
     }
+}
+
+/// A grid's coarse surface mesh (`nearMesh`): `cells` quads across its disc's diameter, each
+/// vertex the lowest ground round it less `sinkM`, so the full-detail chunks cover it where
+/// they are and it shows where they are not (MOON_WORLD.md §5, M-5).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct NearMesh {
+    pub cells: usize,
+    pub sink_m: f64,
 }
 
 impl GridDef {
@@ -399,6 +415,32 @@ pub fn parse_grids(text: &str) -> Result<Vec<GridDef>, String> {
         };
         let far_m = positive(g, "farM", &at)?;
         let surface_m = positive(g, "surfaceM", &at)?;
+        // No air unless declared (the moon, the sun): its sky is space, the night sky's.
+        let atmosphere = match g.get("atmosphere") {
+            None => false,
+            Some(v) => v
+                .as_bool()
+                .ok_or_else(|| format!("{at}: `atmosphere` must be true or false"))?,
+        };
+        let near_mesh = match g.get("nearMesh") {
+            None => None,
+            Some(_) => {
+                let cells = num(g, "nearMesh.cells", &at)?;
+                if !(4.0..=512.0).contains(&cells) || cells.fract() != 0.0 {
+                    return Err(format!(
+                        "{at}: `nearMesh.cells` must be a whole number in 4..=512"
+                    ));
+                }
+                let sink_m = num(g, "nearMesh.sinkM", &at)?;
+                if !(0.0..=200.0).contains(&sink_m) {
+                    return Err(format!("{at}: `nearMesh.sinkM` must be in 0..=200"));
+                }
+                Some(NearMesh {
+                    cells: cells as usize,
+                    sink_m,
+                })
+            }
+        };
         if frame == GridFrameKind::Rest && capture_m.is_some() {
             return Err(format!(
                 "{at}: the grid at rest captures nobody (no `captureM`)"
@@ -450,6 +492,8 @@ pub fn parse_grids(text: &str) -> Result<Vec<GridDef>, String> {
             capture_m,
             far_m,
             surface_m,
+            atmosphere,
+            near_mesh,
             generator,
             capability,
         });
@@ -481,6 +525,67 @@ pub fn grid(name: &str) -> Option<&'static GridDef> {
     grids().iter().find(|g| g.name == name)
 }
 
+/// A spawn on another grid (MOON_WORLD.md §8, M-8; owner 2026-11-13: "Im not seeing a moon spawn or
+/// sun spawn in my new world settings"): the grid and face a world's players start on, chosen by
+/// its key (the grid's name after its namespace, `-b` for face B: `moon`, `moon-b`, `sun`, `sun-b`),
+/// the New world form's Spawn and the `?spawn=` link alike. Every grid of the list but the home
+/// grid (index 0) that has a generator of its own offers both faces.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct GridSpawn {
+    /// The grid's index in its list (the wire's grid byte).
+    pub index: usize,
+    pub def: &'static GridDef,
+    pub face: Face,
+}
+
+/// A grid face's spawn key (`moon`, `moon-b`).
+pub fn spawn_key(def: &GridDef, face: Face) -> String {
+    let short = def
+        .name
+        .split_once(':')
+        .map_or(def.name.as_str(), |(_, n)| n);
+    match face {
+        Face::A => short.to_owned(),
+        Face::B => format!("{short}-b"),
+    }
+}
+
+/// The spawn keys a grid list offers, in its order (both faces of every grid but the home one with
+/// a generator a stand point is found on).
+pub fn spawn_keys(list: &[GridDef]) -> Vec<String> {
+    list.iter()
+        .skip(1)
+        .filter(|g| g.radius_m.is_some() && !matches!(g.generator, GridGenerator::Terrain { .. }))
+        .flat_map(|g| [spawn_key(g, Face::A), spawn_key(g, Face::B)])
+        .collect()
+}
+
+/// The build's grid spawn of key `key` (`sun-b`), if any.
+pub fn grid_spawn(key: &str) -> Option<GridSpawn> {
+    let all = grids();
+    all.iter().enumerate().skip(1).find_map(|(index, def)| {
+        [Face::A, Face::B]
+            .into_iter()
+            .find(|&f| spawn_key(def, f) == key && spawn_keys(all).contains(&spawn_key(def, f)))
+            .map(|face| GridSpawn { index, def, face })
+    })
+}
+
+/// Where a player stands on grid `def` of the world of `world_seed` on `face`: its generator's
+/// spawn point (the moon's flat ground clear of crater walls; the sun's dry crust away from lava),
+/// face-local feet (x, ground, z). `None` for a grid without such a generator.
+pub fn stand_point(def: &GridDef, world_seed: u64, face: Face) -> Option<[f64; 3]> {
+    match &def.generator {
+        GridGenerator::Cratered(_) => {
+            Some(CrateredTerrain::new(def, world_seed)?.spawn_point(face))
+        }
+        GridGenerator::Volcanic(_) => {
+            Some(crate::volcanic::VolcanicTerrain::new(def, world_seed)?.spawn_point(face))
+        }
+        GridGenerator::Terrain { .. } => None,
+    }
+}
+
 /// Travel between the grids (`grids.json` `travel`, MOON_WORLD.md §7).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct TravelRules {
@@ -488,20 +593,24 @@ pub struct TravelRules {
     pub far_above_m: f64,
     /// Far flight's speed per metre of that distance (1/s): `v = perS × d`.
     pub far_per_s: f64,
-    /// Far flight's top speed (m/s).
+    /// Far flight's space speed (m/s): its top, reached only in space (`space` 1 in
+    /// [`TravelRules::far_speed`]).
     pub far_max_mps: f64,
     /// A captured player is released past `captureM` × this (> 1: hysteresis).
     pub release_factor: f64,
 }
 
 impl TravelRules {
-    /// The far-flight speed at `d` m from the nearest grid's slab: 0 nearer than `aboveM` (the
-    /// slider's speed alone), else `perS × d` up to the top.
-    pub fn far_speed(&self, d: f64) -> f64 {
+    /// The far-flight speed (the least fly speed, m/s) at `d` m from the nearest grid's slab and
+    /// `space` (0–1) of the way into space, the sky's value (the atmosphere's thinning, docs/
+    /// DAY_NIGHT.md §15; owner, 2026-11-13: "a much faster fly speed for creative. But only in
+    /// space."): 0 nearer than `aboveM` or in the air (the slider's speed alone), else
+    /// `perS × d` (easing down toward every body's surface) up to `maxMps × space`.
+    pub fn far_speed(&self, d: f64, space: f64) -> f64 {
         if d <= self.far_above_m {
             0.0
         } else {
-            (self.far_per_s * d).min(self.far_max_mps)
+            (self.far_per_s * d).min(self.far_max_mps * space.clamp(0.0, 1.0))
         }
     }
 }

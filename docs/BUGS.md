@@ -79,13 +79,6 @@ pickaxe takes 5 on stone cubes too, pinned by `hits_to_break_come_from_the_tool_
 tools should also break in one hit is the owner's to decide (asked 2026-11-13); until then the rule stays and only the
 form's wording is checked against it.
 
-### 126. Home's sky shows on the moon (clouds hidden after 0.58.4; the moon's sky not built)
-
-Same flight: home's blue sky and clouds show on the moon. The moon's sky (no air, black) is not built yet
-(MOON_WORLD.md §7.3 "Not yet"). Partly fixed: home's clouds are not drawn off home (`DayState::clouds_shown`,
-false from `grid_view::day_on_grid`; the renderer's `clouds_now` is Off), test `grid_view`
-`on_the_moon_the_sun_is_turned_into_its_frame`. Left: the sky's colours and air on the moon.
-
 ### 100. Volumetric clouds look like "crazy triangles"
 
 Owner, 2026-11-12: "the clouds look ridiculous at least the volumetric ones. Look like crazy triangles. Find a
@@ -554,7 +547,7 @@ face, or the placement check against its shape.
 
 ## Fixed
 
-### 138. Red sand on humid red-desert floors cut down to the siltstone (fixed in 0.61.0)
+### 141. Red sand on humid red-desert floors cut down to the siltstone (fixed in 0.61.0)
 
 Found 2026-11-13 by the realistic batch (parts A and B together, seed 1 face A, e.g. (−7750, −8500) in the red rock
 mesa): 14 of 2137 sandstone floors were red sand where the climate is not arid, against #134's rule. Cause: the
@@ -563,6 +556,55 @@ erosion snaps a floor down to the stack's soft layer (`Cut::Floor`), the red des
 cap is `dwell:red_sandstone` with `capBy` `[{"arid": "dwell:red_sand"}]`, as the sandstone's. Test:
 `tests/realistic_rocks.rs` `the_red_desert_floors_are_red_sand`, red at 14 of 2137 (over its 1 in 200), green after;
 the default's goldens unchanged; the starter's red rock mesa has the same stack, so its terrain pin (`tests/starter_memory.rs`) is re-pinned on this line.
+### 140. The player character floats a bit above the ground (scaled up, 2026-11-13)
+
+Owner, 2026-11-13: "I think my player character is floating a bit above the ground now. We didn't talk about
+scaling for the new player model. It's likely shorter and may need to be scaled up." Measured (`models.json`
+`scale` 1.04): the collider rests exactly on the ground (feet 0.000 m over a flat floor, head 1.800 m, natively);
+the Peasant's lowest sole is 0.0005 m over its feet at rest and −0.7 to −0.2 cm in the idle clip (−3.0 to +2.5 cm
+through the walk), on every detail level, so its soles were on the ground; its whole height with the hat is
+1.82 m, but its **eyes were 1.546 m over the feet, 7.3 cm under the camera's 1.62 m eye** (the body under the hat
+~5 % small), which reads as a short body seen from a camera that sits above it. Side-on screenshots on the flat
+world (bench `player-scale`) showed the boots touching the ground. Fixed by data: the Peasant's `scale` 1.09, so
+its eyes (the decor piece's) are at 1.621 m (the hat's top 1.91 m). Test: `render::skinned`
+`the_peasant_stands_on_its_soles_with_its_eyes_at_the_cameras` (both faces; red before: eyes 1.546 m): at idle
+the lowest sole within 2 cm of the feet, the eyes within 3 cm of the camera's eye, your own first-person body's
+soles on the same ground as another player's. The held item still sits within 0.161 m and 5.2° of the rig's hand
+(`the_retargeted_hand_follows_the_rigs_hand_in_the_world`, 0.2 m bar); the first-person arm is scaled to the
+rig's reach, so its fits are unchanged. Not checked: on a ramp the capsule touches the slope off its axis, so
+the feet point (and the body) sits r·(1/cos θ − 1) over the slope under it (~3.5 cm on a ½ m-in-1 m ramp); a
+remote body plants its feet there (`plant_feet`), your own whole body seen from a placed camera does not.
+
+### 126. Home's sky shows on the moon (fixed 2026-11-13)
+
+Same flight: home's blue sky and clouds show on the moon. Home's clouds were hidden off home first
+(`DayState::clouds_shown`). Fixed 2026-11-13 with the sky as one layered model (owner: "Sun and moon should be
+space, the same as night sky"): space is the base sky everywhere and day a layer of a grid's air (`grids.json`
+`atmosphere`, none unless declared), thinning with height (DAY_NIGHT.md §15); on the moon (no air) the sky is
+space at every hour, the stars out, the sun white, no fog (`DayState::airless`, `Air::SPACE`). Tests `grid_view`
+`on_a_grid_without_air_day_colours_never_show` (the moon and a sun added by data),
+`flying_up_from_home_the_day_layer_fades_to_space`, `homes_day_and_night_look_as_before` (both faces). Left: the
+ground's ambient on the moon is still home's hemisphere light, and its sunlight follows home's keyframes.
+
+### 139. A moon landing read 0.11–0.24 m under the ground (fixed 2026-11-13)
+
+Owner's brief, 2026-11-13: "Landing sits slightly below the ground (groundM −0.11 m face A, −0.24 m face B after
+landing): find why and fix." Cause: the report, not the landing. `__dwell.moon()`'s `groundM` measured the feet
+against the moon's smooth generated height, but the ground a player stands on is the column's top cell
+(`CrateredTerrain::top_row`, the height rounded to the ½ m cells), up to a quarter cell over or under it. Fixed:
+`groundM` reads the column's top (`moon_probe.rs` `ground_top`). Tests: `moon_probe`
+`standing_on_the_moons_ground_reads_zero` (both faces; red before: 0.12 m off), `game_local`
+`the_moon_report_steers_a_flight_into_its_capture` (the landing stands within 5 cm of it, both faces).
+
+### 138. The view turned at once at a crossing onto the moon (fixed 2026-11-13)
+
+At a capture or release the look kept its world direction but the view's up jumped to the new grid's face up in
+one frame. Now it eases upright from the view drawn before over `shared/look/motion.json` `gridCrossingRollS`
+(0.6 s; `FaceFlip::cross_grid`, `grid_view::crossing_roll`), also when a snapshot's replay made the crossing,
+which before did not carry the look across at all. Tests: `grid_view`
+`the_crossing_roll_draws_the_view_before_then_eases_to_the_new_up`, `face_flip`
+`a_grid_crossing_eases_the_view_upright_over_the_data` (both faces), `game_local`'s flight to the moon (a roll at
+the capture, none after; red before: no roll at all).
 
 ### 137. Opening the inventory opened the game menu on top of it (fixed after 0.60.7)
 

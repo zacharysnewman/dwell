@@ -35,7 +35,7 @@
         "fbx": "Assets/Stylized NPC - Peasant Nolant/Models/Peasant Nolant(Free Version).fbx",
         "texture": "Assets/Stylized NPC - Peasant Nolant/Textures/Peasant Nolant Green.png"
       },
-      "scale": 1.04,
+      "scale": 1.09,
       "yaw": 0,
       "remap": {},
       "fallback": "idle",

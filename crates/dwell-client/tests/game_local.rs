@@ -39,6 +39,8 @@ struct Recorder {
     camera: Option<[f64; 3]>,
     /// The face the camera was drawn on (its up), and the last day the scene was given.
     camera_face: Option<dwell_world::FaceFrame>,
+    /// The camera's last roll (radians about its forward).
+    roll: f64,
     day: Option<dwell_look::daynight::DayState>,
     outline: Option<[f64; 3]>,
     fov: Option<f64>,
@@ -56,6 +58,9 @@ struct Recorder {
     uploads_waiting: bool,
     frame_bytes: u64,
     frame_chunks: usize,
+    /// The pieces' meshes held (by id) and the last frame's poses.
+    pieces: std::collections::HashSet<u32>,
+    poses: Vec<(u32, [f64; 3], [f32; 4])>,
 }
 
 impl TerrainRenderer for Recorder {
@@ -101,6 +106,16 @@ impl TerrainRenderer for Recorder {
 }
 
 impl Scene for Recorder {
+    fn set_piece(&mut self, id: u32, meshes: Option<(&[ChunkMeshes], f64)>) {
+        if meshes.is_some() {
+            self.pieces.insert(id);
+        } else {
+            self.pieces.remove(&id);
+        }
+    }
+    fn show_pieces(&mut self, poses: Vec<(u32, [f64; 3], [f32; 4])>) {
+        self.poses = poses;
+    }
     fn set_player(&mut self, id: u32, view: Option<PlayerView>) {
         match view {
             Some(v) => self.players.insert(id, v),
@@ -116,10 +131,11 @@ impl Scene for Recorder {
         _yaw: f64,
         _pitch: f64,
         face: dwell_world::FaceFrame,
-        _roll: f64,
+        roll: f64,
     ) {
         self.camera = Some(eye);
         self.camera_face = Some(face);
+        self.roll = roll;
     }
     fn set_day(&mut self, day: &dwell_look::daynight::DayState, _seconds: f64) {
         self.day = Some(*day);
@@ -3951,13 +3967,28 @@ dwell_world::both_faces!(
         let fr = rig.core.server().grids().frame(0, t);
         let (wp, wv) = fr.release(moon_ground(rig.seed, f, 200.0), [0.0; 3]);
         assert!(rig.core.server().place_on_grid(id, wp, wv));
-        let captured = rig.run_until(120, |r| {
-            r.game.as_ref().unwrap().grid() == 1
-                && r.core.server().grid_state_of(id).is_some_and(|g| g.0 == 1)
+        let captured = rig.run_until(120, |r| r.game.as_ref().unwrap().grid() == 1);
+        assert!(captured, "captured by the client");
+        // The view eases upright onto the moon's face (motion.json `gridCrossingRollS`), from
+        // the view drawn before: a roll at the crossing, none once eased.
+        let mut rolls = vec![rig.scene.borrow().roll];
+        rig.run_until(60, |r| {
+            rolls.push(r.scene.borrow().roll);
+            false
         });
-        assert!(captured, "captured by the client and the server");
+        assert!(
+            rolls.iter().any(|r| r.abs() > 1e-3),
+            "the view rolls upright at the crossing: {rolls:?}"
+        );
+        assert_eq!(*rolls.last().unwrap(), 0.0, "upright after the ease");
+        assert!(
+            rig.core
+                .server()
+                .grid_state_of(id)
+                .is_some_and(|g| g.0 == 1),
+            "captured by the server"
+        );
         let stats = rig.game.as_ref().unwrap().debug_state().stats;
-        rig.run_until(30, |_| false);
 
         // The moon's chunks, in the moon's coordinates: the dust under its spawn, meshed.
         let ground = moon_ground(rig.seed, f, 0.0);
@@ -4059,10 +4090,17 @@ dwell_world::both_faces!(
             "the release as the server made it"
         );
         assert_eq!(after.snaps, before.snaps, "no snap through the release");
+        // Just past the release sphere (well inside its `farM`) the moon is its surface mesh at
+        // its pose in home's frame (M-5), not the far disc.
+        let scene = rig.scene.borrow();
+        let moon_id = dwell_client::grid_bodies::id(1);
+        let pose = scene.poses.iter().find(|p| p.0 == moon_id);
         assert!(
-            rig.scene.borrow().day.unwrap().moon_shown,
-            "the moon in home's sky again"
+            pose.is_some_and(|p| p.1 != [0.0; 3]),
+            "the moon drawn from home up close"
         );
+        assert!(!scene.day.unwrap().moon_shown, "and not its far disc too");
+        drop(scene);
 
         // Home's chunks stream again: back at the spawn (a dev move), its ground arrives.
         let centre = [home_feet[0], home_feet[1] + 1.0, home_feet[2]];
@@ -4076,6 +4114,75 @@ dwell_world::both_faces!(
                     .is_some()
         });
         assert!(back, "home's chunks stream again after the release");
+    }
+);
+
+dwell_world::both_faces!(
+    /// M-5 (MOON_WORLD.md §5): the moon seen up close while approaching is its coarse surface mesh
+    /// at its orbit's pose (where its frame puts it), its far disc then not drawn; captured and on
+    /// it, the same mesh is drawn at the identity under its chunks (nothing swapped: no pop).
+    fn the_moon_up_close_is_its_surface_mesh_then_under_its_chunks(f: FaceFrame) {
+        let mut rig = Rig::with_generator(GENERATOR_SANDBOX);
+        assert!(rig.run_until(60 * 20, |r| {
+            r.game
+                .as_ref()
+                .is_some_and(|g| g.debug_state().terrain_ready)
+        }));
+        let moon_id = dwell_client::grid_bodies::id(1);
+        assert!(
+            !rig.scene.borrow().poses.iter().any(|p| p.0 == moon_id),
+            "at home's ground (~600 km) the moon is the sky's far disc"
+        );
+        assert!(rig.scene.borrow().day.unwrap().moon_shown);
+        rig.input.flight.set_allowed(true);
+        rig.input.flight.set(true);
+        rig.run_until(30, |_| false);
+        let face = if f == dwell_world::FaceFrame::A {
+            1.0
+        } else {
+            -1.0
+        };
+        // 2 km outside the capture sphere (42 km from its centre), over its face `f`.
+        let r = rig.core.moon_approach(2000.0, face);
+        assert!(!r.contains("error"), "{r}");
+        rig.run_until(20, |_| false);
+        assert_eq!(rig.game.as_ref().unwrap().grid(), 0, "not captured yet");
+        {
+            let scene = rig.scene.borrow();
+            assert!(scene.pieces.contains(&moon_id), "the moon's mesh built");
+            let pose = scene.poses.iter().find(|p| p.0 == moon_id);
+            let pose = pose.expect("the moon drawn as its mesh up close");
+            let t = f64::from(rig.core.server().tick()) / 60.0;
+            let moon = rig.core.server().grids().frame(0, t);
+            let d = (0..3)
+                .map(|k| (pose.1[k] - moon.origin[k]).powi(2))
+                .sum::<f64>()
+                .sqrt();
+            // The moon moves ~1 km/s: a frame or two of the clock apart.
+            assert!(
+                d < 200.0,
+                "at the moon's frame: {:?} vs {:?}",
+                pose.1,
+                moon.origin
+            );
+            assert!(!scene.day.unwrap().moon_shown, "no far disc over the mesh");
+        }
+        // Onto its ground (the dev teleport): captured the next tick.
+        let r = rig.core.moon_land(face);
+        assert!(!r.contains("error"), "{r}");
+        assert!(
+            rig.run_until(120, |r| r.game.as_ref().unwrap().grid() == 1),
+            "captured"
+        );
+        rig.run_until(10, |_| false);
+        let scene = rig.scene.borrow();
+        let pose = scene.poses.iter().find(|p| p.0 == moon_id);
+        assert_eq!(
+            pose.map(|p| (p.1, p.2)),
+            Some(([0.0; 3], [0.0, 0.0, 0.0, 1.0])),
+            "on the moon its mesh is drawn in its own frame"
+        );
+        assert!(!scene.day.unwrap().moon_shown);
     }
 );
 
@@ -4271,12 +4378,21 @@ dwell_world::both_faces!(
 
         // Steer by the report, as `flyTo` does (moonTrip.ts `aim`).
         let mut captured = false;
+        // A fast arrival (space flight, owner 2026-11-13: "a much faster fly speed … only in
+        // space"): the closing speed on the moon, and no snap through the capture.
+        let snaps0 = rig.game.as_ref().unwrap().debug_state().stats.snaps;
+        let mut last_d: Option<f64> = None;
+        let mut closing: f64 = 0.0;
         for _ in 0..60 * 60 {
             let m = rig.game.as_ref().unwrap().moon_report().unwrap();
             if m.grid == "moon" {
                 captured = true;
                 break;
             }
+            if let Some(d) = last_d {
+                closing = closing.max((d - m.distance) / 0.1);
+            }
+            last_d = Some(m.distance);
             let (yaw, pitch) = m.look;
             rig.input.look.yaw = yaw;
             rig.input.look.pitch = pitch;
@@ -4289,6 +4405,16 @@ dwell_world::both_faces!(
             rig.input.set_key(k, false);
         }
         assert!(captured, "captured flying along the report's look");
+        assert!(
+            closing > 5000.0,
+            "a fast arrival: closing at {closing:.0} m/s"
+        );
+        rig.run_until(30, |_| false);
+        assert_eq!(
+            rig.game.as_ref().unwrap().debug_state().stats.snaps,
+            snaps0,
+            "no snap through a fast capture"
+        );
         let m = rig.game.as_ref().unwrap().moon_report().unwrap();
         assert_eq!(rig.game.as_ref().unwrap().grid(), m.index);
         assert!(
@@ -4342,6 +4468,120 @@ dwell_world::both_faces!(
             m.ground_m.unwrap() < 0.3 && m.up_mps.abs() < 0.1
         });
         assert!(landed, "landed on the moon's ground");
+        // Standing on it, not in it: the feet on its cells' top (BUGS.md: a landing read
+        // −0.11 m on face A, −0.24 m on face B against the smooth height).
+        rig.run_until(60, |_| false);
+        let g = rig
+            .game
+            .as_ref()
+            .unwrap()
+            .moon_report()
+            .unwrap()
+            .ground_m
+            .unwrap();
+        assert!(g.abs() < 0.05, "standing {g} m over the moon's ground");
+    }
+);
+
+dwell_world::both_faces!(
+    /// SUN_WORLD.md §5's capture speed: the sun goes round its path at 3.7–7.5 km/s (the moon's
+    /// ~1 km/s), so the carry's clock slip on a jittery, laggy device turns positions by several
+    /// times the moon's distance. A far flier steered at the sun from just outside its capture
+    /// sphere (`sunApproach`, moving with it) is captured, flown down and landed on its dry crust
+    /// with no snap (#879's carry smoothing).
+    fn a_sun_trip_on_a_jittery_device_makes_no_snap(f: FaceFrame) {
+        let mut rig = Rig::with_generator(GENERATOR_SANDBOX);
+        rig.latency_steps = 6;
+        assert!(rig.run_until(60 * 20, |r| {
+            r.game
+                .as_ref()
+                .is_some_and(|g| g.debug_state().terrain_ready)
+        }));
+        rig.input.flight.set_allowed(true);
+        rig.input.flight.set(true);
+        rig.run_until(30, |_| false);
+        let face = if f == dwell_world::FaceFrame::A {
+            1.0
+        } else {
+            -1.0
+        };
+        let r = rig.core.grid_approach("dwell:sun", 300.0, face);
+        assert!(!r.contains("error"), "{r}");
+        rig.run_until(60, |_| false);
+        let snaps = |r: &Rig| r.game.as_ref().unwrap().debug_state().stats.snaps;
+        let report = |r: &Rig| r.game.as_ref().unwrap().grid_report("dwell:sun").unwrap();
+        let before = snaps(&rig);
+        let mut n = 0usize;
+        let mut step = |r: &mut Rig| {
+            n += 1;
+            if n.is_multiple_of(7) {
+                r.slow_frame(4);
+            } else {
+                r.frame();
+            }
+        };
+        let mut captured = false;
+        for _ in 0..60 * 60 {
+            let m = report(&rig);
+            if m.grid == "sun" {
+                captured = true;
+                break;
+            }
+            rig.input.look.yaw = m.look.0;
+            rig.input.look.pitch = m.look.1;
+            rig.input.set_key("KeyW", m.look.1.abs() < 70.0);
+            rig.input.set_key("Space", m.look.1 > 20.0);
+            rig.input.set_key("KeyC", m.look.1 < -20.0);
+            step(&mut rig);
+        }
+        for k in ["KeyW", "Space", "KeyC"] {
+            rig.input.set_key(k, false);
+        }
+        assert!(captured, "captured by the sun");
+        // The sun's speed on its path at the capture: several times the moon's.
+        let index = report(&rig).index;
+        let t = f64::from(rig.core.server().tick()) / 60.0;
+        let grids = rig.core.server().grids();
+        let slot = grids.slots.iter().position(|s| s.index == index).unwrap();
+        let frame = grids.frame(slot, t);
+        let v = frame.point_velocity(frame.to_world(dwell_sim::travel::GRID_CENTRE));
+        let speed = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
+        assert!(speed > 3_000.0, "the sun moves {speed} m/s");
+        assert_eq!(
+            snaps(&rig),
+            before,
+            "no snap at a capture at {speed:.0} m/s"
+        );
+        // Down to 40 m, then flight off and the landing.
+        rig.input.look.pitch = 0.0;
+        rig.input.set_key("KeyC", true);
+        for _ in 0..60 * 120 {
+            let g = report(&rig).ground_m.unwrap();
+            if g < 40.0 {
+                break;
+            }
+            rig.input
+                .flight
+                .set_speed_level(if g < 600.0 { 6.0 } else { 11.0 });
+            step(&mut rig);
+        }
+        rig.input.set_key("KeyC", false);
+        rig.input.flight.set(false);
+        let mut landed = false;
+        for _ in 0..60 * 30 {
+            let m = report(&rig);
+            if m.ground_m.unwrap() < 0.3 && m.up_mps.abs() < 0.1 {
+                landed = true;
+                break;
+            }
+            step(&mut rig);
+        }
+        assert!(landed, "landed: {:?}", report(&rig).ground_m);
+        assert_eq!(
+            snaps(&rig),
+            before,
+            "no snap through the capture and landing on the sun"
+        );
     }
 );
 
