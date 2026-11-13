@@ -259,3 +259,15 @@ preview and the driver, remove any `client/node_modules` symlink or built `clien
   3-minute target, although it re-records s6 too (s6's first keyframe is camB, so it is stale). The intermediate encode
   is now `-preset veryfast -crf 16` (the splice re-encodes) and still takes 30–40 s a shot, the largest share of the time
   left. Encoding while capturing, or VideoToolbox, would cut it further.
+- 2026-11-12, water and underwater, video 2 (portrait, 6 shots, 51 s, 15.0 MB at the manifest's `"splice": {"crf": 28}`;
+  manifest `videos/water/`, seed 7). **Finding water:** `d.goto('water', { scope: 'world', water: 'sea' | 'river',
+  move: true, maxS: 60 })` goes to the world map's nearest one (seed 7's spawn → a river at 923, 176, 6464, high in
+  the hills; the nearest sea is ~17 km away at 11738, 19660, with a sandy beach and a lagoon; its river is a flat
+  channel through the sand, no stepped pools). Probe the shore by columns (`d.voxel(x, row, z)`, water reads 15) before
+  choosing a wade line. **Golden hour is ~0.8 on seed 7** (0.7–0.75 still read as afternoon; at 0.8 the sun sits low
+  with a glint path). **Swimming:** a swimmer floats (feet ~1.3 m under the level), so W with the pitch down doesn't
+  take the head under: hold `KeyC` (crouch swims down) — it reaches the bed and holds the player there while looking
+  up. The surface crossing reads best as a theater path from 1 m above to 2 m below at the level (`s4`); the
+  third-person treading shot needs no path tuning (target `"player"`, start 3 m behind). The first-person frames show
+  the block-target box (BUGS.md #113). Timings: the first full `take.mjs water` 4 min 07 s; re-recording four shots
+  2 min 25 s–2 min 49 s.
