@@ -43,8 +43,8 @@ impl Relief {
         let count = land.iter().filter(|&&l| l).count() as f64;
         let mut max_height = 0.0f64;
         let (mut a200, mut a1500, mut lake) = (0usize, 0usize, 0usize);
-        for c in 0..land.len() {
-            if !land[c] {
+        for (c, &is_land) in land.iter().enumerate() {
+            if !is_land {
                 continue;
             }
             let h = m.height[c];
@@ -86,9 +86,9 @@ impl Relief {
         }
         let r = (PEAK_RADIUS_M / m.cell).ceil() as i64;
         let mut peaks = 0;
-        for c in 0..land.len() {
+        for (c, &is_land) in land.iter().enumerate() {
             let h = m.height[c];
-            if !land[c] || h <= RANGE_ABOVE_M {
+            if !is_land || h <= RANGE_ABOVE_M {
                 continue;
             }
             let (x, z) = ((c % n) as i64, (c / n) as i64);
