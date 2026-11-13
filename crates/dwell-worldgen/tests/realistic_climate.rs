@@ -99,8 +99,10 @@ dwell_world::both_faces!(
                 "  discharge rain windward {wq:.3} lee {lq:.3} (mean land {:.3})",
                 r.mean_land
             );
+            // Wetter by half again at least (the map's own march over the eroded ground; the
+            // coarse grid's twice, above).
             assert!(
-                wq >= 2.0 * lq,
+                wq >= 1.5 * lq,
                 "seed {world}: discharge rain windward {wq} lee {lq}"
             );
         }

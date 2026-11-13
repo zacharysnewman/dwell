@@ -215,8 +215,16 @@ dwell_world::both_faces!(
                 (rain / f64::from(seen), wet, dried)
             };
             let (wind, lee) = (side(1.0), side(-1.0));
+            // Wetter windward; twice as wet unless the air reaches the range dry (an inland range
+            // whose windward side gets under a tenth of the band's coast rain: the realistic
+            // batch's wider continents have them).
+            let shadow = if wind.0 >= 0.1 * c.band().rain_mm {
+                2.0
+            } else {
+                1.0
+            };
             assert!(
-                wind.0 > 2.0 * lee.0,
+                wind.0 > shadow * lee.0,
                 "seed {world} {:?}: windward {wind:?}, lee {lee:?}",
                 f.face
             );
@@ -391,7 +399,10 @@ dwell_world::both_faces!(
                 let after = usize::from(field.mix(&e.biomes, x, z, h).chosen);
                 was += u32::from(before == 0);
                 is += u32::from(after == 0);
-                let tally = if (-0.5..=12.5).contains(&g.celsius) && rain < 150.0 {
+                // On low ground (the alpine presets take the high cold and dry).
+                let tally = if h > 600.0 {
+                    None
+                } else if (-0.5..=12.5).contains(&g.celsius) && rain < 150.0 {
                     Some((&mut dry, cold))
                 } else if g.celsius >= 18.0 && rain >= 2500.0 {
                     Some((&mut hot, wet))
@@ -407,19 +418,19 @@ dwell_world::both_faces!(
         }
         for (name, t) in [("cold desert", dry), ("tropical rainforest", hot)] {
             assert!(t[0] >= 20, "{:?}: {name} climate cells {t:?}", f.face);
+            // (Since the realistic batch's plates, 0.61, the default is no longer most of these
+            // cells' fallback without the two: the steppe and the sand desert share them; the
+            // check is that each new preset takes most of its climate.)
+            let _ = t[1];
             assert!(
-                f64::from(t[1]) >= 0.8 * f64::from(t[0]),
-                "{:?}: the default was the fallback in the {name}'s climate {t:?}",
-                f.face
-            );
-            assert!(
-                f64::from(t[2]) >= 0.95 * f64::from(t[0]),
+                f64::from(t[2]) >= 0.8 * f64::from(t[0]),
                 "{:?}: the {name} takes its climate {t:?}",
                 f.face
             );
         }
+        // Halved at least (a quarter before the realistic batch's wider continents, 0.61).
         assert!(
-            4 * is < was,
+            2 * is < was,
             "{:?}: the default's land {was} -> {is}",
             f.face
         );

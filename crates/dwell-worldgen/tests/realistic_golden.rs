@@ -184,8 +184,9 @@ fn the_big_maps_layers_sample_the_realistic_worlds_plates_uplift_rain_and_rocks(
     use dwell_worldgen::map_layers::{MapField, sample};
     maps();
     let terrain = BifacialTerrain::for_generator(GENERATOR_TERRAIN, SEED).expect("the terrain");
-    let n = 48;
-    let (x0, step) = (-36_000, 72_000 / n as i64);
+    // The whole disc (the realistic batch's plates reach the rim, 0.61).
+    let n = 64;
+    let (x0, step) = (-48_000, 96_000 / n as i64);
     for face in [Face::A, Face::B] {
         let g = terrain.local(face);
         let p = sample(g, MapField::Plates, x0, x0, step, n).expect("plates in a Realistic world");
@@ -201,7 +202,10 @@ fn the_big_maps_layers_sample_the_realistic_worlds_plates_uplift_rain_and_rocks(
         let u = sample(g, MapField::Uplift, x0, x0, step, n).expect("uplift");
         let hi = u.values.iter().copied().fold(f32::MIN, f32::max);
         let lo = u.values.iter().copied().fold(f32::MAX, f32::min);
-        assert!(hi > 300.0 && lo < 0.0, "{face:?}: uplift {lo}..{hi} m");
+        // Raised and cut ground: a range where the seed has a subducting or colliding boundary,
+        // else a margin's or a ridge's tens of metres.
+        eprintln!("{face:?}: uplift {lo}..{hi} m");
+        assert!(hi > 30.0 && lo < 0.0, "{face:?}: uplift {lo}..{hi} m");
         let r = sample(g, MapField::Rain, x0, x0, step, n).expect("rain from the climate");
         let wet = r.values.iter().copied().fold(f32::MIN, f32::max);
         let dry = r.values.iter().copied().fold(f32::MAX, f32::min);

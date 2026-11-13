@@ -511,9 +511,25 @@ test('a plate fixture and new ranges added by data alone are emitted', () => {
   const rs = platesRust(validatePlates(p));
   assert.match(rs, /count_min: 6,/);
   assert.match(rs, /count_max: 9,/);
-  assert.match(rs, /oceanic: KindRule \{ weight: 0\.45, min: 2 \},/);
+  assert.match(rs, /oceanic: KindRule \{ weight: 0\.5, min: 2, interior: 5000\.0 \},/);
   assert.match(rs, /name: "young_ocean_dives_last",/);
   assert.match(rs, /age: 300\.0 \},\n.*age: 10\.0 \},\n {8}\],\n {8}kind: BoundaryKind::Convergent,\n {8}subducts: Some\(0\),/);
+});
+
+test('a pair landform added by data alone is emitted', () => {
+  // Realistic batch A: a back-arc basin behind a continental arc, by data.
+  const p = loadPlates();
+  const pair = p.uplift.pairs.find(
+    (e) => e.boundary === 'convergent' && e.plates.join() === 'continental,oceanic',
+  );
+  pair.landforms.push({ side: 'over', height: -40, width: 3000, distance: 16000 });
+  const rs = platesRust(validatePlates(p));
+  assert.match(
+    rs,
+    /PairForm \{ side: Side::Over, shape: Shape::Bump, height: -40\.0, width: 3000\.0, distance: 16000\.0 \}\], arc: ArcMode::Crest/,
+  );
+  assert.match(rs, /rim: RimRule \{ edge_sea: 2500\.0,/);
+  assert.match(rs, /rift: RiftRule \{ segment_length: \[8000\.0, 15000\.0\],/);
 });
 
 test('bad plate entries fail with the key and the problem', () => {
@@ -521,19 +537,32 @@ test('bad plate entries fail with the key and the problem', () => {
     [(p) => (p.count = [5, 3]), /plates\.json: count must be \[min, max\]/],
     [(p) => (p.count = [0, 3]), /count must be \[min, max\], whole numbers 1–32/],
     [(p) => delete p.reach, /plates\.json: reach is missing/],
-    [(p) => (p.seaMargin = 30000), /seaMargin must be in \[0, 25000\]/],
+    [(p) => (p.seaMargin = 2000), /the file: unknown seaMargin/],
+    [(p) => (p.centres = 1000), /centres must be in \[50000, 200000\]/],
+    [(p) => (p.rim.noise.amplitude = 5000), /rim\.noise\.amplitude must be in \[0, 1000\]/],
+    [(p) => (p.hotspots.within = 49000), /hotspots\.within must leave the rim's edgeSea band clear/],
+    [(p) => (p.kinds.oceanic.interior = -1), /kinds\.oceanic\.interior must be in/],
+    [(p) => p.uplift.pairs.pop(), /uplift\.pairs: no entry for transform:oceanic-oceanic/],
+    [(p) => p.uplift.pairs.push(p.uplift.pairs[0]), /duplicate pair convergent:continental-continental/],
+    [(p) => (p.uplift.pairs[0].plates = ['oceanic', 'continental']), /plates must be two plate kinds, continental first/],
+    [(p) => (p.uplift.pairs[0].landforms[0].side = 'over'), /side over: only on a subducting pair/],
+    [(p) => (p.uplift.pairs[5].landforms[0].side = 'continental'), /side continental: the pair has no continental plate/],
+    [(p) => (p.uplift.pairs[1].landforms[0].shape = 'rift'), /shape rift must be astride/],
+    [(p) => (p.uplift.pairs[3].arc = 'island'), /arc island: only on a subducting pair/],
+    [(p) => (p.uplift.rift.sill = [0.1, 0.9]), /sill's max must be under depth's min/],
+    [(p) => (p.uplift.along.height = 1), /uplift\.along\.height must be in \[0, 0\.9\]/],
     [(p) => (p.kinds.basaltic = { weight: 1, min: 0 }), /kinds: unknown basaltic/],
     [(p) => delete p.kinds.oceanic, /kinds\.oceanic is missing/],
     [(p) => (p.kinds.oceanic.weight = 2), /kinds\.oceanic\.weight must be in \[0, 1\]/],
     [(p) => ((p.kinds.oceanic.weight = 0), (p.kinds.continental.weight = 0)), /kinds: the weights must not all be 0/],
-    [(p) => (p.kinds.oceanic.min = 3), /kinds: the kinds' mins \(4\) exceed the least plate count \(3\)/],
+    [(p) => (p.kinds.oceanic.min = 7), /kinds: the kinds' mins \(8\) exceed the least plate count \(7\)/],
     [(p) => (p.warp.wavelength = 1.5), /warp\.wavelength must be a whole number/],
     [(p) => (p.transformBelow = 1.5), /transformBelow must be in \[0, 1\]/],
     [(p) => (p.hotspots.extra = 1), /hotspots: unknown extra/],
     [(p) => (p.other = 1), /the file: unknown other/],
     [(p) => (p.uplift.cell = 100), /uplift\.cell must be in \[500, 10000\]/],
-    [(p) => delete p.uplift.rift, /uplift\.rift is missing/],
-    [(p) => (p.uplift.range.width = 0), /uplift\.range\.width must be in \[1, 50000\]/],
+    [(p) => delete p.uplift.rift, /uplift\.rift must be an object/],
+    [(p) => (p.uplift.pairs[0].landforms[0].width = 0), /uplift\.pairs\[0\]\.landforms\[0\]\.width must be in \[1, 50000\]/],
     [(p) => (p.uplift.arc.maxCones = 2.5), /uplift\.arc\.maxCones must be a whole number/],
     [(p) => delete p.uplift.hotspot.decay, /uplift\.hotspot\.decay is missing/],
     [(p) => (p.uplift.wobble = 1), /uplift: unknown wobble/],

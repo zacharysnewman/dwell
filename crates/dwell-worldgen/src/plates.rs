@@ -778,7 +778,7 @@ mod tests {
                 assert_eq!(l, PlateLayout::for_face(seed, f.face), "seed {seed}");
                 // The draw's count less the slivers removed.
                 let n = l.plates.len() as u32;
-                assert!(n >= 2 && n <= PLATES.count_max, "{n}");
+                assert!((2..=PLATES.count_max).contains(&n), "{n}");
                 let h = l.hotspots.len() as u32;
                 assert!(
                     (PLATES.hotspots_min..=PLATES.hotspots_max).contains(&h),
