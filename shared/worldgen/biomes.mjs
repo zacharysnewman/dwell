@@ -993,7 +993,7 @@ export function validateRocks(data, blocks) {
     }
   };
   groups(data);
-  // The ground blocks' ordered blends by stack (0.62, Monument Valley): each its stacks, 2–6 full
+  // The ground blocks' ordered blends by stack (0.64, Monument Valley): each its stacks, 2–6 full
   // blocks in order with their shares (summing to 1), the noise and the dither.
   if (data.blends !== undefined) {
     if (!Array.isArray(data.blends)) fail("blends must be a list");

@@ -596,3 +596,113 @@ dwell_world::both_faces!(
         assert_eq!(path.keyframes[0].up, Some(f));
     }
 );
+
+/// A creature (id 3) walking +x at 4 m/s whose position arrives in steps of `step_s` (the wire's
+/// rate; 0: continuously).
+struct Creature {
+    f: FaceFrame,
+    t: f64,
+    step_s: f64,
+}
+impl Targets for Creature {
+    fn position(&self, t: &TargetRef) -> Option<[f64; 3]> {
+        let seen = if self.step_s > 0.0 {
+            (self.t / self.step_s).floor() * self.step_s
+        } else {
+            self.t
+        };
+        match t {
+            TargetRef::Creature(3) => Some(at(self.f, 4.0 * seen, 1.0, 0.0)),
+            TargetRef::Point(p) => Some(*p),
+            _ => None,
+        }
+    }
+}
+
+/// A still camera 20 m off the creature's line watching it for 6 s at `fps`, `smoothing` its
+/// `followSmoothingS` (None: the default); the aim's direction each frame.
+fn watch(f: FaceFrame, fps: f64, step_s: f64, smoothing: Option<f64>) -> Vec<[f64; 3]> {
+    let mut v = json!({ "formatVersion": 1,
+        "keyframes": [
+            { "t": 0, "position": at(f, 10.0, 4.0, -20.0), "target": { "creature": 3 } },
+            { "t": 6 }
+        ],
+        "segments": [{ "move": "linear" }] });
+    if let Some(s) = smoothing {
+        v["followSmoothingS"] = json!(s);
+    }
+    let mut player = Player::new(path(v));
+    let mut c = Creature { f, t: 0.0, step_s };
+    let mut out = Vec::new();
+    while !player.finished() {
+        c.t += 1.0 / fps;
+        out.push(player.step(1.0 / fps, &c).direction);
+    }
+    out
+}
+
+/// The largest and the mean turn between frames (degrees) after the first second.
+fn turns(dirs: &[[f64; 3]], fps: usize) -> (f64, f64) {
+    let t: Vec<f64> = dirs[fps..]
+        .windows(2)
+        .map(|w| angle_deg(w[0], w[1]))
+        .collect();
+    (
+        t.iter().copied().fold(0.0, f64::max),
+        t.iter().sum::<f64>() / t.len() as f64,
+    )
+}
+
+dwell_world::both_faces!(
+    /// Following a creature (THEATER_MODE.md §3.5): its position arriving in 20 Hz steps, the
+    /// camera's aim still turns evenly frame to frame (smoothed); with no smoothing it steps.
+    fn a_followed_creature_is_smoothed(f: FaceFrame) {
+        let (max, mean) = turns(&watch(f, 60.0, 0.05, None), 60);
+        assert!(mean > 0.05, "it turns to follow ({mean}°)");
+        assert!(
+            max < 1.6 * mean,
+            "smooth: {max}° at most, {mean}° on average"
+        );
+        let (max0, mean0) = turns(&watch(f, 60.0, 0.05, Some(0.0)), 60);
+        assert!(
+            max0 > 2.5 * mean0,
+            "exact: steps of {max0}° (mean {mean0}°)"
+        );
+    }
+);
+
+dwell_world::both_faces!(
+    /// The smoothing is the same at 30 and 144 frames a second.
+    fn following_is_frame_rate_independent(f: FaceFrame) {
+        let slow = watch(f, 30.0, 0.0, None);
+        let fast = watch(f, 144.0, 0.0, None);
+        for s in 1..6 {
+            let d = angle_deg(slow[s * 30 - 1], fast[s * 144 - 1]);
+            assert!(d < 0.05, "{s} s: {d}° apart");
+        }
+    }
+);
+
+#[test]
+fn follow_smoothing_round_trips_and_a_bad_one_fails() {
+    // face-a-only: a path field, no face.
+    let base = json!({ "formatVersion": 1,
+        "keyframes": [{ "t": 0, "position": [0, 100, 0] }, { "t": 2 }] });
+    let p = path(base.clone());
+    assert_eq!(
+        p.follow_smoothing_s,
+        dwell_theater::path::DEFAULT_FOLLOW_SMOOTHING_S
+    );
+    assert!(
+        p.to_json().get("followSmoothingS").is_none(),
+        "the default isn't written"
+    );
+    let mut v = base.clone();
+    v["followSmoothingS"] = json!(1.5);
+    let p = path(v);
+    assert_eq!(path(p.to_json()).follow_smoothing_s, 1.5);
+    let mut bad = base;
+    bad["followSmoothingS"] = json!(-1);
+    let e = Path::parse(&bad).unwrap_err();
+    assert!(e.contains("followSmoothingS"), "{e}");
+}

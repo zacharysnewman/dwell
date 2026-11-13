@@ -184,7 +184,7 @@ fn the_big_maps_layers_sample_the_realistic_worlds_plates_uplift_rain_and_rocks(
     use dwell_worldgen::map_layers::{MapField, sample};
     maps();
     let terrain = BifacialTerrain::for_generator(GENERATOR_TERRAIN, SEED).expect("the terrain");
-    // The whole disc (the realistic batch's plates reach the rim, 0.62).
+    // The whole disc (the realistic batch's plates reach the rim, 0.64).
     let n = 64;
     let (x0, step) = (-48_000, 96_000 / n as i64);
     for face in [Face::A, Face::B] {

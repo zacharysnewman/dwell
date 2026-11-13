@@ -82,7 +82,7 @@ pub struct ClimateRules {
     pub bands: &'static [Band],
     /// (latitude, sea-level °C), latitudes ascending.
     pub sea_level: &'static [[f64; 2]],
-    /// (latitude, the rain's factor), latitudes ascending (0.62: the subtropical dry belt under
+    /// (latitude, the rain's factor), latitudes ascending (0.64: the subtropical dry belt under
     /// the subtropical highs, dry deserts around 20–30°).
     pub rain_by_latitude: &'static [[f64; 2]],
     /// °C per 1000 m.

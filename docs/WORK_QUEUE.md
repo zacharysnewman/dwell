@@ -707,7 +707,7 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    owner: the 6 °C floor counts the steppe's and cold desert's red rock floors as desert (the reported spot's red
    mesas are steppe at ~8 °C); the mesa's own 12 °C would keep red sand to hot deserts (face B of seeds 1, 7, 42
    then has none).
-   **Realistic batch A: plates and coasts (2026-11-13, the 0.62 line).** Owner, 2026-11-13, on a Realistic world
+   **Realistic batch A: plates and coasts (2026-11-13, the 0.64 line).** Owner, 2026-11-13, on a Realistic world
    (seed 2741893632, 0.59.3): "What's up with realistic world having an enormous \"river\"? And a separated mountain
    range from the main continent? It's a very weird geography that doesn't look realistic at all" / "I meant
    horizontal slices of noise" (large uniform swaths of one terrain type in plan view) / "And noise also seems very
@@ -735,7 +735,7 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    A): the "river" is a divergent boundary's rift flooded as one 45 km canal; the separated range a continental plate
    clipped to a sliver at the disc's sea margin; plan view one province (red beds) over ~550 km² and the cold desert
    on 40.5 % of the land, bands parallel to the boundaries; "tiled": no periodicity, but 45°/90° streak hatching at
-   100–300 m (the erosion's D8 routing); the rim: land capped at reach − seaMargin for every plate. Part A (above, the 0.62 line): the rift, the separated range and the rim. **Part B (branch
+   100–300 m (the erosion's D8 routing); the rim: land capped at reach − seaMargin for every plate. Part A (above, the 0.64 line): the rift, the separated range and the rim. **Part B (branch
    `claude/realistic-geography-batch-b-3o44zr`, ships with part A): variety and the grid streaks, Realistic only**
    (the default and starter goldens unchanged; `tests/realistic_variety.rs`, `examples/realistic_variety.rs`, seeds 1,
    7, 42, 2741893632 on both faces): (1) mixed provinces: rocks.json `plateProvinces.mixing` and each rule's `mix`,
@@ -749,7 +749,7 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    and bumps × a 13 km regional amplitude (0.35–1.6), octaves turned 37° and 2.13× finer, basins and swells ±150 m at
    5.5 km kept whole and rising as domes against the erosion. (4) Grid streaks: plates.json `variety.flow` `random`
    (each erosion step to a slope-weighted random lower neighbour); the eight-fold slope harmonic 0.12–0.29 → 0.01–0.08.
-   **Notched ramps only at mesa edges (2026-11-13, added to the realistic batch, the 0.62 line).** Owner, 2026-11-13: "I
+   **Notched ramps only at mesa edges (2026-11-13, added to the realistic batch, the 0.64 line).** Owner, 2026-11-13: "I
    feel like a new rule got applied to some terrain with slopes where they're more common now instead of the previous
    rules where slopes would occur in some instances and not in others. Now it seems like it's only slopes, what
    happened?" Then: "I was in realistic world. Yes I'd like the old rule to apply except for mesa edges." Cause: #888
@@ -1294,6 +1294,20 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    declare the grid's capability, otherwise fall back to home. The `?spawn=` link takes the same values."): built
    with the sun's second slice (item 42, MOON_WORLD.md §8).
 
+   **Three things on the moon (owner, 0.61, iPhone, 2026-11-13, with screenshots):** "3 things on the moon: it doesn't
+   seem to have real LODs, can't see terrain very far in a meaningful way. Is there a moon visible from the moon? And
+   moon rock should have slopes, seems to only be generating half blocks." Screenshots: the ground ends at the chunk
+   distance in a flat pale band, then black sky; looking up, a cratered disc in the starry sky, home not visible; the
+   ground ½ m steps with no ramps. **And (owner, 2026-11-13):** "In addition to the moon, the sun doesn't render chunks
+   past high detail. It needs some directional lighting, let's make it from the earth and moon reflections." / "Sun
+   should also be glowing generally 'due to the lava'." Brief: (1) no moon disc in the moon's own sky; (2) the moon's
+   generator shapes stored ramps by home's rule, as data on the grid's generator; (3) real LOD on the moon and the
+   sun to their horizons (any grid); (4) M-6: home drawn in the moon's sky at its direction and size; (5) a light rig
+   per grid as data: the bodies that light it (their reflected light by albedo, phase and apparent size), a minimum
+   ambient, and on the sun a warm lava glow from below; home's lighting unchanged. BUGS.md #143–#145. Branch
+   `claude/moon-fixes-3-l0zjdx`.
+   **Built natively (0.63.0, a new line):** all five (BUGS.md #143–#145 say how; MOON_WORLD.md §7.3). **Left:** the
+   browser look on a GPU (`moon-draw`, `sun-draw`); shadows from the rig's lights; the rig on water and characters.
 28. **An atmosphere: the sky thinning to space** (owner 2026-11-12: "We likely need an atmosphere transition now
    between sky thinning to space. Clouds shouldn't extend past the earth atmosphere either."). With flight to the
    moon, climbing should fade the sky's scattering to black space with stars by day, the horizon glow becoming a
@@ -2057,6 +2071,26 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    body: chunks streamed around it from the same budget, creatures spawned and kept, the near ecology, lava and
    water stepped there; animals don't flee it. Tests on both faces (creative streams and simulates, adventure
    ignores, no capability ignored, a clear ends it). Not yet run in a browser. Next, locally: T-2, T-3.
+   **The rest (owner-approved brief, 2026-11-13):** the host's `theaterGuests` setting (the host can disable theater
+   for guests), following a creature (an animal or NPC: orbit/track it, the target smoothed), offline frame-exact
+   recording (each frame rendered at the chosen rate whatever the page's speed), phone touch controls; T-5's MCP
+   server skipped (a nice-to-have).
+   Owner, 2026-11-13: **"Improve the UI on the theater mode. It's really bad, it doesn't even have a proper X button or
+   responsive layout."** Done first, ahead of the rest: the panel redone in the menu design system (#892, item 23) —
+   a real close X (labelled, focus ring; Esc closes through the Panels owner, #902), responsive (a compact docked
+   panel on desktop, a bottom sheet with large targets on phones in portrait, a side sheet in landscape, no
+   horizontal scroll at 360 px), grouped sections (Presets: target and move, then sliders; Keyframes: list, add,
+   delete, preview, play; Recording: aspect, frame rate, record or stop, download), a collapsible Advanced section,
+   clear states (recording: a red dot and a timer; playing: a pause button), controller navigable.
+   **Built (2026-11-13, cloud; branch `claude/theater-rest`):** the panel (THEATER_MODE.md §2.1: one of the panels
+   `ui/panels.ts` owns, the X and Esc close it, docked / bottom sheet / side sheet by the viewport, 360 px checked in
+   headless Chromium, Advanced folds, a REC badge with a timer, Pause, the d-pad); `theaterGuests` (`WorldSettings`
+   0x87, optional; Host… → Theater for guests; the host — the loopback session or an op — always may; the server
+   ignores a guest's viewpoint while off); following a creature or NPC (a list nearest first or the crosshair, aimed
+   by id, its position smoothed: the path's `followSmoothingS`); frame-exact path takes (one frame of the rate per
+   drawn frame, WebCodecs VP8 in a WebM; `exact: true` on the dev API's take); a phone's stick and Up/Down buttons.
+   Outstanding: the owner's look on a GPU and a phone (the screenshots), a dedicated server's switch for
+   `theaterGuests`, T-5.
 
 42. **The sun as a real world** (owner 2026-11-12: "Add this feature to the queue, the sun is an actual world like
    the moon. Follow similar concepts as the moon. The sun is a volcano world. Constant flowing lava, oceans of
@@ -2105,6 +2139,12 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    jittery device; spawns on the moon and the sun (MOON_WORLD.md §8). **Left:** `sun-draw` and a sun spawn run in a
    browser on a GPU (a local check); shrines on other grids; the sun's sky (the moon session's).
 
+   **The sun's LOD and light (owner, 2026-11-13):** "In addition to the moon, the sun doesn't render chunks past high
+   detail. It needs some directional lighting, let's make it from the earth and moon reflections." / "Sun should also
+   be glowing generally 'due to the lava'." With item 27's three moon things (branch `claude/moon-fixes-3-l0zjdx`):
+   the LOD per grid covers the sun; the sun is lit by home's and the moon's reflected light (each at its true
+   direction, its strength by albedo, phase and apparent size, as data) and a warm lava ambient from below (data), the
+   lava's own glow and bloom kept. BUGS.md #145.
 ## Done
 
 - **Underwater audio (owner 2026-11-12: "swimming underwater sounds like swimming on the water surface, when
@@ -2705,7 +2745,7 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    completed blueprint disappears (the blocks are the record). Builders (`dwell:builder`) come to a blueprint with a
    player near and build it foundation up, unlimited blocks, from outside its box, skipping occupied cells. Left:
    B4 (towns at worldgen sites, a new compatibility line), a placing preview ghost; BLUEPRINTS.md §7.
-   **B4 built (2026-11-13, cloud, branch `claude/blueprints-towns`, the 0.62 line):** town sites per face from the
+   **B4 built (2026-11-13, cloud, branch `claude/blueprints-towns`, the 0.64 line):** town sites per face from the
    seed (a 1200 m grid, dry land in a height band, gentle slope, clear of shrines and portals; `blueprints.json`
    `towns`), each a plan of blueprints (the hamlet: a well, two huts, a watchtower, a wall) founded once a player is
    within 128 m and its ground is loaded, saved so it is founded once; builders then build it. BLUEPRINTS.md §6.

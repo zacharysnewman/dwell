@@ -1,5 +1,5 @@
 {
-  "$comment": "Sagebrush (0.62; owner, 2026-11-13, of a Monument Valley photo: \"Some brush too. Could add some single 'tree' block with brush on top.\"): a desert shrub in the tree system (docs/TREE_GROWTH.md): a single short trunk with a round grey-green brush crown, about 1–1.5 m tall, placed densely on mesa and desert floors (shared/worldgen/placements.json `sagebrush`). Its growth stages, felling and drops are the tree system's. Lengths in metres. Prototype content. Run `node shared/trees/gen.mjs` after editing; CI fails on stale output.",
+  "$comment": "Sagebrush (0.64; owner, 2026-11-13, of a Monument Valley photo: \"Some brush too. Could add some single 'tree' block with brush on top.\"): a desert shrub in the tree system (docs/TREE_GROWTH.md): a single short trunk with a round grey-green brush crown, about 1–1.5 m tall, placed densely on mesa and desert floors (shared/worldgen/placements.json `sagebrush`). Its growth stages, felling and drops are the tree system's. Lengths in metres. Prototype content. Run `node shared/trees/gen.mjs` after editing; CI fails on stale output.",
   "name": "dwell:sagebrush",
   "label": "Sagebrush",
   "blocks": {

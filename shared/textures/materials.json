@@ -238,7 +238,7 @@
       ]
     },
     "red_dirt": {
-      "$comment": "Red-brown desert dirt (0.62): the soil's dabs and slabs in the red_dirt ramp.",
+      "$comment": "Red-brown desert dirt (0.64): the soil's dabs and slabs in the red_dirt ramp.",
       "use": "block", "ramp": "red_dirt", "overlay": 1,
       "layers": [
         { "kind": "fill", "color": "@base" },
@@ -311,7 +311,7 @@
       ]
     },
     "brush": {
-      "$comment": "Sagebrush's crown (0.62): leaves' clusters with gaps, smaller and denser, in the grey-green sage ramp.",
+      "$comment": "Sagebrush's crown (0.64): leaves' clusters with gaps, smaller and denser, in the grey-green sage ramp.",
       "use": "block", "ramp": "sage", "overlay": 1, "alpha": "strokes",
       "layers": [
         { "kind": "fill", "color": "@base" },

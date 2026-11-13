@@ -3114,7 +3114,7 @@ export function validateClimate(data) {
     if (i > 0 && !(p[0] > data.seaLevel[i - 1][0]))
       fail(`seaLevel[${i}]: latitudes must ascend`);
   }
-  // The rain's factor by latitude (0.62: the subtropical dry belt), as seaLevel's curve.
+  // The rain's factor by latitude (0.64: the subtropical dry belt), as seaLevel's curve.
   if (!(Array.isArray(data.rainByLatitude) && data.rainByLatitude.length >= 2))
     fail("rainByLatitude must be at least two [latitude, factor] points");
   for (const [i, p] of data.rainByLatitude.entries()) {

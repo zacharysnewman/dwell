@@ -2,14 +2,25 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
-      "version": "0.62.0",
+      "version": "0.64.0",
       "changes": [
-        "Realistic worlds: a new compatibility line, their terrain redrawn from the seed (older Realistic worlds open in their own version)",
-        "Realistic plates and coasts: rifts are chains of lakes, coasts end in shelves, no sliver plates, ranges rise and dip, continents run out toward the world's edge",
+        "Realistic worlds: a new compatibility line, their terrain redrawn from the seed (older Realistic worlds open in their own version); rifts are chains of lakes, coasts end in shelves, no sliver plates, ranges rise and dip, continents run out toward the world's edge",
         "Realistic interiors mix rock provinces and vary rain and temperature by district; rolling ground is flat-topped again, with notched ramps only along mesa and rock-wall edges",
-        "Mesa country reads like Monument Valley: dark red-brown walls over red dirt floors with red sand and pale tan patches blending smoothly, and new red dirt blocks",
-        "Mesa tops rise, tilt and carry knobs and small buttes; floors slope to their washes with mounds and talus fans; grey-green sagebrush dots the floors",
-        "Hot tan sand deserts with dunes fill the warm dry lowlands of subtropical faces, separate from the red mesa country"
+        "Mesa country reads like Monument Valley: dark red-brown walls over red dirt floors blending with red sand and pale tan, tops that rise and tilt with knobs, floors with washes, mounds and talus fans, and grey-green sagebrush",
+        "Hot tan sand deserts with dunes fill the warm dry lowlands of subtropical faces, separate from the red mesa country",
+        "Theater mode's panel is redone (a close button, Esc, a docked panel or phone sheet, grouped sections, a recording timer, controller navigation), phones get flying controls, and the camera can follow a creature or NPC",
+        "Theater mode records frame by frame for smooth video on slow machines, and hosts can turn it off for guests"
+      ]
+    },
+    {
+      "version": "0.63.0",
+      "changes": [
+        "On the moon and the sun, the ground is drawn out to the horizon, not only near you",
+        "Home hangs in the moon's sky, lit in its phase by the sun",
+        "Moon slopes are ramps, not stairs of half blocks",
+        "The moon no longer glows in its own sky; on the sun its own disc is gone",
+        "The sun is lit by home's and the moon's reflected light, and glows warm from its lava",
+        "New compatibility line: the moon's terrain changed, so worlds from 0.61 open in 0.61 builds"
       ]
     },
     {

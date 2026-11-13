@@ -23,6 +23,8 @@ export interface TheaterConfig {
     padLookDegPerS: number;
     deadzone: number;
   };
+  /** A phone's flying controls (src/theater/touch.ts). */
+  touch: { stickRadiusPx: number; verticalFactor: number };
   keyframes: { gapS: number; moves: string[] };
   record: {
     aspects: Aspect[];
@@ -54,6 +56,8 @@ export function parseTheaterConfig(raw: unknown): TheaterConfig {
   for (const [k, v] of Object.entries(c.fly)) if (k !== '$comment') positive(v, `fly.${k}`);
   if (c.fly.minSpeedMps > c.fly.maxSpeedMps)
     throw new Error('theater.json: fly.minSpeedMps is over maxSpeedMps');
+  positive(c.touch.stickRadiusPx, 'touch.stickRadiusPx');
+  positive(c.touch.verticalFactor, 'touch.verticalFactor');
   positive(c.keyframes.gapS, 'keyframes.gapS');
   for (const m of c.keyframes.moves)
     if (!(MOVES as readonly string[]).includes(m))

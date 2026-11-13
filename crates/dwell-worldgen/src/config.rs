@@ -756,7 +756,7 @@ fn plate_provinces_from_json(v: Option<&Value>) -> Result<crate::geology::PlateP
 
 /// The erosion (rocks.json `erosion`, systemic terrain T4); absent (an edit stored before T4):
 /// the build's.
-/// rocks.json `blends`; absent (an edit stored before 0.62): none.
+/// rocks.json `blends`; absent (an edit stored before 0.64): none.
 fn blends_from_json(v: Option<&Value>) -> Result<&'static [crate::geology::Blend], String> {
     let Some(list) = v.and_then(Value::as_array) else {
         return Ok(&[]);
@@ -806,7 +806,7 @@ fn blends_from_json(v: Option<&Value>) -> Result<&'static [crate::geology::Blend
     Ok(Box::leak(out.into_boxed_slice()))
 }
 
-/// rocks.json `mesaRelief`; absent (an edit stored before 0.62): none, flat as before.
+/// rocks.json `mesaRelief`; absent (an edit stored before 0.64): none, flat as before.
 fn mesa_relief_from_json(v: Option<&Value>) -> Result<crate::geology::MesaRelief, String> {
     let Some(v) = v else {
         return Ok(crate::geology::MesaRelief::NONE);

@@ -89,7 +89,7 @@ both_faces!(
                     "{face:?}: {top} on {:.1} % of the land",
                     100.0 * share
                 );
-                // A share of the land: the realistic batch's part A (0.62) runs the continents out
+                // A share of the land: the realistic batch's part A (0.64) runs the continents out
                 // to the rim, so the owner's face A holds 2.7× the land (320 km² was 19 % of it; the largest is 16 %, a red rock mesa on face B).
                 let (big, km2) = m.biomes.largest_region();
                 let land = m.biomes.land_km2();

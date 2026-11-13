@@ -890,7 +890,7 @@ pub struct MesaRelief {
 }
 
 impl MesaRelief {
-    /// None: flat tops and floors (an edit stored before 0.62).
+    /// None: flat tops and floors (an edit stored before 0.64).
     pub const NONE: Self = Self {
         top_amplitude: 0.0,
         top_wavelength: 1.0,

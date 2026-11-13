@@ -1,7 +1,7 @@
 //! Uplift from plate boundaries (docs/proposals/REALISTIC_WORLD.md §3.2, phase R2): a Realistic
 //! world's tectonics (`terrain.json` `tectonics.plates` 1) from its face's seed-drawn plate layout
 //! (`plates.rs`), not from a hand-placed line. Every boundary, ordered into polylines, adds the
-//! landforms its **pair** gives (realistic batch A, 0.62: plates.json `uplift.pairs`, keyed by the
+//! landforms its **pair** gives (realistic batch A, 0.64: plates.json `uplift.pairs`, keyed by the
 //! boundary's kind and its two plates' kinds), each on a side by rule:
 //!
 //! - two continents closing: a collision range astride; an ocean diving under a continent: a trench

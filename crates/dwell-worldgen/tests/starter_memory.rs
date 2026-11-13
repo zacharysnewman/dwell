@@ -117,11 +117,11 @@ fn fnv(h: &mut u64, bytes: &[u8]) {
 /// sandstone's treads show red sand where the ground is arid (its `capBy`, rocks.json `arid`), red
 /// sandstone elsewhere.
 ///
-/// Re-pinned 2026-11-13 for BUGS.md #143 (the realistic batch's line): the red desert beds'
+/// Re-pinned 2026-11-13 for BUGS.md #146 (the realistic batch's line): the red desert beds'
 /// siltstone, whose floors the erosion cuts down to, shows red sand only where arid (its `capBy`),
 /// red sandstone elsewhere, as the sandstone does.
 ///
-/// Re-pinned 2026-11-13 for the rest of the realistic batch (the 0.62 line; WORK_QUEUE item 15):
+/// Re-pinned 2026-11-13 for the rest of the realistic batch (the 0.64 line; WORK_QUEUE item 15):
 /// notched ramps only at rock walls' edges (rocks.json `shaping.notched` `mesaEdges`), the mesas'
 /// relief (`mesaRelief`), mesa country's blended red dirt, red sand and tan (`blends`), the red rock
 /// mesa's red dirt bands and its sagebrush, and the boulders on red ground.

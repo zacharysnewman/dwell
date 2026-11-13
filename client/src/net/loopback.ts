@@ -47,6 +47,8 @@ export class LoopbackTransport implements Transport {
   serverTickMs: number | null = null;
   /** The world's game mode (ADR 0065) as the local server last said ('' before it did). */
   mode = '';
+  /** Whether guests may use theater mode (THEATER_MODE.md §7), as the host last set it. */
+  theaterGuests = true;
   private readonly modeWaits: ((mode: string) => void)[] = [];
   private readonly retuneWaits: ((r: { maps: Uint8Array[]; error?: string }) => void)[] = [];
   /** Callers waiting for a save to finish, oldest first (the worker answers in order). */
@@ -89,6 +91,7 @@ export class LoopbackTransport implements Transport {
         } else if (e.data.t === 'ready') {
           const transport = new LoopbackTransport(worker);
           transport.mode = e.data.mode ?? '';
+          transport.theaterGuests = e.data.theaterGuests ?? true;
           transport.post({
             t: 'connect',
             session: SESSION,
@@ -187,6 +190,13 @@ export class LoopbackTransport implements Transport {
       this.modeWaits.push(resolve);
       this.post({ t: 'setMode', mode: name });
     });
+  }
+
+  /** The host turns theater mode on or off for guests (THEATER_MODE.md §7). */
+  setTheaterGuests(on: boolean): void {
+    if (this.closed) return;
+    this.theaterGuests = on;
+    this.post({ t: 'theaterGuests', on });
   }
 
   /**

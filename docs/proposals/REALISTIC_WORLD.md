@@ -13,7 +13,7 @@ plate history (`rocks.json` `plateProvinces`) and soils by rock × climate (`veg
 big map's debug layers (plates, uplift, rain, rocks); created, played and reloaded in the browser on the M1's GPU,
 the phone page's total at load under the starter's (R6 below). Steps by geology (2026-11-13, 0.57.0, WORK_QUEUE item
 15): the global `cliffs` volume off and the rock shaping on in Realistic worlds, so the ground steps only where its rock's
-jointing says (R5 below). Realistic batch A (2026-11-13, the 0.62 line): landforms by plate pair, segmented rifts, no
+jointing says (R5 below). Realistic batch A (2026-11-13, the 0.64 line): landforms by plate pair, segmented rifts, no
 sliver plates, ranges varied along their line, and an open rim (§6, after R6). Variety (2026-11-13, WORK_QUEUE item 15, the realistic batch part B): mixed provinces in the
 plates' settings (`rocks.json` `plateProvinces.mixing`, each rule's `mix`), regional and local climate noise
 (`climate.json` `variety`), basins and swells and turned, warped hills (`plates.json` `variety.relief`) and a
@@ -526,7 +526,7 @@ them: red with the new rocks' palettes among the old, green after). `Resolved::w
   seed 1234 (a subarctic band) is nearly all snow. The phone page's total at load (`npm run bench -- --warm --touch
   --compare memory-phone`, configs `worldgen` `test:starter` and `test:realistic`, seed 0): Realistic **570 MiB**
   against the starter's **655 MiB** at load (−13 %), 532 against 598 MiB 30 s later.
-- **Realistic batch A: plates and coasts (2026-11-13, the 0.62 line; WORK_QUEUE item 15).** The owner, on seed
+- **Realistic batch A: plates and coasts (2026-11-13, the 0.64 line; WORK_QUEUE item 15).** The owner, on seed
   2741893632 (0.59.3): "What's up with realistic world having an enormous \"river\"? And a separated mountain range
   from the main continent? It's a very weird geography that doesn't look realistic at all", and "are we hardcoding
   that there's an ocean edge dropoff always around?". The diagnosis: the "river" was a divergent boundary between a
@@ -580,8 +580,8 @@ them: red with the new rocks' palettes among the old, green after). `Resolved::w
   inland range the air reaches dry), and the former fallback climates' presets take 80 % of their climate on low
   ground; `realistic_climate`'s discharge rain is 1.5× windward; `realistic_rocks` meets a collision on the face's
   first seed that has one, and allows 1 in 100 red-desert floors off by the arid line. The Realistic golden is
-  rewritten (a new line, 0.62). Part B (variety: plan-view swaths, uniform hatching) is separate.
-- **Realistic batch, the owner's later requests (2026-11-13, the 0.62 line; WORK_QUEUE item 15).** All data with
+  rewritten (a new line, 0.64). Part B (variety: plan-view swaths, uniform hatching) is separate.
+- **Realistic batch, the owner's later requests (2026-11-13, the 0.64 line; WORK_QUEUE item 15).** All data with
   validation and tests on both faces:
   - **Notched ramps only at mesa edges** (`rocks.json` `shaping.notched`, now a word: `none` | `mesaEdges` | `all`; an
     edit's 0/1 reads as none/all): `mesaEdges` notches a column only where it or a neighbour shows a rock wall

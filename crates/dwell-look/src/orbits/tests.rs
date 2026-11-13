@@ -18,6 +18,7 @@ fn today_settings() -> WorldSettings {
         size: dwell_protocol::world_size::WorldSize::DEFAULT,
         moon_phase: None,
         orbit: None,
+        theater_guests: true,
     }
 }
 

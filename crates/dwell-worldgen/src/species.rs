@@ -590,7 +590,7 @@ mod tests {
     fn every_species_names_its_sapling() {
         // face-a-only: names only.
         // The old-growth species (WORK_QUEUE item 32), the rainforest's tall broadleaf and the mesa's
-        // sagebrush (0.62) are wild only: no sapling of their own yet.
+        // sagebrush (0.64) are wild only: no sapling of their own yet.
         let wild: Vec<_> = SPECIES
             .iter()
             .filter(|s| s.sapling.is_none())

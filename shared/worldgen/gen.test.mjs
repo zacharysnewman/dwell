@@ -747,7 +747,7 @@ test('the checked-in rocks are valid, generate the checked-in Rust, and take a r
   bad((x) => (x.rocks[1].face = 'dwell:nothing'), /rock dwell:shale: face "dwell:nothing" is not in the registry/);
   bad((x) => (x.stacks[0].layers[0].rock = 'dwell:nothing'), /stack dwell:red_beds: layer rock "dwell:nothing"/);
   bad((x) => (x.shaping.strength = 3), /shaping.strength must be in \[0, 1\]/);
-  // 0.62: notched ramps by a word, the mesa relief, the ground blends (a blend added by data alone).
+  // 0.64: notched ramps by a word, the mesa relief, the ground blends (a blend added by data alone).
   bad((x) => (x.shaping.notched = 'some'), /shaping.notched must be one of none, mesaEdges, all/);
   bad((x) => (x.mesaRelief.topAmplitude = 99), /mesaRelief.topAmplitude must be in \[0, 50\]/);
   bad((x) => (x.blends[0].shares = [0.5, 0.5, 0.5]), /shares must sum to 1/);

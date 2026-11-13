@@ -991,7 +991,7 @@ impl BiomeSet {
                 first
             })
             .collect();
-        // The blends' variants of every palette they reach (0.62), after all those.
+        // The blends' variants of every palette they reach (0.64), after all those.
         let blend_start = palettes.len() as u16;
         let mut blend_origin = Vec::new();
         let blend_first = geology
@@ -2715,7 +2715,7 @@ impl TerrainGenerator {
                 palette = p;
             }
         }
-        // The ground's ordered blend by stack (rocks.json `blends`, 0.62): mesa country's red
+        // The ground's ordered blend by stack (rocks.json `blends`, 0.64): mesa country's red
         // dirt, red sand and tan in order, no hard bands.
         if snow != Some(None) {
             palette = self.blended(&mix, x, z, palette, gx.hypot(gz));

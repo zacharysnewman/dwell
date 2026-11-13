@@ -499,8 +499,21 @@ the moon's unedited chunks never evicted, tier 1 bodies in the moon's space (non
   - **Faster flight in space**: far flight scaled by how far into space the flier is (§7.1), one system.
   - **Landing under the ground** (BUGS.md #139): the report's `groundM`, not the landing: it read the smooth
     height, not the cells' top.
-- **Not yet:** the browser checks (`moon-draw`, `moon-trip`, on a GPU, local); home seen from the moon (M-6's
-  drawing: its bake as a far body or a mesh, from the world map the client does not hold on the main thread);
+- **The owner's three moon things and the sun's light (2026-11-13, 0.63.0, branch `claude/moon-fixes-3-l0zjdx`;
+  BUGS.md #143–#145):**
+  - **No moon in the moon's sky:** its halo, glint and moonlight are not packed there either (`DayState::on_moon`);
+    the cratered disc the owner saw is most likely the sun (its disc shaded by the sun world's bake, white in space).
+  - **Ramps on the moon:** `generator.ramps` (`notched`), home's rule as data (HALF_HEIGHT_GRID.md §10).
+  - **The LOD per grid (M-5 extended):** `grids.json` `lod`: rings of the grid's surface round the viewer to its rim,
+    from its `FarSource` (`grid_lod.rs`), on the moon and the sun; on the grid they replace M-5's identity mesh.
+    Chosen over a `LodSystem` per grid: home's octree takes its sections from the worldgen workers, its index from
+    the server and its tree from home's bounds; the rings need only the grid's generator, ~2.5k samples a ring.
+  - **Home from the moon (M-6's drawing):** home's `nearMesh` (64 cells) from its world maps (`HomeFar`, the
+    shell's `far_terrain`), its seas in the water block's colour, drawn at home's place in the moon's frame at every
+    distance (`skyDisc` false), lit by the sun turned into the moon's frame (so in its phase).
+  - **A light rig per grid:** `light` (`grid_light.rs`): on the moon the sun and home's faint fill, on the sun
+    home's and the moon's reflections and the lava's glow from below.
+- **Not yet:** the browser checks (`moon-draw`, `moon-trip`, on a GPU, local); shadows from the rig's lights;
   the moon's ground light (its hemisphere light is home's, its sunlight follows home's keyframes); remote
   players on another grid (sent at world positions); the other systems for away players listed in §7.2.
 
@@ -564,8 +577,8 @@ data"):**
 | **M-2** [built] | The sky draws the moon from its bake at M-4's position: today's size, glow and brightness (owner: "the moon should look bright"); the baked normals lit by the sun direction; the face from the orbit; moonlight from M-4's `moonlight` | the client bakes in a worker and caches per world; a screenshot per phase angle on both faces; the lit part as bright as today's moon and its halo today's × the lit share (a full moon side by side with today's); CPU-adapter tier |
 | **M-3** [built] | `GridFrame`: the frame abstraction (world ↔ grid ↔ face) for rendering, collision, targeting and gravity; the home grid the identity | the identity frame changes no result (parity tests across physics, targeting, meshing); a moving test grid's points round-trip |
 | **M-4** [built] | The celestial model (§6): the moon's orbit as data, phases from geometry, moonlight by lit share with a night floor; the orbit's phase an optional world setting | `cargo test -p dwell-look --lib celestial` (13 tests, both faces): full when opposite the sun, new when between, lit share monotonic; face A toward home at every phase; both faces' phases equal; the floor kept; the clock and the sun unchanged (golden); `MOON_PHASE` round-trips and is absent by default (`dwell-protocol`) |
-| M-5 [built as a coarse mesh, 2026-11-13] | LOD per grid: the moon's LOD terrain inside `farM`, the far body beyond, crossfaded. Built: a coarse surface mesh inside `farM` (§7.3), switched, not crossfaded | the moon's mesh from its generator inside 150 km, under its chunks on it (tests ✓); no seam at the switch (screenshot, outstanding: a GPU) |
-| M-6 | The home world's bake from its world map (water mask), drawn from far. **Bake built** (§5); drawing it from the moon outstanding (with M-5/M-7) | `cargo test -p dwell-worldgen --test home_far` (10 tests, both faces): deterministic, the water mask the map's sea, normals out of mountain slopes, block colours, size/cost/memory bounded ✓; a screenshot from 600 km (outstanding: needs the drawing) |
+| M-5 [built as a coarse mesh, 2026-11-13; rings on the grid 0.63.0] | LOD per grid: the moon's LOD terrain inside `farM`, the far body beyond, crossfaded. Built: a coarse surface mesh inside `farM` (§7.3), switched, not crossfaded | the moon's mesh from its generator inside 150 km, under its chunks on it (tests ✓); no seam at the switch (screenshot, outstanding: a GPU) |
+| M-6 | The home world's bake from its world map (water mask), drawn from far. **Bake built** (§5); **drawn from the moon (0.63.0)** as its coarse mesh from the same source, at its place and size | `cargo test -p dwell-worldgen --test home_far` (10 tests, both faces): deterministic, the water mask the map's sea, normals out of mountain slopes, block colours, size/cost/memory bounded ✓; a screenshot from 600 km (outstanding: needs the drawing) |
 | M-7 [partial; M-7b server + wire built; M-7c client built] | Streaming the moon's chunks per grid; far flight; capture and release; gravity per grid; the grid id in snapshots (behind `grid.frames`) | a scripted flight home → moon → home with no jump in position (≤ 1 cm) on both of the moon's faces; ⅙ g jump height |
 | M-8 | Moon spawn A and B in the New world form and `?spawn=moon`, `moon-b` | a new world spawned on each face stands on the moon's ground in its frame |
 

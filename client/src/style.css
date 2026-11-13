@@ -3911,7 +3911,7 @@ body.inventory-open #touch-controls {
 
 /* Theater mode's HUD switch (src/theater/hud.ts `setHud`): every child of body but the canvas and the
    toolbar hidden; in a take, the toolbar too. */
-body.theater-clean > *:not(#view):not(#theater-bar):not(script):not(style) {
+body.theater-clean > *:not(#view):not(#theater-bar):not(#theater-touch):not(script):not(style) {
   visibility: hidden !important;
   opacity: 0 !important;
   pointer-events: none !important;
@@ -3921,68 +3921,327 @@ body.theater-take > #theater-bar {
   display: none !important;
 }
 
-/* Theater mode's toolbar (src/theater/mode.ts, docs/THEATER_MODE.md §2): the menu's glass, at the
-   foot of the screen, one column on a phone. It hides while a path plays or a take records. */
+body.theater-take > #theater-touch {
+  display: none !important;
+}
+
+/* Theater mode's flying controls on a phone (src/theater/touch.ts): the stick at the bottom left, Up
+   and Down beside it; above the bottom sheet's header when it is collapsed, under it when open (the
+   sheet's controls come first), beside the side sheet in landscape. */
+.theater-touch {
+  position: fixed;
+  left: var(--safe-left);
+  bottom: calc(var(--safe-bottom) + 8px);
+  z-index: var(--z-widgets);
+  display: flex;
+  align-items: end;
+  gap: 18px;
+  touch-action: none;
+  user-select: none;
+}
+
+.theater-touch[hidden],
+.theater-touch.tb-sheet-bottom[data-sheet='open'] {
+  display: none;
+}
+
+.theater-touch.tb-sheet-bottom[data-sheet='collapsed'] {
+  bottom: calc(var(--safe-bottom) + 84px);
+}
+
+.tt-stick {
+  display: grid;
+  place-items: center;
+  width: 128px;
+  height: 128px;
+  border-radius: 50%;
+  background: rgb(246 250 255 / 30%);
+  box-shadow: inset 0 0 0 2px rgb(255 255 255 / 55%);
+  touch-action: none;
+}
+
+.tt-knob {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: rgb(246 250 255 / 85%);
+  box-shadow: 0 2px 8px rgb(10 20 35 / 30%);
+  pointer-events: none;
+}
+
+.tt-buttons {
+  display: grid;
+  gap: 10px;
+}
+
+.tt-btn {
+  width: 64px;
+  height: 56px;
+  border: 0;
+  border-radius: 14px;
+  background: rgb(246 250 255 / 80%);
+  color: var(--ink);
+  font: 700 15px var(--font-body);
+  touch-action: none;
+}
+
+.tt-btn:active {
+  background: #fff;
+}
+
+/* Theater mode's panel (src/theater/mode.ts, docs/THEATER_MODE.md §2; owner, 2026-11-13: "Improve the UI
+   on the theater mode ... a proper X button or responsive layout"): the menu's glass, buttons, chips
+   and disclosure. Its layout by the viewport (src/theater/layout.ts `layoutFor`): docked beside the
+   view on a desktop, a bottom sheet in portrait, a side sheet in landscape. While a path plays or a
+   take records only its header shows (the state, Pause, Stop and the X). */
 .theater-bar {
   position: fixed;
-  left: 50%;
-  bottom: var(--safe-bottom);
   z-index: var(--z-menu);
-  transform: translateX(-50%);
-  width: min(760px, calc(100% - 32px));
+  display: flex;
+  flex-direction: column;
   box-sizing: border-box;
-  padding: 10px 12px;
-  border-radius: 16px;
+  max-width: 100%;
+  padding: 10px 12px 12px;
+  overflow: hidden;
   background: var(--gm-glass);
   -webkit-backdrop-filter: blur(20px) saturate(1.2);
   backdrop-filter: blur(20px) saturate(1.2);
   box-shadow:
     inset 0 0 0 1px var(--mm-glass-line),
     0 12px 32px rgb(10 20 35 / 30%);
-  color: #1d2733;
-  font-size: 14px;
+  color: var(--ink);
+  font: 500 14px/1.3 var(--font-body);
+  accent-color: var(--mm-mode-creative);
+}
+
+.theater-bar *,
+.theater-bar *::before,
+.theater-bar *::after {
+  box-sizing: border-box;
+  min-width: 0;
+}
+
+/* Desktop: a compact column docked at the left, under the safe area, the view left free. */
+.theater-bar.tb-docked {
+  top: var(--safe-top);
+  left: var(--safe-left);
+  width: 340px;
+  max-height: calc(100% - var(--safe-top) - var(--safe-bottom));
+  border-radius: 16px;
+}
+
+/* A phone in portrait: a bottom sheet, the full width, large targets. */
+.theater-bar.tb-sheet-bottom {
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+  max-height: 58%;
+  padding-bottom: var(--safe-bottom);
+  border-radius: 18px 18px 0 0;
+}
+
+/* A phone in landscape: a side sheet at the right, the full height. */
+.theater-bar.tb-sheet-side {
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(360px, 48%);
+  padding-right: var(--safe-right);
+  border-radius: 18px 0 0 18px;
 }
 
 .theater-bar[hidden],
-.theater-open[hidden] {
-  display: none;
+.theater-open[hidden],
+.theater-bar [hidden] {
+  display: none !important;
 }
 
-.tb-head,
-.tb-row {
+.tb-head {
   display: flex;
-  flex-wrap: wrap;
+  flex: none;
   align-items: center;
   gap: 6px;
-  margin-bottom: 6px;
 }
 
 .tb-title {
-  font-family: var(--font-display);
-  font-weight: 800;
-  font-size: 16px;
-  margin-right: auto;
+  flex: 1 1 auto;
+  overflow: hidden;
+  margin: 0 4px 0 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 800 18px/1.2 var(--font-display);
+}
+
+.tb-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  margin-top: 8px;
+  overflow: hidden auto;
+  overscroll-behavior: contain;
+}
+
+/* Busy (a path playing, a take recording): the header alone. */
+.theater-bar[data-busy='playing'] .tb-body,
+.theater-bar[data-busy='recording'] .tb-body {
+  display: none;
+}
+
+.theater-bar[data-busy='playing'],
+.theater-bar[data-busy='recording'] {
+  max-height: none;
+  bottom: auto;
+}
+
+.theater-bar[data-busy='playing'] .tb-collapse,
+.theater-bar[data-busy='recording'] .tb-collapse {
+  display: none;
+}
+
+.theater-bar.tb-docked[data-busy='playing'],
+.theater-bar.tb-docked[data-busy='recording'] {
+  width: auto;
+  max-width: calc(100% - var(--safe-left) - var(--safe-right));
+}
+
+.theater-bar.tb-sheet-bottom[data-busy='playing'],
+.theater-bar.tb-sheet-bottom[data-busy='recording'] {
+  top: auto;
+  bottom: 0;
+}
+
+/* The header's icon buttons: the X (close) and the sheet's collapse chevron. */
+.tb-icon {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgb(255 255 255 / 75%);
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.tb-close::before,
+.tb-close::after {
+  content: '';
+  grid-area: 1 / 1;
+  width: 18px;
+  height: 2.5px;
+  border-radius: 2px;
+  background: currentColor;
+  transform: rotate(45deg);
+}
+
+.tb-close::after {
+  transform: rotate(-45deg);
+}
+
+.tb-collapse::before {
+  content: '';
+  width: 9px;
+  height: 9px;
+  border-right: 2.5px solid currentColor;
+  border-bottom: 2.5px solid currentColor;
+  transform: translateY(-2px) rotate(45deg);
+  transition: transform 120ms ease-out;
+}
+
+.tb-collapse[aria-expanded='false']::before {
+  transform: translateY(2px) rotate(-135deg);
+}
+
+/* The collapse chevron only on the sheets (a desktop's docked panel is small already). */
+.tb-docked .tb-collapse {
+  display: none;
 }
 
 .tb-btn,
 .tb-tab,
+.tb-chip,
+.tb-keyrow,
 .tb-select,
 .tb-num,
 .tb-name {
-  min-height: 34px;
-  padding: 4px 10px;
-  border: 1px solid rgb(29 39 51 / 18%);
+  min-height: 40px;
+  padding: 6px 12px;
+  border: 1px solid var(--line);
   border-radius: 10px;
-  background: rgb(255 255 255 / 70%);
+  background: rgb(255 255 255 / 75%);
   color: inherit;
-  font: inherit;
+  font: 600 14px var(--font-body);
 }
 
-.tb-tab[aria-pressed='true'],
+.tb-btn,
+.tb-tab,
+.tb-chip,
+.tb-keyrow,
+.tb-icon {
+  cursor: pointer;
+}
+
+.tb-btn:hover,
+.tb-tab:hover,
+.tb-chip:hover,
+.tb-keyrow:hover,
+.tb-icon:hover {
+  border-color: rgb(31 43 56 / 30%);
+  background: #fff;
+}
+
+.tb-btn:active,
+.tb-chip:active,
+.tb-keyrow:active,
+.tb-icon:active {
+  transform: translateY(1px);
+  background: rgb(31 43 56 / 7%);
+}
+
+.tb-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* The menu's focus ring on every control (item 23). */
+.theater-bar :is(button, select, input, summary):focus-visible {
+  outline: 3px solid var(--ink);
+  outline-offset: 2px;
+}
+
+/* The tools: a segmented row of tabs. */
+.tb-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+  padding: 3px;
+  margin-bottom: 10px;
+  border-radius: 12px;
+  background: rgb(31 43 56 / 8%);
+}
+
+.tb-tab {
+  border-color: transparent;
+  background: transparent;
+  font-weight: 700;
+}
+
+.tb-tab[aria-selected='true'] {
+  background: #fff;
+  box-shadow: 0 1px 3px rgb(31 43 56 / 18%);
+}
+
 .tb-primary {
-  background: var(--mm-action);
-  border-color: var(--mm-action-top);
+  background: linear-gradient(180deg, var(--mm-action-top), var(--mm-action));
+  border-color: var(--mm-action);
   color: #fff;
+}
+
+.tb-primary:hover {
+  background: linear-gradient(180deg, var(--mm-action-top), var(--mm-action));
+  filter: brightness(1.08);
 }
 
 .tb-record {
@@ -3991,35 +4250,224 @@ body.theater-take > #theater-bar {
   color: #fff;
 }
 
-.tb-num {
-  width: 64px;
+.tb-record:hover {
+  background: var(--danger);
+  filter: brightness(1.08);
 }
 
+.tb-section {
+  margin: 0 0 12px;
+}
+
+.tb-section-title {
+  margin: 0 0 6px;
+  color: var(--mm-ink-soft);
+  font: 700 12px var(--font-body);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.tb-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.tb-field {
+  display: grid;
+  flex: 1 1 120px;
+  gap: 2px;
+}
+
+.tb-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+}
+
+.tb-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.tb-chip {
+  border-radius: 999px;
+}
+
+.tb-chip[aria-checked='true'] {
+  background: var(--mm-mode-creative);
+  border-color: var(--mm-mode-creative);
+  color: #fff;
+}
+
+.tb-select,
 .tb-name {
-  width: 110px;
+  width: 100%;
+}
+
+.tb-num {
+  width: 100%;
 }
 
 .tb-sliders {
   display: grid;
-  gap: 2px;
+  gap: 4px;
 }
 
-.tb-sliders .tb-row {
+.tb-slider {
   display: grid;
-  grid-template-columns: 90px 1fr 48px;
-  margin: 0;
+  grid-template-columns: minmax(0, 88px) minmax(0, 1fr) 40px;
+  align-items: center;
+  gap: 8px;
+}
+
+.tb-range {
+  width: 100%;
+  min-height: 32px;
 }
 
 .tb-label,
 .tb-value,
 .tb-hint,
 .tb-status {
-  font-size: 12px;
   color: var(--mm-ink-soft);
+  font-size: 12px;
+  overflow-wrap: anywhere;
 }
 
-.tb-hint {
-  margin: 0;
+.tb-hint,
+.tb-status {
+  margin: 4px 0 0;
+}
+
+/* The key list: one row per key, the selected one marked. */
+.tb-keys {
+  display: grid;
+  gap: 4px;
+  max-height: 168px;
+  margin: 0 0 8px;
+  padding: 0;
+  overflow: hidden auto;
+  list-style: none;
+}
+
+.tb-keyrow {
+  width: 100%;
+  text-align: left;
+  font-variant-numeric: tabular-nums;
+}
+
+.tb-keyrow[aria-pressed='true'] {
+  border-color: var(--mm-mode-creative);
+  box-shadow: inset 4px 0 0 var(--mm-mode-creative);
+}
+
+.tb-keys-empty {
+  padding: 8px 0;
+  color: var(--mm-ink-soft);
+  font-size: 13px;
+}
+
+/* Advanced: the menu's disclosure (item 23), the chevron right when closed and down when open. */
+.tb-more {
+  margin: 4px 0 8px;
+  border-top: 1px solid var(--line);
+}
+
+.tb-more summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 8px;
+  margin: 0 -8px;
+  border-radius: 8px;
+  font: 700 15px var(--font-body);
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+}
+
+.tb-more summary::-webkit-details-marker {
+  display: none;
+}
+
+.tb-more summary::before {
+  content: '';
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-right: 2.5px solid currentColor;
+  border-bottom: 2.5px solid currentColor;
+  transform: rotate(-45deg);
+  transition: transform 120ms ease-out;
+}
+
+.tb-more[open] > summary::before {
+  transform: rotate(45deg) translate(-2px, -2px);
+}
+
+.tb-more summary:hover {
+  background: rgb(31 43 56 / 7%);
+}
+
+/* The state: a red dot and the take's timer while recording; Playing or Paused. */
+.tb-badge {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgb(31 43 56 / 10%);
+  font: 700 13px var(--font-body);
+  font-variant-numeric: tabular-nums;
+}
+
+.tb-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--mm-mode-creative);
+}
+
+.tb-rec {
+  background: rgb(200 68 58 / 14%);
+  color: #8f241c;
+}
+
+.tb-rec .tb-dot {
+  background: var(--danger);
+  animation: tb-blink 1s steps(2, start) infinite;
+}
+
+@keyframes tb-blink {
+  to {
+    visibility: hidden;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tb-rec .tb-dot {
+    animation: none;
+  }
+}
+
+/* The sheets: larger targets for a finger. */
+.tb-sheet-bottom :is(.tb-btn, .tb-tab, .tb-chip, .tb-keyrow, .tb-select, .tb-num, .tb-name),
+.tb-sheet-side :is(.tb-btn, .tb-tab, .tb-chip, .tb-keyrow, .tb-select, .tb-num, .tb-name) {
+  min-height: 48px;
+  font-size: 16px;
+}
+
+.tb-sheet-bottom .tb-icon,
+.tb-sheet-side .tb-icon {
+  width: 48px;
+  height: 48px;
 }
 
 .tb-timeline {
@@ -4055,6 +4503,7 @@ body.theater-take > #theater-bar {
   transform: rotate(45deg);
   background: var(--mm-mode-creative);
   touch-action: none;
+  cursor: grab;
 }
 
 .tb-key-on {

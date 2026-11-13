@@ -16,6 +16,9 @@ use serde_json::Value;
 
 use crate::bifacial::face_seed;
 use crate::noise::{fbm2, hash2, seed_word, smooth_step, unit};
+use crate::ramps::{RampRule, Top};
+use dwell_world::ramps::RampFacing;
+use dwell_world::rows_for_m;
 
 /// The build's grids file.
 pub const GRIDS_JSON: &str = include_str!("../../../shared/worldgen/grids.json");
@@ -71,6 +74,16 @@ pub struct GridDef {
     /// The coarse mesh of its surface drawn nearer than `far_m` and under its chunks while on it
     /// (`nearMesh`, MOON_WORLD.md §5 M-5); `None` draws none.
     pub near_mesh: Option<NearMesh>,
+    /// Whether the sky draws it as a far disc past `far_m` (`skyDisc`, true when not given: the
+    /// moon's and the sun's discs); false (home) draws its `near_mesh` from another grid at every
+    /// distance instead (MOON_WORLD.md §5, M-6).
+    pub sky_disc: bool,
+    /// The terrain drawn past the chunks while on it (`lod`, MOON_WORLD.md §5; BUGS.md #143):
+    /// rings of its surface out to its horizon; `None` draws none (home has its own LOD tree).
+    pub lod: Option<GridLodRule>,
+    /// What lights its ground while on it (`light`, BUGS.md #145); `None`: home's keyframes as
+    /// they are (home, and a grid that declares none).
+    pub light: Option<LightRig>,
     pub generator: GridGenerator,
     /// The capability a client must say before the server captures it into this grid
     /// (`shared/protocol/capabilities.json`; the sun's `grid.sun`, docs/proposals/SUN_WORLD.md §5):
@@ -93,6 +106,123 @@ impl GridDef {
 pub struct NearMesh {
     pub cells: usize,
     pub sink_m: f64,
+}
+
+/// A body that lights a grid by the sunlight it reflects (`light.bodies`): another grid by name,
+/// its colour (`albedo`, sRGB) and its light (`intensity`, linear) when seen full at `refDeg` in
+/// angular radius; the light at a moment is that × the share of its disc lit as the viewer sees it
+/// (its phase) × (its angular radius / `refDeg`)², toward its true direction.
+#[derive(Clone, Debug, PartialEq)]
+pub struct LitBy {
+    pub grid: String,
+    pub albedo: [f64; 3],
+    pub intensity: f64,
+    pub ref_deg: f64,
+}
+
+/// A grid's light rig (`light`): whether the sun lights it (`sunlit`: its light and direction are
+/// the sky's keyframes', turned into the grid's frame), the bodies that light it by their reflected
+/// light (at most [`MAX_LIT_BY`]), the least ambient light its ground gets (`ambient`: an sRGB
+/// colour × `min`, linear), and a glow from its own ground (`glow`: an sRGB colour × `intensity`,
+/// lighting surfaces from below and around: the sun's lava).
+#[derive(Clone, Debug, PartialEq)]
+pub struct LightRig {
+    pub sunlit: bool,
+    pub bodies: Vec<LitBy>,
+    pub ambient: [f64; 3],
+    pub ambient_min: f64,
+    pub glow: Option<([f64; 3], f64)>,
+}
+
+/// The most bodies a grid's light rig lists (the shaders' rig lights).
+pub const MAX_LIT_BY: usize = 2;
+
+/// `#rrggbb` as sRGB 0–1.
+fn colour(v: &Value, path: &str, at: &str) -> Result<[f64; 3], String> {
+    let s = get(v, path, at)?
+        .as_str()
+        .and_then(|s| s.strip_prefix('#'))
+        .filter(|s| s.len() == 6)
+        .and_then(|s| u32::from_str_radix(s, 16).ok())
+        .ok_or_else(|| format!("{at}: `{path}` must be a colour \"#rrggbb\""))?;
+    Ok([(s >> 16) & 0xff, (s >> 8) & 0xff, s & 0xff].map(|c| f64::from(c) / 255.0))
+}
+
+fn light_rig(g: &Value, at: &str) -> Result<Option<LightRig>, String> {
+    let Some(l) = g.get("light") else {
+        return Ok(None);
+    };
+    let sunlit = get(l, "sunlit", at)?
+        .as_bool()
+        .ok_or_else(|| format!("{at}: `light.sunlit` must be true or false"))?;
+    let list = get(l, "bodies", at)?
+        .as_array()
+        .ok_or_else(|| format!("{at}: `light.bodies` must be a list"))?;
+    if list.len() > MAX_LIT_BY {
+        return Err(format!(
+            "{at}: `light.bodies` lists at most {MAX_LIT_BY} bodies"
+        ));
+    }
+    let bodies = list
+        .iter()
+        .enumerate()
+        .map(|(i, b)| {
+            let at = format!("{at} light.bodies[{i}]");
+            Ok(LitBy {
+                grid: get(b, "grid", &at)?
+                    .as_str()
+                    .filter(|n| n.contains(':'))
+                    .ok_or_else(|| format!("{at}: `grid` must name a grid"))?
+                    .to_owned(),
+                albedo: colour(b, "albedo", &at)?,
+                intensity: num(b, "intensity", &at).and_then(|v| {
+                    (v >= 0.0)
+                        .then_some(v)
+                        .ok_or_else(|| format!("{at}: `intensity` must be ≥ 0"))
+                })?,
+                ref_deg: positive(b, "refDeg", &at)?,
+            })
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    let a = get(l, "ambient", at)?;
+    let glow = match l.get("glow") {
+        None => None,
+        Some(gl) => Some((
+            colour(gl, "color", &format!("{at} light.glow"))?,
+            positive(gl, "intensity", &format!("{at} light.glow"))?,
+        )),
+    };
+    Ok(Some(LightRig {
+        sunlit,
+        bodies,
+        ambient: colour(a, "color", &format!("{at} light.ambient"))?,
+        ambient_min: num(a, "min", &format!("{at} light.ambient"))?.max(0.0),
+        glow,
+    }))
+}
+
+/// A grid's distant terrain while on it (`lod`): `levels` square rings of its surface centred on
+/// the viewer, each `cells` quads a side, level k's quads `cellM` × 2^k wide, each ring holding the
+/// next finer one in its middle; every vertex its ground (sampled at the quad's scale) less
+/// `sinkM` + `sinkPerCell` × the quad's width, so the chunks cover it where they are.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct GridLodRule {
+    pub levels: usize,
+    pub cells: usize,
+    pub cell_m: f64,
+    pub sink_m: f64,
+    pub sink_per_cell: f64,
+}
+
+impl GridLodRule {
+    /// Level k's quad width (m).
+    pub fn cell(&self, k: usize) -> f64 {
+        self.cell_m * (1u64 << k) as f64
+    }
+    /// How far the coarsest ring reaches from its centre (m).
+    pub fn reach_m(&self) -> f64 {
+        self.cell(self.levels - 1) * self.cells as f64 / 2.0
+    }
 }
 
 impl GridDef {
@@ -183,8 +313,24 @@ pub struct CraterRules {
     pub ridges: RidgeRule,
     pub maria: MariaRule,
     pub craters: CraterField,
+    /// The rule that shapes its tops into stored ramps (`ramps`: `none`, `strict` or `notched`,
+    /// HALF_HEIGHT_GRID.md §4 and §10); none when not given.
+    pub ramps: crate::ramps::RampRule,
     /// The far-LOD map's texels a side, per face.
     pub bake_size: usize,
+}
+
+/// A generator's `ramps` (none when not given).
+pub(crate) fn ramp_rule(g: &Value, at: &str) -> Result<crate::ramps::RampRule, String> {
+    match g.get("ramps") {
+        None => Ok(crate::ramps::RampRule::None),
+        Some(v) => v
+            .as_str()
+            .and_then(crate::ramps::RampRule::parse)
+            .ok_or_else(|| {
+                format!("{at}: `generator.ramps` must be \"none\", \"strict\" or \"notched\"")
+            }),
+    }
 }
 
 pub(crate) fn get<'a>(v: &'a Value, path: &str, at: &str) -> Result<&'a Value, String> {
@@ -338,6 +484,7 @@ fn crater_rules(g: &Value, at: &str) -> Result<CraterRules, String> {
             },
             classes,
         },
+        ramps: ramp_rule(g, at)?,
         bake_size: bake,
     })
 }
@@ -441,6 +588,61 @@ pub fn parse_grids(text: &str) -> Result<Vec<GridDef>, String> {
                 })
             }
         };
+        let sky_disc = match g.get("skyDisc") {
+            None => true,
+            Some(v) => v
+                .as_bool()
+                .ok_or_else(|| format!("{at}: `skyDisc` must be true or false"))?,
+        };
+        if !sky_disc && near_mesh.is_none() {
+            return Err(format!(
+                "{at}: a grid with no sky disc (`skyDisc` false) needs a `nearMesh` to be seen by"
+            ));
+        }
+        let lod = match g.get("lod") {
+            None => None,
+            Some(_) => {
+                let levels = num(g, "lod.levels", &at)?;
+                let cells = num(g, "lod.cells", &at)?;
+                if !(1.0..=16.0).contains(&levels) || levels.fract() != 0.0 {
+                    return Err(format!(
+                        "{at}: `lod.levels` must be a whole number in 1..=16"
+                    ));
+                }
+                if !(4.0..=256.0).contains(&cells) || cells.fract() != 0.0 || cells % 4.0 != 0.0 {
+                    return Err(format!(
+                        "{at}: `lod.cells` must be a multiple of 4 in 4..=256"
+                    ));
+                }
+                let rule = GridLodRule {
+                    levels: levels as usize,
+                    cells: cells as usize,
+                    cell_m: positive(g, "lod.cellM", &at)?,
+                    sink_m: num(g, "lod.sinkM", &at)?,
+                    sink_per_cell: num(g, "lod.sinkPerCell", &at)?,
+                };
+                if rule.sink_m < 0.0 || rule.sink_per_cell < 0.0 {
+                    return Err(format!(
+                        "{at}: `lod.sinkM` and `lod.sinkPerCell` must be ≥ 0"
+                    ));
+                }
+                if let Some(r) = radius_m
+                    && rule.reach_m() < r
+                {
+                    return Err(format!(
+                        "{at}: `lod` must reach its disc's radius (its coarsest ring reaches {} m)",
+                        rule.reach_m()
+                    ));
+                }
+                Some(rule)
+            }
+        };
+        let light = light_rig(g, &at)?;
+        if frame == GridFrameKind::Rest && light.is_some() {
+            return Err(format!(
+                "{at}: home is lit by its sky's keyframes (no `light`)"
+            ));
+        }
         if frame == GridFrameKind::Rest && capture_m.is_some() {
             return Err(format!(
                 "{at}: the grid at rest captures nobody (no `captureM`)"
@@ -494,6 +696,9 @@ pub fn parse_grids(text: &str) -> Result<Vec<GridDef>, String> {
             surface_m,
             atmosphere,
             near_mesh,
+            sky_disc,
+            lod,
+            light,
             generator,
             capability,
         });
@@ -505,6 +710,16 @@ pub fn parse_grids(text: &str) -> Result<Vec<GridDef>, String> {
         != 1
     {
         return Err("grids: exactly one grid must be at rest (the home world)".into());
+    }
+    for d in &out {
+        for b in d.light.iter().flat_map(|l| &l.bodies) {
+            if b.grid == d.name || !out.iter().any(|o| o.name == b.grid) {
+                return Err(format!(
+                    "grid `{}`: `light.bodies` names `{}`, not another grid of the list",
+                    d.name, b.grid
+                ));
+            }
+        }
     }
     let mut salts: Vec<u32> = out.iter().filter_map(|d| d.seed_salt).collect();
     salts.sort_unstable();
@@ -809,6 +1024,19 @@ pub fn bake_far<S: FarSource + ?Sized>(src: &S, face: Face, size: usize) -> FarB
     }
 }
 
+/// Grid `def`'s far source in the world of `world_seed` (its generator, read at any scale: the far
+/// bake's, the near mesh's and the grid LOD's): the `cratered` and `volcanic` kinds; `None` for
+/// home's `terrain`, whose source is its world map (`crate::home_far::HomeFar`).
+pub fn far_source(def: &GridDef, world_seed: u64) -> Option<Arc<dyn FarSource + Send + Sync>> {
+    match &def.generator {
+        GridGenerator::Cratered(_) => Some(Arc::new(CrateredTerrain::new(def, world_seed)?)),
+        GridGenerator::Volcanic(_) => Some(Arc::new(crate::volcanic::VolcanicTerrain::new(
+            def, world_seed,
+        )?)),
+        GridGenerator::Terrain { .. } => None,
+    }
+}
+
 /// The `cratered` generator over one grid of one world, both faces (each from its own seed
 /// stream, as the home world's faces are).
 #[derive(Clone, Debug)]
@@ -819,6 +1047,9 @@ pub struct CrateredTerrain {
     block: StateId,
     /// The maria's ground.
     mare_block: StateId,
+    /// Each ground block's ramp pieces by facing: the ½ m ramp's cell and the 1 m ramp's cells
+    /// from the bottom (empty when the rules shape no ramps).
+    pieces: Vec<(StateId, RampFacing, StateId, Vec<StateId>)>,
 }
 
 const PLAINS: u32 = 0x4D_0001;
@@ -841,12 +1072,31 @@ impl CrateredTerrain {
             return None;
         };
         let seed = def.seed(world_seed);
+        let block = dwell_blocks::require(&rules.block);
+        let mare_block = dwell_blocks::require(&rules.maria.block);
+        let mut pieces = Vec::new();
+        if rules.ramps != RampRule::None {
+            for (m, name) in [(block, &rules.block), (mare_block, &rules.maria.block)] {
+                for facing in RampFacing::ALL {
+                    let g = dwell_world::ramps::gentle_cell_flooded(name, facing, false);
+                    let st = dwell_world::ramps::steep_cells_flooded(name, facing, false);
+                    let (Some(g), Some(st)) = (g, st) else {
+                        panic!(
+                            "grid `{}`: `generator.ramps` shapes ramps but `{name}` has no ramp family (blocks `rampFamilies`)",
+                            def.name
+                        );
+                    };
+                    pieces.push((m, facing, g, st));
+                }
+            }
+        }
         Some(Self {
             rules: rules.clone(),
             radius: def.radius_m?,
             seeds: [face_seed(seed, Face::A), face_seed(seed, Face::B)],
-            block: dwell_blocks::require(&rules.block),
-            mare_block: dwell_blocks::require(&rules.maria.block),
+            block,
+            mare_block,
+            pieces,
         })
     }
 
@@ -1012,6 +1262,44 @@ impl CrateredTerrain {
             .then(|| (self.height(face, cx, cz) / CELL_H).round() as i64 - 1)
     }
 
+    /// The cells (from the bottom) topping column (x, z) of `face`, by the rules' `ramps`
+    /// (HALF_HEIGHT_GRID.md §4): empty for a flat top. `top` gives a column's top row (`None` off
+    /// the disc, lower than any ground), the column's own included.
+    pub fn top_pieces(
+        &self,
+        face: Face,
+        x: i64,
+        z: i64,
+        top: impl Fn(i64, i64) -> Option<i64>,
+    ) -> &[StateId] {
+        if self.pieces.is_empty() {
+            return &[];
+        }
+        let Some(t) = top(x, z) else {
+            return &[];
+        };
+        let around: crate::ramps::Around = std::array::from_fn(|r| {
+            std::array::from_fn(|c| {
+                top(x + c as i64 - 1, z + r as i64 - 1).map_or(i32::MIN / 2, |t| (t + 1) as i32)
+            })
+        });
+        let (facing, steep) = match self.rules.ramps.top(&around, rows_for_m(1.0)) {
+            Top::Flat => return &[],
+            Top::Gentle(f) => (f, false),
+            Top::Steep(f) => (f, true),
+        };
+        let m = self.surface_block(face, x, z);
+        let Some((_, _, g, st)) = self.pieces.iter().find(|p| p.0 == m && p.1 == facing) else {
+            return &[];
+        };
+        let cells: &[StateId] = if steep { st } else { std::slice::from_ref(g) };
+        // A 1 m ramp needs two cells of ground.
+        if cells.len() as i64 > t + 1 {
+            return &[];
+        }
+        cells
+    }
+
     /// The ground block of column (x, z) on `face`: the maria's block where the column's centre
     /// is at least half in a mare, the grid's block elsewhere.
     pub fn surface_block(&self, face: Face, x: i64, z: i64) -> StateId {
@@ -1065,18 +1353,33 @@ impl CrateredTerrain {
         const S: i32 = CHUNK_SIZE;
         let f = FaceFrame::at_chunk_y(coord.y);
         let local = f.chunk(coord);
+        let (x0, z0) = (i64::from(local.x * S), i64::from(local.z * S));
+        // The tops of the chunk's columns and a ring round them, for the ramp rule's neighbours.
+        let w = (S + 2) as usize;
+        let tops: Vec<Option<i64>> = (0..w * w)
+            .map(|k| self.top_row(f.face, x0 - 1 + (k % w) as i64, z0 - 1 + (k / w) as i64))
+            .collect();
+        let top_at = |x: i64, z: i64| tops[((z - z0 + 1) as usize) * w + (x - x0 + 1) as usize];
         let cells = chunk.voxels_mut();
         for z in 0..S {
             for x in 0..S {
-                let wx = i64::from(local.x * S + x);
-                let wz = i64::from(local.z * S + z);
-                let top = self.top_row(f.face, wx, wz);
+                let wx = x0 + i64::from(x);
+                let wz = z0 + i64::from(z);
+                let top = top_at(wx, wz);
                 let ground = f.state(self.surface_block(f.face, wx, wz));
+                let pieces = self.top_pieces(f.face, wx, wz, top_at);
+                let first = top.map_or(0, |t| t + 1 - pieces.len() as i64);
                 for y in 0..S {
                     let row = i64::from(local.y * S + y);
                     let solid = top.is_some_and(|t| row >= 0 && row <= t);
                     let ly = if f.is_b() { S - 1 - y } else { y };
-                    cells[local_index(x, ly, z)] = if solid { ground } else { M.air };
+                    cells[local_index(x, ly, z)] = if !solid {
+                        M.air
+                    } else if row >= first && !pieces.is_empty() {
+                        f.state(pieces[(row - first) as usize])
+                    } else {
+                        ground
+                    };
                 }
             }
         }

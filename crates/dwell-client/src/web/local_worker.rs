@@ -263,6 +263,16 @@ impl LocalWorld {
     pub fn set_mode(&mut self, name: &str) -> bool {
         self.core.set_mode(name)
     }
+    /// The host turns theater mode on or off for guests (THEATER_MODE.md §7).
+    #[wasm_bindgen(js_name = setTheaterGuests)]
+    pub fn set_theater_guests(&mut self, on: bool) {
+        self.core.set_theater_guests(on);
+    }
+    /// Whether guests may use theater mode in this world.
+    #[wasm_bindgen(getter, js_name = theaterGuests)]
+    pub fn theater_guests(&self) -> bool {
+        self.core.theater_guests()
+    }
     /// The host retunes the world's worldgen config (Chisel in the game, Phase 56 B7): the chunks
     /// within `radius` chunks of the player generated again, edits kept, the config saved with the
     /// world. Returns faces A's and B's new map bytes; throws the refusal's message.

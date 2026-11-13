@@ -38,7 +38,7 @@ test("a bad entry fails naming the species and the field", () => {
 
 test("every species names its own sapling, a block of the registry (ADR 0079 S4)", () => {
   // The old-growth species (WORK_QUEUE item 32) and the rainforest's tall broadleaf are wild only: no sapling of their own yet.
-  // So is sagebrush (0.62), the mesa floors' shrub.
+  // So is sagebrush (0.64), the mesa floors' shrub.
   const species = loadSpecies(here, blocks).filter((s) => s.sapling);
   const items = species.map((s) => s.sapling.item);
   assert.deepEqual(items, ["dwell:oak_sapling", "dwell:palm_sapling", "dwell:pine_sapling"]);

@@ -46,7 +46,7 @@ describe('the HUD switch', () => {
       if (m[2] !== 'view') found.add(`index.html #${m[2] ?? ''}`);
     const listed = HUD_ELEMENTS.map((e) => e.split(' ')[0]);
     // Modules appending something that is not a HUD part: a download link, a drag ghost.
-    const notHud = new Set(['record', 'structuresPanel', 'creativeInventory', 'mode']);
+    const notHud = new Set(['record', 'structuresPanel', 'creativeInventory', 'mode', 'panelRig']);
     for (const name of found) {
       if (notHud.has(name)) continue;
       const short = name.startsWith('index.html') ? name : name;

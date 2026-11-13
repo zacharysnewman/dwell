@@ -16,7 +16,7 @@ use dwell_worldgen::terrain::TerrainGenerator;
 use dwell_worldgen::worldmap::WorldMap;
 
 const NAME: &str = "test:realistic";
-/// The seed the census reads (42 before the realistic batch's plates, 0.62, whose wider continents
+/// The seed the census reads (42 before the realistic batch's plates, 0.64, whose wider continents
 /// put its bedded ground on flat plains; 7 has bedded hills on both faces).
 const SEED: u64 = 7;
 /// A drop to a neighbouring column at least this tall (m) is a wall: the column is stepped.
@@ -203,7 +203,7 @@ dwell_world::both_faces!(
     /// Bedded slopes ramp, broken by ledges (owner, 2026-11-13): no more ½ m edges on bedded ground
     /// are bare stairs (a flat top over a ½ m drop) than the 0.58 rule's, and ledges at least the
     /// data's height stand. (0.59–0.61 notched every diagonal contour, under a tenth bare; since
-    /// 0.62 the owner's straight-edge rule holds off the rock walls' edges: "I'd like the old rule
+    /// 0.64 the owner's straight-edge rule holds off the rock walls' edges: "I'd like the old rule
     /// to apply except for mesa edges".)
     fn bedded_slopes_ramp_between_ledges(f: FaceFrame) {
         let seed = face_seed(SEED, f.face);
@@ -298,7 +298,7 @@ fn dump_a_bedded_slope() {
 dwell_world::both_faces!(
     /// Red-brown desert ground (owner, 2026-11-13: "We need a red brown sand for the red desert
     /// areas", then "Mostly reddish dirt though"): the red rock mesa's floors are its floor band's
-    /// ground by data (biomes/presets red_rock_mesa.json, since 0.62 `dwell:red_dirt`, blended with
+    /// ground by data (biomes/presets red_rock_mesa.json, since 0.64 `dwell:red_dirt`, blended with
     /// red sand and tan by rocks.json `blends`), red on the surface, plain sand only as the blend's
     /// patches (`tests/realistic_mesa_colours.rs` holds the blend).
     fn the_red_desert_floor_is_red_sand_by_data(f: FaceFrame) {
