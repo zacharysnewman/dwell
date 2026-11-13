@@ -35,7 +35,7 @@ the map is per player (their explored cells); the filter is per browser.
 | `stand` | [0, 2] | Where a player stands up: the column 2 m from the anchor on the open side (turned with it), on its floor |
 | `searchCells`, `spawnWithin` | 3, 1500 m | A death searches the cells within 3 of its own; the spawn's shrine lies within 1500 m of the spawn search's point, else one is built at the point |
 | `worlds` | `test:archipelago` | Overrides per world setting name (not `design`) |
-| `map` | explored, `shrine`, `#7fd6ff`, 18 px, 28 px, 16 px, 8 ms | The big map's reveal (`explored`: shown once its 8 m explored cell is; `all`), the markers' icon it draws, its colour and size; `clusterPx` (icons nearer on screen merge into one with a count), `minSpacingPx` (none drawn when the grid's spacing is under it on screen), `siteMsPerDraw` (new cells sited a draw) |
+| `map` | explored, `shrine`, `#7fd6ff`, 18 px, 28 px, 8 ms | The big map's reveal (`explored`: shown once its 8 m explored cell is; `all`), the markers' icon it draws, its colour and size; `clusterPx` (icons nearer on screen merge into one with a count, at every zoom), `siteMsPerDraw` (new cells sited a draw) |
 
 `gen.mjs` validates every key (ranges, the structure, the stand on a floor open above, the overrides)
 and emits `crates/dwell-worldgen/src/shrines.gen.rs`; `gen.test.mjs` covers it.
@@ -95,8 +95,10 @@ sited within `siteMsPerDraw` ms a draw and the rest the next draws, and draws ea
 (`reveal` `explored`: Guild Wars' map reveal; with the `mapRevealed` ability, creative, or `reveal`
 `all`, every one) as the map markers' vector `shrine` icon (`shared/ui/markers.json`; `map.icon` names
 it, validated), glowing in `map.color`. Icons nearer than `clusterPx` on screen merge into one with a count
-(`clusterShrines`, so none overlap), and zoomed out past the point where the 2 km grid is under `minSpacingPx` on
-screen none are drawn (BUGS.md #115). The minimap draws the ones on its disc (explored ground by
+(`clusterShrines`, so none overlap; BUGS.md #115) at every zoom: zoomed out to the whole disc, where the 2 km
+grid draws a few pixels apart, they show as clusters with counts (BUGS.md #119: once none were drawn there).
+In adventure only the shrines in explored ground count, so a fresh world shows the few near the spawn; creative
+(revealed) shows them all. The minimap draws the ones on its disc (explored ground by
 definition). They are a derived layer, not saved markers: the markers' records hold at most 200 a
 player per world (`limits.maxMarkers`) and an island has ~130 shrines a face, all derivable from the
 seed.

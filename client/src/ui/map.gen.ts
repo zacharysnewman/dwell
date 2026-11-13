@@ -42,6 +42,7 @@ export const MAP = {
       { cellM: 256, spanM: 100000, reach: 'disc' },
     ],
     startLevel: 1,
+    zoomRatio: 2,
     wheelStepPx: 100,
     pinchStep: 1.6,
     fogColor: '#14161c',

@@ -10,7 +10,7 @@ import {
   clusterShrines,
   parseShrines,
   shrineCellsIn,
-  shrinesShownAt,
+  shrineIcons,
   visibleShrines,
 } from './mapShrines';
 
@@ -70,10 +70,23 @@ describe('the shrines on the big map', () => {
     expect(clusterShrines(dense, SHRINE_MAP.clusterPx).length).toBeLessThanOrEqual(9);
   });
 
-  it('hides them below the zoom where the grid is denser than minSpacingPx', () => {
-    const at = (px: number) => px / 2000; // px a metre for the grid spacing to draw `px` wide
-    expect(shrinesShownAt(at(SHRINE_MAP.minSpacingPx), SHRINE_MAP, 2000)).toBe(true);
-    expect(shrinesShownAt(at(SHRINE_MAP.minSpacingPx - 1), SHRINE_MAP, 2000)).toBe(false);
+  // BUGS.md #119 (seed 0, the whole disc at 20 km a scale bar): no shrine and no count showed at all,
+  // the 2 km grid drawing under `minSpacingPx` there hid every one.
+  it('zoomed out to the whole disc, shows them as clusters with counts, not nothing', () => {
+    const w = 900;
+    const h = 600;
+    const pxPerM = Math.min(w, h) / 100_000; // the whole disc across the short side
+    const pts: { x: number; y: number }[] = [];
+    for (let i = -6; i <= 6; i++)
+      for (let k = -6; k <= 6; k++)
+        if (i * i + k * k <= 36)
+          pts.push({ x: w / 2 + i * 2000 * pxPerM, y: h / 2 + k * 2000 * pxPerM });
+    const icons = shrineIcons(pxPerM, pts);
+    expect(icons.length).toBeGreaterThan(0);
+    expect(icons.reduce((n, c) => n + c.count, 0)).toBe(pts.length);
+    expect(icons.some((c) => c.count > 1)).toBe(true);
+    // A single shrine far out still draws (an explored one), as one icon.
+    expect(shrineIcons(pxPerM, [{ x: 10, y: 10 }])).toEqual([{ x: 10, y: 10, count: 1 }]);
   });
 
   it('sites new cells within a budget, the rest the next draws, and knows explored cells', () => {
