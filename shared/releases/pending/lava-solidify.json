@@ -1,0 +1,7 @@
+{
+  "changes": [
+    "Lava no longer hardens while it flows: a river fed by its vent stays molten its whole length.",
+    "Lava that stops moving darkens and hardens into basalt where it lies, keeping its volume as new rock.",
+    "Lava at a vent, and within a few metres of one, stays molten; water still turns any lava to obsidian at once."
+  ]
+}
