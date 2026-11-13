@@ -771,6 +771,14 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    This shows the red sand of 0.59/0.60 (#891, BUGS.md #134) fell short: it covered only arid red-rock treads.
    **Owner should see:** red desert and mesa country: slopes, talus, washes, floors and tops' loose cover are red
    sand; tan sand only on beaches and non-red areas; mesa layers in 2–3 harmonious red/cream tones.
+   Owner, 2026-11-13, also added to the batch: "Im not seeing any tan deserts is that not a thing yet?" The biome
+   exists (`preset:sand_desert`, in realistic.json's list, with dunes: ≥ 14 °C, rain ≤ 250 mm, wetness ≤ 0.25), but on
+   seed 2741893632 it did not appear (cold desert 40 %, sand desert ~0 %): the climate's dry ground is too cold. Change:
+   a subtropical dry belt in the climate (warm and dry, as at the tropics' edges and in warm continental interiors in
+   a rain shadow), the biome's thresholds checked against the climate's real ranges, dune seas of tan sand with rock
+   only on steep faces; the red desert and mesas stay red, the tan sand desert a separate biome. **Owner should see:**
+   on a typical Realistic seed, at least one big tan sand desert with dunes, in a warm dry region, separate from the
+   red mesa country.
 16. **Phone frame rate (P0)** (owner 2026-11-11, iPhone 17, Safari, setting Low: "I'm only getting ~23 fps on
    mobile, seeing lots of z-fighting on tree trunks with the leaf cards. What might be dropping frames since the
    last while. Used to get 60 fps"). Suspect: leaf cards are on in every tier but CPU, Low included; cards lying
