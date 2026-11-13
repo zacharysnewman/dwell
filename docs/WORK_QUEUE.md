@@ -1309,6 +1309,22 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    timings are samples, not per-frame series: "not recorded"). Next: fewer leaf triangles — impostors from
    nearer than 96 m (item 31) and a plainer leaf mesh with distance (no chamfer, merged faces past the cards'
    fade) — measured with `forest-edge`.
+   **Leaves past the hand-over not drawn (2026-11-13, local, `claude/forest-edge-perf`):** the mesher orders a
+   chunk's cutout triangles with its tree leaf faces last (`dwell_mesh::tree_leaves_from`), so a chunk past the
+   impostors' hand-over end (`fromM` + `fadeM` + 2 m, the tier's data) but within the plants' 90 m draws its grass
+   and cards alone (`render::impostors::cutout_draw`; tests pin the split and the data's switch distance). No
+   look change (those leaves were dropped by the shader). `forest-perf` on the M1 Air at High, `--unthrottled`,
+   `gpu.frame` p50 / p95 ms, two baselines → after: inside 13.9 / 18.1 and 13.2 / 16.8 → 13.5 / 16.6, **edge
+   24.2 / 27.0 and 23.1 / 25.6 → 23.4 / 25.4**, above 10.3 / 12.5 → 10.4 / 12.5: the edge's drawn triangles
+   fall (~5.4 M → 4.0 M) but its frame is within run-to-run noise of the second baseline, so the leaves
+   between 66 and 92 m were not its cost. Still **~6.5 ms over** at p50. Measured, not adopted: the hand-over
+   at 32 m (data) edge 21.5 / 24.3 (−1.7 ms, a visible hand-over nearer than the owner's approved 48 m).
+   The edge's frame now: `gpu.near` 14.5 (the leaf blocks within 66 m), `gpu.shadows` 7.1 p50 (the nearest
+   cascade, redrawn every frame, ~1.5 M caster triangles: the canopy's leaves), composite 4.2, clouds 3.8.
+   Next levers: the leaves' shadow casters (a plainer leaf caster mesh, or leaves in the near cascade only within
+   a distance), a plainer leaf mesh past the cards' fade (no chamfer, merged faces). Also seen: the bench's
+   shots in `test:forest` came out flat grey at every spot (clouds off too), so they show nothing to compare;
+   and `flood_tests::open_terrain_takes_the_full_sky::a` fails on main (3 dark vertices), unrelated.
 33. **Licensed music replaces the generated music** (owner 2026-11-12: "I downloaded a big music set as a Unity
    asset, I'd like the casual game music setup in a prototype and make it play randomly in the game. Probably
    needs compression. It'll replace the current music which is AI generated."). The pack: *Andrew Sitkov Music*

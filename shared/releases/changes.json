@@ -4,11 +4,17 @@
     {
       "version": "0.59.0",
       "changes": [
-                "Red desert: the red rock mesa's floors and talus are a new red-brown sand.",
+        "Red desert: the red rock mesa's floors and talus are a new red-brown sand.",
         "Every terrain block has ramps now, basalt, obsidian and the moon's dust included.",
         "Realistic's layered rock slopes are smooth ramps broken by ledges, not fields of little stairs, and mesa tops keep a little of the ground's roll.",
         "Sand ramps fall like sand and land as flat sand.",
         "New compatibility line: the Realistic and starter worlds' terrain changed, so worlds from 0.58 open in 0.58 builds."
+        ]
+      },
+      {
+      "version": "0.58.10",
+      "changes": [
+        "Forests draw fewer hidden leaves: past the far trees' hand-over, the ground no longer sends the GPU tree leaves that were already faded out."
       ]
     },
     {

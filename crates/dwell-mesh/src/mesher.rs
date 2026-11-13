@@ -2182,6 +2182,43 @@ pub(crate) fn mesh_chunk_full(
     })
 }
 
+/// Whether a cutout triangle (its first index) is a tree's leaf face ([`crate::TREE_LEAF_FADE`]).
+fn is_tree_leaf(m: &MeshArrays, first: u32) -> bool {
+    m.plants.get(first as usize * 4 + 3) == Some(&crate::TREE_LEAF_FADE)
+}
+
+/// Orders a cutout mesh's triangles with the trees' leaf faces last (each kind keeping its own
+/// order), so the indices before [`tree_leaves_from`] are everything but the leaves.
+fn tree_leaves_last(m: &mut MeshArrays) {
+    let (mut rest, mut leaves) = (Vec::with_capacity(m.indices.len()), Vec::new());
+    for tri in m.indices.chunks_exact(3) {
+        if is_tree_leaf(m, tri[0]) {
+            leaves.extend_from_slice(tri);
+        } else {
+            rest.extend_from_slice(tri);
+        }
+    }
+    rest.extend(leaves);
+    m.indices = rest;
+}
+
+/// Where a chunk's cutout mesh (meshed with its trees' leaves last) starts its trees' leaf faces,
+/// as an index into `indices`: the indices before it are the plants, ladders and other cutouts.
+/// Past the far trees' hand-over the shader drops every leaf face, so a chunk there draws only
+/// `0..tree_leaves_from` (WORK_QUEUE item 32: the forest edge is bound by the leaves' vertices).
+pub fn tree_leaves_from(m: &MeshArrays) -> usize {
+    let (mut lo, mut hi) = (0, m.indices.len() / 3);
+    while lo < hi {
+        let mid = (lo + hi) / 2;
+        if is_tree_leaf(m, m.indices[mid * 3]) {
+            hi = mid;
+        } else {
+            lo = mid + 1;
+        }
+    }
+    lo * 3
+}
+
 /// The one-voxel padded block ([`PADDED_VOLUME`]) inside a sky volume ([`SKY_VOLUME`]).
 fn inner_block(sky: &[u16]) -> Vec<u16> {
     let [ex, _, ez] = SKY_EXTENT;
@@ -2713,6 +2750,8 @@ fn mesh_cells(
     let vertices = cutout.m.positions.len() / 3;
     cutout.m.plants.resize(vertices * 4, 0.0);
     cutout.m.bare.resize(vertices, 0.0);
+    // The trees' leaves last, so a far chunk can draw its plants alone (`tree_leaves_from`).
+    tree_leaves_last(&mut cutout.m);
     // Fluids and see-through faces are lit by their own shader: no baked light, but the flood
     // light (docs/DAY_NIGHT.md §11), so water in a cave or under a roof is dark.
     transparent.m.light.clear();
