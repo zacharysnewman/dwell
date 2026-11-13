@@ -440,6 +440,14 @@ impl Resolved {
         self
     }
 
+    /// The face's plate tectonics, in a world whose rocks come from plates (R5; the big map's
+    /// layers, `map_layers.rs`).
+    pub fn plate_tectonics(
+        &self,
+    ) -> Option<&std::sync::Arc<crate::plate_tectonics::PlateTectonics>> {
+        self.plates.as_ref().map(|(t, _)| t)
+    }
+
     /// The plate settings at (x, z), in a world whose rocks come from plates (R5).
     pub fn plate_settings(&self, x: i64, z: i64) -> Option<PlateSettings> {
         let (t, _) = self.plates.as_ref()?;

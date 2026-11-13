@@ -73,8 +73,8 @@ D3 (tuning) to come. The owner's direction and answers are §1; §2 was the prop
   2.5), rounded up; else `default`. A block without `damage` breaks in one hit, as before.
   Prototype values: stone and its ramp `{ default: null, pickaxe: 7 }` (stone pickaxe 5, metal 3, by
   hand or another tool: can't); dirt, grass, snowy grass, sand and their ramps `{ default: 11, shovel: 7 }`
-  (shovel 5, metal 3, by hand or another tool 11). Logs keep the axe's chopping (no `damage`: felling
-  and its notches unchanged).
+  (shovel 5, metal 3, by hand or another tool 11). Logs: *superseded by §12* (they take damage
+  like the others since WORK_QUEUE item 51).
 - **Generator and validation:** `shared/tools/gen.mjs` reads every block's `damage` (as it does
   `breakWith`), emits `BLOCK_DAMAGE` into `dwell_protocol::chopping`'s table and `client/src/ui/tools.gen.ts`,
   and fails on a missing `default`, a count outside 1..255, an unknown class or item, or a non-object
@@ -297,6 +297,40 @@ damage." Built, in addition to the carve (not instead of it):
 - **Not done:** no browser check (cloud session, no GPU): the look in game is for the owner's review;
   the wasm32 clippy and the Vitest files were not run here (no wasm target or `node_modules` in the
   container). The wood set is drawn round the axe's bites on a cut log (§6.4, the wood's `cut.cracks`).
+
+### 6.5 Ramps show their hits (BUGS.md #112)
+
+Owner, 2026-11-12: "Slopes aren't affected visually by tools when hit, though they do break." A stored ramp
+(HALF_HEIGHT_GRID.md; the ½ m `ramp` and the 45° `steep_lower`/`steep_upper` halves) is drawn as its shape's
+polygons (`shaped_voxel`), which the cube carve (§6.2) skipped. Now (`mesher/ramp_damage.rs`) a damaged ramp with a
+`damage.look` (the ramp blocks' data already had one) is drawn as a cube is:
+
+- **Planes:** the shape's polygons, those of one face in one plane merged into their convex hull (the slope's two
+  triangles are one plane, carved across their diagonal), each with its own frame in metres (`Plane`).
+- **Marks:** each mark goes to the plane its hit point lies on (nearest the plane, inside its outline), whatever
+  cube face the client named, so a hit on the slope carves the slope.
+- **The carve:** a struck plane's field is the look's (`carve_shape`, shared with the cube's faces: bowls, facets,
+  flakes), sized by the bite rule (`carve_fit`, the cube's loop: the plane's share of `carved_m3`, a ramp's volume
+  ½), faded to 0 over 5 cm inside the plane's outline (its edges stay put: watertight with the ramp's other planes
+  and the neighbours, T-junctions on straight edges as the cube's) and clamped to `DEEPEST` (0.9) of the solid's
+  thickness under each point along the inward normal (the shape is convex; nothing dents through the floor or the
+  high wall). The plane is gridded over its corners (a triangle as a quad with a collapsed row), finer over the
+  carve's reach, within the cell's `triangles` budget; normals smooth for bowls, flat per triangle for facets and
+  flakes; the colour darkened (a spall's lifted), the sky light at its corners interpolated and occluded by depth.
+- **Cracks:** once staged, every exposed plane carries the overlay (§6.3) as the cube face its normal leans to most
+  (the slope as the top), so cracks run over the slope and down its sides from the hit.
+- **The pieces:** a ramp hit's flying pieces were already its bite (§10, `hit_shards`); unchanged.
+- **Face B:** the mesher turns a face-B chunk over; a damaged cell's state now turns with it (`damaged_cells`), so a
+  ramp's `half` matches its turned-over cell.
+- **Tests** (`ramp_damage_tests.rs`, both faces): `a_ramp_after_k_hits_has_carved_k_bites_of_half_its_volume` (dirt
+  and stone ramps and the 45° halves: the closed mesh's volume k × ½ × V ÷ n within 8 %, the same about two origins,
+  so closed), `the_sloped_face_is_carved_where_struck_inside_the_ramp`, `a_ramps_cracks_are_staged_by_damage`,
+  `a_fixture_ramp_material_by_data_alone_gets_its_facets_and_its_bite`. Red on the unfixed mesher (the ramp drawn
+  whole: 8 triangles, nothing carved, no cracks).
+- **Not done:** the bite rule's volume is a block's (½ for every ramp state): a 45° upper half holds ¼ cell, so past
+  60 % of it its carve is as deep as its solid allows, under the rule; a lower half (¾) follows the rule. A
+  non-convex shape would be drawn uncarved (none is stored). No browser check (cloud session): the look in game is
+  for the owner's local check.
 
 ### 6.4 The axe's bites (WORK_QUEUE item 26)
 
@@ -607,7 +641,7 @@ the block's volume / number of swings required to break it."** One rule in one p
   corners), but that carve is never drawn: the cell splits into the gash, half the cell.
 - **Not done:** the chips of a chop are `chop_bite_m3`, half the *cell* over the swings, while the octagon's
   carve is half its *wood* (0.83 of the cell): the chips run ~20 % over the carve on an octagonal log. Ramps'
-  bite is half a cell's for the pieces; ramps aren't carved (drawn as their shape). No browser check (cloud
+  bite is half a cell's, for the pieces and the carve (§6.5). No browser check (cloud
   session): the look in game is for the owner's local check.
 - **Tests:** `dwell-protocol` `a_bite_is_half_the_blocks_volume_over_its_hits` (dirt, stone wood/metal,
   sand, the ramp's half), `a_tool_taking_half_the_hits_bites_twice_as_much_and_a_fixture_block_by_data_alone`,
@@ -648,3 +682,50 @@ client's sound and chips landed on it `contactS` later.
   `a_pickaxe_swing_aimed_at_air_by_its_contact_is_a_miss`, `a_held_pickaxe_swing_strikes_what_is_aimed_at_each_contact`
   (each swing turned before its contact). All red on the old code (the hit on A; a hit sound and a sent hit on
   the miss).
+
+## 12. The axe like the other tools (WORK_QUEUE item 51)
+
+Owner, 2026-11-12: "Also the axe doesn't behave like the other tools. I think it should." Answer to how:
+**"Like the others, felling on top"**: logs take block damage like stone or dirt, and breaking a trunk's log
+fells the tree above as a body, as before.
+
+- **Data:** the log's `damage` (`shared/blocks/dwell.json`): `{ default: 24, axe: 15, chips }`, so the stone
+  axe breaks it in **10** hits (15 ÷ 1.5, rounded up: the old fell's 11 swings scaled to the 50 % rule,
+  11 × 0.5 ÷ 0.55), the metal axe in **5** (15 ÷ 3), anything else 24 where it may break a log at all
+  (adventure: only an axe, `breakWith`; creative: a hand or a block breaks it in one hit, a tool keeps its
+  hits). The stump's `dwell:log_ramp` (an older world's) `{ default: 12, axe: 8 }` (6 and 3; half a cell).
+  The `axe` class already named both (`breaking.classes`). Its `chips` are the wood's.
+- **Server** (`server/chopping.rs` `chop_hit`): an axe swing that lands on a wood with `damage` (aimed or
+  swept, at its contact, §8) is a block-damage hit: one wear, a `HitMark` (the edit face struck, the point,
+  the bite rule's chunk: `hit_chunk(log, axe)`), the hit's share of the log's drops (`hit_share`: 8 wood,
+  4 over the hits before the last); the hit that reaches the count breaks the block (`drop_destroyed`, the
+  rest), sends its damage gone and fells what it held: a standing trunk above as **one body**, tipped toward
+  the side struck (the uncut side the hinge, as the deepest notch steered before), a lying log's
+  neighbours as after any break (bucking a settled trunk is the same hits). No fell wedges: the cell is
+  broken whole (the gash of WORK_QUEUE item 24 is no longer left; an older world's stump ramps stay and take
+  damage too). A moving body's logs still break in one hit (`BodyEditRequest`, as every block on a body).
+  The chopping prototype (`chop2`, off) keeps its cuts.
+- **No new cuts:** a new hit records no `Cut` (no notch, kerfs, bands, bind or grain share; a vertical
+  swing hits as a level one). **Older saves' cuts** still load (the `cuts` table, `Cuts::from_bytes`
+  unchanged), are sent to clients that said `ChopAction::Hello` and drawn as before (notch and kerfs, or
+  bites); the next hit on such a cell carries its progress over as hits (`Cut::progress` × the hits to
+  break, rounded down), drops the cut (`Cuts` `gone`) and goes on as damage.
+- **Client** (`dwell-mesh` `mesh_cells`): a damaged wood cell (any block of `woods`) with no cut is drawn
+  with the axe's head-sized bites at its marks (`chopping::cut_of_marks`: each mark's side, band and place
+  across), grown by its damage fraction as the progress: the same carve as §6.4's bites, which follows the
+  bite rule on the octagon (k of n hits carve k × ½ × the log's volume ÷ n); the wood's cracks (`cut.cracks`,
+  `wood` set) by the fraction. The chips of a chop are sized by `bite_m3_of(log, axe)`. Only the newest four
+  marks are kept (`MAX_HIT_MARKS`), so a cell's bites are its last four hits, the V deepening with the rest.
+- **Compatibility:** additive. A new `damage` entry, a new client drawing an existing message (`Damage`) on
+  a new block; the `cuts` record and the `Cuts` wire are unchanged and still read. An older client on the
+  line gets `Damage` for logs (it would draw nothing on an octagon; a cube's carve skips octagons) and no
+  new cuts; no new compatibility line.
+- **Tests:** `dwell-sim` `chopping` `an_axe_breaks_a_log_in_its_damage_hits_stone_ten_metal_five`,
+  `each_axe_hit_marks_where_it_struck_with_the_bite_rules_chunk_and_wears_once`,
+  `breaking_a_trunk_log_fells_the_tree_above_as_one_body_toward_the_side_struck`,
+  `a_lone_log_breaks_in_its_hits_drops_its_wood_and_nothing_falls` (all both faces),
+  `creative_breaks_a_log_in_its_hits_and_drops_nothing`,
+  `an_older_saves_cut_still_loads_and_draws_and_its_progress_carries_into_damage`; `dwell-mesh`
+  `a_damaged_log_is_carved_by_its_marks_k_bites_after_k_hits` (both faces, the closed mesh's volume). The
+  old model's tests of notches, kerfs, the gash and bites recorded by the server were removed with it.
+- **Not done:** no browser check (cloud session, no GPU): the look in game is for the owner's check.

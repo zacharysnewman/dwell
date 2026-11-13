@@ -2869,7 +2869,7 @@ fn a_bitten_logs_cracks_show_on_the_bark_round_the_bites() {
             cut.swing(axe, 1, 0, band, 1.0);
             cut.bite(1, 0, band, 0.5, &look.bite);
         }
-        let layer = super::cut_cracks(wood, &look, 1, &cut, [0, 0, 0]).expect("cracks");
+        let layer = super::cut_cracks(wood, &look, 1, &cut, [0, 0, 0], None).expect("cracks");
         let tile = crate::textures::TILE_ORDER[usize::from(layer.slot) - 1];
         let ts = crate::textures::TILE as i64;
         let (mut on_bark, mut in_cut) = (0, 0);

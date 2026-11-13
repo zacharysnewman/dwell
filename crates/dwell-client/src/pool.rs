@@ -83,6 +83,8 @@ pub enum Purpose {
     Verify,
     /// The F4 map.
     Map,
+    /// The big map's debug layer of a field on a face (`Job::Map`'s `layer`, REALISTIC_WORLD.md R6).
+    MapLayer(u8, u8),
     /// The F3 overlay's regenerate-and-diff of a chunk.
     Diff(Coord),
     /// An edited chunk as generated, for the ground items' rules (ADR 0071).
@@ -115,6 +117,7 @@ impl Purpose {
             Purpose::SectionMesh(..) => ("job.section_mesh.wait", "job.section_mesh.run"),
             Purpose::Verify => ("job.verify.wait", "job.verify.run"),
             Purpose::Map => ("job.map.wait", "job.map.run"),
+            Purpose::MapLayer(..) => ("job.map_layer.wait", "job.map_layer.run"),
             Purpose::Diff(..) => ("job.diff.wait", "job.diff.run"),
             Purpose::Base(..) => ("job.base.wait", "job.base.run"),
             Purpose::LodMap(..) => ("job.lod_map.wait", "job.lod_map.run"),

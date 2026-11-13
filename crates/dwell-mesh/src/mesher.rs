@@ -37,6 +37,7 @@ const N: i32 = CHUNK_SIZE;
 mod damage_mesh;
 mod ground_mesh;
 pub(crate) mod leaves;
+mod ramp_damage;
 pub mod relief;
 pub use ground_mesh::{GroundJob, look_mesh, look_swatch, scatter as ground_scatter};
 
@@ -913,20 +914,43 @@ fn neighbour_of(x: i32, y: i32, z: i32, axis: usize, sign: i32) -> [i32; 3] {
     n
 }
 
-/// A shaped voxel: each polygon of its shape, but the parts of cell faces a neighbour covers.
-fn shaped_voxel(b: &mut Builder, cells: &Cells<'_>, k: &Kind, x: i32, y: i32, z: i32) {
+/// A shaped voxel: each polygon of its shape, but the parts of cell faces a neighbour covers. A
+/// damaged one (`damage`: its view, face-local) is carved where struck and cracked once staged
+/// (BUGS.md #112, BLOCK_DAMAGE.md §6.5; `ramp_damage`).
+fn shaped_voxel(
+    b: &mut Builder,
+    cells: &Cells<'_>,
+    k: &Kind,
+    [x, y, z]: [i32; 3],
+    damage: Option<&DamageView>,
+) {
     let Some(def) = k.def else {
         return;
     };
-    for f in faces_of(def) {
-        let tag = usize::from(f.tag);
-        if tag < 6 {
+    let faces = faces_of(def);
+    let visible: Vec<bool> = faces
+        .iter()
+        .map(|f| {
+            let tag = usize::from(f.tag);
+            if tag >= 6 {
+                return true;
+            }
             let (axis, sign) = FACES[tag];
             let [nx, ny, nz] = neighbour_of(x, y, z, axis, sign);
-            if face_covered(def, tag, cover(&cells.kind(nx, ny, nz))) {
-                continue;
-            }
+            !face_covered(def, tag, cover(&cells.kind(nx, ny, nz)))
+        })
+        .collect();
+    let hits = damage.and_then(|view| {
+        let look = dwell_protocol::damage::look_of(k.style.block)?;
+        let fraction = f64::from(view.fraction) / 255.0;
+        let carved = dwell_protocol::damage::carved_m3(k.style.block, fraction);
+        ramp_damage::RampDamage::new(def, look, carved, view, [x, y, z], &visible)
+    });
+    for (fi, f) in faces.iter().enumerate() {
+        if !visible[fi] {
+            continue;
         }
+        let tag = usize::from(f.tag);
         let pts: Vec<[f64; 3]> = f.v[..usize::from(f.count)]
             .iter()
             .map(|p| p.map(f64::from))
@@ -962,7 +986,23 @@ fn shaped_voxel(b: &mut Builder, cells: &Cells<'_>, k: &Kind, x: i32, y: i32, z:
             .iter()
             .map(|p| vertex_light(AO_OPEN, cells.sky_rays([x, y, z], *p, n_m, salt)))
             .collect();
-        let flood = vec![cells.flood.shaped([x, y, z], normal); pts.len()];
+        let flood_at = cells.flood.shaped([x, y, z], normal);
+        if let Some(h) = &hits {
+            let sky = |p: [f64; 3]| vertex_light(AO_OPEN, cells.sky_rays([x, y, z], p, n_m, salt));
+            let face = ramp_damage::RampFace {
+                cell: [x, y, z],
+                color,
+                tint,
+                tile: &tile,
+                side_top: side_top_of(def, tag),
+                light: &sky,
+                flood: flood_at,
+            };
+            if h.draw(&mut b.m, fi, &face) {
+                continue;
+            }
+        }
+        let flood = vec![flood_at; pts.len()];
         b.polygon(
             &pts,
             at,
@@ -1017,7 +1057,28 @@ const CUT_SHADE: f64 = 0.55;
 /// bark left on each side and the end grain are drawn as the cube's faces would be (and not where a
 /// neighbour covers them); the faces cut into it take the wood's cut tile (its `cut.tile`, else the
 /// end grain), lit by the sky the side they are cut into sees and darker the deeper they lie.
-fn carved_voxel(b: &mut Builder, cells: &Cells<'_>, k: &Kind, cell: [i32; 3], cut: &Cut) {
+/// A wood cell's extent across its sides (0..1 of the cell): a standing log's octagon `width` of
+/// its cell, centred (ADR 0079; a thinner trunk), else the whole cell (the server's `log_span`).
+fn wood_span(m: StateId, grain: usize) -> [f64; 2] {
+    match dwell_blocks::octagon::section_of(m) {
+        Some((section, _)) if grain == 1 && section.width < 1.0 => {
+            let w = f64::from(section.width).clamp(0.05, 1.0);
+            [0.5 - 0.5 * w, 0.5 + 0.5 * w]
+        }
+        _ => [0.0, 1.0],
+    }
+}
+
+/// `damage`: a damaged wood's fraction to breaking (WORK_QUEUE item 51), its cut made of its marks
+/// ([`dwell_protocol::chopping::cut_of_marks`]): the carve's progress and the cracks' stage.
+fn carved_voxel(
+    b: &mut Builder,
+    cells: &Cells<'_>,
+    k: &Kind,
+    cell: [i32; 3],
+    cut: &Cut,
+    damage: Option<f64>,
+) {
     let grain = k.style.axis;
     let wood = dwell_protocol::chopping::wood(k.style.block);
     let look = wood.map_or(
@@ -1044,12 +1105,13 @@ fn carved_voxel(b: &mut Builder, cells: &Cells<'_>, k: &Kind, cell: [i32; 3], cu
     // or save's) as before: the notch across the side, the kerfs as slits.
     let faces = if cut.has_bites() {
         // Grown by the bite rule (WORK_QUEUE item 18): its share of the swings to fell.
-        let progress = wood.map_or(cut.cross(grain), |w| cut.progress(w, grain));
+        let progress =
+            damage.unwrap_or_else(|| wood.map_or(cut.cross(grain), |w| cut.progress(w, grain)));
         carve::carve_bites(grain, cut, &look, outline.as_deref(), progress)
     } else {
         carve::carve_in(grain, cut, &look, outline.as_deref())
     };
-    let crack = wood.and_then(|w| cut_cracks(w, &look, grain, cut, cell));
+    let crack = wood.and_then(|w| cut_cracks(w, &look, grain, cut, cell, damage));
     for f in faces {
         // The side (axis, sign) the face looks out of: a cut face's light comes from there.
         let (axis, sign, shade_axis) = match f.part {
@@ -1132,6 +1194,7 @@ fn cut_cracks(
     grain: usize,
     cut: &Cut,
     cell: [i32; 3],
+    damage: Option<f64>,
 ) -> Option<damage_mesh::CrackLayer> {
     use dwell_protocol::chopping::side_axis;
     let cracks = look.cracks.as_ref()?;
@@ -1140,7 +1203,7 @@ fn cut_cracks(
     } else {
         wood.buck_fraction
     };
-    let fraction = (cut.cross(grain) / through.max(1e-6)).min(1.0);
+    let fraction = damage.unwrap_or_else(|| (cut.cross(grain) / through.max(1e-6)).min(1.0));
     let mut layer = damage_mesh::CrackLayer::of_cracks(cracks, fraction, cell)?;
     let side = cut.deepest(grain)?;
     let bite = cut.bites[side].all().last()?;
@@ -1936,7 +1999,13 @@ fn damaged_cells(
         .iter()
         .filter(|(c, _)| in_chunk(*c))
         .map(|(c, v)| {
+            // Face-local as the mirrored chunk's cells are (a ramp's `half` turned over).
             let state = inner[padded_index(c[0], c[1], c[2])];
+            let state = if mirror {
+                mirror_material(state)
+            } else {
+                state
+            };
             let (at, v) = damage_mesh::face_local(*c, v, mirror);
             (at, state, v)
         })
@@ -2184,7 +2253,47 @@ fn mesh_cells(
             }
         }
     }
+    // Damaged ramps (BUGS.md #112): carved and cracked in `shaped_voxel`, by cell.
+    let ramp_hits: HashMap<[i32; 3], usize> = damaged
+        .iter()
+        .enumerate()
+        .filter(|(_, (c, state, _))| {
+            let k = kinds.of(*state);
+            padded[padded_index(c[0], c[1], c[2])] == *state
+                && k.shape == Shape::Shaped
+                && k.style.render == RenderMode::Opaque
+                && !k.style.octagon
+                && !k.style.leafy
+                && !carved.contains_key(c)
+        })
+        .map(|(i, (c, _, _))| (*c, i))
+        .collect();
     let mut struck_faces: Vec<(damage_mesh::StruckFace, usize)> = Vec::new();
+    // A damaged wood (the log hit by the axe through block damage, WORK_QUEUE item 51) is drawn
+    // with the axe's bites at its marks, grown by its damage fraction (the bite rule): the
+    // octagon's carve. A cell with an older save's cut keeps the cut's.
+    let mut progress: HashMap<[i32; 3], f64> = HashMap::new();
+    let mut carved = carved.clone();
+    for (c, state, view) in damaged {
+        let k = kinds.of(*state);
+        if padded[padded_index(c[0], c[1], c[2])] != *state || carved.contains_key(c) {
+            continue;
+        }
+        let Some(wood) = dwell_protocol::chopping::wood(k.style.block) else {
+            continue;
+        };
+        let grain = k.style.axis;
+        let cut = dwell_protocol::chopping::cut_of_marks(
+            grain,
+            &view.marks,
+            &wood.cut.bite,
+            wood_span(*state, grain),
+        );
+        if cut.has_bites() {
+            carved.insert(*c, cut);
+            progress.insert(*c, f64::from(view.fraction) / 255.0);
+        }
+    }
     // A cut cell is carved only if it is drawn as an opaque cube.
     let carved: HashMap<[i32; 3], Cut> = carved
         .iter()
@@ -2531,13 +2640,18 @@ fn mesh_cells(
                 let k = cells.kind(cx, cy, cz);
                 // A wood ramp with the log's octagon (Phase 55 T4) is drawn as its cut prism below.
                 if k.shape == Shape::Shaped && !k.style.octagon {
-                    shaped_voxel(&mut opaque, &cells, &k, cx, cy, cz);
+                    let hit = (!ramp_hits.is_empty())
+                        .then(|| ramp_hits.get(&[cx, cy, cz]))
+                        .flatten()
+                        .map(|&i| &damaged[i].2);
+                    shaped_voxel(&mut opaque, &cells, &k, [cx, cy, cz], hit);
                 }
                 if let Some(cut) = (!carved.is_empty())
                     .then(|| carved.get(&[cx, cy, cz]))
                     .flatten()
                 {
-                    carved_voxel(&mut opaque, &cells, &k, [cx, cy, cz], cut);
+                    let damage = progress.get(&[cx, cy, cz]).copied();
+                    carved_voxel(&mut opaque, &cells, &k, [cx, cy, cz], cut, damage);
                 } else if k.style.octagon {
                     octagon_voxel(&mut opaque, &cells, &k, m, [cx, cy, cz]);
                 }

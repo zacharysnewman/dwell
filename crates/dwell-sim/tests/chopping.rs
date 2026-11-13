@@ -1,9 +1,8 @@
-//! Chopping through the server (docs/adr/0067-stone-axe-and-chopping.md): aimed axe swings cut a
-//! standing trunk, which falls toward the notch (the uncut side the hinge) once cut past its fell fraction (notching in
-//! about 9 swings, hacking one spot about four times as many, vertical swings barely at all); a
-//! lying log is cut through by vertical swings across it and drops wood in adventure; cuts are
-//! saved with the world and sent only to clients that said `ChopAction::Hello`.
-
+//! Chopping through the server (docs/adr/0067-stone-axe-and-chopping.md, docs/BLOCK_DAMAGE.md §12): the
+//! axe's swing (its arc, contact, clears and wear) lands on a log as a block-damage hit (WORK_QUEUE item
+//! 50: hits to break by the axe, a mark each, the drops spread over them), the last breaking it and
+//! felling the trunk above as one body toward the side struck; older saves' cuts still load and are
+//! sent only to clients that said `ChopAction::Hello`; the chopping prototype (`chop2`) keeps its cuts.
 mod common;
 
 use common::*;
@@ -26,6 +25,8 @@ fn config(f: FaceFrame, mode: &str) -> ServerConfig {
         generator_override: Some(empty_generator()),
         spawn: Some(f.point([0.5, m_of_row(BASE), 0.5])),
         mode: mode.into(),
+        // The axe hits a log through block damage (WORK_QUEUE item 51): its real hits to break.
+        one_hit_breaks: false,
         ..flat()
     }
 }
@@ -223,201 +224,6 @@ dwell_world::both_faces!(
     }
 );
 
-dwell_world::both_faces!(
-    fn notching_fells_a_trunk_in_about_ten_swings_toward_the_notch(f: FaceFrame) {
-        let mut fx = scene(f, "adventure", true);
-        let n = swings_to_fell(&mut fx, f, false, 20, |i| i % 2).expect("felled");
-        assert!((8..=12).contains(&n), "{n} swings");
-        // Phase 55 T2 (owner, 2026-11-09): the stump keeps the wood ramp rising away from the
-        // notch (the notch on −x, the player's side at x = 0.5; the uncut +x side the hinge), the
-        // trunk's new bottom is the upside-down ramp (the log's `fellWedge`, data), thin at the
-        // notch: the gash (`fellWedgeTrunk: open`; owner 2026-11-12, WORK_QUEUE item 24).
-        let wood = dwell_protocol::chopping::wood("dwell:log").expect("log");
-        assert!(
-            !wood.fell_wedge_matching,
-            "the log's trunk wedge is the open one (the gash)"
-        );
-        assert!(wood.fell_tip > 0.0, "the log tips when felled (`fellTip`)");
-        let (stump, top) = dwell_sim::felling::fell_wedges(
-            wood.fell_wedge.expect("the log's wedge"),
-            [-1.0, 0.0],
-            dwell_sim::felling::WedgeTrunk::Open,
-        )
-        .expect("the log's wedges");
-        assert_eq!(
-            cell_is(&mut fx, f, [3, AT, 0]),
-            f.state(stump),
-            "the stump's wedge"
-        );
-        let prop = dwell_blocks::state_property;
-        assert_eq!(
-            (prop(stump, "facing"), prop(stump, "half")),
-            (Some("west"), Some("bottom")),
-            "facing (falling toward) −x, the notch: rising away from it"
-        );
-        assert_eq!(
-            (prop(top, "facing"), prop(top, "half")),
-            (Some("west"), Some("top")),
-            "upside down, thin at the notch: the gash opens toward it"
-        );
-        let sent = fx.take(1);
-        let spawn = sent
-            .iter()
-            .find_map(|(m, _)| match m {
-                Message::EntitySpawn(s) => Some(s.clone()),
-                _ => None,
-            })
-            .expect("a piece spawned");
-        // Its bottom cell (face-local lowest) is the upside-down wedge.
-        let up = f.up()[1].signum() as i16;
-        let bottom = spawn
-            .cells
-            .iter()
-            .min_by_key(|c| c.offset[1] * up)
-            .expect("cells");
-        assert_eq!(
-            bottom.state,
-            f.state(top),
-            "the trunk's bottom is the inverted wedge"
-        );
-        // Released tipping toward the notch (−x) with the old scripted tip (the log's `fellTip`;
-        // owner 2026-11-09: "make the tree tip if needed, like we used to, maybe 3/4 of the
-        // force"): within four seconds it is down (leaning past 60°) on that side, not sideways.
-        // Without the tip a matching wedge stood on the stump's slope; at 0.75 and 0.85 of it this
-        // 3.5 m trunk leant ~5° and rocked back upright, so the log's share is 1 (kept with the
-        // open gash, 2026-11-12).
-        let id = spawn.id;
-        let mut lean = [0.0; 3];
-        let mut ticks = 0;
-        for _ in 0..4 * 60 {
-            fx.server.step();
-            ticks += 1;
-            let Some((_, q)) = fx.server.body_pose(id) else {
-                break;
-            };
-            lean = f.vector((q * dwell_physics::DVec3::from(f.up())).to_array());
-            if lean[1] < 0.5 {
-                break;
-            }
-        }
-        println!("{f:?}: lean {lean:?} after {ticks} ticks");
-        assert!(lean[1] < 0.5, "down within 4 s: {lean:?}");
-        assert!(lean[0] < -0.8, "toward −x, the notch: {lean:?}");
-        assert!(lean[2].abs() < 0.2, "not sideways: {lean:?}");
-        // The stump stays; the client heard the cut and then its end.
-        assert_ne!(cell_is(&mut fx, f, [3, AT - 1, 0]), M.air);
-        assert!(
-            sent.iter()
-                .any(|(m, _)| matches!(m, Message::Cuts(c) if !c.cuts.is_empty()))
-        );
-        assert!(fx.server.cut_of(f.cell([3, AT, 0])).is_none());
-    }
-);
-
-/// The face-local heights over a cell's floor of `m`'s hull's top and bottom at its edge toward
-/// the level direction `d` (x, z) and the opposite edge: `[top toward, top away, bottom toward,
-/// bottom away]`.
-fn wedge_edges(m: u16, d: [f64; 2]) -> [f64; 4] {
-    let half = dwell_physics::DVec3::new(0.5, 0.25, 0.5);
-    let pts = dwell_physics::shape_hull_points(m, half);
-    let along = |p: &dwell_physics::DVec3| p.x * d[0] + p.z * d[1];
-    let at = |s: f64| {
-        pts.iter()
-            .filter(move |p| (along(p) - 0.5 * s).abs() < 1e-6)
-    };
-    let top = |s: f64| at(s).map(|p| p.y + 0.25).fold(f64::NEG_INFINITY, f64::max);
-    let bottom = |s: f64| at(s).map(|p| p.y + 0.25).fold(f64::INFINITY, f64::min);
-    [top(1.0), top(-1.0), bottom(1.0), bottom(-1.0)]
-}
-
-dwell_world::both_faces!(
-    /// WORK_QUEUE item 24 (owner, 2026-11-12: "2 half blocks one upside down one right side up,
-    /// both with the 'short side' facing the cut"; confirmed "Yes that was the shape I meant"):
-    /// felled from any of the four sides, the stump is the ramp low at the notch rising away from
-    /// it and the trunk's lowest cell the upside-down ramp thin at the notch, the two slopes
-    /// opening a V toward the side chopped, and the trunk falls that way. Red before: the log's
-    /// `fellWedgeTrunk` was `matching`, the trunk's ramp parallel to the stump's ("like you cut it
-    /// through with a sword in one swipe").
-    fn felled_from_each_side_the_cut_opens_a_gash_toward_the_notch(f: FaceFrame) {
-        let prop = dwell_blocks::state_property;
-        for (d, facing) in [
-            ([-1i32, 0i32], "west"),
-            ([1, 0], "east"),
-            ([0, -1], "north"),
-            ([0, 1], "south"),
-        ] {
-            let mut fx = scene(f, "creative", true);
-            let (dx, dz) = (f64::from(d[0]), f64::from(d[1]));
-            // The chopper stands 3 m out on that side, facing the trunk (centre 3.5, 0.5).
-            move_to_local(&mut fx, f, 3.5 + 3.0 * dx, m_of_row(BASE), 0.5 + 3.0 * dz);
-            for _ in 0..5 {
-                fx.server.step();
-            }
-            fx.take_all();
-            let mut felled = false;
-            for i in 0..30 {
-                let y = m_of_row(AT) + if i % 2 == 0 { 0.12 } else { 0.37 };
-                let at = [3.5 + 0.5 * dx, y, 0.5 + 0.5 * dz];
-                swing(&mut fx, f, [3, AT, 0], [dx, 0.0, dz], at, false);
-                if cell_is(&mut fx, f, [3, AT, 0]) != log(f, "y") {
-                    felled = true;
-                    break;
-                }
-            }
-            assert!(felled, "{facing}: felled");
-            let stump = f.state(cell_is(&mut fx, f, [3, AT, 0]));
-            assert_eq!(
-                (
-                    prop(stump, "shape"),
-                    prop(stump, "half"),
-                    prop(stump, "facing")
-                ),
-                (Some("ramp"), Some("bottom"), Some(facing)),
-                "{f:?} {facing}: the stump's ramp faces the notch"
-            );
-            let sent = fx.take(1);
-            let spawn = felled_piece(&sent);
-            let up = f.up()[1].signum() as i16;
-            let low = spawn
-                .cells
-                .iter()
-                .min_by_key(|c| c.offset[1] * up)
-                .expect("cells");
-            let trunk = f.state(low.state);
-            assert_eq!(
-                (prop(trunk, "shape"), prop(trunk, "half")),
-                (Some("ramp"), Some("top")),
-                "{f:?} {facing}: the trunk's bottom is upside down"
-            );
-            let to = [dx, dz];
-            let [s_top_notch, s_top_hinge, ..] = wedge_edges(stump, to);
-            let [.., t_bottom_notch, t_bottom_hinge] = wedge_edges(trunk, to);
-            assert!(
-                s_top_notch < 1e-6 && (s_top_hinge - 0.5).abs() < 1e-6,
-                "{f:?} {facing}: the stump low at the notch, rising away"
-            );
-            assert!(
-                (t_bottom_notch - 0.5).abs() < 1e-6 && t_bottom_hinge < 1e-6,
-                "{f:?} {facing}: the trunk's ramp thin at the notch (its bottom at the ceiling there)"
-            );
-            // Over the two cells (the trunk's a row up): the stump's top rises 0 → ½ m from the
-            // notch to the hinge, the trunk's bottom falls 1 → ½ m: not parallel, a V open
-            // toward the notch, closed at the hinge.
-            let gap_notch = (0.5 + t_bottom_notch) - s_top_notch;
-            let gap_hinge = (0.5 + t_bottom_hinge) - s_top_hinge;
-            assert!(
-                gap_notch > 0.9 && gap_hinge.abs() < 1e-6,
-                "{f:?} {facing}: the gash opens toward the notch ({gap_notch}, {gap_hinge})"
-            );
-            let lean = lean_of(&mut fx, f, spawn.id);
-            assert!(
-                lean[1] < 0.5 && lean[0] * dx + lean[2] * dz > 0.8,
-                "{f:?} {facing}: down toward the notch: {lean:?}"
-            );
-        }
-    }
-);
-
 /// The player's centre, face-local.
 fn player_at(fx: &mut Fixture, f: FaceFrame) -> [f64; 3] {
     let h = fx.server.player_handle_of(1).expect("a live player");
@@ -473,36 +279,6 @@ fn a_felled_trunk_falling_on_the_chopper_does_not_fling_them_b() {
     a_felled_trunk_falling_on_the_chopper_does_not_fling_them(FaceFrame::B);
 }
 
-dwell_world::both_faces!(
-    fn aiming_at_one_spot_notches_as_alternating_the_bands_does(f: FaceFrame) {
-        // BUGS.md #75: a swing at a band cut deeper than the other lands beside it, in the open
-        // wood, so the same aim notches (before: it hacked one kerf, 28 swings to the notching's 9,
-        // and in the browser no fall in 24).
-        let mut fx = scene(f, "creative", true);
-        let notch = swings_to_fell(&mut fx, f, false, 20, |i| i % 2).expect("notched");
-        let mut fx = scene(f, "creative", true);
-        let one = swings_to_fell(&mut fx, f, false, 20, |_| 0).expect("one aim");
-        assert_eq!(one, notch);
-        assert!((10..=13).contains(&notch), "about twelve: {notch}");
-    }
-);
-
-dwell_world::both_faces!(
-    fn vertical_swings_barely_cut_a_standing_trunk(f: FaceFrame) {
-        let mut fx = scene(f, "creative", true);
-        assert_eq!(swings_to_fell(&mut fx, f, true, 12, |i| i % 2), None);
-        let cut = fx.server.cut_of(f.cell([3, AT, 0])).expect("cut a little");
-        let mut h = scene(f, "creative", true);
-        at_trunk(&mut h, f, 0, false);
-        let one = h.server.cut_of(f.cell([3, AT, 0])).unwrap().depth(0);
-        assert!(
-            cut.depth(0) < 2.5 * one,
-            "12 vertical swings {} vs 1 level {one}",
-            cut.depth(0)
-        );
-    }
-);
-
 /// Swings at the lying log's top (face-local up), from the −x side, in band `band` along z.
 fn at_log(fx: &mut Fixture, f: FaceFrame, band: usize, vertical: bool) {
     let z = if band == 0 { 0.3 } else { 0.7 };
@@ -515,37 +291,6 @@ fn at_log(fx: &mut Fixture, f: FaceFrame, band: usize, vertical: bool) {
         vertical,
     );
 }
-
-dwell_world::both_faces!(
-    fn vertical_swings_cut_a_lying_log_through_and_it_drops_wood(f: FaceFrame) {
-        let mut fx = scene(f, "adventure", false);
-        // Level swings run along its grain: barely.
-        for i in 0..4 {
-            at_log(&mut fx, f, i % 2, false);
-        }
-        let level = fx
-            .server
-            .cut_of(f.cell([3, BASE, 0]))
-            .expect("cut")
-            .depth(1);
-        let mut fx = scene(f, "adventure", false);
-        let mut n = 0;
-        while cell_is(&mut fx, f, [3, BASE, 0]) != M.air {
-            at_log(&mut fx, f, n % 2, true);
-            n += 1;
-            assert!(n < 12, "not cut through");
-        }
-        assert!(level < 0.1, "4 level swings cut {level} m");
-        let wood: u16 = fx
-            .server
-            .loose_items()
-            .iter()
-            .filter(|it| it.stack.item == "dwell:wood")
-            .map(|it| it.stack.count)
-            .sum();
-        assert!((2..=3).contains(&wood), "{wood} wood");
-    }
-);
 
 #[test]
 fn creative_cuts_but_drops_nothing() {
@@ -626,56 +371,6 @@ dwell_world::both_faces!(
     }
 );
 
-#[test]
-fn cuts_are_saved_with_the_world() {
-    // face-a-only: a byte format.
-    let f = FaceFrame::A;
-    let db = WorldDb::in_memory().expect("db");
-    let cfg = || ServerConfig {
-        store: Some(WorldStore::new(db.clone(), false)),
-        ..config(f, "creative")
-    };
-    let before = {
-        let mut fx = scene_with(f, cfg(), true, true);
-        at_trunk(&mut fx, f, 0, false);
-        at_trunk(&mut fx, f, 1, false);
-        at_trunk(&mut fx, f, 0, false);
-        let c = fx.server.cut_of(f.cell([3, AT, 0])).expect("cut");
-        fx.server.save_now();
-        fx.server.flush_store();
-        c
-    };
-    let mut fx = scene_with(f, cfg(), true, false);
-    assert_eq!(fx.server.cut_of(f.cell([3, AT, 0])), Some(before));
-    // A client that says Hello is sent the saved cuts (their depths: the bites go only to one that
-    // said `BitesHello`).
-    fx.send(1, Message::Chop(ChopAction::Hello));
-    fx.server.step();
-    let same = |k: &dwell_protocol::chopping::Cut| k.notch == before.notch && k.kerf == before.kerf;
-    assert!(
-        fx.take(1)
-            .iter()
-            .any(|(m, _)| matches!(m, Message::Cuts(c) if c.cuts.iter().any(|(_, k)| same(k))))
-    );
-}
-
-#[test]
-fn a_client_that_never_says_hello_is_sent_no_cuts() {
-    // face-a-only: a wire rule.
-    let f = FaceFrame::A;
-    let mut fx = scene_with(f, config(f, "creative"), true, false);
-    at_trunk(&mut fx, f, 0, false);
-    assert!(
-        fx.server.cut_of(f.cell([3, AT, 0])).is_some(),
-        "cut all the same"
-    );
-    assert!(
-        fx.take(1)
-            .iter()
-            .all(|(m, _)| !matches!(m, Message::Cuts(_)))
-    );
-}
-
 // The swing's path (owner, 2026-11-08: "the weapon's actual path is what hits"): the client sends
 // the swing's start (`ChopAction::Sweep`: the look and the plane) and the server sweeps the axe's
 // arc from its own eye, hitting the first solid cell on it.
@@ -697,10 +392,14 @@ fn sweep(fx: &mut Fixture, f: FaceFrame, look: [f64; 3], vertical: bool) {
     }
 }
 
-/// The trunk's cells (face-local rows BASE..BASE + 10 at x = 3) that have a cut.
+/// The trunk's cells (face-local rows BASE..BASE + 10 at x = 3) that were hit: damaged (the log
+/// takes block damage, WORK_QUEUE item 51) or cut (the chopping prototype's).
 fn cut_rows(fx: &Fixture, f: FaceFrame) -> Vec<i32> {
     (BASE..BASE + 10)
-        .filter(|&r| fx.server.cut_of(f.cell([3, r, 0])).is_some())
+        .filter(|&r| {
+            let c = f.cell([3, r, 0]);
+            fx.server.cut_of(c).is_some() || fx.server.damage_of(c).is_some()
+        })
         .collect()
 }
 
@@ -751,8 +450,9 @@ dwell_world::both_faces!(
         sweep(&mut fx, f, [1.0, 0.0, 0.0], false);
         let rows = cut_rows(&fx, f);
         assert!(!rows.is_empty(), "the trunk aimed at");
-        let cut = fx.server.cut_of(f.cell([3, rows[0], 0])).unwrap();
-        assert_eq!(cut.deepest(1), Some(0), "the near side: {cut:?}");
+        // The mark's face: −x, an edit's face 1 (x is the same on both faces).
+        let d = fx.server.damage_of(f.cell([3, rows[0], 0])).unwrap();
+        assert_eq!(d.marks[0].face, 1, "the near side: {d:?}");
         // A stone post to the right, between the swing's start and the trunk: it takes the hit
         // (a bounce: nothing changes) and the trunk is not cut.
         let mut fx = near(f, "adventure");
@@ -1115,17 +815,6 @@ dwell_world::both_faces!(
 );
 
 dwell_world::both_faces!(
-    fn chop2_off_the_old_chopping_is_unchanged(f: FaceFrame) {
-        // Without the switch a chop opens a kerf (the old model), not the prototype's notch.
-        const { assert!(!dwell_protocol::chopping::CHOP2_DEFAULT, "off by default") };
-        let mut fx = scene(f, "adventure", true);
-        at_trunk(&mut fx, f, 0, false);
-        let cut = fx.server.cut_of(f.cell([3, AT, 0])).expect("cut");
-        assert!(cut.kerf[0][0] > 0.0 && cut.notch[0] == 0.0, "{cut:?}");
-    }
-);
-
-dwell_world::both_faces!(
     fn chop2_reaches_as_far_as_the_target_outline(f: FaceFrame) {
         // Round 2: a trunk you can outline you can chop. From x = 0.5 the trunk's face at x = 3
         // is 2.5 m off, past the swing's 2.2 m reach but within the outline's.
@@ -1403,156 +1092,15 @@ dwell_world::both_faces!(
     }
 );
 
-// The axe's bites (WORK_QUEUE item 26): each hit records where it struck across the side, the
-// client carving a head-sized bite there; sent only to a client that said `BitesHello`.
+// The axe like the other tools (WORK_QUEUE item 51; owner, 2026-11-12: "Like the others, felling
+// on top"): a log takes block damage, hits to break by the axe (its `damage` data), a mark where
+// each hit struck, its drops spread over the hits; the hit that breaks it fells the tree above.
 
 /// A swing at the trunk's −x side in the lower band, struck `z` across it (face-local).
 fn at_trunk_across(fx: &mut Fixture, f: FaceFrame, z: f64) {
     let y = m_of_row(AT) + 0.12;
     swing(fx, f, [3, AT, 0], [-1.0, 0.0, 0.0], [3.0, y, z], false);
 }
-
-dwell_world::both_faces!(
-    fn a_hit_records_its_bite_where_it_struck_and_the_fall_is_unchanged(f: FaceFrame) {
-        let mut fx = scene(f, "creative", true);
-        at_trunk_across(&mut fx, f, 0.3);
-        let cut = fx.server.cut_of(f.cell([3, AT, 0])).expect("cut");
-        // Side 0 (−x), the face-locally lower band, 0.3 across (z, a level axis on both faces).
-        let b = cut.bites[0].all();
-        assert_eq!(b.len(), 1, "{cut:?}");
-        assert!(
-            (f64::from(b[0].u) - 0.3).abs() < 1e-6 && b[0].band == 0,
-            "{b:?}"
-        );
-        // The next swing at the same spot lands in the open band, the same place across.
-        at_trunk_across(&mut fx, f, 0.3);
-        let cut = fx.server.cut_of(f.cell([3, AT, 0])).expect("cut");
-        assert_eq!(cut.bites[0].all()[1].band, 1);
-        // Hacking that spot still fells it in the rule's swings (ADR 0067 §2, BUGS.md #75).
-        let mut n = 2;
-        while cell_is(&mut fx, f, [3, AT, 0]) == log(f, "y") && n < 20 {
-            at_trunk_across(&mut fx, f, 0.3);
-            n += 1;
-        }
-        assert_eq!(n, 11, "felled at the eleventh swing");
-    }
-);
-
-#[test]
-fn bites_go_only_to_a_client_that_said_bites_hello_and_are_saved() {
-    // face-a-only: a wire and byte format.
-    let f = FaceFrame::A;
-    let db = WorldDb::in_memory().expect("db");
-    let cfg = || ServerConfig {
-        store: Some(WorldStore::new(db.clone(), false)),
-        ..config(f, "creative")
-    };
-    let before = {
-        let mut fx = scene_with(f, cfg(), true, true);
-        at_trunk_across(&mut fx, f, 0.4);
-        // Without `BitesHello` (an older client): its cuts carry no bites (it can't read them).
-        let cuts: Vec<CutsMessage> = fx
-            .take(1)
-            .into_iter()
-            .filter_map(|(m, _)| match m {
-                Message::Cuts(c) => Some(c),
-                _ => None,
-            })
-            .collect();
-        assert!(!cuts.is_empty() && cuts.iter().all(|c| !c.bites));
-        // Saying it brings all the cuts again with their bites, and every later one has them.
-        fx.server.on_datagram(1, &Message::BitesHello.encode());
-        fx.server.step();
-        let again: Vec<CutsMessage> = fx
-            .take(1)
-            .into_iter()
-            .filter_map(|(m, _)| match m {
-                Message::Cuts(c) => Some(c),
-                _ => None,
-            })
-            .collect();
-        assert!(
-            again
-                .iter()
-                .any(|c| c.bites && c.cuts.iter().any(|(_, k)| k.bites[0].n == 1)),
-            "{again:?}"
-        );
-        at_trunk_across(&mut fx, f, 0.4);
-        assert!(
-            fx.take(1)
-                .iter()
-                .any(|(m, _)| matches!(m, Message::Cuts(c) if c.bites))
-        );
-        let c = fx.server.cut_of(f.cell([3, AT, 0])).expect("cut");
-        fx.server.save_now();
-        fx.server.flush_store();
-        c
-    };
-    assert!(before.has_bites());
-    let fx = scene_with(f, cfg(), true, false);
-    assert_eq!(
-        fx.server.cut_of(f.cell([3, AT, 0])),
-        Some(before),
-        "saved with its bites"
-    );
-}
-
-dwell_world::both_faces!(
-    /// WORK_QUEUE item 26 (owner, 2026-11-12: "I think let's do your recommendation" — the stump
-    /// keeps its gash): a 12th swing at the felled spot hits the stump's fell wedge as wood, a bite
-    /// and a wear, and never clears it (red before: the axe's `clears` broke the `dwell:log_ramp`,
-    /// leaving a flat stump); the stump comes down only after it is chopped like a log, and in
-    /// adventure drops the wood's `buckDrops`.
-    fn a_swing_after_the_fall_bites_the_stump_which_comes_down_only_when_chopped(f: FaceFrame) {
-        let mut fx = scene(f, "adventure", true);
-        let n = swings_to_fell(&mut fx, f, false, 20, |i| i % 2).expect("felled");
-        let stump = cell_is(&mut fx, f, [3, AT, 0]);
-        let name = dwell_blocks::block_of(f.state(stump)).name;
-        assert_eq!(name, "dwell:log_ramp", "the stump's wedge");
-        // On the hinge side, out of the trunk's fall (toward −x), facing the stump.
-        move_to_local(&mut fx, f, 5.0, m_of_row(BASE), 0.5);
-        for _ in 0..60 {
-            fx.server.step();
-        }
-        let worn = axe_wear(&fx).expect("the axe in hand");
-        // The 12th swing: its arc meets the stump's wedge.
-        sweep(&mut fx, f, [-1.0, 0.0, 0.0], false);
-        assert_eq!(
-            cell_is(&mut fx, f, [3, AT, 0]),
-            stump,
-            "{f:?}: the gash stays"
-        );
-        let cut = fx
-            .server
-            .cut_of(f.cell([3, AT, 0]))
-            .expect("the stump is cut");
-        assert!(cut.has_bites(), "{f:?}: a bite in the stump: {cut:?}");
-        assert_eq!(axe_wear(&fx), Some(worn + 1), "{f:?}: the hit wore the axe");
-        // Chopped like a log: down after about as many swings as the trunk took, not one.
-        let wood_before = wood_count(&fx);
-        let mut k = 1;
-        while cell_is(&mut fx, f, [3, AT, 0]) == stump && k < 40 {
-            at_trunk(&mut fx, f, k % 2, false);
-            k += 1;
-        }
-        assert_eq!(
-            cell_is(&mut fx, f, [3, AT, 0]),
-            M.air,
-            "{f:?}: chopped down"
-        );
-        assert!(
-            k + 2 >= n && k >= 6,
-            "{f:?}: {k} swings to chop the stump ({n} to fell)"
-        );
-        for _ in 0..120 {
-            fx.server.step();
-        }
-        assert!(
-            wood_count(&fx) > wood_before,
-            "{f:?}: the stump's wood dropped"
-        );
-    }
-);
 
 /// The wood lying loose and in player 1's inventory.
 fn wood_count(fx: &Fixture) -> u32 {
@@ -1572,4 +1120,220 @@ fn wood_count(fx: &Fixture) -> u32 {
             .sum()
     });
     loose + held
+}
+
+/// The log's hits to break with `tool` held (its `damage` data).
+fn log_hits(tool: &str) -> u32 {
+    dwell_protocol::damage::hits_to_break("dwell:log", Some(tool)).expect("an axe breaks a log")
+}
+
+/// Swings at the trunk's −x side until the cell at AT is no longer a log (at most `limit`).
+fn hits_to_break_trunk(fx: &mut Fixture, f: FaceFrame, limit: usize) -> Option<usize> {
+    swings_to_fell(fx, f, false, limit, |i| i % 2)
+}
+
+dwell_world::both_faces!(
+    fn an_axe_breaks_a_log_in_its_damage_hits_stone_ten_metal_five(f: FaceFrame) {
+        // The data: the stone axe ≈ the old fell's 11 swings scaled to the 50 % rule (11 × 0.5 /
+        // 0.55), the metal axe half (owner: metal reaches 50 % broken faster).
+        assert_eq!((log_hits(AXE), log_hits("dwell:metal_axe")), (10, 5));
+        let mut fx = scene(f, "adventure", true);
+        let n = hits_to_break_trunk(&mut fx, f, 20).expect("broken");
+        assert_eq!(n as u32, log_hits(AXE), "stone axe");
+        assert_eq!(cell_is(&mut fx, f, [3, AT, 0]), M.air, "broken, no wedge");
+        // Each hit before the last was recorded with its mark (no cut).
+        assert!(fx.server.cut_of(f.cell([3, AT, 0])).is_none());
+        assert!(
+            fx.server.damage_of(f.cell([3, AT, 0])).is_none(),
+            "gone with it"
+        );
+    }
+);
+
+dwell_world::both_faces!(
+    fn each_axe_hit_marks_where_it_struck_with_the_bite_rules_chunk_and_wears_once(f: FaceFrame) {
+        let mut fx = scene(f, "adventure", true);
+        at_trunk_across(&mut fx, f, 0.3);
+        let d = fx
+            .server
+            .damage_of(f.cell([3, AT, 0]))
+            .expect("damaged")
+            .clone();
+        assert_eq!((d.hits, d.need), (1, log_hits(AXE) as u16));
+        assert_eq!(d.marks.len(), 1);
+        let m = d.marks[0];
+        assert_eq!(m.face, 1, "−x (an edit's face 1)");
+        assert!((i32::from(m.point[2]) - 77).abs() <= 2, "0.3 across: {m:?}");
+        assert_eq!(m.point[0], 0, "on the −x face");
+        // Face-locally the lower band; world-oriented, so turned over on face B.
+        let up = if f == FaceFrame::A {
+            m.point[1]
+        } else {
+            255 - m.point[1]
+        };
+        assert!(up < 128, "the lower band: {m:?}");
+        assert_eq!(
+            m.chunk,
+            dwell_protocol::damage::hit_chunk("dwell:log", Some(AXE)),
+            "the bite rule's chunk"
+        );
+        let bite = dwell_protocol::damage::bite_m3_of("dwell:log", Some(AXE)).unwrap();
+        assert!(
+            (bite - 0.5 * 0.5 / 10.0).abs() < 1e-9,
+            "½ the cell over 10 hits"
+        );
+        assert_eq!(axe_wear(&fx), Some(1), "one hit, one wear");
+        assert!(fx.server.cut_of(f.cell([3, AT, 0])).is_none(), "no cut");
+        // No cut reaches the client either: its marks are its damage.
+        assert!(
+            fx.take(1)
+                .iter()
+                .all(|(m, _)| !matches!(m, Message::Cuts(c) if !c.cuts.is_empty()))
+        );
+    }
+);
+
+dwell_world::both_faces!(
+    fn breaking_a_trunk_log_fells_the_tree_above_as_one_body_toward_the_side_struck(f: FaceFrame) {
+        let mut fx = scene(f, "adventure", true);
+        hits_to_break_trunk(&mut fx, f, 20).expect("broken");
+        let sent = fx.take(1);
+        let spawns: Vec<EntitySpawn> = sent
+            .iter()
+            .filter_map(|(m, _)| match m {
+                Message::EntitySpawn(s) => Some(s.clone()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(spawns.len(), 1, "one body");
+        let spawn = &spawns[0];
+        assert_eq!(
+            spawn.cells.len(),
+            (BASE + 10 - AT - 1) as usize,
+            "the trunk above the broken log"
+        );
+        for r in AT + 1..BASE + 10 {
+            assert_eq!(
+                cell_is(&mut fx, f, [3, r, 0]),
+                M.air,
+                "row {r} went with it"
+            );
+        }
+        assert_eq!(
+            cell_is(&mut fx, f, [3, AT - 1, 0]),
+            log(f, "y"),
+            "the stump stays"
+        );
+        // The block's drops: its 8 wood, half over the hits before the last, the rest at the break
+        // (the trunk itself falls as a body, not as drops).
+        assert_eq!(wood_count(&fx), 8);
+        // It tips toward the side struck (−x, the player's): the uncut side is the hinge.
+        let id = spawn.id;
+        let mut lean = [0.0; 3];
+        for _ in 0..4 * 60 {
+            fx.server.step();
+            let Some((_, q)) = fx.server.body_pose(id) else {
+                break;
+            };
+            lean = f.vector((q * dwell_physics::DVec3::from(f.up())).to_array());
+            if lean[1] < 0.5 {
+                break;
+            }
+        }
+        assert!(lean[1] < 0.5, "down within 4 s: {lean:?}");
+        assert!(lean[0] < -0.8, "toward −x, the side struck: {lean:?}");
+        assert!(lean[2].abs() < 0.2, "not sideways: {lean:?}");
+    }
+);
+
+dwell_world::both_faces!(
+    fn a_lone_log_breaks_in_its_hits_drops_its_wood_and_nothing_falls(f: FaceFrame) {
+        // Bucking: a lying log (a felled trunk's, settled) takes the same hits.
+        let mut fx = scene(f, "adventure", false);
+        move_to_local(&mut fx, f, 2.5, m_of_row(BASE), 0.5);
+        fx.server.step();
+        let n = log_hits(AXE);
+        for i in 0..n {
+            assert_eq!(
+                cell_is(&mut fx, f, [3, BASE, 0]),
+                log(f, "z"),
+                "hit {i}: still a log"
+            );
+            at_log(&mut fx, f, (i % 2) as usize, true);
+        }
+        assert_eq!(cell_is(&mut fx, f, [3, BASE, 0]), M.air, "broken after {n}");
+        assert_eq!(wood_count(&fx), 8, "its drops");
+        assert!(
+            fx.take(1)
+                .iter()
+                .all(|(m, _)| !matches!(m, Message::EntitySpawn(_))),
+            "nothing to fell"
+        );
+    }
+);
+
+#[test]
+fn creative_breaks_a_log_in_its_hits_and_drops_nothing() {
+    // face-a-only: a mode rule (the hits are the axe's in creative too: a tool keeps its hits).
+    let f = FaceFrame::A;
+    let mut fx = scene(f, "creative", false);
+    move_to_local(&mut fx, f, 2.5, m_of_row(BASE), 0.5);
+    fx.server.step();
+    for i in 0..log_hits(AXE) {
+        at_log(&mut fx, f, (i % 2) as usize, false);
+    }
+    assert_eq!(cell_is(&mut fx, f, [3, BASE, 0]), M.air);
+    assert!(fx.server.loose_items().is_empty(), "creative drops nothing");
+}
+
+#[test]
+fn an_older_saves_cut_still_loads_and_draws_and_its_progress_carries_into_damage() {
+    // face-a-only: a byte format. An older build's chopping saved cuts (notches, kerfs, bites):
+    // they still load and reach clients (drawn as before) until the cell is hit again, when its
+    // share of the swings to fell carries over as hits.
+    use dwell_protocol::chopping::{BITE_LOOK, Cut};
+    let f = FaceFrame::A;
+    let db = WorldDb::in_memory().expect("db");
+    let cfg = || ServerConfig {
+        store: Some(WorldStore::new(db.clone(), false)),
+        ..config(f, "creative")
+    };
+    let cell = f.cell([3, AT, 0]);
+    let mut old = Cut::default();
+    for i in 0..5 {
+        old.swing_by(0.1, 0.05, 1, 0, i % 2, 1.0);
+        old.bite(1, 0, i % 2, 0.5, &BITE_LOOK);
+    }
+    {
+        let mut fx = scene_with(f, cfg(), true, true);
+        fx.server.put_cut(cell, old);
+        fx.server.save_now();
+        fx.server.flush_store();
+    }
+    let mut fx = scene_with(f, cfg(), true, false);
+    assert_eq!(fx.server.cut_of(cell), Some(old), "loaded");
+    fx.send(1, Message::Chop(ChopAction::Hello));
+    fx.server.step();
+    assert!(
+        fx.take(1).iter().any(
+            |(m, _)| matches!(m, Message::Cuts(c) if c.cuts.iter().any(|(at, k)| *at == cell && k.notch == old.notch && k.kerf == old.kerf))
+        ),
+        "sent to a client, drawn as before"
+    );
+    let wood = dwell_protocol::chopping::wood("dwell:log").unwrap();
+    let carried = (old.progress(wood, 1) * f64::from(log_hits(AXE))).floor() as u16;
+    assert!(carried >= 1, "{carried}");
+    at_trunk(&mut fx, f, 0, false);
+    assert!(fx.server.cut_of(cell).is_none(), "the cut gives way");
+    assert_eq!(
+        fx.server.damage_of(cell).map(|d| d.hits),
+        Some(carried + 1),
+        "its progress and the hit"
+    );
+    assert!(
+        fx.take(1)
+            .iter()
+            .any(|(m, _)| matches!(m, Message::Cuts(c) if c.gone.contains(&cell))),
+        "the clients drop the cut"
+    );
 }
