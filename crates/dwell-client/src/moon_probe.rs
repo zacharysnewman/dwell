@@ -223,6 +223,43 @@ pub fn grid_landing_point(
     Some(f.point([s[0], s[1] + up_m, s[2]]))
 }
 
+/// Where the dev tools put a player beside a river head of grid `name` on face `f` (the bench's
+/// `sunLand` with `river`, BUGS.md #142): `up_m` over the first dry column (at least a metre over
+/// the lava it borders, its neighbours 2 m off not molten) 8–96 m from the river head nearest the
+/// grid's stand point, so the head's lava field (grids.json `flow`, placed within `nearM` of a
+/// player and run within lava.json `nearRadiusM`) runs beside it. `None` on a grid with no rivers
+/// kept flowing, or no such head and bank within 4 km of the stand point.
+pub fn grid_river_bank_point(world_seed: u64, name: &str, f: FaceFrame, up_m: f64) -> Option<V3> {
+    let t = dwell_worldgen::volcanic::VolcanicTerrain::for_grid(name, world_seed)?;
+    let s = t.spawn_point(f.face);
+    let h = *t.river_heads(f.face, s[0], s[2], 4_000.0).first()?;
+    let dry = |x: f64, z: f64| {
+        let c = t.column(f.face, x, z);
+        c.ground >= c.lava + 1.0
+    };
+    for ring in 2..=24 {
+        let r = f64::from(ring) * 4.0;
+        for k in 0..16 {
+            let a = f64::from(k) / 16.0 * std::f64::consts::TAU;
+            let (x, z) = (
+                (h.x + r * a.cos()).floor() + 0.5,
+                (h.z + r * a.sin()).floor() + 0.5,
+            );
+            let near = [[2.0, 0.0], [-2.0, 0.0], [0.0, 2.0], [0.0, -2.0]];
+            if dry(x, z)
+                && near
+                    .iter()
+                    .all(|[dx, dz]| !t.column(f.face, x + dx, z + dz).molten())
+            {
+                let top =
+                    (t.height(f.face, x, z) / dwell_world::CELL_H).round() * dwell_world::CELL_H;
+                return Some(f.point([x, top + up_m, z]));
+            }
+        }
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

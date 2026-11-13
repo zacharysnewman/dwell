@@ -16,6 +16,16 @@ Last updated: 2026-11-11 (0.52.108).
 
 ## Queued next, in order (2026-11-12)
 
+- **Space travel bugs from a browser check (brief, 2026-11-13, on 0.60.16, seed 7, local world, M1; BUGS.md
+  #142–#146):** "No lava flowing on the sun: after sunLand on face A, `d.lava('report')` gives `fields: []` … Travel stuck
+  after the spyglass … Teleporting to a point far outside the disc fails silently: make it either work or fail with a
+  message. The moon was not drawn from 7–25 km out during a flyTo approach … Small: the bench `flyTo` step rejects
+  `marginM` although `__dwell.flyTo` takes it — accept it." Fixed on `claude/space-bugs` (each with a red → green test):
+  the lava report lists the sun's fields and `sunLand({river: true})` lands by a river head; `moonLand`/`sunLand` carry
+  the player onto the grid themselves (the capture took only fliers) and the trip keeps its way home before starting;
+  the teleport refuses a point past the rim or on the other face with a message; the far pass's near plane no longer
+  clips the moon's near mesh from home; the `flyTo` step takes `marginM`. **Open:** the owner's browser re-check (the
+  moon's mesh from home inside `farM`; the sun's river by `sunLand({river: true})`).
 - **Realistic spawn without `at` (brief, 2026-11-13; BUGS.md #132):** "a fresh Realistic world never loads without a
   start point … fix (bounded search with a fallback; the whole spawn ≤ ~2 s natively); a test that the Realistic spawn
   resolves within a time/step budget on seeds 1, 7, 42 and stands at a shrine. Also check whether the client shows a

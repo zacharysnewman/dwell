@@ -131,6 +131,7 @@ import {
   flyHome,
   flyToMoon,
   teleportToMoon,
+  tripStartOf,
   type HomeTrip,
   type MoonLanding,
   type MoonReport,
@@ -327,8 +328,12 @@ interface DwellDebug {
    * `toward` a point. Rejects with what it looked for when nothing is found.
    */
   goto(query: string, options?: GotoOptions): Promise<GotoResult>;
-  /** Moves the local player's feet there (a local world, on its face); false otherwise. */
-  teleport(feet: Vec3): boolean;
+  /**
+   * Moves the local player's feet there (a local world, on its face, inside the disc's rim):
+   * resolves true once the local server has, rejects with why it can't (BUGS.md #144: a point
+   * past the rim failed silently).
+   */
+  teleport(feet: Vec3): Promise<boolean>;
   /**
    * The moon from the player (docs/DEV_TOOLS.md "The moon"): its world position at the clock's
    * time, the direction and distance to it, the player's grid (`home`, `moon`), the gravity there
@@ -354,7 +359,7 @@ interface DwellDebug {
    * point, away from lava), no flight, and waits until standing there with its chunk held (bench
    * `sunLand`, scenario `sun-draw`). `flyTo('home')` comes back.
    */
-  sunLand(options?: Pick<TripOptions, 'face' | 'maxS'>): Promise<MoonLanding>;
+  sunLand(options?: Pick<TripOptions, 'face' | 'maxS' | 'river'>): Promise<MoonLanding>;
   /** The sun from the player (`__dwell.moon()`'s fields for the sun grid), or null. */
   sun(): MoonReport | null;
   /** Plants' wind scale (0 still, 1 the data's) and whether cutout meshes draw (cost A/B). */
@@ -1466,28 +1471,27 @@ async function start(): Promise<App | null> {
     camera: () => client.camera() as Camera | null,
     find: (query, options) => findPlace(findHost(app), query, options),
     goto: (query, options) => gotoPlace(findHost(app), query, options),
-    teleport: (feet) => teleport(app, feet),
+    teleport: (feet) => teleportAnswered(app, feet),
     moon: () => moonOf(app),
+    // The way home is kept before each trip starts, so one that fails still leaves it (BUGS.md
+    // #143); a spot off home ground (in space) is never one.
     flyTo: async (to, options) => {
       const host = tripHost(app);
       if (to === 'moon') {
-        const trip = await flyToMoon(host, options);
-        if (trip.home) tripStart = trip.home;
-        return trip;
+        tripStart = tripStartOf(moonOf(app)) ?? tripStart;
+        return flyToMoon(host, options);
       }
-      const start = tripStart ?? moonOf(app)?.feet;
+      const start = tripStart ?? tripStartOf(moonOf(app));
       if (!start) throw new Error('flyTo home: no start (fly to the moon first)');
       return flyHome(host, start, options);
     },
     moonLand: async (options) => {
-      const trip = await teleportToMoon(tripHost(app), options);
-      if (trip.home) tripStart = trip.home;
-      return trip;
+      tripStart = tripStartOf(moonOf(app)) ?? tripStart;
+      return teleportToMoon(tripHost(app), options);
     },
     sunLand: async (options) => {
-      const trip = await teleportToMoon(tripHost(app, 'sun'), options, 'sun');
-      if (trip.home) tripStart = trip.home;
-      return trip;
+      tripStart = tripStartOf(moonOf(app)) ?? tripStart;
+      return teleportToMoon(tripHost(app, 'sun'), options, 'sun');
     },
     sun: () => gridOf(app, 'dwell:sun'),
     plants: (wind, shown) => {
@@ -1746,6 +1750,18 @@ function teleport(app: App, feet: Vec3): boolean {
   return app.loopback !== null;
 }
 
+/** `__dwell.teleport`: `teleport`'s move, answered by the local server (local.rs `teleport_checked`). */
+async function teleportAnswered(app: App, feet: Vec3): Promise<boolean> {
+  const at = feetOf(feet);
+  if (at === null)
+    throw new Error(`teleport: feet must be [x, y, z] (metres), not ${JSON.stringify(feet)}`);
+  const r = await (app.loopback?.lavaDev('teleport', [...at]) ?? Promise.resolve(null));
+  if (r === null) throw new Error('teleport: not a local world');
+  const j = JSON.parse(r) as { error?: string };
+  if (j.error) throw new Error(`teleport: ${j.error}`);
+  return true;
+}
+
 /** Where the last `flyTo('moon')` started (world feet): `flyTo('home')` goes back there. */
 let tripStart: Vec3 | null = null;
 
@@ -1768,8 +1784,8 @@ function tripHost(app: App, grid: 'moon' | 'sun' = 'moon'): TripHost {
     approach: (margin, face) =>
       app.loopback?.lavaDev(grid === 'sun' ? 'sunApproach' : 'moonApproach', [margin, face]) ??
       Promise.resolve(null),
-    land: (face) =>
-      app.loopback?.lavaDev(grid === 'sun' ? 'sunLand' : 'moonLand', [face]) ??
+    land: (face, river) =>
+      app.loopback?.lavaDev(grid === 'sun' ? 'sunLand' : 'moonLand', river ? [face, 1] : [face]) ??
       Promise.resolve(null),
     placeHome: (feet) => app.loopback?.lavaDev('placeHome', [...feet]) ?? Promise.resolve(null),
     press: (code, down) => {

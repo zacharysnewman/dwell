@@ -146,60 +146,19 @@ impl Server {
     }
 
     /// The lava fields as a dev report (`__dwell.lava()`, docs/DEV_TOOLS.md): JSON
-    /// `{"worldgen":…, "fields":[{"face":"a"|"b","centre":[x,z],"origin":[x,z],"w","h","tiles",
+    /// `{"worldgen":…, "fields":[{"grid":"home"|name,"face":"a"|"b","centre":[x,z],"origin":[x,z],"w","h","tiles",
     /// "molten","maxDepthM","vents":[{"x","z","rateM3s"}]}]}`, `molten` the columns holding lava;
     /// `centre` its first vent (else its tiles' middle), `origin`, `w` and `h` the box its tiles
     /// cover now (a field grows with its flow, V2).
     pub fn lava_report(&self) -> String {
-        let fields: Vec<String> = self
-            .lava
-            .fields
-            .iter()
-            .map(|p| {
-                let f = &p.field;
-                let t = dwell_lava::TILE as i32;
-                let (lo, hi) = f.tiles().iter().fold(
-                    ([i32::MAX; 2], [i32::MIN; 2]),
-                    |(lo, hi), k| {
-                        (
-                            [lo[0].min(k[0] * t), lo[1].min(k[1] * t)],
-                            [hi[0].max(k[0] * t + t), hi[1].max(k[1] * t + t)],
-                        )
-                    },
-                );
-                let (lo, hi) = if f.tiles().is_empty() { ([0; 2], [0; 2]) } else { (lo, hi) };
-                let centre = f
-                    .vents
-                    .first()
-                    .map_or([(lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2], |v| [v.x, v.z]);
-                let molten = f.depth.iter().filter(|d| **d > 0.0).count();
-                let max = f.depth.iter().copied().fold(0.0_f32, f32::max);
-                let vents: Vec<String> = f
-                    .vents
-                    .iter()
-                    .map(|v| {
-                        format!(
-                            r#"{{"x":{},"z":{},"rateM3s":{}}}"#,
-                            f.origin[0] + v.x,
-                            f.origin[1] + v.z,
-                            v.rate_m3s
-                        )
-                    })
-                    .collect();
-                format!(
-                    r#"{{"face":"{}","centre":[{},{}],"origin":[{},{}],"w":{},"h":{},"tiles":{},"molten":{molten},"maxDepthM":{max},"vents":[{}]}}"#,
-                    if p.face.is_b() { "b" } else { "a" },
-                    f.origin[0] + centre[0],
-                    f.origin[1] + centre[1],
-                    f.origin[0] + lo[0],
-                    f.origin[1] + lo[1],
-                    hi[0] - lo[0],
-                    hi[1] - lo[1],
-                    f.tiles().len(),
-                    vents.join(",")
-                )
-            })
-            .collect();
+        // Home's fields, then each other grid's (the sun's rivers, SUN_WORLD.md §6; BUGS.md #142:
+        // the report listed home's only, so a player by a sun river read `fields: []`).
+        let home = self.lava.fields.iter().map(|p| lava_field_json(p, "home"));
+        let grids = self.grids.slots.iter().flat_map(|g| {
+            let name = g.space.def.name.as_str();
+            g.lava.fields.iter().map(move |p| lava_field_json(p, name))
+        });
+        let fields: Vec<String> = home.chain(grids).collect();
         let worldgen = if self.worldgen_text.len() > 64 {
             "(text)"
         } else {
@@ -266,4 +225,55 @@ impl Server {
             self.send_reliable(id, &m, Channel::World);
         }
     }
+}
+
+/// One lava field of grid `grid` (`home`, or its grids.json name) as [`Server::lava_report`]'s
+/// entry (that grid's own coordinates).
+fn lava_field_json(p: &crate::lava::Placed, grid: &str) -> String {
+    let f = &p.field;
+    let t = dwell_lava::TILE as i32;
+    let (lo, hi) = f
+        .tiles()
+        .iter()
+        .fold(([i32::MAX; 2], [i32::MIN; 2]), |(lo, hi), k| {
+            (
+                [lo[0].min(k[0] * t), lo[1].min(k[1] * t)],
+                [hi[0].max(k[0] * t + t), hi[1].max(k[1] * t + t)],
+            )
+        });
+    let (lo, hi) = if f.tiles().is_empty() {
+        ([0; 2], [0; 2])
+    } else {
+        (lo, hi)
+    };
+    let centre = f
+        .vents
+        .first()
+        .map_or([(lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2], |v| [v.x, v.z]);
+    let molten = f.depth.iter().filter(|d| **d > 0.0).count();
+    let max = f.depth.iter().copied().fold(0.0_f32, f32::max);
+    let vents: Vec<String> = f
+        .vents
+        .iter()
+        .map(|v| {
+            format!(
+                r#"{{"x":{},"z":{},"rateM3s":{}}}"#,
+                f.origin[0] + v.x,
+                f.origin[1] + v.z,
+                v.rate_m3s
+            )
+        })
+        .collect();
+    format!(
+        r#"{{"grid":{grid:?},"face":"{}","centre":[{},{}],"origin":[{},{}],"w":{},"h":{},"tiles":{},"molten":{molten},"maxDepthM":{max},"vents":[{}]}}"#,
+        if p.face.is_b() { "b" } else { "a" },
+        f.origin[0] + centre[0],
+        f.origin[1] + centre[1],
+        f.origin[0] + lo[0],
+        f.origin[1] + lo[1],
+        hi[0] - lo[0],
+        hi[1] - lo[1],
+        f.tiles().len(),
+        vents.join(",")
+    )
 }
