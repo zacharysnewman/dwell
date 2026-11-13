@@ -1083,8 +1083,13 @@ its local frame, physics, players) beside the home world, carries fliers into it
 away `grid.frames` client and applies an away player's edits to it. Its edited chunks are saved in the
 optional `grid_chunks` world table ((grid name, cx, cy, cz) → (revision, chunk blob); additive). The
 client's predictor carries its player across grids as the server does (MOON_WORLD.md §7.3: a
-`GridTravel` hook, `dwell-sim` `TravelMap`, run before each predicted tick; history per grid); the
-game client's drawing of another grid and its `grid.frames` are outstanding.
+`GridTravel` hook, `dwell-sim` `TravelMap`, run before each predicted tick; history per grid), and the
+game client follows it (M-7c, behind `grid.frames`, which the client now says): its streamer holds the
+chunks of the predictor's grid only (all dropped at a crossing; another grid's chunk messages ignored),
+the view is drawn in that grid's local frame (the look carried across with `look_across`, the sky's
+directions turned into the frame, the moon's far disc hidden, home's LOD hidden while away). The server
+sends a `grid.frames` client the moon's chunks as voxels and forgets its home stream at the capture, so
+home streams again from nothing on the release.
 
 ### 6.1 Grid & chunks **[in progress]**
 
@@ -4606,9 +4611,9 @@ structure's placement as `RegionEdit`'s `Structure` op, below). The second is `g
 (MOON_WORLD.md §7.2): `PhysicsSnapshot` ends with the local player's grid (a byte, its index in
 `grids.json`, 0 home; off home the grid's frame, origin f64 × 3 and rotation f64 × 4, and `local` in
 the grid's space), and `ChunkData`/`ChunkUnload` end with their grid's byte when not home (a trailing
-0 is malformed). The server lists it; this build's client doesn't say it yet
-(`capabilities::CLIENT_PENDING`: its predictor and renderer don't follow another grid), so a player
-off home is sent its world position, as an older client is. The third is `damage.chunks`
+0 is malformed). The server lists it and this build's client says it (M-7c: its predictor and view
+follow another grid); an older client never gets a grid id: a player off home is sent its world
+position. The third is `damage.chunks`
 (BLOCK_DAMAGE.md §9): `Damage` ends with `0xC4` and each cell's hit marks' chunks (a byte a mark, the
 piece's size in sixteenths of the block's mark; a metal tool's 32), only to a client that listed it;
 without it every mark is ×1.

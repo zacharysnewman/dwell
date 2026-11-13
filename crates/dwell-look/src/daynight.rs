@@ -470,6 +470,7 @@ impl DayNight {
             a: self.sample(solar_deg),
             b: self.sample(solar_deg + 180.0),
             air: crate::atmosphere::Air::GROUND,
+            moon_shown: true,
         }
     }
 }
@@ -497,6 +498,9 @@ pub struct DayState {
     /// viewer's face's frame. [`Air::GROUND`](crate::atmosphere::Air::GROUND) from [`DayNight::state`];
     /// [`DayState::at_altitude`] sets it.
     pub air: crate::atmosphere::Air,
+    /// Whether the sky draws the moon's far disc: false for a viewer on the moon itself
+    /// (MOON_WORLD.md §7.3; true from [`DayNight::state`]).
+    pub moon_shown: bool,
 }
 
 impl Default for DayState {
@@ -635,7 +639,9 @@ impl DayState {
         ]);
         // The viewer's air (docs/DAY_NIGHT.md §15): x the thinning, y the limb's elevation sine.
         // z how much of the limb shows (past the rim it fades out: BUGS.md #102).
-        put([self.air.thin, self.air.limb, self.air.limb_weight, 0.0]);
+        // w: the moon's far disc drawn (1) or not (0: the viewer is on the moon).
+        let shown = if self.moon_shown { 1.0 } else { 0.0 };
+        put([self.air.thin, self.air.limb, self.air.limb_weight, shown]);
         u
     }
 }
@@ -712,7 +718,7 @@ struct DaySky {
     other_stars: vec4f,
     // The viewer's air (docs/DAY_NIGHT.md §15): x how far the sky has thinned toward space (0 the
     // ground's sky, exactly), y the limb's elevation sine in the viewer's face's frame, z how much
-    // of the limb shows (0 for a viewer far past the rim).
+    // of the limb shows (0 for a viewer far past the rim), w whether the moon's far disc is drawn.
     space: vec4f,
 };
 ";
@@ -1019,6 +1025,29 @@ mod tests {
         assert!((u[12] - day.a.sky_zenith[0] as f32).abs() < 1e-6);
         assert!(u[36] > 1.0 && u[52] == 0.0);
         assert!((u[34] - 0.002).abs() < 1e-9);
+    }
+
+    /// MOON_WORLD.md §7.3: on the moon the sky draws no far moon disc (`space.w` 0); everywhere
+    /// else it does, as before.
+    #[test]
+    fn the_moons_disc_is_drawn_unless_the_viewer_is_on_it() {
+        let day = D.state(0.0, Some(0.0), Some(0.5));
+        assert!(day.moon_shown);
+        assert_eq!(
+            day.pack(FaceFrame::A, 1.0, 0.0, 0.001)[DAY_SKY_FLOATS - 1],
+            1.0
+        );
+        let away = DayState {
+            moon_shown: false,
+            ..day
+        };
+        let u = away.pack(FaceFrame::A, 1.0, 0.0, 0.001);
+        assert_eq!(u[DAY_SKY_FLOATS - 1], 0.0);
+        assert_eq!(
+            &u[..DAY_SKY_FLOATS - 1],
+            &day.pack(FaceFrame::A, 1.0, 0.0, 0.001)[..DAY_SKY_FLOATS - 1]
+        );
+        assert!(crate::sky_wgsl().contains("day.space.w < 0.5"));
     }
 
     #[test]

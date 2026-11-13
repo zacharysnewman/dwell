@@ -858,6 +858,20 @@ where
         }
     }
 
+    /// Every chunk held or generating, unloaded (MOON_WORLD.md §7.3: the player crossed onto another
+    /// grid, whose chunks the server streams from nothing).
+    pub fn unload_all(&mut self) {
+        let mut all: Vec<Coord> = self
+            .loaded
+            .keys()
+            .chain(self.generating.keys())
+            .copied()
+            .collect();
+        all.sort();
+        all.dedup();
+        self.on_chunk_unload(&all);
+    }
+
     pub fn on_chunk_unload(&mut self, coords: &[Coord]) {
         let (mut stored, mut air) = (Vec::new(), Vec::new());
         for &key in coords {

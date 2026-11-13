@@ -37,6 +37,9 @@ struct Recorder {
     held: std::collections::HashMap<i64, ([f64; 3], f64)>,
     shown: Vec<i64>,
     camera: Option<[f64; 3]>,
+    /// The face the camera was drawn on (its up), and the last day the scene was given.
+    camera_face: Option<dwell_world::FaceFrame>,
+    day: Option<dwell_look::daynight::DayState>,
     outline: Option<[f64; 3]>,
     fov: Option<f64>,
     wind: WindView,
@@ -112,10 +115,14 @@ impl Scene for Recorder {
         eye: [f64; 3],
         _yaw: f64,
         _pitch: f64,
-        _face: dwell_world::FaceFrame,
+        face: dwell_world::FaceFrame,
         _roll: f64,
     ) {
         self.camera = Some(eye);
+        self.camera_face = Some(face);
+    }
+    fn set_day(&mut self, day: &dwell_look::daynight::DayState, _seconds: f64) {
+        self.day = Some(*day);
     }
     fn set_block_outline(&mut self, cell: Option<[f64; 3]>, _bounds: ([f32; 3], [f32; 3])) {
         self.outline = cell;
@@ -352,6 +359,11 @@ impl Rig {
             game.set_loading_screen(self.loading_screen);
             // As the web app does (`app.rs`: always, the portals' shafts with the size).
             game.set_world(self.generator, self.seed, size);
+            // As the web app does: the moon's travel on a server that carries players there.
+            game.set_grid_frames(
+                self.session
+                    .capability(dwell_protocol::capability_names::GRID_FRAMES),
+            );
             self.game = Some(game);
         }
         let Some(game) = &mut self.game else { return };
@@ -3895,3 +3907,174 @@ fn bug_107_a_player_who_walks_into_a_portal_lands_beside_the_far_hole() {
     assert_eq!(crossings, 1, "{log}");
     assert!(from_axis > 4.0, "{from_axis:.2} m from the axis:\n{log}");
 }
+
+/// The player's id on the local core (the game's).
+fn my_id(rig: &Rig) -> u16 {
+    rig.game.as_ref().unwrap().debug_state().player_id
+}
+
+fn moon_ground(seed: u64, f: dwell_world::FaceFrame, up: f64) -> [f64; 3] {
+    let moon = dwell_worldgen::grids::CrateredTerrain::for_grid("dwell:moon", seed).unwrap();
+    let s = moon.spawn_point(f.face);
+    f.point([s[0], s[1] + up, s[2]])
+}
+
+dwell_world::both_faces!(
+    /// MOON_WORLD.md §7.3 (M-7c): the game client's scripted flight home → moon → home. Flying over
+    /// the moon's face `f` the predictor and the server capture the player on the same input; the
+    /// game drops home's chunks, asks for and meshes the moon's in the moon's own coordinates (its
+    /// dust where the server's moon has it), draws the view on the moon's face (its up) with the sun
+    /// turned into the moon's frame and no far moon disc, and falls at ⅙ g; flying out past the
+    /// release sphere it comes home on the same input, with no snap or grid miss at either
+    /// crossing, and home's chunks stream again.
+    fn a_scripted_flight_to_the_moon_and_back_follows_its_grid(f: FaceFrame) {
+        use dwell_sim::travel::GRID_CENTRE;
+        let mut rig = Rig::with_generator(GENERATOR_SANDBOX);
+        assert!(rig.run_until(60 * 20, |r| {
+            r.game
+                .as_ref()
+                .is_some_and(|g| g.debug_state().terrain_ready)
+        }));
+        let home_feet = rig.game.as_ref().unwrap().debug_state().feet;
+        let home_chunk = dwell_world::chunk_of(
+            home_feet[0].floor() as i32,
+            dwell_world::row_of_m(home_feet[1]) - 1,
+            home_feet[2].floor() as i32,
+        );
+        let id = my_id(&rig);
+        rig.input.flight.set_allowed(true);
+        rig.input.flight.set(true);
+        rig.run_until(30, |_| false);
+
+        // At home, 200 m over the moon's ground, moving with it: a dev move (one snap).
+        let t = f64::from(rig.core.server().tick()) / 60.0;
+        let fr = rig.core.server().grids().frame(0, t);
+        let (wp, wv) = fr.release(moon_ground(rig.seed, f, 200.0), [0.0; 3]);
+        assert!(rig.core.server().place_on_grid(id, wp, wv));
+        let captured = rig.run_until(120, |r| {
+            r.game.as_ref().unwrap().grid() == 1
+                && r.core.server().grid_state_of(id).is_some_and(|g| g.0 == 1)
+        });
+        assert!(captured, "captured by the client and the server");
+        let stats = rig.game.as_ref().unwrap().debug_state().stats;
+        rig.run_until(30, |_| false);
+
+        // The moon's chunks, in the moon's coordinates: the dust under its spawn, meshed.
+        let ground = moon_ground(rig.seed, f, 0.0);
+        let cell = dwell_world::GridFrame::HOME.cell_of(moon_ground(
+            rig.seed,
+            f,
+            -0.5 * dwell_world::CELL_H,
+        ));
+        let chunk = dwell_world::chunk_of(cell[0], cell[1], cell[2]);
+        // Down onto it, slowly: flight on, a few m over it.
+        assert!(
+            rig.core
+                .server()
+                .place_on_grid(id, moon_ground(rig.seed, f, 6.0), [0.0; 3])
+        );
+        let meshed = rig.run_until(60 * 30, |r| {
+            let feet = r.game.as_ref().unwrap().debug_state().feet;
+            let over = f.vector([0, 1, 2].map(|k| feet[k] - ground[k]))[1];
+            r.scene.borrow().chunks.contains(&chunk) && over.abs() < 10.0
+        });
+        assert!(
+            meshed,
+            "the moon's chunk under its spawn meshed, the player over it"
+        );
+        // The eye eases down after the dev move's 200 m snap.
+        let settled = rig.run_until(60 * 10, |r| {
+            let eye = r.scene.borrow().camera.unwrap();
+            let feet = r.game.as_ref().unwrap().debug_state().feet;
+            (f.vector([0, 1, 2].map(|k| eye[k] - feet[k]))[1] - 1.62).abs() < 0.5
+        });
+        assert!(settled, "the eye over the feet on the moon's face");
+        let server = rig.core.server().grid_voxel(1, cell).unwrap();
+        let client = rig.game.as_mut().unwrap().voxel(cell[0], cell[1], cell[2]);
+        assert_eq!(
+            client, server,
+            "the moon's cell as the server's moon has it"
+        );
+        let name = dwell_blocks::block_of(client).name;
+        assert!(name.contains("moon"), "moon dust under the spawn: {name}");
+
+        // The view on the moon's face, in its frame: the sun turned into it, no far moon disc.
+        let face = rig.scene.borrow().camera_face;
+        assert_eq!(face, Some(f), "the view's up is the moon's face's");
+        let day = rig.scene.borrow().day.unwrap();
+        assert!(!day.moon_shown, "no far moon disc on the moon");
+        let eye = rig.scene.borrow().camera.unwrap();
+        let d = [0, 1, 2].map(|k| eye[k] - ground[k]);
+        assert!(
+            d.iter().map(|x| x * x).sum::<f64>().sqrt() < 30.0,
+            "eye by the moon's ground (grid-local): {eye:?}"
+        );
+
+        // ⅙ g: flight off, 40 m over the ground at rest, falling toward the moon's midplane.
+        rig.input.flight.set(false);
+        assert!(
+            rig.core
+                .server()
+                .place_on_grid(id, moon_ground(rig.seed, f, 40.0), [0.0; 3])
+        );
+        rig.run_until(20, |_| false);
+        let up = |r: &Rig| f.vector(r.game.as_ref().unwrap().state().velocity)[1];
+        let v0 = up(&rig);
+        rig.run_until(30, |_| false);
+        let v1 = up(&rig);
+        let g = (v0 - v1) / 0.5;
+        let home_g = f64::from(PlayerControllerConfig::default().body.gravity);
+        assert!(
+            (g / home_g - 0.1667).abs() < 0.03,
+            "falls at {g} m/s² on the moon ({home_g} at home)"
+        );
+        let mid = rig.game.as_ref().unwrap().debug_state().stats;
+        assert_eq!(
+            mid.grid_misses, stats.grid_misses,
+            "the capture as the server made it"
+        );
+
+        // Home: hovering inside the release sphere, then flying up and out (far flight).
+        let moon = dwell_worldgen::grids::grid("dwell:moon").unwrap();
+        let r = moon.capture_m.unwrap() * dwell_worldgen::grids::travel().release_factor - 200.0;
+        let upv = f.vector([0.0, 1.0, 0.0]);
+        rig.input.flight.set(true);
+        rig.run_until(5, |_| false);
+        let at = [0, 1, 2].map(|k| GRID_CENTRE[k] + upv[k] * r);
+        assert!(rig.core.server().place_on_grid(id, at, [0.0; 3]));
+        rig.run_until(30, |_| false);
+        assert_eq!(rig.game.as_ref().unwrap().grid(), 1, "still on the moon");
+        let before = rig.game.as_ref().unwrap().debug_state().stats;
+        rig.input.set_key("Space", true);
+        let released = rig.run_until(120, |r| {
+            r.game.as_ref().unwrap().grid() == 0
+                && r.core.server().grid_state_of(id).is_some_and(|g| g.0 == 0)
+        });
+        rig.input.set_key("Space", false);
+        assert!(released, "released by the client and the server");
+        rig.run_until(10, |_| false);
+        let after = rig.game.as_ref().unwrap().debug_state().stats;
+        assert_eq!(
+            after.grid_misses, before.grid_misses,
+            "the release as the server made it"
+        );
+        assert_eq!(after.snaps, before.snaps, "no snap through the release");
+        assert!(
+            rig.scene.borrow().day.unwrap().moon_shown,
+            "the moon in home's sky again"
+        );
+
+        // Home's chunks stream again: back at the spawn (a dev move), its ground arrives.
+        let centre = [home_feet[0], home_feet[1] + 1.0, home_feet[2]];
+        assert!(rig.core.server().place_on_grid(id, centre, [0.0; 3]));
+        let back = rig.run_until(60 * 20, |r| {
+            r.scene.borrow().chunks.contains(&home_chunk)
+                || r.game
+                    .as_ref()
+                    .unwrap()
+                    .chunk_revision(home_chunk.to_array())
+                    .is_some()
+        });
+        assert!(back, "home's chunks stream again after the release");
+    }
+);
