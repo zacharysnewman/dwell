@@ -105,7 +105,14 @@ struct Shape {
     /// from the anchor.
     trunk: [Vec<(i32, i32)>; 4],
     base: i32,
+    /// Its stem in each quarter turn: the bottom cell of the trunk column nearest the anchor's,
+    /// relative to the anchor, and how many cells stand straight up from it (at most
+    /// [`STEM_CAP`]): the cells a far tree's impostor checks to see the tree felled.
+    stem: [([i32; 3], u8); 4],
 }
+
+/// The most stem cells a far tree is checked by (½ m cells: 8 m, above a player's reach for a cut).
+pub const STEM_CAP: u8 = 16;
 
 /// A placement resolved for one world: block ids, structures and noise seeds.
 #[derive(Clone, Debug)]
@@ -128,6 +135,26 @@ pub struct Planter {
     /// The most the biomes' `trees` densities raise its chance by (ADR 0074 B5): 0 where no biome
     /// of the world lists it (it stands nowhere), 1 by default; the factor brings it down per column.
     boost: f32,
+}
+
+/// A placed structure's stem (placed at the origin): the bottom cell of its trunk column (`cols`,
+/// its lowest row's columns) nearest the anchor's, and the solid cells straight up from it, at most
+/// [`STEM_CAP`].
+fn stem_of(placed: &dwell_world::structure::Placed, cols: &[(i32, i32)]) -> ([i32; 3], u8) {
+    let Some(&(x, z)) = cols.iter().min_by_key(|(x, z)| (x * x + z * z, *x, *z)) else {
+        return ([0, 0, 0], 0);
+    };
+    let low = placed
+        .cells()
+        .filter(|(c, _)| c[0] == x && c[2] == z)
+        .map(|(c, _)| c[1])
+        .min()
+        .unwrap_or(0);
+    let solid = |y: i32| matches!(placed.at([x, y, z]), Some(m) if m != dwell_world::M.air);
+    let n = (0..i32::from(STEM_CAP))
+        .take_while(|&h| solid(low + h))
+        .count();
+    ([x, low, z], n as u8)
 }
 
 /// The share of candidates the slope, footprint and overlap tests keep, as measured over seeds
@@ -227,6 +254,17 @@ impl Planter {
                             cols
                         });
                         let base = trunk_base(&structure).unwrap_or(0);
+                        let stem = std::array::from_fn(|t| {
+                            let placed = structure.place_oriented(
+                                [0, 0, 0],
+                                Orientation {
+                                    quarter_turns: t as u8,
+                                    mirror: None,
+                                },
+                                0,
+                            );
+                            stem_of(&placed, &trunk[t])
+                        });
                         Shape {
                             structure,
                             weight,
@@ -235,6 +273,7 @@ impl Planter {
                             rise,
                             trunk,
                             base,
+                            stem,
                         }
                     })
                     .collect();
@@ -529,6 +568,16 @@ impl Planter {
     /// Whether any of its structures is a species tree (ADR 0079: they grow).
     pub fn grows(&self) -> bool {
         self.shapes.iter().any(|s| s.grown.is_some())
+    }
+
+    /// A tree's stem (face-local): its bottom cell and the cells standing straight up from it
+    /// (`Shape::stem`), what a far tree's impostor reads to see it felled.
+    pub fn stem(&self, t: &Tree) -> ([i32; 3], u8) {
+        let Some(s) = self.shapes.get(usize::from(t.shape)) else {
+            return (t.anchor, 0);
+        };
+        let (d, n) = s.stem[t.quarter_turns as usize % 4];
+        (std::array::from_fn(|i| t.anchor[i] + d[i]), n)
     }
 
     /// The species tree a tree is, if it is one: (species index, seed, stage) (ADR 0079).

@@ -1,5 +1,5 @@
 {
-  "$comment": "Far trees as multi-angle impostors (docs/proposals/TREE_IMPOSTORS.md, WORK_QUEUE item 31; owner, 2026-11-12: billboards from a few angles, from above too, \"like old Mario kart did\"). What the bake (dwell-worldgen `impostor`) makes of a species tree grown by `species::grow(species, seed, stage)`: `views` the view layout (`ring`: `azimuths` evenly spaced around the tree, at each of `elevationsDeg` above the horizon, plus one straight down when `top`), `viewPx` a view's square side in texels per renderer tier (desktop, phone, cpu), `stages` the growth stages baked (clamped to a species' last stage; a tree between them takes the nearest, scaled to its height), `variants` the seeds baked per species and stage (a tree takes variant hash(seed) mod variants), `albedo` the palette colour (shared/textures/palette.json, `ramp.stop` or a ramp's base) a leaf cell and a log are painted (the per-tree leaf tint is applied at draw time), `marginM` metres added to the bounding sphere's radius so no texel at the frame's edge is cut. The leaves' lighting normals lean out of the crown by shared/look/leaves.json `canopyBlend`, as the near trees'. Read at load and validated (a bad entry fails naming the field); no generated file.",
+  "$comment": "Far trees as multi-angle impostors (docs/proposals/TREE_IMPOSTORS.md, WORK_QUEUE item 31; owner, 2026-11-12: billboards from a few angles, from above too, \"like old Mario kart did\"). What the bake (dwell-worldgen `impostor`) makes of a species tree grown by `species::grow(species, seed, stage)`: `views` the view layout (`ring`: `azimuths` evenly spaced around the tree, at each of `elevationsDeg` above the horizon, plus one straight down when `top`), `viewPx` a view's square side in texels per renderer tier (desktop, phone, cpu), `stages` the growth stages baked (clamped to a species' last stage; a tree between them takes the nearest, scaled to its height), `variants` the seeds baked per species and stage (a tree takes variant hash(seed) mod variants), `albedo` the palette colour (shared/textures/palette.json, `ramp.stop` or a ramp's base) a leaf cell and a log are painted (the per-tree leaf tint is applied at draw time), `marginM` metres added to the bounding sphere's radius so no texel at the frame's edge is cut, `mips` whether the atlas is drawn with a mip chain (each view's square halved alone, a texel covered when half its base texels are; off until the owner approves the look). The leaves' lighting normals lean out of the crown by shared/look/leaves.json `canopyBlend`, as the near trees'. Read at load and validated (a bad entry fails naming the field); no generated file.",
   "views": { "kind": "ring", "azimuths": 8, "elevationsDeg": [0, 40], "top": true },
   "viewPx": { "desktop": 64, "phone": 32, "cpu": 16 },
   "stages": [2, 4, 7],
@@ -11,6 +11,12 @@
     "ambient": 0.6,
     "albedo": 0.8
   },
+  "ao": {
+    "$comment": "Ambient occlusion baked into each texel (WORK_QUEUE item 31: the impostors read paler than the near crowns at the hand-over): a texel darkens by strength × the share of the tree's cells within radiusM m of its hit, as the near leaves' corner occlusion and sky light darken a crown's inside. strength 0 is off: opt-in until the owner approves the look (try 0.5).",
+    "strength": 0,
+    "radiusM": 1.5
+  },
+  "mips": false,
   "far": {
     "$comment": "Where impostors take over from the full-detail trees, per Far trees setting tier (Settings → Graphics → Far trees; the presets pick the tier by name): `draw` `impostor` (one baked quad a tree, the view nearest the camera dithered with the next) or `none` (no far trees); `fromM` the distance (m, from the eye) the hand-over starts, `fadeM` its width (both draw, each pixel showing one by the screen dither; the impostor's share rises 0 → 1 across it), `toM` where far trees stop (0: never).",
     "tiers": {

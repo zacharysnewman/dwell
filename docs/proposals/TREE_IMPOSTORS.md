@@ -13,7 +13,7 @@ and received shadows at the texel's baked position), the near leaves' complement
 cut past the hand-over; the Far trees setting picks the tier, `?impostors=0` the old `lod_trees.rs` path. Changed
 from this proposal: the hand-over is **48 m over 16 m** on High (measured, §5); the depth offset (`frag_depth`) is
 not drawn (it disabled early depth: the quad writes its own depth, the texel's baked depth only places its light
-and fog); no mip-maps yet (texels loaded exactly). Not yet: felled trees left out, shadows cast (I-5), the
+and fog); no mip-maps yet (texels loaded exactly). Built 2026-11-13: felled trees left out (`impostors::standing_trees`), AO and mips in the bake as opt-in data (`ao`, `mips`, off until the owner approves), the phone tier by `tier_for`. Not yet: shadows cast (I-5), the trunks handed over, the
 LOD ground under far trees (BUGS.md #95), retiring `lod_trees.rs` (I-4), the phone run. Open questions for the
 owner at the end.
 **BUGS.md #106 (2026-11-12, fixed):** on a GPU the far crowns read as bare sticks: the quad stood at its sphere's
