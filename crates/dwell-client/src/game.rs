@@ -3248,6 +3248,11 @@ impl<S: Scene> Game<S> {
         }
     }
 
+    /// The world's portals' axes (world x, z; the same on both faces; BIFACIAL_WORLD.md §12).
+    pub fn portal_axes(&self) -> &[[f64; 2]] {
+        &self.portals.0
+    }
+
     /// The world's portals (BIFACIAL_WORLD.md §12): their axes and mote look, from the generator
     /// and seed the server announced, for the motes drawn in their shafts.
     /// `size`: the world's (BIG_MAP.md M2b, its `WorldSettings`), its disc, build volume and maps.

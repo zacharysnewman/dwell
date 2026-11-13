@@ -47,7 +47,11 @@ import {
   formatMarkerDistance,
   iconSvg,
   markersInRange,
+  markerGroundY,
+  markerRows,
+  directionWord,
   pickMarker,
+  seenPortalSpots,
   type PendingPin,
   bigMapPins,
   waypointAlpha,
@@ -1060,6 +1064,10 @@ export interface MapClient extends RevealClient, LiveClient, MinimapFeed {
   markerPose?(): ArrayLike<number>;
   /** The player's saved markers record the server sent, once. */
   takeMarkers?(): Uint8Array | undefined;
+  /** The loaded ground's face-local height at (x, z) on `face`; undefined where none is loaded. */
+  markerGround?(face: number, x: number, z: number): number | undefined;
+  /** The portals the player sees now: [face, x, y, z]* face-local (y NaN: not loaded). */
+  seenPortals?(): ArrayLike<number>;
   /** Whether the server keeps the player's markers (`markers.private`). */
   markersSynced?(): boolean;
   /** The player's markers record now, to the server. */
@@ -1253,6 +1261,13 @@ export class BigMapState {
     this.centred = false;
   }
 
+  /** Centred on face-local (x, z) of `face`, the zoom kept (the markers list's row). */
+  centerOn(face: number, x: number, z: number): void {
+    if (!this.view) return;
+    this.view = { ...this.view, face, cx: x, cz: z };
+    this.centred = false;
+  }
+
   /** Back to the player's place and face, the zoom kept, and kept on them through zooms. */
   center(): void {
     if (!this.view) return;
@@ -1422,6 +1437,12 @@ export class MapUi {
   private markersReady = false;
   private markersWaitFrom = -1;
   private wasDead = false;
+  /** When the seen portals were last read (ms). */
+  private portalsAt = -Infinity;
+  /** The big map's markers list (docs/MAP_MARKERS.md), its button and its rows. */
+  private readonly listButton: HTMLButtonElement;
+  private readonly listPanel: HTMLDivElement;
+  private readonly listRows: HTMLDivElement;
   /** The big map opened or closed (the shell holds the game's input while it is open). */
   onOpenChange: ((open: boolean) => void) | null = null;
   /** A zoom button or key zoomed the big map (its sound). */
@@ -1508,6 +1529,17 @@ export class MapUi {
     this.filterButton = this.button('map-filters', '', 'Map filters');
     this.filterButton.append(iconSvg(doc, SHRINE_MAP.icon, '#f4ecd8', 18));
     this.filterButton.setAttribute('aria-expanded', 'false');
+    this.listButton = this.button('map-list', '', 'Markers list');
+    this.listButton.append(iconSvg(doc, 'flag', '#f4ecd8', 18));
+    this.listButton.setAttribute('aria-expanded', 'false');
+    this.listPanel = doc.createElement('div');
+    this.listPanel.className = 'map-markers';
+    this.listPanel.hidden = true;
+    const listTitle = doc.createElement('h3');
+    listTitle.textContent = 'Markers';
+    this.listRows = doc.createElement('div');
+    this.listRows.className = 'map-markers-rows';
+    this.listPanel.append(listTitle, this.listRows);
     this.filterPanel = doc.createElement('div');
     this.filterPanel.className = 'map-filters';
     this.filterPanel.hidden = true;
@@ -1528,6 +1560,7 @@ export class MapUi {
       this.zoomOut,
       centre,
       this.layerButton,
+      this.listButton,
       this.filterButton,
       this.filterPanel,
     );
@@ -1542,7 +1575,14 @@ export class MapUi {
     this.picker.onChange = () => {
       if (this.pending) this.bigStale = true;
     };
-    body.append(this.bigCanvas, controls, this.scaleEl, this.progress, this.picker.root);
+    body.append(
+      this.bigCanvas,
+      controls,
+      this.scaleEl,
+      this.progress,
+      this.picker.root,
+      this.listPanel,
+    );
     // The waypoints over the world: a layer under the HUD (hud.json "waypoints").
     this.waypoints = doc.createElement('div');
     this.waypoints.id = 'map-waypoints';
@@ -1552,6 +1592,7 @@ export class MapUi {
       this.client.setMarkers?.(encodeMarkers(list));
       this.drawDisc();
       if (this.bigOpen) this.drawBig();
+      this.drawList();
     };
     this.panel.append(bar, body);
     this.big.append(this.panel);
@@ -1571,6 +1612,9 @@ export class MapUi {
     });
     this.filterButton.addEventListener('click', () => {
       this.toggleFilters();
+    });
+    this.listButton.addEventListener('click', () => {
+      this.toggleList();
     });
     this.layerButton.addEventListener('click', () => {
       this.stepLayer();
@@ -1658,6 +1702,7 @@ export class MapUi {
       this.state.openAt();
       if (this.doc.pointerLockElement) this.doc.exitPointerLock();
       this.drawBig();
+      this.drawList();
     } else {
       this.picker.close();
       this.state.close();
@@ -1684,6 +1729,88 @@ export class MapUi {
   }
 
   /** Steps to the next debug layer (after the last, none). */
+  /** Opens or closes the markers list (the big map's side panel). */
+  toggleList(): void {
+    this.listPanel.hidden = !this.listPanel.hidden;
+    this.listButton.setAttribute('aria-expanded', String(!this.listPanel.hidden));
+    this.drawList();
+  }
+
+  /**
+   * The markers list's rows (`markerRows`: those the filters show, nearest first, each its icon,
+   * label, distance and the way to it on the map); a row centres the map on its marker, its
+   * buttons edit or delete it.
+   */
+  private drawList(): void {
+    if (this.listPanel.hidden || !this.bigOpen) return;
+    const doc = this.doc;
+    const pose = Array.from(this.client.markerPose?.() ?? []);
+    const [face = 0, x = 0, y = 0, z = 0] = pose;
+    const me = pose.length >= 4 ? { face, x, y, z } : null;
+    const rows = markerRows(this.shownMarkers(), me);
+    this.listRows.replaceChildren();
+    if (rows.length === 0) {
+      const empty = doc.createElement('p');
+      empty.className = 'map-markers-empty';
+      empty.textContent = 'No markers. Click the map to place one.';
+      this.listRows.append(empty);
+      return;
+    }
+    for (const { marker: m, distanceM, angle } of rows) {
+      const row = doc.createElement('div');
+      row.className = 'map-marker-row';
+      row.dataset.id = String(m.id);
+      const go = doc.createElement('button');
+      go.type = 'button';
+      go.className = 'map-marker-go';
+      go.title = 'Show on the map';
+      const label = doc.createElement('span');
+      label.className = 'map-marker-label';
+      label.textContent = m.label;
+      const dist = doc.createElement('span');
+      dist.className = 'map-marker-distance';
+      dist.textContent = distanceM === null ? 'other side' : formatMarkerDistance(distanceM);
+      go.append(iconSvg(doc, m.icon, m.rgb, 20), label, dist);
+      if (angle !== null) {
+        const arrow = doc.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        arrow.setAttribute('viewBox', '0 0 24 24');
+        arrow.setAttribute('width', '16');
+        arrow.setAttribute('height', '16');
+        arrow.setAttribute('class', 'map-marker-way');
+        arrow.setAttribute('role', 'img');
+        arrow.setAttribute('aria-label', directionWord(angle));
+        const path = doc.createElementNS('http://www.w3.org/2000/svg', 'path');
+        path.setAttribute('d', 'M12 3 L19 19 L12 15 L5 19 Z');
+        path.setAttribute('fill', '#f4ecd8');
+        path.setAttribute('transform', `rotate(${((angle * 180) / Math.PI).toFixed(1)} 12 12)`);
+        arrow.append(path);
+        go.append(arrow);
+      }
+      go.addEventListener('click', () => {
+        this.state.centerOn(m.face, m.x, m.z);
+        this.drawBig();
+      });
+      const edit = this.button('map-marker-edit', '✎', `Edit ${m.label}`);
+      edit.addEventListener('click', () => {
+        this.editMarker(m);
+      });
+      const del = this.button('map-marker-delete', '✕', `Delete ${m.label}`);
+      del.addEventListener('click', () => {
+        this.markers.remove(m.id);
+      });
+      row.append(go, edit, del);
+      this.listRows.append(row);
+    }
+  }
+
+  /** Opens the picker to edit or delete marker `m`. */
+  private editMarker(m: MapMarker): void {
+    this.picker.openFor(m, (r) => {
+      if (r.kind === 'save') this.markers.edit(m.id, r.look);
+      else if (r.kind === 'delete') this.markers.remove(m.id);
+    });
+  }
+
   /** Opens or closes the filters' list. */
   toggleFilters(): void {
     this.filterPanel.hidden = !this.filterPanel.hidden;
@@ -1697,6 +1824,7 @@ export class MapUi {
     const box = this.filterPanel.querySelector<HTMLInputElement>(`input[data-layer="${key}"]`);
     if (box) box.checked = on;
     this.bigStale = true;
+    this.drawList();
   }
 
   /** The markers the filters show. */
@@ -2042,6 +2170,14 @@ export class MapUi {
       this.markers.noteAuto('death', { face: df, x: dx, y: dy, z: dz });
     }
     this.wasDead = dead !== 0;
+    // The portals seen (the `portal` auto kind, BIFACIAL_WORLD.md §12), a few times a second.
+    if (this.client.seenPortals && now - this.portalsAt >= 500) {
+      this.portalsAt = now;
+      for (const at of seenPortalSpots(this.client.seenPortals(), (f, px, pz) =>
+        this.placeY(f, px, pz),
+      ))
+        this.markers.noteAuto('portal', at);
+    }
     this.drawWaypoints(face, x, z);
   }
 
@@ -2108,10 +2244,30 @@ export class MapUi {
     return [(c.width || 800) / 2 + sx, (c.height || 600) / 2 + sy];
   }
 
-  /** The ground's height for a marker placed on the map: the player's when on their face. */
-  private placeY(face: number): number {
+  /**
+   * The ground's face-local height for a marker placed on the map at (x, z) on `face`
+   * (`markerGroundY`): the loaded column's top, else the map's height for its cell (the finest
+   * level's, else the explored cell's), else the player's when on that face (else 0).
+   */
+  private placeY(face: number, x: number, z: number): number {
     const [pf = 0, , py = 0] = Array.from(this.client.markerPose?.() ?? []);
-    return pf === face ? py : 0;
+    const revealed = this.client.mapRevealed();
+    let code = NO_HEIGHT;
+    for (const cellM of [levelCellM(0), MAP.explored.cellM]) {
+      const c = this.levels.at(
+        this.reveal,
+        revealed,
+        cellM,
+        face,
+        Math.floor(x / cellM),
+        Math.floor(z / cellM),
+      );
+      if (c && c[1] !== NO_HEIGHT) {
+        code = c[1];
+        break;
+      }
+    }
+    return markerGroundY(this.client.markerGround?.(face, x, z), code, pf === face ? py : 0);
   }
 
   /** The pending pin: the spot the picker is open to place a marker at, in the draft's look. */
@@ -2127,10 +2283,7 @@ export class MapUi {
     if (!v) return;
     const hit = pickMarker(this.shownMarkers(), (m) => this.markerPx(m), px, py);
     if (hit) {
-      this.picker.openFor(hit, (r) => {
-        if (r.kind === 'save') this.markers.edit(hit.id, r.look);
-        else if (r.kind === 'delete') this.markers.remove(hit.id);
-      });
+      this.editMarker(hit);
       return;
     }
     if (this.markers.full) return;
@@ -2141,7 +2294,7 @@ export class MapUi {
     this.picker.openFor(undefined, (r) => {
       this.pending = null;
       this.bigStale = true;
-      if (r.kind === 'save') this.markers.place(r.look, { face, x, y: this.placeY(face), z });
+      if (r.kind === 'save') this.markers.place(r.look, { face, x, y: this.placeY(face, x, z), z });
     });
     this.drawBig();
   }
@@ -2394,7 +2547,7 @@ export class MapUi {
       up(e);
       if (p?.id !== e.pointerId) return;
       const m = p.marker === null ? undefined : this.markers.get(p.marker);
-      if (p.moved && m) this.markers.move(m.id, { ...m, y: this.placeY(m.face) });
+      if (p.moved && m) this.markers.move(m.id, { ...m, y: this.placeY(m.face, m.x, m.z) });
       else if (!p.moved) this.mapClick(p.x, p.y);
     });
     c.addEventListener('pointercancel', (e) => {

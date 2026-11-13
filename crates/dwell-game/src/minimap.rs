@@ -383,6 +383,33 @@ fn column_top(
     None
 }
 
+/// The face-local height (m) of the top of loaded column (`cx`, `cz`) on face `f`, read down from
+/// `top_m` to `bottom_m` (ground at `top_m` followed up to its surface): the top of its highest
+/// block (a liquid's surface), as the maps read it, strictly (a top under a chunk not held is
+/// unknown). None: nothing loaded there. A marker placed on the big map stands on it
+/// (docs/MAP_MARKERS.md).
+pub fn ground_at(
+    world: &VoxelWorld,
+    f: FaceFrame,
+    cx: i32,
+    cz: i32,
+    top_m: f64,
+    bottom_m: f64,
+) -> Option<f64> {
+    let top = column_top(
+        world,
+        f,
+        cx,
+        cz,
+        row_of_m(top_m),
+        row_of_m(bottom_m),
+        1,
+        &|m| (m != M.air).then_some(0),
+        true,
+    )?;
+    Some(f64::from(top.height))
+}
+
 /// A liquid top at `row` of column (`cx`, `cz`): its colour `c` shaded by the water under it as
 /// the generated map shades it (`LOD_MAP.water_shade`, in linear light, followed down as far as
 /// [`dwell_look::lod_map::LodMapTunables::water_colour_depth_m`]; the owner, 0.52.35: exploring
