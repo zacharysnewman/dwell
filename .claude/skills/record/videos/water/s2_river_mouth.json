@@ -1,0 +1,6 @@
+{ "formatVersion": 1, "name": "water s2: down the river's channel through the sand to the lagoon and the sea",
+  "keyframes": [
+    { "t": 0, "position": [11840, 70, 19140], "target": [11756, 60, 19264], "fov": 60, "timeOfDay": 0.7 },
+    { "t": 12, "position": [11730, 58, 19400], "target": [11700, 32, 19700], "fov": 60, "timeOfDay": 0.7 }
+  ],
+  "segments": [ { "move": "ease", "easing": "inOutSine" } ] }

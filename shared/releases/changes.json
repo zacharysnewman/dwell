@@ -2,6 +2,12 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.56.1",
+      "changes": [
+        "The water showcase video's camera paths and takes are saved for one-command re-recording."
+      ]
+    },
+    {
       "version": "0.56.0",
       "changes": [
         "Bigger worlds (2× to 10×) keep their mountains: 1×-height ranges across the whole island, more peaks the bigger the world",
