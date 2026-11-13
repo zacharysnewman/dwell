@@ -48,6 +48,8 @@ jobs:
           node --test shared/ground/gen.test.mjs
           node shared/creatures/gen.mjs
           node --test shared/creatures/gen.test.mjs
+          node shared/blueprints/gen.mjs
+          node --test shared/blueprints/gen.test.mjs
           node shared/ecology/gen.mjs
           node --test shared/ecology/gen.test.mjs
           node --test shared/input/gen.test.mjs

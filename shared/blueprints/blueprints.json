@@ -1,0 +1,9 @@
+{
+  "$comment": "Blueprints and builder NPCs (WORK_QUEUE item 56, docs/BLUEPRINTS.md): a placed structure shown as ghost blocks, built by players holding Place and by builder NPCs. `limits`: the most blueprints a world holds (`perWorld`). `player`: one piece every `paceMs` while Place is held aiming into a blueprint, the panel's most block rows (`panelRows`). `ghost`: the most ghost faces drawn per blueprint (`faceCap`). `builder`: the creature that builds (`creature`, shared/creatures), one piece every `paceS` seconds with unlimited blocks, standing within `reachM` of its cell to place it, spawned at a blueprint with a player within `nearM` m and none of its builders yet (at most `perBlueprint`). `catalog`: the repository's blueprints offered in the Blueprints list (structure names, shared/structures). Run `node shared/blueprints/gen.mjs` after editing; CI fails if crates/dwell-world/src/blueprints.gen.rs is stale.",
+  "formatVersion": 1,
+  "limits": { "perWorld": 64 },
+  "player": { "paceMs": 150, "panelRows": 6 },
+  "ghost": { "faceCap": 24000 },
+  "builder": { "creature": "dwell:builder", "paceS": 0.75, "reachM": 4, "nearM": 96, "perBlueprint": 1 },
+  "catalog": ["dwell:bp_hut", "dwell:bp_wall", "dwell:bp_well", "dwell:bp_watchtower"]
+}

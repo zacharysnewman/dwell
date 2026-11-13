@@ -4,7 +4,8 @@
 // the fall with flight off and lands; `__dwell.flyTo('home')` flies up and out past the release
 // sphere, moves the player back to where the trip started and waits for home's chunks.
 // `__dwell.moonLand()` teleports onto the moon's ground instead (local.rs `moon_land`; owner,
-// 2026-11-13: "We should just teleport to the moon to see if ground draws"). The page's
+// 2026-11-13: "We should just teleport to the moon to see if ground draws"), and `__dwell.sunLand()`
+// onto the sun's dry crust (local.rs `grid_land`, SUN_WORLD.md: the same, for the sun). The page's
 // side is a host (main.ts `tripHost`), so the steering is tested here without a browser.
 
 export type Vec3 = [number, number, number];
@@ -88,7 +89,7 @@ export interface MoonTrip {
 }
 
 export interface MoonLanding {
-  to: 'moonLand';
+  to: 'moonLand' | 'sunLand';
   /** Where the teleport started (world feet), for `flyTo('home')`. */
   home: Vec3 | null;
   /** The teleport's answer (local.rs `moon_land`). */
@@ -360,26 +361,28 @@ export async function flyHome(host: TripHost, home: Vec3, o: TripOptions = {}): 
 export async function teleportToMoon(
   host: TripHost,
   o: Pick<TripOptions, 'face' | 'maxS'> = {},
+  grid: 'moon' | 'sun' = 'moon',
 ): Promise<MoonLanding> {
+  const to = grid === 'sun' ? 'sunLand' : 'moonLand';
   const maxS = o.maxS ?? 60;
   const start = report(host);
-  if (start.grid !== 'home') throw new Error('moonLand: not at home');
+  if (start.grid !== 'home') throw new Error(`${to}: not at home`);
   host.fly(false);
-  const land = answer('moonLand', await host.land(o.face === 'b' ? -1 : 1));
+  const land = answer(to, await host.land(o.face === 'b' ? -1 : 1));
   const t = host.now();
   const down = await until(
     host,
     maxS,
-    (m) => m.grid === 'moon' && m.groundHeld && (m.groundM ?? 1) < 0.5 && Math.abs(m.upMps) < 0.1,
+    (m) => m.grid === grid && m.groundHeld && (m.groundM ?? 1) < 0.5 && Math.abs(m.upMps) < 0.1,
   );
   if (!down) {
     const m = report(host);
     throw new Error(
-      `moonLand: not standing on the moon in ${String(maxS)} s (grid ${m.grid}, ${String(m.groundM)} m over the ground, chunk held ${String(m.groundHeld)})`,
+      `${to}: not standing on the ${grid} in ${String(maxS)} s (grid ${m.grid}, ${String(m.groundM)} m over the ground, chunk held ${String(m.groundHeld)})`,
     );
   }
   return {
-    to: 'moonLand',
+    to,
     home: start.feet,
     land,
     landS: secondsSince(host, t),

@@ -185,6 +185,11 @@ export type Step =
    */
   | { do: 'moonLand'; face?: 'a' | 'b'; maxS?: number; waitS?: number }
   /**
+   * `moonLand` onto the sun's dry crust instead (`__dwell.sunLand`, SUN_WORLD.md): the same wait,
+   * draw counts and report. Scenario `sun-draw`.
+   */
+  | { do: 'sunLand'; face?: 'a' | 'b'; maxS?: number; waitS?: number }
+  /**
    * Stands the player on a raft `lift` m (default 1) above its feet and moves the raft at `speed`
    * m/s toward `yaw` (degrees, 0 = +Z, 90 = +X) for `s` seconds at a held height, then waits out
    * the ride (a local world only): "carried by a moving body" bugs (`__dwell.carry`).
@@ -460,6 +465,7 @@ const STEP_FIELDS: Record<Step['do'], readonly string[]> = {
   herd: ['kind', 'back'],
   flyTo: ['to', 'face', 'landM', 'maxS'],
   moonLand: ['face', 'maxS', 'waitS'],
+  sunLand: ['face', 'maxS', 'waitS'],
   mark: [],
   record: ['name', 'budget', 'reportOnly'],
   shot: ['name', ...PLACEMENT_FIELDS, 'quietFrames', 'maxS'],
@@ -722,7 +728,8 @@ export function parseStep(where: string, v: unknown): Step {
         ...(o.maxS === undefined ? {} : { maxS: num(at('maxS'), o.maxS, 1, 600) }),
       };
     }
-    case 'moonLand': {
+    case 'moonLand':
+    case 'sunLand': {
       if (o.face !== undefined && o.face !== 'a' && o.face !== 'b') {
         throw new ViewError(`${at('face')}: expected "a" or "b"`);
       }

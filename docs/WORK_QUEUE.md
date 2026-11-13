@@ -1139,6 +1139,12 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    data. Owner's note on the PR: the baked maria were too faint after #682's shading, so the mare block's `color`
    (`#555459`) is 0.55 × the moon dust's luma, the old sky moon's seas (`1 − moon.maria`); a test pins the bake's
    maria/highland contrast at 0.55. Tests on both faces (`--test grids`, 26).
+   **Spawns on any grid (M-8)** (owner, 2026-11-13: "Im not seeing a moon spawn or sun spawn in my new world
+   settings"; orchestrator: "one general system rather than per-world code: a spawn choice for any grid, by data …
+   New world → Spawn lists home face A or B, plus each other grid's faces … generated from the grids data … the
+   player starts on that grid at a safe stand point … with a shrine there if shrines apply … only for clients that
+   declare the grid's capability, otherwise fall back to home. The `?spawn=` link takes the same values."): built
+   with the sun's second slice (item 42, MOON_WORLD.md §8).
 
 28. **An atmosphere: the sky thinning to space** (owner 2026-11-12: "We likely need an atmosphere transition now
    between sky thinning to space. Clouds shouldn't extend past the earth atmosphere either."). With flight to the
@@ -1886,6 +1892,21 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    make space a more general skybox and have 'day' be a closer atmosphere skybox so it can fade out as you leave
    earth."): the general sky is built by the moon session (claude/moon-m5), not here; the sun only declares in its
    grid data that it has no atmosphere, once that field exists.
+   **Second slice (orchestrator brief, 2026-11-13: "(1) lava damage on the sun — the server's lava fields/damage
+   apply on any grid whose generator places lava (by data), not only home; (2) 'Constant flowing lava, oceans of
+   lava' (owner): the sun's lava rivers always flowing — the lava flow of VOLCANOES.md kept running on the sun (a
+   source at each river head, as data), bounded in cost (only near players, as the water does); (3) a dev teleport
+   onto the sun (`__dwell.sunLand`, like #883's moonLand) and a bench scenario `sun-draw` (lands on face A, shots
+   across and down, reports draw calls/triangles); (4) the capture's speed: with the sun at 3.7–7.5 km/s, check a
+   far-flight player can be captured without a snap"; the sky stays the moon session's):** SUN_WORLD.md §6.
+   **Spawns on the moon and the sun** (owner, 2026-11-13: "Im not seeing a moon spawn or sun spawn in my new world
+   settings"): one spawn choice for any grid, by the grids data (item 27's M-8), in this slice.
+   **Built natively (2026-11-13, SUN_WORLD.md §6):** lava burns on any grid (a field's or any hot fluid's cell, by
+   lava.json's names; a death there takes the player home or to the spawn grid); the sun's `flow` rules place a river
+   vent at each cell's river head near a player there (at most 12 fields of 192 tiles, run only near players);
+   `__dwell.sunLand` / `sun()` and the `sun-draw` scenario; the capture at the sun's > 3 km/s checked snap-free on a
+   jittery device; spawns on the moon and the sun (MOON_WORLD.md §8). **Left:** `sun-draw` and a sun spawn run in a
+   browser on a GPU (a local check); shrines on other grids; the sun's sky (the moon session's).
 
 ## Done
 
@@ -2015,6 +2036,24 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
   hits; creative doesn't wear, metal tools are unlimited).
 
 ## Smaller items, after the queue
+
+- **The inventory opened the game menu too (BUGS.md #137, 2026-11-13, `claude/inventory-lock`), done.** Owner: "Opening
+  your inventory currently opens the menu too, on top of your inventory. Which isn't correct. Should just open your
+  inventory and free your mouse. Closing it, should immediately lock your mouse again, same for menuz". One owner of
+  which panel is open (`client/src/ui/panels.ts`: playing, inventory, menu, big map) holds the pointer lock with it:
+  opening frees the mouse and opens nothing else, closing (key, Esc, Resume, Back, controller) re-locks from that
+  gesture, a refused re-lock waits for the next click; a lock the browser takes (Esc, alt-tab) still opens the menu.
+  Next (local): a check in Chrome on the GPU (E, Esc, Resume, M).
+
+- **Softer shore foam edge (2026-11-13, `claude/foam-soft`), done.** Owner: "The water foam edge is a little too hard
+  now, the softness of the old version was better and the consistency of the new one along the edge is better. Combine
+  those concepts and share screenshots when you've got it." The hard edge came from 0.52.6's solid contact line (#502:
+  a 0.06 m line ending in a 3 cm step) and its flat-topped bands; the old rim (before 0.52.6) was a ~0.2 m soft fade
+  but multiplied by noise, so it broke into blotches. Now the contact line keeps a thin solid core (`shore.lineM` 0.02)
+  and feathers into the water over `shore.featherM` (0.2 m), with no noise cutting it, and the bands' sides soften by
+  `shore.bandSoftness` (0.75) (`shared/look/waterflow.json`, WATER_RENDERING.md §20). The mirror
+  `dwell_look::waterflow::shore_foam` pins the profile: no step over 0.08 between samples 5 mm apart (0.52.6's
+  stepped 0.28) and never under half strength along the edge's first 0.1 m. Outstanding: the owner's look.
 
 - **The full-sky flood test on main (2026-11-13, `claude/flood-sky-test`), done.** Owner: "`cargo test -p dwell-mesh --lib
   flood_tests::open_terrain_takes_the_full_sky` fails on main (face a: 3 dark vertices) … find which merge broke it, decide
@@ -2220,6 +2259,15 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    radius, and marks; by facet, every level; `node --test shared/models/decor.test.mjs`), not yet applied to the
    Peasant. **Left:** eyes as geometry; the hat band and a waist band wired into models.json `decor` once the eyes
    land, with renders for the owner.
+   **The waist ring** (owner, 2026-11-13): **"There's a ring that goes around the waist with alternating triangles
+   that already looked pretty good they were just inconsistently colored."**
+   **Built (branch `claude/outfit-2`, 2026-11-13):** the eyes as geometry (decor `piece`: a dark quad and a glint a
+   side on the head joint, added to every detail level, the part map listing them with no part); the hat's crown
+   band (the hat part inside r 0.19 m, never the brim; bark and wool_red strictly alternating); the waist ring (the
+   outermost facets at the belt's height, no spikes, leather and wool_green strictly alternating: the triangles
+   the paint vote coloured wood, canvas, brass and leaf). CHARACTERS.md §11.14. Renders before/after at 60 % and
+   100 % went to the owner. **Left:** the owner's look at the colours (data in models.json `decor`); at 35 % and
+   20 % the waist is long triangles, so the ring is a few facets or none.
 
 44. **Trees on slopes hang over the edge** (owner 2026-11-12: **"I notice a lot of trees on slopes are hanging out over
    the edge. Perhaps trees should always have flats under them? Don't limit trees to flats, since they might not
@@ -2428,6 +2476,28 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    `stand`; others see both; the wire change additive; data for the kneel's time, the fade, the camera and
    per-character overrides; tests by data on both faces. Design rule recorded in docs/CHARACTERS.md §1a. Built on
    branch `claude/defeat-kneel` (docs/CHARACTERS.md §11.13, docs/SHRINES.md §5).
+
+56. **Blueprints and builder NPCs** (owner 2026-11-13: **"I also want to add a new version of the human NPC, same looks, no
+   sword capable of building blueprints like the ones you can save right now. In adventure you can place "blueprints" but
+   not as actual blocks as an entity that shows ghost blocks. When you hold build, it auto places only within the correct
+   placement, only the correct blocks where you're aiming like our drag building today. If you don't have a block, it
+   won't place it, it will show blocks you don't have as red. Should also show n/n logs, etc all required blocks on hover
+   in a compact UI. NPCs will use this to build towns and cities from blueprints I provide. Feel free to add simple test
+   ones."**). Answers (2026-11-13): builder NPCs have **unlimited blocks for now** (gathering later); towns at **worldgen
+   sites for now** (**"Eventually both, but just world gen sites for now"** — player-placed later); a placed blueprint is
+   **visible to and buildable by everyone in the world**, saved with it. Phases: B1 blueprint entities (a saved structure
+   placed as a ghost entity: position, face, turn; saved with the world; synced behind a capability), B2 building from one
+   (held Place fills only ghost cells with the ghost's block, missing blocks red, a have/need panel on hover), B3 builder
+   NPCs (the villager without a sword, data-defined, steady pace, unlimited blocks, foundation up), B4 town sites from
+   worldgen (deterministic per face, a town plan of blueprints, builders spawning; a new compatibility line). Test
+   blueprints as structure data: a hut, a wall segment, a well, a watchtower. Design and status in docs/BLUEPRINTS.md.
+   **B1–B3 built (2026-11-13, cloud, branch `claude/builder-npcs-blueprints-rs25zj`):** blueprints as world entities
+   (`blueprints.world`, the world's `blueprints` table, the `blueprints` mode ability in creative and adventure),
+   placed from the Structures page (catalog or library, a turn) at the crosshair; held Place into one fills only its
+   ghost cells with their block from what the player has (red ghosts where not), a compact have/need panel; a
+   completed blueprint disappears (the blocks are the record). Builders (`dwell:builder`) come to a blueprint with a
+   player near and build it foundation up, unlimited blocks, from outside its box, skipping occupied cells. Left:
+   B4 (towns at worldgen sites, a new compatibility line), a placing preview ghost; BLUEPRINTS.md §7.
 
 ## Future (needs owner answers)
 

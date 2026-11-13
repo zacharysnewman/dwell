@@ -84,6 +84,7 @@ export class LocalCore {
     chop2 = false,
     radiusScale?: number,
     sky?: string,
+    spawnGrid?: string,
   ): Promise<LocalCore> {
     const exports = (await loadWasm()) as { memory?: WebAssembly.Memory };
     const core = new LocalCore(
@@ -103,6 +104,7 @@ export class LocalCore {
         chop2,
         radiusScale,
         sky,
+        spawnGrid,
       ),
     );
     core.memory = exports.memory ?? null;

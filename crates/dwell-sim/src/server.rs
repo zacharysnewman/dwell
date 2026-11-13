@@ -51,6 +51,7 @@ pub use grass::{Grass, GrassEnvelope};
 mod grass;
 mod grids;
 pub use grids::{GridSlot, Grids};
+mod blueprints;
 mod ground;
 mod growth;
 mod items;
@@ -86,6 +87,9 @@ const INPUT_BUFFER: usize = 2; // jitter buffer depth (ticks)
 /// prediction once we report half a second queued (its `BUFFER_HOLD`, 30) and nudges its tick
 /// rate for smaller drift, so only a client that ignores both reaches this.
 const MAX_BUFFERED_INPUTS: usize = 60;
+/// How long a player spawned at home waits for its client to say it can be on the world's spawn
+/// grid (its capabilities) before it stays home (MOON_WORLD.md §8).
+const GRID_SPAWN_GRACE_TICKS: u32 = 10 * SIM_HZ;
 const LATENCY_WINDOW_TICKS: u32 = 60;
 const MAX_SEQ_AHEAD: u32 = 256; // inputs further ahead are rejected
 const INPUT_DATAGRAMS_PER_SECOND: u32 = 2 * SIM_HZ; // §11: SIM_HZ + redundancy
@@ -273,6 +277,11 @@ pub struct ServerConfig {
     /// they left the world: a local world opened by a spawn link (`?spawn=portal`, `b`; owner,
     /// 2026-10-27). Off, a saved world keeps its own spawn and players continue where they were.
     pub join_at_spawn: bool,
+    /// The grid face a new world's players spawn and respawn on (docs/proposals/MOON_WORLD.md §8,
+    /// M-8: a spawn key of `dwell_worldgen::grids::spawn_keys`, `moon`, `sun-b`); none: home. A
+    /// saved world keeps its own (unless `join_at_spawn` with one). Only a client that can be on that
+    /// grid (`grid.frames` and the grid's `capability`) goes there; any other starts at `spawn`.
+    pub spawn_grid: Option<String>,
     /// Terrain generation and streaming (§6.3): 0 threads generate on the tick within the budget.
     pub worldgen_threads: usize,
     pub worldgen_budget: Duration,
@@ -425,6 +434,7 @@ impl Default for ServerConfig {
             generator_version: dwell_world::GENERATOR_TERRAIN,
             spawn: None,
             join_at_spawn: false,
+            spawn_grid: None,
             worldgen_threads: 0,
             worldgen_budget: Duration::from_micros(4000),
             pregen_radius_chunks: 2,
@@ -702,11 +712,18 @@ struct Session {
     markers: Option<dwell_protocol::markers::Markers>,
     markers_loaded: bool,
     markers_sent: bool,
+    /// Whether the world's blueprints went to its client (`blueprints.world`, BLUEPRINTS.md).
+    blueprints_sent: bool,
     /// The last damage cause its client understands (`CausesHello`; 0: it never said, so only the
     /// causes every build knows, and `Drown` with `vitals_hello`).
     known_cause: u8,
     /// Its lava burn (docs/proposals/VOLCANOES.md §6): burning left after leaving lava.
     burn: dwell_lava::Burn,
+    /// The world spawns on another grid (MOON_WORLD.md §8): until this tick, the player (just
+    /// spawned at home) is moved there once its client says it can be (`Server::spawn_on_grids`).
+    grid_spawn_due: Option<u32>,
+    /// It died on another grid: its respawn goes to the world's spawn grid.
+    grid_respawn: bool,
     /// Whether its client draws creatures (`CreaturesHello`, ADR 0073).
     creatures_hello: bool,
     /// Whether its client draws block damage (`DamageHello`, docs/BLOCK_DAMAGE.md).
@@ -808,7 +825,10 @@ impl Session {
             markers: None,
             markers_loaded: false,
             markers_sent: false,
+            blueprints_sent: false,
             burn: dwell_lava::Burn::default(),
+            grid_spawn_due: None,
+            grid_respawn: false,
             creatures_hello: false,
             damage_hello: false,
             ecology_hello: false,
@@ -1073,6 +1093,8 @@ pub struct Server {
     departed_vitals: Vec<([u8; 32], Vec<u8>)>,
     /// The markers of players who left since the last save (docs/MAP_MARKERS.md).
     departed_markers: Vec<([u8; 32], Vec<u8>)>,
+    /// The world's blueprints and their builders (docs/BLUEPRINTS.md).
+    blueprints: blueprints::Blueprints,
     /// The loose items lying in the world (ADR 0066), and the moved ones not yet sent.
     loose: crate::loose_items::LooseItems,
     loose_moved: HashSet<u32>,
@@ -1152,6 +1174,9 @@ impl Server {
             config.generator_version = meta.generator_version;
             if meta.spawn.is_some() && !(config.join_at_spawn && config.spawn.is_some()) {
                 config.spawn = meta.spawn;
+            }
+            if meta.spawn_grid.is_some() && !(config.join_at_spawn && config.spawn_grid.is_some()) {
+                config.spawn_grid = meta.spawn_grid;
             }
             // And its own size (BIG_MAP.md M2): its settings' (`init_storage` reads the rest); a
             // world from before sizes, or saved without settings, is today's size.
@@ -1287,6 +1312,7 @@ impl Server {
             departed_inventories: Vec::new(),
             departed_vitals: Vec::new(),
             departed_markers: Vec::new(),
+            blueprints: Default::default(),
             loose: Default::default(),
             loose_moved: HashSet::default(),
             creatures: Default::default(),
@@ -1852,9 +1878,11 @@ impl Server {
                 s.capabilities = c;
                 self.swordplay_hello(id);
                 self.send_markers(id);
+                self.send_blueprints(id);
             }
             Message::TheaterViewpoint(at) => self.theater_viewpoint(id, at),
             Message::Markers(m) => self.set_markers(id, m),
+            Message::Blueprints(m) => self.blueprints_message(id, m),
             Message::WorldgenRequest => {
                 let m = Message::WorldgenConfig(self.worldgen_text.clone());
                 self.send_reliable(id, &m, Channel::Control);
@@ -1916,6 +1944,11 @@ impl Server {
         s.inputs.clear();
         s.primed = false;
         s.last_input = Input::default();
+        // At the world's spawn (or up again after a death on another grid): on its spawn grid, if
+        // the world has one, once the client says it can be there (a few seconds' grace).
+        let to_grid = feet.is_none() || std::mem::take(&mut s.grid_respawn);
+        s.grid_spawn_due = (to_grid && self.config.spawn_grid.is_some())
+            .then_some(self.tick + GRID_SPAWN_GRACE_TICKS);
     }
 
     /// Server-originated velocity change for a player (knockback), applied before this tick's
@@ -1945,7 +1978,7 @@ impl Server {
             return;
         }
         let s = self.sessions.get_mut(&id).expect("session");
-        if s.handle.is_none() || amount <= 0 {
+        if (s.handle.is_none() && s.away.is_none()) || amount <= 0 {
             return;
         }
         s.health = (s.health - amount).max(0);
@@ -1970,24 +2003,44 @@ impl Server {
     /// kneels (snapshots carry it as `DEAD` at `death_position`, which clients draw kneeling);
     /// its inventory stays with it until it stands up, then is left where it knelt.
     fn kill(&mut self, id: SessionId, cause: DamageCause) {
-        let Some(h) = self.sessions[&id].handle else {
-            return;
+        // On another grid (the sun's lava, SUN_WORLD.md §6): out of its space, the inventory kept
+        // (items aren't on other grids yet), up again at the world's spawn.
+        let (death, yaw, away) = match (self.sessions[&id].handle, self.sessions[&id].away) {
+            (Some(h), _) => {
+                let p = self.players.position(&self.physics, h);
+                let death = [p.x, self.feet_y(h), p.z];
+                let yaw = self.players.controller(h).input.look_yaw;
+                self.players.despawn(&mut self.physics, h);
+                (death, yaw, false)
+            }
+            (None, Some(a)) => {
+                let sp = &self.grids.slots[a.slot].space;
+                let yaw = sp.players.controller(a.handle).input.look_yaw;
+                match self.remove_away(id) {
+                    Some(d) => (d, yaw, true),
+                    None => return,
+                }
+            }
+            _ => return,
         };
-        let p = self.players.position(&self.physics, h);
-        let death = [p.x, self.feet_y(h), p.z];
-        let yaw = self.players.controller(h).input.look_yaw;
-        self.players.despawn(&mut self.physics, h);
         let respawn_tick = self.tick + defeat_ticks(dwell_protocol::defeat::PLAYER);
-        let respawn = self.respawn_after_death(self.sessions[&id].player_id, death);
+        let pid = self.sessions[&id].player_id;
+        let respawn = if away {
+            self.respawn_feet(pid)
+        } else {
+            self.respawn_after_death(pid, death)
+        };
         let half = f64::from(self.config.player_config.half_height(false));
         let preload = self
             .config
             .respawn_preload_radius_chunks
             .map(|_| body_centre_chunk(respawn, half));
         let s = self.sessions.get_mut(&id).expect("session");
+        s.grid_respawn = away;
         s.death_position = death;
         s.death_yaw = yaw;
-        s.drop_on_stand = true;
+        // Away, the inventory stays with the player (items aren't on other grids yet).
+        s.drop_on_stand = !away;
         s.handle = None;
         s.health = 0;
         s.inputs.clear();
@@ -2021,6 +2074,16 @@ impl Server {
         }
         self.drown(id);
         self.burn(id);
+    }
+
+    /// After the other grids' step: an away player burns in its grid's lava (SUN_WORLD.md §6, the
+    /// same `burn` rules as home's).
+    fn after_away_tick(&mut self, id: SessionId) {
+        let Some(a) = self.sessions[&id].away else {
+            return;
+        };
+        let in_lava = self.away_hot_fluid(a);
+        self.burn_by(id, in_lava);
     }
 
     /// Advances the simulation by one 1/SIM_HZ step.
@@ -2173,6 +2236,11 @@ impl Server {
         self.physics.step(1.0 / f64::from(SIM_HZ));
         // The other grids' spaces, their players and physics.
         self.grids.step(1.0 / f64::from(SIM_HZ));
+        for &id in &ids {
+            if self.sessions.get(&id).is_some_and(Session::joined) {
+                self.after_away_tick(id);
+            }
+        }
         self.phase_ms[6] += watch.lap_ms();
         self.rejoin_apart();
         self.tick += 1;
@@ -2181,6 +2249,7 @@ impl Server {
         self.flow_water();
         // Lava flows, cools and quenches (docs/proposals/VOLCANOES.md §6).
         self.flow_lava();
+        self.flow_grid_lava();
         self.send_lava_steam();
         // Trees grow by the world's days (ADR 0079 S3).
         self.grow_trees();
@@ -2195,6 +2264,8 @@ impl Server {
         // Creatures spawn near players, wander and despawn far away (ADR 0073).
         self.step_creatures();
         self.step_npc_fights();
+        // Blueprints complete, and their builders build (docs/BLUEPRINTS.md).
+        self.step_blueprints();
 
         // 5. Respawns, then snapshots at SNAPSHOT_HZ.
         for &id in &ids {
@@ -4835,6 +4906,7 @@ impl Server {
             self.flush_water();
         }
         *self.saved.lock().expect("saved index") = saved;
+        self.blueprints.restore(db.blueprints());
         if let Some(saved) = db
             .loose_items()
             .and_then(|b| crate::loose_items::LooseItems::from_bytes(&b))
@@ -4964,6 +5036,7 @@ impl Server {
                 app_version_created: APP_VERSION.into(),
                 app_version_last: APP_VERSION.into(),
                 settings: Some(self.settings_fields.to_bytes()),
+                spawn_grid: self.config.spawn_grid.clone(),
             }),
             ..SaveBatch::default()
         };
@@ -5002,6 +5075,7 @@ impl Server {
             batch.markers.extend(Self::markers_record(s));
         }
         batch.loose_items = Some(self.loose.to_bytes());
+        batch.blueprints = self.blueprints.record_to_save();
         if !self.cuts_unread {
             batch.cuts = Some(self.cuts.to_bytes());
         }

@@ -643,6 +643,9 @@ impl Client {
                 game.set_markers_synced(
                     session.capability(dwell_protocol::capability_names::MARKERS_PRIVATE),
                 );
+                game.set_blueprints_synced(
+                    session.capability(dwell_protocol::capability_names::BLUEPRINTS_WORLD),
+                );
                 // The theater camera as a simulation viewpoint (THEATER_MODE.md §7): creative
                 // on a server that takes it.
                 game.set_theater_viewpoint(
@@ -1859,6 +1862,14 @@ impl Client {
     pub fn moon(&self) -> Option<String> {
         let s = self.inner.borrow();
         s.game.as_ref()?.moon_report().map(|r| r.json())
+    }
+    /// A grid from the player as JSON, by name (`__dwell.sun()` is `dwell:sun`'s; the moon report's
+    /// fields, SUN_WORLD.md), or None before playing, from a server without `grid.frames`, or in a
+    /// world without that grid (or one this build's session can't be on).
+    #[wasm_bindgen(js_name = gridReport)]
+    pub fn grid_report(&self, name: String) -> Option<String> {
+        let s = self.inner.borrow();
+        s.game.as_ref()?.grid_report(&name).map(|r| r.json())
     }
     pub fn voxel(&self, x: i32, y: i32, z: i32) -> u16 {
         self.inner
@@ -3218,6 +3229,112 @@ impl Client {
             g.send_markers(m);
         }
         true
+    }
+    /// Blueprints (docs/BLUEPRINTS.md): whether the server keeps the world's (`blueprints.world`).
+    #[wasm_bindgen(js_name = blueprintsSynced)]
+    pub fn blueprints_synced(&self) -> bool {
+        self.inner
+            .borrow()
+            .game
+            .as_ref()
+            .is_some_and(|g| g.blueprints_synced())
+    }
+    /// The repository's blueprints offered in the Blueprints list (`blueprints.json` `catalog`):
+    /// each "name sx sy sz".
+    #[wasm_bindgen(js_name = blueprintCatalog)]
+    pub fn blueprint_catalog(&self) -> Vec<String> {
+        dwell_world::blueprint::SHIPPED
+            .catalog
+            .iter()
+            .filter_map(|n| dwell_world::structure::load(n).ok())
+            .map(|s| format!("{} {} {} {}", s.name, s.size[0], s.size[1], s.size[2]))
+            .collect()
+    }
+    /// Places the catalog's blueprint `name` at the crosshair's place cell, turned `turn` quarter
+    /// turns; false with no aim, an unknown name or a server that keeps none.
+    #[wasm_bindgen(js_name = placeBlueprint)]
+    pub fn place_blueprint(&self, name: &str, turn: u8) -> bool {
+        if !dwell_world::blueprint::SHIPPED.catalog.contains(&name) {
+            return false;
+        }
+        let Ok(s) = dwell_world::structure::load(name) else {
+            return false;
+        };
+        let mut st = self.inner.borrow_mut();
+        st.game
+            .as_mut()
+            .is_some_and(|g| g.place_blueprint_structure(&s, turn))
+    }
+    /// Places a structure of the player's library as a blueprint at the crosshair's place cell:
+    /// its size, anchor, palette (state names, one a line) and cells (x fastest, then z, then y;
+    /// 0 kept, k the palette's k-th), turned `turn` quarter turns.
+    #[wasm_bindgen(js_name = placeBlueprintCells)]
+    pub fn place_blueprint_cells(
+        &self,
+        name: &str,
+        size: Vec<u8>,
+        anchor: Vec<u8>,
+        palette: &str,
+        cells: Vec<u8>,
+        turn: u8,
+    ) -> bool {
+        let (Ok(size), Ok(anchor)) = (<[u8; 3]>::try_from(size), <[u8; 3]>::try_from(anchor))
+        else {
+            return false;
+        };
+        let names: Vec<String> = palette.lines().map(str::to_owned).collect();
+        let states: Vec<Option<dwell_blocks::StateId>> = cells
+            .iter()
+            .map(|&c| {
+                (c > 0)
+                    .then(|| names.get(usize::from(c) - 1))
+                    .flatten()
+                    .and_then(|n| dwell_blocks::parse_state(n).ok())
+            })
+            .collect();
+        if states.len() != size.iter().map(|&n| usize::from(n)).product::<usize>() {
+            return false;
+        }
+        let s = dwell_world::structure::Structure::from_cells(
+            dwell_blocks::intern(name),
+            0,
+            size.map(i32::from),
+            anchor.map(i32::from),
+            &states,
+        );
+        let mut st = self.inner.borrow_mut();
+        st.game
+            .as_mut()
+            .is_some_and(|g| g.place_blueprint_structure(&s, turn))
+    }
+    /// Removes the blueprint the view aims into; false when none is.
+    #[wasm_bindgen(js_name = removeAimedBlueprint)]
+    pub fn remove_aimed_blueprint(&self) -> bool {
+        let mut st = self.inner.borrow_mut();
+        st.game.as_mut().is_some_and(|g| g.remove_aimed_blueprint())
+    }
+    /// The aimed blueprint's panel (docs/BLUEPRINTS.md §4): its name, cells left, then per item
+    /// still needed "item have need", one a line ("" with none aimed); a last line "+n" folds rows
+    /// past the panel's most.
+    #[wasm_bindgen(js_name = blueprintPanel)]
+    pub fn blueprint_panel(&self) -> String {
+        let mut st = self.inner.borrow_mut();
+        let Some(p) = st.game.as_mut().and_then(|g| g.blueprint_panel()) else {
+            return String::new();
+        };
+        let mut out = format!("{}\n{}", p.name, p.left);
+        for r in &p.rows {
+            let have = if r.have == u32::MAX {
+                "∞".to_string()
+            } else {
+                r.have.to_string()
+            };
+            out.push_str(&format!("\n{} {} {}", r.block, have, r.need));
+        }
+        if p.more > 0 {
+            out.push_str(&format!("\n+{}", p.more));
+        }
+        out
     }
     /// The player on the explored map: [face (0 A, 1 B), x, z (face-local m), heading (degrees)].
     #[wasm_bindgen(js_name = mapPose)]

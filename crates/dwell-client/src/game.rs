@@ -743,6 +743,7 @@ pub struct LodSettings {
     pub full_mode: bool,
 }
 
+mod blueprints;
 pub mod streaming_report;
 
 pub struct Game<S: Scene> {
@@ -1003,6 +1004,11 @@ pub struct Game<S: Scene> {
     /// record it sent, until the shell takes it (`take_markers`).
     markers_synced: bool,
     markers_in: Option<dwell_protocol::markers::Markers>,
+    /// The world's blueprints (docs/BLUEPRINTS.md): kept by the server (`blueprints.world`), the
+    /// aimed one's ghost and panel, the held Place's pace.
+    pub(crate) blueprints: crate::blueprints::ClientBlueprints,
+    blueprints_synced: bool,
+    blueprint_aimed: Option<usize>,
     /// The server takes a tool's hit at its contact (`hits.at_contact`, BUGS.md #111): the hit is
     /// aimed and sent then, not at the click.
     hits_at_contact: bool,
@@ -1219,6 +1225,9 @@ impl<S: Scene> Game<S> {
             swordplay: false,
             markers_synced: false,
             markers_in: None,
+            blueprints: Default::default(),
+            blueprints_synced: false,
+            blueprint_aimed: None,
             // As this build's client says it (`Capabilities::this_client`); an older server's
             // session turns it off (`set_hits_at_contact`).
             hits_at_contact: true,
@@ -2097,6 +2106,7 @@ impl<S: Scene> Game<S> {
                 self.on_clash(&c, now_ms);
             }
             Message::Markers(m) => self.markers_in = Some(m),
+            Message::Blueprints(m) => self.blueprints.apply(m),
             Message::Swordplay(dwell_protocol::SwordplayMessage::Guards(list)) => {
                 for g in list {
                     self.remote_guards.insert(g.who, (g.vertical, g.raised));
@@ -2495,6 +2505,15 @@ impl<S: Scene> Game<S> {
         // The axe held (ADR 0067): Use turns the swing, Break swings at wood aimed at.
         if let Some(tool) = self.held_tool() {
             return self.chop_with(tool, action, now_ms);
+        }
+        // Aimed into a blueprint (docs/BLUEPRINTS.md): Place builds its ghost cells only, from
+        // what the player has, whatever the hand holds; held, it builds on at the data's pace.
+        if action == EditAction::Place
+            && !self.brush.active()
+            && !self.region.pasting()
+            && let Some(placed) = self.blueprint_press(holder.is_some(), now_ms)
+        {
+            return placed;
         }
         // In a world that uses items (ADR 0066) a place needs the held slot to hold a block; a
         // hotbar tool that does not chop (a pickaxe, a shovel) places nothing either.
@@ -2974,6 +2993,7 @@ impl<S: Scene> Game<S> {
 
     pub fn release_place(&mut self, holder: dwell_game::build_drag::Holder) {
         self.drag.release(holder);
+        self.blueprints.held = false;
         // The weapon's block (swordplay): a tap turns the stance, else the block drops.
         if self.guard_input.pressed()
             && let Some(w) = self.held_tool().and_then(|t| t.weapon)
@@ -3257,6 +3277,11 @@ impl<S: Scene> Game<S> {
     /// position at the latest snapshot's clock, the way and distance to it, the player's grid and
     /// the gravity; `None` before the travel rules (a server without `grid.frames`) or with no moon.
     pub fn moon_report(&self) -> Option<crate::moon_probe::MoonReport> {
+        self.grid_report("dwell:moon")
+    }
+
+    /// [`Self::moon_report`] for any grid by name (`dwell:sun`: `__dwell.sun()`).
+    pub fn grid_report(&self, name: &str) -> Option<crate::moon_probe::MoonReport> {
         let map = self.travel.as_ref()?;
         let viewer = crate::moon_probe::Viewer {
             grid: self.grid_drawn,
@@ -3265,7 +3290,7 @@ impl<S: Scene> Game<S> {
             world_s: f64::from(self.last_snapshot_tick) / SIM_HZ as f64,
             gravity: f64::from(self.predictor.config().body.gravity),
         };
-        let mut r = crate::moon_probe::moon_report(map, self.world_seed, viewer)?;
+        let mut r = crate::moon_probe::grid_report(map, self.world_seed, name, viewer)?;
         let f = FaceFrame::at_height(viewer.feet[1]);
         let below = f.point({
             let l = f.point(viewer.feet);
@@ -5550,6 +5575,7 @@ impl<S: Scene> Game<S> {
             block.is_none_or(|b| hit.distance < b).then_some(hit)
         });
         self.drag_build(eye, dir, now_ms);
+        self.blueprint_frame(eye, dir, now_ms);
         self.region
             .aim(self.interaction.placement().map(|(c, _)| c));
         self.show_region_boxes();
@@ -5593,7 +5619,7 @@ impl<S: Scene> Game<S> {
             .update_preview(materials, &mut self.streamer, now_ms);
         self.scene
             .borrow_mut()
-            .set_brush_outline(self.brush.outline());
+            .set_brush_outline(self.brush.outline().or(self.blueprints.outline()));
         // Outlines off (a clean recording, BUGS.md #113): the target stays, nothing is drawn.
         if !self.show_outline {
             self.scene.borrow_mut().set_block_outline(None, FULL_CELL);

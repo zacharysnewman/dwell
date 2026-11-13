@@ -37,6 +37,7 @@ fn meta() -> WorldMeta {
         app_version_created: "0.9.0".into(),
         app_version_last: "0.9.1".into(),
         settings: None,
+        spawn_grid: None,
     }
 }
 
@@ -90,6 +91,7 @@ fn everything_round_trips_through_a_file() {
             vitals: vec![(key, vec![1, 0, 0, 200, 66, 0, 0, 160, 64, 0])],
             markers: vec![(key, vec![1, 0, 0])],
             loose_items: Some(vec![9, 8]),
+            blueprints: Some(vec![1, 2, 0, 0, 0, 0, 0]),
             cuts: Some(vec![1, 0, 0, 0, 0]),
             ground_gone: Some(vec![1, 1, 0, 0, 0, 4, 0, 0, 0, 5, 0, 0, 0, 6, 0, 0, 0]),
             damage: Some(vec![1, 0, 0, 0, 0]),
@@ -127,6 +129,7 @@ fn everything_round_trips_through_a_file() {
         .expect("permission");
     }
     let db = WorldDb::open(&path).expect("reopens");
+    assert_eq!(db.blueprints(), Some(vec![1, 2, 0, 0, 0, 0, 0]));
     let mut m = db.load_meta().expect("meta");
     assert_ne!(m.saved_at, 0);
     m.saved_at = 0;

@@ -106,6 +106,7 @@ export const AREAS: Record<string, Area> = {
       'src/ui/creativeInventory.test.ts',
       'src/ui/hotbar.test.ts',
       'src/ui/brush',
+      'src/ui/blueprints.test.ts',
     ],
   },
   worldgen: {
@@ -145,6 +146,7 @@ export const AREAS: Record<string, Area> = {
       'shared/textures/gen.test.mjs',
       'shared/models/gen.test.mjs',
       'shared/models/painter.test.mjs',
+      'shared/models/decor.test.mjs',
       'shared/characters/gen.test.mjs',
     ],
     crates: ['dwell-look', 'dwell-models', 'dwell-characters', 'dwell-client', 'dwell-native'],
@@ -177,6 +179,7 @@ export const AREAS: Record<string, Area> = {
     generators: [
       'shared/physics/gen.mjs',
       'shared/creatures/gen.mjs',
+      'shared/blueprints/gen.mjs',
       'shared/explosives/gen.mjs',
       'shared/fluids/gen.mjs',
       'shared/fluids/falls.mjs',
@@ -186,6 +189,7 @@ export const AREAS: Record<string, Area> = {
     nodeTests: [
       'shared/physics/gen.test.mjs',
       'shared/creatures/gen.test.mjs',
+      'shared/blueprints/gen.test.mjs',
       'shared/explosives/gen.test.mjs',
       'shared/fluids/gen.test.mjs',
       'shared/fluids/falls.test.mjs',

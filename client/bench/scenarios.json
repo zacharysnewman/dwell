@@ -9233,6 +9233,45 @@
       ]
     },
     {
+      "name": "sun-draw",
+      "notes": "Does the sun's ground draw (SUN_WORLD.md, the second slice): from the spawn, sunLand teleports onto the sun's dry crust on face A (its stand point, away from lava; no flight), waits until the player stands there with its chunk held, and prints the frame's draw calls, triangles and mesh bytes (saved in report.json's trips); a shot looking across the crust toward the lava and one looking down.",
+      "steps": [
+        {
+          "do": "settle",
+          "maxS": 120
+        },
+        {
+          "do": "sunLand"
+        },
+        {
+          "do": "look",
+          "yaw": 0,
+          "pitch": -10
+        },
+        {
+          "do": "wait",
+          "s": 2
+        },
+        {
+          "do": "shot",
+          "name": "sun-a-across"
+        },
+        {
+          "do": "look",
+          "yaw": 0,
+          "pitch": -60
+        },
+        {
+          "do": "wait",
+          "s": 1
+        },
+        {
+          "do": "shot",
+          "name": "sun-a-down"
+        }
+      ]
+    },
+    {
       "name": "moon-trip",
       "notes": "The browser flight to the moon and back (MOON_WORLD.md §7.3; docs/DEV_TOOLS.md \"The moon\"): from the spawn, flyTo moon puts the player just outside the moon's capture sphere over its face A with the dev move, flies it in for real until captured, down to 40 m over the moon's ground, measures the fall with flight off (the run fails unless it is the moon's ⅙ g within 25 %) and lands; a shot on the moon at noon looking across its ground and one looking up; then flyTo home flies up past the release sphere, moves the player back to the spawn and waits until the client holds home's chunk under the feet again, and a last shot at home. The trips (capture, descent and landing seconds, the fall) are in report.json's trips.",
       "steps": [
