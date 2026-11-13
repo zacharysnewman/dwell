@@ -66,7 +66,6 @@ fn bad_grids_fail_with_a_message() {
         ("\"seedSalt\": 1297040974,", "", "seedSalt"),
         ("\"captureM\": 40000,", "", "needs a `captureM`"),
         ("\"atmosphere\": false", "\"atmosphere\": 0", "atmosphere"),
-        ("\"atmosphere\": false,", "", "`atmosphere` is missing"),
         ("\"cells\": 96", "\"cells\": 2", "nearMesh.cells"),
         ("\"sinkM\": 8", "\"sinkM\": -1", "nearMesh.sinkM"),
     ];
@@ -526,4 +525,14 @@ fn the_moon_is_airless_and_has_a_near_mesh() {
     assert!(!moon.atmosphere);
     let near = moon.near_mesh.expect("the moon's near mesh");
     assert!(near.cells >= 64 && near.sink_m > 0.0, "{near:?}");
+    // A grid that declares no atmosphere has none (the sun's, by data alone).
+    let bare = GRIDS_JSON.replacen("\"atmosphere\": false,", "", 1);
+    let list = parse_grids(&bare).unwrap();
+    assert!(
+        !list
+            .iter()
+            .find(|g| g.name == "dwell:moon")
+            .unwrap()
+            .atmosphere
+    );
 }

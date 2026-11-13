@@ -59,8 +59,9 @@ pub struct GridDef {
     /// How high its ground reaches over its midplane (m, face-local): the slab far flight measures
     /// its distance from (MOON_WORLD.md §7).
     pub surface_m: f64,
-    /// Whether the grid has air (`atmosphere`): its sky is the home sky thinning to space with
-    /// height (docs/DAY_NIGHT.md §15); without, a viewer on it sees space at its ground (the moon).
+    /// Whether the grid has air (`atmosphere`, false when not given): the day sky is a layer over
+    /// space that thins with height (docs/DAY_NIGHT.md §15); without, a viewer on it sees space,
+    /// the night sky's, at every hour (the moon, the sun).
     pub atmosphere: bool,
     /// The coarse mesh of its surface drawn nearer than `far_m` and under its chunks while on it
     /// (`nearMesh`, MOON_WORLD.md §5 M-5); `None` draws none.
@@ -389,9 +390,13 @@ pub fn parse_grids(text: &str) -> Result<Vec<GridDef>, String> {
         };
         let far_m = positive(g, "farM", &at)?;
         let surface_m = positive(g, "surfaceM", &at)?;
-        let atmosphere = get(g, "atmosphere", &at)?
-            .as_bool()
-            .ok_or_else(|| format!("{at}: `atmosphere` must be true or false"))?;
+        // No air unless declared (the moon, the sun): its sky is space, the night sky's.
+        let atmosphere = match g.get("atmosphere") {
+            None => false,
+            Some(v) => v
+                .as_bool()
+                .ok_or_else(|| format!("{at}: `atmosphere` must be true or false"))?,
+        };
         let near_mesh = match g.get("nearMesh") {
             None => None,
             Some(_) => {

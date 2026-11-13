@@ -33,14 +33,113 @@ pub fn day_on_grid(day: &DayState, frame: &GridFrame, grid: u8) -> DayState {
 
 /// Whether grid `grid` (its `grids.json` index) has air (`atmosphere`); an unknown index has.
 pub fn grid_has_air(grid: u8) -> bool {
-    dwell_worldgen::grids::grids()
-        .get(usize::from(grid))
-        .is_none_or(|g| g.atmosphere)
+    grid_has_air_in(dwell_worldgen::grids::grids(), grid)
+}
+
+/// [`grid_has_air`] over `grids` (a list as `grids.json` parses).
+pub fn grid_has_air_in(grids: &[dwell_worldgen::grids::GridDef], grid: u8) -> bool {
+    grids.get(usize::from(grid)).is_none_or(|g| g.atmosphere)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use dwell_look::atmosphere::{ATMOSPHERE, Air, space_sky};
+    use dwell_look::daynight::DAY_NIGHT;
+
+    /// The sky straight up toward `zenith` (the keyframe's), away from the sun, in `air`: the
+    /// CPU twin of `dwell_space` (the day layer over space).
+    fn up_sky(zenith: [f64; 3], air: Air) -> [f64; 3] {
+        space_sky(zenith, zenith, 1.0, -1.0, 1000.0, air)
+    }
+
+    fn gap(a: [f64; 3], b: [f64; 3]) -> f64 {
+        (0..3).map(|i| (a[i] - b[i]).abs()).fold(0.0, f64::max)
+    }
+
+    dwell_world::both_faces!(
+        /// The owner (2026-11-13): "Sun and moon should be space, the same as night sky." On a
+        /// grid without air (the moon; a sun added by data alone, no `atmosphere`) the day layer
+        /// is gone at every hour: the sky straight up is space's colour, the stars out, never a
+        /// day colour, on face `f`.
+        fn on_a_grid_without_air_day_colours_never_show(f: FaceFrame) {
+            let text = dwell_worldgen::grids::GRIDS_JSON;
+            let end = text.rfind("\n  ]").unwrap();
+            let sun = r#",
+    { "name": "test:sun", "frame": "orbit", "radiusM": 9000, "seedSalt": 99, "gravityScale": 2,
+      "captureM": 30000, "farM": 150000, "surfaceM": 200,
+      "generator": { "kind": "terrain", "bake": { "size": 64 } } }"#;
+            let list = dwell_worldgen::grids::parse_grids(&format!(
+                "{}{}{}",
+                &text[..end],
+                sun,
+                &text[end..]
+            ))
+            .expect("a sun by data");
+            let sun_index = list.iter().position(|g| g.name == "test:sun").unwrap() as u8;
+            assert!(
+                !grid_has_air_in(&list, sun_index),
+                "the sun declares no air"
+            );
+            assert!(!grid_has_air(1) && grid_has_air(0), "the moon none, home's");
+            for k in 0..48 {
+                let t = f64::from(k) / 48.0;
+                let day = DAY_NIGHT.state(0.0, Some(t), None);
+                let on = day_on_grid(&day, &GridFrame::HOME, 1).at_eye(80.0, 0.0, 12_500.0);
+                assert_eq!(on.air, Air::SPACE);
+                let v = on.of(f);
+                let sky = up_sky(v.sky_zenith, on.air);
+                assert!(
+                    gap(sky, ATMOSPHERE.space_color) < 1e-9,
+                    "t {t}: {sky:?} is not space"
+                );
+                assert_eq!(on.air.stars(v.stars), 1.0, "the stars out at t {t}");
+                assert!(on.air.fog() == 0.0, "no haze");
+            }
+        }
+    );
+
+    dwell_world::both_faces!(
+        /// Flying up from home's ground on face `f` at noon, the day layer fades to space: the sky
+        /// straight up moves steadily from the keyframe's day blue to space's colour at the top.
+        fn flying_up_from_home_the_day_layer_fades_to_space(f: FaceFrame) {
+            let noon = DAY_NIGHT.state(0.0, Some(if f.is_b() { 0.0 } else { 0.5 }), None);
+            let zenith = noon.of(f).sky_zenith;
+            let mut last = f64::INFINITY;
+            for k in 0..=40 {
+                let alt = ATMOSPHERE.top_m * f64::from(k) / 40.0;
+                let day = day_on_grid(&noon, &GridFrame::HOME, 0).at_eye(alt, 0.0, 25_000.0);
+                let to_space = gap(up_sky(zenith, day.air), ATMOSPHERE.space_color);
+                assert!(to_space <= last + 1e-12, "{alt} m: {to_space} after {last}");
+                last = to_space;
+            }
+            assert!(
+                gap(zenith, ATMOSPHERE.space_color) > 0.2,
+                "day is blue at the ground"
+            );
+            assert!(last < 1e-9, "space at the top: {last}");
+        }
+    );
+
+    dwell_world::both_faces!(
+        /// Home's day and night as before: at its ground the day layer is whole at every hour
+        /// (the sky exactly the keyframes', packed bit for bit as the plain day), on face `f`.
+        fn homes_day_and_night_look_as_before(f: FaceFrame) {
+            for k in 0..48 {
+                let t = f64::from(k) / 48.0;
+                let day = DAY_NIGHT.state(0.0, Some(t), None);
+                let home = day_on_grid(&day, &GridFrame::HOME, 0).at_eye(80.0, 10.0, 25_000.0);
+                assert_eq!(home.air, Air::GROUND, "t {t}");
+                assert!(!home.airless);
+                assert_eq!(
+                    home.pack(f, 1.0, 3.0, 0.001),
+                    day.pack(f, 1.0, 3.0, 0.001),
+                    "t {t}"
+                );
+            }
+        }
+    );
 
     fn dot(a: [f64; 3], b: [f64; 3]) -> f64 {
         a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
