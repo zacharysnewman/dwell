@@ -6,6 +6,21 @@ pins it.
 
 ## Open
 
+### 131. After a face B return from the moon the held stone block looked pink (not reproduced natively)
+
+Second browser moon flight (0.58.8 on facaaaf1, seed 7, M1), brief 2026-11-13: "After a face B return the held stone
+block looked pink (first-person held item's colour/lighting after the crossing — likely the face/grid frame or a light
+uniform not restored)." Read through natively (2026-11-13), not reproduced: nothing in `render/` or the arms' inputs
+is set at a grid crossing and left in place. The held block's tiles and colour (`characters.rs` `block_uniforms`), its
+flood light (`game.rs` `eased_light(ARMS_LIGHT, …)`), the frame block (eye, face sign, the day from `day_on_grid`) and
+the arms' placement are all rebuilt every frame. Suspects, most likely first: (1) `block_uniforms`' fallback colour is
+magenta (`[1, 0, 1]`, untextured) when `dwell_blocks::try_info` doesn't know the held state, and a lit, dimmed magenta
+reads pink: the held id is the hotbar's raw `selected_material()`, never mapped through the session's registry;
+(2) the eye adaptation `adapted_a` (`render/mod.rs`) eases back from face B's look over a few seconds after the
+return; (3) the eased arms light is not reset at `follow_grid` and starts from the moon's last sample while home's
+chunks are missing (open sky). If the pink lasts, check (1) in the browser (`__dwell` the held state id against the
+client's table); if it fades in seconds, (2) or (3). Needs a browser repro (local, GPU) before a red test.
+
 ### 128. A cliff-edge ramp can't be aimed at from above at some angles
 
 Brief, 2026-11-13 (screenshot pass on 0.58, after #856): "Aiming at a cliff-edge ramp: from 2 m back, pitches −35° to
@@ -504,6 +519,32 @@ shallow ramp, maybe same problem with steep ramps too?" Not investigated yet: ta
 face, or the placement check against its shape.
 
 ## Fixed
+
+### 130. A capture or release counted as a ~600 km snap, hiding the real snaps around a moon trip (fixed after 0.58.8)
+
+Second browser moon flight (0.58.8 on facaaaf1, seed 7, M1), brief 2026-11-13: "A grid change counts as a snap (~640 km
+at each capture and release), hiding real snaps around a trip: don't count the crossing's own coordinate change as a
+snap/correction." Cause: when a snapshot's grid differed from the one predicted at its ack (a capture or release the
+prediction made a tick apart from the server's) and the replay ended in another grid than the present's, the
+predictor (`Predictor::on_snapshot`) took the correction as 1e6 m on each axis (1 732 km) and counted a snap, however
+close the two were in the world. Fixed: such a correction is measured in world coordinates, through the travel
+rules' frames at the present's clock (`GridTravel::to_world`, `TravelMap`'s grid frames); only a real difference over
+the snap distance counts, and the render offset is still reset at a crossing. Test `dwell-physics` `tests/predictor.rs`
+`a_crossing_predicted_a_tick_apart_is_no_snap`: a server's move into a grid 600 km off at the same world point; red on
+the unfixed code (1 732 051 m corrected, a snap), green after (0 m, no snap). Note: the trip's dev moves (`moonApproach`
+before the capture, `placeHome` after the release) are real server moves of ~550–640 km and still count as one snap
+each, as any server teleport does; read a trip's snaps net of those two.
+
+### 129. The test tool's flight home left the player in space 2 of 4 times (fixed after 0.58.8)
+
+Same flight: "`flyHome` calls `placeHome` as soon as the client shows the player back on the home grid, but
+`place_home` checks the server, which may not have released the player yet, and answers 'not at home'; the player is
+left in space, and the next `flyTo('moon')` saves that spot as 'home'." Fixed (`client/src/debug/moonTrip.ts`):
+`flyHome` asks `placeHome` again every poll while the answer is "not at home", for at most `PLACE_HOME_S` (10 s), then
+throws; `flyToMoon` saves its start as the trip's home only on home ground (`onHomeGround`: the home grid, the chunk
+under the feet held, outside the release sphere), so a spot in space never becomes "home". Tests `moonTrip.test.ts`
+"waits for the server to release the player before moving it home" and "never saves a spot in space as the next trip
+home" (red on the unfixed code, green after), and "gives up when the server never releases the player".
 
 ### 123. On the moon its ground is not drawn: sky above, stars below (fixed after 0.58.4; the browser check outstanding)
 

@@ -166,6 +166,32 @@ async function until(
   }
 }
 
+/** On the home grid, the chunk under the feet held, and outside the moon's release sphere. */
+export function onHomeGround(m: MoonReport): boolean {
+  return m.grid === 'home' && m.groundHeld && m.distance > m.releaseM;
+}
+
+/** How long `flyHome` asks again while the server hasn't released the player yet (s). */
+export const PLACE_HOME_S = 10;
+
+/**
+ * `placeHome`, asked again every poll while the server still has the player on the moon: the
+ * client shows the release as soon as it predicts it, the server's may come a few ticks later
+ * (BUGS.md #129). Any other error, or still not at home after `PLACE_HOME_S`, throws.
+ */
+async function placeHome(host: TripHost, home: Vec3): Promise<void> {
+  const end = host.now() + PLACE_HOME_S * 1000;
+  for (;;) {
+    const r = await host.placeHome(home);
+    const notYet = r !== null && (JSON.parse(r) as { error?: string }).error === 'not at home';
+    if (!notYet || host.now() >= end) {
+      answer('flyTo home', r);
+      return;
+    }
+    await host.wait(POLL_MS);
+  }
+}
+
 const secondsSince = (host: TripHost, t: number): number => (host.now() - t) / 1000;
 
 /** Flies to the moon and lands (see the file's head). Throws with what failed. */
@@ -174,7 +200,9 @@ export async function flyToMoon(host: TripHost, o: TripOptions = {}): Promise<Mo
   const landM = o.landM ?? 40;
   const held = new Set<string>();
   const start = report(host);
-  const home = start.grid === 'home' ? start.feet : null;
+  // Only home ground is a trip's start: a player left in space by a failed flight home is on the
+  // home grid too, and that spot isn't where to come back to (BUGS.md #129).
+  const home = onHomeGround(start) ? start.feet : null;
   let approach: unknown = null;
   let t = host.now();
   try {
@@ -296,7 +324,7 @@ export async function flyHome(host: TripHost, home: Vec3, o: TripOptions = {}): 
     }
     hold(host, held, []);
     const releaseS = secondsSince(host, t);
-    answer('flyTo home', await host.placeHome(home));
+    await placeHome(host, home);
     t = host.now();
     const back = await until(host, maxS, (m) => m.grid === 'home' && m.groundHeld);
     if (!back)

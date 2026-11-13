@@ -123,6 +123,12 @@ pub trait GridTravel {
     fn far_speed(&self, grid: u8, position: [f64; 3], world_s: f64) -> f32;
     /// A grid's gravity scale (home 1).
     fn gravity_scale(&self, grid: u8) -> f32;
+    /// A grid-local point of `grid` in world coordinates at `world_s` (home's are the world's):
+    /// a correction across grids is measured there, not across two frames' coordinates.
+    fn to_world(&self, grid: u8, position: [f64; 3], world_s: f64) -> [f64; 3] {
+        let _ = (grid, world_s);
+        position
+    }
     /// The world clock (s) of a server tick.
     fn world_s(&self, server_tick: i64) -> f64 {
         server_tick as f64 / 60.0
@@ -638,9 +644,13 @@ impl Predictor {
 
         // Mispredicted (or history lost): restart from the server's state at `ack` and replay.
         self.stats.replays += 1;
-        // A correction across grids is measured in the server's grid (where the player is now).
+        // A correction across grids (a capture or release the prediction made a tick apart from
+        // the server's) is measured in world coordinates: the frames' own coordinate change is no
+        // correction (BUGS.md #130).
         let grid_before = self.grid;
         let before = self.position();
+        let present = self.latest_seq;
+        let world_before = self.world_point(grid_before, before, present);
         self.regrid(server_grid, server_position, server_velocity);
         let h = self.handle.expect("active");
         let known = known && e.grid == server_grid;
@@ -672,10 +682,16 @@ impl Predictor {
         self.latest_seq = self.latest_seq.max(ack);
         self.replay(world, ack + 1);
         let bumped = bumped || self.touched_since(ack);
-        let correction = if self.grid == grid_before {
+        let crossed = self.grid != grid_before;
+        let correction = if !crossed {
             (before - self.position()).as_vec3()
+        } else if let (Some(b), Some(a)) = (
+            world_before,
+            self.world_point(self.grid, self.position(), present),
+        ) {
+            (b - a).as_vec3()
         } else {
-            Vec3::splat(1.0e6) // positions of two grids' frames: snapped
+            Vec3::splat(1.0e6) // no travel rules to relate the frames: snapped
         };
         self.stats.last_correction = correction.length();
         // Just after a carry, its clock's slip moves the player by up to the grids' relative
@@ -694,9 +710,24 @@ impl Predictor {
         if self.stats.last_correction > snap {
             self.offset = Vec3::ZERO;
             self.stats.snaps += 1;
+        } else if crossed {
+            // A small correction across grids isn't smoothed: the offset is the new frame's.
+            self.offset = Vec3::ZERO;
         } else {
             self.offset += correction;
         }
+    }
+
+    /// Grid-local `p` of `grid` in world coordinates after the tick of input `seq`, or `None`
+    /// without the travel rules or the server's clock.
+    fn world_point(&self, grid: u8, p: DVec3, seq: u32) -> Option<DVec3> {
+        let (travel, off) = (self.travel.as_ref()?, self.tick_of_seq?);
+        let world_s = travel.world_s(i64::from(seq) + off);
+        Some(DVec3::from_array(travel.to_world(
+            grid,
+            p.to_array(),
+            world_s,
+        )))
     }
 
     /// A server knockback (PlayerEvent) applied after the pipeline of input `input_seq`.

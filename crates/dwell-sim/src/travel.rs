@@ -294,6 +294,10 @@ impl dwell_physics::predictor::GridTravel for TravelMap {
     fn gravity_scale(&self, grid: u8) -> f32 {
         self.def(grid).map_or(1.0, |g| g.1.gravity_scale as f32)
     }
+
+    fn to_world(&self, grid: u8, p: V3, world_s: f64) -> V3 {
+        self.frame(grid, world_s).to_world(p)
+    }
 }
 
 /// One grid's simulation space: its chunks, physics and players, in its local frame.
