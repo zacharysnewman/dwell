@@ -5358,7 +5358,25 @@ impl<S: Scene> Game<S> {
         // far disc not drawn (MOON_WORLD.md §7.3).
         if let Some(m) = self.travel.as_ref().filter(|_| self.grid_drawn != 0) {
             let frame = m.frame(self.grid_drawn, world_s);
+            let sun = self.day.sun;
             self.day = crate::grid_view::day_on_grid(&self.day, &frame, self.grid_drawn);
+            // Its light rig (BUGS.md #144): the bodies lighting it from where they are.
+            let all = dwell_worldgen::grids::grids();
+            if let Some(rig) = all
+                .get(usize::from(self.grid_drawn))
+                .and_then(|d| d.light.as_ref())
+            {
+                let centre = dwell_sim::travel::GRID_CENTRE;
+                let home_r = self.world_bounds.radius() as f64;
+                let body = |name: &str| {
+                    let def = all.iter().find(|d| d.name == name)?;
+                    let f = dwell_sim::travel::grid_frame_at(&m.celestial, def, world_s);
+                    Some((f.to_world(centre), def.radius_m.unwrap_or(home_r)))
+                };
+                let eye = frame.to_world(self.current.position);
+                let lights = crate::grid_light::rig_lights(rig, eye, &frame, sun, body);
+                crate::grid_light::apply(&mut self.day, rig, lights);
+            }
         }
         // The moon drawn up close as its mesh (M-5): its far disc in the sky not drawn too.
         let eye = self.current.position;

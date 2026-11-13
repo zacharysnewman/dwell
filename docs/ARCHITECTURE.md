@@ -1111,8 +1111,15 @@ grid having no air: `grids.json` `atmosphere`, DAY_NIGHT.md §15; the view easin
 `gridCrossingRollS` at a crossing; the maps hidden with a label while away). **The moon up close [built,
 M-5, 2026-11-13]:** a grid with a `nearMesh` (`grids.json`) is drawn nearer than its `farM` as a coarse
 mesh of its surface (`dwell-client` `grid_bodies.rs`, from its `FarSource`, both faces) at its pose in the
-drawn frame, a piece the shadows skip, the far disc then hidden; on the grid itself the same mesh at the
-identity, sunk under the ground so its chunks cover it. The server
+drawn frame, a piece the shadows skip, the far disc then hidden. **On a grid [built, 0.63.0; BUGS.md #142–#144]:**
+its distant terrain is its `lod` (`grids.json`): square rings of its surface from its `FarSource` centred on the
+viewer, quads doubling per level, past its disc's rim, sunk so the chunks cover them, recentred a few a frame
+(`dwell-client` `grid_lod.rs`; home keeps its own LOD tree). Home has no sky disc (`skyDisc` false): from the moon
+its `nearMesh`, made from its world maps (`HomeFar`), is drawn at its place at every distance (M-6). A grid's
+`light` rig lights it (`grid_light.rs`): the sun kept or not (`sunlit`), up to two bodies by the sunlight they
+reflect (albedo × phase × apparent size², toward them; the `DaySky` uniform's `rig0`/`rig1`, added in
+`lambert_lit`), an ambient floor and a ground `glow` (the sun's lava); on the moon its own halo and moonlight, on
+the sun its own disc and halo, are not drawn. Grid generators shape stored ramps by their `ramps` rule. The server
 sends a `grid.frames` client the moon's chunks as voxels and forgets its home stream at the capture, so
 home streams again from nothing on the release.
 

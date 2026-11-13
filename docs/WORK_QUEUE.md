@@ -1205,6 +1205,8 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    per grid as data: the bodies that light it (their reflected light by albedo, phase and apparent size), a minimum
    ambient, and on the sun a warm lava glow from below; home's lighting unchanged. BUGS.md #142–#144. Branch
    `claude/moon-fixes-3-l0zjdx`.
+   **Built natively (0.63.0, a new line):** all five (BUGS.md #142–#144 say how; MOON_WORLD.md §7.3). **Left:** the
+   browser look on a GPU (`moon-draw`, `sun-draw`); shadows from the rig's lights; the rig on water and characters.
 28. **An atmosphere: the sky thinning to space** (owner 2026-11-12: "We likely need an atmosphere transition now
    between sky thinning to space. Clouds shouldn't extend past the earth atmosphere either."). With flight to the
    moon, climbing should fade the sky's scattering to black space with stars by day, the horizon glow becoming a

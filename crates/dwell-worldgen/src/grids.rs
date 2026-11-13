@@ -81,6 +81,9 @@ pub struct GridDef {
     /// The terrain drawn past the chunks while on it (`lod`, MOON_WORLD.md §5; BUGS.md #142):
     /// rings of its surface out to its horizon; `None` draws none (home has its own LOD tree).
     pub lod: Option<GridLodRule>,
+    /// What lights its ground while on it (`light`, BUGS.md #144); `None`: home's keyframes as
+    /// they are (home, and a grid that declares none).
+    pub light: Option<LightRig>,
     pub generator: GridGenerator,
     /// The capability a client must say before the server captures it into this grid
     /// (`shared/protocol/capabilities.json`; the sun's `grid.sun`, docs/proposals/SUN_WORLD.md §5):
@@ -103,6 +106,99 @@ impl GridDef {
 pub struct NearMesh {
     pub cells: usize,
     pub sink_m: f64,
+}
+
+/// A body that lights a grid by the sunlight it reflects (`light.bodies`): another grid by name,
+/// its colour (`albedo`, sRGB) and its light (`intensity`, linear) when seen full at `refDeg` in
+/// angular radius; the light at a moment is that × the share of its disc lit as the viewer sees it
+/// (its phase) × (its angular radius / `refDeg`)², toward its true direction.
+#[derive(Clone, Debug, PartialEq)]
+pub struct LitBy {
+    pub grid: String,
+    pub albedo: [f64; 3],
+    pub intensity: f64,
+    pub ref_deg: f64,
+}
+
+/// A grid's light rig (`light`): whether the sun lights it (`sunlit`: its light and direction are
+/// the sky's keyframes', turned into the grid's frame), the bodies that light it by their reflected
+/// light (at most [`MAX_LIT_BY`]), the least ambient light its ground gets (`ambient`: an sRGB
+/// colour × `min`, linear), and a glow from its own ground (`glow`: an sRGB colour × `intensity`,
+/// lighting surfaces from below and around: the sun's lava).
+#[derive(Clone, Debug, PartialEq)]
+pub struct LightRig {
+    pub sunlit: bool,
+    pub bodies: Vec<LitBy>,
+    pub ambient: [f64; 3],
+    pub ambient_min: f64,
+    pub glow: Option<([f64; 3], f64)>,
+}
+
+/// The most bodies a grid's light rig lists (the shaders' rig lights).
+pub const MAX_LIT_BY: usize = 2;
+
+/// `#rrggbb` as sRGB 0–1.
+fn colour(v: &Value, path: &str, at: &str) -> Result<[f64; 3], String> {
+    let s = get(v, path, at)?
+        .as_str()
+        .and_then(|s| s.strip_prefix('#'))
+        .filter(|s| s.len() == 6)
+        .and_then(|s| u32::from_str_radix(s, 16).ok())
+        .ok_or_else(|| format!("{at}: `{path}` must be a colour \"#rrggbb\""))?;
+    Ok([(s >> 16) & 0xff, (s >> 8) & 0xff, s & 0xff].map(|c| f64::from(c) / 255.0))
+}
+
+fn light_rig(g: &Value, at: &str) -> Result<Option<LightRig>, String> {
+    let Some(l) = g.get("light") else {
+        return Ok(None);
+    };
+    let sunlit = get(l, "sunlit", at)?
+        .as_bool()
+        .ok_or_else(|| format!("{at}: `light.sunlit` must be true or false"))?;
+    let list = get(l, "bodies", at)?
+        .as_array()
+        .ok_or_else(|| format!("{at}: `light.bodies` must be a list"))?;
+    if list.len() > MAX_LIT_BY {
+        return Err(format!(
+            "{at}: `light.bodies` lists at most {MAX_LIT_BY} bodies"
+        ));
+    }
+    let bodies = list
+        .iter()
+        .enumerate()
+        .map(|(i, b)| {
+            let at = format!("{at} light.bodies[{i}]");
+            Ok(LitBy {
+                grid: get(b, "grid", &at)?
+                    .as_str()
+                    .filter(|n| n.contains(':'))
+                    .ok_or_else(|| format!("{at}: `grid` must name a grid"))?
+                    .to_owned(),
+                albedo: colour(b, "albedo", &at)?,
+                intensity: num(b, "intensity", &at).and_then(|v| {
+                    (v >= 0.0)
+                        .then_some(v)
+                        .ok_or_else(|| format!("{at}: `intensity` must be ≥ 0"))
+                })?,
+                ref_deg: positive(b, "refDeg", &at)?,
+            })
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    let a = get(l, "ambient", at)?;
+    let glow = match l.get("glow") {
+        None => None,
+        Some(gl) => Some((
+            colour(gl, "color", &format!("{at} light.glow"))?,
+            positive(gl, "intensity", &format!("{at} light.glow"))?,
+        )),
+    };
+    Ok(Some(LightRig {
+        sunlit,
+        bodies,
+        ambient: colour(a, "color", &format!("{at} light.ambient"))?,
+        ambient_min: num(a, "min", &format!("{at} light.ambient"))?.max(0.0),
+        glow,
+    }))
 }
 
 /// A grid's distant terrain while on it (`lod`): `levels` square rings of its surface centred on
@@ -541,6 +637,12 @@ pub fn parse_grids(text: &str) -> Result<Vec<GridDef>, String> {
                 Some(rule)
             }
         };
+        let light = light_rig(g, &at)?;
+        if frame == GridFrameKind::Rest && light.is_some() {
+            return Err(format!(
+                "{at}: home is lit by its sky's keyframes (no `light`)"
+            ));
+        }
         if frame == GridFrameKind::Rest && capture_m.is_some() {
             return Err(format!(
                 "{at}: the grid at rest captures nobody (no `captureM`)"
@@ -596,6 +698,7 @@ pub fn parse_grids(text: &str) -> Result<Vec<GridDef>, String> {
             near_mesh,
             sky_disc,
             lod,
+            light,
             generator,
             capability,
         });
@@ -607,6 +710,16 @@ pub fn parse_grids(text: &str) -> Result<Vec<GridDef>, String> {
         != 1
     {
         return Err("grids: exactly one grid must be at rest (the home world)".into());
+    }
+    for d in &out {
+        for b in d.light.iter().flat_map(|l| &l.bodies) {
+            if b.grid == d.name || !out.iter().any(|o| o.name == b.grid) {
+                return Err(format!(
+                    "grid `{}`: `light.bodies` names `{}`, not another grid of the list",
+                    d.name, b.grid
+                ));
+            }
+        }
     }
     let mut salts: Vec<u32> = out.iter().filter_map(|d| d.seed_salt).collect();
     salts.sort_unstable();

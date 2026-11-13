@@ -479,6 +479,11 @@ impl DayNight {
             clouds_shown: true,
             airless: false,
             on_moon: false,
+            on_sun: false,
+            rig: [RigLight::default(); 2],
+            sun_off: false,
+            hemi: None,
+            hemi_floor: [0.0; 3],
         }
     }
 }
@@ -520,6 +525,27 @@ pub struct DayState {
     /// [`DayNight::state`]): its sky has no moon halo and its ground no moonlight, as well as no
     /// disc (BUGS.md #142).
     pub on_moon: bool,
+    /// Whether the viewer stands on the sky's sun itself (`dwell:sun`): its sky draws no sun disc
+    /// or sun halo (BUGS.md #144).
+    pub on_sun: bool,
+    /// A grid's light rig's lights (`grids.json` `light.bodies`, BUGS.md #144): the bodies that
+    /// light it by their reflected light, both faces; zero on home.
+    pub rig: [RigLight; 2],
+    /// The sun lights nothing (`light.sunlit` false: the viewer is on the sun).
+    pub sun_off: bool,
+    /// The hemisphere's sky and ground light (linear) in place of the keyframes' on both faces
+    /// (a light rig's ambient and glow); `None` the keyframes'.
+    pub hemi: Option<(Rgb, Rgb)>,
+    /// The least hemisphere light (linear, each channel) on both faces: a light rig's `ambient`.
+    pub hemi_floor: Rgb,
+}
+
+/// A directional light of a grid's light rig: toward it (unit, the drawn frame) and its linear
+/// colour × intensity; zero is none.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct RigLight {
+    pub direction: Rgb,
+    pub light: Rgb,
 }
 
 impl Default for DayState {
@@ -650,11 +676,28 @@ impl DayState {
             pixel_angle,
             moon_glow,
         ]);
+        let sun_k = if self.sun_off { 0.0 } else { 1.0 };
         for s in [&self.a, &self.b] {
-            put(lit(s.sun_light, s.sun_intensity));
+            put(lit(s.sun_light, s.sun_intensity * sun_k));
             put(lit(s.moon_light, s.moon_intensity * moon_light));
-            put(lit(s.hemi_sky, s.hemi_intensity));
-            put(lit(s.hemi_ground, s.hemi_intensity));
+            let floor = |c: [f64; 4]| {
+                [
+                    c[0].max(self.hemi_floor[0]),
+                    c[1].max(self.hemi_floor[1]),
+                    c[2].max(self.hemi_floor[2]),
+                    0.0,
+                ]
+            };
+            match self.hemi {
+                Some((sky, ground)) => {
+                    put(floor([sky[0], sky[1], sky[2], 0.0]));
+                    put(floor([ground[0], ground[1], ground[2], 0.0]));
+                }
+                None => {
+                    put(floor(lit(s.hemi_sky, s.hemi_intensity)));
+                    put(floor(lit(s.hemi_ground, s.hemi_intensity)));
+                }
+            }
         }
         // The other face's sky, for the rays that cross into its air: down a shaft, or past the
         // rim (docs/BUGS.md 10, 13); y its fog density (× the fog data's).
@@ -663,10 +706,11 @@ impl DayState {
         put(with(o.glow, o.glow_strength));
         put(with(o.band, o.band_strength));
         put(with(o.sun_disc, o.moon_glow * moon_glow));
+        // z: the viewer is on the sun (its disc and halo not drawn, BUGS.md #144).
         put([
             self.air.stars(o.stars),
             self.fog_density(face.other()),
-            0.0,
+            if self.on_sun { 1.0 } else { 0.0 },
             0.0,
         ]);
         // The viewer's air (docs/DAY_NIGHT.md §15): x the thinning, y the limb's elevation sine.
@@ -674,6 +718,11 @@ impl DayState {
         // w: the moon's far disc drawn (1) or not (0: the viewer is on the moon).
         let shown = if self.moon_shown { 1.0 } else { 0.0 };
         put([self.air.thin, self.air.limb, self.air.limb_weight, shown]);
+        // A grid's light rig (BUGS.md #144): each light's direction and linear light.
+        for r in &self.rig {
+            put([r.direction[0], r.direction[1], r.direction[2], 0.0]);
+            put([r.light[0], r.light[1], r.light[2], 0.0]);
+        }
         u
     }
 }
@@ -709,7 +758,7 @@ impl EyeAdaptation {
 }
 
 /// Floats in the `DaySky` uniform block.
-pub const DAY_SKY_FLOATS: usize = 24 * 4;
+pub const DAY_SKY_FLOATS: usize = 28 * 4;
 
 /// The uniform block the renderer's frame carries (`frame.day`): the cycle's state for this frame.
 /// Sky colours are sRGB (the sky is drawn in output colour); lights are linear × intensity. Clouds
@@ -752,6 +801,12 @@ struct DaySky {
     // ground's sky, exactly), y the limb's elevation sine in the viewer's face's frame, z how much
     // of the limb shows (0 for a viewer far past the rim), w whether the moon's far disc is drawn.
     space: vec4f,
+    // A grid's light rig (grids.json `light.bodies`, BUGS.md #144): each light's direction (xyz,
+    // toward it) and its linear light (rgb); zero on home.
+    rig0_dir: vec4f,
+    rig0: vec4f,
+    rig1_dir: vec4f,
+    rig1: vec4f,
 };
 ";
 
@@ -1063,10 +1118,12 @@ mod tests {
     /// else it does, as before.
     #[test]
     fn the_moons_disc_is_drawn_unless_the_viewer_is_on_it() {
+        // `space.w`, the 24th vec4's last float.
+        const SPACE_W: usize = 23 * 4 + 3;
         let day = D.state(0.0, Some(0.0), Some(0.5));
         assert!(day.moon_shown);
         assert_eq!(
-            day.pack(FaceFrame::A, 1.0, 0.0, 0.001)[DAY_SKY_FLOATS - 1],
+            day.pack(FaceFrame::A, 1.0, 0.0, 0.001)[SPACE_W],
             1.0
         );
         let away = DayState {
@@ -1074,10 +1131,10 @@ mod tests {
             ..day
         };
         let u = away.pack(FaceFrame::A, 1.0, 0.0, 0.001);
-        assert_eq!(u[DAY_SKY_FLOATS - 1], 0.0);
+        assert_eq!(u[SPACE_W], 0.0);
         assert_eq!(
-            &u[..DAY_SKY_FLOATS - 1],
-            &day.pack(FaceFrame::A, 1.0, 0.0, 0.001)[..DAY_SKY_FLOATS - 1]
+            &u[..SPACE_W],
+            &day.pack(FaceFrame::A, 1.0, 0.0, 0.001)[..SPACE_W]
         );
         assert!(crate::sky_wgsl().contains("day.space.w < 0.5"));
     }

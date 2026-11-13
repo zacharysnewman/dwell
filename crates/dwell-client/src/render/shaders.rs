@@ -437,7 +437,10 @@ fn lambert_lit(albedo: vec3f, n: vec3f, frag_y: f32, l: TerrainLight) -> vec3f {
     // preview's toon levels when it is on (`band`; smooth otherwise).
     let ks = band(max(dot(n, d.sun.xyz), 0.0) * own(d.sun.xyz, face) * l.direct, frame.pixel_art.x);
     let km = band(max(dot(n, d.moon.xyz), 0.0) * own(d.moon.xyz, face) * l.direct, frame.pixel_art.x);
-    let direct = ks * sun + km * moon;
+    // A grid's light rig (BUGS.md #144): the bodies lighting it by their reflected light.
+    let k0 = band(max(dot(n, d.rig0_dir.xyz), 0.0) * own(d.rig0_dir.xyz, face) * l.direct, frame.pixel_art.x);
+    let k1 = band(max(dot(n, d.rig1_dir.xyz), 0.0) * own(d.rig1_dir.xyz, face) * l.direct, frame.pixel_art.x);
+    let direct = ks * sun + km * moon + k0 * d.rig0.rgb + k1 * d.rig1.rgb;
     let ambient = band(l.ambient, frame.pixel_art.y);
     // The preview's hue-shifted shadows: the sky light where the sun doesn't reach takes the
     // tint's hue (the block light and torches keep theirs).

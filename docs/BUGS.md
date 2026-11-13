@@ -554,6 +554,16 @@ lighting, let's make it from the earth and moon reflections." / "Sun should also
 lava'." As #142 on the moon; and the sun's ground is lit by home's sunlight keyframes turned into its frame (the sun
 lights nothing from inside it). WORK_QUEUE items 27, 42.
 
+**Fixed (0.63.0, natively; the browser look a local check on a GPU):** the sun's rings to its horizon as #142's;
+a light rig per grid (`grids.json` `light`, `dwell-client` `grid_light.rs`): the sun `sunlit` false, lit by home and
+the moon from their true directions by albedo × phase × (apparent size)², an ambient floor and its lava `glow` from
+below; its own sun disc and halo not drawn there (`DayState::on_sun`). Tests (both faces): `grid_light`
+`on_the_sun_the_ground_is_lit_from_home_and_the_moon` (lit side toward home, the strength by the phase),
+`the_sun_glows_warm_from_below_and_the_moon_and_home_do_not`, `homes_lighting_is_unchanged`,
+`on_the_moon_home_is_a_faint_fill`; `grid_lod` `on_the_sun_its_terrain_is_drawn_to_its_horizon`. Not done:
+shadows from home's or the moon's light (the shadow maps follow the sun's direction); the rig lights terrain and
+pieces (`lambert_lit`), not yet water or characters.
+
 ### 143. The moon's ground is ½ m steps with no ramps
 
 Owner, 0.61, iPhone, 2026-11-13: "And moon rock should have slopes, seems to only be generating half blocks." 0.59 gave
@@ -561,12 +571,27 @@ moon dust its ramp family (HALF_HEIGHT_GRID.md §10), but the `cratered` generat
 `CrateredTerrain::generate`) fills each column with full cells to its top row and never runs the §4 rule. WORK_QUEUE
 item 27.
 
+**Fixed (0.63.0, a new compatibility line: the moon's terrain changes):** a grid generator's `ramps` (`none`, `strict`,
+`notched`; the moon `notched`, home's Realistic rule; HALF_HEIGHT_GRID.md §10). Red → green:
+`dwell-worldgen` `tests/grids.rs` `moon_slopes_are_ramps_not_bare_half_metre_stairs` (both faces): every ½ m edge bare
+before, under 1 % after (the strict rule left 36–43 %).
+
 ### 142. The moon draws no terrain past its chunks; a cratered disc in its own sky; home not in it
 
 Owner, 0.61, iPhone, 2026-11-13: "3 things on the moon: it doesn't seem to have real LODs, can't see terrain very far in a
 meaningful way. Is there a moon visible from the moon?" Screenshots: standing on the moon the ground ends at the chunk
 distance in a flat pale band (M-5's coarse near mesh, under the chunks), then black sky; looking up, a cratered disc in
 the starry sky; home is not drawn (M-6's drawing not built). WORK_QUEUE item 27.
+
+**Fixed (0.63.0, natively; the browser look a local check on a GPU):** (1) the sky on the moon drew no moon disc
+already (#869), but still packed the moon's halo, its water glint and its moonlight: `DayState::on_moon` zeroes them
+(red → green: `grid_view` `the_moon_is_never_in_its_own_sky`, both faces, 108 moments, failed on the halo). The
+cratered disc in the screenshot is most likely the **sun**: its disc is shaded by the sun world's baked crust and
+cones (S-3, `sun.surface` 0.45) and goes white in space. (2) The moon's (and the sun's) terrain past the chunks:
+`grids.json` `lod`, rings of the grid's real surface round the viewer out past its rim (`dwell-client` `grid_lod.rs`),
+in place of M-5's identity mesh on the grid (tests: `grid_lod` on both faces, `game_local`
+`the_moon_up_close_is_its_surface_mesh_then_under_its_chunks`). (3) Home in the moon's sky (M-6): home's `nearMesh`
+from its world maps (`HomeFar`), drawn from the moon at its true place and size (`skyDisc` false).
 
 ### 141. Lava expired into rock and "all just goes away" (fixed after 0.60.11)
 

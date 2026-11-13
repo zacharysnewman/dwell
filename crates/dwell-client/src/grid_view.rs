@@ -30,6 +30,9 @@ pub fn day_on_grid(day: &DayState, frame: &GridFrame, grid: u8) -> DayState {
         on_moon: dwell_worldgen::grids::grids()
             .get(usize::from(grid))
             .is_some_and(|g| g.name == crate::render::moon::MOON_GRID),
+        on_sun: dwell_worldgen::grids::grids()
+            .get(usize::from(grid))
+            .is_some_and(|g| g.name == crate::render::moon::SUN_GRID),
         ..*day
     }
 }
