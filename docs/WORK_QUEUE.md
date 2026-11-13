@@ -617,6 +617,15 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    terrain and Sky; the layers' square-past-the-disc overdraw fixed (REALISTIC_WORLD.md R6). The phone page's total at
    load (bench `--touch`, `memory-phone`): Realistic 570 MiB against the starter's 655 MiB.
    **Not done:** the overlays in Chisel (next with its other overlays); O3.
+   Owner, 2026-11-12, on the R6 check's screenshots: **"Is that screenshot from realistic world. Is all of our terrain
+   still stepped? I like stepped terrain but it should be system driven not across the whole realistic world"**. Today
+   the `cliffs` terrain volume (volume.json, the default terrain's terraces: stepped country and escarpments on steep
+   hillsides by a 600 m noise field and every steep mountainside) shapes every world, Realistic included. Next (after
+   video 2): in Realistic worlds steps come from the geology system instead — rocks.json's jointing (`bedded`
+   sedimentary stacks step every `bed` m into walls and treads, `vertical` basalt stands as columns, `massive` granite
+   rises unstepped) with the R5 rock provinces and `shaping`/`erosion` (mesas and scarps in arid sedimentary basins,
+   smooth slopes on granite cores and soils), and the global cliffs volume off for Realistic (data: realistic.json's
+   terrain volume and its rocks shaping strength). A Realistic-only terrain change (the default world unchanged).
 16. **Phone frame rate (P0)** (owner 2026-11-11, iPhone 17, Safari, setting Low: "I'm only getting ~23 fps on
    mobile, seeing lots of z-fighting on tree trunks with the leaf cards. What might be dropping frames since the
    last while. Used to get 60 fps"). Suspect: leaf cards are on in every tier but CPU, Low included; cards lying
