@@ -1424,6 +1424,20 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    log wall, which would vanish past 48 m with no impostor: needs an owner call); I-4 (`lod_trees.rs` still draws
    the far trees until the impostors are ready, BUGS.md #106's gate, and for `?impostors=0` / the bench's
    `impostors-off`); I-5 shadows (GPU work, local).
+   **Doubled, half-faded impostors (owner, 2026-11-13, with two screenshots; BUGS.md #154):** "There seems to be
+   doubled partially faded imposters, they can't fade slowly based on distance alone because they are obviously
+   faded. Not sure why there's 2 and they seem to split and combine as you fly up and down in front of them. It can
+   be a fade transition but it shouldn't ever be partial transitions over distance, but over time. Does that make
+   sense?" Owner should see: flying toward and away from a forest, trees swap between near and far with a brief
+   fade, never a steady half-faded or doubled tree, and no copies sliding apart as you fly up and down.
+   **Built (2026-11-13, cloud, `claude/impostor-fade-time-biapw1`):** the hand-over is per tree and in time: near or
+   impostor by distance with hysteresis (`far.tiers.on` `inM` 54 / `outM` 58, replacing `fromM`/`fadeM`), each switch
+   a `fadeS` 0.3 s cross-fade (`render/tree_fade.rs`: a byte map of each tree's near share about the eye, group 0
+   binding 21, read by the leaves per fragment and by the impostor at its foot); the views 6 azimuths × 0/20/40/60°
+   + top (was 8 × 0/40°), the crown's silhouette within 0.27 m of the real one's from any height (was 0.55 m).
+   **For the orchestrator (local GPU):** fly toward, away from and up and down in front of `forest:edge`; expected:
+   no steady half-faded tree at any distance, a ~0.3 s swap as a tree crosses ~56 m, no copy sliding up and down;
+   and a `forest-perf` run (the map adds one storage lookup per leaf fragment and impostor; the atlas 1.25×).
 32. **A tall dense forest for performance reference** (owner 2026-11-12: "We should have a tall dense forest
    biome/climate for performance reference on trees."). A biome preset (tall, closely spaced mature trees — an
    old-growth temperate rainforest of tall pines and broadleaf, thick undergrowth) placed by climate (cool and very
@@ -1751,6 +1765,14 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    feet that didn't line up / seemed to be floating?"** **Fixed (BUGS.md #142):** your first-person body was moved
    back whole (0.1–0.4 m) off its feet and their shadow; it now leans back from its soles, which stand where you do
    on flat ground, ramps and slopes.
+   Owner, 2026-11-13: **"Can you make a collection of skin tone ranges with hair color ranges so it's not completely
+   random. Also, face should always match arms, etc. shouldn't have different skin colors on different skin parts."**
+   **Built (BUGS.md #152):** `shared/creatures/appearance.json` holds the skin tones (ten, porcelain to ebony) and, for
+   each, the hair colours that go with it by weight (light skins blond, ginger, auburn, brown; deep skins mostly black
+   and dark brown); a villager picks a tone from its seed, then a hair colour from that tone's list; clothes keep their
+   own `colours`. Every skin vertex draws the one tone (the neck and jaw had been a ramp darker than the face and
+   arms). No eyebrows exist on the Peasant yet (when they do, they take the hair colour). Owner should see: a lineup
+   of villagers with natural, consistent skin across face, neck, arms and hands, and hair colours that suit each tone.
 39. **Livelier animals** (owner 2026-11-12, after the video had no chase or fleeing — on day one every pack is
    kilometres from any herd and players can't scare deer): chose **deer flee from players** (they notice a player
    within a distance by data, closer when crouching, and run off; wolves keep their distance unless hungry),
@@ -2580,6 +2602,13 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    [MAP_MARKERS.md](MAP_MARKERS.md) — the icon set, palette and auto kinds as data (`shared/ui/markers.json` →
    `markers.gen.ts`), a player's markers as one record per device key in the world's optional `markers` table,
    synced to that player only behind the `markers.private` capability.
+   **Bug, owner 2026-11-13:** **"Another bug, Im not sure if it's because I was flying high at the time, but the
+   portal indicator showed up several hundred meters in the air over the portal."** Fixed after 0.63.3 (BUGS.md
+   #153): a seen portal's marker stands at its opening's height from the generator (the portal shafts), never the
+   player's; a marker placed over unloaded ground is put back on it when its column loads, and a saved one far above
+   its ground (or a portal's above its opening) is corrected once seen. **Owner should see:** fly a few hundred
+   metres up over a portal you have not seen yet: its marker appears on the rim, not at your height; an old floating
+   portal marker drops onto its rim when you come back within the render radius.
 
 54. **Resurrection shrines** (owner 2026-11-12: **"And then we want to add 'resurrection shrines' these should work like
    Guild Wars. You respawn at the nearest shrine when you die."** / **"We'll have to spread these pretty thick across

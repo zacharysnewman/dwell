@@ -547,6 +547,67 @@ face, or the placement check against its shape.
 
 ## Fixed
 
+### 154. Far trees drew doubled and half faded at the hand-over, splitting as the eye flew up and down
+
+Owner, 2026-11-13, with two screenshots: "There seems to be doubled partially faded imposters, they can't fade
+slowly based on distance alone because they are obviously faded. Not sure why there's 2 and they seem to split and
+combine as you fly up and down in front of them. It can be a fade transition but it shouldn't ever be partial
+transitions over distance, but over time. Does that make sense?" The shots: pines at the hand-over distance drew
+both the near leaves (dithered, half faded) and the impostor (dithered, half faded) at once, the two copies offset
+and sliding apart and together as the camera moved up and down. WORK_QUEUE item 31.
+
+Owner should see: flying toward and away from a forest, trees swap between near and far with a brief fade, never a
+steady half-faded or doubled tree, and no copies sliding apart as you fly up and down.
+
+**Cause:** (1) the hand-over was a blend by distance (`fromM` 48 over `fadeM` 16): every tree 48–64 m off drew
+both copies, each on its share of the pixels, for as long as the eye stayed there. (2) The impostor dithered
+between baked views 40° apart in elevation (0° and 40°), which see different silhouettes: from a rising eye two
+crowns up to 0.55 m apart (vertically) were interleaved, their weights shifting with the height.
+
+**Fixed (natively; the browser look a local check on a GPU):** (1) each tree is in one state, its real leaves or its
+impostor, switched by its crown's distance with hysteresis (`impostors.json` `far.tiers.on` `inM` 54, `outM` 58)
+and cross-faded over `fadeS` 0.3 s at each switch (client `render/tree_fade.rs`: per-tree states, a byte map of
+the near share about the eye that the leaves read at their fragment and the impostor at its tree's foot, so a
+tree's leaves and its impostor fade as one). Tests (both faces): `a_still_eye_sees_no_half_faded_tree_at_any_distance`,
+`crossing_the_switch_fades_once_over_time`, `the_gap_between_in_and_out_keeps_a_tree_from_flickering`,
+`a_crown_reads_its_trees_state_and_an_unbaked_tree_stays_real`; the old distance blend (`Far::share`, 0.5 at 56 m)
+is gone and a tier naming `fadeM` fails to parse. (2) The view layout is 6 azimuths × 0°, 20°, 40°, 60° + the top
+(25 views, the atlas 1.25× the bytes; the phone's 14 MB): `impostor`
+`the_impostor_registers_with_the_real_crown_as_the_eye_rises` (pine and oak, the eye from 3° to 65° up) red
+before (0.55 m off, overlap 0.65), 0.27 m and 0.68 after. Tried and dropped (each measured worse or no better): an
+upright proxy plane per view, a depth-refined reprojection, a narrower blend between views. Left: during the
+0.3 s fade the impostor is a baked seed variant, not the tree itself, so the two shapes differ for that moment.
+### 153. A portal's marker floated hundreds of metres above the portal (fixed after 0.63.3)
+
+Owner, 2026-11-13: "Another bug, Im not sure if it's because I was flying high at the time, but the portal indicator
+showed up several hundred meters in the air over the portal." Cause: a seen portal's marker took its rim's loaded top,
+read only within 256 m of the eye (`map_markers::ground`); flying higher, nothing was found (NaN), and the shell's
+fallback chain (`markerGroundY`: the map's height, else **the player's height**) put the marker at the player's
+altitude; `noteAuto` never moved a portal marker once noted, so it stayed there for good. Now `seen_portals` gives the
+opening's height from the generator's shafts (`world.portals`, the same the controller's exit push uses), known from
+the seed wherever the player is; an unknown height takes only the map's (provisional) or waits, never the player's; a
+portal seen again at its known height corrects its marker (the saved bad ones too); a marker placed on the map over
+unloaded ground is put back on its ground once the column loads, and one saved more than `regroundAboveM` (8 m,
+`shared/ui/markers.json`) above its loaded ground is corrected (`regroundMarkers`). Tests: `dwell-client`
+`a_portal_seen_from_far_overhead_stands_at_its_openings_height` (both faces; red: `[1.0, 10.5, NaN, 0.5]`),
+`markers.test.ts` "never notes a portal at the player height while flying high over it", "corrects a saved portal
+marker far above its opening when the portal is seen again", "puts placed markers back on their ground once it loads"
+(red on the old code: 472 kept, `regroundMarkers` missing).
+
+### 152. A villager's neck and jaw were another skin colour than its face and arms (fixed after 0.63.3)
+
+Owner, 2026-11-13: "face should always match arms, etc. shouldn't have different skin colors on different skin parts."
+The Peasant's skin part is modelled in two ramps (skin_fair face and arms, a skin_tan neck and jaw), and the recolour
+kept a vertex's whole shade of the part's base, so the neck and jaw drew 0.83 of the tone: a second skin. Skin and
+hair also came from independent random lists (a deep skin with blond hair as often as black). Now the skin and hair
+come from `shared/creatures/appearance.json` (tones, each with its hair colours), and the skin part keeps only the
+set's `shade` share (0.25) of the modelled shading. Tests: `dwell-client`
+`every_skin_vertex_of_a_villager_draws_its_one_skin_tone` (200 villagers, every level; red at a share of 1: "skin
+vertex 693 draws … x0.83"), `dwell-sim` `a_villagers_hair_always_goes_with_its_skin_tone`, `dwell-models`
+`a_tone_by_hex_keeps_its_share_of_the_parts_shading`, `shared/creatures/gen.test.mjs` (bad entries by name). Left: the
+coarser detail levels' part map puts a few sleeve-edge and lip vertices of other colours in the skin part; they draw
+the tone at 0.86–1.0.
+
 ### 151. `dwell-sim` `items.rs` `dying_in_adventure_drops_everything_where_the_player_died` failed on main (fixed after 0.63.1)
 
 Found 2026-11-13 (branch `claude/collision-ahead`, not caused by it: the same failure on main at 0.61.1 and after

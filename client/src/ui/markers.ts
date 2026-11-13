@@ -266,9 +266,11 @@ export class MarkerList {
   /**
    * The game noted an auto kind's place (spawn, a death, a portal seen): a kind kept `one` has its
    * marker moved there (placed the first time); one kept `each` gets a new one unless one of its
-   * markers is already within 2 m. Nothing for a kind that is off or unknown. The marker's id.
+   * markers is already within 2 m, which takes this height when `settled` (the height known, not
+   * provisional: a portal's opening, so one noted or saved at a wrong height is corrected when seen
+   * again, BUGS.md #153). Nothing for a kind that is off or unknown. The marker's id.
    */
-  noteAuto(kind: string, at: MarkerSpot): number | null {
+  noteAuto(kind: string, at: MarkerSpot, settled = true): number | null {
     const k = this.kinds.find((a) => a.kind === kind);
     if (!k?.on) return null;
     const mine = this.items.filter((m) => m.auto === kind);
@@ -283,7 +285,13 @@ export class MarkerList {
     // A place within 2 m across the ground is one already seen (its height may be read again
     // finer: a portal's rim from the map's height, then from the loaded ground).
     const near = mine.find((m) => m.face === at.face && Math.hypot(m.x - at.x, m.z - at.z) < 2);
-    if (near) return near.id;
+    if (near) {
+      if (settled && Number.isFinite(at.y) && Math.abs(near.y - at.y) >= 0.01) {
+        near.y = at.y;
+        this.changed();
+      }
+      return near.id;
+    }
     if (this.full) return null;
     const id = this.nextId++;
     this.items.push({ id, ...this.clean(look), ...spot(at), auto: kind });
@@ -510,13 +518,24 @@ export function heightOfCode(code: number): number | null {
 /**
  * The face-local height a marker placed on the big map stands at (docs/MAP_MARKERS.md): the loaded
  * ground's top there (`Client.markerGround`), else the map's height for its cell (a height code),
- * else `fallback` (the player's height when on that face).
+ * else `fallback` (the player's height when on that face, for a marker placed on the map, a
+ * provisional height `regroundMarkers` corrects; null for an auto one, which waits: BUGS.md #153).
  */
 export function markerGroundY(
   loaded: number | null | undefined,
   mapCode: number,
   fallback: number,
-): number {
+): number;
+export function markerGroundY(
+  loaded: number | null | undefined,
+  mapCode: number,
+  fallback: number | null,
+): number | null;
+export function markerGroundY(
+  loaded: number | null | undefined,
+  mapCode: number,
+  fallback: number | null,
+): number | null {
   if (typeof loaded === 'number' && Number.isFinite(loaded)) return loaded;
   return heightOfCode(mapCode) ?? fallback;
 }
@@ -573,19 +592,57 @@ export function directionWord(angle: number): string {
   return DIRECTION_WORDS[((n % 8) + 8) % 8] ?? 'up';
 }
 
+/** A seen portal's spot, `settled` when its height is the opening's (not the map's guess). */
+export interface SeenSpot extends MarkerSpot {
+  settled: boolean;
+}
+
 /**
- * The portals to note as seen (`Client.seenPortals`' flat [face, x, y, z]*, y NaN where the rim
- * isn't loaded), each standing at `groundY(face, x, z)` when its rim's height is unknown.
+ * The portals to note as seen (`Client.seenPortals`' flat [face, x, y, z]*, y the opening's height,
+ * NaN where it isn't known), each standing at `groundY(face, x, z)` (the map's height, provisional)
+ * when its height is unknown, and left out when that is unknown too: never the player's height
+ * (BUGS.md #153: flying high, the marker floated hundreds of metres over the portal).
  */
 export function seenPortalSpots(
   flat: ArrayLike<number>,
-  groundY: (face: number, x: number, z: number) => number,
-): MarkerSpot[] {
-  const out: MarkerSpot[] = [];
+  groundY: (face: number, x: number, z: number) => number | null,
+): SeenSpot[] {
+  const out: SeenSpot[] = [];
   for (let n = 0; n + 3 < flat.length; n += 4) {
     const face = flat[n] === 1 ? 1 : 0;
     const [x = 0, y = Number.NaN, z = 0] = [flat[n + 1], flat[n + 2], flat[n + 3]];
-    out.push({ face, x, y: Number.isFinite(y) ? y : groundY(face, x, z), z });
+    if (Number.isFinite(y)) {
+      out.push({ face, x, y, z, settled: true });
+      continue;
+    }
+    const guess = groundY(face, x, z);
+    if (guess !== null && Number.isFinite(guess))
+      out.push({ face, x, y: guess, z, settled: false });
+  }
+  return out;
+}
+
+/**
+ * The markers placed on the map (not the auto ones) on `face` to put back on their ground
+ * (docs/MAP_MARKERS.md, BUGS.md #153), as [id, y]: where `groundAt(x, z)` (the loaded column's top)
+ * is known, those placed at a provisional height (`provisional`: the map's or the player's, the
+ * column not loaded then) and those standing more than `MARKER_WORLD.regroundAboveM` over it (one
+ * saved before the fix at the player's height). Every provisional one whose ground is known is
+ * listed (the caller drops it from `provisional`), at the ground's height.
+ */
+export function regroundMarkers(
+  markers: readonly MapMarker[],
+  face: number,
+  provisional: ReadonlySet<number>,
+  groundAt: (x: number, z: number) => number | null | undefined,
+  aboveM: number = MARKER_WORLD.regroundAboveM,
+): [number, number][] {
+  const out: [number, number][] = [];
+  for (const m of markers) {
+    if (m.auto !== '' || m.face !== face) continue;
+    const g = groundAt(m.x, m.z);
+    if (typeof g !== 'number' || !Number.isFinite(g)) continue;
+    if (provisional.has(m.id) || m.y - g > aboveM) out.push([m.id, g]);
   }
   return out;
 }
