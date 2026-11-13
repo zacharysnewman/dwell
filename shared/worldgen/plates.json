@@ -1,18 +1,20 @@
 {
-  "$comment": "The plate layout a Realistic world's seed draws (docs/proposals/REALISTIC_WORLD.md §3.1, phase R1; owner 2026-11-11: plates decide land and sea, face B its own plates from its own face seed). Read by crates/dwell-worldgen/src/plates.rs and plate_tectonics.rs; only a world with terrain.json tectonics.plates 1 (the Realistic test world, worlds/realistic.json, R2) reads it, so nothing here changes the default's or the starter's terrain. `count` [min, max]: the seed picks how many plates (3–5 for the first region, the proposal's default; Q1 not answered). `reach`: plates and hotspots lie within this many m of the disc's centre, and the layout covers that disc; `seaMargin`: the outer m of it are sea whatever the plate (the disc must end in sea). `spacing`: the least distance between two plates' centres (m), tried at up to `attempts` seeded points. `kinds`: each plate kind (code vocabulary: oceanic, continental) has a draw `weight` and a `min` count the layout keeps (oceanic plate = sea, continental = land). `speed` [min, max] cm/yr and `age` [min, max] Myr are drawn uniformly per plate. `warp`: the boundaries curve by `amplitude` m of noise at `wavelength` m. `transformBelow`: a boundary is transform where the closing (or opening) rate across it is less than this share of the plates' relative speed, else convergent (closing) or divergent (opening). `hotspots`: `count` [min, max] points fixed in the mantle within `within` m of the centre; the chain's older islands lie along the overlying plate's motion. `fixtures`: two-plate layouts by data with the boundary each must give (`kind`, and `subducts`: the index of the plate that dives, or null) — the tests check every entry. Run `node shared/worldgen/gen.mjs` after editing; CI fails on stale output.",
-  "count": [3, 5],
-  "reach": 25000,
-  "seaMargin": 2000,
-  "spacing": 8000,
+  "$comment": "The plate layout a Realistic world's seed draws (docs/proposals/REALISTIC_WORLD.md §3.1, phase R1; owner 2026-11-11: plates decide land and sea, face B its own plates from its own face seed). Read by crates/dwell-worldgen/src/plates.rs and plate_tectonics.rs; only a world with terrain.json tectonics.plates 1 (the Realistic test world, worlds/realistic.json, R2) reads it, so nothing here changes the default's or the starter's terrain. `count` [min, max]: the seed picks how many plates (3–5 for the first region, the proposal's default; Q1 not answered). `reach`: the disc (m) the layout covers, the world's radius at the default size; `centres`: plate centres are drawn within this many m of the centre (more than the reach, so plates straddle the rim and the visible area holds plate middles, not only their tips). `spacing`: the least distance between two plates' centres (m), tried at up to `attempts` seeded points. No sliver plates (realistic batch A, 0.61): each kind's `interior` is the least distance (m) some point of a plate of that kind must lie from every other plate and from the rim inside the land area (a continent's room beyond its boundary landforms; for an ocean, half the narrowest strait it may make between two continents); a plate short of it is removed while the count stays at least `count`'s min, else turned to the other kind where the kinds' minimums allow. `rim` (owner, 2026-11-13: no circular sea cap): the plates of mixed kinds run out to the rim; where a continent reaches it, the land ends as a passive margin `shelf` [min, max] m inside the outer `edgeSea` m band, the shelf drawn per each of `sectors` sectors round the disc (cosine-blended) with the coast moved ±`noise.amplitude` m by noise at `noise.wavelength` m; the outer `edgeSea` m are always sea at least `edgeCoast` m out to sea (deep), and every landform fades to nothing at that coast. `kinds`: each plate kind (code vocabulary: oceanic, continental) has a draw `weight` and a `min` count the layout keeps (oceanic plate = sea, continental = land). `speed` [min, max] cm/yr and `age` [min, max] Myr are drawn uniformly per plate. `warp`: the boundaries curve by `amplitude` m of noise at `wavelength` m. `transformBelow`: a boundary is transform where the closing (or opening) rate across it is less than this share of the plates' relative speed, else convergent (closing) or divergent (opening). `hotspots`: `count` [min, max] points fixed in the mantle within `within` m of the centre; the chain's older islands lie along the overlying plate's motion. `fixtures`: two-plate layouts by data with the boundary each must give (`kind`, and `subducts`: the index of the plate that dives, or null) — the tests check every entry. Run `node shared/worldgen/gen.mjs` after editing; CI fails on stale output.",
+  "count": [7, 11],
+  "reach": 50000,
+  "centres": 56000,
+  "spacing": 12000,
   "attempts": 400,
   "kinds": {
     "oceanic": {
-      "weight": 0.45,
-      "min": 1
+      "weight": 0.5,
+      "min": 1,
+      "interior": 5000
     },
     "continental": {
-      "weight": 0.55,
-      "min": 1
+      "weight": 0.5,
+      "min": 1,
+      "interior": 8000
     }
   },
   "speed": [1, 10],
@@ -24,43 +26,186 @@
   "transformBelow": 0.4,
   "hotspots": {
     "count": [0, 2],
-    "within": 22000
+    "within": 40000
+  },
+  "rim": {
+    "edgeSea": 2500,
+    "edgeCoast": 3000,
+    "shelf": [1000, 8000],
+    "sectors": 10,
+    "noise": {
+      "amplitude": 800,
+      "wavelength": 7000
+    }
   },
   "uplift": {
-    "$comment": "The uplift from the boundaries (phase R2, plate_tectonics.rs; a world reads it with terrain.json tectonics.plates 1). Each boundary kind's landform by rule: `range` on the overriding side of a subducting boundary (`height` m, `width` m half-wide, centred `distance` m behind the line), `trench` on the diving side (`height` its depth), `collision` astride a convergent boundary of two continents, `rift` along a divergent one (`height` its depth, with shoulders `riftShoulder` of it either side), `transform` a low ridge along a transform. Each is scaled by the boundary's rate (closing, opening or slip, cm/yr) over `speedRef`, clamped to `speedScale` [min, max]. The polylines join scan points within `link` m and keep vertices `segment` m apart; the landforms are summed on a coarse grid of `cell` m (at least 500: no new 100 m whole-map grid) and read bilinearly. `arc`: on a subducting boundary's overriding side, `distance` m behind the line, one dormant cone per `spacing` m of a polyline at least `minLength` m long (at most `maxCones`), `coneHeight` m (× the rate's scale) and `coneRadius` m with a crater `craterRadius` m wide and `craterDepth` m deep, hardened against the erosion by `hardness` (0..1). `hotspot`: each hotspot's chain of `islands` shields `spacing` m apart along its plate's motion (older that way), the youngest `height` m and `radius` m, each older one `decay` of the last's height and `widen` broader.",
+    "$comment": "The uplift from the boundaries (phase R2, plate_tectonics.rs; a world reads it with terrain.json tectonics.plates 1). Each boundary's landforms come from `pairs` (realistic batch A, 0.61), keyed by the boundary's kind and its two plates' kinds (all nine pairs, each once): `landforms` lists each landform's `side` (code vocabulary: `over` the overriding plate and `under` the diving one, on a subducting boundary only; `astride` both; `continental` or `oceanic` the plate of that kind), `shape` (`bump`, the default; `rift`, the segmented rift basins below, astride only; `shoulder`, a bump beside the rift's axis that is left out at sea, so a rift reaching the sea opens as a gulf), `height` m (signed: below 0 cuts), `width` m half-wide and `distance` m from the line; `arc` (`none`; `crest`: one dormant cone per `arc.spacing` m on the crest of the pair's `over` landform, a continental arc; `island`: cones `arc.distance` m behind the line, an island arc, its back-arc basin a landform behind it). The default pairs: two continents closing collide in a range astride, an ocean diving under a continent gives a trench and a range with an arc on its crest, two oceans an island arc with a back-arc basin; two continents opening rift, a continent and an ocean opening make a passive margin (a wide shelf on the sea side, a gentle coastal plain on land, no trough), two oceans a low mid-ocean swell; transforms a low ridge. Each landform is scaled by the boundary's rate (closing, opening or slip, cm/yr) over `speedRef`, clamped to `speedScale` [min, max], and `along` each line by 1-D noise at `wavelength` m (`octaves`): its height by ±`height` and its width by ±`width` (shares), so ranges have saddles and peaks and rifts narrow (a rift's depth is its segments'). `rift`: a rift line cut into segments `segmentLength` [min, max] m long, each a basin `depth` [min, max] × its height deep and `width` [min, max] × its width wide, deepest mid-segment, with a sill between segments `sill` [min, max] of its height deep (shallow at the line's upstream end, deeper toward the end nearer the sea, so the lakes step down a chain with outlets), alternate segments' axes `stepOver` m apart; an end at sea has no sill (a gulf). The polylines join scan points within `link` m and keep vertices `segment` m apart; the landforms are summed on a coarse grid of `cell` m (at least 500: no new 100 m whole-map grid) and read bilinearly. `arc`: `distance` m behind the line for an island arc (a crest arc stands on its range's crest), each brought nearer the line in steps when its site is off the overriding plate (so an arc fits a narrow plate), down to `minDistance` m; one dormant cone per `spacing` m of a polyline at least `minLength` m long (at most `maxCones`), `coneHeight` m (× the rate's scale) and `coneRadius` m with a crater `craterRadius` m wide and `craterDepth` m deep, hardened against the erosion by `hardness` (0..1). `hotspot`: each hotspot's chain of `islands` shields `spacing` m apart along its plate's motion (older that way), the youngest `height` m and `radius` m, each older one `decay` of the last's height and `widen` broader.",
     "speedRef": 5,
     "speedScale": [0.5, 1.6],
     "link": 1300,
     "segment": 1000,
     "cell": 500,
-    "range": {
-      "height": 700,
-      "width": 3500,
-      "distance": 4000
-    },
-    "trench": {
-      "height": 60,
-      "width": 1500,
-      "distance": 1500
-    },
-    "collision": {
-      "height": 900,
-      "width": 5000,
-      "distance": 0
+    "pairs": [
+      {
+        "boundary": "convergent",
+        "plates": ["continental", "continental"],
+        "landforms": [
+          {
+            "side": "astride",
+            "height": 900,
+            "width": 5000,
+            "distance": 0
+          }
+        ],
+        "arc": "none"
+      },
+      {
+        "boundary": "convergent",
+        "plates": ["continental", "oceanic"],
+        "landforms": [
+          {
+            "side": "over",
+            "height": 700,
+            "width": 3500,
+            "distance": 4000
+          },
+          {
+            "side": "under",
+            "height": -60,
+            "width": 1500,
+            "distance": 1500
+          }
+        ],
+        "arc": "crest"
+      },
+      {
+        "boundary": "convergent",
+        "plates": ["oceanic", "oceanic"],
+        "landforms": [
+          {
+            "side": "under",
+            "height": -60,
+            "width": 1500,
+            "distance": 1500
+          },
+          {
+            "side": "over",
+            "height": -20,
+            "width": 3500,
+            "distance": 15000
+          }
+        ],
+        "arc": "island"
+      },
+      {
+        "boundary": "divergent",
+        "plates": ["continental", "continental"],
+        "landforms": [
+          {
+            "side": "astride",
+            "shape": "rift",
+            "height": -160,
+            "width": 2500,
+            "distance": 0
+          },
+          {
+            "side": "astride",
+            "shape": "shoulder",
+            "height": 48,
+            "width": 2500,
+            "distance": 3750
+          }
+        ],
+        "arc": "none"
+      },
+      {
+        "boundary": "divergent",
+        "plates": ["continental", "oceanic"],
+        "landforms": [
+          {
+            "side": "oceanic",
+            "height": 8,
+            "width": 5000,
+            "distance": 5000
+          },
+          {
+            "side": "continental",
+            "height": -25,
+            "width": 4000,
+            "distance": 4000
+          }
+        ],
+        "arc": "none"
+      },
+      {
+        "boundary": "divergent",
+        "plates": ["oceanic", "oceanic"],
+        "landforms": [
+          {
+            "side": "astride",
+            "height": 10,
+            "width": 4000,
+            "distance": 0
+          }
+        ],
+        "arc": "none"
+      },
+      {
+        "boundary": "transform",
+        "plates": ["continental", "continental"],
+        "landforms": [
+          {
+            "side": "astride",
+            "height": 60,
+            "width": 1500,
+            "distance": 0
+          }
+        ],
+        "arc": "none"
+      },
+      {
+        "boundary": "transform",
+        "plates": ["continental", "oceanic"],
+        "landforms": [
+          {
+            "side": "astride",
+            "height": 40,
+            "width": 1500,
+            "distance": 0
+          }
+        ],
+        "arc": "none"
+      },
+      {
+        "boundary": "transform",
+        "plates": ["oceanic", "oceanic"],
+        "landforms": [
+          {
+            "side": "astride",
+            "height": 15,
+            "width": 1500,
+            "distance": 0
+          }
+        ],
+        "arc": "none"
+      }
+    ],
+    "along": {
+      "height": 0.4,
+      "width": 0.4,
+      "wavelength": 9000,
+      "octaves": 2
     },
     "rift": {
-      "height": 160,
-      "width": 2500,
-      "distance": 0
-    },
-    "riftShoulder": 0.3,
-    "transform": {
-      "height": 60,
-      "width": 1500,
-      "distance": 0
+      "segmentLength": [8000, 15000],
+      "depth": [0.7, 1.3],
+      "width": [0.7, 1.3],
+      "sill": [0.1, 0.45],
+      "stepOver": 1500
     },
     "arc": {
       "distance": 9000,
+      "minDistance": 2000,
       "spacing": 10000,
       "minLength": 6000,
       "maxCones": 4,

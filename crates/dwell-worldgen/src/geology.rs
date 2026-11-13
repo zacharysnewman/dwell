@@ -295,7 +295,9 @@ impl PlateProvinces {
                         }
                     }
                 },
-                BoundaryKind::Divergent => {
+                // A rift's fill only where the pair cuts one (two continents opening): a passive
+                // margin or a mid-ocean swell is no rift.
+                BoundaryKind::Divergent if line.has_rift() => {
                     near(self.rift_width);
                     if d < self.rift_width {
                         s.add(PlateSetting::Rift);

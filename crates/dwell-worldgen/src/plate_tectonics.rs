@@ -1,44 +1,126 @@
 //! Uplift from plate boundaries (docs/proposals/REALISTIC_WORLD.md §3.2, phase R2): a Realistic
 //! world's tectonics (`terrain.json` `tectonics.plates` 1) from its face's seed-drawn plate layout
-//! (`plates.rs`), not from a hand-placed line. Every boundary, ordered into polylines, adds its
-//! kind's landform by rule:
+//! (`plates.rs`), not from a hand-placed line. Every boundary, ordered into polylines, adds the
+//! landforms its **pair** gives (realistic batch A, 0.61: plates.json `uplift.pairs`, keyed by the
+//! boundary's kind and its two plates' kinds), each on a side by rule:
 //!
-//! - **subducting** (convergent, one side dives): a range on the overriding side `range.distance` m
-//!   behind the line, a trench on the diving side, and an arc of dormant cones `arc.distance` m
-//!   behind the line on the overriding side, one per `arc.spacing` m of boundary;
-//! - **collision** (convergent, two continents): a range astride the line;
-//! - **divergent**: a rift valley along the line with raised shoulders;
-//! - **transform**: a low ridge along the line (little relief);
+//! - two continents closing: a collision range astride; an ocean diving under a continent: a trench
+//!   on the diving side, a range on the overriding side with an arc of dormant cones on its crest;
+//!   two oceans: a trench, an island arc behind it and a back-arc basin behind that;
+//! - two continents opening: a **segmented** rift (basins `rift.segmentLength` m long, each its own
+//!   depth and width, deepest mid-segment, sills between them stepping down toward the sea,
+//!   alternate axes `rift.stepOver` m apart; shoulders beside it, none at sea: a gulf where it
+//!   meets the sea); a continent and an ocean opening: a passive margin (a wide shelf, a gentle
+//!   coastal plain, no trough); two oceans: a low mid-ocean swell;
+//! - transforms: a low ridge;
 //!
 //! each scaled by the boundary's rate (closing, opening or slip) over `speedRef`, clamped to
-//! `speedScale`. Every hotspot raises a chain of islands from its point **along the plate's
-//! motion**, each older one lower and wider (the plate carries them off the fixed hotspot).
+//! `speedScale`, and varied **along** the line by 1-D noise (`along`: height and width), so ranges
+//! have saddles and peaks. An arc's cones are brought nearer the line when the overriding plate is
+//! narrow (down to `arc.minDistance`). Every hotspot raises a chain of islands from its point
+//! **along the plate's motion**, each older one lower and wider. Every landform fades to nothing at
+//! the rim's coast (`PlateLayout::land_edge`): the outer band stays sea.
 //!
-//! The vocabulary is code (the four landforms, the arc and the chain rules); the tuning is data
-//! (`shared/worldgen/plates.json` `uplift`, generated into `plates.gen.rs` as [`UPLIFT`]). The
-//! boundaries' landforms are summed on a coarse grid ([`PlateUplift::cell`], ≥ 500 m) and read
+//! The vocabulary is code (the sides, the three shapes, the arc modes, the chain rule); the tuning
+//! is data (`shared/worldgen/plates.json` `uplift`, generated into `plates.gen.rs` as [`UPLIFT`]).
+//! The boundaries' landforms are summed on a coarse grid ([`PlateUplift::cell`], ≥ 500 m) and read
 //! bilinearly, so the layer is a function of vectors plus one coarse grid (§4: no new 100 m
 //! whole-map grid). Face-local: each face's layout is its own face seed's, so both faces.
 
-use crate::plates::{Boundary, BoundaryKind, PLATES, PlateLayout};
+use crate::noise::{fbm2, mix32};
+use crate::plates::{Boundary, BoundaryKind, PLATES, PlateKind, PlateLayout};
 use crate::tectonics::{Tectonics, Volcano};
 
 pub use crate::plates::UPLIFT;
 
-/// A landform across a boundary (plates.json `uplift.*`): `height` m (a depth for a trench or a
-/// rift), `width` m half-wide, centred `distance` m from the line (on the side its rule names).
+/// Which plate a pair's landform stands on (code vocabulary, plates.json `uplift.pairs[].side`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Side {
+    /// The overriding plate of a subducting boundary.
+    Over,
+    /// The diving plate of a subducting boundary.
+    Under,
+    /// Either plate.
+    Astride,
+    /// The pair's continental plate (both, for two continents).
+    Continental,
+    /// The pair's oceanic plate (both, for two oceans).
+    Oceanic,
+}
+
+/// A landform's shape across and along its line (code vocabulary).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Shape {
+    /// A smooth bump `distance` m from the line, `width` m half-wide.
+    Bump,
+    /// The segmented rift basins ([`RiftRule`]), astride.
+    Rift,
+    /// A bump `distance` m beside the rift's (stepped) axis, left out at sea (a gulf).
+    Shoulder,
+}
+
+/// Where a subducting pair's arc of cones stands (code vocabulary).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ArcMode {
+    None,
+    /// On the crest of the pair's raised `over` landform (a continental arc).
+    Crest,
+    /// `arc.distance` m behind the line (an island arc).
+    Island,
+}
+
+/// One landform of a pair (plates.json `uplift.pairs[].landforms[]`): `height` m (below 0 cuts),
+/// `width` m half-wide, `distance` m from the line, on `side`.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Landform {
+pub struct PairForm {
+    pub side: Side,
+    pub shape: Shape,
     pub height: f64,
     pub width: f64,
     pub distance: f64,
 }
 
+/// A boundary kind and plate pair's landforms (plates.json `uplift.pairs[]`; plates continental
+/// first).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PairRule {
+    pub boundary: BoundaryKind,
+    pub plates: [PlateKind; 2],
+    pub landforms: &'static [PairForm],
+    pub arc: ArcMode,
+}
+
+/// The landforms' variation along their line (plates.json `uplift.along`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct AlongRule {
+    /// ± shares of height and width.
+    pub height: f64,
+    pub width: f64,
+    pub wavelength: i32,
+    pub octaves: u32,
+}
+
+/// The segmented rift (plates.json `uplift.rift`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct RiftRule {
+    /// Each segment's length (m), drawn in [min, max].
+    pub segment_length: [f64; 2],
+    /// Each segment's depth and width as shares of its landform's, drawn in [min, max].
+    pub depth: [f64; 2],
+    pub width: [f64; 2],
+    /// The sills' depth as shares of the landform's, shallow upstream to deep toward the sea.
+    pub sill: [f64; 2],
+    /// Alternate segments' axes are this far apart (m).
+    pub step_over: f64,
+}
+
 /// The arc's rule (plates.json `uplift.arc`).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ArcRule {
-    /// The cones' distance (m) behind the line on the overriding side.
+    /// An island arc's cones' distance (m) behind the line on the overriding side; any arc's
+    /// cones come nearer the line in steps, down to `min_distance` m, to stand on that plate.
     pub distance: f64,
+    pub min_distance: f64,
     /// One cone per this many m of boundary, at most `max_cones` a polyline; none on a polyline
     /// shorter than `min_length` m.
     pub spacing: f64,
@@ -75,15 +157,27 @@ pub struct PlateUplift {
     pub segment: f64,
     /// The coarse grid's cell (m) the landforms are summed on.
     pub cell: f64,
-    pub range: Landform,
-    pub trench: Landform,
-    pub collision: Landform,
-    pub rift: Landform,
-    /// The rift's shoulders: this share of its depth, raised either side.
-    pub rift_shoulder: f64,
-    pub transform: Landform,
+    /// Every boundary kind × plate pair's landforms (all nine, each once).
+    pub pairs: &'static [PairRule],
+    pub along: AlongRule,
+    pub rift: RiftRule,
     pub arc: ArcRule,
     pub hotspot: ChainRule,
+}
+
+impl PlateUplift {
+    /// The pair rule of a boundary kind and two plate kinds (in either order).
+    pub fn pair(&self, kind: BoundaryKind, a: PlateKind, b: PlateKind) -> &PairRule {
+        let key = if a == PlateKind::Continental || b == PlateKind::Oceanic {
+            [a, b]
+        } else {
+            [b, a]
+        };
+        self.pairs
+            .iter()
+            .find(|p| p.boundary == kind && p.plates == key)
+            .expect("plates.json uplift.pairs holds every pair (gen.mjs checks it)")
+    }
 }
 
 /// A smooth bump: 1 at 0, 0 from |t| ≥ 1 (as `tectonics.rs`).
@@ -112,25 +206,132 @@ fn to_segment(p: [f64; 2], a: [f64; 2], b: [f64; 2]) -> (f64, f64) {
 
 /// The distance (m) from `p` to a polyline.
 fn to_line(p: [f64; 2], line: &[[f64; 2]]) -> f64 {
-    if line.len() == 1 {
-        return to_segment(p, line[0], line[0]).0;
-    }
-    line.windows(2)
-        .map(|w| to_segment(p, w[0], w[1]).0)
-        .fold(f64::INFINITY, f64::min)
+    project(p, line, &[]).0
 }
 
-/// A boundary as the uplift reads it: its polylines and its rule's numbers.
+/// `p` against a polyline: its distance (m), the arc length (m) of its nearest point along the
+/// line (with `lengths`, the cumulative length at each vertex; 0 without), and its signed distance
+/// (> 0 on the line's left).
+fn project(p: [f64; 2], line: &[[f64; 2]], lengths: &[f64]) -> (f64, f64, f64) {
+    if line.len() == 1 {
+        let d = to_segment(p, line[0], line[0]).0;
+        return (d, 0.0, d);
+    }
+    let mut best = (f64::INFINITY, 0.0, 0.0);
+    for (k, w) in line.windows(2).enumerate() {
+        let (d, t) = to_segment(p, w[0], w[1]);
+        if d < best.0 {
+            let (ex, ez) = (w[1][0] - w[0][0], w[1][1] - w[0][1]);
+            let cross = ex * (p[1] - w[0][1]) - ez * (p[0] - w[0][0]);
+            let s = match (lengths.get(k), lengths.get(k + 1)) {
+                (Some(&a), Some(&b)) => a + t * (b - a),
+                _ => 0.0,
+            };
+            best = (d, s, if cross < 0.0 { -d } else { d });
+        }
+    }
+    best
+}
+
+/// One segment of a rift polyline ([`RiftRule`]): its span along the line (m), its depth and
+/// width shares, the sills' depth shares at its ends (`None`: open, a gulf), and which way its axis
+/// steps.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct RiftSegment {
+    pub from: f64,
+    pub to: f64,
+    pub depth: f64,
+    pub width: f64,
+    pub sill_from: Option<f64>,
+    pub sill_to: Option<f64>,
+    pub step: f64,
+}
+
+/// A seeded draw in [lo, hi] from a word and an index.
+fn draw(seed: u32, k: u32, [lo, hi]: [f64; 2]) -> f64 {
+    let u = f64::from(mix32(seed ^ mix32(k.wrapping_mul(0x9E37_79B9)))) / 4_294_967_296.0;
+    lo + (hi - lo) * u
+}
+
+/// A boundary as the uplift reads it: its polylines, its pair's landforms and its rate's scale.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Line {
     /// Index into the layout's boundaries.
     pub boundary: usize,
     pub kind: BoundaryKind,
-    /// The overriding plate on a subducting boundary.
+    /// The overriding and the diving plate on a subducting boundary.
     pub over: Option<usize>,
+    pub under: Option<usize>,
+    /// Its pair's landforms (plates.json `uplift.pairs`).
+    pub pair: PairRule,
     /// The landforms' scale from the boundary's rate.
     pub scale: f64,
     pub polylines: Vec<Vec<[f64; 2]>>,
+    /// Each polyline's cumulative length (m) at each vertex.
+    pub lengths: Vec<Vec<f64>>,
+    /// Each polyline's rift segments (none unless the pair has a rift).
+    pub segments: Vec<Vec<RiftSegment>>,
+    seed: u32,
+}
+
+impl Line {
+    /// Whether its pair cuts a rift.
+    pub fn has_rift(&self) -> bool {
+        self.pair.landforms.iter().any(|f| f.shape == Shape::Rift)
+    }
+
+    /// The along-line variation at arc length `s` of polyline `k`: (height, width) factors.
+    fn along(&self, a: &AlongRule, k: usize, s: f64) -> (f64, f64) {
+        let n = |salt: u32, amp: f64| {
+            if amp <= 0.0 {
+                return 1.0;
+            }
+            let v = fbm2(
+                mix32(self.seed ^ salt),
+                s as i64,
+                k as i64 * 1_000_003,
+                a.wavelength,
+                a.octaves,
+                None,
+            );
+            1.0 + amp * (2.0 * f64::from(v)).clamp(-1.0, 1.0)
+        };
+        (n(0x4A11, a.height), n(0x4B22, a.width))
+    }
+
+    /// The rift at arc length `s` of polyline `k`: (depth share, width share, axis offset m).
+    fn rift_at(&self, r: &RiftRule, k: usize, s: f64) -> (f64, f64, f64) {
+        let segs = &self.segments[k];
+        if segs.is_empty() {
+            return (1.0, 1.0, 0.0);
+        }
+        let i = segs
+            .iter()
+            .position(|g| s < g.to)
+            .unwrap_or(segs.len() - 1);
+        let g = &segs[i];
+        let t = ((s - g.from) / (g.to - g.from).max(1.0)).clamp(0.0, 1.0);
+        let wave = (std::f64::consts::PI * t).sin();
+        let edge = if t < 0.5 { g.sill_from } else { g.sill_to }.unwrap_or(g.depth);
+        let depth = edge + (g.depth - edge) * wave;
+        // The width blends between the segments' middles.
+        let mid = 0.5 * (g.from + g.to);
+        let j = if s < mid {
+            i.checked_sub(1)
+        } else {
+            (i + 1 < segs.len()).then_some(i + 1)
+        };
+        let width = match j {
+            Some(j) => {
+                let h = &segs[j];
+                let other = 0.5 * (h.from + h.to);
+                let u = ((s - mid) / (other - mid)).clamp(0.0, 1.0);
+                g.width + (h.width - g.width) * 0.5 * u
+            }
+            None => g.width,
+        };
+        (depth, width, g.step * 0.5 * r.step_over * wave)
+    }
 }
 
 /// A face's tectonics from its plate layout.
@@ -161,13 +362,7 @@ impl PlateTectonics {
             .boundaries
             .iter()
             .enumerate()
-            .map(|(i, b)| Line {
-                boundary: i,
-                kind: b.meeting.kind,
-                over: b.overriding_plate(),
-                scale: Self::scale_of(&u, b),
-                polylines: b.polylines(u.link, u.segment),
-            })
+            .map(|(i, b)| Self::line_of(&layout, &u, i, b))
             .collect();
         let mut t = Self {
             layout,
@@ -184,6 +379,93 @@ impl PlateTectonics {
         t
     }
 
+    fn line_of(layout: &PlateLayout, u: &PlateUplift, i: usize, b: &Boundary) -> Line {
+        let [pa, pb] = b.plates.map(|k| layout.plates[k].kind);
+        let pair = *u.pair(b.meeting.kind, pa, pb);
+        let polylines = b.polylines(u.link, u.segment);
+        let lengths: Vec<Vec<f64>> = polylines
+            .iter()
+            .map(|pl| {
+                let mut acc = vec![0.0];
+                for w in pl.windows(2) {
+                    let d = ((w[1][0] - w[0][0]).powi(2) + (w[1][1] - w[0][1]).powi(2)).sqrt();
+                    acc.push(acc[acc.len() - 1] + d);
+                }
+                acc
+            })
+            .collect();
+        let first = polylines.first().and_then(|p| p.first()).copied();
+        let seed = mix32(
+            (b.plates[0] as u32) << 16
+                ^ b.plates[1] as u32
+                ^ first.map_or(0, |p| mix32(p[0] as i32 as u32) ^ p[1] as i32 as u32),
+        );
+        let rift = pair.landforms.iter().any(|f| f.shape == Shape::Rift);
+        let r = &u.rift;
+        let segments = polylines
+            .iter()
+            .zip(&lengths)
+            .enumerate()
+            .map(|(k, (pl, len))| {
+                if !rift || pl.len() < 2 {
+                    return Vec::new();
+                }
+                let total = len[len.len() - 1];
+                let key = mix32(seed ^ (k as u32).wrapping_mul(0x85EB_CA6B));
+                // Cut into segments; a short remainder joins the last.
+                let mut cuts = vec![0.0];
+                let mut j = 0;
+                while cuts[cuts.len() - 1] < total {
+                    let step = draw(key, 3 * j, r.segment_length);
+                    let at = cuts[cuts.len() - 1] + step;
+                    if total - at < 0.5 * r.segment_length[0] {
+                        cuts.push(total);
+                        break;
+                    }
+                    cuts.push(at.min(total));
+                    j += 1;
+                }
+                let m = cuts.len() - 1;
+                // The sills step down toward the end nearer the sea; an end at sea is open.
+                let (head, tail) = (pl[0], pl[pl.len() - 1]);
+                let (ch, ct) = (
+                    layout.coast_distance(head[0], head[1]),
+                    layout.coast_distance(tail[0], tail[1]),
+                );
+                let down_at_tail = ct <= ch;
+                let sill = |c: usize| {
+                    let share = if m == 0 { 0.0 } else { c as f64 / m as f64 };
+                    let share = if down_at_tail { share } else { 1.0 - share };
+                    let open = (c == 0 && ch < 0.0) || (c == m && ct < 0.0);
+                    (!open).then(|| r.sill[0] + (r.sill[1] - r.sill[0]) * share)
+                };
+                (0..m)
+                    .map(|c| RiftSegment {
+                        from: cuts[c],
+                        to: cuts[c + 1],
+                        depth: draw(key, 3 * c as u32 + 1, r.depth),
+                        width: draw(key, 3 * c as u32 + 2, r.width),
+                        sill_from: sill(c),
+                        sill_to: sill(c + 1),
+                        step: if c % 2 == 0 { 1.0 } else { -1.0 },
+                    })
+                    .collect()
+            })
+            .collect();
+        Line {
+            boundary: i,
+            kind: b.meeting.kind,
+            over: b.overriding_plate(),
+            under: b.subducting_plate(),
+            pair,
+            scale: Self::scale_of(u, b),
+            polylines,
+            lengths,
+            segments,
+            seed,
+        }
+    }
+
     fn scale_of(u: &PlateUplift, b: &Boundary) -> f64 {
         let rate = match b.meeting.kind {
             BoundaryKind::Transform => b.meeting.slip,
@@ -195,35 +477,72 @@ impl PlateTectonics {
     /// The farthest (m) any boundary's landform reaches from its line.
     fn reach(&self) -> f64 {
         let u = &self.uplift;
-        [
-            u.range.distance + u.range.width,
-            u.trench.distance + u.trench.width,
-            u.collision.distance + u.collision.width,
-            2.5 * u.rift.width + u.rift.distance,
-            u.transform.distance + u.transform.width,
-        ]
-        .into_iter()
-        .fold(0.0, f64::max)
+        let wide = 1.0 + u.along.width;
+        let rw = u.rift.width[1];
+        u.pairs
+            .iter()
+            .flat_map(|p| p.landforms.iter())
+            .map(|f| match f.shape {
+                Shape::Bump => f.distance + f.width * wide,
+                Shape::Rift => f.width * rw * wide + 0.5 * u.rift.step_over,
+                Shape::Shoulder => (f.distance + f.width * wide) * rw + 0.5 * u.rift.step_over,
+            })
+            .fold(0.0, f64::max)
     }
 
-    /// One boundary's landform at `p` (m), on plate `plate`, `d` m from its line.
-    fn landform(&self, line: &Line, plate: usize, d: f64) -> f64 {
+    /// One boundary's landforms (m) at `p`, on plate `plate`.
+    fn landform(&self, line: &Line, plate: usize, p: [f64; 2], reach: f64) -> f64 {
         let u = &self.uplift;
-        let across = |l: &Landform| bump((d - l.distance) / l.width.max(1.0));
-        let h = match line.kind {
-            BoundaryKind::Convergent => match line.over {
-                Some(over) if plate == over => u.range.height * across(&u.range),
-                Some(_) => -u.trench.height * across(&u.trench),
-                None => u.collision.height * across(&u.collision),
-            },
-            BoundaryKind::Divergent => {
-                let w = u.rift.width.max(1.0);
-                -u.rift.height * across(&u.rift)
-                    + u.rift_shoulder * u.rift.height * bump((d - u.rift.distance - 1.5 * w) / w)
+        let mut near = (f64::INFINITY, 0.0, 0.0, 0usize);
+        for (k, (pl, len)) in line.polylines.iter().zip(&line.lengths).enumerate() {
+            let (d, s, signed) = project(p, pl, len);
+            if d < near.0 {
+                near = (d, s, signed, k);
             }
-            BoundaryKind::Transform => u.transform.height * across(&u.transform),
-        };
+        }
+        let (d, s, signed, k) = near;
+        if d >= reach {
+            return 0.0;
+        }
+        let kind = self.layout.plates[plate].kind;
+        let (fh, fw) = line.along(&u.along, k, s);
+        let mut h = 0.0;
+        for f in line.pair.landforms {
+            let on = match f.side {
+                Side::Over => line.over == Some(plate),
+                Side::Under => line.under == Some(plate),
+                Side::Astride => true,
+                Side::Continental => kind == PlateKind::Continental,
+                Side::Oceanic => kind == PlateKind::Oceanic,
+            };
+            if !on {
+                continue;
+            }
+            h += match f.shape {
+                Shape::Bump => f.height * fh * bump((d - f.distance) / (f.width * fw).max(1.0)),
+                Shape::Rift => {
+                    let (depth, width, off) = line.rift_at(&u.rift, k, s);
+                    f.height * depth * bump((signed - off) / (f.width * width * fw).max(1.0))
+                }
+                Shape::Shoulder => {
+                    if self.layout.coast_distance(p[0], p[1]) < 0.0 {
+                        continue;
+                    }
+                    let (_, width, off) = line.rift_at(&u.rift, k, s);
+                    let across = (signed - off).abs() - f.distance * width;
+                    f.height * fh * bump(across / (f.width * width * fw).max(1.0))
+                }
+            };
+        }
         h * line.scale
+    }
+
+    /// How much of the raised landforms stands at (x, z): 1 inland, falling to 0 at the rim's
+    /// coast (the outer band stays sea).
+    pub fn rim_fade(&self, x: f64, z: f64) -> f64 {
+        let w = self.layout.rules.rim.edge_sea.max(1.0);
+        let t = (self.layout.land_edge(x, z) / w).clamp(0.0, 1.0);
+        t * t * (3.0 - 2.0 * t)
     }
 
     /// The boundaries of plate `plate` and their distance (m) from (x, z) (R5's rock settings).
@@ -241,7 +560,8 @@ impl PlateTectonics {
         })
     }
 
-    /// The boundaries' landform at (x, z) computed exactly (the coarse grid's nodes take it).
+    /// The boundaries' landform at (x, z) computed exactly (the coarse grid's nodes take it): the
+    /// raised part faded at the rim ([`PlateTectonics::rim_fade`]).
     pub fn landform_exact(&self, x: f64, z: f64) -> f64 {
         let reach = self.reach();
         let plate = self.layout.plate_at(x, z);
@@ -252,16 +572,9 @@ impl PlateTectonics {
             if plate != a && plate != b {
                 continue;
             }
-            let d = line
-                .polylines
-                .iter()
-                .map(|pl| to_line([x, z], pl))
-                .fold(f64::INFINITY, f64::min);
-            if d < reach {
-                h += self.landform(line, plate, d);
-            }
+            h += self.landform(line, plate, [x, z], reach);
         }
-        h
+        if h > 0.0 { h * self.rim_fade(x, z) } else { h }
     }
 
     fn fill_field(&mut self) {
@@ -306,6 +619,11 @@ impl PlateTectonics {
             .iter()
             .map(|v| Tectonics::cone(v, ((x - v.x).powi(2) + (z - v.z).powi(2)).sqrt()))
             .fold(0.0, f64::max);
+        let cones = if cones > 0.0 {
+            cones * self.rim_fade(x, z)
+        } else {
+            cones
+        };
         self.boundary(x, z) + cones
     }
 
@@ -325,16 +643,28 @@ impl PlateTectonics {
         k * s
     }
 
-    /// The arcs: along each subducting boundary's polylines at least `min_length` m long, one cone
-    /// per `spacing` m (at most `max_cones`), evenly along it, `distance` m off the line on the
-    /// overriding plate's side; a cone whose site is not on that plate (a junction) or beyond the
-    /// layout's reach is left out.
+    /// The arcs: along each subducting boundary whose pair has an arc, on polylines at least
+    /// `min_length` m long, one cone per `spacing` m (at most `max_cones`), evenly along it, on the
+    /// overriding plate's side: on the crest of the pair's raised `over` landform (a continental
+    /// arc) or `distance` m behind the line (an island arc). Where that site is off the overriding
+    /// plate (a narrow plate, a junction) the cone comes nearer the line in steps of a fifth, down
+    /// to `min_distance`; a cone with no site on the plate, or none inside the rim's coast, is left
+    /// out.
     fn place_arcs(&self) -> Vec<Volcano> {
         let a = &self.uplift.arc;
-        let reach = self.layout.rules.reach;
         let mut out = Vec::new();
         for line in &self.lines {
             let Some(over) = line.over else { continue };
+            let base = match line.pair.arc {
+                ArcMode::None => continue,
+                ArcMode::Island => a.distance,
+                ArcMode::Crest => line
+                    .pair
+                    .landforms
+                    .iter()
+                    .find(|f| f.side == Side::Over && f.height > 0.0)
+                    .map_or(a.distance, |f| f.distance),
+            };
             for pl in &line.polylines {
                 let lens: Vec<f64> = pl
                     .windows(2)
@@ -357,21 +687,27 @@ impl PlateTectonics {
                     let at = [p[0] + t * (q[0] - p[0]), p[1] + t * (q[1] - p[1])];
                     let len = lens[seg].max(1e-9);
                     let normal = [-(q[1] - p[1]) / len, (q[0] - p[0]) / len];
-                    let site = [1.0, -1.0].into_iter().map(|sign| {
-                        [
-                            at[0] + sign * a.distance * normal[0],
-                            at[1] + sign * a.distance * normal[1],
-                        ]
-                    });
-                    let Some(c) = site
-                        .into_iter()
-                        .find(|c| self.layout.plate_at(c[0], c[1]) == over)
-                    else {
-                        continue;
-                    };
-                    if c[0] * c[0] + c[1] * c[1] > reach * reach {
-                        continue;
+                    let mut dist = base.max(a.min_distance);
+                    let mut found = None;
+                    while found.is_none() {
+                        found = [1.0, -1.0]
+                            .into_iter()
+                            .map(|sign| {
+                                [
+                                    at[0] + sign * dist * normal[0],
+                                    at[1] + sign * dist * normal[1],
+                                ]
+                            })
+                            .find(|c| {
+                                self.layout.plate_at(c[0], c[1]) == over
+                                    && self.layout.land_edge(c[0], c[1]) > 0.0
+                            });
+                        if dist <= a.min_distance {
+                            break;
+                        }
+                        dist = (0.8 * dist).max(a.min_distance);
                     }
+                    let Some(c) = found else { continue };
                     out.push(Volcano {
                         x: c[0],
                         z: c[1],
@@ -398,9 +734,10 @@ impl PlateTectonics {
             for k in 0..if still { c.islands.min(1) } else { c.islands } {
                 let age = f64::from(k);
                 let d = age * c.spacing;
+                let (x, z) = (hs.at[0] + d * hs.trail[0], hs.at[1] + d * hs.trail[1]);
                 out.push(Volcano {
-                    x: hs.at[0] + d * hs.trail[0],
-                    z: hs.at[1] + d * hs.trail[1],
+                    x,
+                    z,
                     height: c.height * c.decay.powf(age),
                     radius: c.radius * (1.0 + c.widen * age),
                     crater_radius: 0.0,

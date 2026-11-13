@@ -2598,7 +2598,7 @@ const PLATES_TOP = [
   "$comment",
   "count",
   "reach",
-  "seaMargin",
+  "centres",
   "spacing",
   "attempts",
   "kinds",
@@ -2607,13 +2607,18 @@ const PLATES_TOP = [
   "warp",
   "transformBelow",
   "hotspots",
+  "rim",
   "uplift",
   "fixtures",
 ];
-/** plates.json `uplift`'s landforms (R2, `plate_tectonics.rs`): each a height, half-width, distance. */
-const UPLIFT_LANDFORMS = ["range", "trench", "collision", "rift", "transform"];
+/** plates.json `uplift.pairs`' code vocabulary (`plate_tectonics.rs`): the landforms' sides and
+ * shapes, and the arc's modes. */
+export const PAIR_SIDES = ["over", "under", "astride", "continental", "oceanic"];
+export const PAIR_SHAPES = ["bump", "rift", "shoulder"];
+export const ARC_MODES = ["none", "crest", "island"];
 const UPLIFT_ARC = [
   "distance",
+  "minDistance",
   "spacing",
   "minLength",
   "maxCones",
@@ -2663,7 +2668,7 @@ export function validatePlates(data) {
     if (!(k in data)) fail(`${k} is missing`);
   range("count", data.count, 1, 32, true);
   num("reach", data.reach, 1000, 100_000);
-  num("seaMargin", data.seaMargin, 0, data.reach);
+  num("centres", data.centres, data.reach, 4 * data.reach);
   num("spacing", data.spacing, 0, 2 * data.reach);
   num("attempts", data.attempts, 1, 100_000, true);
   obj("kinds", data.kinds, PLATE_KINDS);
@@ -2672,9 +2677,10 @@ export function validatePlates(data) {
   for (const k of PLATE_KINDS) {
     const e = data.kinds[k];
     if (e === undefined) fail(`kinds.${k} is missing`);
-    obj(`kinds.${k}`, e, ["weight", "min"]);
+    obj(`kinds.${k}`, e, ["weight", "min", "interior"]);
     num(`kinds.${k}.weight`, e.weight, 0, 1);
     num(`kinds.${k}.min`, e.min, 0, 32, true);
+    num(`kinds.${k}.interior`, e.interior, 0, data.reach);
     weight += e.weight;
     mins += e.min;
   }
@@ -2692,6 +2698,18 @@ export function validatePlates(data) {
   obj("hotspots", data.hotspots, ["count", "within"]);
   range("hotspots.count", data.hotspots.count, 0, 32, true);
   num("hotspots.within", data.hotspots.within, 0, data.reach);
+  const rim = data.rim;
+  obj("rim", rim, ["edgeSea", "edgeCoast", "shelf", "sectors", "noise"]);
+  num("rim.edgeSea", rim.edgeSea, 0, data.reach / 4);
+  num("rim.edgeCoast", rim.edgeCoast, 0, 100_000);
+  range("rim.shelf", rim.shelf, 0, data.reach / 2);
+  num("rim.sectors", rim.sectors, 1, 360, true);
+  obj("rim.noise", rim.noise, ["amplitude", "wavelength"]);
+  // The noise may not carry the coast past the shelf: the outer band stays sea.
+  num("rim.noise.amplitude", rim.noise.amplitude, 0, rim.shelf[0]);
+  num("rim.noise.wavelength", rim.noise.wavelength, 100, 1_000_000, true);
+  if (data.hotspots.within > data.reach - rim.edgeSea)
+    fail("hotspots.within must leave the rim's edgeSea band clear");
   const u = data.uplift;
   obj("uplift", u, [
     "speedRef",
@@ -2699,8 +2717,9 @@ export function validatePlates(data) {
     "link",
     "segment",
     "cell",
-    ...UPLIFT_LANDFORMS,
-    "riftShoulder",
+    "pairs",
+    "along",
+    "rift",
     "arc",
     "hotspot",
   ]);
@@ -2710,17 +2729,75 @@ export function validatePlates(data) {
   num("uplift.segment", u.segment, 1, 20_000);
   // The landforms sum on a coarse grid: no new 100 m whole-map grid (REALISTIC_WORLD.md §4).
   num("uplift.cell", u.cell, 500, 10_000);
-  for (const k of UPLIFT_LANDFORMS) {
-    if (u[k] === undefined) fail(`uplift.${k} is missing`);
-    obj(`uplift.${k}`, u[k], ["height", "width", "distance"]);
-    num(`uplift.${k}.height`, u[k].height, 0, 5000);
-    num(`uplift.${k}.width`, u[k].width, 1, 50_000);
-    num(`uplift.${k}.distance`, u[k].distance, 0, 50_000);
-  }
-  num("uplift.riftShoulder", u.riftShoulder, 0, 2);
+  // Every boundary kind × plate pair once (the plate kinds sorted as PLATE_KINDS lists them).
+  if (!Array.isArray(u.pairs)) fail("uplift.pairs must be a list");
+  const pairKeys = new Set();
+  u.pairs.forEach((e, i) => {
+    const at = `uplift.pairs[${i}]`;
+    obj(at, e, ["boundary", "plates", "landforms", "arc"]);
+    if (!BOUNDARY_KINDS.includes(e.boundary))
+      fail(`${at}.boundary must be one of ${BOUNDARY_KINDS.join(", ")}`);
+    if (!(
+      Array.isArray(e.plates) &&
+      e.plates.length === 2 &&
+      e.plates.every((k) => PLATE_KINDS.includes(k)) &&
+      PLATE_KINDS.indexOf(e.plates[0]) >= PLATE_KINDS.indexOf(e.plates[1])
+    ))
+      fail(`${at}.plates must be two plate kinds, continental first (${PLATE_KINDS.join(", ")})`);
+    const key = `${e.boundary}:${e.plates.join("-")}`;
+    if (pairKeys.has(key)) fail(`${at}: duplicate pair ${key}`);
+    pairKeys.add(key);
+    // A boundary has an overriding and a diving side only where one plate subducts.
+    const subducts =
+      e.boundary === "convergent" && e.plates.includes("oceanic");
+    if (!Array.isArray(e.landforms)) fail(`${at}.landforms must be a list`);
+    e.landforms.forEach((l, j) => {
+      const la = `${at}.landforms[${j}]`;
+      obj(la, l, ["side", "shape", "height", "width", "distance"]);
+      if (!PAIR_SIDES.includes(l.side))
+        fail(`${la}.side must be one of ${PAIR_SIDES.join(", ")}`);
+      if ((l.side === "over" || l.side === "under") && !subducts)
+        fail(`${la}.side ${l.side}: only on a subducting pair (convergent, an ocean in it)`);
+      if ((l.side === "continental" || l.side === "oceanic") && !e.plates.includes(l.side))
+        fail(`${la}.side ${l.side}: the pair has no ${l.side} plate`);
+      const shape = l.shape ?? "bump";
+      if (!PAIR_SHAPES.includes(shape))
+        fail(`${la}.shape must be one of ${PAIR_SHAPES.join(", ")}`);
+      if (shape !== "bump" && l.side !== "astride")
+        fail(`${la}.shape ${shape} must be astride`);
+      num(`${la}.height`, l.height, -5000, 5000);
+      num(`${la}.width`, l.width, 1, 50_000);
+      num(`${la}.distance`, l.distance, 0, 50_000);
+    });
+    if (!ARC_MODES.includes(e.arc)) fail(`${at}.arc must be one of ${ARC_MODES.join(", ")}`);
+    if (e.arc !== "none" && !subducts)
+      fail(`${at}.arc ${e.arc}: only on a subducting pair`);
+    if (e.arc === "crest" && !e.landforms.some((l) => l.side === "over" && l.height > 0))
+      fail(`${at}.arc crest needs a raised landform on the over side (its crest)`);
+  });
+  for (const b of BOUNDARY_KINDS)
+    for (const [i, a] of PLATE_KINDS.entries())
+      for (const c of PLATE_KINDS.slice(0, i + 1)) {
+        const key = `${b}:${[a, c].sort((x, y) => PLATE_KINDS.indexOf(y) - PLATE_KINDS.indexOf(x)).join("-")}`;
+        if (!pairKeys.has(key)) fail(`uplift.pairs: no entry for ${key}`);
+      }
+  obj("uplift.along", u.along, ["height", "width", "wavelength", "octaves"]);
+  num("uplift.along.height", u.along.height, 0, 0.9);
+  num("uplift.along.width", u.along.width, 0, 0.9);
+  num("uplift.along.wavelength", u.along.wavelength, 100, 1_000_000, true);
+  num("uplift.along.octaves", u.along.octaves, 1, 8, true);
+  obj("uplift.rift", u.rift, ["segmentLength", "depth", "width", "sill", "stepOver"]);
+  range("uplift.rift.segmentLength", u.rift.segmentLength, 1000, 200_000);
+  range("uplift.rift.depth", u.rift.depth, 0, 5);
+  range("uplift.rift.width", u.rift.width, 0.05, 5);
+  range("uplift.rift.sill", u.rift.sill, 0, 1);
+  if (!(u.rift.sill[1] < u.rift.depth[0]))
+    fail("uplift.rift.sill's max must be under depth's min (each basin deeper than its sills)");
+  num("uplift.rift.stepOver", u.rift.stepOver, 0, 50_000);
   obj("uplift.arc", u.arc, UPLIFT_ARC);
   for (const k of UPLIFT_ARC) if (!(k in u.arc)) fail(`uplift.arc.${k} is missing`);
   num("uplift.arc.distance", u.arc.distance, 0, 50_000);
+  num("uplift.arc.minDistance", u.arc.minDistance, 0, u.arc.distance);
   num("uplift.arc.spacing", u.arc.spacing, 1, 100_000);
   num("uplift.arc.minLength", u.arc.minLength, 0, 200_000);
   num("uplift.arc.maxCones", u.arc.maxCones, 0, 32, true);
@@ -2780,8 +2857,12 @@ export function platesRust(data) {
   const rs = [
     `// ${platesHeader}`,
     "",
-    "use crate::plate_tectonics::{ArcRule, ChainRule, Landform, PlateUplift};",
-    "use crate::plates::{BoundaryKind, FixturePlate, KindRule, PlateFixture, PlateKind, PlateRules};",
+    "use crate::plate_tectonics::{",
+    "    AlongRule, ArcMode, ArcRule, ChainRule, PairForm, PairRule, PlateUplift, RiftRule, Shape, Side,",
+    "};",
+    "use crate::plates::{",
+    "    BoundaryKind, FixturePlate, KindRule, PlateFixture, PlateKind, PlateRules, RimRule,",
+    "};",
     "",
     "/// The plate layout's rules (shared/worldgen/plates.json).",
     "pub const PLATES: PlateRules = PlateRules {",
@@ -2790,16 +2871,16 @@ export function platesRust(data) {
     ["count_min", `${data.count[0]}`],
     ["count_max", `${data.count[1]}`],
     ["reach", rf(data.reach)],
-    ["sea_margin", rf(data.seaMargin)],
+    ["centres", rf(data.centres)],
     ["spacing", rf(data.spacing)],
     ["attempts", `${data.attempts}`],
     [
       "oceanic",
-      `KindRule { weight: ${rf(data.kinds.oceanic.weight)}, min: ${data.kinds.oceanic.min} }`,
+      `KindRule { weight: ${rf(data.kinds.oceanic.weight)}, min: ${data.kinds.oceanic.min}, interior: ${rf(data.kinds.oceanic.interior)} }`,
     ],
     [
       "continental",
-      `KindRule { weight: ${rf(data.kinds.continental.weight)}, min: ${data.kinds.continental.min} }`,
+      `KindRule { weight: ${rf(data.kinds.continental.weight)}, min: ${data.kinds.continental.min}, interior: ${rf(data.kinds.continental.interior)} }`,
     ],
     ["speed", `[${rf(data.speed[0])}, ${rf(data.speed[1])}]`],
     ["age", `[${rf(data.age[0])}, ${rf(data.age[1])}]`],
@@ -2809,13 +2890,22 @@ export function platesRust(data) {
     ["hotspots_min", `${data.hotspots.count[0]}`],
     ["hotspots_max", `${data.hotspots.count[1]}`],
     ["hotspots_within", rf(data.hotspots.within)],
+    [
+      "rim",
+      `RimRule { edge_sea: ${rf(data.rim.edgeSea)}, edge_coast: ${rf(data.rim.edgeCoast)}, shelf: [${rf(data.rim.shelf[0])}, ${rf(data.rim.shelf[1])}], sectors: ${data.rim.sectors}, noise_amplitude: ${rf(data.rim.noise.amplitude)}, noise_wavelength: ${data.rim.noise.wavelength} }`,
+    ],
   ];
   for (const [k, v] of fields) rs.push(`    ${k}: ${v},`);
   rs.push("};");
   rs.push("");
   const u = data.uplift;
-  const landform = (l) =>
-    `Landform { height: ${rf(l.height)}, width: ${rf(l.width)}, distance: ${rf(l.distance)} }`;
+  const cap = (k) => `${k[0].toUpperCase()}${k.slice(1)}`;
+  const form = (l) =>
+    `PairForm { side: Side::${cap(l.side)}, shape: Shape::${cap(l.shape ?? "bump")}, height: ${rf(l.height)}, width: ${rf(l.width)}, distance: ${rf(l.distance)} }`;
+  const pairs = u.pairs.map(
+    (e) =>
+      `PairRule { boundary: ${bkind(e.boundary)}, plates: [${kind(e.plates[0])}, ${kind(e.plates[1])}], landforms: &[${e.landforms.map(form).join(", ")}], arc: ArcMode::${cap(e.arc)} }`,
+  );
   const a = u.arc;
   const h = u.hotspot;
   rs.push("/// The uplift from the boundaries (plates.json `uplift`, R2).");
@@ -2826,11 +2916,18 @@ export function platesRust(data) {
     ["link", rf(u.link)],
     ["segment", rf(u.segment)],
     ["cell", rf(u.cell)],
-    ...UPLIFT_LANDFORMS.map((k) => [k, landform(u[k])]),
-    ["rift_shoulder", rf(u.riftShoulder)],
+    ["pairs", `&[\n        ${pairs.join(",\n        ")},\n    ]`],
+    [
+      "along",
+      `AlongRule { height: ${rf(u.along.height)}, width: ${rf(u.along.width)}, wavelength: ${u.along.wavelength}, octaves: ${u.along.octaves} }`,
+    ],
+    [
+      "rift",
+      `RiftRule { segment_length: [${rf(u.rift.segmentLength[0])}, ${rf(u.rift.segmentLength[1])}], depth: [${rf(u.rift.depth[0])}, ${rf(u.rift.depth[1])}], width: [${rf(u.rift.width[0])}, ${rf(u.rift.width[1])}], sill: [${rf(u.rift.sill[0])}, ${rf(u.rift.sill[1])}], step_over: ${rf(u.rift.stepOver)} }`,
+    ],
     [
       "arc",
-      `ArcRule { distance: ${rf(a.distance)}, spacing: ${rf(a.spacing)}, min_length: ${rf(a.minLength)}, max_cones: ${a.maxCones}, cone_height: ${rf(a.coneHeight)}, cone_radius: ${rf(a.coneRadius)}, crater_radius: ${rf(a.craterRadius)}, crater_depth: ${rf(a.craterDepth)}, hardness: ${rf(a.hardness)} }`,
+      `ArcRule { distance: ${rf(a.distance)}, min_distance: ${rf(a.minDistance)}, spacing: ${rf(a.spacing)}, min_length: ${rf(a.minLength)}, max_cones: ${a.maxCones}, cone_height: ${rf(a.coneHeight)}, cone_radius: ${rf(a.coneRadius)}, crater_radius: ${rf(a.craterRadius)}, crater_depth: ${rf(a.craterDepth)}, hardness: ${rf(a.hardness)} }`,
     ],
     [
       "hotspot",
