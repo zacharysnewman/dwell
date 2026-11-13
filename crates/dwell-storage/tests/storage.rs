@@ -37,6 +37,7 @@ fn meta() -> WorldMeta {
         app_version_created: "0.9.0".into(),
         app_version_last: "0.9.1".into(),
         settings: None,
+        spawn_grid: None,
     }
 }
 

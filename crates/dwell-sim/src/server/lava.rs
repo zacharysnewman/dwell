@@ -52,6 +52,15 @@ impl Server {
         let p = self.players.position(&self.physics, h);
         let feet = [p.x, self.feet_y(h), p.z];
         let in_lava = self.lava.fluid_at(feet);
+        self.burn_by(id, in_lava);
+    }
+
+    /// One tick of burning for a player in `in_lava` (or not): home's or another grid's.
+    pub(super) fn burn_by(
+        &mut self,
+        id: SessionId,
+        in_lava: Option<&'static dwell_lava::HotFluid>,
+    ) {
         let s = self.sessions.get_mut(&id).expect("session");
         if in_lava.is_none() && !s.burn.burning() {
             return;

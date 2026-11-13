@@ -194,6 +194,16 @@ describe('scenarios', () => {
     expect(bad({ to: 'moon' })).toThrow(/to/);
   });
 
+  it('teleports onto the sun (SUN_WORLD.md, scenario sun-draw)', () => {
+    const [s] = parseScenarios(
+      file([{ name: 's', steps: [{ do: 'sunLand' }, { do: 'sunLand', face: 'b', maxS: 30 }] }]),
+    );
+    expect(s.steps).toEqual([{ do: 'sunLand' }, { do: 'sunLand', face: 'b', maxS: 30 }]);
+    expect(() =>
+      parseScenarios(file([{ name: 's', steps: [{ do: 'sunLand', face: 'c' }] }])),
+    ).toThrow(/face/);
+  });
+
   it('flies to the moon and home (docs/DEV_TOOLS.md "The moon")', () => {
     const [s] = parseScenarios(
       file([

@@ -1139,6 +1139,12 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    data. Owner's note on the PR: the baked maria were too faint after #682's shading, so the mare block's `color`
    (`#555459`) is 0.55 × the moon dust's luma, the old sky moon's seas (`1 − moon.maria`); a test pins the bake's
    maria/highland contrast at 0.55. Tests on both faces (`--test grids`, 26).
+   **Spawns on any grid (M-8)** (owner, 2026-11-13: "Im not seeing a moon spawn or sun spawn in my new world
+   settings"; orchestrator: "one general system rather than per-world code: a spawn choice for any grid, by data …
+   New world → Spawn lists home face A or B, plus each other grid's faces … generated from the grids data … the
+   player starts on that grid at a safe stand point … with a shrine there if shrines apply … only for clients that
+   declare the grid's capability, otherwise fall back to home. The `?spawn=` link takes the same values."): built
+   with the sun's second slice (item 42, MOON_WORLD.md §8).
 
 28. **An atmosphere: the sky thinning to space** (owner 2026-11-12: "We likely need an atmosphere transition now
    between sky thinning to space. Clouds shouldn't extend past the earth atmosphere either."). With flight to the
@@ -1886,6 +1892,21 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    make space a more general skybox and have 'day' be a closer atmosphere skybox so it can fade out as you leave
    earth."): the general sky is built by the moon session (claude/moon-m5), not here; the sun only declares in its
    grid data that it has no atmosphere, once that field exists.
+   **Second slice (orchestrator brief, 2026-11-13: "(1) lava damage on the sun — the server's lava fields/damage
+   apply on any grid whose generator places lava (by data), not only home; (2) 'Constant flowing lava, oceans of
+   lava' (owner): the sun's lava rivers always flowing — the lava flow of VOLCANOES.md kept running on the sun (a
+   source at each river head, as data), bounded in cost (only near players, as the water does); (3) a dev teleport
+   onto the sun (`__dwell.sunLand`, like #883's moonLand) and a bench scenario `sun-draw` (lands on face A, shots
+   across and down, reports draw calls/triangles); (4) the capture's speed: with the sun at 3.7–7.5 km/s, check a
+   far-flight player can be captured without a snap"; the sky stays the moon session's):** SUN_WORLD.md §6.
+   **Spawns on the moon and the sun** (owner, 2026-11-13: "Im not seeing a moon spawn or sun spawn in my new world
+   settings"): one spawn choice for any grid, by the grids data (item 27's M-8), in this slice.
+   **Built natively (2026-11-13, SUN_WORLD.md §6):** lava burns on any grid (a field's or any hot fluid's cell, by
+   lava.json's names; a death there takes the player home or to the spawn grid); the sun's `flow` rules place a river
+   vent at each cell's river head near a player there (at most 12 fields of 192 tiles, run only near players);
+   `__dwell.sunLand` / `sun()` and the `sun-draw` scenario; the capture at the sun's > 3 km/s checked snap-free on a
+   jittery device; spawns on the moon and the sun (MOON_WORLD.md §8). **Left:** `sun-draw` and a sun spawn run in a
+   browser on a GPU (a local check); shrines on other grids; the sun's sky (the moon session's).
 
 ## Done
 

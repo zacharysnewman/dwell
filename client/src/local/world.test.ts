@@ -115,6 +115,20 @@ describe('local world options', () => {
     });
   });
 
+  it('reads ?spawn=moon, sun-b, … (MOON_WORLD.md §8) as a spawn on that grid, its own world file', () => {
+    expect(parseLocalWorld('?seed=7&spawn=sun-b')).toEqual({
+      worldSeed: 7,
+      generatorVersion: GENERATORS.terrain,
+      file: 'local-g8-s7-sun-b',
+      spawnGrid: 'sun-b',
+      spawnOnOpen: true,
+    });
+    expect(parseLocalWorld('?spawn=moon')).toMatchObject({ spawnGrid: 'moon' });
+    expect(parseLocalWorld('?spawn=moon').spawnFaceB).toBeUndefined();
+    expect(parseLocalWorld('?spawn=mars').spawnGrid).toBeUndefined();
+    expect(spawnOptions('portal-b').spawnGrid).toBeUndefined();
+  });
+
   it('a spawn link puts the player at its spawn on every open, a plain link does not', () => {
     // Owner, 2026-10-27: a saved world opened by a spawn link moves its player to the spawn.
     expect(parseLocalWorld('?spawn=portal').spawnOnOpen).toBe(true);

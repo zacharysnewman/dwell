@@ -479,6 +479,8 @@ impl LocalCore {
             }
             ("moonApproach", [margin, face]) => self.moon_approach(*margin, *face),
             ("moonLand", [face]) => self.moon_land(*face),
+            ("sunLand", [face]) => self.grid_land("dwell:sun", *face),
+            ("sunApproach", [margin, face]) => self.grid_approach("dwell:sun", *margin, *face),
             ("placeHome", [x, y, z]) => self.place_home([*x, *y, *z]),
             ("npcsFight", []) => {
                 // Every NPC turns on the local player as if struck by it (its `npc.fight` rules
@@ -628,6 +630,11 @@ impl LocalCore {
     /// B), moving with the moon, so a short real flight at it is captured (MOON_WORLD.md §7.3).
     /// JSON `{"at":[x,y,z],"grid":[x,y,z],"distance":m}` (world and moon-local), or `{"error":…}`.
     pub fn moon_approach(&mut self, margin_m: f64, face: f64) -> String {
+        self.grid_approach("dwell:moon", margin_m, face)
+    }
+
+    /// [`Self::moon_approach`] for any grid by name (`dwell:sun`: `sunApproach`).
+    pub fn grid_approach(&mut self, name: &str, margin_m: f64, face: f64) -> String {
         let Some(id) = self.local_player_id() else {
             return r#"{"error":"no local player"}"#.into();
         };
@@ -641,11 +648,13 @@ impl LocalCore {
         };
         let map = self.server.grids().travel_map();
         let seed = self.server.config().world_seed;
-        let Some(local) = crate::moon_probe::approach_point(&map, seed, f, margin_m) else {
-            return r#"{"error":"this world has no moon"}"#.into();
+        let none = format!(r#"{{"error":"this world has no {name}"}}"#);
+        let Some(local) = crate::moon_probe::grid_approach_point(&map, seed, name, f, margin_m)
+        else {
+            return none;
         };
-        let Some(&(index, ..)) = map.grids.iter().find(|g| g.1.name == "dwell:moon") else {
-            return r#"{"error":"this world has no moon"}"#.into();
+        let Some(&(index, ..)) = map.grids.iter().find(|g| g.1.name == name) else {
+            return none;
         };
         let t = f64::from(self.server.tick()) / f64::from(dwell_protocol::SIM_HZ);
         let (at, v) = map.frame(index, t).release(local, [0.0; 3]);
@@ -669,6 +678,12 @@ impl LocalCore {
     /// stands on the moon's ground. JSON `{"at":[x,y,z],"grid":[x,y,z]}` (world and moon-local),
     /// or `{"error":…}`.
     pub fn moon_land(&mut self, face: f64) -> String {
+        self.grid_land("dwell:moon", face)
+    }
+
+    /// [`Self::moon_land`] for any grid by name (`dwell:sun`: the bench's `sunLand`, SUN_WORLD.md:
+    /// 1.5 m over its stand point, dry crust away from lava).
+    pub fn grid_land(&mut self, name: &str, face: f64) -> String {
         let Some(id) = self.local_player_id() else {
             return r#"{"error":"no local player"}"#.into();
         };
@@ -683,10 +698,10 @@ impl LocalCore {
         let map = self.server.grids().travel_map();
         let seed = self.server.config().world_seed;
         let (Some(local), Some(&(index, ..))) = (
-            crate::moon_probe::landing_point(&map, seed, f, 1.5),
-            map.grids.iter().find(|g| g.1.name == "dwell:moon"),
+            crate::moon_probe::grid_landing_point(&map, seed, name, f, 1.5),
+            map.grids.iter().find(|g| g.1.name == name),
         ) else {
-            return r#"{"error":"this world has no moon"}"#.into();
+            return format!(r#"{{"error":"this world has no {name}"}}"#);
         };
         let t = f64::from(self.server.tick()) / f64::from(dwell_protocol::SIM_HZ);
         let (at, v) = map.frame(index, t).release(local, [0.0; 3]);

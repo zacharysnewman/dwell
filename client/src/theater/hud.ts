@@ -28,6 +28,7 @@ export const HUD_ELEMENTS = [
   'registryPrompt',
   'hudLayout probe',
   'TheaterMode #theater-open',
+  'main (the blueprint have/need panel)',
   'index.html #net-status',
   'index.html #perf-status',
   'index.html #build-info',
