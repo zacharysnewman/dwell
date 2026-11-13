@@ -925,6 +925,12 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    voxels and streams home again from nothing after the release), draws in the moon's local frame (the sun turned
    into it, the far moon disc and home's LOD hidden, the look carried with `look_across`); `grid.frames` off
    `CLIENT_PENDING`; the `game_local` scripted flight home → moon → home on both faces (MOON_WORLD.md §7.3).
+   **Bench tool (2026-11-13, branch `claude/moon-bench`):** brief: "a bench hook and scenario for flying to the moon in
+   the browser. A browser pass could not fly to the moon: no `__dwell` hook gives the moon's position or the player's
+   grid … and a sky scan didn't find the moon at clock 0.30." Built: `__dwell.moon()` (position, direction, distance,
+   the player's grid, on-moon gravity), the `flyTo` step (`moon`: dev move near the capture, a real flight in, descent,
+   the fall checked against ⅙ g, landing; `home`: out past the release, home's chunks back) and the `moon-trip`
+   scenario (DEV_TOOLS.md "The moon"). **Left:** running `moon-trip` on a GPU (local).
    **Left:** the browser flight (local, GPU), the roll upright at a crossing, M-5 (the moon's LOD), M-8. Earlier
    **M-7c status (2026-11-12, branch `claude/moon-m7c-x07vsc`, local):** owner, 2026-11-12: "Do we have the real physical moon yet?" (no: the client doesn't draw the moon
    up close yet (M-5) and there are no moon spawns (M-8)). **Built:** `carry` moved into `dwell-physics`; a

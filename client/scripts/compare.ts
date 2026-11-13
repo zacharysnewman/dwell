@@ -51,6 +51,8 @@ export interface ScenarioReport {
   respawns?: { s: number | null; loading: Record<string, unknown> | null }[];
   /** Each `goto` step's result: what it found and where it put the camera (docs/DEV_TOOLS.md). */
   gotos?: unknown[];
+  /** Each `flyTo` step's trip (debug/moonTrip.ts; docs/DEV_TOOLS.md "The moon"). */
+  trips?: unknown[];
   /** The page address it ran at. */
   url: string;
 }

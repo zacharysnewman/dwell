@@ -3170,6 +3170,30 @@ impl<S: Scene> Game<S> {
         self.travel = Some(map());
     }
 
+    /// The moon from the player (`__dwell.moon()`, docs/DEV_TOOLS.md "The moon"): its world
+    /// position at the latest snapshot's clock, the way and distance to it, the player's grid and
+    /// the gravity; `None` before the travel rules (a server without `grid.frames`) or with no moon.
+    pub fn moon_report(&self) -> Option<crate::moon_probe::MoonReport> {
+        let map = self.travel.as_ref()?;
+        let viewer = crate::moon_probe::Viewer {
+            grid: self.grid_drawn,
+            feet: self.current.feet(),
+            velocity: self.current.velocity,
+            world_s: f64::from(self.last_snapshot_tick) / SIM_HZ as f64,
+            gravity: f64::from(self.predictor.config().body.gravity),
+        };
+        let mut r = crate::moon_probe::moon_report(map, self.world_seed, viewer)?;
+        let f = FaceFrame::at_height(viewer.feet[1]);
+        let below = f.point({
+            let l = f.point(viewer.feet);
+            [l[0], l[1] - 0.25, l[2]]
+        });
+        let cell = dwell_world::GridFrame::HOME.cell_of(below);
+        let chunk = dwell_world::chunk_of(cell[0], cell[1], cell[2]);
+        r.ground_held = self.chunk_revision(chunk.to_array()).is_some();
+        Some(r)
+    }
+
     /// The grid the view is drawn in (0 home; MOON_WORLD.md §7.3).
     pub fn grid(&self) -> u8 {
         self.grid_drawn

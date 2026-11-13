@@ -122,6 +122,15 @@ import {
   type GotoOptions,
   type GotoResult,
 } from './debug/find';
+import {
+  flyHome,
+  flyToMoon,
+  type HomeTrip,
+  type MoonReport,
+  type MoonTrip,
+  type TripHost,
+  type TripOptions,
+} from './debug/moonTrip';
 import type { ServerStats } from './local/messages';
 import { audio } from './audio/engine';
 import type { TapOptions } from './audio/mixer';
@@ -313,6 +322,20 @@ interface DwellDebug {
   goto(query: string, options?: GotoOptions): Promise<GotoResult>;
   /** Moves the local player's feet there (a local world, on its face); false otherwise. */
   teleport(feet: Vec3): boolean;
+  /**
+   * The moon from the player (docs/DEV_TOOLS.md "The moon"): its world position at the clock's
+   * time, the direction and distance to it, the player's grid (`home`, `moon`), the gravity there
+   * and on the moon, the look toward it, the height over its ground when on it. Null before
+   * playing, from a server without `grid.frames`, or in a world with no moon.
+   */
+  moon(): MoonReport | null;
+  /**
+   * The bench's moon trip (debug/moonTrip.ts; a local world): `moon` moves the player just
+   * outside the capture sphere, flies it in, down and lands it, measuring the fall; `home` flies
+   * out past the release, back to where the last trip to the moon started, and waits for home's
+   * chunks. Rejects with what failed.
+   */
+  flyTo(to: 'moon' | 'home', options?: TripOptions): Promise<MoonTrip | HomeTrip>;
   /** Plants' wind scale (0 still, 1 the data's) and whether cutout meshes draw (cost A/B). */
   plants(wind: number, shown: boolean): void;
   /** The last frame's draw calls and triangles. */
@@ -1385,6 +1408,18 @@ async function start(): Promise<App | null> {
     find: (query, options) => findPlace(findHost(app), query, options),
     goto: (query, options) => gotoPlace(findHost(app), query, options),
     teleport: (feet) => teleport(app, feet),
+    moon: () => moonOf(app),
+    flyTo: async (to, options) => {
+      const host = tripHost(app);
+      if (to === 'moon') {
+        const trip = await flyToMoon(host, options);
+        if (trip.home) tripStart = trip.home;
+        return trip;
+      }
+      const start = tripStart ?? moonOf(app)?.feet;
+      if (!start) throw new Error('flyTo home: no start (fly to the moon first)');
+      return flyHome(host, start, options);
+    },
     plants: (wind, shown) => {
       client.setPlants(wind, shown);
     },
@@ -1638,6 +1673,40 @@ function teleport(app: App, feet: Vec3): boolean {
     throw new Error(`teleport: feet must be [x, y, z] (metres), not ${JSON.stringify(feet)}`);
   app.loopback?.postToWorker({ t: 'teleport', at });
   return app.loopback !== null;
+}
+
+/** Where the last `flyTo('moon')` started (world feet): `flyTo('home')` goes back there. */
+let tripStart: Vec3 | null = null;
+
+function moonOf(app: App): MoonReport | null {
+  const j = app.client.moon();
+  return j === undefined ? null : (JSON.parse(j) as MoonReport);
+}
+
+/** The page's side of the bench's moon trip (debug/moonTrip.ts). */
+function tripHost(app: App): TripHost {
+  const { client } = app;
+  return {
+    moon: () => moonOf(app),
+    approach: (margin, face) =>
+      app.loopback?.lavaDev('moonApproach', [margin, face]) ?? Promise.resolve(null),
+    placeHome: (feet) => app.loopback?.lavaDev('placeHome', [...feet]) ?? Promise.resolve(null),
+    press: (code, down) => {
+      client.press(code, down);
+    },
+    fly: (on) => {
+      client.fly(on);
+    },
+    flySpeed: (level) => {
+      client.flySpeed(level);
+      app.flightSpeed.show(client.flySpeedLevel());
+    },
+    look: (yaw, pitch) => {
+      client.setLook(yaw, pitch);
+    },
+    wait: (ms) => new Promise((r) => setTimeout(r, ms)),
+    now: () => performance.now(),
+  };
 }
 
 /** The page's side of the dev tools' place search (debug/find.ts). */

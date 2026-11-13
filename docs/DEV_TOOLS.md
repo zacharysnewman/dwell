@@ -128,6 +128,7 @@ fields, ranges and names fail with the entry named):
 | `die {maxS}` | kills the local player (`__dwell.die()`, a local world only), waits for its respawn, then (at most `maxS`) until it is playing again, and saves the respawn → playing seconds with the loading screen's wait in `report.json`'s `respawns` (ARCHITECTURE.md §6.3). `respawn-far` flies 700 m from the spawn and dies there; `--compare --configs raster,respawn-preload-off` runs it with and without the respawn preload (`?respawnPreload=off`) |
 | `herd {kind?, back?}` | the finder (WORK_QUEUE item 46): logs the far herds nearest first (`__dwell.herds`) and stands the player `back` m (40) short of the nearest of `kind` (`deer`, `wolf`; either) on the ground (`goToHerd`, a local world); fails when there is none. Scenario `herds` |
 | `lava {op, args?}` | the local server's lava (`__dwell.lava(op, args)`, VOLCANOES.md §6.3), its JSON printed: `report` its fields (face, centre, origin, `molten` columns, deepest m, vents, the world's worldgen, `steamCells` sent so far), `rate` [k] every vent's rate × k (fill a lake in seconds), `vent` [x, y, z, rateM3s, depthM] a lake vent at a world point, `ventNear` [dx, dz, rateM3s, depthM] one off the player's feet; `lava-lake` shoots the starter's summit lake and lava meeting the sea. A scenario's `query` (e.g. `{"worldgen": "test:starter", "seed": "0", "at": "x,y,z"}`) opens a test world at a point for steps of its own |
+| `flyTo {to, face?, landM?, maxS?}` | the moon trip ([The moon](#the-moon-__dwellmoon-the-flyto-step); `__dwell.flyTo`, a local world): `to: "moon"` moves the player just outside the moon's capture sphere over its face `face` (`a`, `b`) with the dev move, flies it in for real until captured, down to `landM` m (40) over the moon's ground, measures the fall with flight off (**failing the run unless it is the moon's gravity within 25 %**) and lands; `to: "home"` flies up past the release sphere, back to where the trip started, and waits until the client holds home's chunk under the feet. Each leg at most `maxS` s (120); saved in `report.json`'s `trips`. Scenario `moon-trip` |
 | `give {item, count}` | gives the local player `count` of `item` (`__dwell.give`, a local world that uses items, e.g. `?mode=adventure`): `pieces-combine` fills the backpack with pieces to shoot its Combine section |
 | `mark` | forgets the telemetry so far: the next `record` measures from here |
 | `record {name, budget?, reportOnly?}` | saves everything above under `name`; a `budget` (`{"<series>.<stat>": max}`, stat `mean`, `p50`, `p95`, `p99` or `max`, e.g. `{"frame.cpu.p95": 18.5}`) fails the scenario when a value is over its maximum or not recorded (`overBudget`). `phone-moving` (walk, sprint, fly 8 s each on an iPhone-sized page; run `--touch --cpu-throttle 4` at Low, BUGS.md #72) bounds `frame.cpu`, `jobs.apply` and `mesh_dirty` while moving; with `reportOnly` true a value over it prints `OVER BUDGET (report only)` and the scenario goes on (`forest-perf`, a target not met yet) |
@@ -491,6 +492,35 @@ player, so `view()` after `placeCamera` still reads the player's own look.
 
 Seed 0's river at `?local=1&seed=0&fresh=1&at=2364.5,142,7443.5` is a known river by link (the
 player there with yaw 0 looks down it); `goto` finds water wherever the terrain puts it.
+
+## The moon (`__dwell.moon()`, the `flyTo` step)
+
+MOON_WORLD.md §7.3's browser flight. **`__dwell.moon()`** (`Game::moon_report`, `crates/dwell-client/src/moon_probe.rs`)
+returns the moon as the client's travel rules place it at the latest snapshot's clock, or null before playing, from
+a server without `grid.frames` or in a world with no moon:
+
+- `position` its centre (the midplane's centre) and `feet` the player's, world m; `direction` the unit way from the
+  feet to it and `distance` (m); `captureM` and `releaseM` (× `releaseFactor`) round its centre;
+- `grid` the player's grid now (`home`, `moon`) and `index` the moon's (`grids.json`);
+- `gravity` the moon's (m/s²: home's controller gravity × its `gravityScale`) and `gravityNow` where the player is;
+- `look` `{yaw, pitch}` toward its centre in the player's face-local look (as `look` takes it), `upMps` the
+  velocity along the face's up, `groundM` the feet's height over the moon's generated ground (on the moon; null
+  at home), and `groundHeld` whether the client holds the chunk under the feet.
+
+**`__dwell.flyTo('moon' | 'home', options?)`** (`client/src/debug/moonTrip.ts`, node-tested with a fake page in
+`moonTrip.test.ts`; a local world) is the step's page side. `moon`: the dev move (`LocalCore::moon_approach`, the
+worker's `moonApproach` op) puts the player at home `marginM` (2000) m outside the capture sphere over the moon's
+spawn on face `face`, moving with the moon; flight on at the top speed, it flies along `look` (level by the yaw,
+Space or crouch for a pitch over 20°) until `grid` is `moon`, then down with crouch (level 6 under 600 m) to
+`landM`, hovers a second, turns flight off and measures the fall over a second, and waits until it stands on the
+ground. `home`: Space until released, then `placeHome` (the worker's op: the feet back where the last trip to the
+moon started, on either face) and a wait for `groundHeld`. The native check of the same flight is `game_local`'s
+`the_moon_report_steers_a_flight_into_its_capture` (both faces: the report from home and on the moon, the capture,
+the descent, ⅙ g ± 10 %, the landing).
+
+`npm run bench -- --warm moon-trip` flies there, lands, shoots `on-the-moon` and `moon-sky` at noon, flies
+back and shoots `home-again`; the capture, descent, landing and return seconds and the fall are printed and saved in
+`report.json`'s `trips`.
 
 ## Screenshots of a place
 

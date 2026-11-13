@@ -446,8 +446,12 @@ the moon's unedited chunks never evicted, tier 1 bodies in the moon's space (non
   sphere: released by both with no snap or grid miss, the moon disc back; home's chunks stream again at the spawn.
   `dwell-client` `grid_view.rs` (both faces: the sun's rise over a turned grid's face kept), `dwell-look`
   `the_moons_disc_is_drawn_unless_the_viewer_is_on_it`, `dwell-protocol` (the client says `grid.frames`).
-- **Not yet (after M-7c):** the browser flight (a local check: fly out with far flight, land, look round, fly back;
-  no GPU here); the view's roll upright at the crossing (it is turned at once, keeping the look's direction); the
+- **The browser flight's tool** (2026-11-13): `__dwell.moon()` (the moon's world position, the way and distance to it,
+  the player's grid, the gravity) and the bench's `flyTo` step and `moon-trip` scenario (docs/DEV_TOOLS.md "The
+  moon"): a dev move to just outside the capture sphere, a real flight in, the descent, the fall measured and a
+  landing, then out past the release and home's chunks back; natively `game_local`
+  `the_moon_report_steers_a_flight_into_its_capture` (both faces).
+- **Not yet (after M-7c):** the browser flight itself (`moon-trip` on a GPU, a local check; no GPU in cloud sessions); the view's roll upright at the crossing (it is turned at once, keeping the look's direction); the
   moon's own LOD and home's far disc from the moon (M-5, M-6's drawing); the sky's colours and air on the moon
   (home's face samples, `at_eye` by the grid-local height); remote players on another grid (sent at world
   positions); the other systems for away players listed in §7.2.

@@ -168,6 +168,15 @@ export type Step =
    */
   | { do: 'herd'; kind?: 'deer' | 'wolf'; back?: number }
   /**
+   * The moon trip (`__dwell.flyTo`, docs/DEV_TOOLS.md "The moon"; a local world): `moon` puts the
+   * player just outside the moon's capture sphere over its face `face` (`a`, `b`) with the dev
+   * move, flies it in, down to `landM` m (40) over the ground, measures the fall with flight off
+   * (failing when it is not the moon's gravity) and lands; `home` flies up past the release
+   * sphere, back to where the trip started, and waits for home's chunk under the feet. Each leg
+   * at most `maxS` (120). Saved in the report's `trips`.
+   */
+  | { do: 'flyTo'; to: 'moon' | 'home'; face?: 'a' | 'b'; landM?: number; maxS?: number }
+  /**
    * Stands the player on a raft `lift` m (default 1) above its feet and moves the raft at `speed`
    * m/s toward `yaw` (degrees, 0 = +Z, 90 = +X) for `s` seconds at a held height, then waits out
    * the ride (a local world only): "carried by a moving body" bugs (`__dwell.carry`).
@@ -441,6 +450,7 @@ const STEP_FIELDS: Record<Step['do'], readonly string[]> = {
   give: ['item', 'count'],
   lava: ['op', 'args'],
   herd: ['kind', 'back'],
+  flyTo: ['to', 'face', 'landM', 'maxS'],
   mark: [],
   record: ['name', 'budget', 'reportOnly'],
   shot: ['name', ...PLACEMENT_FIELDS, 'quietFrames', 'maxS'],
@@ -686,6 +696,21 @@ export function parseStep(where: string, v: unknown): Step {
         do: d,
         ...(o.kind === undefined ? {} : { kind: o.kind }),
         ...(o.back === undefined ? {} : { back: num(at('back'), o.back, 0, 2000) }),
+      };
+    }
+    case 'flyTo': {
+      if (o.to !== 'moon' && o.to !== 'home') {
+        throw new ViewError(`${at('to')}: expected "moon" or "home"`);
+      }
+      if (o.face !== undefined && (o.to !== 'moon' || (o.face !== 'a' && o.face !== 'b'))) {
+        throw new ViewError(`${at('face')}: expected "a" or "b" (a trip to the moon)`);
+      }
+      return {
+        do: d,
+        to: o.to,
+        ...(o.face === undefined ? {} : { face: o.face }),
+        ...(o.landM === undefined ? {} : { landM: num(at('landM'), o.landM, 5, 500) }),
+        ...(o.maxS === undefined ? {} : { maxS: num(at('maxS'), o.maxS, 1, 600) }),
       };
     }
     case 'give': {
