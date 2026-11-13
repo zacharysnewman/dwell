@@ -581,6 +581,29 @@ them: red with the new rocks' palettes among the old, green after). `Resolved::w
   ground; `realistic_climate`'s discharge rain is 1.5× windward; `realistic_rocks` meets a collision on the face's
   first seed that has one, and allows 1 in 100 red-desert floors off by the arid line. The Realistic golden is
   rewritten (a new line, 0.62). Part B (variety: plan-view swaths, uniform hatching) is separate.
+- **Realistic batch, the owner's later requests (2026-11-13, the 0.62 line; WORK_QUEUE item 15).** All data with
+  validation and tests on both faces:
+  - **Notched ramps only at mesa edges** (`rocks.json` `shaping.notched`, now a word: `none` | `mesaEdges` | `all`; an
+    edit's 0/1 reads as none/all): `mesaEdges` notches a column only where it or a neighbour shows a rock wall
+    (`Column::wall`: an erosion mesa's scarp, a hard bed's wall), the pre-0.59 straight-edge rule elsewhere; ledges
+    unchanged. `tests/realistic_ramps.rs`: off the edges exactly the old rule; ramped columns off the edges 6.6–15.5 %
+    against 0.59's 11.8–32.0 %; 140–637 notched edge columns per face.
+  - **Mesa relief** (`mesaRelief`): standing tops undulate (3.5 m at 220 m), tilt (~1.2 %) and carry knobs or small
+    buttes; floors rise from their drainage line (1.2 %, at most 9 m) with 3 m mounds, talus fans and 2 m washes; the
+    wall and talus follow both. `tests/realistic_mesas.rs`: flat patches' rms tops 0.65 → 0.95 m (A), 0.86 → 1.20 m (B),
+    floors 0.65 → 1.10 m, 0.66 → 1.14 m; the walls' steep share within 15 %.
+  - **Mesa country's palette** (`blends` `dwell:mesa_country` on the red desert beds): red dirt 0.68, red sand 0.24,
+    tan sand 0.08 in order by a 90 m noise (its normal CDF), the slope pushing toward red sand but never into tan,
+    dithered at 3 m: neighbours at most one tone apart. New `dwell:red_dirt` (and its ramps); the red rock mesa's bands
+    red dirt over red sandstone; the siltstone's floors red dirt, its faces red sandstone; the red rock ramp darker.
+    Part B's province mixing does not reach a mesa: the biome's own stack (`rockStack`) wins. `tests/realistic_mesa_colours.rs`.
+  - **Sagebrush** (`shared/trees/sagebrush.json`, `dwell:brush`, `placements.json` `sagebrush`): 0.07–0.08 shrubs per m² of
+    mesa floor (about 3.5 m apart; the rule's most 0.225), none on walls. `tests/realistic_sagebrush.rs`.
+  - **Tan sand deserts** (`climate.json` `rainByLatitude`: the subtropical dry belt; `preset:sand_desert` weight 2.5 below
+    800 m): every subtropical face ≥ 5 % sand desert (seed 1 A 3.4 → 14.8 %, the owner's face B 4.6 → 21.9 %), all of it
+    in warm dry climate; temperate and subarctic faces have little or none (cold deserts there). `tests/realistic_deserts.rs`.
+  - The map's build time: 1.44× the default's (the time test's bar 1.6×, was 1.3×) after sharing the warp and coast
+    between the height and the swells.
 - **Later (not phased):** strata tilt near boundaries; lava vents by rule; a 10× Realistic once the
   world map tiles.
 

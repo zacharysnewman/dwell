@@ -120,8 +120,13 @@ fn fnv(h: &mut u64, bytes: &[u8]) {
 /// Re-pinned 2026-11-13 for BUGS.md #143 (the realistic batch's line): the red desert beds'
 /// siltstone, whose floors the erosion cuts down to, shows red sand only where arid (its `capBy`),
 /// red sandstone elsewhere, as the sandstone does.
+///
+/// Re-pinned 2026-11-13 for the rest of the realistic batch (the 0.62 line; WORK_QUEUE item 15):
+/// notched ramps only at rock walls' edges (rocks.json `shaping.notched` `mesaEdges`), the mesas'
+/// relief (`mesaRelief`), mesa country's blended red dirt, red sand and tan (`blends`), the red rock
+/// mesa's red dirt bands and its sagebrush, and the boulders on red ground.
 const STARTER_PIN: [(Face, &str); 2] =
-    [(Face::A, "6e4f3ec70c730183"), (Face::B, "89dda3d14d454394")];
+    [(Face::A, "bf64104dba77cf86"), (Face::B, "cb8c22ceed97f947")];
 
 #[test]
 fn the_starter_worlds_terrain_is_unchanged() {
