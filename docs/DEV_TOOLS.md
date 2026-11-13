@@ -421,6 +421,11 @@ independently. Use it for cinematic moves instead of per-frame `placeCamera` scr
   promise of `{ bytes (base64), mime, width, height }`: the in-game recorder (MediaRecorder on the canvas, resized
   to the take; MP4 on Chrome) records while the path plays and ends with it; without a path, `'endTake'` ends it.
   Real time: a slow page records fewer frames (the screencast route of the record skill is frame-exact).
+  `audio: true` adds the game's sound (effects and ambience, never the music).
+- **The recording tap** (`__dwell.audioTap({ music: false })` → `{ stream, buses, close }` or null): the game's mix as
+  a MediaStream, effects and ambience by default (`music`/`ui: true` to include those buses), on a parallel graph so
+  the speakers are unchanged; it starts the AudioContext if the page may (the record driver's Chrome needs no
+  gesture). The record skill's driver records it during a take (`/rec/start?…&audio=1`; the skill's §0b).
 - The bench's step: `{ "do": "theater", "preset": "orbit", "params": { "radiusM": 25, "heightM": 8,
   "timeFrom": 0.7, "timeTo": 0.8 }, "subject": "player" }` or `{ "do": "theater", "path": { … } }`; it waits
   for the path's end unless `"wait": false`, and hides the HUD unless `"hud": true`. Record around it with

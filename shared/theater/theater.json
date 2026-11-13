@@ -20,7 +20,7 @@
     "moves": ["ease", "linear", "cut", "pan", "crane", "dolly"]
   },
   "record": {
-    "$comment": "aspects: the frame's shape (width:height); heights: the frame's height choices (px); fps: the stream's rate choices; mimeTypes: tried in order, the first the browser records is used.",
+    "$comment": "aspects: the frame's shape (width:height); heights: the frame's height choices (px); fps: the stream's rate choices; mimeTypes: tried in order, the first the browser records is used; audioMimeTypes: the same with a sound track (a take with `audio`: the game's effects and ambience, never the music), at audioBitsPerSecond.",
     "aspects": [
       { "name": "9:16", "w": 9, "h": 16 },
       { "name": "16:9", "w": 16, "h": 9 }
@@ -36,6 +36,13 @@
       "video/webm;codecs=vp9",
       "video/webm;codecs=vp8",
       "video/webm"
-    ]
+    ],
+    "audioMimeTypes": [
+      "video/mp4;codecs=avc1,mp4a.40.2",
+      "video/webm;codecs=vp9,opus",
+      "video/webm;codecs=vp8,opus",
+      "video/webm"
+    ],
+    "audioBitsPerSecond": 192000
   }
 }

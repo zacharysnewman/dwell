@@ -617,6 +617,22 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    terrain and Sky; the layers' square-past-the-disc overdraw fixed (REALISTIC_WORLD.md R6). The phone page's total at
    load (bench `--touch`, `memory-phone`): Realistic 570 MiB against the starter's 655 MiB.
    **Not done:** the overlays in Chisel (next with its other overlays); O3.
+   Owner, 2026-11-12, on the R6 check's screenshots: **"Is that screenshot from realistic world. Is all of our terrain
+   still stepped? I like stepped terrain but it should be system driven not across the whole realistic world"**. Today
+   the `cliffs` terrain volume (volume.json, the default terrain's terraces: stepped country and escarpments on steep
+   hillsides by a 600 m noise field and every steep mountainside) shapes every world, Realistic included. Next (after
+   video 2): in Realistic worlds steps come from the geology system instead — rocks.json's jointing (`bedded`
+   sedimentary stacks step every `bed` m into walls and treads, `vertical` basalt stands as columns, `massive` granite
+   rises unstepped) with the R5 rock provinces and `shaping`/`erosion` (mesas and scarps in arid sedimentary basins,
+   smooth slopes on granite cores and soils), and the global cliffs volume off for Realistic (data: realistic.json's
+   terrain volume and its rocks shaping strength). A Realistic-only terrain change (the default world unchanged).
+   **Done (2026-11-13, 0.57.0, a new line):** `realistic.json` `"cliffs": 0` and `geology` shaping and erosion strength
+   1, so Realistic ground steps by its rock's jointing (bedded walls and treads, vertical columns, massive granite
+   smooth) and erodes into mesas and scarps in the arid sedimentary biomes; plate-rule province edges fade the shaping
+   in over `rocks.json` `plateProvinces.edgeFade` (600 m) so no wall runs along them. `tests/realistic_steps.rs` (both
+   faces): massive ground < 1 % stepped (as unshaped), bedded 3–4 %, no column reshaped by the volume. Default world
+   unchanged (goldens); Realistic golden rewritten (REALISTIC_WORLD.md R5). Open for the owner: the collision cores'
+   schist is `bedded` (steps every 10 m); `massive` would make the cores smooth throughout (data).
 16. **Phone frame rate (P0)** (owner 2026-11-11, iPhone 17, Safari, setting Low: "I'm only getting ~23 fps on
    mobile, seeing lots of z-fighting on tree trunks with the leaf cards. What might be dropping frames since the
    last while. Used to get 60 fps"). Suspect: leaf cards are on in every tier but CPU, Low included; cards lying
@@ -1249,6 +1265,13 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    (AAC/Opus at a music bitrate, loudness-matched), a music list as data (tracks, moods, gain, fade), a prototype
    page to audition the set, the game's music player shuffling them (no repeats back to back, gaps and fades as
    data) in place of the current tracks; licence notes as for the Imphenzia samples (AUDIO.md §2b).
+   Owner (2026-11-12): "Did you give me a sample of the music yet". **Built (branch `claude/casual-music`):**
+   20 candidates from the casual packs (Mega *Casual Game Music*, Massive *Casual Game Music Pack* and its
+   acoustic versions, *Simple and Positive*), AAC 96 kbps at −18 LUFS, 24.2 MB; the playlist as data
+   (`shared/music/music.json` `playlist`: shuffle, 20–60 s gaps, cross-fade 0) played by
+   `client/src/audio/playlist.ts`; Starry Sunshine removed; the audition page
+   `docs/prototypes/music-audition.html` (https://claude.ai/artifact/Ccdtsp5eiQYF4b9uzspyYe). **Waiting on the owner:** the
+   picks (the page's JSON), the level and the gap.
 
 34. **The in-game Chisel editor and the Textures tab extras** (owner 2026-11-12: "these all seem solid yes"): open
    Chisel's biome sliders inside a running world with the terrain around the player regenerating as they tune
@@ -1452,6 +1475,14 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    showcase with recordings. Ideally recordings are 1 minute or less. Don't include any text or anything in the
    video."). Made with the `record` skill (`.claude/skills/record/`): 9:16 at 1080×1920, h264 30 fps, a minute or
    less, no text of any kind, no music, clouds off unless the shot is about clouds, footage deleted after sending.
+   **Showcase audio** (owner, 2026-11-13: "showcases shouldn't have music, but sound effects and ambiance are good";
+   asked whether that meant the recordings: "Yes it's for the recordings"). Built 2026-11-13: every take records the
+   game's own sound, effects and ambience, never the music or the UI (`__dwell.audioTap({ music: false })`, a parallel
+   tap of the mix, the speakers unchanged); the record driver saves it beside the frames, take.mjs muxes it into each
+   clip (aligned to the first frame, 48 kHz AAC), splice.py cuts, cross-fades and fades it with the picture
+   (time-stretched on slow-motion parts, muted on time-lapses past 2×); a manifest's `audio` is on by default, per
+   shot and per part overrides; theater mode's take takes `audio: true`. Outstanding: the first re-record with sound
+   on the owner's machine (a browser check; the cloud session that built it had none), and the owner's listen.
    Video 1, the bifacial world (16), recorded 2026-11-12 (55 s, 7 clips; at the rim of seed 7 the edge is open sea on
    both faces, so the player flies over the edge rather than walking; BUGS.md #99 fixed for the third-person shots).
    Waiting on the owner to pick which come first. The list (suggested first: 1, 10, 3, 6, 11, 2 — the most striking
@@ -1522,8 +1553,15 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    uses face B's own up (upright, `up: "auto"`).
    v5 (one-command tool #853; full record ~5 min, a one-shot fix 2 min 34 s): owner **"Bifacial v5 looks great saved
    it."** — video 1 done; its clip cache cleared. Next: video 2 (water and underwater), shot plan first.
+   Showcase audio (owner 2026-11-12: "Can you record audio output from an application directly? Instead of trying to
+   record via microphone?" → explained: the game's WebAudio master can feed a recorder inside the page; owner:
+   **"Yeah showcases shouldn't have music, but sound effects and ambiance are good."**). Build: the recorders capture
+   the game's mix with the music bus muted (effects + ambience kept) — the in-game recorder as a second track, the
+   screencast takes via a MediaRecorder of the master (minus music) written alongside the frames and aligned in the
+   splice; the manifest's audio on by default for showcases. Queued after video 2 and the Realistic steps.
    Video 2 plan given (coast glide, river to the sea, wading in, the transition, underwater swim, surfacing at
-   sunset). Owner sent a look reference: **"Underwater reference photo from the game abzu for pretty underwater with
+   sunset). Owner on the underwater look pass (#860), 2026-11-12: **"Water looks good"** — approved; video 2
+   recorded with `take.mjs water` (manifest `.claude/skills/record/videos/water/`, seed 7's coast at ~11700, 19500). Owner sent a look reference: **"Underwater reference photo from the game abzu for pretty underwater with
    transparent surface, light rays etc."** (ABZÛ: bright turquoise water with a long clear view, a bright see-through
    surface from below with the sun's disc and Snell's window, strong volumetric light shafts, caustics, a colourful
    lit floor). Before recording video 2: an underwater look pass toward that reference (WATER_RENDERING.md W4's

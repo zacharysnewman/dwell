@@ -2,10 +2,13 @@
 // node driver.mjs URL OUT_DIR [WIDTH HEIGHT] — POST /eval (body: JS, `d` = __dwell), /goto (body: URL),
 // /rec/start?name=, /rec/stop, /shot?name=, /viewport?w=&h=, /errors, /quit. Listens on :4999 (or $RECORD_PORT).
 // $RECORD_STORAGE: a JSON {localStorage key: value} set before every load (take.mjs passes a video's world.storage).
+// /rec/start?name=&audio=1 also records the game's sound (__dwell.audioTap: effects and ambience, never music) and
+// /rec/stop saves it beside the frames as OUT_DIR/<name>.webm with <name>.audio.json (its epoch start, the frames' clock).
 import { createRequire } from 'node:module';
 import http from 'node:http';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { audioStartExpr, audioStopExpr } from './audio.mjs';
 const require = createRequire(new URL('../../../../client/package.json', import.meta.url));
 const { chromium } = require('playwright');
 const url = process.argv[2];
@@ -13,7 +16,9 @@ const OUT = process.argv[3] ?? 'record-out';
 const W = +(process.argv[4] ?? 1080), H = +(process.argv[5] ?? 1920);
 const browser = await chromium.launch({ headless: false, channel: 'chrome', args: [
   '--enable-unsafe-webgpu', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows',
-  '--disable-background-timer-throttling', '--no-proxy-server'] });
+  '--disable-background-timer-throttling', '--no-proxy-server',
+  // the game's AudioContext starts without a click, so a take records its sound
+  '--autoplay-policy=no-user-gesture-required'] });
 const context = await browser.newContext({ viewport: { width: W, height: H } });
 const page = await context.newPage();
 const storage = { 'dwell.music': '"off"', ...JSON.parse(process.env.RECORD_STORAGE || '{}') };
@@ -43,15 +48,25 @@ http.createServer(async (req, res) => {
     else if (u.pathname === '/eval') out = await ev(body);
     else if (u.pathname === '/rec/start') {
       const dir = join(OUT, u.searchParams.get('name')); mkdirSync(dir, { recursive: true });
-      rec = { dir, n: 0, times: [] };
+      rec = { dir, name: u.searchParams.get('name'), n: 0, times: [], audio: null };
+      if (u.searchParams.get('audio') === '1') rec.audio = await page.evaluate(audioStartExpr());
       await cdp.send('Page.startScreencast', { format: 'jpeg', quality: 92, maxWidth: vw, maxHeight: vh, everyNthFrame: 1 });
-      out = 'recording ' + dir;
+      out = 'recording ' + dir + (rec.audio ? ` with sound (${rec.audio.buses.join(', ')})` : '');
     } else if (u.pathname === '/rec/stop') {
       await cdp.send('Page.stopScreencast');
       const r = rec; rec = null;
       writeFileSync(join(r.dir, 'times.json'), JSON.stringify(r.times));
       const span = r.times.length > 1 ? r.times[r.times.length - 1] - r.times[0] : 0;
       out = { frames: r.n, seconds: span, fps: r.n / Math.max(span, 1e-6) };
+      if (r.audio) {
+        const a = await page.evaluate(audioStopExpr());
+        if (a) {
+          writeFileSync(join(OUT, r.name + '.webm'), Buffer.from(a.bytes, 'base64'));
+          const { bytes: _, ...meta } = a;
+          writeFileSync(join(OUT, r.name + '.audio.json'), JSON.stringify(meta));
+          out.audio = { seconds: a.stopS - a.startS, buses: a.buses };
+        }
+      }
     } else if (u.pathname === '/viewport') {
       vw = +u.searchParams.get('w'); vh = +u.searchParams.get('h');
       await page.setViewportSize({ width: vw, height: vh }); out = `viewport ${vw}x${vh}`;

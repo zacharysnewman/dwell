@@ -732,6 +732,16 @@ test('R5: plateProvinces map plate settings to stacks by name, by data alone; ba
   bad((x) => (x.plateProvinces.rangeCore = [9000, 1000]), /plateProvinces: rangeCore must be/);
   bad((x) => (x.plateProvinces.riftWidth = -1), /plateProvinces: riftWidth must be/);
   bad((x) => (x.plateProvinces.depth = 1), /plateProvinces: unknown depth/);
+  bad((x) => (x.plateProvinces.edgeFade = -5), /plateProvinces: edgeFade must be/);
+});
+
+test('item 15: the Realistic world steps by its rock, not the global cliffs volume (data)', () => {
+  const r = JSON.parse(readFileSync(join(here, 'worlds/realistic.json'), 'utf8'));
+  assert.equal(r.cliffs, 0, 'no global terrace volume in Realistic worlds');
+  assert.ok(r.geology.shaping.strength > 0, 'the rock shaping is on');
+  assert.ok(r.geology.erosion.strength > 0, 'the erosion is on');
+  const rocks = JSON.parse(readFileSync(join(here, 'rocks.json'), 'utf8'));
+  assert.ok(rocks.plateProvinces.edgeFade > 0, 'the provinces fade at their edges');
 });
 
 test('R5: a rock\'s soils by climate, in order; bad climates fail naming the rock', () => {

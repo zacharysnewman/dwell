@@ -352,8 +352,9 @@ There are **no official game servers**; players host (ADR 0003, details in §10)
 /shared/sounds       Sound data (dwell.json: sounds, block sound sets, events, gaits, actions, UI,
                      controls), samples/ (recorded variations, mono .m4a) + gen.mjs (→ TS for client/src/audio, Rust for dwell-game) and
                      validate.mjs (also used by shared/blocks/gen.mjs and the client's tests).
-/shared/music        Music (music.json: tracks — title, author, file, volume, loop, fades, when —
-                     and their audio files, the owner's Starry Sunshine) + gen.mjs (→ TS
+/shared/music        Music (music.json: the playlist — order, gaps, cross-fade — and tracks — title,
+                     author, file, volume, loop, fades, when — with their .m4a files, 20 casual
+                     tracks by Andrew Sitkov) + gen.mjs (→ TS
                      music.gen.ts, each file's published name with its content hash), validate.mjs.
 /shared/worldgen     golden/: chunk and LOD-section hashes of generator version 23 (§6.3); terrain.json: the world's elevation and water (the height field, rivers, lakes, spawn, the `defaultBiome`), biomes/: the biomes layered on it (where they belong, fine relief, banks, water look, elevation bands, rule references; fixtures/ for tests; ADR 0074), worlds/: example world settings (the archipelago), decorations.json: the terrain's decoration rules, placements.json: the structure placements (the pines, ADR 0043; broadleaf trees and boulders that preset biomes list, ADR 0074 B5; tree species by name, ADR 0079), midplane.json: the bedrock between the faces and the portals through it, gen.mjs (→ Rust tables for dwell-worldgen) (§6.3).
 /shared/structures   Structure files (*.json; test/ holds fixtures) + gen.mjs (→ Rust tables for
@@ -786,9 +787,12 @@ ones need no wiring; `data-sound` overrides or silences one. Offline renders
 (`npm run sfx:render`) play every sound through the same synth and mixer in Chromium's
 `OfflineAudioContext`, check them (non-silent, peak < 1.0, sensible length) and write WAVs.
 
-**Music** **[built, Phase 28 F8]** ([`AUDIO.md`](./AUDIO.md) §2a, §6a). The one streamed asset: the
-owner's track *Starry Sunshine*, as data in `shared/music/music.json` (title, author, file, volume,
-loop, fades, `when` — only `always` so far; the first matching track plays), validated and
+**Music** **[built, Phase 28 F8]** ([`AUDIO.md`](./AUDIO.md) §2a, §6a). The streamed assets: 20
+casual tracks (Andrew Sitkov's Total Music Collection, AAC 96 kbps at −18 LUFS), as data in
+`shared/music/music.json` (each track's title, author, file, volume, loop, fades, `when` — only
+`always` so far; and one `playlist`: `shuffle`, a gap drawn in [`gapMinS`, `gapMaxS`], `crossfadeS`),
+played by `client/src/audio/playlist.ts` (a shuffled bag, never the same track twice in a row, one
+player per track), validated and
 generated into `client/src/audio/music.gen.ts` (CI fails on stale output). The shell streams it with
 an `<audio>` element, never decoded whole, routed once the AudioContext runs into the mixer's
 **music** bus (`createMediaElementSource` → gain → music → master); before that it plays straight

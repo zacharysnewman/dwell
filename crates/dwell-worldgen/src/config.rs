@@ -658,6 +658,11 @@ fn plate_provinces_from_json(v: Option<&Value>) -> Result<crate::geology::PlateP
         range_core: range,
         rift_width: num(v, "riftWidth").map_err(at)?,
         basin_distance: num(v, "basinDistance").map_err(at)?,
+        // Absent (an edit stored before 0.57): a sharp edge, as then.
+        edge_fade: match v.get("edgeFade") {
+            None => 0.0,
+            Some(_) => num(v, "edgeFade").map_err(at)?,
+        },
         rules: Box::leak(rules.into_boxed_slice()),
     })
 }

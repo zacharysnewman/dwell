@@ -1,0 +1,261 @@
+<title>Dwell Music Audition</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Atkinson+Hyperlegible:wght@400;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: one column of track rows under a sticky transport; the shuffle preview beside it on wide screens. */
+:root {
+  --bg: #eef2ea; --panel: #fbfcf8; --ink: #23301f; --muted: #5d6b57; --line: #cfd8c6;
+  --accent: #2f6f8f; --accent-ink: #ffffff; --keep: #3f7d3a; --drop: #a4473a; --wash: #dfe8d6;
+  --display: "Fraunces", Georgia, serif; --body: "Atkinson Hyperlegible", system-ui, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #161c18; --panel: #1f2721; --ink: #e5ece0; --muted: #9fae98; --line: #34413a;
+  --accent: #79b6d4; --accent-ink: #0d1a20; --keep: #86c77f; --drop: #e28b7c; --wash: #263129; color-scheme: dark; } }
+:root[data-theme="dark"] {
+  --bg: #161c18; --panel: #1f2721; --ink: #e5ece0; --muted: #9fae98; --line: #34413a;
+  --accent: #79b6d4; --accent-ink: #0d1a20; --keep: #86c77f; --drop: #e28b7c; --wash: #263129; color-scheme: dark; }
+body { background: var(--bg); color: var(--ink); font: 15px/1.5 var(--body);
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 20px 48px; }
+.wrap { max-width: 1080px; margin: 0 auto; display: grid; gap: 20px; }
+header h1 { font: 700 2rem/1.1 var(--display); margin: 0; text-wrap: balance; }
+header p { margin: 6px 0 0; color: var(--muted); max-width: 68ch; }
+.cols { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: 20px; align-items: start; }
+@media (max-width: 820px) { .cols { grid-template-columns: minmax(0, 1fr); } }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px; display: grid; gap: 12px; min-width: 0; }
+h2 { font: 700 1.1rem/1.2 var(--display); margin: 0; }
+.label { font: 600 0.72rem/1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.now { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--bg); }
+.np-title { font: 700 1.25rem/1.2 var(--display); }
+.bar { height: 6px; background: var(--wash); border-radius: 3px; overflow: hidden; cursor: pointer; }
+.bar > i { display: block; height: 100%; width: 0; background: var(--accent); }
+.row-btns { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+button { font: 600 0.9rem/1 var(--body); border: 1px solid var(--line); background: var(--panel); color: var(--ink); border-radius: 6px; padding: 8px 12px; cursor: pointer; }
+button:hover { border-color: var(--accent); }
+button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.tracks { display: grid; gap: 0; }
+.track { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; gap: 12px; align-items: center; padding: 10px 4px; border-top: 1px solid var(--line); }
+.track:first-child { border-top: 0; }
+.track.playing { background: var(--wash); border-radius: 6px; }
+.track .t { font-weight: 700; overflow-wrap: anywhere; }
+.track .m { font: 0.78rem/1.3 var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+.track.dropped .t { color: var(--muted); text-decoration: line-through; }
+.chip { font: 600 0.78rem/1 var(--mono); padding: 6px 9px; border-radius: 999px; border: 1px solid currentColor; background: transparent; }
+.chip.keep { color: var(--keep); } .chip.drop { color: var(--drop); }
+.play { width: 34px; height: 34px; padding: 0; border-radius: 50%; display: grid; place-items: center; }
+.play svg { width: 14px; height: 14px; fill: currentColor; }
+.field { display: grid; grid-template-columns: minmax(0, 1fr) 84px; gap: 8px; align-items: center; }
+.field input { font: 0.9rem var(--mono); padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink); width: 100%; box-sizing: border-box; }
+.log { font: 0.8rem/1.45 var(--mono); color: var(--muted); max-height: 180px; overflow: auto; margin: 0; white-space: pre-wrap; }
+textarea { width: 100%; box-sizing: border-box; min-height: 150px; font: 0.78rem/1.4 var(--mono); background: var(--bg); color: var(--ink); border: 1px solid var(--line); border-radius: 6px; padding: 8px; }
+.note { font-size: 0.85rem; color: var(--muted); }
+.summary { font: 0.85rem var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+@media (prefers-reduced-motion: reduce) { .bar > i { transition: none; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>Dwell Music Audition</h1>
+    <p>The casual candidates from Andrew Sitkov's Total Music Collection, as the game ships them: AAC at 96 kbps, levelled to −18 LUFS. Play each, mark it keep or drop, then hear the kept set the way the game plays it: shuffled, never the same track twice in a row, with silence or a cross-fade between tracks. Copy the JSON at the end and send it back.</p>
+  </header>
+
+  <section class="panel now" aria-label="Now playing">
+    <span class="label" id="np-mode">Stopped</span>
+    <div class="np-title" id="np-title">Pick a track</div>
+    <div class="bar" id="np-bar" title="Seek"><i id="np-fill"></i></div>
+    <div class="row-btns">
+      <button id="btn-pause" class="primary">Pause</button>
+      <button id="btn-skip">Skip</button>
+      <button id="btn-keep" class="chip keep">Keep</button>
+      <button id="btn-drop" class="chip drop">Drop</button>
+      <span class="summary" id="np-time">0:00 / 0:00</span>
+    </div>
+  </section>
+
+  <div class="cols">
+    <section class="panel" aria-label="Candidates">
+      <div class="row-btns" style="justify-content: space-between">
+        <h2>Candidates</h2>
+        <span class="summary" id="count"></span>
+      </div>
+      <div class="tracks" id="tracks"></div>
+    </section>
+
+    <div style="display: grid; gap: 20px; min-width: 0">
+      <section class="panel" aria-label="Shuffle preview">
+        <h2>Shuffle preview</h2>
+        <p class="note">Plays the kept tracks in the game's order. Set "Start near the end" to hear each transition without waiting out whole tracks.</p>
+        <label class="field"><span>Gap, shortest (s)</span><input id="gap-min" type="number" min="0" max="600" step="1" value="20"></label>
+        <label class="field"><span>Gap, longest (s)</span><input id="gap-max" type="number" min="0" max="600" step="1" value="60"></label>
+        <label class="field"><span>Cross-fade (s)</span><input id="xfade" type="number" min="0" max="30" step="0.5" value="0"></label>
+        <label class="field"><span>Fade in (s)</span><input id="fade-in" type="number" min="0" max="60" step="0.5" value="2"></label>
+        <label class="field"><span>Fade out (s)</span><input id="fade-out" type="number" min="0" max="60" step="0.5" value="3"></label>
+        <label class="field"><span>Start near the end (s before, 0 = off)</span><input id="tail" type="number" min="0" max="120" step="1" value="0"></label>
+        <div class="row-btns"><button id="btn-shuffle" class="primary">Play shuffled</button><button id="btn-stop">Stop</button></div>
+        <pre class="log" id="log" aria-live="polite"></pre>
+      </section>
+
+      <section class="panel" aria-label="Export">
+        <h2>Your picks</h2>
+        <p class="note">Kept tracks and the playlist settings, in the shape of <code>shared/music/music.json</code>.</p>
+        <textarea id="json" readonly></textarea>
+        <div class="row-btns"><button id="btn-copy">Copy JSON</button><span class="summary" id="copied"></span></div>
+      </section>
+    </div>
+  </div>
+</div>
+
+<script>
+const TRACKS = [{"id":"dwell:casual_classic_1","title":"Casual Classic #1","pack":"Casual Game Music","file":"casual-classic-1.m4a","dur":115.2,"srcLufs":-17.5,"kb":1371},{"id":"dwell:casual_classic_2","title":"Casual Classic #2","pack":"Casual Game Music","file":"casual-classic-2.m4a","dur":145.8,"srcLufs":-17.5,"kb":1736},{"id":"dwell:casual_classic_3","title":"Casual Classic #3","pack":"Casual Game Music","file":"casual-classic-3.m4a","dur":96,"srcLufs":-19.7,"kb":1143},{"id":"dwell:casual_classic_4","title":"Casual Classic #4","pack":"Casual Game Music","file":"casual-classic-4.m4a","dur":133,"srcLufs":-16.6,"kb":1582},{"id":"dwell:casual_classic_5","title":"Casual Classic #5","pack":"Casual Game Music","file":"casual-classic-5.m4a","dur":117.6,"srcLufs":-19.5,"kb":1400},{"id":"dwell:casual_theme_1","title":"Casual Theme #1","pack":"Casual Game Music Pack","file":"casual-theme-1.m4a","dur":106,"srcLufs":-17.4,"kb":1262},{"id":"dwell:casual_theme_2","title":"Casual Theme #2","pack":"Casual Game Music Pack","file":"casual-theme-2.m4a","dur":96,"srcLufs":-19,"kb":1143},{"id":"dwell:casual_theme_3","title":"Casual Theme #3","pack":"Casual Game Music Pack","file":"casual-theme-3.m4a","dur":85.1,"srcLufs":-20,"kb":1013},{"id":"dwell:casual_theme_4","title":"Casual Theme #4","pack":"Casual Game Music Pack","file":"casual-theme-4.m4a","dur":76.4,"srcLufs":-17.2,"kb":909},{"id":"dwell:casual_theme_5","title":"Casual Theme #5","pack":"Casual Game Music Pack","file":"casual-theme-5.m4a","dur":79.2,"srcLufs":-18.4,"kb":943},{"id":"dwell:casual_theme_1_acoustic","title":"Casual Theme #1 (Acoustic)","pack":"Casual Game Music Pack (Acoustic Guitar Versions)","file":"casual-theme-1-acoustic.m4a","dur":108.5,"srcLufs":-17.6,"kb":1291},{"id":"dwell:casual_theme_2_acoustic","title":"Casual Theme #2 (Acoustic)","pack":"Casual Game Music Pack (Acoustic Guitar Versions)","file":"casual-theme-2-acoustic.m4a","dur":103.2,"srcLufs":-22.9,"kb":1228},{"id":"dwell:casual_theme_3_acoustic","title":"Casual Theme #3 (Acoustic)","pack":"Casual Game Music Pack (Acoustic Guitar Versions)","file":"casual-theme-3-acoustic.m4a","dur":86.1,"srcLufs":-18.1,"kb":1026},{"id":"dwell:casual_theme_4_acoustic","title":"Casual Theme #4 (Acoustic)","pack":"Casual Game Music Pack (Acoustic Guitar Versions)","file":"casual-theme-4-acoustic.m4a","dur":87.3,"srcLufs":-20.8,"kb":1039},{"id":"dwell:casual_theme_5_acoustic","title":"Casual Theme #5 (Acoustic)","pack":"Casual Game Music Pack (Acoustic Guitar Versions)","file":"casual-theme-5-acoustic.m4a","dur":98.4,"srcLufs":-14.7,"kb":1171},{"id":"dwell:simple_positive_1","title":"Simple and Positive Track #1","pack":"Simple and Positive Casual Music Pack","file":"simple-positive-1.m4a","dur":102,"srcLufs":-18.1,"kb":1214},{"id":"dwell:simple_positive_2","title":"Simple and Positive Track #2","pack":"Simple and Positive Casual Music Pack","file":"simple-positive-2.m4a","dur":79.9,"srcLufs":-18.9,"kb":951},{"id":"dwell:simple_positive_3","title":"Simple and Positive Track #3","pack":"Simple and Positive Casual Music Pack","file":"simple-positive-3.m4a","dur":84.6,"srcLufs":-18.6,"kb":1007},{"id":"dwell:simple_positive_4","title":"Simple and Positive Track #4","pack":"Simple and Positive Casual Music Pack","file":"simple-positive-4.m4a","dur":91.9,"srcLufs":-19.9,"kb":1095},{"id":"dwell:simple_positive_5","title":"Simple and Positive Track #5","pack":"Simple and Positive Casual Music Pack","file":"simple-positive-5.m4a","dur":90,"srcLufs":-17.5,"kb":1072}];
+// In the repository the files are beside the game's data; on the published page, beside the page.
+const BASE = (location.protocol === 'file:' || location.pathname.includes('/docs/prototypes/')) ? '../../shared/music/' : 'tracks/';
+const STORE = 'dwell.musicAudition';
+const $ = (id) => document.getElementById(id);
+let picks = {};
+try { picks = JSON.parse(localStorage.getItem(STORE) || '{}') || {}; } catch { picks = {}; }
+const isKept = (t) => picks[t.id] !== 'drop';
+const save = () => { try { localStorage.setItem(STORE, JSON.stringify(picks)); } catch {} render(); };
+const fmt = (s) => { s = Math.max(0, Math.floor(s || 0)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
+const num = (id) => Math.max(0, Number($(id).value) || 0);
+
+// Two decks: a cross-fade needs both playing at once.
+const decks = [new Audio(), new Audio()];
+decks.forEach((a) => { a.preload = 'auto'; });
+let cur = 0;                 // the deck playing the current track
+let current = null;          // the current track
+let mode = 'stopped';        // 'single' | 'shuffle' | 'gap' | 'stopped'
+let bag = [], last = null, gapTimer = null, rafId = 0;
+const fades = new Map();     // deck -> { from, to, t0, s }
+
+function fadeTo(deck, to, s) {
+  fades.set(deck, { from: deck.volume, to, t0: performance.now(), s: Math.max(0.001, s) });
+  if (!rafId) rafId = requestAnimationFrame(step);
+}
+function step(now) {
+  rafId = 0;
+  for (const [deck, f] of fades) {
+    const k = Math.min(1, (now - f.t0) / (f.s * 1000));
+    deck.volume = Math.min(1, Math.max(0, f.from + (f.to - f.from) * k));
+    if (k >= 1) { fades.delete(deck); if (f.to === 0) deck.pause(); }
+  }
+  tick();
+  if (fades.size || mode !== 'stopped') rafId = requestAnimationFrame(step);
+}
+
+function nextShuffled() {
+  const kept = TRACKS.filter(isKept);
+  if (!kept.length) return null;
+  bag = bag.filter((t) => isKept(t));
+  if (!bag.length) {
+    bag = [...kept];
+    for (let i = bag.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [bag[i], bag[j]] = [bag[j], bag[i]]; }
+    if (bag.length > 1 && bag[bag.length - 1] === last) { const k = Math.floor(Math.random() * (bag.length - 1)); [bag[bag.length - 1], bag[k]] = [bag[k], bag[bag.length - 1]]; }
+  }
+  last = bag.pop();
+  return last;
+}
+
+function start(t, how) {
+  clearTimeout(gapTimer);
+  const prev = decks[cur];
+  const xf = how === 'shuffle' ? num('xfade') : 0;
+  if (!prev.paused) fadeTo(prev, 0, xf > 0 ? Math.max(xf, 0.3) : 0.3);
+  cur = 1 - cur;
+  const d = decks[cur];
+  d.src = BASE + (BASE === 'tracks/' ? t.file.replace(/\.m4a$/, '.mp4') : t.file); // published as .mp4 (the same MP4 container)
+  d.volume = 0;
+  const tail = how === 'shuffle' ? num('tail') : 0;
+  if (tail > 0) d.addEventListener('loadedmetadata', () => { d.currentTime = Math.max(0, d.duration - tail); }, { once: true });
+  d.play().catch(() => log('The browser held the sound: press a button to start it.'));
+  fadeTo(d, 1, how === 'shuffle' ? num('fade-in') : 0.3);
+  current = t; mode = how; scheduled = false;
+  log(`${new Date().toLocaleTimeString()}  ▶ ${t.title}`);
+  render();
+  if (!rafId) rafId = requestAnimationFrame(step);
+}
+
+let scheduled = false;
+function tick() {
+  const d = decks[cur];
+  if (current && Number.isFinite(d.duration)) {
+    $('np-fill').style.width = `${(100 * d.currentTime / d.duration).toFixed(2)}%`;
+    $('np-time').textContent = `${fmt(d.currentTime)} / ${fmt(d.duration)}`;
+  }
+  if (mode !== 'shuffle' || !Number.isFinite(d.duration) || scheduled) return;
+  const left = d.duration - d.currentTime;
+  const fo = num('fade-out');
+  if (fo > 0 && left <= fo && !fades.has(d)) fadeTo(d, 0, left);
+  const gMin = num('gap-min'), gMax = Math.max(gMin, num('gap-max'));
+  const gap = gMin + (gMax - gMin) * Math.random();
+  const lead = gap - num('xfade');       // the next starts this long after the end (negative: before it)
+  if (left <= Math.max(0, -lead) || d.ended) {
+    scheduled = true;
+    const wait = Math.max(0, left + lead);
+    if (wait > 0.05) { mode = 'gap'; log(`             … ${wait.toFixed(1)} s of silence`); setStatus(); }
+    gapTimer = setTimeout(() => { const n = nextShuffled(); if (n) start(n, 'shuffle'); else stop(); }, wait * 1000);
+  }
+}
+decks.forEach((d) => d.addEventListener('ended', () => { if (mode === 'single' && d === decks[cur]) { mode = 'stopped'; render(); } }));
+
+function stop() {
+  clearTimeout(gapTimer);
+  decks.forEach((d) => fadeTo(d, 0, 0.4));
+  mode = 'stopped'; render();
+}
+
+function log(s) { const el = $('log'); el.textContent = (s + '\n' + el.textContent).slice(0, 4000); }
+function setStatus() {
+  $('np-mode').textContent = { single: 'Playing', shuffle: 'Shuffle', gap: 'Shuffle: between tracks', stopped: 'Stopped' }[mode];
+  $('np-title').textContent = current ? current.title : 'Pick a track';
+  $('btn-pause').textContent = decks[cur].paused && mode !== 'stopped' ? 'Resume' : 'Pause';
+}
+
+const PLAY = '<svg viewBox="0 0 10 10" aria-hidden="true"><path d="M2 1l7 4-7 4z"/></svg>';
+function render() {
+  const list = $('tracks');
+  list.innerHTML = '';
+  for (const t of TRACKS) {
+    const row = document.createElement('div');
+    row.className = 'track' + (isKept(t) ? '' : ' dropped') + (current === t && mode !== 'stopped' ? ' playing' : '');
+    row.innerHTML = `<button class="play" aria-label="Play ${t.title}">${PLAY}</button>
+      <div><div class="t"></div><div class="m">${t.pack} · ${fmt(t.dur)} · ${t.kb} KB · source ${t.srcLufs} LUFS</div></div>
+      <button class="chip keep" aria-pressed="${isKept(t)}">${isKept(t) ? 'Kept' : 'Keep'}</button>
+      <button class="chip drop" aria-pressed="${!isKept(t)}">${isKept(t) ? 'Drop' : 'Dropped'}</button>`;
+    row.querySelector('.t').textContent = t.title;
+    const [play, keep, drop] = row.querySelectorAll('button');
+    play.onclick = () => start(t, 'single');
+    keep.onclick = () => { delete picks[t.id]; save(); };
+    drop.onclick = () => { picks[t.id] = 'drop'; save(); };
+    list.appendChild(row);
+  }
+  const kept = TRACKS.filter(isKept);
+  $('count').textContent = `${kept.length} of ${TRACKS.length} kept · ${fmt(kept.reduce((a, t) => a + t.dur, 0))} · ${(kept.reduce((a, t) => a + t.kb, 0) / 1024).toFixed(1)} MB`;
+  $('json').value = JSON.stringify({
+    kept: kept.map((t) => t.id),
+    dropped: TRACKS.filter((t) => !isKept(t)).map((t) => t.id),
+    playlist: { order: 'shuffle', gapMinS: num('gap-min'), gapMaxS: Math.max(num('gap-min'), num('gap-max')), crossfadeS: num('xfade') },
+    fadeInS: num('fade-in'), fadeOutS: num('fade-out'),
+  }, null, 2);
+  setStatus();
+}
+
+$('btn-pause').onclick = () => { const d = decks[cur]; if (!current) return; if (d.paused) d.play(); else d.pause(); setStatus(); };
+$('btn-skip').onclick = () => {
+  if (mode === 'shuffle' || mode === 'gap') { const n = nextShuffled(); if (n) start(n, 'shuffle'); return; }
+  const i = TRACKS.indexOf(current); start(TRACKS[(i + 1) % TRACKS.length], 'single');
+};
+$('btn-keep').onclick = () => { if (current) { delete picks[current.id]; save(); } };
+$('btn-drop').onclick = () => { if (current) { picks[current.id] = 'drop'; save(); if (mode === 'single' || mode === 'shuffle') $('btn-skip').onclick(); } };
+$('btn-shuffle').onclick = () => { bag = []; const n = nextShuffled(); if (n) start(n, 'shuffle'); else log('Keep at least one track.'); };
+$('btn-stop').onclick = stop;
+$('np-bar').onclick = (e) => { const d = decks[cur]; if (!Number.isFinite(d.duration)) return; const r = e.currentTarget.getBoundingClientRect(); d.currentTime = d.duration * (e.clientX - r.left) / r.width; };
+['gap-min', 'gap-max', 'xfade', 'fade-in', 'fade-out'].forEach((id) => $(id).addEventListener('input', render));
+$('btn-copy').onclick = () => {
+  const ta = $('json');
+  navigator.clipboard.writeText(ta.value).then(() => { $('copied').textContent = 'Copied'; }, () => { ta.select(); $('copied').textContent = 'Selected: copy it with your keyboard'; });
+};
+render();
+</script>

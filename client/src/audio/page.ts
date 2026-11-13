@@ -2,8 +2,9 @@
 // volumes, the menus' delegated UI sounds, and the music (§6a). Once per page, whoever asks first
 // (the game page, or the main menu, which the launcher shows without WASM).
 import { audio, type AudioEngine } from './engine';
-import { browserMusicEnv, chooseTrack, MusicPlayer, musicEnabled } from './music';
+import { browserMusicEnv, musicEnabled } from './music';
 import { MUSIC_DATA } from './music.gen';
+import { MusicPlaylist } from './playlist';
 import { loadVolumes } from './settings';
 import { installUiSounds } from './uiSounds';
 
@@ -28,7 +29,8 @@ export function installPageSounds(doc: Document = document): AudioEngine {
   w.__dwellMusic = () =>
     music
       ? {
-          track: music.track.title,
+          track: music.track?.title ?? null,
+          history: [...music.history],
           state: music.state,
           routed: music.routed,
           time: music.time,
@@ -41,18 +43,17 @@ export function installPageSounds(doc: Document = document): AudioEngine {
 }
 
 /** The music, from the first screen (the menu, the loading screen, the game): off for tests. */
-function installMusic(sfx: AudioEngine, doc: Document): MusicPlayer | null {
+function installMusic(sfx: AudioEngine, doc: Document): MusicPlaylist | null {
   let store: Storage | null;
   try {
     store = typeof localStorage === 'undefined' ? null : localStorage;
   } catch {
     store = null;
   }
-  const track = chooseTrack(MUSIC_DATA);
-  if (!track || !musicEnabled(location.search, store)) return null;
-  const player = new MusicPlayer(
-    track,
-    `${__MEDIA_BASE__}${track.file}`,
+  if (!musicEnabled(location.search, store)) return null;
+  const player = new MusicPlaylist(
+    MUSIC_DATA,
+    (t) => `${__MEDIA_BASE__}${t.file}`,
     sfx,
     browserMusicEnv(doc),
   );

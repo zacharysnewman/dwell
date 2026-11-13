@@ -7,18 +7,19 @@ import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { PART_AUDIO, partAudio } from './audio.mjs';
 
 export const SKILL = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export const VIDEOS = join(SKILL, 'videos');
 
 const KEYS = {
-  video: ['formatVersion', 'name', 'description', 'world', 'capture', 'splice', 'shots'],
+  video: ['formatVersion', 'name', 'description', 'world', 'capture', 'audio', 'splice', 'shots'],
   world: ['url', 'storage'],
   capture: ['size', 'fps'],
   splice: ['fade', 'crf'],
-  shot: ['id', 'note', 'kind', 'path', 'script', 'args', 'setup', 'capture', 'splice'],
+  shot: ['id', 'note', 'kind', 'path', 'script', 'args', 'setup', 'capture', 'audio', 'splice'],
   setup: ['reload', 'url', 'timeOfDay', 'view', 'hud', 'warmS', 'eval'],
-  part: ['label', 'from', 'to', 'speed', 'vf', 'cut'],
+  part: ['label', 'from', 'to', 'speed', 'vf', 'cut', 'audio'],
 };
 const KINDS = { path: 'path', take: 'script' };
 
@@ -42,6 +43,7 @@ export function validate(m, base = SKILL) {
       errs.push('video.world.storage: expected {localStorage key: string value}');
   }
   if (keys(m.capture, 'capture', 'video.capture')) { size(m.capture.size, 'video.capture.size'); num(m.capture.fps, 'video.capture.fps', 1); }
+  if (m.audio !== undefined && typeof m.audio !== 'boolean') errs.push('video.audio: expected true or false (the game\'s effects and ambience; never music)');
   if (m.splice !== undefined && keys(m.splice, 'splice', 'video.splice')) {
     if (m.splice.fade !== undefined) num(m.splice.fade, 'video.splice.fade');
     if (m.splice.crf !== undefined) num(m.splice.crf, 'video.splice.crf');
@@ -67,6 +69,7 @@ export function validate(m, base = SKILL) {
         } catch (e) { errs.push(`${at}.path: ${s.path}: ${e.message}`); }
       }
     }
+    if (s.audio !== undefined && typeof s.audio !== 'boolean') errs.push(`${at}.audio: expected true or false`);
     if (s.args !== undefined && (s.kind !== 'take' || !obj(s.args))) errs.push(`${at}.args: an object, on a "take" shot only`);
     if (s.setup !== undefined && keys(s.setup, 'setup', `${at}.setup`)) {
       const u = s.setup;
@@ -92,6 +95,7 @@ export function validate(m, base = SKILL) {
       if (p.speed !== undefined && !(typeof p.speed === 'number' && p.speed > 0)) errs.push(`${pat}.speed: expected a number > 0`);
       if (p.vf !== undefined && typeof p.vf !== 'string') errs.push(`${pat}.vf: expected ffmpeg filters`);
       if (p.cut !== undefined && typeof p.cut !== 'boolean') errs.push(`${pat}.cut: expected true or false`);
+      if (p.audio !== undefined && !PART_AUDIO.includes(p.audio)) errs.push(`${pat}.audio: expected one of ${PART_AUDIO.join(', ')}, got ${JSON.stringify(p.audio)}`);
       if (p.cut && i === 0 && j === 0) errs.push(`${pat}.cut: the first part has nothing to cut from`);
       if (p.label !== undefined) {
         if (typeof p.label !== 'string' || !/^[a-z0-9][a-z0-9_-]*$/.test(p.label)) errs.push(`${pat}.label: expected a lowercase id`);
@@ -125,12 +129,15 @@ export function resolveOnly(m, only) {
 }
 const label = (s) => s.splice.some((p) => p.label) ? `${s.id} [${s.splice.map((p) => p.label).filter(Boolean).join(' ')}]` : s.id;
 
+/** Whether a shot records the game's sound: the shot's `audio`, else the video's, else on (effects and ambience; never music). */
+export const shotAudio = (m, shot) => shot.audio ?? m.audio ?? true;
+
 /** A hash of everything that changes a shot's footage (not its splice parts): reuse a clip only while it matches. */
 export function fingerprint(m, shot, base = SKILL) {
   const file = shot[KINDS[shot.kind]];
   const recipe = {
     world: m.world, capture: { ...m.capture, ...shot.capture }, kind: shot.kind, args: shot.args ?? null,
-    setup: shot.setup ?? null, file: readFileSync(resolve(base, file), 'utf8'),
+    setup: shot.setup ?? null, file: readFileSync(resolve(base, file), 'utf8'), audio: shotAudio(m, shot),
   };
   return createHash('sha256').update(JSON.stringify(recipe)).digest('hex').slice(0, 16);
 }
@@ -167,6 +174,10 @@ export function splicePlan(m, cache) {
   const plan = { out: join(cache, m.name, `${m.name}.mp4`), size: m.capture.size, fps: m.capture.fps };
   if (m.splice?.fade !== undefined) plan.fade = m.splice.fade;
   if (m.splice?.crf !== undefined) plan.crf = m.splice.crf;
-  plan.clips = m.shots.flatMap((s) => s.splice.map(({ label: _, ...p }) => ({ src: clipPath(cache, m, s.id), from: p.from ?? 0, ...p })));
+  plan.audio = m.shots.some((s) => shotAudio(m, s));
+  plan.clips = m.shots.flatMap((s) => s.splice.map(({ label: _, audio, ...p }) => ({
+    src: clipPath(cache, m, s.id), from: p.from ?? 0, ...p,
+    ...(plan.audio ? { audio: shotAudio(m, s) ? partAudio(audio, p.speed ?? 1) : 'mute' } : {}),
+  })));
   return plan;
 }
