@@ -465,6 +465,19 @@ face, or the placement check against its shape.
 
 ## Fixed
 
+### 112. Slopes show no mark when hit with a tool, though they break (fixed after 0.55.13)
+
+Owner, 2026-11-12: "Slopes aren't affected visually by tools when hit, though they do break." A ½ m stored ramp
+(`dwell:dirt_ramp`, `dwell:stone_ramp`, …; HALF_HEIGHT_GRID.md) takes damage and breaks by the bite rule (#794,
+BLOCK_DAMAGE.md §10, a ramp's volume ½), but the mesher carved only full cubes: `mesh_cells` left a damaged cell
+of `Shape::Shaped` out of the struck faces and `shaped_voxel` drew it whole, so no carved bite, crack overlay or
+hit look showed on it. Repro: dig a slope with a shovel or pickaxe; the slope stays smooth until it breaks. Fixed (BLOCK_DAMAGE.md §6.5, `mesher/ramp_damage.rs`): a
+damaged ramp's planes (the slope's two triangles merged) are carved where the hit point lies by the bite rule's
+volume, kept inside the solid and watertight at the planes' edges, and cracked once staged; a face-B chunk's damaged
+cell now turns its state over with the chunk (it never matched a mirrored ramp). Tests (`ramp_damage_tests.rs`, both
+faces): the carved volume k × ½ × V ÷ n, the slope carved where struck, the mesh closed, cracks staged, a fixture
+look by data alone; red on the unfixed mesher (8 triangles, nothing carved, no cracks), green after.
+
 ### 111. A tool hit lands on the block clicked, not the one aimed at when the swing connects (fixed after 0.55.11)
 
 Owner, 2026-11-12: "I've noticed on tool hits they don't check where they're aimed at hit time, if I click on a

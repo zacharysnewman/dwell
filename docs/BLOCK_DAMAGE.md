@@ -298,6 +298,40 @@ damage." Built, in addition to the carve (not instead of it):
   the wasm32 clippy and the Vitest files were not run here (no wasm target or `node_modules` in the
   container). The wood set is drawn round the axe's bites on a cut log (§6.4, the wood's `cut.cracks`).
 
+### 6.5 Ramps show their hits (BUGS.md #112)
+
+Owner, 2026-11-12: "Slopes aren't affected visually by tools when hit, though they do break." A stored ramp
+(HALF_HEIGHT_GRID.md; the ½ m `ramp` and the 45° `steep_lower`/`steep_upper` halves) is drawn as its shape's
+polygons (`shaped_voxel`), which the cube carve (§6.2) skipped. Now (`mesher/ramp_damage.rs`) a damaged ramp with a
+`damage.look` (the ramp blocks' data already had one) is drawn as a cube is:
+
+- **Planes:** the shape's polygons, those of one face in one plane merged into their convex hull (the slope's two
+  triangles are one plane, carved across their diagonal), each with its own frame in metres (`Plane`).
+- **Marks:** each mark goes to the plane its hit point lies on (nearest the plane, inside its outline), whatever
+  cube face the client named, so a hit on the slope carves the slope.
+- **The carve:** a struck plane's field is the look's (`carve_shape`, shared with the cube's faces: bowls, facets,
+  flakes), sized by the bite rule (`carve_fit`, the cube's loop: the plane's share of `carved_m3`, a ramp's volume
+  ½), faded to 0 over 5 cm inside the plane's outline (its edges stay put: watertight with the ramp's other planes
+  and the neighbours, T-junctions on straight edges as the cube's) and clamped to `DEEPEST` (0.9) of the solid's
+  thickness under each point along the inward normal (the shape is convex; nothing dents through the floor or the
+  high wall). The plane is gridded over its corners (a triangle as a quad with a collapsed row), finer over the
+  carve's reach, within the cell's `triangles` budget; normals smooth for bowls, flat per triangle for facets and
+  flakes; the colour darkened (a spall's lifted), the sky light at its corners interpolated and occluded by depth.
+- **Cracks:** once staged, every exposed plane carries the overlay (§6.3) as the cube face its normal leans to most
+  (the slope as the top), so cracks run over the slope and down its sides from the hit.
+- **The pieces:** a ramp hit's flying pieces were already its bite (§10, `hit_shards`); unchanged.
+- **Face B:** the mesher turns a face-B chunk over; a damaged cell's state now turns with it (`damaged_cells`), so a
+  ramp's `half` matches its turned-over cell.
+- **Tests** (`ramp_damage_tests.rs`, both faces): `a_ramp_after_k_hits_has_carved_k_bites_of_half_its_volume` (dirt
+  and stone ramps and the 45° halves: the closed mesh's volume k × ½ × V ÷ n within 8 %, the same about two origins,
+  so closed), `the_sloped_face_is_carved_where_struck_inside_the_ramp`, `a_ramps_cracks_are_staged_by_damage`,
+  `a_fixture_ramp_material_by_data_alone_gets_its_facets_and_its_bite`. Red on the unfixed mesher (the ramp drawn
+  whole: 8 triangles, nothing carved, no cracks).
+- **Not done:** the bite rule's volume is a block's (½ for every ramp state): a 45° upper half holds ¼ cell, so past
+  60 % of it its carve is as deep as its solid allows, under the rule; a lower half (¾) follows the rule. A
+  non-convex shape would be drawn uncarved (none is stored). No browser check (cloud session): the look in game is
+  for the owner's local check.
+
 ### 6.4 The axe's bites (WORK_QUEUE item 26)
 
 Owner, 2026-11-12: the axe's slice "cuts a line all the way across which is much bigger than the tool
@@ -607,7 +641,7 @@ the block's volume / number of swings required to break it."** One rule in one p
   corners), but that carve is never drawn: the cell splits into the gash, half the cell.
 - **Not done:** the chips of a chop are `chop_bite_m3`, half the *cell* over the swings, while the octagon's
   carve is half its *wood* (0.83 of the cell): the chips run ~20 % over the carve on an octagonal log. Ramps'
-  bite is half a cell's for the pieces; ramps aren't carved (drawn as their shape). No browser check (cloud
+  bite is half a cell's, for the pieces and the carve (§6.5). No browser check (cloud
   session): the look in game is for the owner's local check.
 - **Tests:** `dwell-protocol` `a_bite_is_half_the_blocks_volume_over_its_hits` (dirt, stone wood/metal,
   sand, the ramp's half), `a_tool_taking_half_the_hits_bites_twice_as_much_and_a_fixture_block_by_data_alone`,
