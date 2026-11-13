@@ -1,7 +1,0 @@
-{
-  "changes": [
-    "Chisel in the game: a local creative world's menu has a Chisel page to tune its biomes' sliders",
-    "The terrain around you is generated again as you tune, keeping what you built; Undo and Reset",
-    "The tuned biomes are saved with the world (host only: not while guests are in it)"
-  ]
-}
