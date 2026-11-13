@@ -1376,6 +1376,21 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    is still **~2.6 ms over** at p95. Next: the cutout's vertex outputs (26 floats a vertex to the tiler: tile,
    fade and draw could be flat or packed), the colour as unorm8x4 (its tints can pass 1: needs a range),
    then `clouds`/`composite` measured by `--compare` with them off.
+   **Round 4, the cutout's colour and outputs (2026-11-13, local, `claude/forest-r4`):** clouds measured by switching
+   them off at the edge (a `view` step, same page): `gpu.frame` 18.6 / 19.5 → 18.3 / 19.4 → back on 18.7 / 19.5, so
+   the clouds' 5.3 ms pass time is ~0.3 ms of real frame (they overlap the near pass). The composite measured by
+   its parts (`--compare forest-edge`, new configs `shafts-off`, `bloom-off`): `gpu.frame` p95 18.26 / 18.27 /
+   18.40 ms, `composite` 6.4 in all three, so neither is a cost at High and the composite's ~6 ms pass time is the
+   near pass's overlap, not its own work. Built: the cutout's colour as unorm8x4 over a scale (`scaled_rgb`: rgb / (1 + 3a), tints up to 4, a colour within 0–1 keeps plain
+   8-bit rounding; cutout 72 → 64 bytes a vertex; the terrain's colour stays floats, its lava faces code a stop in
+   it), and the cutout's tile and fade passed flat (the same at every corner, test
+   `cutout_tiles_and_fades_are_the_same_at_a_triangles_corners`; 6 of the 22 interpolated floats). No look change
+   (same-spot edge shots before/after differ by the clouds' drift and the wind). `forest-perf`, M1 Air, High,
+   `--unthrottled`, `gpu.frame` p50 / p95 ms, before (round 3 / this session's base) → after: inside 12.6 / 13.0 →
+   **12.4 / 12.9**, **edge 18.7 / 19.3, 18.6 / 19.5 → 18.3 / 18.9** (`gpu.near` 14.1 → 13.8), above 12.0 / 12.4 →
+   12.2 / 12.7 (noise). The edge is still **~2.2 ms over** at p95; what is left there is the near pass's ~4 M leaf
+   triangles themselves. Next levers: fewer leaf triangles past the cards' fade (merged faces, no chamfer), or the
+   terrain's colour packed too (its lava code needs a byte of its own).
 33. **Licensed music replaces the generated music** (owner 2026-11-12: "I downloaded a big music set as a Unity
    asset, I'd like the casual game music setup in a prototype and make it play randomly in the game. Probably
    needs compression. It'll replace the current music which is AI generated."). The pack: *Andrew Sitkov Music*

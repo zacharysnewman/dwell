@@ -1,0 +1,5 @@
+{
+  "changes": [
+    "Forests draw a little faster: leaves and plants send less data to the graphics card per corner."
+  ]
+}
