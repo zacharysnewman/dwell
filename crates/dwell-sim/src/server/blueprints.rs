@@ -11,6 +11,12 @@ use dwell_world::blueprint::{Ghost, Rules};
 
 use super::*;
 
+/// How often town sites near players are looked for (ticks).
+const TOWNS_EVERY: u32 = SIM_HZ * 2;
+/// How many rows above and below the height field's ground a blueprint's anchor looks for the
+/// world's own ground (trees, players' edits).
+const GROUND_SEARCH_ROWS: i32 = 12;
+
 /// How often blueprints are checked for completion (ticks).
 const CHECK_EVERY: u32 = SIM_HZ / 2;
 /// A builder that hasn't come within reach of its cell for this long places it from where it is
@@ -36,6 +42,10 @@ pub(crate) struct Blueprints {
     unread: bool,
     dirty: bool,
     builders: HashMap<u32, Vec<Builder>>,
+    /// The town sites founded (face, grid cell): their blueprints placed once (B4).
+    founded: std::collections::BTreeSet<(u8, i32, i32)>,
+    /// The ground town sites need (none: a world without a height field has no towns).
+    pub(crate) town_ground: Option<dwell_worldgen::TownGround>,
 }
 
 impl Default for Blueprints {
@@ -47,6 +57,8 @@ impl Default for Blueprints {
             unread: false,
             dirty: false,
             builders: HashMap::default(),
+            founded: Default::default(),
+            town_ground: None,
         }
     }
 }
@@ -58,8 +70,9 @@ impl Blueprints {
             return;
         };
         match list_from_bytes(&bytes) {
-            Some((next, list)) => {
+            Some((next, list, towns)) => {
                 self.next_id = next.max(1);
+                self.founded = towns.into_iter().collect();
                 self.list = list
                     .into_iter()
                     .map(|b| (b.clone(), Ghost::of(&b)))
@@ -76,7 +89,8 @@ impl Blueprints {
         }
         self.dirty = false;
         let list: Vec<Blueprint> = self.list.iter().map(|(b, _)| b.clone()).collect();
-        Some(list_to_bytes(self.next_id, &list))
+        let towns: Vec<(u8, i32, i32)> = self.founded.iter().copied().collect();
+        Some(list_to_bytes(self.next_id, &list, &towns))
     }
 }
 
@@ -205,6 +219,9 @@ impl Server {
     /// Each tick: completed blueprints go; builders come to blueprints with a player near, go from
     /// those with none, and build.
     pub(super) fn step_blueprints(&mut self) {
+        if self.tick.is_multiple_of(TOWNS_EVERY) {
+            self.found_towns();
+        }
         if self.blueprints.list.is_empty() {
             return;
         }
@@ -421,7 +438,95 @@ impl Server {
         self.broadcast_changes(changes, VoxelModificationReason::Edit);
     }
 
+    /// Town sites (B4, docs/BLUEPRINTS.md §6): each site within `found_m` of a living player
+    /// (its face's) not yet founded is founded once its blueprints' ground is loaded: each of its
+    /// plan's blueprints placed with its anchor on the ground under it, then the site recorded.
+    fn found_towns(&mut self) {
+        let Some(ground) = self.blueprints.town_ground.clone() else {
+            return;
+        };
+        let rules = self.blueprints.rules.towns;
+        let seed = self.config.world_seed;
+        let mut sites = Vec::new();
+        for p in self.living_points() {
+            let f = FaceFrame::at_height(p[1]);
+            let l = f.point(p);
+            let g = |x: i32, z: i32| ground(f.face, x, z);
+            for t in rules.sites_near(seed, f, l[0], l[2], rules.found_m, &g) {
+                let key = (
+                    dwell_world::blueprint::face_byte(t.face),
+                    t.cell[0],
+                    t.cell[1],
+                );
+                if !self.blueprints.founded.contains(&key) && !sites.contains(&(key, t)) {
+                    sites.push((key, t));
+                }
+            }
+        }
+        for (key, t) in sites {
+            let f = t.face;
+            let mut placed = Vec::new();
+            let mut ready = true;
+            for (name, [x, z], turn) in rules.layout(&t) {
+                let Ok(s) = dwell_world::structure::load(name) else {
+                    continue;
+                };
+                let Some(h) = ground(f.face, x, z) else {
+                    continue; // that blueprint's column is water: left out
+                };
+                let row = dwell_world::rows_for_m(h);
+                let feet = {
+                    let world = &self.world;
+                    let get = |c: [i32; 3]| {
+                        world.find(chunk_of(c[0], c[1], c[2]))?;
+                        Some(world.get_voxel_if_loaded(c))
+                    };
+                    if get(f.cell([x, row, z])).is_none() {
+                        ready = false;
+                        break;
+                    }
+                    crate::creatures::feet_row(
+                        &get,
+                        f,
+                        [x, z],
+                        row,
+                        GROUND_SEARCH_ROWS,
+                        GROUND_SEARCH_ROWS,
+                        1,
+                    )
+                };
+                // No ground within the search where the height field has it (not generated yet,
+                // or dug away): the site waits.
+                let Some(y) = feet else {
+                    ready = false;
+                    break;
+                };
+                if let Some(b) = dwell_world::blueprint::record_of(&s, f, [x, y, z], turn) {
+                    placed.push(b);
+                }
+            }
+            if !ready {
+                continue; // its ground isn't loaded yet: next time
+            }
+            for b in placed {
+                self.place_blueprint(b);
+            }
+            self.blueprints.founded.insert(key);
+            self.blueprints.dirty = true;
+        }
+    }
+
     // --- for tests and tools ---
+
+    /// The towns founded (face, grid cell).
+    pub fn towns_founded(&self) -> Vec<(u8, i32, i32)> {
+        self.blueprints.founded.iter().copied().collect()
+    }
+
+    /// Replaces the ground town sites need (tests: a flat one; none: no towns).
+    pub fn set_town_ground(&mut self, g: Option<dwell_worldgen::TownGround>) {
+        self.blueprints.town_ground = g;
+    }
 
     /// The world's blueprints.
     pub fn blueprint_list(&self) -> Vec<Blueprint> {

@@ -639,7 +639,7 @@ waypoint over the spot, faded with distance, clamped to the screen's edge), plus
 (spawn, last death; portals once there are any). The set, palette, auto kinds and limits are data
 (`shared/ui/markers.json` → `shared/ui/gen.mjs` → `markers.gen.ts` and `dwell-protocol`'s
 `markers.gen.rs`); the record is saved per player in the world's `markers` table and synced to that
-player only (`markers.private`). **[in progress, WORK_QUEUE item 56] Blueprints**
+player only (`markers.private`). **[built, WORK_QUEUE item 56] Blueprints**
 ([BLUEPRINTS.md](BLUEPRINTS.md)): a structure placed as an entity shown as ghost blocks (the brush
 preview's renderer; red where the player lacks the block), placed from the game menu's Structures page
 where the mode has the `blueprints` ability (creative and adventure), seen and built by everyone in the
@@ -648,7 +648,7 @@ one piece every `player.paceMs` (one-cell region fills), and a compact panel sho
 Builder NPCs (`dwell:builder`, the villager without a sword) build them on the server with unlimited
 blocks, foundation up. The rules are data (`shared/blueprints/blueprints.json` → `shared/blueprints/gen.mjs`
 → `dwell-world`'s `blueprints.gen.rs`); the geometry is `dwell_world::blueprint`; the world's list is
-saved in its optional `blueprints` table and synced behind `blueprints.world`. **[built, 0.52.3]** A save (every 10 s while cells
+saved in its optional `blueprints` table and synced behind `blueprints.world`. **[built, 0.61] Towns** (B4): town sites per face from the world seed (`blueprints.json` `towns`; `dwell_world::blueprint::TownRules`, the ground from `dwell_worldgen::town_ground_for_sized`), each a plan of blueprints the server places once a player comes near, recorded in the `blueprints` table so it is founded once. **[built, 0.52.3]** A save (every 10 s while cells
 change) hands the store only the cells changed since the last one (`ExploredChanges`,
 `client/src/ui/exploredStore.ts`), and the store merges them into the record in its own worker
 (`exploredWorker.ts`; on the page only when the page is closing or has no workers): the merge reads
@@ -2459,7 +2459,7 @@ lives in side files. Chunk and LOD blobs are the protocol's palette + RLE compre
 | `inventories` | **[built, 0.50.33]** Keyed by device public key: the player's inventory record (`Inventory::to_bytes`, version 1: held slot, wallet and money, each non-empty slot's index, item name and count; ADR 0066). Optional: older builds leave it; an unreadable record is kept, not overwritten |
 | `vitals` | **[built, 0.50.57]** Keyed by device public key: the player's stamina and oxygen (version 1: f32 stamina, f32 seconds of air, u8 exhausted; ADR 0069), rewritten each save. Optional: older builds leave it; a player without one, or with a record this build can't read, starts rested |
 | `markers` | **[built, WORK_QUEUE item 53]** Keyed by device public key: the player's own map markers (`dwell_protocol::markers::Markers::to_bytes`, version 1: each marker's id, icon name, colour, label, face, face-local point and auto kind; [MAP_MARKERS.md](MAP_MARKERS.md)), rewritten each save for every player who has a record. Optional and additive: a world without it has no markers, older builds on the line never open it; an unreadable record reads as none and is replaced only when the player changes their markers |
-| `blueprints` | **[in progress, WORK_QUEUE item 56]** One record (key 0), rewritten on a save after a change: the world's blueprints (`dwell_protocol::blueprints::list_to_bytes`, version 1: the next id, a count, then each record; BLUEPRINTS.md §2). Optional and additive: older builds leave it; an unreadable record is kept, not overwritten |
+| `blueprints` | **[built, WORK_QUEUE item 56]** One record (key 0), rewritten on a save after a change: the world's blueprints (`dwell_protocol::blueprints::list_to_bytes`, version 2: the next id, a count, then each record, then the town sites founded; version 1 had no towns and is still read; BLUEPRINTS.md §2, §6). Optional and additive: older builds leave it; an unreadable record is kept, not overwritten |
 | `loose_items` | **[built, 0.50.33]** One record (key 0), rewritten each save: the loose items lying in the world (version 1: item name, count, point, age each; ADR 0066) |
 | `ground_gone` | **[built, 0.50.68]** One record (key 0), rewritten each save: the ground items gone from the scatter (`dwell_world::ground::GroundGone::to_bytes`, version 1: a count, then each cell as i32×3, sorted; ADR 0071), the scatter's tombstones. Optional: older builds leave it; an unreadable record is kept, not overwritten |
 | `block_damage` | **[built, 0.52.28]** One record (key 0), rewritten each save: the blocks hit short of breaking (`dwell_protocol::damage::Damage::to_bytes`, version 1: each cell, its state, hits and up to four hit marks; ADR 0078). Optional: a world without it loads undamaged, older builds leave it; an unreadable record is kept, not overwritten |

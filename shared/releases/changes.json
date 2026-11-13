@@ -2,6 +2,14 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.61.0",
+      "changes": [
+        "Towns: hamlets of blueprints are sited across both faces of every world, and builders come to build them when you are near",
+        "A hamlet: a well, two huts, a watchtower and a wall, laid out from data, kept clear of the shrines and portals",
+        "New compatibility line: generated worlds now hold towns, so worlds from 0.60 open in 0.60 builds"
+      ]
+    },
+    {
       "version": "0.60.18",
       "changes": [
         "Lava no longer hardens while it flows: a river fed by its vent stays molten its whole length.",

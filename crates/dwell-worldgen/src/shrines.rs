@@ -287,6 +287,18 @@ impl Shrines {
     /// spawn's when it reaches them. The spawn's is looked for only where no grid shrine lies within
     /// `spawn_within` less its reach (the spawn's shrine exists only where none is that near it),
     /// so most chunks never run the spawn search.
+    /// Whether column (x, z) is within `margin` m of a shrine's clear ground or within the rules'
+    /// `portal_clear` of a portal's axis (a town keeps off both, docs/BLUEPRINTS.md §6).
+    pub fn crowds(&self, g: &TerrainGenerator, x: i32, z: i32, margin: i32) -> bool {
+        let clear2 = f64::from(self.rules.portal_clear).powi(2);
+        self.portals.iter().any(|p| {
+            let (dx, dz) = (f64::from(p.x - x), f64::from(p.z - z));
+            dx * dx + dz * dz < clear2
+        }) || !self
+            .near(g, (x - margin, z - margin), (x + margin, z + margin))
+            .is_empty()
+    }
+
     pub fn near(&self, g: &TerrainGenerator, lo: (i32, i32), hi: (i32, i32)) -> Vec<Shrine> {
         let mut out = self.grid_near(g, lo, hi, 0);
         let bound = self.rules.spawn_within.floor() as i32 - 2 * self.clear_reach;
