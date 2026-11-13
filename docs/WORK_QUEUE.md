@@ -2016,6 +2016,16 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
 
 ## Smaller items, after the queue
 
+- **Softer shore foam edge (2026-11-13, `claude/foam-soft`), done.** Owner: "The water foam edge is a little too hard
+  now, the softness of the old version was better and the consistency of the new one along the edge is better. Combine
+  those concepts and share screenshots when you've got it." The hard edge came from 0.52.6's solid contact line (#502:
+  a 0.06 m line ending in a 3 cm step) and its flat-topped bands; the old rim (before 0.52.6) was a ~0.2 m soft fade
+  but multiplied by noise, so it broke into blotches. Now the contact line keeps a thin solid core (`shore.lineM` 0.02)
+  and feathers into the water over `shore.featherM` (0.2 m), with no noise cutting it, and the bands' sides soften by
+  `shore.bandSoftness` (0.75) (`shared/look/waterflow.json`, WATER_RENDERING.md §20). The mirror
+  `dwell_look::waterflow::shore_foam` pins the profile: no step over 0.08 between samples 5 mm apart (0.52.6's
+  stepped 0.28) and never under half strength along the edge's first 0.1 m. Outstanding: the owner's look.
+
 - **The full-sky flood test on main (2026-11-13, `claude/flood-sky-test`), done.** Owner: "`cargo test -p dwell-mesh --lib
   flood_tests::open_terrain_takes_the_full_sky` fails on main (face a: 3 dark vertices) … find which merge broke it, decide
   whether the 3 dark vertices are a real lighting bug or a fixture made stale by an intended change. Check face b too."
