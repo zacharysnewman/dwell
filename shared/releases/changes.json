@@ -2,6 +2,16 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.63.2",
+      "changes": [
+        "The moon draws as you fly near it from home, no longer cut away",
+        "Dev tools: teleporting onto the moon or the sun lands from a fresh spawn, and the trip home works after a failed one",
+        "Dev tools: the lava report lists the sun's rivers, and sunLand can land beside a flowing river",
+        "Dev tools: a teleport past the world's rim or onto the other face says why it can't",
+        "Dev tools: the bench's flyTo step takes marginM"
+      ]
+    },
+    {
       "version": "0.63.1",
       "changes": [
         "Theater mode's panel is redone: a proper close button, Esc to close, a docked panel on desktop and a bottom or side sheet on phones, grouped sections with an Advanced fold, a recording timer and a pause button, and controller navigation.",
