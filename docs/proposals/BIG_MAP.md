@@ -191,6 +191,46 @@ erosion's valleys narrower than ~2 cells, and the coast's and shores' detail bet
 rivers, ranges and climate stay. The sizes are data: `constants.json` `worldSizes` (1×, 2×, 4×, 8×,
 10×), each a whole radius scale, so the test steps up through them.
 
+### 5.1 The quick fix: features in metres, not cells (BUGS.md #77, WORK_QUEUE item 52)
+
+Owner, 2026-11-12: "any idea why 10x worlds are super flat with massive rivers and lakes? And no
+mountains?" Measured natively (seed 0, face A, `cargo run --release -p dwell-worldgen --example
+big_terrain`; `worldmap::relief` measures in metres, so the coarse cell doesn't change what is counted:
+a peak is land above 1 000 m that is the highest within 5 km; a range, connected land above 1 000 m of
+at least 20 km²):
+
+| size (cell) | | max m | land > 1 500 m | ranges | peaks / 1 000 km² | widest channel (at m³/s) | lakes (share of land) |
+|---|---|---|---|---|---|---|---|
+| 1× (100 m) | before = after | 2 613 | 6.4 % | 2 | 1.92 | 67 m (8) | 3 (0.11 %) |
+| 4× (400 m) | before | 1 961 | 0.3 % | 14 | 1.53 | 469 m (198) | 1 355 (4.2 %) |
+| | after | 2 641 | 5.6 % | 14 | 2.37 | 403 m (160) | 13 (1.1 %) |
+| 10× (1 km) | before | 1 427 | 0.0 % | 19 | 0.76 | 6 477 m (2 751) | 5 888 (10.5 %) |
+| | after | 2 692 | 8.1 % | 52 | 2.83 | 807 m (341) | 1 (0.03 %) |
+
+The causes, and the fix (data: `hydrology.json` `bigWorlds`, applied by `HydrologyParams::sized`, so a
+1× map is the same bits; its goldens and the hydrology digests are unchanged):
+
+- **The ranges stood in a ring by the coast.** Their centres were drawn 3–9 km from the coast, in
+  metres: a ring on a 250 km island. Now the coast distances × the radius scale (`rangeCoastExponent`
+  1), so the ranges (already × the area in number, their widths and lengths in metres) rise across the
+  whole island.
+- **The erosion cut the ridges down.** A ridge cell drains its own whole cell's area, 100× at 10×, so
+  stream-power erosion lowered every ridge by ~ln(scale)·U/K. Now a cell's own share of its area is a
+  profile cell's (`ridge_cell`, set only by `sized` above 1×), so ridges keep 1×'s steepness.
+- **The coarse map's pits speckled the island with lakes.** The least lake (0.3 km²) was under one
+  1 km cell. Now its area × the scale² and its depth × the scale (`lakeAreaExponent` 2,
+  `lakeDepthExponent` 1): the smallest lake kept is today's shape in cells; small lakes and ponds wait
+  for the regional maps (part 3).
+- **The rivers were carved kilometres wide.** A channel's lips (the cells its water pours over) were
+  linear in discharge. Now one for one up to `lipsLinearTo` (100 m³/s; 1×'s rivers stay under 20) and
+  by √Q beyond (hydraulic geometry), so a 10× world's greatest river is ~800 m across, not 6.5 km.
+
+Pinned by `tests/big_terrain.rs` (4× and 10×, both faces, against 1×'s map: highest land, share above
+1 500 m, peaks per area, channel width by √Q, lake share), red with the old rules. Not done in the
+quick fix: the uplift's ranges sampled per column at full resolution (the map would have to carry its
+spines to the chunk generator, a world-map format change; at 10× a 1 km cell still blurs a ridge's
+crest between cells), and the regional 100 m maps (part 3, R1–R4) for the small rivers and lakes.
+
 ## 6. Phases (each ≤ 45 minutes)
 
 - **M0 — the radius as one value, per world. [built]** The named sizes as data

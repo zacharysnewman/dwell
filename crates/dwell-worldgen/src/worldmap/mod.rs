@@ -19,6 +19,7 @@
 pub mod cache;
 pub mod channels;
 pub mod codec;
+pub mod relief;
 pub mod shores;
 
 use crate::hydrology::{self, End, HydrologyMap, MouthKind, NEIGHBOURS_D8, NONE};

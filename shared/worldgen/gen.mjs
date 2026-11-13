@@ -1262,9 +1262,17 @@ export function validateHydrology(data) {
   };
   if (typeof data !== "object" || data === null) fail("must be an object");
   const top = Object.keys(data).filter(
-    (k) => !["$comment", "default", "profiles"].includes(k),
+    (k) => !["$comment", "default", "profiles", "bigWorlds"].includes(k),
   );
   if (top.length) fail(`unknown ${top.join(", ")}`);
+  // How a bigger world's map scales with its radius (BUGS.md #77): whole exponents of the scale,
+  // and the flow up to which a river's lips follow its discharge one for one.
+  checkGroup("bigWorlds", data.bigWorlds, {
+    rangeCoastExponent: [0, 3, true],
+    lakeAreaExponent: [0, 3, true],
+    lakeDepthExponent: [0, 3, true],
+    lipsLinearTo: [{ above: 0 }, 1e6],
+  });
   if (!(Array.isArray(data.profiles) && data.profiles.length))
     fail("profiles must be a non-empty list");
   const names = new Set();
@@ -1463,6 +1471,17 @@ export function hydrologyRust(data) {
   );
   rs.push(`pub const DEFAULT: &str = ${JSON.stringify(data.default)};`);
   rs.push("");
+  const b = data.bigWorlds;
+  rs.push(
+    "/// How a bigger world's map scales with its radius (hydrology.json `bigWorlds`, BUGS.md #77).",
+  );
+  rs.push("pub const BIG_WORLDS: super::BigWorlds = super::BigWorlds {");
+  rs.push(`    range_coast_exponent: ${b.rangeCoastExponent},`);
+  rs.push(`    lake_area_exponent: ${b.lakeAreaExponent},`);
+  rs.push(`    lake_depth_exponent: ${b.lakeDepthExponent},`);
+  rs.push(`    lips_linear_to: ${rf(b.lipsLinearTo)},`);
+  rs.push("};");
+  rs.push("");
   rs.push(
     "/// The hydrology profiles (shared/worldgen/hydrology.json), in their file order.",
   );
@@ -1475,6 +1494,7 @@ export function hydrologyRust(data) {
     rs.push("    HydrologyParams {");
     rs.push(`        name: ${JSON.stringify(p.name)},`);
     rs.push(`        cell: ${p.grid.cell},`);
+    rs.push("        ridge_cell: 0.0,");
     rs.push(`        iterations: ${e.iterations},`);
     rs.push(`        time_step: ${rf(e.timeStep)},`);
     rs.push(`        erodibility: ${rf(e.erodibility)},`);

@@ -223,6 +223,15 @@ the island shape's absolute tunables (BIG_MAP.md §1) narrower than the map's co
 400 m at 4×), and the erosion and lake fill tuned per cell rather than per metre. A worldgen look
 question for the owner (the plates are to decide the land, REALISTIC_WORLD.md), not a crash.
 
+Owner, 2026-11-12: "any idea why 10x worlds are super flat with massive rivers and lakes? And no
+mountains?" **Quick fix built** (branch `claude/notes-batch-2`, WORK_QUEUE item 52; the 0.56 line, which
+the owner raises; 1× unchanged): the ranges' coast distances × the radius scale, ridges eroded as at the
+profile's cell, the least lake × the scale², river lips by √Q past 100 m³/s (`hydrology.json`
+`bigWorlds`). Measured (BIG_MAP.md §5.1): 10× before max 1 427 m, 0.0 % above 1 500 m, a 6.5 km channel,
+5 888 lakes on 10.5 % of the land; after 2 692 m, 8.1 %, 807 m, 1 lake (1×: 2 613 m, 6.4 %). Regression
+test `tests/big_terrain.rs` (4×, 10×, both faces), red on the old rules. Left: the ranges per column at
+full resolution and the regional 100 m maps (small rivers and lakes).
+
 ### 69. A dark vertical column in the far terrain before the starter world's volcano
 
 Found 2026-11-11 (0.52.64) on the starter world's tour: `?worldgen=test:starter&fresh=1&at=8571.5,350,-4866.5`

@@ -24,6 +24,9 @@ time"). Notes ride with real changes (no notes-only PRs; CI skips docs-only chan
   branch `claude/underwater-look`; the reference image at the session scratchpad `abzu-ref.jpg` (not in the repo).
   Video 2 (water/underwater, plan in item 40) waits for the owner's look approval.
 - **Next, in order:** (1) PR #856 slopes show tool hits (`claude/ramp-hit-marks-eaj3ru`) — conflicts with main,
+  resolve and merge; (2) big-world terrain quick fix (item 52) — built on `claude/notes-batch-2` (also carries the
+  v5 approval and ABZÛ notes), its PR open, not merged: it waits for the owner to raise the 0.56 line; (3) the moon's client side M-7c (item 27) — WIP on `claude/moon-m7c`;
+  (4) browser check of Realistic worlds (R6 merged #858: create, play, reload); (5) the forest edge (~9 ms over at
   resolve and merge; (2) big-world terrain quick fix (item 51) — WIP on `claude/notes-batch-2` (also carries the
   v5 approval and ABZÛ notes; the cloud session was stopped mid-work: read its status note on that branch); needs
   the 0.56 line raised by the owner; (3) the moon's client side M-7c (item 27) — WIP on `claude/moon-m7c`;
@@ -1511,6 +1514,15 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    the initial wide shot so you could tell it was a different side without the disorientation."** — only the
    initial wide (the crane from face A round under to face B) holds face A's up; the out-of-the-hole shot on face B
    uses face B's own up (upright, `up: "auto"`).
+   v5 (one-command tool #853; full record ~5 min, a one-shot fix 2 min 34 s): owner **"Bifacial v5 looks great saved
+   it."** — video 1 done; its clip cache cleared. Next: video 2 (water and underwater), shot plan first.
+   Video 2 plan given (coast glide, river to the sea, wading in, the transition, underwater swim, surfacing at
+   sunset). Owner sent a look reference: **"Underwater reference photo from the game abzu for pretty underwater with
+   transparent surface, light rays etc."** (ABZÛ: bright turquoise water with a long clear view, a bright see-through
+   surface from below with the sun's disc and Snell's window, strong volumetric light shafts, caustics, a colourful
+   lit floor). Before recording video 2: an underwater look pass toward that reference (WATER_RENDERING.md W4's
+   pieces exist: fog, Snell's window and TIR, god rays, caustics — tune and strengthen them), the owner's look
+   check, then the video.
    weird", confirmed by the v2 comparison).
    **Built 2026-11-12:** a keyframe `up` ("a" | "b" | "auto", default auto) holds a face's up, roll and look frame
    across the midplane (THEATER_MODE.md §3.1; presets and the keyframe editor's Up take it); the next take uses
@@ -2032,6 +2044,29 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    drawn with the axe's head-sized bites at its marks grown by the bite rule, the wood cracks by the fraction. No
    new cuts (no notch, kerfs or gash wedges); older saves' cuts still load and draw, the next hit carrying their
    progress into damage. Additive: no new compatibility line (docs/BLOCK_DAMAGE.md §12, ADR 0067 note).
+
+52. **Big worlds keep their mountains and rivers** — **Quick fix built 2026-11-12** (branch `claude/notes-batch-2`,
+   one PR; needs the owner to raise the 0.56 line before it merges: it changes 2×–10× worlds' terrain, 1× is the same
+   bits, its goldens and hydrology digests unchanged). `hydrology.json` `bigWorlds` (generated `BIG_WORLDS`,
+   applied by `HydrologyParams::sized` above 1×): the ranges' coast distances × the radius scale (they rise across
+   the island, not in a ring by its coast), ridges eroded as at the profile's cell (`ridge_cell`), the least lake
+   × scale² and its depth × scale, river lips one for one to 100 m³/s then by √Q. Measured (seed 0, face A,
+   `examples/big_terrain.rs`, table in BIG_MAP.md §5.1): 10× before max 1 427 m, 0.0 % above 1 500 m, 0.76
+   peaks/1 000 km², a 6.5 km channel, 5 888 lakes (10.5 %); after 2 692 m, 8.1 %, 2.83, 807 m, 1 lake (0.03 %); 1×
+   2 613 m, 6.4 %, 1.92, 67 m, 3 lakes. Tests `tests/big_terrain.rs` (4×, 10×, both faces vs 1×), red on the old
+   rules → green; `map_build_budget`'s uplift bound 4× → 8× (ranges across the island: ~1 000 segment tests a
+   cell at 10×, the map still ~2 s). **Left:** the uplift's ranges sampled per column at full resolution (the
+   world map would carry its spines to the chunk generator: a map-format change), and (2) below, the regional
+   100 m maps (small rivers and lakes, R1–R4). Original item:
+   **Big worlds keep their mountains and rivers** (owner 2026-11-12: "any idea why 10x worlds are super flat with
+   massive rivers and lakes? And no mountains? Are they just stretching out the noise or something like that?" →
+   explained: the whole-map grids keep ~1 M cells, so a 10× cell is 1 km; ranges narrower than a few cells vanish,
+   rivers are carved a cell wide, the lake fill is per cell, the island tunables don't scale; BUGS #77. Owner:
+   **"Yes feel free to add the big terrain fix to the queue."**). Plan (BIG_MAP.md §5): (1) quick — features in
+   metres, not cells (range widths, river widths by discharge, lake fill per metre), the island shape and the number
+   of ranges scaled with the radius, so bigger islands get more mountains, not flatter ones; (2) the regional 100 m
+   maps on demand around the player (25.6 km squares, seams agreed). Changes big worlds' terrain: the 0.56 line
+   (the owner raises it), 1× unchanged.
 
 ## Future (needs owner answers)
 

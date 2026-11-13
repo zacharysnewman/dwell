@@ -2,6 +2,14 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.56.0",
+      "changes": [
+        "Bigger worlds (2× to 10×) keep their mountains: 1×-height ranges across the whole island, more peaks the bigger the world",
+        "Rivers in big worlds are sized by their flow instead of a kilometre wide, and the speckle of tiny lakes is gone",
+        "A new compatibility line: big worlds' terrain changed, so worlds from 0.55 open in their own version (1× worlds are unchanged)"
+      ]
+    },
+    {
       "version": "0.55.21",
       "changes": [
         "The big map's debug layers (L) now cover only the world's disc, not the square around it."
