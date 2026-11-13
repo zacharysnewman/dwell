@@ -1193,6 +1193,18 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    declare the grid's capability, otherwise fall back to home. The `?spawn=` link takes the same values."): built
    with the sun's second slice (item 42, MOON_WORLD.md §8).
 
+   **Three things on the moon (owner, 0.61, iPhone, 2026-11-13, with screenshots):** "3 things on the moon: it doesn't
+   seem to have real LODs, can't see terrain very far in a meaningful way. Is there a moon visible from the moon? And
+   moon rock should have slopes, seems to only be generating half blocks." Screenshots: the ground ends at the chunk
+   distance in a flat pale band, then black sky; looking up, a cratered disc in the starry sky, home not visible; the
+   ground ½ m steps with no ramps. **And (owner, 2026-11-13):** "In addition to the moon, the sun doesn't render chunks
+   past high detail. It needs some directional lighting, let's make it from the earth and moon reflections." / "Sun
+   should also be glowing generally 'due to the lava'." Brief: (1) no moon disc in the moon's own sky; (2) the moon's
+   generator shapes stored ramps by home's rule, as data on the grid's generator; (3) real LOD on the moon and the
+   sun to their horizons (any grid); (4) M-6: home drawn in the moon's sky at its direction and size; (5) a light rig
+   per grid as data: the bodies that light it (their reflected light by albedo, phase and apparent size), a minimum
+   ambient, and on the sun a warm lava glow from below; home's lighting unchanged. BUGS.md #142–#144. Branch
+   `claude/moon-fixes-3-l0zjdx`.
 28. **An atmosphere: the sky thinning to space** (owner 2026-11-12: "We likely need an atmosphere transition now
    between sky thinning to space. Clouds shouldn't extend past the earth atmosphere either."). With flight to the
    moon, climbing should fade the sky's scattering to black space with stars by day, the horizon glow becoming a
@@ -1972,6 +1984,12 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    jittery device; spawns on the moon and the sun (MOON_WORLD.md §8). **Left:** `sun-draw` and a sun spawn run in a
    browser on a GPU (a local check); shrines on other grids; the sun's sky (the moon session's).
 
+   **The sun's LOD and light (owner, 2026-11-13):** "In addition to the moon, the sun doesn't render chunks past high
+   detail. It needs some directional lighting, let's make it from the earth and moon reflections." / "Sun should also
+   be glowing generally 'due to the lava'." With item 27's three moon things (branch `claude/moon-fixes-3-l0zjdx`):
+   the LOD per grid covers the sun; the sun is lit by home's and the moon's reflected light (each at its true
+   direction, its strength by albedo, phase and apparent size, as data) and a warm lava ambient from below (data), the
+   lava's own glow and bloom kept. BUGS.md #144.
 ## Done
 
 - **Underwater audio (owner 2026-11-12: "swimming underwater sounds like swimming on the water surface, when

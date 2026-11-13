@@ -547,6 +547,27 @@ face, or the placement check against its shape.
 
 ## Fixed
 
+### 144. The sun draws no terrain past its chunks and has no light but the lava's
+
+Owner, 2026-11-13: "In addition to the moon, the sun doesn't render chunks past high detail. It needs some directional
+lighting, let's make it from the earth and moon reflections." / "Sun should also be glowing generally 'due to the
+lava'." As #142 on the moon; and the sun's ground is lit by home's sunlight keyframes turned into its frame (the sun
+lights nothing from inside it). WORK_QUEUE items 27, 42.
+
+### 143. The moon's ground is ½ m steps with no ramps
+
+Owner, 0.61, iPhone, 2026-11-13: "And moon rock should have slopes, seems to only be generating half blocks." 0.59 gave
+moon dust its ramp family (HALF_HEIGHT_GRID.md §10), but the `cratered` generator (`grids.rs`
+`CrateredTerrain::generate`) fills each column with full cells to its top row and never runs the §4 rule. WORK_QUEUE
+item 27.
+
+### 142. The moon draws no terrain past its chunks; a cratered disc in its own sky; home not in it
+
+Owner, 0.61, iPhone, 2026-11-13: "3 things on the moon: it doesn't seem to have real LODs, can't see terrain very far in a
+meaningful way. Is there a moon visible from the moon?" Screenshots: standing on the moon the ground ends at the chunk
+distance in a flat pale band (M-5's coarse near mesh, under the chunks), then black sky; looking up, a cratered disc in
+the starry sky; home is not drawn (M-6's drawing not built). WORK_QUEUE item 27.
+
 ### 141. Lava expired into rock and "all just goes away" (fixed after 0.60.11)
 
 Owner, 2026-11-13: "Another thing I observed, I think Lava needs to not just expire into rock, since it all just goes
