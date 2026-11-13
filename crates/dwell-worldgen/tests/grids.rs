@@ -47,7 +47,7 @@ fn the_build_s_grids_are_home_at_rest_and_a_cratered_moon() {
 /// A bad entry fails with a message naming it.
 #[test]
 fn bad_grids_fail_with_a_message() {
-    let cases: [(&str, &str, &str); 13] = [
+    let cases: [(&str, &str, &str); 15] = [
         (
             "\"ramps\": \"notched\"",
             "\"ramps\": \"wavy\"",
@@ -73,6 +73,8 @@ fn bad_grids_fail_with_a_message() {
         ("\"atmosphere\": false", "\"atmosphere\": 0", "atmosphere"),
         ("\"cells\": 96", "\"cells\": 2", "nearMesh.cells"),
         ("\"sinkM\": 8", "\"sinkM\": -1", "nearMesh.sinkM"),
+        ("\"levels\": 9", "\"levels\": 3", "must reach its disc"),
+        ("\"cells\": 48", "\"cells\": 50", "lod.cells"),
     ];
     for (from, to, want) in cases {
         assert!(
@@ -533,16 +535,23 @@ both_faces!(
     }
 );
 
-/// Home has air and no coarse mesh (its far view is the LOD's); the moon has no air (its sky is
-/// space at its ground) and a coarse mesh of its surface (MOON_WORLD.md §5 M-5, §7.3).
+/// Home has air, no sky disc and a coarse mesh to be seen by from the moon (M-6), and no grid LOD
+/// (its far view is its own LOD tree); the moon has no air (its sky is space at its ground), a
+/// coarse mesh of its surface (MOON_WORLD.md §5 M-5, §7.3) and a LOD reaching past its disc, as
+/// the sun does (BUGS.md #142, #144).
 // both-faces: the grids' data; no face enters.
 #[test]
 fn the_moon_is_airless_and_has_a_near_mesh() {
     let list = parse_grids(GRIDS_JSON).unwrap();
     let home = list.iter().find(|g| g.name == "dwell:home").unwrap();
     let moon = list.iter().find(|g| g.name == "dwell:moon").unwrap();
-    assert!(home.atmosphere && home.near_mesh.is_none());
-    assert!(!moon.atmosphere);
+    assert!(home.atmosphere && !home.sky_disc && home.near_mesh.is_some() && home.lod.is_none());
+    assert!(!moon.atmosphere && moon.sky_disc);
+    let sun = list.iter().find(|g| g.name == "dwell:sun").unwrap();
+    for g in [moon, sun] {
+        let lod = g.lod.expect("a LOD on the grid");
+        assert!(lod.reach_m() >= g.radius_m.unwrap(), "{}: {lod:?}", g.name);
+    }
     let near = moon.near_mesh.expect("the moon's near mesh");
     assert!(near.cells >= 64 && near.sink_m > 0.0, "{near:?}");
     // A grid that declares no atmosphere has none (the sun's, by data alone).

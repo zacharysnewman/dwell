@@ -74,6 +74,13 @@ pub struct GridDef {
     /// The coarse mesh of its surface drawn nearer than `far_m` and under its chunks while on it
     /// (`nearMesh`, MOON_WORLD.md §5 M-5); `None` draws none.
     pub near_mesh: Option<NearMesh>,
+    /// Whether the sky draws it as a far disc past `far_m` (`skyDisc`, true when not given: the
+    /// moon's and the sun's discs); false (home) draws its `near_mesh` from another grid at every
+    /// distance instead (MOON_WORLD.md §5, M-6).
+    pub sky_disc: bool,
+    /// The terrain drawn past the chunks while on it (`lod`, MOON_WORLD.md §5; BUGS.md #142):
+    /// rings of its surface out to its horizon; `None` draws none (home has its own LOD tree).
+    pub lod: Option<GridLodRule>,
     pub generator: GridGenerator,
     /// The capability a client must say before the server captures it into this grid
     /// (`shared/protocol/capabilities.json`; the sun's `grid.sun`, docs/proposals/SUN_WORLD.md §5):
@@ -96,6 +103,30 @@ impl GridDef {
 pub struct NearMesh {
     pub cells: usize,
     pub sink_m: f64,
+}
+
+/// A grid's distant terrain while on it (`lod`): `levels` square rings of its surface centred on
+/// the viewer, each `cells` quads a side, level k's quads `cellM` × 2^k wide, each ring holding the
+/// next finer one in its middle; every vertex its ground (sampled at the quad's scale) less
+/// `sinkM` + `sinkPerCell` × the quad's width, so the chunks cover it where they are.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct GridLodRule {
+    pub levels: usize,
+    pub cells: usize,
+    pub cell_m: f64,
+    pub sink_m: f64,
+    pub sink_per_cell: f64,
+}
+
+impl GridLodRule {
+    /// Level k's quad width (m).
+    pub fn cell(&self, k: usize) -> f64 {
+        self.cell_m * (1u64 << k) as f64
+    }
+    /// How far the coarsest ring reaches from its centre (m).
+    pub fn reach_m(&self) -> f64 {
+        self.cell(self.levels - 1) * self.cells as f64 / 2.0
+    }
 }
 
 impl GridDef {
@@ -461,6 +492,55 @@ pub fn parse_grids(text: &str) -> Result<Vec<GridDef>, String> {
                 })
             }
         };
+        let sky_disc = match g.get("skyDisc") {
+            None => true,
+            Some(v) => v
+                .as_bool()
+                .ok_or_else(|| format!("{at}: `skyDisc` must be true or false"))?,
+        };
+        if !sky_disc && near_mesh.is_none() {
+            return Err(format!(
+                "{at}: a grid with no sky disc (`skyDisc` false) needs a `nearMesh` to be seen by"
+            ));
+        }
+        let lod = match g.get("lod") {
+            None => None,
+            Some(_) => {
+                let levels = num(g, "lod.levels", &at)?;
+                let cells = num(g, "lod.cells", &at)?;
+                if !(1.0..=16.0).contains(&levels) || levels.fract() != 0.0 {
+                    return Err(format!(
+                        "{at}: `lod.levels` must be a whole number in 1..=16"
+                    ));
+                }
+                if !(4.0..=256.0).contains(&cells) || cells.fract() != 0.0 || cells % 4.0 != 0.0 {
+                    return Err(format!(
+                        "{at}: `lod.cells` must be a multiple of 4 in 4..=256"
+                    ));
+                }
+                let rule = GridLodRule {
+                    levels: levels as usize,
+                    cells: cells as usize,
+                    cell_m: positive(g, "lod.cellM", &at)?,
+                    sink_m: num(g, "lod.sinkM", &at)?,
+                    sink_per_cell: num(g, "lod.sinkPerCell", &at)?,
+                };
+                if rule.sink_m < 0.0 || rule.sink_per_cell < 0.0 {
+                    return Err(format!(
+                        "{at}: `lod.sinkM` and `lod.sinkPerCell` must be ≥ 0"
+                    ));
+                }
+                if let Some(r) = radius_m
+                    && rule.reach_m() < r
+                {
+                    return Err(format!(
+                        "{at}: `lod` must reach its disc's radius (its coarsest ring reaches {} m)",
+                        rule.reach_m()
+                    ));
+                }
+                Some(rule)
+            }
+        };
         if frame == GridFrameKind::Rest && capture_m.is_some() {
             return Err(format!(
                 "{at}: the grid at rest captures nobody (no `captureM`)"
@@ -514,6 +594,8 @@ pub fn parse_grids(text: &str) -> Result<Vec<GridDef>, String> {
             surface_m,
             atmosphere,
             near_mesh,
+            sky_disc,
+            lod,
             generator,
             capability,
         });
@@ -826,6 +908,19 @@ pub fn bake_far<S: FarSource + ?Sized>(src: &S, face: Face, size: usize) -> FarB
         albedo,
         water,
         height_range: [lo, hi],
+    }
+}
+
+/// Grid `def`'s far source in the world of `world_seed` (its generator, read at any scale: the far
+/// bake's, the near mesh's and the grid LOD's): the `cratered` and `volcanic` kinds; `None` for
+/// home's `terrain`, whose source is its world map (`crate::home_far::HomeFar`).
+pub fn far_source(def: &GridDef, world_seed: u64) -> Option<Arc<dyn FarSource + Send + Sync>> {
+    match &def.generator {
+        GridGenerator::Cratered(_) => Some(Arc::new(CrateredTerrain::new(def, world_seed)?)),
+        GridGenerator::Volcanic(_) => Some(Arc::new(crate::volcanic::VolcanicTerrain::new(
+            def, world_seed,
+        )?)),
+        GridGenerator::Terrain { .. } => None,
     }
 }
 

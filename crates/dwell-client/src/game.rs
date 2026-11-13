@@ -632,6 +632,10 @@ impl HudVitals {
 /// few rings of chunks round a capture.
 const OTHER_GRID_CHUNKS_MAX: usize = 4096;
 
+/// The distant terrain's rings rebuilt a frame at most on another grid (`grid_lod.rs`): a ring is
+/// ~2.5k samples of its generator (a few ms in the page), the coarsest first after a crossing.
+const GRID_LOD_RINGS_PER_FRAME: usize = 2;
+
 /// A camera a tool places (tests, the views runner, ARCHITECTURE.md §6.6): the renderer and the
 /// LOD view from it while the player stays where it is. Full-detail chunks still stream around the
 /// player only, so away from the player the view is the LOD's.
@@ -803,6 +807,13 @@ pub struct Game<S: Scene> {
     /// The grids whose coarse surface mesh the scene holds (`grid_bodies.rs`, MOON_WORLD.md §5
     /// M-5), built the first time each is drawn.
     grid_meshes: std::collections::HashSet<u8>,
+    /// The distant terrain's rings of the grid the view is on (`grid_lod.rs`; BUGS.md #142,
+    /// #144), and that grid's far source.
+    grid_lod: crate::grid_lod::GridLod,
+    grid_lod_src: Option<(
+        u8,
+        std::sync::Arc<dyn dwell_worldgen::grids::FarSource + std::marker::Send + Sync>,
+    )>,
     /// A crossing onto another grid a snapshot's replay made (from, to, the face before): the
     /// next input tick carries the look across and eases the view upright.
     pending_cross: Option<(u8, u8, FaceFrame)>,
@@ -1307,6 +1318,8 @@ impl<S: Scene> Game<S> {
             remote_contacts: Default::default(),
             world_seed: 0,
             grid_meshes: Default::default(),
+            grid_lod: Default::default(),
+            grid_lod_src: None,
             pending_cross: None,
             grid_frames: false,
             grid_capabilities: None,
@@ -3331,12 +3344,24 @@ impl<S: Scene> Game<S> {
         let Some(m) = &self.travel else {
             return Vec::new();
         };
-        let with: Vec<_> = m
+        let mut with: Vec<_> = m
             .grids
             .iter()
             .filter(|(_, def, _)| def.near_mesh.is_some())
-            .map(|&(g, def, _)| (g, m.frame(g, world_s), def.far_m))
+            .map(|&(g, def, _)| (g, m.frame(g, world_s), def.sky_disc.then_some(def.far_m)))
             .collect();
+        // Home (the grid at rest, not one of the travel map's) seen from another grid: its mesh,
+        // at every distance when the sky draws no disc of it (M-6).
+        if let Some(home) = dwell_worldgen::grids::grids()
+            .first()
+            .filter(|d| d.near_mesh.is_some())
+        {
+            with.push((
+                0,
+                dwell_world::GridFrame::HOME,
+                home.sky_disc.then_some(home.far_m),
+            ));
+        }
         crate::grid_bodies::shown(
             self.grid_drawn,
             &m.frame(self.grid_drawn, world_s),
@@ -3346,28 +3371,78 @@ impl<S: Scene> Game<S> {
         )
     }
 
-    /// The grids' meshes' poses for the pieces drawn this frame, each mesh built the first time.
+    /// The grids' meshes' poses for the pieces drawn this frame, each mesh built the first time,
+    /// and the rings of the grid the view is on (`grid_lod.rs`), at the identity.
     fn grid_body_poses(&mut self) -> Vec<(u32, [f64; 3], [f32; 4])> {
         // By the player's place, not the eye's (which eases after a dev move).
         let shown = self.grid_bodies_at(self.travel_s(), self.current.position);
-        for &(g, ..) in &shown {
-            if self.grid_meshes.insert(g) {
-                let def = dwell_worldgen::grids::grids().get(usize::from(g));
-                let built = def.and_then(|d| {
-                    let t = dwell_worldgen::grids::CrateredTerrain::new(d, self.world_seed)?;
-                    Some(crate::grid_bodies::near_mesh(&t, d.near_mesh?))
-                });
-                if let Some((mesh, radius)) = built {
-                    self.scene.borrow_mut().set_piece(
-                        crate::grid_bodies::id(g),
-                        Some((std::slice::from_ref(&mesh), radius)),
-                    );
-                }
+        let mut out = Vec::new();
+        for &(g, origin, q) in &shown {
+            if !self.grid_meshes.contains(&g) {
+                let Some(def) = dwell_worldgen::grids::grids().get(usize::from(g)) else {
+                    continue;
+                };
+                let Some(near) = def.near_mesh else { continue };
+                let built = match dwell_worldgen::grids::far_source(def, self.world_seed) {
+                    Some(src) => Some(crate::grid_bodies::near_mesh(&*src, near)),
+                    // Home from its world maps, once the shell holds them (never computed here).
+                    None => self.far_terrain.as_deref().map(|t| {
+                        crate::grid_bodies::near_mesh(
+                            &dwell_worldgen::home_far::HomeFar::new(t),
+                            near,
+                        )
+                    }),
+                };
+                let Some((mesh, radius)) = built else {
+                    continue;
+                };
+                self.scene.borrow_mut().set_piece(
+                    crate::grid_bodies::id(g),
+                    Some((std::slice::from_ref(&mesh), radius)),
+                );
+                self.grid_meshes.insert(g);
+            }
+            out.push((crate::grid_bodies::id(g), origin, q));
+        }
+        out.extend(self.grid_lod_poses());
+        out
+    }
+
+    /// The rings of the grid the view is on, rebuilt as the player moves (a few a frame), and
+    /// their poses (the identity: they are in its frame).
+    fn grid_lod_poses(&mut self) -> Vec<(u32, [f64; 3], [f32; 4])> {
+        let g = self.grid_drawn;
+        let def = dwell_worldgen::grids::grids()
+            .get(usize::from(g))
+            .filter(|d| g != 0 && d.lod.is_some());
+        if self.grid_lod_src.as_ref().map(|s| s.0) != def.map(|_| g) {
+            self.grid_lod_src =
+                def.and_then(|d| Some((g, dwell_worldgen::grids::far_source(d, self.world_seed)?)));
+        }
+        let p = self.current.position;
+        let face = FaceFrame::at_height(p[1]).face;
+        let on = match (def, &self.grid_lod_src) {
+            (Some(d), Some((_, src))) => Some((g, face, d.lod.as_ref().unwrap(), src.as_ref())),
+            _ => None,
+        };
+        let on =
+            on.map(|(g, f, r, s)| (g, f, r, s as &(dyn dwell_worldgen::grids::FarSource + Sync)));
+        let changes = self
+            .grid_lod
+            .update(on, p[0], p[2], GRID_LOD_RINGS_PER_FRAME);
+        for (k, mesh) in changes {
+            let id = crate::grid_lod::id(k);
+            match mesh {
+                Some((m, radius)) => self
+                    .scene
+                    .borrow_mut()
+                    .set_piece(id, Some((std::slice::from_ref(&m), radius))),
+                None => self.scene.borrow_mut().set_piece(id, None),
             }
         }
-        shown
-            .into_iter()
-            .map(|(g, origin, q)| (crate::grid_bodies::id(g), origin, q))
+        self.grid_lod
+            .held()
+            .map(|k| (crate::grid_lod::id(k), [0.0; 3], [0.0, 0.0, 0.0, 1.0]))
             .collect()
     }
 
