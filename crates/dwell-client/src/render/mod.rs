@@ -587,10 +587,10 @@ const STRIDES: [u64; 6] = [
     4 * (3 + 3 + 3 + 1),     // Line: position, colour, the other end, side (a quad corner)
     4 * (3 + 3),             // Ghost: position, colour (triangles)
     4 * (3 + 3 + 3 + 1 + 2), // Fluid: position, normal, colour, fluid id, flood
-    // Cutout: position, normal (snorm8x4), colour, uv, tile, plant (sway, wind speed, fade), and
-    // light, flood and bare (unorm8x4): 72 bytes (`packed_cutout`, WORK_QUEUE item 32: the forest
-    // edge's near pass is its leaves' vertices; 92 bytes before).
-    4 * (3 + 1 + 3 + 2 + 4 + 4 + 1),
+    // Cutout: position, normal (snorm8x4), colour (unorm8x4 over a scale, `scaled_rgb`), uv, tile,
+    // plant (sway, wind speed, fade), and light, flood and bare (unorm8x4): 64 bytes (`packed_lit`,
+    // WORK_QUEUE item 32: the forest edge's near pass is its leaves' vertices; 92 bytes before).
+    4 * (3 + 1 + 1 + 2 + 4 + 4 + 1),
 ];
 
 pub(crate) fn floats(v: &[f32]) -> &[u8] {
@@ -672,10 +672,24 @@ fn textured_vertices(m: &MeshArrays, kind: Kind) -> Vec<f32> {
         std::borrow::Cow::Owned([1.0, 0.0].repeat(count))
     };
     let (normals, lit) = packed_lit(m, &light, &flood, kind == Kind::Cutout);
+    // The cutout's colour as four bytes (`scaled_rgb`); the terrain's stays three floats (its lava
+    // faces code a stop in it, `terrain_fs`).
+    let colors: Vec<f32>;
+    let (colors, per) = if kind == Kind::Cutout {
+        colors = (0..count)
+            .map(|k| {
+                let c = m.colors.get(3 * k..3 * k + 3).unwrap_or(&[1.0, 1.0, 1.0]);
+                scaled_rgb([c[0], c[1], c[2]])
+            })
+            .collect();
+        (&colors[..], 1)
+    } else {
+        (&m.colors[..], 3)
+    };
     let mut streams: Vec<(&[f32], usize)> = vec![
         (&m.positions, 3),
         (&normals, 1),
-        (&m.colors, 3),
+        (colors, per),
         (&m.uvs, 2),
         (&m.tiles, 4),
     ];
@@ -710,6 +724,20 @@ fn snorm8x3(n: [f32; 3]) -> f32 {
 fn unorm8x4(v: [f32; 4]) -> f32 {
     let b = |c: f32| u32::from((c.clamp(0.0, 1.0) * 255.0).round() as u8);
     f32::from_bits(b(v[0]) | b(v[1]) << 8 | b(v[2]) << 16 | b(v[3]) << 24)
+}
+
+/// The most a cutout's colour channel holds (`scaled_rgb`): a tint over 1 brightens a texel.
+const SCALED_RGB_MAX: f32 = 4.0;
+
+/// A colour whose channels may pass 1 (tints) as unorm8x4 in one float's slot (WORK_QUEUE item 32):
+/// rgb over a scale `1 + 3a`, `a` the fourth byte, the smallest step at or over the brightest
+/// channel (1 for any colour within 0–1, so those keep the plain 8-bit rounding), channels capped
+/// at [`SCALED_RGB_MAX`]. The cutout shader reads `rgb * (1 + 3a)`.
+fn scaled_rgb(c: [f32; 3]) -> f32 {
+    let top = c.iter().fold(0.0f32, |m, v| m.max(*v)).min(SCALED_RGB_MAX);
+    let a = (((top - 1.0) / 3.0).max(0.0) * 255.0).ceil().min(255.0);
+    let scale = 1.0 + 3.0 * a / 255.0;
+    unorm8x4([c[0] / scale, c[1] / scale, c[2] / scale, a / 255.0])
 }
 
 /// A terrain or cutout mesh's packed streams (WORK_QUEUE item 32): each vertex's normal as
@@ -1897,8 +1925,9 @@ impl Renderer {
         terrain_attrs.0 += 4;
         // The cutout's normal (snorm8x4) and its light, flood and bare (unorm8x4) are four bytes
         // each in one float's slot (`packed_cutout`).
-        let mut cutout_attrs = attrs(&[(0, 3), (1, 1), (2, 3), (3, 2), (4, 4), (5, 4), (6, 1)]);
+        let mut cutout_attrs = attrs(&[(0, 3), (1, 1), (2, 1), (3, 2), (4, 4), (5, 4), (6, 1)]);
         cutout_attrs.1[1].format = wgpu::VertexFormat::Snorm8x4;
+        cutout_attrs.1[2].format = wgpu::VertexFormat::Unorm8x4;
         cutout_attrs.1[6].format = wgpu::VertexFormat::Unorm8x4;
         let flat_attrs = attrs(&[(0, 3), (1, 3), (2, 3)]);
         let line_attrs = attrs(&[(0, 3), (1, 3), (2, 3), (3, 1)]);
@@ -6879,7 +6908,7 @@ mod tests {
             (Kind::Line, 4 * (3 + 3 + 3 + 1)),
             (Kind::Ghost, ghost),
             (Kind::Fluid, 4 * (3 + 3 + 3 + 1 + 2)),
-            (Kind::Cutout, 4 * (3 + 1 + 3 + 2 + 4 + 4 + 1)),
+            (Kind::Cutout, 4 * (3 + 1 + 1 + 2 + 4 + 4 + 1)),
         ] {
             assert_eq!(STRIDES.get(kind as usize), Some(&stride), "{kind:?}");
         }
@@ -6907,10 +6936,79 @@ mod tests {
         }
     }
 
-    /// The cutout's packed vertex (WORK_QUEUE item 32, 92 → 72 bytes): the normal's direction
-    /// as snorm bytes and the light, flood light and bare flag as unorm bytes, each in its float's
-    /// slot as the pipeline reads them, within one 8-bit step of the mesher's values; on both
-    /// faces' meshes (face B's normals mirrored by the mesher before the packing).
+    #[test]
+    fn cutout_colours_pack_into_bytes_over_a_scale() {
+        // WORK_QUEUE item 32: a cutout's colour is unorm8x4, rgb over 1 + 3a (tints can pass 1).
+        let unorm = |b: u32| f32::from(b as u8) / 255.0;
+        let decode = |f: f32| {
+            let bits = f.to_bits();
+            let scale = 1.0 + 3.0 * unorm(bits >> 24);
+            [0, 1, 2].map(|a| unorm(bits >> (8 * a)) * scale)
+        };
+        for c in [
+            [0.0, 0.0, 0.0],
+            [1.0, 1.0, 1.0],
+            [0.31, 0.62, 0.12],
+            [1.35, 0.9, 0.4],
+            [2.5, 3.9, 0.01],
+            [4.0, 4.0, 4.0],
+        ] {
+            let top = c.iter().fold(0.0f32, |m, v| m.max(*v));
+            let step = top.max(1.0) / 255.0;
+            let got = decode(scaled_rgb(c));
+            for a in 0..3 {
+                assert!(
+                    (got[a] - c[a]).abs() <= 0.5 * step + 1e-5,
+                    "{c:?} channel {a}: {got:?}"
+                );
+            }
+            if top <= 1.0 {
+                assert_eq!(scaled_rgb(c).to_bits() >> 24, 0, "no scale within 0–1");
+            }
+        }
+        // Past the range: capped, not wrapped.
+        let got = decode(scaled_rgb([9.0, 0.5, 0.0]));
+        assert!((got[0] - SCALED_RGB_MAX).abs() < 1e-5 && (got[1] - 0.5).abs() < 0.01);
+    }
+
+    #[test]
+    fn cutout_tiles_and_fades_are_the_same_at_a_triangles_corners() {
+        // both-faces: checks each face's own mesh. `cutout_vs` passes the tile and the plant's fade
+        // to the fragments flat (WORK_QUEUE item 32): every triangle's corners must agree.
+        let mut padded = vec![0u16; dwell_mesh::PADDED_VOLUME];
+        for (name, at) in [
+            ("dwell:leaves", (3, 3, 3)),
+            ("dwell:leaves", (3, 4, 3)),
+            ("dwell:leaves", (4, 4, 3)),
+            ("dwell:stone[flooded=false]", (6, 1, 6)),
+            ("dwell:tall_grass", (6, 2, 6)),
+        ] {
+            padded[dwell_mesh::padded_index(at.0, at.1, at.2)] = dwell_blocks::require(name);
+        }
+        for mirrored in [false, true] {
+            let m = dwell_mesh::mesh_chunk(&padded, mirrored)
+                .expect("meshed")
+                .cutout;
+            assert!(!m.indices.is_empty());
+            for t in m.indices.chunks_exact(3) {
+                let first = t[0] as usize;
+                for &k in &t[1..] {
+                    let k = k as usize;
+                    assert_eq!(m.tiles[4 * k..4 * k + 4], m.tiles[4 * first..4 * first + 4]);
+                    assert_eq!(
+                        m.plants[4 * k + 2..4 * k + 4],
+                        m.plants[4 * first + 2..4 * first + 4]
+                    );
+                }
+            }
+        }
+    }
+
+    /// The cutout's packed vertex (WORK_QUEUE item 32, 92 → 64 bytes): the normal's direction
+    /// as snorm bytes, the colour over its scale and the light, flood light and bare flag as unorm
+    /// bytes, each in its float's slot as the pipeline reads them, within one 8-bit step of the
+    /// mesher's values; on both faces' meshes (face B's normals mirrored by the mesher before the
+    /// packing).
     #[test]
     fn terrain_and_cutout_vertices_pack_normal_and_light_into_bytes() {
         // both-faces: compares each face's packed normals with its own mesh's.
@@ -6945,9 +7043,14 @@ mod tests {
                     assert!((got - c / len).abs() <= 0.5 / 127.0 + 1e-6, "normal {a}");
                 }
                 assert_eq!(bits >> 24, 0, "w");
-                assert_eq!(&at[4..7], &m.colors[3 * k..3 * k + 3], "colour");
-                assert_eq!(&at[13..17], &m.plants[4 * k..4 * k + 4], "plant");
-                let bits = at[17].to_bits();
+                let bits = at[4].to_bits();
+                let scale = 1.0 + 3.0 * unorm(bits >> 24);
+                for (a, c) in m.colors[3 * k..3 * k + 3].iter().enumerate() {
+                    let got = unorm(bits >> (8 * a)) * scale;
+                    assert!((got - c).abs() <= 0.5 / 255.0 * scale + 1e-6, "colour {a}");
+                }
+                assert_eq!(&at[11..15], &m.plants[4 * k..4 * k + 4], "plant");
+                let bits = at[15].to_bits();
                 let want = [
                     m.light[k].clamp(0.0, 1.0),
                     m.flood[2 * k],
