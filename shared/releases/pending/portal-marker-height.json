@@ -1,0 +1,6 @@
+{
+  "changes": [
+    "A portal's map marker now sits on the portal's rim, even when you first see it while flying high; old floating ones drop back onto the rim when you come near.",
+    "A marker placed on the map over ground that wasn't loaded yet now settles onto the ground once it loads."
+  ]
+}

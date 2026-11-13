@@ -2588,6 +2588,13 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    [MAP_MARKERS.md](MAP_MARKERS.md) — the icon set, palette and auto kinds as data (`shared/ui/markers.json` →
    `markers.gen.ts`), a player's markers as one record per device key in the world's optional `markers` table,
    synced to that player only behind the `markers.private` capability.
+   **Bug, owner 2026-11-13:** **"Another bug, Im not sure if it's because I was flying high at the time, but the
+   portal indicator showed up several hundred meters in the air over the portal."** Fixed after 0.63.3 (BUGS.md
+   #153): a seen portal's marker stands at its opening's height from the generator (the portal shafts), never the
+   player's; a marker placed over unloaded ground is put back on it when its column loads, and a saved one far above
+   its ground (or a portal's above its opening) is corrected once seen. **Owner should see:** fly a few hundred
+   metres up over a portal you have not seen yet: its marker appears on the rim, not at your height; an old floating
+   portal marker drops onto its rim when you come back within the render radius.
 
 54. **Resurrection shrines** (owner 2026-11-12: **"And then we want to add 'resurrection shrines' these should work like
    Guild Wars. You respawn at the nearest shrine when you die."** / **"We'll have to spread these pretty thick across
