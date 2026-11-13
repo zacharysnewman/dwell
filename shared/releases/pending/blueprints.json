@@ -1,0 +1,9 @@
+{
+  "changes": [
+    "Blueprints: place a structure as ghost blocks from the Structures page; anyone in the world can build it",
+    "Hold Place while aiming into a blueprint to fill its ghost cells with the right blocks, one at a time",
+    "Ghost blocks you don't have show red, and a small panel lists each block you have and need",
+    "Builders, villagers without swords, come and build blueprints near you",
+    "Four simple test blueprints: a hut, a wall, a well and a watchtower"
+  ]
+}
