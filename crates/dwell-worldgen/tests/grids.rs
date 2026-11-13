@@ -65,6 +65,10 @@ fn bad_grids_fail_with_a_message() {
         ),
         ("\"seedSalt\": 1297040974,", "", "seedSalt"),
         ("\"captureM\": 40000,", "", "needs a `captureM`"),
+        ("\"atmosphere\": false", "\"atmosphere\": 0", "atmosphere"),
+        ("\"atmosphere\": false,", "", "`atmosphere` is missing"),
+        ("\"cells\": 160", "\"cells\": 2", "nearMesh.cells"),
+        ("\"sinkM\": 6", "\"sinkM\": -1", "nearMesh.sinkM"),
     ];
     for (from, to, want) in cases {
         assert!(
@@ -509,3 +513,17 @@ both_faces!(
         );
     }
 );
+
+/// Home has air and no coarse mesh (its far view is the LOD's); the moon has no air (its sky is
+/// space at its ground) and a coarse mesh of its surface (MOON_WORLD.md §5 M-5, §7.3).
+// both-faces: the grids' data; no face enters.
+#[test]
+fn the_moon_is_airless_and_has_a_near_mesh() {
+    let list = parse_grids(GRIDS_JSON).unwrap();
+    let home = list.iter().find(|g| g.name == "dwell:home").unwrap();
+    let moon = list.iter().find(|g| g.name == "dwell:moon").unwrap();
+    assert!(home.atmosphere && home.near_mesh.is_none());
+    assert!(!moon.atmosphere);
+    let near = moon.near_mesh.expect("the moon's near mesh");
+    assert!(near.cells >= 64 && near.sink_m > 0.0, "{near:?}");
+}

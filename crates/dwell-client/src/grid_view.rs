@@ -1,7 +1,9 @@
 //! The view on another grid (docs/proposals/MOON_WORLD.md §7.3, M-7c): while the player is on the
 //! moon the game holds the moon's chunks in its own grid-local coordinates and draws in that frame,
 //! so the sky's directions (the sun, the moon, the stars' axis) are turned into it, and the moon's
-//! own far disc is not drawn (the viewer stands on it), nor home's clouds (the moon has no air).
+//! own far disc is not drawn (the viewer stands on it), nor home's clouds; a grid without air
+//! (`grids.json` `atmosphere` false, the moon) sees space at its ground: black, the stars by day,
+//! the sun white (the atmosphere's space path, docs/DAY_NIGHT.md §15, with no air at all).
 
 use dwell_look::daynight::DayState;
 use dwell_world::GridFrame;
@@ -24,8 +26,16 @@ pub fn day_on_grid(day: &DayState, frame: &GridFrame, grid: u8) -> DayState {
         axis: turn(day.axis),
         moon_shown: false,
         clouds_shown: false,
+        airless: !grid_has_air(grid),
         ..*day
     }
+}
+
+/// Whether grid `grid` (its `grids.json` index) has air (`atmosphere`); an unknown index has.
+pub fn grid_has_air(grid: u8) -> bool {
+    dwell_worldgen::grids::grids()
+        .get(usize::from(grid))
+        .is_none_or(|g| g.atmosphere)
 }
 
 #[cfg(test)]
@@ -74,6 +84,19 @@ mod tests {
                 "{rise_world} {rise_local}"
             );
             assert!((dot(on.sun, on.sun) - 1.0).abs() < 1e-9);
+            // The moon has no air: at its ground the sky is space, the stars out by day, the sun
+            // white; home's ground sky is today's (BUGS.md #126's sky).
+            assert!(on.airless && !day.airless);
+            let noon = dwell_look::daynight::DAY_NIGHT.state(0.0, Some(0.5), None);
+            let moon_noon = day_on_grid(&noon, &frame, 1).at_eye(80.0, 0.0, 12_500.0);
+            assert_eq!(moon_noon.air, dwell_look::atmosphere::Air::SPACE);
+            let u = moon_noon.pack(f, 1.0, 0.0, 0.001);
+            let space = 23 * 4;
+            assert_eq!(u[space], 1.0, "the sky thinned all the way to space");
+            assert_eq!(u[space + 2], 0.0, "no limb: no air seen edge-on");
+            assert_eq!(u[8 * 4], 1.0, "the stars by day");
+            let home_noon = noon.at_eye(80.0, 0.0, 25_000.0);
+            assert_eq!(home_noon.air, dwell_look::atmosphere::Air::GROUND);
             assert!((dot(on.sun, day.sun) - 1.0).abs() > 1e-3, "turned");
             assert_eq!(on.time_of_day, day.time_of_day);
         }
