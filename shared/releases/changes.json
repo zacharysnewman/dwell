@@ -2,6 +2,13 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.57.1",
+      "changes": [
+        "Fly to the moon and land: its ground streams in around you, under its own sun and at a sixth of the gravity",
+        "Flying back home streams the home world in again"
+      ]
+    },
+    {
       "version": "0.57.0",
       "changes": [
         "Realistic worlds step only where the rock does: bedded sandstone and shale in walls and ledges, basalt in columns, granite rising smooth",
