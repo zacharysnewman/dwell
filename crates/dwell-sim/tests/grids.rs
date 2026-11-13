@@ -305,3 +305,161 @@ dwell_world::both_faces!(
         );
     }
 );
+
+/// The client's predictor of player 1 beside a [`Scene`] (MOON_WORLD.md §7.3): its own inputs ticked
+/// before the server's, the server's snapshots for `NEW` handed to it, the grids' travel rules as
+/// the client builds them (`TravelMap`). Its world is empty air: the checks are in flight or free
+/// fall, away from any ground.
+struct Client1 {
+    p: dwell_physics::predictor::Predictor,
+    world: dwell_world::VoxelWorld,
+    seen: usize,
+    sent: Vec<u16>,
+}
+
+impl Client1 {
+    fn new(sc: &mut Scene) -> Self {
+        let mut p = dwell_physics::predictor::Predictor::new(*sc.server().player_config());
+        let g = sc.server().grids();
+        let map = dwell_sim::travel::TravelMap {
+            celestial: g.celestial.clone(),
+            rules: g.rules,
+            home: g.home,
+            home_radius_m: g.home_radius_m,
+            grids: g
+                .slots
+                .iter()
+                .map(|s| (s.index, s.space.def, s.space.radius_m))
+                .collect(),
+        };
+        p.set_travel(Box::new(map));
+        let air: dwell_world::ChunkGenerator = std::sync::Arc::new(|_, _| {});
+        Self {
+            p,
+            world: dwell_world::VoxelWorld::new(air, None),
+            seen: 0,
+            sent: Vec::new(),
+        }
+    }
+
+    /// One tick: predicted, then the server's, then its snapshots handed over.
+    fn tick(&mut self, sc: &mut Scene, buttons: u16) {
+        // The inputs sent, by seq: the predictor catches up on those it hasn't run (the server
+        // processes an input a tick after it arrives, so a fresh prediction starts behind).
+        self.sent.push(buttons);
+        let to = sc.seq + 1;
+        while self.p.active() && self.p.next_seq() <= to {
+            let seq = self.p.next_seq();
+            let f = InputFrame {
+                seq,
+                buttons: self.sent[seq as usize - 1],
+                ..InputFrame::default()
+            };
+            self.p.tick(&mut self.world, &f);
+        }
+        sc.tick(buttons, 0);
+        for (s, m) in &sc.got[self.seen..] {
+            if let (NEW, Message::PhysicsSnapshot(snap)) = (*s, m) {
+                self.p.on_snapshot(&mut self.world, snap);
+            }
+        }
+        self.seen = sc.got.len();
+    }
+}
+
+dwell_world::both_faces!(
+    /// MOON_WORLD.md §7.3: the client predicts its own capture into the moon's frame and its
+    /// release home on the same inputs as the server makes them, with no snap at either; on the moon it falls at
+    /// ⅙ g toward the moon's midplane on face `f`.
+    fn the_client_predicts_capture_and_release(f: FaceFrame) {
+        let mut sc = Scene::new(flat());
+        let mut c = Client1::new(&mut sc);
+        for _ in 0..10 {
+            c.tick(&mut sc, 0);
+        }
+        assert!(c.p.active(), "predicting");
+        // At home, 200 m over the moon's ground, moving with it, not flying: not captured yet.
+        let fr = sc.moon_frame();
+        let (wp, wv) = fr.release(moon_spawn(f, 200.0), [0.0; 3]);
+        for pid in [1, 2] {
+            assert!(sc.server().place_on_grid(pid, wp, wv));
+        }
+        for _ in 0..10 {
+            c.tick(&mut sc, 0);
+        }
+        assert_eq!(c.p.grid(), 0, "home until flying");
+        assert_eq!(sc.server().grid_state_of(1).unwrap().0, 0);
+        // Fly: captured by both on the same input, the client never in another grid than the
+        // server's at an acknowledged input, and never snapped. (Its small replays here are the
+        // snapshot's f16 velocity at the moon's ~1 km/s, not the capture.)
+        let snaps = c.p.stats().snaps;
+        let mut worst: f32 = 0.0;
+        for _ in 0..20 {
+            c.tick(&mut sc, input_buttons::FLY);
+            worst = worst.max(c.p.stats().last_error);
+        }
+        assert_eq!(
+            sc.server().grid_state_of(1).unwrap().0,
+            1,
+            "server: captured"
+        );
+        assert_eq!(c.p.grid(), 1, "client: in the moon's frame");
+        assert_eq!(
+            c.p.stats().grid_misses,
+            0,
+            "the capture predicted as the server made it"
+        );
+        assert_eq!(c.p.stats().snaps, snaps, "no snap through the capture");
+        assert!(worst < 0.05, "{worst} m off at an ack through the capture");
+
+        // ⅙ g: dropped 50 m over the moon's ground at rest, flight off.
+        assert!(sc.server().place_on_grid(1, moon_spawn(f, 50.0), [0.0; 3]));
+        for _ in 0..10 {
+            c.tick(&mut sc, 0);
+        }
+        let v0 = f.vector(c.p.velocity().as_dvec3().to_array())[1];
+        for _ in 0..30 {
+            c.tick(&mut sc, 0);
+        }
+        let v1 = f.vector(c.p.velocity().as_dvec3().to_array())[1];
+        let g = (v0 - v1) / 0.5;
+        let home_g = f64::from(sc.server().player_config().body.gravity);
+        assert!(
+            (g / home_g - 0.1667).abs() < 0.03,
+            "falls at {g} m/s² toward the moon's midplane ({home_g} at home)"
+        );
+
+        // Hovering 200 m inside captureM × releaseFactor, then flying up and out (far flight's
+        // km/s): released home by both on the same input, no snap.
+        let moon = grid("dwell:moon").unwrap();
+        let r = moon.capture_m.unwrap() * dwell_worldgen::grids::travel().release_factor - 200.0;
+        let up = f.vector([0.0, 1.0, 0.0]);
+        let at = [0, 1, 2].map(|k| GRID_CENTRE[k] + up[k] * r);
+        c.tick(&mut sc, input_buttons::FLY);
+        assert!(sc.server().place_on_grid(1, at, [0.0; 3]));
+        for _ in 0..20 {
+            c.tick(&mut sc, input_buttons::FLY);
+        }
+        assert_eq!(
+            sc.server().grid_state_of(1).unwrap().0,
+            1,
+            "still on the moon"
+        );
+        let (misses, snaps) = (c.p.stats().grid_misses, c.p.stats().snaps);
+        for _ in 0..30 {
+            c.tick(&mut sc, input_buttons::FLY | input_buttons::JUMP);
+        }
+        assert_eq!(
+            sc.server().grid_state_of(1).unwrap().0,
+            0,
+            "server: released"
+        );
+        assert_eq!(c.p.grid(), 0, "client: home's frame again");
+        assert_eq!(
+            c.p.stats().grid_misses,
+            misses,
+            "the release predicted as the server made it"
+        );
+        assert_eq!(c.p.stats().snaps, snaps, "no snap through the release");
+    }
+);

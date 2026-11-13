@@ -71,6 +71,9 @@ pub struct PredictorStats {
     /// Position error at ack of the last compared snapshot (m).
     pub last_error: f32,
     pub last_replay_ticks: u32,
+    /// Snapshots whose player was in another grid than predicted at its ack (a capture or release
+    /// mispredicted; MOON_WORLD.md §7.3).
+    pub grid_misses: u32,
 }
 
 #[derive(Clone, Copy, Default)]
@@ -330,7 +333,11 @@ impl Predictor {
         };
         let world_s = travel.world_s(i64::from(seq) + off);
         let p = self.players.position(&self.physics, h).to_array();
-        let v = self.players.velocity(&self.physics, h).as_dvec3().to_array();
+        let v = self
+            .players
+            .velocity(&self.physics, h)
+            .as_dvec3()
+            .to_array();
         let flying = self.players.controller(h).fly.flying;
         let carry = travel.carry(self.grid, p, v, flying, world_s);
         if let Some(c) = carry {
@@ -596,11 +603,13 @@ impl Predictor {
         let known = e.seq == ack && ack <= self.latest_seq;
         let server_position = DVec3::from(l.position);
         let server_velocity = Vec3::from(l.velocity);
-        if known {
+        if known && e.grid != server_grid {
+            self.stats.grid_misses += 1;
+        }
+        if known && e.grid == server_grid {
             self.stats.last_error = (e.position - server_position).length() as f32;
             let predicted = to_net(&e.controller, |_| 0);
-            let matched = e.grid == server_grid
-                && self.stats.last_error <= Self::POSITION_TOLERANCE
+            let matched = self.stats.last_error <= Self::POSITION_TOLERANCE
                 && (e.velocity - server_velocity).length() <= Self::VELOCITY_TOLERANCE
                 && predicted.flags == l.controller.flags
                 && predicted.slide_flags == l.controller.slide_flags
