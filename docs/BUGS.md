@@ -6,6 +6,14 @@ pins it.
 
 ## Open
 
+### 154. A dead-straight, axis-aligned edge between snow and forest in a Realistic world (fixed in 0.64.0)
+
+Owner, 2026-11-13: "This might be part of the realistic fix, but I'm seeing really sharp edges between terrain types like
+this." The photo, from high up in a Realistic world on 0.61.x: a perfectly straight vertical line many km long, snow, ice
+and glacier blue-white ground with lakes on the left, dense green forest and grass on the right: a data or render seam,
+not a natural biome edge. **Owner should see:** no straight lines across the land between terrain types. Snow, forest,
+desert and grass meet along natural, wandering edges.
+
 ### 153. Ramps back onto open air at bowl corners: sawtooth spikes (fixed in 0.64.0)
 
 Owner, 2026-11-13: "Also we might be in process on slopes or something, but I'm noticing at the corners of bowl areas

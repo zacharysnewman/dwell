@@ -814,6 +814,11 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    ground at its top height (steep pairs too); else another facing whose back is solid, else a full block; exposed side
    edges are fine. **Owner should see:** bowls and diagonal slopes with no tall ramp backs standing in open air, so no
    sawtooth spikes. Ramps meet higher ground at their backs; only their triangular sides may show.
+   Owner, 2026-11-13, also added to the 0.64 batch (BUGS.md #154): "This might be part of the realistic fix, but I'm
+   seeing really sharp edges between terrain types like this." (A Realistic world on 0.61.x from high up: a dead-straight,
+   axis-aligned line many km long, snow, ice and glacier ground left, dense forest and grass right.) **Owner should
+   see:** no straight lines across the land between terrain types. Snow, forest, desert and grass meet along natural,
+   wandering edges.
 16. **Phone frame rate (P0)** (owner 2026-11-11, iPhone 17, Safari, setting Low: "I'm only getting ~23 fps on
    mobile, seeing lots of z-fighting on tree trunks with the leaf cards. What might be dropping frames since the
    last while. Used to get 60 fps"). Suspect: leaf cards are on in every tier but CPU, Low included; cards lying
