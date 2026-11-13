@@ -153,7 +153,9 @@ impl LocalWorld {
     /// chopping prototype (docs/WORK_QUEUE.md item 7). `radius_scale`: a new world's size (BIG_MAP.md
     /// M2b; the New world form's World size, `?size=2x`), a saved world keeps its own. `sky`: a new
     /// world's Sky preset (REALISTIC_WORLD.md §8: its orbit rolled from its seed); a saved world
-    /// keeps its own orbit.
+    /// keeps its own orbit. `spawn_grid`: a new world's spawn on another grid (MOON_WORLD.md §8: a
+    /// grids.json spawn key, `moon`, `sun-b`; `?spawn=` and the New world form's Spawn); a saved
+    /// world keeps its own unless opened by a spawn link.
     // Positional, as JS passes them (wasm-bindgen constructor), like `LocalCore::create_spawning`.
     #[allow(clippy::too_many_arguments)]
     #[wasm_bindgen(constructor)]
@@ -173,6 +175,7 @@ impl LocalWorld {
         chop2: Option<bool>,
         radius_scale: Option<u32>,
         sky: Option<String>,
+        spawn_grid: Option<String>,
     ) -> Result<LocalWorld, JsError> {
         // The tick's phases timed by this worker's clock (`tickPhases`, docs/DEV_TOOLS.md).
         dwell_sim::clock::set_clock(worker_now);
@@ -214,6 +217,9 @@ impl LocalWorld {
                 c.world_size = dwell_protocol::world_size::WorldSize::playable(radius_scale);
                 // A new world's Sky (the server reads a saved world's orbit from its file).
                 c.sky = sky;
+                // A new world's spawn grid (the server reads a saved world's own from its file).
+                c.spawn_grid =
+                    spawn_grid.filter(|k| dwell_worldgen::grids::grid_spawn(k).is_some());
             },
         ) {
             Ok(core) => Ok(Self { core }),

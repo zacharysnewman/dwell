@@ -10,6 +10,8 @@ export type ToWorker =
       file?: string;
       spawnFaceB?: boolean;
       spawnPortal?: boolean;
+      /** A spawn on another grid (local/world.ts `spawnGrid`: `moon`, `sun-b`). */
+      spawnGrid?: string;
       /** A spawn link: a saved world's player starts at the spawn too (local/world.ts). */
       spawnOnOpen?: boolean;
       /** Dev link `?at=x,y,z`: the spawn is that point, and the player starts there. */

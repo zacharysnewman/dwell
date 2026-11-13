@@ -3,6 +3,7 @@
 
 import { WorldSizes } from '../protocol/constants.gen';
 import { isGameMode } from '../ui/modes';
+import { OVERRIDE_FIELDS } from '../ui/playOverrides.gen';
 
 /**
  * Generator versions by world type, as the Rust side numbers them (`dwell_world::GENERATOR_*`).
@@ -37,6 +38,13 @@ export interface LocalWorld {
    * own world file (`<name>-portal`, `<name>-portal-b`).
    */
   spawnPortal?: boolean;
+  /**
+   * A spawn on another grid (docs/proposals/MOON_WORLD.md §8; `?spawn=moon`, `sun-b`, the New world
+   * form's Spawn): the grid face a new world's players start and respawn on, a key of
+   * `GRID_SPAWNS` (from shared/worldgen/grids.json). The server sends there only a build that can be
+   * there; any other starts at home.
+   */
+  spawnGrid?: string;
   /**
    * A spawn link (`?spawn=`) on a world file that is already there: its player starts at that
    * spawn too, not where it left the world (owner, 2026-10-27). A menu world's chosen spawn is its
@@ -88,19 +96,37 @@ export function sizeOptions(
     : {};
 }
 
-/** The spawns a world can start at (`?spawn=`, a new world's Spawn): "" is face A's usual one. */
-export const SPAWNS = ['', 'b', 'portal', 'portal-b'] as const;
-export type Spawn = (typeof SPAWNS)[number];
+/** Home's spawns (`?spawn=`, a new world's Spawn): "" is face A's usual one. */
+export const HOME_SPAWNS = ['', 'b', 'portal', 'portal-b'] as const;
+
+/**
+ * The other grids' spawns, both faces of each (`moon`, `moon-b`, `sun`, `sun-b`): the Spawn
+ * choice's options past home's, generated from shared/worldgen/grids.json (shared/play/gen.mjs
+ * `gridSpawnOptions`), so a new world body is a spawn by itself.
+ */
+export const GRID_SPAWNS: readonly string[] = (() => {
+  const field = OVERRIDE_FIELDS.find((f) => f.param === 'spawn');
+  const values = field?.kind === 'choice' ? field.options.map((o) => o.value) : [];
+  return values.filter((v) => !(HOME_SPAWNS as readonly string[]).includes(v));
+})();
+
+/** Every spawn a world can start at. */
+export const SPAWNS: readonly string[] = [...HOME_SPAWNS, ...GRID_SPAWNS];
+/** A spawn: one of `SPAWNS`. */
+export type Spawn = string;
 
 export function isSpawn(v: unknown): v is Spawn {
-  return (SPAWNS as readonly unknown[]).includes(v);
+  return typeof v === 'string' && SPAWNS.includes(v);
 }
 
 /** The local world's options for a spawn. */
-export function spawnOptions(spawn: Spawn): Pick<LocalWorld, 'spawnFaceB' | 'spawnPortal'> {
+export function spawnOptions(
+  spawn: Spawn,
+): Pick<LocalWorld, 'spawnFaceB' | 'spawnPortal' | 'spawnGrid'> {
   return {
     ...(spawn === 'b' || spawn === 'portal-b' ? { spawnFaceB: true } : {}),
     ...(spawn === 'portal' || spawn === 'portal-b' ? { spawnPortal: true } : {}),
+    ...(GRID_SPAWNS.includes(spawn) ? { spawnGrid: spawn } : {}),
   };
 }
 

@@ -587,6 +587,7 @@ fn a_world_from_an_older_line_opens_on_this_builds_terrain() {
                     app_version_created: "0.40.0".into(),
                     app_version_last: "0.40.0".into(),
                     settings: None,
+                    spawn_grid: None,
                 }),
                 ..SaveBatch::default()
             })

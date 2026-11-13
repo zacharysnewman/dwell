@@ -908,13 +908,14 @@ async function step(run: Run, s: Step): Promise<void> {
       );
       return;
     }
-    case 'moonLand': {
+    case 'moonLand':
+    case 'sunLand': {
       const options = { ...(s.face ? { face: s.face } : {}), ...(s.maxS ? { maxS: s.maxS } : {}) };
       const r = await call<{ ok?: Record<string, unknown>; error?: string } | null>(
         page,
-        `d.moonLand(${JSON.stringify(options)}).then((ok) => ({ ok }), (e) => ({ error: String(e?.message ?? e) }))`,
+        `d.${s.do}(${JSON.stringify(options)}).then((ok) => ({ ok }), (e) => ({ error: String(e?.message ?? e) }))`,
       );
-      if (!r?.ok) throw new Error(`moonLand: ${r?.error ?? 'not playing'}`);
+      if (!r?.ok) throw new Error(`${s.do}: ${r?.error ?? 'not playing'}`);
       await sleep(page, s.waitS ?? 3);
       const stats = await call<{ calls: number; triangles: number; meshBytes: number } | null>(
         page,
@@ -928,7 +929,7 @@ async function step(run: Run, s: Step): Promise<void> {
       run.trips.push({ ...r.ok, ...drawn });
       const landS = typeof r.ok.landS === 'number' ? f(r.ok.landS) : '–';
       console.log(
-        `  moonLand: on the moon's ground in ${landS} s; drawn: ${String(drawn.calls)} calls, ${String(drawn.triangles)} triangles, meshes ${String(drawn.meshBytes === null ? null : Math.round(drawn.meshBytes / 1e6))} MB`,
+        `  ${s.do}: on the ${s.do === 'sunLand' ? 'sun' : 'moon'}'s ground in ${landS} s; drawn: ${String(drawn.calls)} calls, ${String(drawn.triangles)} triangles, meshes ${String(drawn.meshBytes === null ? null : Math.round(drawn.meshBytes / 1e6))} MB`,
       );
       return;
     }

@@ -41,8 +41,32 @@ export const RESERVED = [
   'versions',
 ];
 
+/**
+ * Options a choice may add after its own (`optionsAlso`): `gridSpawns`, each grid of
+ * shared/worldgen/grids.json with a generator of its own (not the home grid, the first, nor a
+ * `terrain` one) on both faces (docs/proposals/MOON_WORLD.md §8: `moon`, `moon-b`, … — the keys
+ * `dwell_worldgen::grids::spawn_keys` gives), so a new world body appears in the Spawn list by itself.
+ */
+export const ALSO_SOURCES = ['gridSpawns'];
+
+/** The grids' spawn options: `{ value: "moon", label: "Moon (face A)" }`, then face B, per grid. */
+export function gridSpawnOptions(read = (p) => readFileSync(join(root, p), 'utf8')) {
+  const { grids } = JSON.parse(read('shared/worldgen/grids.json'));
+  return grids
+    .slice(1)
+    .filter((g) => typeof g.radiusM === 'number' && g.generator?.kind !== 'terrain')
+    .flatMap((g) => {
+      const short = g.name.includes(':') ? g.name.slice(g.name.indexOf(':') + 1) : g.name;
+      const label = titled(short.replace(/_/g, ' '));
+      return [
+        { value: short, label: `${label} (face A)` },
+        { value: `${short}-b`, label: `${label} (face B)` },
+      ];
+    });
+}
+
 const KINDS = {
-  choice: ['options', 'optionsFrom'],
+  choice: ['options', 'optionsFrom', 'optionsAlso'],
   integer: ['min', 'max'],
   number: ['min', 'max', 'step'],
   clock: [],
@@ -139,6 +163,12 @@ export function validateOverrides(data, read) {
           checkText(`${at}.options[${j}].label`, x.label);
           return { value: x.value, label: x.label };
         });
+      }
+      if ('optionsAlso' in o) {
+        if (!ALSO_SOURCES.includes(o.optionsAlso)) {
+          fail(`${at}.optionsAlso must be one of ${ALSO_SOURCES.join(', ')}, got ${JSON.stringify(o.optionsAlso)}`);
+        }
+        options = [...options, ...gridSpawnOptions(read)];
       }
       if (options[0].value !== '') fail(`${at}.options must start with the default, value ""`);
       const values = options.map((x) => x.value);
