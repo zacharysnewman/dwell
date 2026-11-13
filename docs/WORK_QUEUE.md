@@ -778,6 +778,18 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    `breaking.tools`), validated in the generator with a fixture by data alone, each repeat a whole new swing sent
    as a click's (others see each by its swing count; wear on a hit only), mouse, controller and touch (a still
    hold in Break mode with such a tool). Left: the feel in game (no GPU in the cloud).
+   Owner, 2026-11-13: **"You should also be able to hold 'punch' to dig with your hand."**
+   **Status (hand-hold):** built (ITEMS.md "Hold to keep swinging", BLOCK_DAMAGE.md §13): a punch is a Break
+   holding no breaking or chopping tool (an empty hand, a block, any other item, as the damage rules already
+   count it); held, it punches every `breaking.hand.repeatS` (0.4 s, `shared/tools/tools.json`), each a hit
+   landing at once on what is aimed at then, the arms' break swing replayed per punch; mouse, controller trigger
+   and a still touch in Break mode. The server takes a punch short of breaking no faster than that rate (one
+   spare for network bunching), and the client sends no faster either, clicked or held. Not changed: a creative
+   punch breaks in one hit and is not rate-limited, a palette tool, the brush and paste mode don't repeat, the
+   punch has no `contactS` (it lands at the click as before). Tests: `dwell-sim` `damage` (rate accepted, twice
+   it refused, dirt broken after its hand hits; both faces, red → green), `dwell-client` `game_local`
+   `a_held_punch_digs_dirt_at_the_hands_rate_and_stops_when_let_go` (red → green), `held_use.rs`,
+   `gen.test.mjs`. Left: the feel in game (no GPU in the cloud).
 18. **Digging marks that look carved** (owner 2026-11-11: "the 'chunks' of dirt aren't at all what we
    discussed. It should be like a normal map change (do we support normal/bump maps)? It's completely flat
    should look like mesh deformation (preferably without actually doing it for performance)"; "That part was
@@ -1645,6 +1657,10 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    `tests/weapons.rs`): an unguarded hit hurts and pushes, a raised guard across the blade blocks, creative
    takes none, an older client hears `Fall`. Not yet: the client's own hurt look for a weapon (it shows the
    generic damage flash), wolves biting players.
+   Owner, 2026-11-13: **"I think my player character is floating a bit above the ground now. We didn't talk about
+   scaling for the new player model. It's likely shorter and may need to be scaled up."** (items 37/38: the Peasant
+   is your body, other players' and the villagers'). **Fixed (BUGS.md #140):** its soles were on the ground but its
+   eyes 7.3 cm under the camera's; `models.json` `scale` 1.04 → 1.09 puts them at the camera's 1.62 m eye.
 39. **Livelier animals** (owner 2026-11-12, after the video had no chase or fleeing — on day one every pack is
    kilometres from any herd and players can't scare deer): chose **deer flee from players** (they notice a player
    within a distance by data, closer when crouching, and run off; wolves keep their distance unless hungry),
@@ -2079,6 +2095,12 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
   `shore.bandSoftness` (0.75) (`shared/look/waterflow.json`, WATER_RENDERING.md §20). The mirror
   `dwell_look::waterflow::shore_foam` pins the profile: no step over 0.08 between samples 5 mm apart (0.52.6's
   stepped 0.28) and never under half strength along the edge's first 0.1 m. Outstanding: the owner's look.
+  Follow-up (owner, 2026-11-13, after the screenshots): "Can you make it smoother or thicker around corners, so it
+  doesn't looks so squared off." Done (`claude/foam-corners`): the foam's distance to the shore is now also measured
+  across the surface from each water top's solid neighbours (the mesher packs them over the fluid id): round, a
+  quarter circle, at an outer corner, and filleted by `shore.cornerRadiusM` (0.4 m) into an inner one, so the band
+  thickens into it instead of a sharp L (WATER_RENDERING.md §21; `?waterdbg=corners` turns it off to compare).
+  Outstanding: the owner's look.
 
 - **The full-sky flood test on main (2026-11-13, `claude/flood-sky-test`), done.** Owner: "`cargo test -p dwell-mesh --lib
   flood_tests::open_terrain_takes_the_full_sky` fails on main (face a: 3 dark vertices) … find which merge broke it, decide

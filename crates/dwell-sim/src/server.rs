@@ -127,6 +127,13 @@ const EDIT_HOLD_TICKS: u8 = 30;
 /// small burst so edits bunched by the network are not rejected.
 const EDITS_PER_TICK: f64 = 1000.0 / (pc::BLOCK_EDIT_INTERVAL_MS as f64 * SIM_HZ as f64);
 const EDIT_BURST: f64 = 3.0;
+/// Punches (WORK_QUEUE item 17): a damage hit by hand takes a credit, refilled at the hand's
+/// `repeatS` (`breaking.hand`), holding one spare so punches bunched by the network are not refused;
+/// a client punching faster than its data's rate is refused the extra hits.
+const PUNCH_BURST: f64 = 2.0;
+fn punch_credit_per_tick() -> f64 {
+    dwell_protocol::chopping::HAND_REPEAT_S.map_or(f64::INFINITY, |r| 1.0 / (r * f64::from(SIM_HZ)))
+}
 /// Region edits (§6.5): a token bucket of cells, each request costing its box's volume.
 const REGION_CELLS_PER_TICK: f64 = region_edit::CELLS_PER_SECOND as f64 / SIM_HZ as f64;
 const REGION_BURST_CELLS: f64 = region_edit::BURST_CELLS as f64;
@@ -663,6 +670,8 @@ struct Session {
     /// Body edits (docs/BUILT_BODIES.md §4), applied after the block edits.
     body_edits: Vec<BodyEditRequest>,
     edit_credit: f64,
+    /// Damage hits by hand left before the hand's rate refuses one (`PUNCH_BURST`).
+    punch_credit: f64,
     /// Applied after the block edits, in order: (edit number, edit, ticks held while all of it
     /// would go into a player, EDIT_HOLD_TICKS).
     region_edits: Vec<(u32, RegionEdit, u8)>,
@@ -857,6 +866,7 @@ impl Session {
             edits: Vec::new(),
             body_edits: Vec::new(),
             edit_credit: 0.0,
+            punch_credit: 0.0,
             region_edits: Vec::new(),
             region_credit: 0.0,
             edit_seq: 0,
@@ -1659,6 +1669,7 @@ impl Server {
         s.player_id = player_id;
         s.phase = Phase::Joined;
         s.edit_credit = EDIT_BURST;
+        s.punch_credit = PUNCH_BURST;
         s.region_credit = REGION_BURST_CELLS;
         let flight = self.may_fly(&self.sessions[&id]);
         let flight_policy = self.may_fly_by_policy(&self.sessions[&id]);
@@ -3024,6 +3035,7 @@ impl Server {
             let eye = handle.map(|h| self.eye_of(h));
             let s = self.sessions.get_mut(&id).expect("session");
             s.edit_credit = (s.edit_credit + EDITS_PER_TICK).min(EDIT_BURST);
+            s.punch_credit = (s.punch_credit + punch_credit_per_tick()).min(PUNCH_BURST);
             let mut held = Vec::new();
             for (seq, edit, ticks, contact) in std::mem::take(&mut s.edits) {
                 // A tool's hit waits for its contact; switched away from by then, it is dropped.
@@ -3116,6 +3128,16 @@ impl Server {
                             self.settings.allows(Ability::InstantBreaks),
                         )
                     };
+                    // A punch short of breaking comes no faster than the hand's `repeatS` (held
+                    // Break repeats it; WORK_QUEUE item 17): a faster one is refused.
+                    if need.is_some_and(|n| n > 1) && dwell_protocol::chopping::is_punch(held) {
+                        if s.punch_credit < 1.0 - 1e-9 {
+                            s.stats.edits_rejected += 1;
+                            s.edit_refused.push(seq);
+                            continue;
+                        }
+                        s.punch_credit -= 1.0;
+                    }
                     // A hit that counts wears the held tool (owner, 2026-11-11), where items are
                     // used (or creative too, `creativeWear`).
                     if need.is_some() {

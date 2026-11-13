@@ -129,6 +129,14 @@ tool, a still hold on the view (`TouchControls::hold_breaks`) all hold it, each 
 hold of n swing lengths, one contact each; let go mid-swing: that swing ends, no other), `gen.test.mjs`,
 the touch hold (`dwell-game` `touch.rs`).
 
+**Hold to punch (WORK_QUEUE item 17).** Owner, 2026-11-13: "You should also be able to hold 'punch' to
+dig with your hand." A Break holding no breaking or chopping tool (an empty hand, a block, any other
+item: a punch, as the damage rules count it) repeats while held every `breaking.hand.repeatS`
+(`repeatOnHold`, default 0.5 s, in [0.1, 5]; 0.4 s today; `dwell_protocol::chopping::HAND_REPEAT_S`,
+`break_repeat_s`, `is_punch`), each punch landing at once on what is aimed at then. A creative palette
+tool, the brush and paste mode keep one per press. A punch short of breaking is sent at most that often,
+clicked or held, and the server refuses faster ones (BLOCK_DAMAGE.md §13).
+
 **Wear.** The stone axe, the stone pickaxe and the wooden shovel survive 32 hits each
 (`shared/tools/tools.json` `durability`; owner, 2026-11-11: "stone pick wears too like axe, same with
 shovel"); the metal axe, pickaxe and shovel 64 each (owner, 2026-11-12: metal tools "have double

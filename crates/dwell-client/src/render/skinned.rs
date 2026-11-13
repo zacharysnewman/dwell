@@ -1425,6 +1425,102 @@ mod tests {
         }
     }
 
+    /// The Peasant's eyes in its bind pose (model units) and their joint: models.json's decor piece
+    /// that adds them (docs/CHARACTERS.md §11.14), so the test follows the data.
+    fn peasant_eyes() -> ([f32; 3], String) {
+        let json: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../shared/models/models.json")).unwrap();
+        let piece = json["models"]["peasant"]["decor"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|d| d["kind"] == "piece")
+            .expect("the Peasant's eyes are a decor piece");
+        let at = piece["at"].as_array().unwrap();
+        (
+            std::array::from_fn(|k| at[k].as_f64().unwrap() as f32),
+            piece["joint"].as_str().unwrap().to_string(),
+        )
+    }
+
+    // Owner, 2026-11-13 (BUGS.md #140): "I think my player character is floating a bit above the
+    // ground now. ... It's likely shorter and may need to be scaled up." The Peasant at idle, as
+    // another player, your shadow or your whole body from a placed camera sees it: its lowest sole
+    // within 2 cm of the feet (the collider's bottom, on the ground), its eyes at the camera's eye
+    // height within 3 cm (they were 7.3 cm low at scale 1.04), and your own body in first person
+    // standing on the same ground.
+    dwell_world::both_faces! {
+        fn the_peasant_stands_on_its_soles_with_its_eyes_at_the_cameras(face: FaceFrame) {
+            use dwell_characters::anim::sample;
+            let (data, model) = dwell_models::player();
+            let ch = dwell_characters::player();
+            let cfg = dwell_physics::config::PlayerControllerConfig::default();
+            let body = ch.first_person.and_then(|f| f.body).unwrap();
+            let (eyes, eye_joint) = peasant_eyes();
+            let eye_skin = model
+                .skin
+                .iter()
+                .position(|&n| model.nodes[n].name == eye_joint)
+                .unwrap();
+            let level = dwell_models::DETAIL_DEFAULT;
+            let (_, own_verts) = own_body_mesh(data, model, level).unwrap();
+            let all: Vec<u32> = (0..model.level(level).positions.len() as u32).collect();
+            let feet = face.point([4.0, 7.0, -2.0]);
+            let eye = face.point([4.0, 7.0 + f64::from(cfg.body.eye_height), -2.0]);
+            let over = |p: [f32; 3]| face.y(f64::from(p[1]) + eye[1]) - face.y(feet[1]);
+            let lowest = |pts: Vec<[f32; 3]>| pts.into_iter().map(over).fold(f64::MAX, f64::min);
+            let clip = dwell_characters::TABLES.clip(ch.clip("idle").unwrap());
+            for s in 0..6 {
+                let pose = sample(clip, clip.duration * s as f32 / 6.0);
+                let d = SkinnedDraw {
+                    model: dwell_models::PLAYER,
+                    seed: 1,
+                    feet,
+                    yaw: 30.0,
+                    face,
+                    role: "idle",
+                    light: [1.0, 0.0],
+                    cast_only: false,
+                    rig_pose: Some(pose),
+                    grip: None,
+                    remap: NO_REMAP,
+                    idle_pose: None,
+                };
+                let place = body_matrix(&d, data, eye);
+                let p = Player::new(data, model, "idle");
+                let joints: Vec<Mat4> =
+                    anim::joint_matrices(model, &model_pose(data, model, &p, d.rig_pose.as_ref(), None))
+                        .iter()
+                        .map(|j| mm::mul(&place, j))
+                        .collect();
+                let sole = lowest(dwell_models::first_person::skin_points(model, level, &joints, &all));
+                assert!(sole.abs() < 0.02, "t {s}/6: the lowest sole {sole:.3} m over the feet");
+                let eye_at = over(mm::point(&joints[eye_skin], eyes));
+                let miss = eye_at - f64::from(cfg.body.eye_height);
+                assert!(
+                    miss.abs() < 0.03,
+                    "t {s}/6: the model's eyes {eye_at:.3} m over the feet, the camera's {}",
+                    cfg.body.eye_height
+                );
+                // Your own body in first person (moved back only, along the ground) stands on the
+                // same soles as everyone else sees.
+                let own = SkinnedOwn {
+                    draw: d,
+                    forward: face.look(30.0, -60.0),
+                    body,
+                    passes: 1,
+                };
+                let (own_joints, _) = own_joints(data, model, level, &own_verts, &own, eye).unwrap();
+                let own_sole = lowest(dwell_models::first_person::skin_points(model, level, &own_joints, &own_verts));
+                let remote_sole = lowest(dwell_models::first_person::skin_points(model, level, &joints, &own_verts));
+                assert!(
+                    (own_sole - remote_sole).abs() < 1e-3,
+                    "own body's sole {own_sole:.4}, another player's {remote_sole:.4}"
+                );
+            }
+        }
+    }
+
     #[test]
     fn a_fist_closes_round_the_handle_and_an_open_hand_does_not() {
         // both-faces: model space at rest, before the body's face frame (as

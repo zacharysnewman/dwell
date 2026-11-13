@@ -27,7 +27,7 @@ pub mod fixture {
 pub use crate::damage::{BlockDamageDef, CarveProfile, Cracks, DamageLook, DamageLookKind};
 pub use table::{
     BLOCK_DAMAGE, BREAK_CLASSES, BREAK_TOOLS, BREAK_WITH, CHOP2_DEFAULT, CREATIVE_WEAR, DURABILITY,
-    HINTS, TOOLS, WEAR_BREAK_SOUND, WOODS,
+    HAND_REPEAT_S, HINTS, TOOLS, WEAR_BREAK_SOUND, WOODS,
 };
 
 /// The on-screen hint for a tool of `kind` held in a stance (`vertical` or level), in `table`
@@ -654,6 +654,24 @@ pub struct BreakTool {
 pub fn break_contact_s_in(tools: &[BreakTool], held: Option<&str>) -> f64 {
     held.and_then(|h| tools.iter().find(|t| t.item == h))
         .map_or(0.0, |t| t.contact_s)
+}
+
+/// Whether a break made holding `held` (an item name; none: an empty hand) is a punch: no breaking
+/// tool (`breaking.tools`) nor chopping tool (`tools`) in hand, so a block or any other item punches
+/// as the bare hand does (WORK_QUEUE item 17).
+pub fn is_punch(held: Option<&str>) -> bool {
+    held.is_none_or(|h| BREAK_TOOLS.iter().all(|t| t.item != h) && tool(h).is_none())
+}
+
+/// How often a break held with `held` repeats (s): a breaking tool's `repeatS`, a punch's
+/// (`breaking.hand`, [`HAND_REPEAT_S`]); none: one per press (a chopping tool swings by its own
+/// `repeatOnHold`).
+pub fn break_repeat_s(held: Option<&str>) -> Option<f64> {
+    if is_punch(held) {
+        return HAND_REPEAT_S;
+    }
+    held.and_then(|h| BREAK_TOOLS.iter().find(|t| t.item == h))
+        .and_then(|t| t.repeat_s)
 }
 
 /// [`break_contact_s_in`] over the game's data.

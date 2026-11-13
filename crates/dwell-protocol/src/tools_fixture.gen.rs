@@ -91,3 +91,6 @@ pub static BREAK_TOOLS: &[BreakTool] = &[
     BreakTool { item: "dwell:wooden_shovel", class: "shovel", tier: "stone", speed: 1.5, contact_s: 0.26, repeat_s: Some(0.5) },
     BreakTool { item: "dwell:metal_shovel", class: "shovel", tier: "metal", speed: 3.0, contact_s: 0.26, repeat_s: Some(0.5) },
 ];
+/// A punch (a break holding no tool) held repeats this often (s; `breaking.hand`), and the server
+/// takes damage hits by hand no faster; none: one per press.
+pub const HAND_REPEAT_S: Option<f64> = Some(0.4);

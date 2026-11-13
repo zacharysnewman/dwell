@@ -512,3 +512,22 @@ test("a tool's swing clips (WORK_QUEUE item 35): the sword's slashes, the axe's 
   bad((t) => (t.clips = { level: 'Slash Left' }), /tools\.dwell:sword\.clips\.level must be a role name/);
   bad((t) => (t.clips = { thrust: 'thrust' }), /clips: unknown field thrust/);
 });
+
+test('hold to punch (WORK_QUEUE item 17; owner, 2026-11-13): the hand repeats at its data rate; by data alone; bad entries fail naming them', () => {
+  const rs = toolsRust(validateTools(...fresh()));
+  assert.match(rs, /pub const HAND_REPEAT_S: Option<f64> = Some\(0\.4\);/);
+  const withHand = (hand) => {
+    const [d, i, b] = fresh();
+    if (hand === undefined) delete d.breaking.hand;
+    else d.breaking.hand = hand;
+    return toolsRust(validateTools(d, i, b));
+  };
+  assert.match(withHand({ repeatOnHold: true, repeatS: 0.7 }), /HAND_REPEAT_S: Option<f64> = Some\(0\.7\);/);
+  assert.match(withHand({ repeatOnHold: true }), /HAND_REPEAT_S: Option<f64> = Some\(0\.5\);/);
+  assert.match(withHand(undefined), /HAND_REPEAT_S: Option<f64> = None;/);
+  assert.match(withHand({ repeatOnHold: false }), /HAND_REPEAT_S: Option<f64> = None;/);
+  assert.throws(() => withHand({ repeatOnHold: true, repeatS: 0.05 }), /breaking\.hand: repeatS is seconds in \[0\.1, 5\]/);
+  assert.throws(() => withHand({ repeatS: 0.5 }), /breaking\.hand: repeatS without repeatOnHold/);
+  assert.throws(() => withHand({ repeatOnHold: 'yes' }), /breaking\.hand: repeatOnHold must be true or false/);
+  assert.throws(() => withHand({ repeatOnHold: true, rate: 2 }), /rate/);
+});
