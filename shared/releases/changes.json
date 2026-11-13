@@ -2,6 +2,15 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.58.6",
+      "changes": [
+        "On the moon its ground is drawn: you no longer see only sky and stars after landing.",
+        "Trips to the moon no longer keep home's distant terrain in memory while you're away.",
+        "No more jumps in your position when the moon captures or releases you on a slow frame.",
+        "Home's clouds no longer hang in the moon's sky."
+      ]
+    },
+    {
       "version": "0.58.5",
       "changes": [
         "The big map zooms in smaller steps (about 2× each), with the buttons, keys, wheel, pinch and controller",

@@ -1,8 +1,0 @@
-{
-  "changes": [
-    "On the moon its ground is drawn: you no longer see only sky and stars after landing.",
-    "Trips to the moon no longer keep home's distant terrain in memory while you're away.",
-    "No more jumps in your position when the moon captures or releases you on a slow frame.",
-    "Home's clouds no longer hang in the moon's sky."
-  ]
-}
