@@ -7,8 +7,17 @@
         "Resurrection shrines: when you die you stand up again at the shrine nearest where you fell, on the side of the world you fell on",
         "Shrines stand about every 2 km: a terraced stone circle with stepping pillars, the tallest joined at the top, and a light at its centre",
         "Each shrine faces out from its hillside, and every new world's spawn is at a shrine",
-        "The map shows the shrines in ground you have explored; its new ✦ button hides or shows them",
+        "The map shows the shrines in ground you have explored; its new filters hide or show the shrines and each kind of marker",
         "New compatibility line: worlds from 0.57 open in 0.57 builds"
+        ]
+      },
+      {
+      "version": "0.57.4",
+      "changes": [
+        "Map markers: click the big map (M) to place one, with an icon, a colour and a short label; drag to move, click to edit or delete",
+        "Your markers show on the minimap and as waypoints in the world with their distance",
+        "Spawn and your last death are marked for you",
+        "Markers are yours alone, saved with the world"
       ]
     },
     {

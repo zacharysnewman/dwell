@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
-  SHRINE_FILTER_KEY,
+  FILTERS_KEY,
+  MapFilters,
+  OWN_MARKERS,
   SHRINE_MAP,
-  ShrineFilter,
+  filterLayers,
+  markerLayer,
   cellsFor,
   parseShrines,
   visibleShrines,
@@ -34,17 +37,37 @@ describe('the shrines on the big map', () => {
     expect(visibleShrines(sites, false, explored, true)).toEqual([]);
   });
 
-  it('remembers the filter in this browser, on by default, and survives failing storage', () => {
-    const kept = new Map<string, string>();
+  it('filters the shrines and each marker kind, remembered in this browser, surviving failing storage', () => {
+    const layers = filterLayers([
+      { kind: 'spawn', label: 'Spawn' },
+      { kind: 'death', label: 'Last death' },
+    ]);
+    expect(layers.map((l) => l.key)).toEqual(['shrine', 'spawn', 'death', OWN_MARKERS]);
+    expect(markerLayer({ auto: '' })).toBe(OWN_MARKERS);
+    expect(markerLayer({ auto: 'death' })).toBe('death');
+    const kept = new Map<string, string>([[FILTERS_KEY, '{"future":false}']]);
     const storage = {
       getItem: (k: string) => kept.get(k) ?? null,
       setItem: (k: string, v: string) => void kept.set(k, v),
     };
-    const f = new ShrineFilter(storage);
-    expect(f.on).toBe(true);
-    expect(f.toggle()).toBe(false);
-    expect(kept.get(SHRINE_FILTER_KEY)).toBe('off');
-    expect(new ShrineFilter(storage).on).toBe(false);
+    const f = new MapFilters(storage);
+    expect(f.shows('shrine')).toBe(true);
+    expect(f.toggle('shrine')).toBe(false);
+    f.set('death', false);
+    // Kept, with a layer this build doesn't know left as it was.
+    expect(JSON.parse(kept.get(FILTERS_KEY) ?? '')).toEqual({
+      future: false,
+      shrine: false,
+      death: false,
+    });
+    const again = new MapFilters(storage);
+    expect([again.shows('shrine'), again.shows('death'), again.shows('spawn')]).toEqual([
+      false,
+      false,
+      true,
+    ]);
+    // The filter hides the shrines whatever the reveal.
+    expect(visibleShrines(sites, again.shows('shrine'), () => true, true)).toEqual([]);
     const broken = {
       getItem: () => {
         throw new Error('blocked');
@@ -53,8 +76,9 @@ describe('the shrines on the big map', () => {
         throw new Error('blocked');
       },
     };
-    const b = new ShrineFilter(broken);
-    expect(b.on).toBe(true);
-    expect(b.toggle()).toBe(false);
+    const b = new MapFilters(broken);
+    expect(b.shows('shrine')).toBe(true);
+    expect(b.toggle('shrine')).toBe(false);
+    expect(new MapFilters(null).shows('own')).toBe(true);
   });
 });

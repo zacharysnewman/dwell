@@ -26,13 +26,30 @@ import { compatibilityLine } from '../version/semver';
 import { World } from '../protocol/constants.gen';
 import { ExploredChanges, type ExploredStore } from './exploredStore';
 import {
+  MapFilters,
   SHRINE_MAP,
-  ShrineFilter,
   browserStorage,
   cellsFor,
+  filterLayers,
+  markerLayer,
   parseShrines,
   visibleShrines,
 } from './mapShrines';
+import {
+  MarkerList,
+  type MapMarker,
+  decodeMarkers,
+  drawIcon,
+  encodeMarkers,
+  formatMarkerDistance,
+  iconSvg,
+  markersInRange,
+  pickMarker,
+  waypointAlpha,
+  waypointOnScreen,
+} from './markers';
+import { AUTO_MARKERS, MARKER_WORLD } from './markers.gen';
+import { MarkerPicker } from './markerPicker';
 
 /** An explored cell's key: its face (0 A, 1 B) and its index along face-local x and z. */
 export function cellKey(face: number, i: number, k: number): string {
@@ -991,6 +1008,19 @@ export interface MapClient extends RevealClient, LiveClient, MinimapFeed {
    * (docs/SHRINES.md): [x, z]* face-local m.
    */
   mapShrines?(face: number, x: number, z: number, cells: number): Float64Array;
+  /**
+   * Map markers (docs/MAP_MARKERS.md): the player's feet, face-local [face, x, y, z, dead, then
+   * while dead the death's face, x, y, z].
+   */
+  markerPose?(): ArrayLike<number>;
+  /** The player's saved markers record the server sent, once. */
+  takeMarkers?(): Uint8Array | undefined;
+  /** Whether the server keeps the player's markers (`markers.private`). */
+  markersSynced?(): boolean;
+  /** The player's markers record now, to the server. */
+  setMarkers?(record: Uint8Array): boolean;
+  /** A face-local point in the view: [x, y (−1..1, +y up), depth (≤ 0 behind), distance (m)]. */
+  markerScreen?(face: number, x: number, y: number, z: number): ArrayLike<number>;
 }
 
 /** A nice scale bar: the longest 1, 2 or 5 × 10ⁿ metres no wider than `maxPx` at `pxPerM`. */
@@ -1288,15 +1318,26 @@ export class MapUi {
   /** The debug layer shown (an index into `MAP_LAYERS.layers`; −1 none) and its button. */
   private layer = -1;
   private readonly layerButton: HTMLButtonElement;
-  /** The shrine layer's filter toggle (docs/SHRINES.md) and its button. */
-  private readonly shrines: ShrineFilter;
-  private readonly shrineButton: HTMLButtonElement;
+  /** The map's filters (the shrines, each marker kind, the player's own; docs/SHRINES.md), their
+   * button and the list it opens. */
+  private readonly filters: MapFilters;
+  private readonly filterButton: HTMLButtonElement;
+  private readonly filterPanel: HTMLDivElement;
   /** Each face's layer images by `face:name` (null: the world has no such field), and those asked. */
   private readonly layerImages = new Map<string, HTMLCanvasElement | null>();
   private readonly layerAsked = new Set<string>();
   /** The disc's last draw (ms), for the bench's cost readout. */
   costMs = 0;
   shading: boolean = MAP.heightShading.default;
+  /** The player's map markers (docs/MAP_MARKERS.md), their picker and their world waypoints. */
+  readonly markers = new MarkerList();
+  private readonly picker: MarkerPicker;
+  private readonly waypoints: HTMLDivElement;
+  private readonly waypointEls = new Map<number, HTMLDivElement>();
+  /** The server's record arrived (or the server keeps none), so the auto markers may be noted. */
+  private markersReady = false;
+  private markersWaitFrom = -1;
+  private wasDead = false;
   /** The big map opened or closed (the shell holds the game's input while it is open). */
   onOpenChange: ((open: boolean) => void) | null = null;
   /** A zoom button or key zoomed the big map (its sound). */
@@ -1359,7 +1400,8 @@ export class MapUi {
     title.textContent = 'Map';
     const hint = doc.createElement('span');
     hint.className = 'map-hint';
-    hint.textContent = 'Drag to move · scroll, pinch or + − to zoom a level · M or Esc to close';
+    hint.textContent =
+      'Drag to move · scroll, pinch or + − to zoom a level · click to mark, drag a marker to move it · M or Esc to close';
     const close = this.button('map-close', '✕', 'Close map (M or Esc)');
     bar.append(title, hint, close);
     const body = doc.createElement('div');
@@ -1375,12 +1417,33 @@ export class MapUi {
     this.layerButton = this.button('map-layer', '▦', `Map layer (${MAP_LAYERS.key.slice(3)})`);
     this.layerButton.append(doc.createElement('span'));
     this.layerButton.hidden = !client.requestMapLayer;
-    this.shrineButton = this.button('map-shrines', '✦', 'Shrines on the map');
-    this.shrineButton.hidden = !client.mapShrines;
-    this.shrines = new ShrineFilter(browserStorage());
-    this.shrineButton.classList.toggle('on', this.shrines.on);
-    this.shrineButton.setAttribute('aria-pressed', String(this.shrines.on));
-    controls.append(this.zoomIn, this.zoomOut, centre, this.layerButton, this.shrineButton);
+    this.filters = new MapFilters(browserStorage());
+    this.filterButton = this.button('map-filters', '', 'Map filters');
+    this.filterButton.append(iconSvg(doc, SHRINE_MAP.icon, '#f4ecd8', 18));
+    this.filterButton.setAttribute('aria-expanded', 'false');
+    this.filterPanel = doc.createElement('div');
+    this.filterPanel.className = 'map-filters';
+    this.filterPanel.hidden = true;
+    for (const layer of filterLayers(AUTO_MARKERS)) {
+      const row = doc.createElement('label');
+      const box = doc.createElement('input');
+      box.type = 'checkbox';
+      box.dataset.layer = layer.key;
+      box.checked = this.filters.shows(layer.key);
+      box.addEventListener('change', () => {
+        this.setFilter(layer.key, box.checked);
+      });
+      row.append(box, doc.createTextNode(layer.label));
+      this.filterPanel.append(row);
+    }
+    controls.append(
+      this.zoomIn,
+      this.zoomOut,
+      centre,
+      this.layerButton,
+      this.filterButton,
+      this.filterPanel,
+    );
     this.scaleEl = doc.createElement('div');
     this.scaleEl.className = 'map-scale';
     this.scaleLabel = doc.createElement('span');
@@ -1388,7 +1451,18 @@ export class MapUi {
     this.progress = doc.createElement('div');
     this.progress.className = 'map-progress';
     this.progress.hidden = true;
-    body.append(this.bigCanvas, controls, this.scaleEl, this.progress);
+    this.picker = new MarkerPicker(doc);
+    body.append(this.bigCanvas, controls, this.scaleEl, this.progress, this.picker.root);
+    // The waypoints over the world: a layer under the HUD (hud.json "waypoints").
+    this.waypoints = doc.createElement('div');
+    this.waypoints.id = 'map-waypoints';
+    this.waypoints.setAttribute('aria-hidden', 'true');
+    doc.body.append(this.waypoints);
+    this.markers.onChange = (list) => {
+      this.client.setMarkers?.(encodeMarkers(list));
+      this.drawDisc();
+      if (this.bigOpen) this.drawBig();
+    };
     this.panel.append(bar, body);
     this.big.append(this.panel);
     doc.body.append(this.root, this.big);
@@ -1405,8 +1479,8 @@ export class MapUi {
       this.state.center();
       this.drawBig();
     });
-    this.shrineButton.addEventListener('click', () => {
-      this.toggleShrines();
+    this.filterButton.addEventListener('click', () => {
+      this.toggleFilters();
     });
     this.layerButton.addEventListener('click', () => {
       this.stepLayer();
@@ -1495,6 +1569,7 @@ export class MapUi {
       if (this.doc.pointerLockElement) this.doc.exitPointerLock();
       this.drawBig();
     } else {
+      this.picker.close();
       this.state.close();
     }
     this.onOpenChange?.(open);
@@ -1519,17 +1594,29 @@ export class MapUi {
   }
 
   /** Steps to the next debug layer (after the last, none). */
-  /** Shows or hides the shrines on the big map (the filter, remembered in this browser). */
-  toggleShrines(): void {
-    const on = this.shrines.toggle();
-    this.shrineButton.classList.toggle('on', on);
-    this.shrineButton.setAttribute('aria-pressed', String(on));
+  /** Opens or closes the filters' list. */
+  toggleFilters(): void {
+    this.filterPanel.hidden = !this.filterPanel.hidden;
+    this.filterButton.setAttribute('aria-expanded', String(!this.filterPanel.hidden));
+  }
+
+  /** Shows or hides a layer of the maps (`filterLayers`: the shrines, a marker kind, the player's
+   * own), remembered in this browser. */
+  setFilter(key: string, on: boolean): void {
+    this.filters.set(key, on);
+    const box = this.filterPanel.querySelector<HTMLInputElement>(`input[data-layer="${key}"]`);
+    if (box) box.checked = on;
     this.bigStale = true;
+  }
+
+  /** The markers the filters show. */
+  private shownMarkers(): MapMarker[] {
+    return this.markers.all.filter((m) => this.filters.shows(markerLayer(m)));
   }
 
   /** The shrines the big map shows in view `v` (the filter, the reveal rule). */
   shownShrines(v: BigView, w: number, h: number): { x: number; z: number }[] {
-    if (!this.client.mapShrines || !this.shrines.on) return [];
+    if (!this.client.mapShrines || !this.filters.shows('shrine')) return [];
     const [cx, cz] = toWorld(v, 0, 0);
     const [ax, az] = toWorld(v, -w / 2, -h / 2);
     const span = Math.hypot(ax - cx, az - cz) * 2;
@@ -1606,6 +1693,7 @@ export class MapUi {
     const r = this.state.padFrame(values, axes, now);
     if (this.state.view && this.state.view.level !== level) this.onZoom?.();
     if (r.closed) {
+      this.picker.close();
       this.big.hidden = true;
       this.onOpenChange?.(false);
     } else if (r.moved) this.drawBig();
@@ -1646,6 +1734,7 @@ export class MapUi {
     }
     this.fillReveal();
     this.takeLayer();
+    this.markersFrame(now);
     if (this.bigStale && this.bigOpen && now - this.lastBigDraw >= MAP.revealed.redrawMs) {
       this.drawBig();
     }
@@ -1759,7 +1848,168 @@ export class MapUi {
     for (let n = 0; n + 1 < d.length; n += 2) {
       dot(half + (d[n] ?? 0) * perM, half - (d[n + 1] ?? 0) * perM, MAP.minimap.otherColor);
     }
+    // The markers on the disc (heading up, as the dots), their icons over the ground.
+    const [face = 0, x = 0, z = 0, yaw = 0] = this.client.mapPose();
+    const iconPx = Math.max(8, Math.round(px * 0.09));
+    for (const { marker: m, right, up } of markersInRange(
+      this.shownMarkers(),
+      { face, x, z, yaw },
+      MAP.minimap.radiusM,
+    )) {
+      drawIcon(ctx, m.icon, m.rgb, half + right * perM, half - up * perM, iconPx);
+    }
+    // The shrines on the disc (it is explored ground, so each one there shows), under the dot.
+    if (this.client.mapShrines && this.filters.shows('shrine')) {
+      const near = parseShrines(this.client.mapShrines(face, x, z, 1)).map((sh) => ({
+        id: 0,
+        icon: SHRINE_MAP.icon,
+        rgb: SHRINE_MAP.color,
+        label: '',
+        face,
+        x: sh.x,
+        y: 0,
+        z: sh.z,
+        auto: 'shrine',
+      }));
+      for (const { right, up } of markersInRange(near, { face, x, z, yaw }, MAP.minimap.radiusM)) {
+        drawIcon(
+          ctx,
+          SHRINE_MAP.icon,
+          SHRINE_MAP.color,
+          half + right * perM,
+          half - up * perM,
+          iconPx,
+        );
+      }
+    }
     dot(half, half, MAP.minimap.playerColor);
+  }
+
+  /**
+   * The markers each frame: the server's record once (the auto markers wait for it, or for a server
+   * that keeps none), spawn the first time the player is placed, the last death when they die, and
+   * the world waypoints.
+   */
+  private markersFrame(now: number): void {
+    const got = this.client.takeMarkers?.();
+    if (got) {
+      const list = decodeMarkers(got);
+      // The server's record replaces what this session had; markers placed before it arrived
+      // are kept.
+      if (list) {
+        const before = this.markers.all.filter((m) => m.auto === '');
+        this.markers.load(list);
+        for (const m of before) this.markers.place(m, m);
+      }
+      this.markersReady = true;
+      this.drawDisc();
+    }
+    const pose = Array.from(this.client.markerPose?.() ?? []);
+    if (pose.length < 5) return;
+    if (!this.markersReady) {
+      if (this.client.markersSynced?.()) return;
+      // A server without `markers.private`: wait a moment for the session's capabilities.
+      if (this.markersWaitFrom < 0) this.markersWaitFrom = now;
+      if (now - this.markersWaitFrom < 2000) return;
+      this.markersReady = true;
+    }
+    const [face = 0, x = 0, y = 0, z = 0, dead = 0] = pose;
+    if (!this.markers.hasAuto('spawn') && dead === 0)
+      this.markers.noteAuto('spawn', { face, x, y, z });
+    if (dead !== 0 && !this.wasDead) {
+      const [, , , , , df = 0, dx = 0, dy = 0, dz = 0] = pose;
+      this.markers.noteAuto('death', { face: df, x: dx, y: dy, z: dz });
+    }
+    this.wasDead = dead !== 0;
+    this.drawWaypoints(face);
+  }
+
+  /** The waypoints over the markers' spots on the player's face (none while the big map is open). */
+  private drawWaypoints(face: number): void {
+    const screen = this.client.markerScreen?.bind(this.client);
+    const shown = new Set<number>();
+    const w = this.doc.defaultView?.innerWidth ?? 1000;
+    const h = this.doc.defaultView?.innerHeight ?? 1000;
+    if (screen && !this.bigOpen) {
+      for (const m of this.shownMarkers()) {
+        if (m.face !== face) continue;
+        // The marker's spot, a little over the ground it was placed on.
+        const [nx = 0, ny = 0, depth = 0, dist = 0] = Array.from(
+          screen(m.face, m.x, m.y + 1.5, m.z),
+        );
+        if (dist > MARKER_WORLD.showM) continue;
+        shown.add(m.id);
+        const el = this.waypoint(m);
+        const at = waypointOnScreen(nx, ny, depth, w, h);
+        el.style.transform = `translate(${at.x.toFixed(1)}px, ${at.y.toFixed(1)}px)`;
+        el.style.opacity = waypointAlpha(dist).toFixed(2);
+        el.classList.toggle('edge', !at.onScreen);
+        const d = el.lastChild as HTMLSpanElement;
+        d.textContent = formatMarkerDistance(dist);
+      }
+    }
+    for (const [id, el] of this.waypointEls) {
+      if (!shown.has(id)) {
+        el.remove();
+        this.waypointEls.delete(id);
+      }
+    }
+  }
+
+  /** A marker's waypoint element (made again when its look changed). */
+  private waypoint(m: MapMarker): HTMLDivElement {
+    const key = `${m.icon}|${m.rgb}|${m.label}`;
+    const had = this.waypointEls.get(m.id);
+    if (had?.dataset.key === key) return had;
+    had?.remove();
+    const el = this.doc.createElement('div');
+    el.className = 'waypoint';
+    el.dataset.key = key;
+    const label = this.doc.createElement('span');
+    label.className = 'waypoint-label';
+    label.textContent = m.label;
+    const dist = this.doc.createElement('span');
+    dist.className = 'waypoint-distance';
+    el.append(iconSvg(this.doc, m.icon, m.rgb, MARKER_WORLD.sizePx), label, dist);
+    this.waypoints.append(el);
+    this.waypointEls.set(m.id, el);
+    return el;
+  }
+
+  /** A marker's spot on the open big map (pixels from its top left), or null off its face. */
+  private markerPx(m: MapMarker): [number, number] | null {
+    const v = this.state.view;
+    if (!v || m.face !== v.face) return null;
+    const c = this.bigCanvas;
+    const [sx, sy] = toScreen(v, m.x, m.z);
+    return [(c.width || 800) / 2 + sx, (c.height || 600) / 2 + sy];
+  }
+
+  /** The ground's height for a marker placed on the map: the player's when on their face. */
+  private placeY(face: number): number {
+    const [pf = 0, , py = 0] = Array.from(this.client.markerPose?.() ?? []);
+    return pf === face ? py : 0;
+  }
+
+  /** A click on the open map: edit the marker under it, else place one there. */
+  private mapClick(px: number, py: number): void {
+    const v = this.state.view;
+    if (!v) return;
+    const hit = pickMarker(this.shownMarkers(), (m) => this.markerPx(m), px, py);
+    if (hit) {
+      this.picker.openFor(hit, (r) => {
+        if (r.kind === 'save') this.markers.edit(hit.id, r.look);
+        else if (r.kind === 'delete') this.markers.remove(hit.id);
+      });
+      return;
+    }
+    if (this.markers.full) return;
+    const c = this.bigCanvas;
+    const [x, z] = toWorld(v, px - (c.width || 800) / 2, py - (c.height || 600) / 2);
+    const face = v.face;
+    this.picker.openFor(undefined, (r) => {
+      if (r.kind === 'save') this.markers.place(r.look, { face, x, y: this.placeY(face), z });
+    });
   }
 
   /** Tile (ti, tk) of a level's tinted image (null: nothing in it to draw), made again when stale. */
@@ -1842,22 +2092,21 @@ export class MapUi {
       ctx.drawImage(layerImg, 0, 0, Math.abs(bx - ax), Math.abs(by - ay));
       ctx.restore();
     }
-    // The shrines (docs/SHRINES.md): a glowing ring each, under the player's arrow.
-    const r = SHRINE_MAP.iconPx / 2;
+    // The shrines (docs/SHRINES.md): their vector icon, glowing, under the markers.
     for (const sh of this.shownShrines(v, w, h)) {
       const [sx, sy] = toScreen(v, sh.x, sh.z);
-      ctx.beginPath();
-      ctx.arc(w / 2 + sx, h / 2 + sy, r, 0, Math.PI * 2);
-      ctx.fillStyle = SHRINE_MAP.color;
+      ctx.save();
       ctx.shadowColor = SHRINE_MAP.color;
-      ctx.shadowBlur = r;
-      ctx.fill();
-      ctx.shadowBlur = 0;
-      ctx.strokeStyle = 'white';
-      ctx.lineWidth = 1.5;
-      ctx.stroke();
+      ctx.shadowBlur = SHRINE_MAP.iconPx / 2;
+      drawIcon(ctx, SHRINE_MAP.icon, SHRINE_MAP.color, w / 2 + sx, h / 2 + sy, SHRINE_MAP.iconPx);
+      ctx.restore();
     }
     this.updateControls();
+    // The markers on this face (those the filters show).
+    for (const m of this.shownMarkers()) {
+      const p = this.markerPx(m);
+      if (p) drawIcon(ctx, m.icon, m.rgb, p[0], p[1], 22);
+    }
     const [face = 0, x = 0, z = 0, yaw = 0] = this.client.mapPose();
     if (face !== v.face) return;
     const [px, py] = toScreen(v, x, z);
@@ -1906,8 +2155,26 @@ export class MapUi {
       const steps = this.wheel.add(-px);
       this.zoomBy(steps, e.clientX - r.left - r.width / 2, e.clientY - r.top - r.height / 2);
     });
+    // A press on a marker drags it; a press that doesn't move is a click (place or edit).
+    let press: { id: number; x: number; y: number; moved: boolean; marker: number | null } | null =
+      null;
+    const px = (e: PointerEvent): [number, number] => {
+      const r = c.getBoundingClientRect();
+      return [e.clientX - r.left, e.clientY - r.top];
+    };
     c.addEventListener('pointerdown', (e) => {
       const [x, y] = local(e);
+      const [ax, ay] = px(e);
+      press =
+        down.size === 0
+          ? {
+              id: e.pointerId,
+              x: ax,
+              y: ay,
+              moved: false,
+              marker: pickMarker(this.shownMarkers(), (m) => this.markerPx(m), ax, ay)?.id ?? null,
+            }
+          : null;
       down.set(e.pointerId, { x, y });
       c.setPointerCapture(e.pointerId);
       c.classList.add('dragging');
@@ -1918,6 +2185,22 @@ export class MapUi {
       const v = this.state.view;
       if (!was || !v) return;
       const [x, y] = local(e);
+      if (press?.id === e.pointerId) {
+        const [ax, ay] = px(e);
+        if (Math.hypot(ax - press.x, ay - press.y) > 4) press.moved = true;
+        if (press.moved && press.marker !== null) {
+          // Dragging a marker moves it (drawn as it goes, saved once on release).
+          const m = this.markers.get(press.marker);
+          const r = c.getBoundingClientRect();
+          if (m) {
+            const [wx, wz] = toWorld(v, ax - r.width / 2, ay - r.height / 2);
+            Object.assign(m, { x: wx, z: wz });
+          }
+          down.set(e.pointerId, { x, y });
+          this.drawBig();
+          return;
+        }
+      }
       if (down.size >= 2) {
         const other = [...down.entries()].find(([id]) => id !== e.pointerId)?.[1];
         if (other) {
@@ -1938,7 +2221,18 @@ export class MapUi {
       down.delete(e.pointerId);
       if (down.size === 0) c.classList.remove('dragging');
     };
-    c.addEventListener('pointerup', up);
-    c.addEventListener('pointercancel', up);
+    c.addEventListener('pointerup', (e) => {
+      const p = press;
+      press = null;
+      up(e);
+      if (p?.id !== e.pointerId) return;
+      const m = p.marker === null ? undefined : this.markers.get(p.marker);
+      if (p.moved && m) this.markers.move(m.id, { ...m, y: this.placeY(m.face) });
+      else if (!p.moved) this.mapClick(p.x, p.y);
+    });
+    c.addEventListener('pointercancel', (e) => {
+      press = null;
+      up(e);
+    });
   }
 }

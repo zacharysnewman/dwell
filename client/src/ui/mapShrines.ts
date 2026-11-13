@@ -2,13 +2,16 @@
 // map" and the map can "toggle them off (filters)"). The client crate gives the shrines round the
 // view (`mapShrines`, sited from the seed as the server sites them); this shows those in explored
 // ground (Guild Wars' map reveal: a shrine is known once its cell is explored) or all of them
-// (`reveal` "all", or the `mapRevealed` ability), as icons, behind a filter toggle remembered per
-// browser. Its looks and reveal rule are data (shared/worldgen/shrines.json `map`).
+// (`reveal` "all", or the `mapRevealed` ability), as the markers' vector icon, behind the map's
+// filters (the shrines and each marker kind, remembered per browser). Its looks and reveal rule are
+// data (shared/worldgen/shrines.json `map`).
 
 import data from '../../../shared/worldgen/shrines.json';
 
 export interface ShrineMapRules {
   reveal: 'explored' | 'all';
+  /** A vector icon of shared/ui/markers.json. */
+  icon: string;
   color: string;
   iconPx: number;
 }
@@ -53,14 +56,41 @@ export function visibleShrines(
   return sites.filter((s) => explored(s.x, s.z));
 }
 
-/** The filter's key in this browser's storage (a per-viewer convenience). */
-export const SHRINE_FILTER_KEY = 'dwell.map.shrines';
+/** A layer of the map the filters show or hide: the shrines, each auto marker kind, the player's own. */
+export interface FilterLayer {
+  key: string;
+  label: string;
+}
 
-function readFilter(storage: Pick<Storage, 'getItem'> | null): string | null {
+/** The player's own markers' layer key (a marker with no auto kind). */
+export const OWN_MARKERS = 'own';
+
+/** The map's filter layers: the shrines, then the marker kinds by data, then the player's own. */
+export function filterLayers(auto: readonly { kind: string; label: string }[]): FilterLayer[] {
+  return [
+    { key: 'shrine', label: 'Shrines' },
+    ...auto.map((a) => ({ key: a.kind, label: a.label })),
+    { key: OWN_MARKERS, label: 'My markers' },
+  ];
+}
+
+/** The filter layer a marker belongs to. */
+export function markerLayer(m: { auto: string }): string {
+  return m.auto === '' ? OWN_MARKERS : m.auto;
+}
+
+/** The filters' key in this browser's storage (a per-viewer convenience). */
+export const FILTERS_KEY = 'dwell.map.filters';
+
+function readFilters(storage: Pick<Storage, 'getItem'> | null): Record<string, boolean> {
   try {
-    return storage?.getItem(SHRINE_FILTER_KEY) ?? null;
+    const v: unknown = JSON.parse(storage?.getItem(FILTERS_KEY) ?? '{}');
+    if (typeof v !== 'object' || v === null || Array.isArray(v)) return {};
+    const out: Record<string, boolean> = {};
+    for (const [k, on] of Object.entries(v)) if (typeof on === 'boolean') out[k] = on;
+    return out;
   } catch {
-    return null;
+    return {};
   }
 }
 
@@ -73,19 +103,32 @@ export function browserStorage(): Storage | null {
   }
 }
 
-/** The shrine layer's toggle, remembered in `storage` (on unless turned off; storage may fail). */
-export class ShrineFilter {
-  on: boolean;
+/**
+ * The map's filters (owner, 2026-11-12: the map can "toggle them off (filters)"): each layer shown
+ * unless turned off, remembered in `storage` (unknown layers' choices kept; storage may fail).
+ */
+export class MapFilters {
+  private readonly hidden: Record<string, boolean>;
   constructor(private readonly storage: Pick<Storage, 'getItem' | 'setItem'> | null) {
-    this.on = readFilter(storage) !== 'off';
+    this.hidden = Object.fromEntries(
+      Object.entries(readFilters(storage)).map(([k, on]) => [k, !on]),
+    );
   }
-  toggle(): boolean {
-    this.on = !this.on;
+  shows(key: string): boolean {
+    return this.hidden[key] !== true;
+  }
+  set(key: string, on: boolean): void {
+    this.hidden[key] = !on;
     try {
-      this.storage?.setItem(SHRINE_FILTER_KEY, this.on ? 'on' : 'off');
+      const saved = readFilters(this.storage);
+      saved[key] = on;
+      this.storage?.setItem(FILTERS_KEY, JSON.stringify(saved));
     } catch {
-      // Private windows and blocked storage: the toggle lasts the page.
+      // Private windows and blocked storage: the choice lasts the page.
     }
-    return this.on;
+  }
+  toggle(key: string): boolean {
+    this.set(key, !this.shows(key));
+    return this.shows(key);
   }
 }

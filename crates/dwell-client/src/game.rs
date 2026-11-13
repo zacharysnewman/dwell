@@ -969,6 +969,10 @@ pub struct Game<S: Scene> {
     /// input; the others' guards (players' and NPCs': stance, raised) for the renderer; and when
     /// this player's last strike was blocked (its view's recoil: the time, the weapon, its plane).
     swordplay: bool,
+    /// Map markers (docs/MAP_MARKERS.md): the server keeps them (`markers.private`), and the
+    /// record it sent, until the shell takes it (`take_markers`).
+    markers_synced: bool,
+    markers_in: Option<dwell_protocol::markers::Markers>,
     /// The server takes a tool's hit at its contact (`hits.at_contact`, BUGS.md #111): the hit is
     /// aimed and sent then, not at the click.
     hits_at_contact: bool,
@@ -1176,6 +1180,8 @@ impl<S: Scene> Game<S> {
             remote_sounds: Default::default(),
             remote_tools: Default::default(),
             swordplay: false,
+            markers_synced: false,
+            markers_in: None,
             // As this build's client says it (`Capabilities::this_client`); an older server's
             // session turns it off (`set_hits_at_contact`).
             hits_at_contact: true,
@@ -2028,6 +2034,7 @@ impl<S: Scene> Game<S> {
             Message::Swordplay(dwell_protocol::SwordplayMessage::Clash(c)) => {
                 self.on_clash(&c, now_ms);
             }
+            Message::Markers(m) => self.markers_in = Some(m),
             Message::Swordplay(dwell_protocol::SwordplayMessage::Guards(list)) => {
                 for g in list {
                     self.remote_guards.insert(g.who, (g.vertical, g.raised));
@@ -2919,6 +2926,35 @@ impl<S: Scene> Game<S> {
     /// clashes and others' guards arrive.
     pub fn set_swordplay(&mut self, on: bool) {
         self.swordplay = on;
+    }
+
+    /// Whether the server keeps this player's map markers (`markers.private`, MAP_MARKERS.md).
+    pub fn set_markers_synced(&mut self, on: bool) {
+        self.markers_synced = on;
+    }
+
+    /// Whether the server keeps this player's map markers.
+    pub fn markers_synced(&self) -> bool {
+        self.markers_synced
+    }
+
+    /// The markers record the server sent (this player's saved ones), once.
+    pub fn take_markers(&mut self) -> Option<dwell_protocol::markers::Markers> {
+        self.markers_in.take()
+    }
+
+    /// The player's markers now, to the server where it keeps them (the whole record).
+    pub fn send_markers(&mut self, m: dwell_protocol::markers::Markers) {
+        if self.markers_synced {
+            self.outbox
+                .borrow_mut()
+                .push(Send::Control(Message::Markers(m)));
+        }
+    }
+
+    /// Where the player died, while dead (the death camera's feet; world metres).
+    pub fn death_feet(&self) -> Option<[f64; 3]> {
+        self.dead.then_some(self.death_feet)
     }
 
     /// Whether the server lands a tool's hit on arrival, sent at the swing's contact and aimed

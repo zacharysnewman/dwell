@@ -1,0 +1,51 @@
+{
+  "$comment": "Map markers (WORK_QUEUE item 53, docs/MAP_MARKERS.md; owner 2026-11-12: \"Let's use non-Unicode vector style symbols to let you annotate your own map so you can find your way around.\"). icons: the set a player picks from, each an id (lowercase, the name saved in a marker: a marker keeps its icon's name, so renaming or removing an icon is a change players see, adding one is not), a name (shown in the picker), a path (SVG path data in a 24 x 24 box, absolute commands M L H V C Q A Z only, every point inside the box, filled even-odd: holes are subpaths inside the outline; never an emoji or a Unicode glyph) and colour (its default, a palette name). palette: the colours a marker can take (name, #rrggbb); a marker saves the colour itself, so changing the palette leaves placed markers as they were. auto: the markers the game places by itself, each kind (spawn: where the player first came into the world; death: where they last died, moved on each death; portal: each portal once seen, none in the game yet), on (whether the game places it), keep (one: a single marker moved to the newest place; each: one per place), and its icon, colour and label. limits: maxMarkers (per player per world, the auto ones included), labelChars (a label's most characters), the most bytes of an icon or auto kind name, and pickRadiusPx (a click this close to a marker on the big map picks it). world: the waypoint over a marker's spot in the world, its size (px) and its fade, full at nearM, fadedAlpha from farM on, edgePx (an off-screen marker clamps this far inside the screen's edge) and showM (markers farther than this are not shown in the world, only on the maps). Run `node shared/ui/gen.mjs` after editing; CI fails if client/src/ui/markers.gen.ts or crates/dwell-protocol/src/markers.gen.rs is stale.",
+  "palette": [
+    { "name": "red", "rgb": "#e8322a" },
+    { "name": "orange", "rgb": "#f08c28" },
+    { "name": "yellow", "rgb": "#f2cf3a" },
+    { "name": "green", "rgb": "#4caf50" },
+    { "name": "teal", "rgb": "#2bb3a8" },
+    { "name": "blue", "rgb": "#2f7df6" },
+    { "name": "purple", "rgb": "#8e5bd8" },
+    { "name": "white", "rgb": "#f4f1ea" }
+  ],
+  "icons": [
+    { "id": "home", "name": "Home", "colour": "red", "path": "M12 3 L22 12 H19 V21 H14 V15 H10 V21 H5 V12 H2 Z" },
+    { "id": "camp", "name": "Camp", "colour": "orange", "path": "M12 3 L22 20 H2 Z M12 11 L8.5 20 H15.5 Z" },
+    { "id": "flag", "name": "Flag", "colour": "red", "path": "M5 2 H7 V22 H5 Z M7 3 H19 L16 7.5 L19 12 H7 Z" },
+    { "id": "star", "name": "Star", "colour": "yellow", "path": "M12 2 L14.9 8.6 L22 9.3 L16.6 14 L18.2 21 L12 17.3 L5.8 21 L7.4 14 L2 9.3 L9.1 8.6 Z" },
+    { "id": "cave", "name": "Cave", "colour": "orange", "path": "M2 21 L6 9 L12 4 L18 9 L22 21 Z M8 21 C8 15 10 12 12 12 C14 12 16 15 16 21 Z" },
+    { "id": "portal", "name": "Portal", "colour": "purple", "path": "M12 2 A7 10 0 0 1 12 22 A7 10 0 0 1 12 2 Z M12 6 A3.5 6 0 0 0 12 18 A3.5 6 0 0 0 12 6 Z" },
+    { "id": "ore", "name": "Ore", "colour": "teal", "path": "M7 3 H17 L22 9 L12 21 L2 9 Z M7.5 9 L12 16.5 L16.5 9 Z" },
+    { "id": "tree", "name": "Tree", "colour": "green", "path": "M12 2 L19 12 H15 L20 18 H13 V22 H11 V18 H4 L9 12 H5 Z" },
+    { "id": "water", "name": "Water", "colour": "blue", "path": "M12 2 C10 5 5 10 5 15 A7 7 0 0 0 19 15 C19 10 14 5 12 2 Z" },
+    { "id": "danger", "name": "Danger", "colour": "yellow", "path": "M12 2 L23 21 H1 Z M11 8 V14 H13 V8 Z M11 16 V18.5 H13 V16 Z" },
+    { "id": "skull", "name": "Skull", "colour": "white", "path": "M12 2 C6.5 2 3 5.5 3 10 C3 13 4.5 15 7 16 V21 H17 V16 C19.5 15 21 13 21 10 C21 5.5 17.5 2 12 2 Z M6.5 9 H10.5 V13 H6.5 Z M13.5 9 H17.5 V13 H13.5 Z M11 14.5 L12 16.5 L13 14.5 Z" },
+    { "id": "house", "name": "House", "colour": "orange", "path": "M3 11 L12 4 L21 11 V21 H3 Z M7 13 V17 H11 V13 Z M13 13 V21 H17 V13 Z" },
+    { "id": "tower", "name": "Tower", "colour": "white", "path": "M6 2 H9 V4 H11 V2 H13 V4 H15 V2 H18 V8 L16 10 V22 H8 V10 L6 8 Z M11 13 V17 H13 V13 Z" },
+    { "id": "mountain", "name": "Mountain", "colour": "white", "path": "M1 21 L9 6 L13 13 L16 9 L23 21 Z" },
+    { "id": "eye", "name": "Lookout", "colour": "teal", "path": "M1 12 C5 5 19 5 23 12 C19 19 5 19 1 12 Z M12 8 A4 4 0 0 1 12 16 A4 4 0 0 1 12 8 Z M12 10 A2 2 0 0 1 12 14 A2 2 0 0 1 12 10 Z" },
+    { "id": "shrine", "name": "Shrine", "colour": "teal", "path": "M2 19 H22 V22 H2 Z M5 17 H19 V19 H5 Z M3 11 H5 V19 H3 Z M19 11 H21 V19 H19 Z M7 6 H9 V17 H7 Z M15 6 H17 V17 H15 Z M7 4 H17 V6 H7 Z M12 9 C10.5 11 10.5 13 12 14 C13.5 13 13.5 11 12 9 Z" },
+    { "id": "question", "name": "Unknown", "colour": "purple", "path": "M7.5 8.5 C7.5 4.5 16.5 4.5 16.5 8.5 C16.5 11.5 13 12 13 14.5 V15.5 H11 V14 C11 10.5 14.5 10.5 14.5 8.5 C14.5 6.5 9.5 6.5 9.5 8.5 Z M11 17.5 H13 V20.5 H11 Z" }
+  ],
+  "auto": [
+    { "kind": "spawn", "on": true, "keep": "one", "icon": "home", "colour": "yellow", "label": "Spawn" },
+    { "kind": "death", "on": true, "keep": "one", "icon": "skull", "colour": "white", "label": "Last death" },
+    { "kind": "portal", "on": true, "keep": "each", "icon": "portal", "colour": "purple", "label": "Portal" }
+  ],
+  "limits": {
+    "maxMarkers": 200,
+    "labelChars": 24,
+    "nameBytes": 32,
+    "pickRadiusPx": 14
+  },
+  "world": {
+    "sizePx": 26,
+    "nearM": 16,
+    "farM": 400,
+    "fadedAlpha": 0.45,
+    "edgePx": 28,
+    "showM": 1500
+  }
+}

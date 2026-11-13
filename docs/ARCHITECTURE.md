@@ -631,7 +631,14 @@ height** (owner, 2026-11-09; replacing 0.50.52's height bands, which hid the san
 already); the minimap's height-shading toggle shows the same look. The shell hands each tile's
 screen-order cells (inside a one-cell border, unread) to `shadeMap` (`shade_grid`). Explored
 cells and their heights are kept per world in this browser (IndexedDB `dwell-explored`, append-only:
-`heights` beside `cells`), not on the server. **[built, 0.52.3]** A save (every 10 s while cells
+`heights` beside `cells`), not on the server. **[built, WORK_QUEUE item 53] Map markers**
+([MAP_MARKERS.md](MAP_MARKERS.md)): the player's own markers — an icon from a vector set, a colour, a
+label — on the big map (a click places or edits one, a drag moves it), the minimap and in the world (a
+waypoint over the spot, faded with distance, clamped to the screen's edge), plus the auto markers
+(spawn, last death; portals once there are any). The set, palette, auto kinds and limits are data
+(`shared/ui/markers.json` → `shared/ui/gen.mjs` → `markers.gen.ts` and `dwell-protocol`'s
+`markers.gen.rs`); the record is saved per player in the world's `markers` table and synced to that
+player only (`markers.private`). **[built, 0.52.3]** A save (every 10 s while cells
 change) hands the store only the cells changed since the last one (`ExploredChanges`,
 `client/src/ui/exploredStore.ts`), and the store merges them into the record in its own worker
 (`exploredWorker.ts`; on the page only when the page is closing or has no workers): the merge reads
@@ -1603,8 +1610,9 @@ search's point moved to the shrine nearest it, or a shrine built at the point wh
 `spawnWithin` (looked for only by chunks with no grid shrine near, so most never run the search). The
 server respawns a dead player at the shrine nearest its death on its face (`ShrineRespawn`,
 `Server::respawn_after_death`; every mode), the respawn preload streaming that shrine's ring; the client
-guesses the same shrine from its own terrain for its preload. The big map shows the explored ones
-(`mapShrines`, `ui/mapShrines.ts`) behind a filter toggle. Generator change: the 0.58 line.
+guesses the same shrine from its own terrain for its preload. The big map and the minimap show the explored ones
+(`mapShrines`, `ui/mapShrines.ts`, the markers' `shrine` icon); the map's filters hide the shrines or
+any marker kind. Generator change: the 0.58 line.
 The rock above the bedrock is ordinary stone and can be dug through, in the flat test world too,
 which has no face B and no bedrock. The flat worlds (the flat test world and
 the structure sandbox) fill the midplane up to `FLAT_TOP_Y` = 32, their surface. The anchor for
@@ -2385,6 +2393,7 @@ lives in side files. Chunk and LOD blobs are the protocol's palette + RLE compre
 | `bodies` | **[built, Phase 51 B2]** The world's moving bodies, rewritten whole each save: kind, pose, velocities, cells (states by name; BUILT_BODIES.md §7) |
 | `inventories` | **[built, 0.50.33]** Keyed by device public key: the player's inventory record (`Inventory::to_bytes`, version 1: held slot, wallet and money, each non-empty slot's index, item name and count; ADR 0066). Optional: older builds leave it; an unreadable record is kept, not overwritten |
 | `vitals` | **[built, 0.50.57]** Keyed by device public key: the player's stamina and oxygen (version 1: f32 stamina, f32 seconds of air, u8 exhausted; ADR 0069), rewritten each save. Optional: older builds leave it; a player without one, or with a record this build can't read, starts rested |
+| `markers` | **[built, WORK_QUEUE item 53]** Keyed by device public key: the player's own map markers (`dwell_protocol::markers::Markers::to_bytes`, version 1: each marker's id, icon name, colour, label, face, face-local point and auto kind; [MAP_MARKERS.md](MAP_MARKERS.md)), rewritten each save for every player who has a record. Optional and additive: a world without it has no markers, older builds on the line never open it; an unreadable record reads as none and is replaced only when the player changes their markers |
 | `loose_items` | **[built, 0.50.33]** One record (key 0), rewritten each save: the loose items lying in the world (version 1: item name, count, point, age each; ADR 0066) |
 | `ground_gone` | **[built, 0.50.68]** One record (key 0), rewritten each save: the ground items gone from the scatter (`dwell_world::ground::GroundGone::to_bytes`, version 1: a count, then each cell as i32×3, sorted; ADR 0071), the scatter's tombstones. Optional: older builds leave it; an unreadable record is kept, not overwritten |
 | `block_damage` | **[built, 0.52.28]** One record (key 0), rewritten each save: the blocks hit short of breaking (`dwell_protocol::damage::Damage::to_bytes`, version 1: each cell, its state, hits and up to four hit marks; ADR 0078). Optional: a world without it loads undamaged, older builds leave it; an unreadable record is kept, not overwritten |
@@ -4653,7 +4662,11 @@ used by the server only in a mode with `theaterViewpoint`; an older server is ne
 is `hits.at_contact` (BUGS.md #111, BLOCK_DAMAGE.md §11): a breaking tool's `BlockEditRequest` (one with a
 `contactS`) leaves at its swing's contact, naming the cell aimed at then, and the server lands it on
 arrival instead of `contactS` after; without it on either side the request leaves at the click and the
-server waits, as before. The message itself is unchanged.
+server waits, as before. The message itself is unchanged. The tenth is `markers.private`
+([MAP_MARKERS.md](MAP_MARKERS.md), WORK_QUEUE item 53): `Markers` 0x6C (both ways, control: the player's
+whole markers record, `dwell_protocol::markers`) — the server sends a player their own saved record once
+after their `Capabilities`, to them alone, and the client sends its whole record again on each change;
+without it neither is sent and the client's markers last the session.
 ```
 S→C  WorldSettings field 0x85 (optional): u8 count (≤ 64), each str name (≤ 48 bytes, no repeat)
 C→S  Capabilities 0x69, control: the same form — the client's capabilities, once after Welcome,

@@ -1823,7 +1823,12 @@ export function validateShrines(data, structures = registryStructures()) {
   }
   const m = data.map;
   if (typeof m !== "object" || m === null) fail("map must be an object");
-  const me = Object.keys(m).filter((k) => !["$comment", "reveal", "color", "iconPx"].includes(k));
+  const me = Object.keys(m).filter(
+    (k) => !["$comment", "reveal", "icon", "color", "iconPx"].includes(k),
+  );
+  const icons = JSON.parse(readFileSync(join(root, "shared/ui/markers.json"), "utf8")).icons;
+  if (!icons.some((i) => i.id === m.icon))
+    fail(`map.icon ${JSON.stringify(m.icon)} is not an icon of shared/ui/markers.json`);
   if (me.length) fail(`map: unknown ${me.join(", ")}`);
   if (!SHRINE_REVEALS.includes(m.reveal))
     fail(`map.reveal must be one of ${SHRINE_REVEALS.join(", ")}`);

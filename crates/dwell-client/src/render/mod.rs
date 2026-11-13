@@ -3396,6 +3396,20 @@ impl Renderer {
     pub fn outline(&self) -> Option<&'static str> {
         self.ink_outline.map(|m| m.name)
     }
+    /// A world point in this frame's view (`camera::project`): [x, y] in −1..1 across the view
+    /// (+y up) and its depth along the view (≤ 0 behind).
+    pub fn project(&self, p: V3) -> V3 {
+        let basis = aim(self.yaw, self.pitch, self.face, self.roll);
+        let aspect = f64::from(self.canvas.0) / f64::from(self.canvas.1.max(1));
+        let tan_y = (self.frame_fov().to_radians() / 2.0).tan();
+        camera::project(&basis, self.eye, tan_y, aspect, p)
+    }
+
+    /// The camera's eye (world m) as last placed.
+    pub fn eye(&self) -> V3 {
+        self.eye
+    }
+
     /// The vertical FOV this frame draws with.
     pub fn frame_fov(&self) -> f64 {
         // The pixel-art preview's picture has a margin past the rows it shows (the camera snap's

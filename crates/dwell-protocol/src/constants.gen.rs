@@ -207,6 +207,7 @@ pub enum MessageType {
     Capabilities = 105,
     Swordplay = 106,
     TheaterViewpoint = 107,
+    Markers = 108,
 }
 
 impl MessageType {
@@ -275,6 +276,7 @@ impl MessageType {
             105 => Some(Self::Capabilities),
             106 => Some(Self::Swordplay),
             107 => Some(Self::TheaterViewpoint),
+            108 => Some(Self::Markers),
             _ => None,
         }
     }
@@ -681,6 +683,8 @@ pub mod capability_names {
     pub const THEATER_VIEWPOINT: &str = "theater.viewpoint";
     /// A breaking tool's hit (one with a `contactS`, shared/tools/tools.json; docs/BLOCK_DAMAGE.md §11) is sent at its swing's contact, aimed at what the crosshair targets then, and the server lands it on arrival (reach, line of sight and the edit rate checked from the eye at that tick) instead of `contactS` after it arrives. Without it (either side) the client sends the hit at the click, at the cell clicked, and the server lands it `contactS` after it arrives.
     pub const HITS_AT_CONTACT: &str = "hits.at_contact";
+    /// A player's map markers (WORK_QUEUE item 53, docs/MAP_MARKERS.md) go both ways as `Markers` (the record, dwell_protocol::markers): the server sends that player's saved record once, after this client's Capabilities, to that player only; the client sends its whole record again on each change, and the server keeps it for that player's device key in the world's optional `markers` table. Without it neither is sent: the client keeps its markers for this session only.
+    pub const MARKERS_PRIVATE: &str = "markers.private";
     /// Every capability this build knows, in the table's order.
-    pub const ALL: &[&str] = &[STRUCTURES_PLACE, GRID_FRAMES, DAMAGE_CHUNKS, CREATURES_NPCS, WEAPONS_CLASH, CREATURES_POSES, NPCS_SWINGS, THEATER_VIEWPOINT, HITS_AT_CONTACT];
+    pub const ALL: &[&str] = &[STRUCTURES_PLACE, GRID_FRAMES, DAMAGE_CHUNKS, CREATURES_NPCS, WEAPONS_CLASH, CREATURES_POSES, NPCS_SWINGS, THEATER_VIEWPOINT, HITS_AT_CONTACT, MARKERS_PRIVATE];
 }

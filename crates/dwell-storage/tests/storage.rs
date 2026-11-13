@@ -88,6 +88,7 @@ fn everything_round_trips_through_a_file() {
             water: None,
             inventories: vec![(key, vec![1, 2, 3])],
             vitals: vec![(key, vec![1, 0, 0, 200, 66, 0, 0, 160, 64, 0])],
+            markers: vec![(key, vec![1, 0, 0])],
             loose_items: Some(vec![9, 8]),
             cuts: Some(vec![1, 0, 0, 0, 0]),
             ground_gone: Some(vec![1, 1, 0, 0, 0, 4, 0, 0, 0, 5, 0, 0, 0, 6, 0, 0, 0]),
@@ -156,6 +157,9 @@ fn everything_round_trips_through_a_file() {
         Some(vec![1, 0, 0, 200, 66, 0, 0, 160, 64, 0])
     );
     assert_eq!(db.load_inventory(&[1; 32]), None);
+    // Map markers (docs/MAP_MARKERS.md): the player's own record, none for anyone else.
+    assert_eq!(db.load_markers(&key), Some(vec![1, 0, 0]));
+    assert_eq!(db.load_markers(&[1; 32]), None);
     assert_eq!(db.loose_items(), Some(vec![9, 8]));
     assert_eq!(db.cuts(), Some(vec![1, 0, 0, 0, 0]));
     assert_eq!(db.damage(), Some(vec![1, 0, 0, 0, 0]));
@@ -704,4 +708,25 @@ fn the_waters_record_is_saved_with_the_world_and_replaced_on_each_save() {
     })
     .expect("saved");
     assert_eq!(db.water(), Some(vec![1, 2, 3]));
+}
+
+#[test]
+fn each_players_markers_are_their_own_and_a_world_without_them_has_none() {
+    let db = WorldDb::in_memory().expect("db");
+    let (a, b) = ([3u8; 32], [4u8; 32]);
+    assert_eq!(db.load_markers(&a), None, "a world from before markers");
+    db.save(&SaveBatch {
+        markers: vec![(a, vec![1, 1, 0, 9]), (b, vec![1, 0, 0])],
+        ..Default::default()
+    })
+    .expect("save");
+    // A later save of one player's markers leaves the other's.
+    db.save(&SaveBatch {
+        markers: vec![(a, vec![1, 0, 0])],
+        ..Default::default()
+    })
+    .expect("save");
+    assert_eq!(db.load_markers(&a), Some(vec![1, 0, 0]));
+    assert_eq!(db.load_markers(&b), Some(vec![1, 0, 0]));
+    assert_eq!(db.load_markers(&[5; 32]), None);
 }

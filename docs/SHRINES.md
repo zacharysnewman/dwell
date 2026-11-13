@@ -1,6 +1,6 @@
 # Resurrection shrines
 
-**[built, 0.58]** WORK_QUEUE item 53. Owner, 2026-11-12: "And then we want to add 'resurrection shrines'
+**[built, 0.58]** WORK_QUEUE item 54. Owner, 2026-11-12: "And then we want to add 'resurrection shrines'
 these should work like Guild Wars. You respawn at the nearest shrine when you die." / "We'll have to
 spread these pretty thick across the map likely."
 
@@ -35,7 +35,7 @@ the map is per player (their explored cells); the filter is per browser.
 | `stand` | [0, 2] | Where a player stands up: the column 2 m from the anchor on the open side (turned with it), on its floor |
 | `searchCells`, `spawnWithin` | 3, 1500 m | A death searches the cells within 3 of its own; the spawn's shrine lies within 1500 m of the spawn search's point, else one is built at the point |
 | `worlds` | `test:archipelago` | Overrides per world setting name (not `design`) |
-| `map` | explored, `#7fd6ff`, 9 px | The big map's reveal (`explored`: shown once its 8 m explored cell is; `all`), colour and icon size |
+| `map` | explored, `shrine`, `#7fd6ff`, 18 px | The big map's reveal (`explored`: shown once its 8 m explored cell is; `all`), the markers' icon it draws, its colour and size |
 
 `gen.mjs` validates every key (ranges, the structure, the stand on a floor open above, the overrides)
 and emits `crates/dwell-worldgen/src/shrines.gen.rs`; `gen.test.mjs` covers it.
@@ -90,12 +90,19 @@ spawn search) for its meshing priorities, the spawn's when it has no terrain. No
 ## 6. The map (`client/src/ui/mapShrines.ts`)
 
 The big map asks the client crate for the shrines in the cells round its view's centre (`mapShrines`,
-from the client's terrain, sited as the server sites them) and draws a glowing ring for each one in an
-explored cell (`reveal` `explored`: Guild Wars' map reveal; with the `mapRevealed` ability, creative,
-or `reveal` `all`, every one). The ✦ button is the filter: it hides or shows the shrine layer,
-remembered per browser (`dwell.map.shrines`, a convenience; failing storage keeps it for the page).
-The map markers' auto markers (branch `claude/map-markers`) were not merged when this was built; the
-shrine layer is its own filter until they are, when it becomes one of their kinds.
+from the client's terrain, sited as the server sites them) and draws each one in an explored cell
+(`reveal` `explored`: Guild Wars' map reveal; with the `mapRevealed` ability, creative, or `reveal`
+`all`, every one) as the map markers' vector `shrine` icon (`shared/ui/markers.json`; `map.icon` names
+it, validated), glowing in `map.color`; the minimap draws the ones on its disc (explored ground by
+definition). They are a derived layer, not saved markers: the markers' records hold at most 200 a
+player per world (`limits.maxMarkers`) and an island has ~130 shrines a face, all derivable from the
+seed.
+
+**Filters** (owner: the map can "toggle them off (filters)"): the map's filter button opens a list of
+layers (`filterLayers`): Shrines, each auto marker kind by data (`markers.json` `auto`: Spawn, Last death,
+Portal) and My markers. Each shows unless turned off, on the big map, the minimap and the world
+waypoints alike (a hidden marker is not picked either); the choices are remembered per browser
+(`dwell.map.filters`, JSON; unknown layers' choices kept, failing storage keeps them for the page).
 
 ## 7. Compatibility
 
