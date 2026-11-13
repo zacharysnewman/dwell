@@ -2361,6 +2361,117 @@ fn towering_builds_a_metre_a_jump_at_five_and_three_frames_a_second() {
     }
 }
 
+/// A held Place's line straight up out of the sandbox floor's top face (docs/BUGS.md 30), on a
+/// device whose frames each cover `steps` of the server's ticks: Place pressed on the floor 2 m
+/// ahead, the aim then up the column to `up_m` over the floor, held `hold_ms`. The pieces in the
+/// column after the press, the first place's aside, at each frame (ms since the press, pieces).
+fn held_line(steps: usize, up_m: f64, hold_ms: f64) -> Vec<(f64, usize)> {
+    use dwell_game::build_drag::Holder;
+    let mut rig = Rig::with_generator(GENERATOR_SANDBOX);
+    assert!(rig.run_until(60 * 30, |r| {
+        r.game
+            .as_ref()
+            .is_some_and(|g| g.debug_state().terrain_ready)
+    }));
+    let SessionState::Joined {
+        region_edits,
+        brushes,
+        generator_version: _,
+        ..
+    } = rig.session.state().clone()
+    else {
+        panic!("joined")
+    };
+    rig.game
+        .as_mut()
+        .unwrap()
+        .set_capabilities(region_edits, brushes);
+    rig.run_until(60, |_| false);
+    let feet = rig.game.as_ref().unwrap().debug_state().feet;
+    // The floor's cell 2 m ahead (+z), looked at.
+    let floor = [feet[0], feet[1], feet[2] + 2.0];
+    let look_at = |rig: &mut Rig, p: [f64; 3]| {
+        let feet = rig.game.as_ref().unwrap().debug_state().feet;
+        let d = [p[0] - feet[0], p[1] - feet[1] - 1.62, p[2] - feet[2]];
+        rig.input.look.yaw = d[0].atan2(d[2]).to_degrees();
+        rig.input.look.pitch = d[1].atan2(d[0].hypot(d[2])).to_degrees();
+    };
+    look_at(&mut rig, floor);
+    rig.run_until(10, |_| false);
+    let t = rig
+        .game
+        .as_ref()
+        .unwrap()
+        .debug_state()
+        .target
+        .expect("the floor");
+    assert_eq!(t.face, 2, "the floor's top face");
+    let [x, y, z] = t.cell;
+    let now = rig.now;
+    assert!(
+        rig.game
+            .as_mut()
+            .unwrap()
+            .edit_held(EditAction::Place, Holder::Mouse, now)
+    );
+    let top = f64::from(y + 1) * dwell_world::CELL_H;
+    look_at(
+        &mut rig,
+        [f64::from(x) + 0.5, top + up_m, f64::from(z) + 0.5],
+    );
+    let stone = dwell_blocks::require("dwell:stone");
+    let mut out = Vec::new();
+    let start = now;
+    while rig.now - start < hold_ms {
+        rig.slow_frame(steps);
+        let built = (y + 2..y + 40)
+            .take_while(|&r| host_voxel(&mut rig, [x, r, z]) == stone)
+            .count();
+        out.push((rig.now - start, built));
+    }
+    rig.game.as_mut().unwrap().release_place(Holder::Mouse);
+    out
+}
+
+#[test]
+fn a_held_place_builds_at_the_datas_rate_at_sixty_five_and_three_frames_a_second() {
+    // docs/BUGS.md 30: a held Place built one piece a frame, and a line waited for the server's
+    // answer to each piece before the next, so under the software renderer (CI ~5 fps, a Mac's
+    // ~3 fps) it built a piece a frame: 5 a second at 5 fps (red before: 7 of the column's 12
+    // after 1.2 s, 11 after 2 s), 60 a second at 60 fps. Now a piece every `buildModes.repeatS`
+    // by the clock, the same at 60 and 5 fps; under that, as many as the server's region queue
+    // takes from a frame (`region_edit::MAX_QUEUED`: a frame's fills reach it in one tick).
+    use dwell_game::items::{BUILD_HOLD_MS, BUILD_REPEAT_S};
+    let column = 12; // the pieces up the column within reach
+    for steps in [1, 12, 20] {
+        let frame_ms = steps as f64 * 1000.0 / 60.0;
+        let per_s = (1.0 / BUILD_REPEAT_S)
+            .min(dwell_protocol::region_edit::MAX_QUEUED as f64 * 1000.0 / frame_ms);
+        if steps <= 12 {
+            assert_eq!(per_s, 1.0 / BUILD_REPEAT_S, "5 fps and up: the data's rate");
+        }
+        let timeline = held_line(steps, 20.0, 2000.0);
+        for &(t, built) in &timeline {
+            // A piece once armed, then one every 1 / per_s.
+            let due = if t + 1.0 < BUILD_HOLD_MS {
+                0
+            } else {
+                1 + ((t - BUILD_HOLD_MS) * per_s / 1000.0 + 1e-6).floor() as usize
+            };
+            let want = due.min(column);
+            assert!(
+                built.abs_diff(want) <= 1,
+                "{steps} ticks a frame: {built} pieces at {t:.0} ms, {want} due ({timeline:?})"
+            );
+        }
+        assert_eq!(
+            timeline.last().map(|l| l.1),
+            Some(column),
+            "{steps} ticks a frame: the whole column in 2 s"
+        );
+    }
+}
+
 #[test]
 fn a_jump_pressed_and_let_go_between_two_ticks_still_jumps() {
     // docs/BUGS.md 30: under the e2e software renderer, a jump press shorter than the gap between

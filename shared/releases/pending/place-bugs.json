@@ -1,0 +1,6 @@
+{
+  "changes": [
+    "Aiming low on a ramp's slope now places a block against its downhill side, instead of on top of the ramp.",
+    "Holding Place builds at a steady rate even when the frame rate drops: a slow device builds as fast as a smooth one."
+  ]
+}
