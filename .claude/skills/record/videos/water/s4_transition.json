@@ -1,0 +1,7 @@
+{ "formatVersion": 1, "name": "water s4: the camera slowly crossing the surface, half above and half below, then fully under looking up",
+  "keyframes": [
+    { "t": 0, "position": [11660, 33.0, 19575], "look": [0, -3], "fov": 70, "timeOfDay": 0.55 },
+    { "t": 4, "position": [11660, 32.0, 19578], "look": [0, -2] },
+    { "t": 8, "position": [11660, 30.0, 19582], "look": [0, 25] }
+  ],
+  "segments": [ { "move": "ease", "easing": "inOutSine" }, { "move": "ease", "easing": "inOutSine" } ] }

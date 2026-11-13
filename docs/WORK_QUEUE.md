@@ -1517,7 +1517,8 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    v5 (one-command tool #853; full record ~5 min, a one-shot fix 2 min 34 s): owner **"Bifacial v5 looks great saved
    it."** — video 1 done; its clip cache cleared. Next: video 2 (water and underwater), shot plan first.
    Video 2 plan given (coast glide, river to the sea, wading in, the transition, underwater swim, surfacing at
-   sunset). Owner sent a look reference: **"Underwater reference photo from the game abzu for pretty underwater with
+   sunset). Owner on the underwater look pass (#860), 2026-11-12: **"Water looks good"** — approved; video 2
+   recorded with `take.mjs water` (manifest `.claude/skills/record/videos/water/`, seed 7's coast at ~11700, 19500). Owner sent a look reference: **"Underwater reference photo from the game abzu for pretty underwater with
    transparent surface, light rays etc."** (ABZÛ: bright turquoise water with a long clear view, a bright see-through
    surface from below with the sun's disc and Snell's window, strong volumetric light shafts, caustics, a colourful
    lit floor). Before recording video 2: an underwater look pass toward that reference (WATER_RENDERING.md W4's
