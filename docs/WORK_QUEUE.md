@@ -1564,8 +1564,8 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    bitten, and swords still strike animals and NPCs only. The hurt look: a creature hit past its block (the
    `weapons.clash` outcome) flinches from the blow and flashes its tint by its `hurtLook` data (the file's
    default, per-creature overrides; the skinned shader's flash). Tests on both faces (`tests/weapons.rs`,
-   `creatures.rs`). SWORD_CLIPS_PLACEHOLDER
-   **Outstanding:** a wolf bite pose/clip on the clients (the bite shows as the player's damage and push only);
+   `creatures.rs`). The sword's own clips as data: a tool's `clips` (shared/tools) names the role each swing kind plays; the sword plays `slash_level` (a straight-armed sweep right to left) and `slash_overhead` (raised high, cut straight down), arms and body fitted with `clip_probe --fit` to the 1 m blade and timed to its swing (contact 0.355 s on a key), played on your arms, others (from `HeldTools`) and NPCs; clip_probe tests pin direction, contact on the crosshair and the world on both faces; sheets `docs/clip_probe/sword_*.svg`.
+   **Outstanding:** a thrust; an edge check for the sword model; a wolf bite pose/clip on the clients (the bite shows as the player's damage and push only);
    seen in game (local, a GPU).
 36. **A showcase video of the deer and wolves** (owner 2026-11-12: "have you observed the animals simulation? Make
    some clips of the deer/wolves behavior, really showcase it and try to get good angles. Keep it under 2 minutes

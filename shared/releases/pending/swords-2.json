@@ -1,5 +1,7 @@
 {
   "changes": [
+    "The sword has its own swings: a level slash and an overhead cut, timed so the blade lands as it hits",
+    "Other players and villagers swing their swords with the new slashes",
     "Wolves bite back: strike one and it turns on you, and enough bites leave you kneeling in defeat",
     "A creature struck by a sword flinches and flashes red"
   ]
