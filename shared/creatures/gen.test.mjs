@@ -97,3 +97,33 @@ test('an NPC’s fight rules are emitted, with defaults when it names none', asy
   delete e.creatures.find((c) => c.npc).npc.fight;
   assert.match(creaturesRust(validateCreatures(e, blocks, models), 'x'), /fight: FightDef \{ stance: FightStance::Counter, [^}]*give_up_s: 10\.0 \}/);
 });
+
+// WORK_QUEUE item 35, round 2: wolves bite (`attack`) and a hit shows (`hurtLook`), both data.
+test('a creature’s attack and hurt look are checked, defaulted and emitted', async () => {
+  const { creaturesRust } = await import('./gen.mjs');
+  const v = validateCreatures(data(), blocks, models);
+  const wolf = v.creatures.find((c) => c.name === 'dwell:wolf');
+  assert.ok(wolf.attack.reachM > 0 && wolf.attack.damage > 0 && wolf.attack.angryS > 0);
+  assert.equal(v.creatures.find((c) => c.name === 'dwell:doe').attack, null, 'deer don’t bite');
+  // The file's hurt look, the wolf's own field over it.
+  assert.equal(wolf.hurtLook.flinchM, 0.18);
+  assert.equal(wolf.hurtLook.tint, data().hurtLook.tint);
+  const rs = creaturesRust(v, 'test');
+  assert.match(rs, /name: "dwell:wolf".*attack: Some\(AttackDef \{ reach_m: 1\.3,/);
+  assert.match(rs, /name: "dwell:doe".*attack: None, hurt_look: HurtLook \{ seconds: 0\.4, tint: \[0\.878, 0\.251, 0\.165\]/);
+  // The fixture's walker pecks, by data alone, with the defaults filled.
+  const fx = validateCreatures(JSON.parse(readFileSync(join(here, 'fixtures/creatures.json'), 'utf8')), blocks, models);
+  assert.deepEqual(fx.creatures[0].attack, { reachM: 1, cooldownS: 0.5, damage: 2, knockbackMps: 0, liftMps: 0, angryS: 4, frontDeg: 120 });
+  const bad = (edit, re) => {
+    const d = data();
+    edit(d, d.creatures.find((c) => c.name === 'dwell:wolf'));
+    assert.throws(() => validateCreatures(d, blocks, models), re);
+  };
+  bad((_, c) => (c.attack.reachM = 0), /creatures\.dwell:wolf\.attack\.reachM must be in \(0, 4\]/);
+  bad((_, c) => (c.attack.bite = 1), /bite/);
+  bad((_, c) => delete c.attack.angryS, /angryS must be in/);
+  bad((_, c) => ((c.health = 0), (c.drops = [])), /attack needs health/);
+  bad((_, c) => (c.hurtLook = { tint: 'red' }), /hurtLook\.tint must be #rrggbb/);
+  bad((d) => (d.hurtLook.strength = 2), /hurtLook\.strength must be in \[0, 1\]/);
+  bad((d) => (d.hurtLook.glow = 1), /glow/);
+});

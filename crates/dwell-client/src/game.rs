@@ -965,6 +965,13 @@ pub struct Game<S: Scene> {
     lod_map: Option<crate::lod_map::LodMap>,
     /// Far trees tiles asked of the workers and not back yet (render/impostors.rs).
     far_tree_jobs: std::collections::HashSet<(u8, i32, i32)>,
+    /// Far trees tiles as the generator lists them (the felled are left out of what is drawn,
+    /// `impostors::standing_trees`), the felled trees seen (face bit, anchor), and the tiles whose
+    /// chunks arrived or changed since they were filtered.
+    far_tree_lists:
+        std::collections::HashMap<(u8, i32, i32), Vec<dwell_worldgen::impostor::FarTree>>,
+    far_tree_felled: std::collections::HashSet<(u8, [i32; 3])>,
+    far_tree_stale: std::collections::HashSet<(u8, i32, i32)>,
     lod_map_on: bool,
     /// The drawing's size in CSS pixels, for LOD selection.
     pub viewport_css: (f64, f64),
@@ -1211,6 +1218,9 @@ impl<S: Scene> Game<S> {
             unloads: Default::default(),
             lod_map: None,
             far_tree_jobs: Default::default(),
+            far_tree_lists: Default::default(),
+            far_tree_felled: Default::default(),
+            far_tree_stale: Default::default(),
             lod_map_on: false,
             viewport_css: (1280.0, 720.0),
             debug_note: String::new(),
@@ -1431,6 +1441,7 @@ impl<S: Scene> Game<S> {
         if let Some((vertical, _)) = held {
             self.chop.vertical = vertical;
         }
+        self.bodies.own_tool = self.held_tool().map(|t| t.name);
         self.bodies.hold_swing(held.map(|(vertical, t)| {
             let s = if vertical {
                 Swing::ChopVertical
@@ -1858,6 +1869,7 @@ impl<S: Scene> Game<S> {
             // that grid's); home streams again whole on the way back.
             Message::VoxelModification(_) if self.grid_drawn != 0 => {}
             Message::ChunkData(d) => {
+                self.far_trees_touched(d.coord);
                 // The server's data for the chunk: predictions in it are its business now.
                 self.prediction.forget_chunk(d.coord);
                 self.streamer.on_chunk_data(ChunkMessage::from(d))
@@ -1872,6 +1884,9 @@ impl<S: Scene> Game<S> {
             Message::VoxelModification(mut v) => {
                 // Cells showing a prediction keep it until their edits' ack (§6.5).
                 self.prediction.filter(&mut v.chunks);
+                for c in &v.chunks {
+                    self.far_trees_touched(c.coord);
+                }
                 if v.reason == dwell_protocol::VoxelModificationReason::Edit {
                     let changes = self.cell_changes(&v.chunks);
                     self.edit_sounds.changes(&changes, now_ms, &mut self.sounds);
@@ -2372,7 +2387,8 @@ impl<S: Scene> Game<S> {
                         Output::FarTrees(t) => t,
                         _ => Vec::new(),
                     };
-                    self.scene.borrow_mut().far_tree_tile((face, i, k), &trees);
+                    self.far_tree_lists.insert((face, i, k), trees);
+                    self.far_tree_stale.insert((face, i, k));
                 }
                 (Purpose::CloudNoise(detail, z0), Output::CloudNoise(texels)) => {
                     self.scene
@@ -3125,6 +3141,10 @@ impl<S: Scene> Game<S> {
     fn on_clash(&mut self, c: &dwell_protocol::ClashNet, now_ms: f64) {
         let show = crate::swordplay::show(c, self.player_id);
         let at = c.point.map(f64::from);
+        // A hit past the defender's block: a creature shows its hurt look (WORK_QUEUE item 35).
+        if let Some(id) = crate::swordplay::hurt_creature(c) {
+            self.creatures.hurt(id, at);
+        }
         if let Some((name, volume)) = show.sound
             && let Some(k) = SoundKind::ALL.into_iter().find(|k| k.name() == name)
         {
@@ -3241,6 +3261,11 @@ impl<S: Scene> Game<S> {
             }
             self.send_drag_fill(fill, tries);
         }
+    }
+
+    /// The world's portals' axes (world x, z; the same on both faces; BIFACIAL_WORLD.md §12).
+    pub fn portal_axes(&self) -> &[[f64; 2]] {
+        &self.portals.0
     }
 
     /// The world's portals (BIFACIAL_WORLD.md §12): their axes and mote look, from the generator
@@ -4787,6 +4812,12 @@ impl<S: Scene> Game<S> {
         let views = self.remotes.sample(now_ms);
         // Each one's footsteps this frame, for the rustle layered on them (BUGS.md #103).
         let mut strides = dwell_world::hash::HashMap::default();
+        // Their swings play their tool's clips (WORK_QUEUE item 35: the sword's slashes).
+        self.bodies.tools = self
+            .remote_tools
+            .iter()
+            .map(|(&id, &(name, _))| (id, name))
+            .collect();
         // Their raised blocks (the server's guards, WORK_QUEUE item 35), by the weapon in hand.
         self.bodies.guards = self
             .remote_guards
@@ -4916,6 +4947,10 @@ impl<S: Scene> Game<S> {
                 // on a body (docs/DEV_TOOLS.md `puppets`).
                 if tool.is_some() {
                     use dwell_protocol::swing_flags as sf;
+                    // Your tool's clips (the sword's slashes), as another player's arrive.
+                    if let Some(t) = self.held_tool() {
+                        self.bodies.tools.insert(v.player_id, t.name);
+                    }
                     v.swing = sf::BREAK | ((now_ms / 800.0) as u64 as u8 & sf::COUNT_MASK);
                     // The chop your hand would swing, as another player's arrives (`SwingHello`).
                     v.swing_kind = if self.chop.vertical {
@@ -5610,6 +5645,26 @@ impl<S: Scene> Game<S> {
         let keep: std::collections::HashSet<(u8, i32, i32)> =
             want.iter().map(|&(i, k)| (bit, i, k)).collect();
         scene.retain_far_tree_tiles(&|t| keep.contains(t));
+        self.far_tree_lists.retain(|t, _| keep.contains(t));
+        // The tiles whose trees or chunks changed: drawn short of the felled trees.
+        let store = self.streamer.store();
+        for key in std::mem::take(&mut self.far_tree_stale) {
+            let Some(trees) = self.far_tree_lists.get(&key) else {
+                continue;
+            };
+            let f = if key.0 == 1 {
+                FaceFrame::B
+            } else {
+                FaceFrame::A
+            };
+            let drawn = crate::render::impostors::standing_trees(
+                f,
+                trees,
+                |c| store.voxel_if_held(c),
+                &mut self.far_tree_felled,
+            );
+            scene.far_tree_tile(key, &drawn);
+        }
         let t = f64::from(crate::render::impostors::TILE_M);
         let d2 = |&(i, k): &(i32, i32)| {
             let dx = (f64::from(i) + 0.5) * t - local[0];
@@ -5635,6 +5690,16 @@ impl<S: Scene> Game<S> {
                     size,
                 },
             );
+        }
+    }
+
+    /// A chunk arrived or changed (`coord`, world chunk indices): its far trees tiles are filtered
+    /// for felled trees again at the next update.
+    fn far_trees_touched(&mut self, coord: [i32; 3]) {
+        for key in crate::render::impostors::tiles_of_chunk(coord) {
+            if self.far_tree_lists.contains_key(&key) {
+                self.far_tree_stale.insert(key);
+            }
         }
     }
 
@@ -6001,6 +6066,7 @@ impl<S: Scene> Game<S> {
             return false;
         };
         self.chop.set_cleared(&swept.cleared);
+        self.bodies.own_tool = Some(tool.name);
         self.bodies.swing_arms(if self.chop.vertical {
             dwell_characters::animator::Swing::ChopVertical
         } else {

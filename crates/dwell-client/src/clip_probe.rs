@@ -257,14 +257,45 @@ impl Report {
 }
 
 /// The swing the arms and body play for a role (`chop_level` → the level chop).
+/// A tool's `clips` role (the sword's `slash_level`, WORK_QUEUE item 35) is the chop of its kind.
 fn swing_of(role: &str) -> Option<Swing> {
     match role {
         "chop_level" => Some(Swing::ChopLevel),
         "chop_vertical" => Some(Swing::ChopVertical),
         "break" => Some(Swing::Break),
         "place" => Some(Swing::Place),
-        _ => None,
+        _ => tool_of_role(role).map(|(_, vertical)| {
+            if vertical {
+                Swing::ChopVertical
+            } else {
+                Swing::ChopLevel
+            }
+        }),
     }
+}
+
+/// The first tool whose `clips` name `role` (and whether it is its vertical swing's).
+fn tool_of_role(role: &str) -> Option<(&'static dwell_protocol::chopping::ToolDef, bool)> {
+    dwell_protocol::chopping::TOOLS.iter().find_map(|t| {
+        [false, true]
+            .into_iter()
+            .find(|&v| t.swing_role(v) == role)
+            .map(|v| (t, v))
+    })
+}
+
+/// Starts swing `role` on `a` (a tool's clip role plays its own clip).
+fn start_swing(a: &mut Animator, role: &str) -> bool {
+    let Some(s) = swing_of(role) else {
+        return false;
+    };
+    let named = [s.role()]
+        .into_iter()
+        .chain(tool_of_role(role).map(|(t, v)| t.swing_role(v)))
+        .find(|r| *r == role)
+        .unwrap_or(s.role());
+    a.swing_as(s, named);
+    true
 }
 
 /// Defeat's input for one of its roles (`kneel`, `kneel_sword`: kneeling; `stand`, `stand_sword`:
@@ -340,7 +371,13 @@ fn swing_def(item: Option<&str>, role: &str) -> Option<dwell_protocol::chopping:
     if swing_of(role).is_none_or(|s| !matches!(s, Swing::ChopLevel | Swing::ChopVertical)) {
         return None;
     }
-    let tool = dwell_protocol::chopping::tool(item.unwrap_or("dwell:stone_axe"))
+    // A tool's own clip role (the sword's slash) is timed by that tool's swing.
+    let tool = item
+        .and_then(dwell_protocol::chopping::tool)
+        .filter(|t| {
+            role.starts_with("chop_") || t.swing_role(false) == role || t.swing_role(true) == role
+        })
+        .or_else(|| tool_of_role(role).map(|(t, _)| t))
         .or_else(|| dwell_protocol::chopping::tool("dwell:stone_axe"))?;
     Some(tool.swing)
 }
@@ -352,7 +389,7 @@ pub fn held_for(item: Option<&'static str>, role: &str) -> Held {
     };
     let tool = dwell_protocol::chopping::tool(item);
     let hold = tool.and_then(|t| {
-        if role == "chop_vertical" {
+        if swing_of(role) == Some(Swing::ChopVertical) {
             t.held_vertical.or(t.held)
         } else {
             t.held
@@ -431,8 +468,7 @@ fn arms_bones(role: &str, held: Held, t: f32) -> [Affine; MAX_BONES] {
         ..Default::default()
     };
     a.update(&input, 0.0);
-    if let Some(s) = swing_of(role) {
-        a.swing(s);
+    if start_swing(&mut a, role) {
         a.drive_action(Some(t));
     }
     let pose = a.update(&input, 0.0);
@@ -673,8 +709,7 @@ fn body_bones(role: &str, held: Held, t: f32) -> [Affine; MAX_BONES] {
         ..Default::default()
     };
     a.update(&input, 0.0);
-    if let Some(s) = swing_of(role) {
-        a.swing(s);
+    if start_swing(&mut a, role) {
         a.drive_action(Some(t));
     }
     // A defeat role plays from its start: `t` into it.
@@ -1752,6 +1787,173 @@ mod chop_swing_tests {
                     assert!(
                         along < -0.2,
                         "{role} at yaw {yaw}: the head travels {along:.3} m along the view's \
+                         {} (want left/down)",
+                        if way == 0 { "right" } else { "up" }
+                    );
+                }
+            }
+        }
+    );
+
+    /// The sword's own swings (WORK_QUEUE item 35): its `clips` roles, probed holding it.
+    const SWORD_SWINGS: [(&str, usize); 2] = [("slash_level", 0), ("slash_overhead", 1)];
+
+    fn run_sword(role: &str, samples: usize) -> Report {
+        let mut p = Probe::new(role);
+        p.item = Some("dwell:sword");
+        p.points = vec![Point::ToolHead, Point::Grip];
+        p.samples = samples;
+        probe(&p).expect("probe")
+    }
+
+    #[test]
+    fn every_tools_swing_clips_are_roles_of_the_player_and_its_arms() {
+        // face-a-only: data only. A tool's `clips` (shared/tools) name roles the player character
+        // (others see) and its first-person arms both play, else its swing would fall back.
+        let ch = player();
+        let fp = ch.first_person.expect("first person");
+        for t in dwell_protocol::chopping::TOOLS {
+            for v in [false, true] {
+                let role = t.swing_role(v);
+                assert!(
+                    ch.clips.iter().any(|(r, _)| *r == role),
+                    "{}: no body clip for role {role}",
+                    t.name
+                );
+                assert!(
+                    fp.clips.iter().any(|(r, _)| *r == role),
+                    "{}: no arms clip for role {role}",
+                    t.name
+                );
+            }
+        }
+        let sword = dwell_protocol::chopping::tool("dwell:sword").expect("the sword");
+        assert_eq!(
+            (sword.swing_role(false), sword.swing_role(true)),
+            ("slash_level", "slash_overhead"),
+            "the sword plays its own clips, not the axe's"
+        );
+    }
+
+    #[test]
+    fn the_swords_slashes_strike_across_and_down_through_the_crosshair_at_contact() {
+        // face-a-only: view space (the world test below checks both faces). The level slash runs
+        // right to left on screen, the overhead cut top to bottom, monotonic through the strike;
+        // the head on the crosshair at the sword's contact (its `swing`: the arc's middle) and the
+        // swing's fastest stretch inside the strike; the wind-up the other way; back to rest;
+        // never behind the eye; the hands travelling with the blade.
+        let sword = dwell_protocol::chopping::tool("dwell:sword").expect("the sword");
+        let want = sword.swing.windup_s + sword.swing.active_s / 2.0;
+        for (role, axis) in SWORD_SWINGS {
+            let r = run_sword(role, 121);
+            let s = within(&r, "strike");
+            let ph = r.phase("strike").unwrap();
+            assert!(
+                ph.screen[axis] < -1.0 && ph.screen[axis].abs() > 2.0 * ph.screen[1 - axis].abs(),
+                "{role}: the strike runs along its way: {ph:?}\n{}",
+                table(&r)
+            );
+            for w in s.windows(2) {
+                let d = w[1].at[0].screen[axis] - w[0].at[0].screen[axis];
+                assert!(
+                    d < 0.02,
+                    "{role}: the blade never turns back in the strike: {:.3}→{:.3} s, {d:+.3}\n{}",
+                    w[0].t,
+                    w[1].t,
+                    table(&r)
+                );
+            }
+            let c = r.contact_t.expect("a swing has a contact time");
+            assert!(
+                (f64::from(c) - want).abs() < 0.02,
+                "{role}: contact at {c:.3} s, the sword's swing has it at {want:.3} s"
+            );
+            // The clip strikes on its own key at contact: the animation and the hit agree.
+            let clip = resolve(role).expect("the role").1;
+            assert!(
+                clip.channels
+                    .iter()
+                    .flat_map(|c| c.keys)
+                    .any(|k| (f64::from(k.t) - want).abs() < 0.01),
+                "{role}: no key at the contact ({want:.3} s)"
+            );
+            let a = r.at(0, c);
+            assert!(
+                a.screen[0].abs() < 0.12 && a.screen[1].abs() < 0.12 && a.screen[2] > 0.5,
+                "{role}: at contact ({c:.3} s) the blade's head is on the crosshair: {a:?}"
+            );
+            assert!(
+                r.peak_t >= ph.from && r.peak_t <= ph.to,
+                "{role}: the peak speed at {:.3} s is outside the strike {:.2}–{:.2}",
+                r.peak_t,
+                ph.from,
+                ph.to
+            );
+            let w = r.phase("wind-up").unwrap();
+            assert!(
+                w.screen[axis] * ph.screen[axis] < 0.0 && w.screen[axis].abs() > 0.15,
+                "{role}: the wind-up draws back against the strike: {w:?} vs {ph:?}"
+            );
+            let (first, last) = (r.samples[0].at[0], r.samples[r.samples.len() - 1].at[0]);
+            for k in 0..3 {
+                assert!(
+                    (first.local[k] - last.local[k]).abs() < 1e-3,
+                    "{role}: the recovery ends where the swing began"
+                );
+            }
+            for smp in &r.samples {
+                assert!(
+                    smp.at[0].screen[2] > 0.15,
+                    "{role}: the head at {:.3} s is {:.3} m ahead",
+                    smp.t,
+                    smp.at[0].screen[2]
+                );
+            }
+            let (head, grip) = (travel(&s, 0), travel(&s, 1));
+            assert!(
+                grip >= 0.2 * head && grip > 0.3, // a 1 m blade's head goes far past the hands
+                "{role}: the hands travel the arc with the blade: grip {grip:.2} m, head {head:.2} m"
+            );
+        }
+    }
+
+    #[test]
+    fn others_see_the_swords_slashes_on_the_body() {
+        // face-a-only: the body's frame (right, up, ahead of its feet) is face-local. The level
+        // slash sweeps from its right to its left, the overhead cut down, in front of it.
+        for (role, axis) in SWORD_SWINGS {
+            let r = run_sword(role, 63);
+            let s = r.phase("strike").unwrap();
+            assert!(
+                s.body[axis] < -1.0 && s.body[axis].abs() > 2.0 * s.body[1 - axis].abs(),
+                "{role}: the body's strike runs along its way: {s:?}"
+            );
+            let c = r.contact_t.expect("contact");
+            let a = r.at(0, c);
+            assert!(
+                a.body[2] > 0.8,
+                "{role}: the blade strikes in front of the body: {a:?}"
+            );
+        }
+    }
+
+    dwell_world::both_faces!(
+        fn the_swords_slashes_go_left_and_down_in_the_world(f: FaceFrame) {
+            for yaw in [0.0, 90.0, 225.0] {
+                for (role, way) in SWORD_SWINGS {
+                    let mut p = Probe::new(role);
+                    p.item = Some("dwell:sword");
+                    (p.face, p.yaw, p.pitch) = (f, yaw, -10.0);
+                    let r = probe(&p).expect("probe");
+                    let s = within(&r, "strike");
+                    let (a, b) = (s[0].at[0].world, s[s.len() - 1].at[0].world);
+                    let d: [f64; 3] = std::array::from_fn(|k| b[k] - a[k]);
+                    let basis = aim(yaw, -10.0, f, 0.0);
+                    let axis = if way == 0 { basis.right } else { basis.up };
+                    let along = (0..3).map(|k| d[k] * axis[k]).sum::<f64>();
+                    assert!(
+                        along < -0.4,
+                        "{role} at yaw {yaw}: the blade travels {along:.3} m along the view's \
                          {} (want left/down)",
                         if way == 0 { "right" } else { "up" }
                     );

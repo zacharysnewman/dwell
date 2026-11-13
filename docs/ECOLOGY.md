@@ -331,7 +331,7 @@ A weapon's hit (ARCHITECTURE.md "Weapons") takes health from a creature (its `he
 it back (`knockbackM`) and tells its mind where the hit came from (`Creature::hurt_from`). Each
 species' `near.hurt` says how one reacts, before anything else, for `seconds` after the hit at `pace`
 × its walk: the deer `flee` (runs `runM` from the striker each decision), the wolves `fight` (turn on
-the striker and close on it; they can't bite players yet) unless under `fleeBelowHealth` (0.35) of
+the striker and close on it, following where that player stands now: `Creature::chase_to`) unless under `fleeBelowHealth` (0.35) of
 their health, when they flee. A creature killed is removed and drops its `drops`; its herd counts it a
 death at its next decision (`Near::refresh`: a member whose creature is gone), and folds back without
 it. Tests: `herds.rs` `a_hurt_deer_flees_and_a_hurt_wolf_fights_unless_badly_hurt`,
@@ -342,7 +342,25 @@ NPCs (the villager) are struck by the same rule but react by their `npc.combat` 
 recovery and gives up `giveUpS` after the last hit; a blow past the player's raised block hurts the
 player (WORK_QUEUE item 38; owner, 2026-11-12: "Villagers should be able to hurt players."): the
 weapon's `damage`, cause `Weapon`, and its `knockbackMps`/`liftMps` push; none in creative
-(ARCHITECTURE.md "Weapons"). Wolves still can't bite players.
+(ARCHITECTURE.md "Weapons").
+
+Wolves bite back (WORK_QUEUE item 35, round 2): a creature's `attack` (shared/creatures: the wolf's
+`reachM` 1.3 from its body, `cooldownS` 1.1, `damage` 3, `knockbackMps` 2.5, `liftMps` 1.5, `angryS`
+10, `frontDeg` 120) turns it on the player that struck it (`Creatures::provoke`) for `angryS` after
+each hit; each tick (`Creatures::step_attacks`, `Server::step_creature_attacks`) it bites that player
+when they stand within its reach and in front of it, its cooldown over, through the damage rules
+(cause `Weapon`; none in creative) with the push away and up. Only the striker is bitten, never
+another player, and a player brought to 0 health is defeated and kneels (CHARACTERS.md §11.13), never
+killed; a kneeling player is bitten no more and the wolf calms. Tests: `tests/weapons.rs`
+`a_struck_wolf_bites_its_striker_in_reach_by_its_data_never_another`,
+`a_wolf_out_of_reach_or_behind_bites_no_one`, `creative_players_are_never_bitten`,
+`bitten_to_zero_health_the_player_is_defeated_kneeling_never_killed` (both faces).
+
+A hit that connects shows on the clients (the `weapons.clash` outcome, defender a creature, not
+blocked): its kind's `hurtLook` (shared/creatures, the file's default and each creature's override:
+`seconds` 0.4, `tint` #e0402a at up to `strength` 0.6 fading, a flinch of `flinchM` away from the blow
+and `flinchDeg` round, easing back; dwell-client `creatures.rs` `ClientCreatures::hurt`, the skinned
+shader's flash in the instance's spare `light.w`).
 
 ### 8.2 Players, roaming packs and idles (WORK_QUEUE item 39)
 

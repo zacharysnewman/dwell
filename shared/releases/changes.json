@@ -2,6 +2,29 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.61.4",
+      "changes": [
+        "Far trees: a tree you fell no longer stays standing as a distant impostor."
+      ]
+    },
+    {
+      "version": "0.61.3",
+      "changes": [
+        "The big map has a markers list: each marker's distance and direction, nearest first; click one to show it, edit or delete it",
+        "Portals you come near are marked on your map",
+        "A marker placed on the big map now stands on the ground there"
+      ]
+    },
+    {
+      "version": "0.61.2",
+      "changes": [
+        "The sword has its own swings: a level slash and an overhead cut, timed so the blade lands as it hits",
+        "Other players and villagers swing their swords with the new slashes",
+        "Wolves bite back: strike one and it turns on you, and enough bites leave you kneeling in defeat",
+        "A creature struck by a sword flinches and flashes red"
+      ]
+    },
+    {
       "version": "0.61.1",
       "changes": [
         "Behind the scenes: test fixes"

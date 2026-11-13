@@ -20,7 +20,7 @@
 //!   `FaceFrame::point`; the shader turns the baked frame into the world by `face_vector`.
 //! - **Shadows:** received (the scene's shadow lookup); not cast (I-5).
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use dwell_world::FaceFrame;
 use dwell_worldgen::impostor::{Config, Far, FarTree, Instance, Tier};
@@ -59,6 +59,125 @@ pub fn tiles_within(eye: [f64; 2], reach: f32) -> Vec<(i32, i32)> {
                 out.push((i, k));
             }
         }
+    }
+    out
+}
+
+/// A tile's far trees short of the felled (WORK_QUEUE item 31): `trees` as the generator lists them
+/// on `face`, `held` the client's state of a world cell where it holds the chunk
+/// (`VoxelWorld::voxel_if_held`). A tree whose held stem has air in it is felled
+/// (`impostor::stem_seen`) and remembered in `felled` (face bit, anchor), so it stays out after its
+/// chunk unloads; one seen standing again (rebuilt, or the cell refilled) is forgotten.
+pub fn standing_trees(
+    face: FaceFrame,
+    trees: &[FarTree],
+    held: impl Fn([i32; 3]) -> Option<dwell_blocks::StateId>,
+    felled: &mut HashSet<(u8, [i32; 3])>,
+) -> Vec<FarTree> {
+    let bit = u8::from(face.is_b());
+    trees
+        .iter()
+        .filter(|t| {
+            let key = (bit, t.anchor);
+            match dwell_worldgen::impostor::stem_seen(t, |c| held(face.cell(c))) {
+                Some(false) => {
+                    felled.insert(key);
+                    false
+                }
+                Some(true) => {
+                    felled.remove(&key);
+                    true
+                }
+                None => !felled.contains(&key),
+            }
+        })
+        .copied()
+        .collect()
+}
+
+/// The far trees tiles (face bit, i, k) a chunk (`coord`, world chunk indices) lies in: its
+/// columns' tile on either face (a chunk's x and z are the same on both).
+pub fn tiles_of_chunk(coord: [i32; 3]) -> [(u8, i32, i32); 2] {
+    let s = dwell_world::CHUNK_SIZE;
+    let (i, k) = (
+        (coord[0] * s).div_euclid(TILE_M),
+        (coord[2] * s).div_euclid(TILE_M),
+    );
+    [(0, i, k), (1, i, k)]
+}
+
+/// The atlas tier a device bakes at (`impostors.json` `viewPx`): the CPU adapter's cheapest, a
+/// phone's smaller atlas (32 px a view: a quarter of the desktop's memory), else the desktop's.
+pub fn tier_for(cpu: bool, phone: bool) -> Tier {
+    if cpu {
+        Tier::Cpu
+    } else if phone {
+        Tier::Phone
+    } else {
+        Tier::Desktop
+    }
+}
+
+/// The bytes one tier's atlas holds (two RGBA8 textures over every layer, its mips included).
+pub fn atlas_bytes(config: &Config, tier: Tier) -> u64 {
+    let px = config.px(tier);
+    let n = config.views.len() as u32;
+    let cols = (n as f32).sqrt().ceil().max(1.0) as u32;
+    let rows = n.div_ceil(cols);
+    let (w, h) = (cols * px, rows * px);
+    let per_level: u64 = (0..mip_count(config, px))
+        .map(|l| u64::from((w >> l).max(1)) * u64::from((h >> l).max(1)))
+        .sum();
+    per_level * 8 * u64::from(config.layer_count())
+}
+
+/// The atlas's mip levels at `px` texels a view: the chain down to a texel a view when the data
+/// asks for mips (`impostors.json` `mips`, opt-in until the owner approves the look), else 1.
+pub fn mip_count(config: &Config, px: u32) -> u32 {
+    if config.mips {
+        dwell_worldgen::impostor::Impostor::mip_levels(px)
+    } else {
+        1
+    }
+}
+
+/// The levels a baked layer uploads (`size` the atlas's texels, `px` a view's side, `mips` the
+/// level count): (width, height, albedo bytes, normal + depth bytes) per level, level 0 the bake
+/// itself and each next `Impostor::mip` (each view's square halved alone).
+pub fn mip_chain(
+    size: (u32, u32),
+    px: u32,
+    mips: u32,
+    albedo: &[u8],
+    normal_depth: &[u8],
+) -> Vec<(u32, u32, Vec<u8>, Vec<u8>)> {
+    let mut out = vec![(size.0, size.1, albedo.to_vec(), normal_depth.to_vec())];
+    if mips <= 1 || px == 0 {
+        return out;
+    }
+    let texels = |b: &[u8]| -> Vec<[u8; 4]> {
+        b.chunks_exact(4)
+            .map(|c| [c[0], c[1], c[2], c[3]])
+            .collect()
+    };
+    let im = dwell_worldgen::impostor::Impostor {
+        px,
+        cols: size.0 / px,
+        rows: size.1 / px,
+        centre: [0.0; 3],
+        radius: 0.0,
+        views: Vec::new(),
+        albedo: texels(albedo),
+        normal_depth: texels(normal_depth),
+    };
+    for level in 1..mips {
+        let (a, n) = im.mip(level);
+        out.push((
+            (size.0 >> level).max(1),
+            (size.1 >> level).max(1),
+            a.into_flattened(),
+            n.into_flattened(),
+        ));
     }
     out
 }
@@ -285,7 +404,7 @@ struct ImpostorScene {
     leaf: vec4f,
     // x: the debug view (`__dwell.impostorDebug`, BUGS.md #106): 0 off, 1 the whole quad solid,
     // 2 the alpha-tested silhouette solid, 3 the albedo unlit. y, z: a leaf texel's ambient share
-    // and albedo scale (impostors.json `leafShade`).
+    // and albedo scale (impostors.json `leafShade`). w: the atlas's mip levels (`mip_count`).
     debug: vec4f,
 };
 @group(3) @binding(20) var<uniform> imp: ImpostorScene;
@@ -455,6 +574,11 @@ struct ImpOutFs {
 fn imp_fs(i: ImpOut) -> ImpOutFs {
     let face = imp.eye.w;
     let r = i.radius;
+    // The mip level (`mips`, render/impostors.rs `mip_count`): a screen pixel's footprint in a
+    // view's texels, taken before any branch (derivatives need uniform control flow).
+    let foot = max(length(dpdx(i.local)), length(dpdy(i.local))) / max(r, 1e-3) * 0.5 * imp.leaf.w;
+    let levels = max(u32(imp.debug.w), 1u);
+    let level = min(u32(max(floor(log2(max(foot, 1.0))), 0.0)), levels - 1u);
     // The view this pixel draws, then the quad point in that view's square.
     let k = imp_pick(i.dir, pixel_noise(i.clip.xy + vec2f(37.0, 17.0)));
     let vk = imp_view(k);
@@ -473,10 +597,10 @@ fn imp_fs(i: ImpOut) -> ImpOutFs {
     if (abs(u) >= 1.0 || abs(v) >= 1.0) {
         discard;
     }
-    let px = imp.leaf.w;
+    let px = max(floor(imp.leaf.w / f32(1u << level)), 1.0);
     let cell = vec2i(i32(k % IMP_COLS), i32(k / IMP_COLS)) * i32(px);
     let t = vec2i(clamp(vec2f((u * 0.5 + 0.5) * px, (0.5 - v * 0.5) * px), vec2f(0.0), vec2f(px - 1.0)));
-    let a = textureLoad(imp_albedo, cell + t, i.layer, 0);
+    let a = textureLoad(imp_albedo, cell + t, i.layer, i32(level));
     if (a.a < 0.5) {
         discard;
     }
@@ -487,7 +611,7 @@ fn imp_fs(i: ImpOut) -> ImpOutFs {
         q.mask = 0xffffffffu;
         return q;
     }
-    let nd = textureLoad(imp_normal, cell + t, i.layer, 0);
+    let nd = textureLoad(imp_normal, cell + t, i.layer, i32(level));
     // The texel's real point: on the view's plane at the sphere's near side, moved back by its depth.
     let p = right * u * r + up * v * r + vk * r * (1.0 - 2.0 * nd.a);
     let rel = i.centre + face_vector(face, imp_turn(p, i.turns));
@@ -510,7 +634,8 @@ fn imp_fs(i: ImpOut) -> ImpOutFs {
     } else if (near > noise) {
         discard;
     }
-    var albedo = a.rgb;
+    // The baked occlusion in the alpha (`impostor::ao_alpha`: 128–255 → 0–1; 255 when off).
+    var albedo = a.rgb * clamp((a.a * 255.0 - 128.0) / 127.0, 0.0, 1.0);
     var light = open_light();
     if (distance(a.rgb, imp.leaf.rgb) < 0.02) {
         albedo *= i.tint * imp.debug.z;
@@ -556,6 +681,8 @@ pub struct Impostors {
     pub leaf_shade: [f32; 2],
     /// Layers uploaded (of `layers.len()`).
     baked: u32,
+    /// The atlas's mip levels ([`mip_count`]).
+    mips: u32,
     /// The last upload or bake that went wrong ([`Status::last_error`]).
     last_error: String,
 }
@@ -578,6 +705,7 @@ impl Impostors {
         let rows = n.div_ceil(cols);
         let size = (cols * px, rows * px);
         let layer_count = config.layer_count().max(1);
+        let mips = mip_count(config, px);
         let texture = |label, format| {
             device.create_texture(&wgpu::TextureDescriptor {
                 label: Some(label),
@@ -586,7 +714,7 @@ impl Impostors {
                     height: size.1,
                     depth_or_array_layers: layer_count,
                 },
-                mip_level_count: 1,
+                mip_level_count: mips,
                 sample_count: 1,
                 dimension: wgpu::TextureDimension::D2,
                 format,
@@ -774,6 +902,7 @@ impl Impostors {
             debug: 0,
             leaf_shade: [config.leaf_ambient, config.leaf_albedo],
             baked: 0,
+            mips,
             last_error: String::new(),
         }
     }
@@ -848,30 +977,34 @@ impl Impostors {
         if slot[2] < 0.5 {
             self.baked += 1;
         }
-        for (t, data) in [(&self.albedo, albedo), (&self.normal, normal_depth)] {
-            queue.write_texture(
-                wgpu::TexelCopyTextureInfo {
-                    texture: t,
-                    mip_level: 0,
-                    origin: wgpu::Origin3d {
-                        x: 0,
-                        y: 0,
-                        z: layer,
+        let px = self.px;
+        let levels = mip_chain(self.size, px, self.mips, albedo, normal_depth);
+        for (level, (w, h, a, n)) in levels.iter().enumerate() {
+            for (t, data) in [(&self.albedo, a), (&self.normal, n)] {
+                queue.write_texture(
+                    wgpu::TexelCopyTextureInfo {
+                        texture: t,
+                        mip_level: level as u32,
+                        origin: wgpu::Origin3d {
+                            x: 0,
+                            y: 0,
+                            z: layer,
+                        },
+                        aspect: wgpu::TextureAspect::All,
                     },
-                    aspect: wgpu::TextureAspect::All,
-                },
-                data,
-                wgpu::TexelCopyBufferLayout {
-                    offset: 0,
-                    bytes_per_row: Some(self.size.0 * 4),
-                    rows_per_image: Some(self.size.1),
-                },
-                wgpu::Extent3d {
-                    width: self.size.0,
-                    height: self.size.1,
-                    depth_or_array_layers: 1,
-                },
-            );
+                    data,
+                    wgpu::TexelCopyBufferLayout {
+                        offset: 0,
+                        bytes_per_row: Some(w * 4),
+                        rows_per_image: Some(*h),
+                    },
+                    wgpu::Extent3d {
+                        width: *w,
+                        height: *h,
+                        depth_or_array_layers: 1,
+                    },
+                );
+            }
         }
         *slot = [centre_y, radius, 1.0, 0.0];
         self.layers_dirty = true;
@@ -937,7 +1070,7 @@ impl Impostors {
             self.debug as f32,
             self.leaf_shade[0],
             self.leaf_shade[1],
-            0.0,
+            self.mips as f32,
         ];
         queue.write_buffer(&self.uniform, 0, super::floats(&u));
         if self.layers_dirty {
@@ -1134,6 +1267,8 @@ mod tests {
             species: u16::MAX,
             seed: 1,
             stage: 4,
+            stem: [0, 0, 0],
+            stem_cells: 0,
         };
         assert_eq!(tint_ratio(&tree, c.leaf), [1.0; 3]);
         let real = FarTree { species: 0, ..tree };
@@ -1160,5 +1295,108 @@ mod tests {
                 "{entry}"
             );
         }
+    }
+
+    dwell_world::both_faces!(
+        /// Felled trees leave the far trees (WORK_QUEUE item 31): a tile's tree whose stem the client
+        /// holds with air in it (a cut) is not drawn, stays out once its chunk unloads, and comes back
+        /// only when its stem is seen solid again; trees the client holds nothing of are drawn.
+        fn a_felled_tree_leaves_its_tile_and_stays_out_after_its_chunk_unloads(f: FaceFrame) {
+            use std::cell::RefCell;
+            let tree = |x: i32| FarTree {
+                anchor: [x, 130, 5],
+                species: 0,
+                seed: 9,
+                stage: 7,
+                stem: [x, 130, 5],
+                stem_cells: 8,
+            };
+            let trees = [tree(1), tree(20)];
+            let (log, air) = (7, dwell_world::M.air);
+            // The world as the client holds it: tree 1's stem cut 1 m up, world cells by the face.
+            let cut = f.cell([1, 132, 5]);
+            let held = RefCell::new(true);
+            let at = |c: [i32; 3]| -> Option<dwell_blocks::StateId> {
+                if !*held.borrow() {
+                    return None;
+                }
+                let local = f.cell(c);
+                (local[0] == 1 || local[0] == 20).then(|| {
+                    if c[0] == cut[0] && c[2] == cut[2] && local[1] >= 132 {
+                        air
+                    } else {
+                        log
+                    }
+                })
+            };
+            let mut felled = HashSet::new();
+            let drawn = standing_trees(f, &trees, at, &mut felled);
+            assert_eq!(drawn, vec![tree(20)], "the cut tree is out");
+            *held.borrow_mut() = false;
+            assert_eq!(
+                standing_trees(f, &trees, at, &mut felled),
+                vec![tree(20)],
+                "still out once its chunk unloads"
+            );
+            let solid = |_: [i32; 3]| Some(log);
+            assert_eq!(
+                standing_trees(f, &trees, solid, &mut felled),
+                trees.to_vec()
+            );
+            assert!(felled.is_empty());
+            assert_eq!(
+                standing_trees(f, &trees, |_| None, &mut HashSet::new()),
+                trees.to_vec(),
+                "nothing held: the generator's trees"
+            );
+            // A chunk's tile on either face.
+            assert_eq!(tiles_of_chunk([-1, 4, 2]), [(0, -1, 1), (1, -1, 1)]);
+        }
+    );
+
+    #[test]
+    fn a_layer_uploads_its_mip_chain_only_when_the_data_asks() {
+        // face-a-only: texels only.
+        let c = Config::get();
+        assert_eq!(
+            mip_count(c, 64),
+            1,
+            "mips are opt-in (impostors.json `mips`)"
+        );
+        let on = Config {
+            mips: true,
+            ..c.clone()
+        };
+        assert_eq!(mip_count(&on, 64), 7);
+        assert_eq!(mip_count(&on, 48), 1);
+        let b = dwell_worldgen::impostor::bake(&dwell_worldgen::species::SPECIES[0], 3, 7, c, 16);
+        let (w, h) = b.size();
+        let (a, n) = (b.albedo.as_flattened(), b.normal_depth.as_flattened());
+        assert_eq!(mip_chain((w, h), 16, 1, a, n).len(), 1);
+        let chain = mip_chain((w, h), 16, mip_count(&on, 16), a, n);
+        assert_eq!(chain.len(), 5);
+        for (level, (lw, lh, la, ln)) in chain.iter().enumerate() {
+            assert_eq!((*lw, *lh), (w >> level, h >> level));
+            assert_eq!(la.len(), (lw * lh * 4) as usize);
+            assert_eq!(ln.len(), la.len());
+        }
+        assert_eq!(&chain[0].2[..], a);
+    }
+
+    #[test]
+    fn a_phone_bakes_the_smaller_atlas_the_data_names() {
+        // face-a-only: memory only.
+        let c = Config::get();
+        assert_eq!(tier_for(false, true), Tier::Phone);
+        assert_eq!(
+            tier_for(true, true),
+            Tier::Cpu,
+            "a CPU adapter's cheapest wins"
+        );
+        assert_eq!(tier_for(false, false), Tier::Desktop);
+        let (desk, phone) = (atlas_bytes(c, Tier::Desktop), atlas_bytes(c, Tier::Phone));
+        assert!(c.px(Tier::Phone) < c.px(Tier::Desktop));
+        assert_eq!(desk, phone * 4, "half the side: a quarter of the bytes");
+        assert!(phone <= 12 << 20, "the phone's atlas {} MB", phone >> 20);
     }
 }

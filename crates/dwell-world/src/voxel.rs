@@ -864,6 +864,18 @@ impl VoxelWorld {
         })
     }
 
+    /// The voxel of a stored chunk, `None` where its chunk isn't held: a read that never generates.
+    pub fn voxel_if_held(&self, [x, y, z]: [i32; 3]) -> Option<StateId> {
+        let c = chunk_of(x, y, z);
+        self.chunks.get(&c).map(|ch| {
+            ch.get(
+                x - c.x * CHUNK_SIZE,
+                y - c.y * CHUNK_SIZE,
+                z - c.z * CHUNK_SIZE,
+            )
+        })
+    }
+
     pub fn get_voxel(&mut self, x: i32, y: i32, z: i32) -> StateId {
         let c = chunk_of(x, y, z);
         self.read(c).get(

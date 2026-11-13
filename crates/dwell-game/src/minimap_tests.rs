@@ -1032,3 +1032,26 @@ fn the_big_maps_levels_follow_the_worlds_size() {
         [1.0, 256.0, 4096.0]
     );
 }
+
+dwell_world::both_faces!(
+    fn a_columns_ground_is_its_top_blocks_top_face_locally(f: FaceFrame) {
+        // A marker placed on the big map stands on the loaded ground (docs/MAP_MARKERS.md): the
+        // floor's top, a pillar's top where one stands, nothing where nothing is loaded.
+        let mut w = floor(f, 6);
+        for row in GROUND..GROUND + 6 {
+            let [x, y, z] = f.cell([2, row, 3]);
+            w.set_voxel(x, y, z, stone());
+        }
+        let eye = m_of_row(GROUND) + 1.6;
+        let at = |x, z| ground_at(&w, f, x, z, eye + 64.0, eye - 64.0);
+        assert_eq!(at(0, 0), Some(m_of_row(GROUND)), "the floor's top");
+        assert_eq!(at(2, 3), Some(m_of_row(GROUND + 6)), "the pillar's top");
+        assert_eq!(at(40, 40), None, "nothing loaded");
+        // The other face's ground under the same x and z is not this face's.
+        assert_eq!(
+            ground_at(&w, f.other(), 0, 0, eye + 64.0, eye - 64.0),
+            None,
+            "the other face"
+        );
+    }
+);

@@ -614,6 +614,8 @@ pub fn encode_output(id: u32, out: &Output) -> Vec<u8> {
                 w.u32(u32::from(t.species));
                 w.u32(t.seed);
                 w.u32(t.stage);
+                t.stem.into_iter().for_each(|v| w.i32(v));
+                w.u8(t.stem_cells);
             }
         }
     }
@@ -713,6 +715,8 @@ pub fn decode_output(bytes: &[u8]) -> Result<(u32, Output), DecodeError> {
                     species: r.u32()? as u16,
                     seed: r.u32()?,
                     stage: r.u32()?,
+                    stem: [r.i32()?, r.i32()?, r.i32()?],
+                    stem_cells: r.u8()?,
                 });
             }
             Output::FarTrees(trees)
@@ -902,6 +906,8 @@ mod tests {
             species: 2,
             seed: 0xdead_beef,
             stage: 6,
+            stem: [-6, 130, 77],
+            stem_cells: 9,
         }]);
         assert_eq!(
             decode_output(&encode_output(7, &trees)).unwrap(),

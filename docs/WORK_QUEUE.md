@@ -1361,6 +1361,25 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    green. Left: the in-game look from high up at night (a local check).
 
    Owner, 2026-11-12, on the 48 m hand-over side-by-sides: **"Distant trees looks solid handover."**
+   **The rest, round 1 (2026-11-13, cloud, `claude/impostors-rest`; brief: felled trees out, trunks handed over,
+   AO + mips in the bake, the phone atlas by data, I-4, I-5 shadows last; any visible change opt-in data until the
+   owner approves it from same-spot before/after shots):** **felled trees left out** — each far tree carries its
+   stem (`Planter::stem`: the trunk column's bottom cell and up to 16 solid cells above), and the game drops a tree
+   whose held stem has air in it, remembers it after its chunk unloads, and re-filters a tile when its chunks arrive
+   or change (`impostors::standing_trees`; tests `a_far_trees_stem_is_its_trunk_and_air_in_it_fells_it`, both faces,
+   and `a_felled_tree_leaves_its_tile_and_stays_out_after_its_chunk_unloads`). Not seen: a tree felled in a chunk
+   the client never held (past the loaded chunks the generator's tree is drawn). **AO and mips baked, opt-in
+   (off):** `impostors.json` `ao.strength` (0 off; try 0.5) and `mips` (false); tests on the bake (occlusion deep in a
+   crown, coverage unchanged, a mip halves each view alone keeping coverage and palette colours) and on the upload's
+   chain. **For the orchestrator (local GPU):** same-spot before/after at `forest:edge` and 80/150 m with
+   `ao.strength` 0.5 and `mips` true (each alone and both); expected: far crowns darker inside (closer to the near
+   crowns' shade at 48 m), less sparkle and noise past ~120 m. **Phone atlas by data:** already `viewPx.phone`
+   (32 px); the pick is now `impostors::tier_for`, with a test that the phone's atlas is a quarter of the
+   desktop's. **Not done:** the trunks' hand-over (logs are in the opaque mesh; handing them over means moving tree
+   logs into the cutout mesh with the leaves' fade marker, and the mesher can't tell a tree's log from a player's
+   log wall, which would vanish past 48 m with no impostor: needs an owner call); I-4 (`lod_trees.rs` still draws
+   the far trees until the impostors are ready, BUGS.md #106's gate, and for `?impostors=0` / the bench's
+   `impostors-off`); I-5 shadows (GPU work, local).
 32. **A tall dense forest for performance reference** (owner 2026-11-12: "We should have a tall dense forest
    biome/climate for performance reference on trees."). A biome preset (tall, closely spaced mature trees — an
    old-growth temperate rainforest of tall pines and broadleaf, thick undergrowth) placed by climate (cool and very
@@ -1590,6 +1609,18 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    stance's raised blade is now data (`guard.stances.*.blade`, grip and tip from the feet, fitted to the
    raised clips and kept in step by a `clip_probe` test), and the point is where the swing's arc meets it.
    Not yet seen in game (a duel screencast on the local machine).
+   **Second slice (cloud, 2026-11-13; owner's brief: "sword clips of their own as data … the hurt look on the
+   client … wolves bite players: an attack in reach with a cooldown and damage as data, leading to the defeat
+   kneel at 0 health, not death; animals only remain the sword's targets (no PvP)"):** wolves bite: a
+   creature's `attack` (shared/creatures: reach, cooldown, damage, push, `angryS`, front arc) turns it on the
+   player that struck it, its mind closing on where that player stands, biting through the damage rules
+   (none in creative); at 0 health the player kneels in defeat (§11.13), never dies; only the striker is
+   bitten, and swords still strike animals and NPCs only. The hurt look: a creature hit past its block (the
+   `weapons.clash` outcome) flinches from the blow and flashes its tint by its `hurtLook` data (the file's
+   default, per-creature overrides; the skinned shader's flash). Tests on both faces (`tests/weapons.rs`,
+   `creatures.rs`). The sword's own clips as data: a tool's `clips` (shared/tools) names the role each swing kind plays; the sword plays `slash_level` (a straight-armed sweep right to left) and `slash_overhead` (raised high, cut straight down), arms and body fitted with `clip_probe --fit` to the 1 m blade and timed to its swing (contact 0.355 s on a key), played on your arms, others (from `HeldTools`) and NPCs; clip_probe tests pin direction, contact on the crosshair and the world on both faces; sheets `docs/clip_probe/sword_*.svg`.
+   **Outstanding:** a thrust; an edge check for the sword model; a wolf bite pose/clip on the clients (the bite shows as the player's damage and push only);
+   seen in game (local, a GPU).
 36. **A showcase video of the deer and wolves** (owner 2026-11-12: "have you observed the animals simulation? Make
    some clips of the deer/wolves behavior, really showcase it and try to get good angles. Keep it under 2 minutes
    of video. Splice it together into a single video."). Queued (local, after item 30).
@@ -2472,9 +2503,13 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    look in the browser: the picker, the minimap icons and the world waypoints were not drawn on a GPU here).
    Built: the data, generator and validator; the record (`dwell_protocol::markers`, golden vector); the
    world's `markers` table; the `markers.private` capability and `Markers` 0x6C; the big map's place / edit /
-   drag / delete; the minimap; the world waypoints (a HUD part); spawn and last-death auto markers. **Left:**
-   a list view of the markers; portals (the `portal` kind is data, nothing notes one until portals exist);
-   a marker placed on the big map takes the player's height on that face, not the ground's under the click. Owner 2026-11-12:
+   drag / delete; the minimap; the world waypoints (a HUD part); spawn and last-death auto markers. The rest
+   **built 2026-11-13** (branch `claude/markers-rest`, the brief "map markers, the rest"): the big map's
+   **markers list** (a side panel: icon, label, distance and the way from the player, nearest first; a row centres
+   the map on it, edit, delete; the filters apply); **portal auto markers** (each opening the player comes within
+   the render radius of, on its face, standing on its rim); a marker placed or dragged on the big map **stands on
+   the ground there** (the loaded column's top, else the map's height, face-local). Needs the owner's look in the
+   browser (no GPU here). Owner 2026-11-12:
    **"Let's use non-Unicode vector style symbols to let you annotate your own map so you can find your way
    around."** / **"Add that to the queue."** Answers: shown on the **big map (M), the minimap and in the world** (a
    waypoint over its spot with its distance); **private to the player** (saved with the world for that player); a
