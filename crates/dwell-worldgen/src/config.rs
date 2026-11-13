@@ -609,7 +609,17 @@ pub fn geology_from_json(v: &Value) -> Result<Geology, String> {
         ledge: opt("ledge").unwrap_or(0.0),
         ledge_every: opt("ledgeEvery").unwrap_or(1.0),
         tread_relief: opt("treadRelief").unwrap_or(0.0),
-        notched: opt("notched").is_some_and(|n| n >= 1.0),
+        // A word (rocks.json `shaping.notched`), or an edit stored in 0.59–0.61: 1 all, else none.
+        notched: match v.get("shaping").and_then(|s| s.get("notched")) {
+            Some(Value::String(w)) => match w.as_str() {
+                "none" => crate::geology::Notched::None,
+                "mesaEdges" => crate::geology::Notched::MesaEdges,
+                "all" => crate::geology::Notched::All,
+                other => return Err(format!("geology: shaping.notched: unknown {other}")),
+            },
+            Some(n) if n.as_f64().is_some_and(|n| n >= 1.0) => crate::geology::Notched::All,
+            _ => crate::geology::Notched::None,
+        },
         erosion: erosion_from_json(v.get("erosion"))?,
         // The tectonic provinces' stacks (T5); absent (an edit stored before T5): the build's.
         volcanic_stack: v

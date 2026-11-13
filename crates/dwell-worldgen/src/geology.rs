@@ -124,9 +124,9 @@ pub struct Geology {
     /// The share of a bed's height its tread rises over (0: a dead-flat cap): a mesa's top keeps a
     /// little of the ground's relief.
     pub tread_relief: f64,
-    /// Where the rock shapes the ground (`strength` > 0), the stored ramps also top a column on a
-    /// diagonal contour (a notched ramp, `ramps::top_of_notched`), not only on straight edges.
-    pub notched: bool,
+    /// Where the rock shapes the ground (`strength` > 0), where the stored ramps also top a column
+    /// on a diagonal contour (a notched ramp, `ramps::top_of_notched`), not only on straight edges.
+    pub notched: Notched,
     /// The rule-based erosion (T4).
     pub erosion: Erosion,
     /// The tectonic provinces' stacks (T5, `rocks.json` `tectonic`): a volcano's, the old core's.
@@ -140,6 +140,20 @@ pub struct Geology {
     pub plate_provinces: PlateProvinces,
     /// What arid ground is, for the rocks' `capBy` (`rocks.json` `arid`).
     pub arid: Arid,
+}
+
+/// Where notched ramps go (rocks.json `shaping.notched`; code vocabulary). Owner, 2026-11-13 ("I'd
+/// like the old rule to apply except for mesa edges"): 0.59's `all` made rolling ground nearly all
+/// slopes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Notched {
+    /// Straight edges only (the pre-0.59 rule) everywhere.
+    None,
+    /// Notched only at a rock wall's edge: a column that is, or touches, a wall (an erosion mesa's
+    /// scarp, a hard bed's wall); straight edges elsewhere.
+    MesaEdges,
+    /// Notched wherever the rock shapes the ground (0.59–0.61).
+    All,
 }
 
 /// A column's setting on its face's plate layout (R5; the code's vocabulary, `plateProvinces`

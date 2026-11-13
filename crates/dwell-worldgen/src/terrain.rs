@@ -513,6 +513,9 @@ pub struct Column {
     pub lip: bool,
     /// In a chute's stream (ADR 0059): running water over its top, no still water.
     pub stream: bool,
+    /// The rock's wall shows at its top (an erosion mesa's scarp, a hard bed's wall): its edge
+    /// takes notched ramps where rocks.json `shaping.notched` is `mesaEdges`.
+    pub wall: bool,
 }
 
 /// A column's bank shaping (a biome's `banks`, or the biomes' blend at a column).
@@ -2496,6 +2499,7 @@ impl TerrainGenerator {
         }
         // Where the rock shapes the ground, its blocks show: a wall its face, talus its scree, a
         // tread its cap, a massive rock's steep faces its face.
+        let wall = matches!(rock, Some((_, crate::geology::Part::Wall))) && band != Band::Shore;
         if let Some((r, part)) = rock
             && band != Band::Shore
         {
@@ -2547,6 +2551,7 @@ impl TerrainGenerator {
             base: height,
             lip: on_lip,
             stream,
+            wall,
         }
     }
 
@@ -2855,6 +2860,18 @@ impl TerrainGenerator {
         }
         let col = self.column_at(x, z);
         !col.outside && y <= top_voxel(col.height)
+    }
+
+    /// How many ramp pieces top column (x, z) (0: a flat top), by the generation rule over its
+    /// neighbours (`generate`'s, from the columns alone).
+    pub fn ramp_pieces_at(&self, x: i32, z: i32) -> usize {
+        let col = self.column_at(x, z);
+        if col.outside {
+            return 0;
+        }
+        let top = top_voxel(col.height).clamp(FACE_MIN_Y, FACE_MAX_Y - 1);
+        self.pieces_with(|nx, nz| self.column_at(nx, nz), x, z, &col, top)
+            .len()
     }
 
     /// The top solid voxel of a column inside the disc.
@@ -4126,22 +4143,37 @@ impl TerrainGenerator {
         if self.ramps.by.is_empty() || col.lip {
             return &[];
         }
-        let height = |nx: i32, nz: i32| {
-            let col = column(nx, nz);
-            // Beyond the rim, nothing: lower than any ground.
-            if col.outside {
-                i32::MIN / 2
-            } else {
-                top_voxel(col.height) + 1
-            }
-        };
+        let cols: [[Column; 3]; 3] = std::array::from_fn(|r| {
+            std::array::from_fn(|c| {
+                if (r, c) == (1, 1) {
+                    *col
+                } else {
+                    column(x + c as i32 - 1, z + r as i32 - 1)
+                }
+            })
+        });
         let around: ramps_rule::Around = std::array::from_fn(|r| {
-            std::array::from_fn(|c| height(x + c as i32 - 1, z + r as i32 - 1))
+            std::array::from_fn(|c| {
+                let col = &cols[r][c];
+                // Beyond the rim, nothing: lower than any ground.
+                if col.outside {
+                    i32::MIN / 2
+                } else {
+                    top_voxel(col.height) + 1
+                }
+            })
         });
         // Where the rock shapes the ground (rocks.json `shaping`), notched ramps on its diagonal
-        // contours too, so its slopes ramp rather than stair (owner, 2026-11-13).
+        // contours too (owner, 2026-11-13): everywhere (`all`, 0.59–0.61), or only at a rock
+        // wall's edge (`mesaEdges`: the column or a neighbour shows a wall; owner, 2026-11-13: "I'd
+        // like the old rule to apply except for mesa edges").
         let geo = &self.biomes.geology.geology;
-        let shape = if geo.notched && geo.strength > 0.0 {
+        let notched = match geo.notched {
+            crate::geology::Notched::None => false,
+            crate::geology::Notched::All => true,
+            crate::geology::Notched::MesaEdges => cols.iter().flatten().any(|c| c.wall),
+        };
+        let shape = if notched && geo.strength > 0.0 {
             ramps_rule::top_of_notched(&around, rows_for_m(1.0))
         } else {
             ramps_rule::top_of(&around, rows_for_m(1.0))

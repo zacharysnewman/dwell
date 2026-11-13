@@ -186,7 +186,7 @@ fn generator_058(seed: u64) -> TerrainGenerator {
     let mut e = world_config(NAME)
         .unwrap()
         .expect("the Realistic world's edit");
-    e.geology.notched = false;
+    e.geology.notched = dwell_worldgen::geology::Notched::None;
     e.geology.ledge = 0.0;
     e.geology.tread_relief = 0.0;
     let map = WorldMap::for_height(seed, e.height.expect("its height field"))

@@ -754,7 +754,12 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    (0.59) set rocks.json `shaping.notched` 1, so wherever the shaping is on (Realistic strength 1, the starter 0.25)
    the stored ramps also top diagonal contours, and rolling ground became nearly all slopes. Change: the pre-0.59 ramp
    rule (straight edges only) everywhere except at mesa edges (the erosion mesas' scarp and wall tops and the hard
-   beds' wall edges), which keep notched ramps; the 0.59 ledges on soft bedded slopes stay (owner-approved).
+   beds' wall edges), which keep notched ramps; the 0.59 ledges on soft bedded slopes stay (owner-approved). Owner, 2026-11-13, also added to the batch: "I also feel like
+   mesas are too flat on the tops and the bottoms, real mesas have height variety." Today the treads keep only
+   `treadRelief` 0.08 of a bed's height and the erosion's floors snap to the drainage line's height (dead flat). Change:
+   mesa tops undulate (a few metres over a few hundred metres by noise), tilt slightly per mesa (a dip range) and carry
+   occasional small buttes or knobs; floors slope gently toward their drainage line with low mounds, talus fans out from
+   the walls and shallow washes; the tread/wall structure, stepping and ledges stay.
 16. **Phone frame rate (P0)** (owner 2026-11-11, iPhone 17, Safari, setting Low: "I'm only getting ~23 fps on
    mobile, seeing lots of z-fighting on tree trunks with the leaf cards. What might be dropping frames since the
    last while. Used to get 60 fps"). Suspect: leaf cards are on in every tier but CPU, Low included; cards lying

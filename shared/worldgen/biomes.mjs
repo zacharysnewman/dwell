@@ -801,7 +801,7 @@ export const GEOLOGY = {
     ledge: [0, 50],
     ledgeEvery: [0.05, 1],
     treadRelief: [0, 0.5],
-    notched: [0, 1, true],
+    notched: ["none", "mesaEdges", "all"],
   },
   erosion: {
     strength: [0, 1],
@@ -951,8 +951,14 @@ export function validateRocks(data, blocks) {
         fail(`${group} must be an object`);
       const ex = Object.keys(v).filter((k) => k !== "$comment" && !(k in keys));
       if (ex.length) fail(`${group}: unknown ${ex.join(", ")}`);
-      for (const [key, [min, max, whole]] of Object.entries(keys)) {
+      for (const [key, spec] of Object.entries(keys)) {
         const x = v[key];
+        if (typeof spec[0] === "string") {
+          // A word of the code's vocabulary.
+          if (!spec.includes(x)) fail(`${group}.${key} must be one of ${spec.join(", ")}`);
+          continue;
+        }
+        const [min, max, whole] = spec;
         if (!(
           isNum(x) &&
           x >= min &&

@@ -621,8 +621,8 @@ export function rocksRust(data) {
     `// ${rocksHeader}`,
     "",
     "use crate::geology::{",
-    "    Arid, CapClimate, CapRule, Erosion, Geology, Jointing, Layer, Mixing, PlateMix, PlateProvinces,",
-    "    PlateRule, PlateSetting, Rock, Stack,",
+    "    Arid, CapClimate, CapRule, Erosion, Geology, Jointing, Layer, Mixing, Notched, PlateMix,",
+    "    PlateProvinces, PlateRule, PlateSetting, Rock, Stack,",
     "};",
     "",
   ];
@@ -678,7 +678,9 @@ export function rocksRust(data) {
   rs.push(`    ledge: ${rf(data.shaping.ledge)},`);
   rs.push(`    ledge_every: ${rf(data.shaping.ledgeEvery)},`);
   rs.push(`    tread_relief: ${rf(data.shaping.treadRelief)},`);
-  rs.push(`    notched: ${data.shaping.notched === 1},`);
+  rs.push(
+    `    notched: Notched::${{ none: "None", mesaEdges: "MesaEdges", all: "All" }[data.shaping.notched]},`,
+  );
   rs.push("    erosion: Erosion {");
   const snake = (k) => k.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
   for (const k of Object.keys(GEOLOGY.erosion))
