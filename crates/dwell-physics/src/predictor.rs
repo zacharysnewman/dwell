@@ -21,6 +21,13 @@ const DT: f32 = PlayerControllerConfig::dt();
 /// Knockback corrections are smoothed up to this multiple of the snap distance: they are expected
 /// to be large (the client learns of them about one RTT late) and must not pop.
 const KNOCKBACK_SNAP_FACTOR: f32 = 4.0;
+/// How many ticks the server's tick for an input may be off the predictor's guess of it (the
+/// latest snapshot's `server_tick − 1 − ack`): uneven frames and a link's jitter shift the server's
+/// input queue by a few ticks. A carry across grids turns positions at that tick's frames, so its
+/// error is the grids' relative speed × the slip (BUGS.md #125: ~17 m a tick at the moon's ~1 km/s).
+const CARRY_SLIP_TICKS: f32 = 8.0;
+/// For how many inputs after a carry a reconciliation smooths that error out instead of snapping.
+const CARRY_WINDOW: u32 = 120;
 const HISTORY: u32 = 256; // ticks (> 4 s)
 const MAX_DEAD_RECKONING: f32 = 0.5; // s
 
@@ -249,6 +256,9 @@ pub struct Predictor {
     travel: Option<Box<dyn GridTravel>>,
     /// The server tick an input runs in, less its seq (from the latest snapshot).
     tick_of_seq: Option<i64>,
+    /// The latest predicted carry across grids: its input's seq, and the correction (m) its clock
+    /// slip can explain (`CARRY_SLIP_TICKS`), smoothed rather than snapped for `CARRY_WINDOW`.
+    carried: Option<(u32, f32)>,
     vitals_rules: Option<crate::controller::VitalsRules>,
     collision_cells: Option<usize>,
 }
@@ -281,6 +291,7 @@ impl Predictor {
             grid: 0,
             travel: None,
             tick_of_seq: None,
+            carried: None,
             vitals_rules: None,
             collision_cells: None,
         }
@@ -341,6 +352,8 @@ impl Predictor {
         let flying = self.players.controller(h).fly.flying;
         let carry = travel.carry(self.grid, p, v, flying, world_s);
         if let Some(c) = carry {
+            let dv: f64 = (0..3).map(|k| (v[k] - c.velocity[k]).powi(2)).sum();
+            self.carried = Some((seq, dv.sqrt() as f32 * CARRY_SLIP_TICKS * DT));
             self.carry_to(c);
         }
         let travel = self.travel.as_ref().expect("travel");
@@ -665,12 +678,19 @@ impl Predictor {
             Vec3::splat(1.0e6) // positions of two grids' frames: snapped
         };
         self.stats.last_correction = correction.length();
-        let snap = RECONCILE_SNAP_DISTANCE
+        // Just after a carry, its clock's slip moves the player by up to the grids' relative
+        // speed a tick (BUGS.md #125): smoothed out, not snapped.
+        let slip = self
+            .carried
+            .filter(|&(c, _)| c.saturating_add(CARRY_WINDOW) > ack)
+            .map_or(0.0, |(_, m)| m);
+        let snap = (RECONCILE_SNAP_DISTANCE
             * if knockback || bumped {
                 KNOCKBACK_SNAP_FACTOR
             } else {
                 1.0
-            };
+            })
+        .max(slip);
         if self.stats.last_correction > snap {
             self.offset = Vec3::ZERO;
             self.stats.snaps += 1;

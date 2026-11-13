@@ -728,6 +728,34 @@ impl LodSystem {
         self.options.cache_bytes
     }
 
+    /// Drops every section held, their meshes off `view`, and the selection: the viewer left home's
+    /// grid (MOON_WORLD.md §7.3, BUGS.md #124), whose sections stayed uploaded, hidden, while away.
+    /// The index, the bounds, the settings and the jobs in flight are kept (a job's result finds
+    /// no section and is dropped); the next `update` builds again from the root.
+    pub fn drop_all<P>(&mut self, view: &mut dyn LodView<P>) {
+        let ids: Vec<LodId> = self.nodes.keys().copied().collect();
+        for id in ids {
+            self.remove(id, view);
+        }
+        view.show_lod_sections(&[]);
+        view.show_lod_stand_ins(&[]);
+        self.cache_bytes = 0;
+        self.in_use = 0;
+        self.selection = Selection::default();
+        self.chunk_fades.clear();
+        self.fade.clear();
+        self.covered.clear();
+        self.covered_ancestors.clear();
+        self.drawable_since.clear();
+        self.warm.clear();
+        self.asking.clear();
+        self.chunk_asked.clear();
+        self.active = false;
+        self.settled = false;
+        self.last_key = None;
+        self.revision += 1;
+    }
+
     /// When the last selection ran (ms, `update`'s clock), or None before the first.
     pub fn selected_ms(&self) -> Option<f64> {
         self.selected_ms
