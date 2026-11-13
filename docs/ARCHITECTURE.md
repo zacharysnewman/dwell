@@ -1058,7 +1058,7 @@ rules that spawn the species' creatures are left out (`Creatures::reserved`).
 
 ---
 
-### 5.5 Theater mode **[in progress: T-1, the camera path engine, and T-4, the creative viewpoint, built; the mode's UI and recording planned]**
+### 5.5 Theater mode **[built: T-1 to T-4; T-5, an MCP server, a nice-to-have]**
 
 Design: [`THEATER_MODE.md`](THEATER_MODE.md) (WORK_QUEUE item 41). A viewer-only camera toolset: the
 character stays put while the camera follows a **camera path** — JSON keyframes (world position, a look or a
@@ -1066,9 +1066,20 @@ target, field of view, the viewer's time of day, a playback speed) joined by seg
 (`cut`, `linear`, `ease`, `orbit`, `track`, `dolly` with the dolly zoom, `crane`, `pan`) and easings — or a
 **preset** (`shared/theater/presets.json`) expanded into one. `crates/dwell-theater` parses and validates paths
 and presets, evaluates a path at a time into a pose and plays it frame-rate independently (tracking a moving
-player, creature or NPC with exponential smoothing). The client steps it before each frame
+player, creature or NPC with exponential smoothing; a creature's or NPC's position itself is followed smoothed,
+the path's `followSmoothingS`). The client steps it before each frame
 (`Game::step_theater`) into the placed view (`ViewOverride`, with an optional field of view) and a viewer-only
 time of day (`theater_time`). Dev API `__dwell.theater`, the bench's `theater` step.
+
+**The mode in game [built, T-2, T-3]** (`client/src/theater/`, THEATER_MODE.md §2, §6): a panel that is one of
+the panels `ui/panels.ts` owns (`theater`: it frees the mouse, its X or Esc closes it and locks the mouse again),
+docked on a desktop and a bottom or side sheet on a phone (`layout.ts`), worked by the controller's d-pad; the free
+camera (keys, mouse drag, sticks, a phone's stick and Up/Down buttons, `touch.ts`), presets and keyframes, a
+creature or NPC picked to follow by id (`Client.theaterSubjects`), the path store, and recording: MediaRecorder on
+the canvas in real time, or **frame-exact** path takes (the path stepped one frame of the rate per drawn frame,
+`Client.theaterExact`/`theaterAdvance`; the canvas encoded by WebCodecs and written as WebM by `webm.ts`). The
+host's `theaterGuests` world setting (`WorldSettings` 0x87) turns the mode off for guests; the host (the loopback
+session or an op) always may, and the server ignores a guest's viewpoint while it is off.
 
 **The simulation viewpoint [built, T-4]** (THEATER_MODE.md §7): the one thing on the wire. Where the server has
 the `theater.viewpoint` capability (§8.3) and the world's mode the `theaterViewpoint` ability (creative), the
@@ -1083,8 +1094,7 @@ within the render radius of it answered, `StreamStats::viewpoint_sent`); worldge
 chunks; the LOD's propagation, creature spawning and despawning, the near ecology's groups and the lava run near
 it as near a body (`Server::presence_points`). It only brings the world near: animals don't flee it and NPCs
 don't look at it or get bumped by it (`herds::World::near` vs `players`). Tests:
-`crates/dwell-sim/tests/theater_viewpoint.rs` (both faces). Planned: the in-game mode and editor (T-2) and canvas
-recording (T-3).
+`crates/dwell-sim/tests/theater_viewpoint.rs` (both faces).
 
 ## 6. Voxel World
 
@@ -4546,12 +4556,15 @@ S→C  WorldSettings 0x54 (protocol v22): u8 count, each u8 tag, u16 length, byt
                    (`CELESTIAL`, REALISTIC_WORLD.md §8, O2 **[built]**: u8 version 1, f32
                    pole height, pole yaw, distance, tilt, year days, year phase, the moon's
                    month, inclination, node; written at creation only by a world with a Sky
-                   preset, a Realistic one; absent: today's orbit, byte-identical joins);
+                   preset, a Realistic one; absent: today's orbit, byte-identical joins),
+                   0x87 whether guests may use theater mode (`THEATER_GUESTS`, u8 0 off;
+                   written only when off, THEATER_MODE.md §7);
                    a tag with the top bit set is optional (skipped by a build that doesn't
                    know it), any other must be understood ("This world needs a newer
                    version of Dwell."); before Welcome. The client uses the world's clock
                    for the sky, not its own. Sent again while joined when the host changes
-                   the world's game mode (ADR 0065); older clients ignore it then.
+                   the world's game mode (ADR 0065) or theater for guests; older clients
+                   ignore it then.
                    **[built, 0.52.38]** Tag 2 (required) the world's worldgen config hash
                    (u64 FNV-1a of its text, ADR 0074 B7), only for a world made from a
                    config (a Chisel edit or a fixture), never saved: an older build refuses

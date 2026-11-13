@@ -10,6 +10,13 @@ use crate::easing::Easing;
 /// The path format this build reads and writes.
 pub const FORMAT_VERSION: u64 = 1;
 
+/// How long a moving subject's position takes to be followed (s, the exponential's time constant;
+/// a path's `followSmoothingS`): the camera follows a creature or NPC smoothly, not its every
+/// step on the wire.
+pub const DEFAULT_FOLLOW_SMOOTHING_S: f64 = 0.35;
+/// The longest a path may set.
+pub const MAX_FOLLOW_SMOOTHING_S: f64 = 10.0;
+
 /// Something a camera can look at, orbit or follow.
 #[derive(Clone, Debug, PartialEq)]
 pub enum TargetRef {
@@ -24,6 +31,12 @@ pub enum TargetRef {
 }
 
 impl TargetRef {
+    /// Whether the target moves on its own (a creature or an NPC): followed smoothed
+    /// (`Path::follow_smoothing_s`). The player's own body is already smooth, a point still.
+    pub fn moves(&self) -> bool {
+        matches!(self, Self::Creature(_) | Self::Npc(_))
+    }
+
     /// Reads a target (`at` names it in the message).
     pub fn from_json(v: &Value, at: &str) -> Result<Self, String> {
         if let Some(p) = vec3(v) {
@@ -192,6 +205,9 @@ pub struct Path {
     pub segments: Vec<Segment>,
     /// Start over at the end.
     pub looped: bool,
+    /// A moving subject's smoothing (s; `followSmoothingS`, default
+    /// [`DEFAULT_FOLLOW_SMOOTHING_S`], 0 follows it exactly).
+    pub follow_smoothing_s: f64,
 }
 
 impl Path {
@@ -230,6 +246,15 @@ impl Path {
             Some(b) => b
                 .as_bool()
                 .ok_or("camera path: loop must be true or false")?,
+        };
+        let follow_smoothing_s = match o.get("followSmoothingS") {
+            None => DEFAULT_FOLLOW_SMOOTHING_S,
+            Some(v) => v
+                .as_f64()
+                .filter(|s| (0.0..=MAX_FOLLOW_SMOOTHING_S).contains(s))
+                .ok_or(format!(
+                    "camera path: followSmoothingS must be a number of seconds in [0, {MAX_FOLLOW_SMOOTHING_S}]"
+                ))?,
         };
         let kfs = o
             .get("keyframes")
@@ -301,6 +326,7 @@ impl Path {
             keyframes,
             segments,
             looped,
+            follow_smoothing_s,
         })
     }
 
@@ -321,13 +347,23 @@ impl Path {
         if self.looped {
             o.insert("loop".into(), json!(true));
         }
+        if self.follow_smoothing_s != DEFAULT_FOLLOW_SMOOTHING_S {
+            o.insert("followSmoothingS".into(), json!(self.follow_smoothing_s));
+        }
         o.insert("keyframes".into(), Value::Array(keyframes));
         o.insert("segments".into(), Value::Array(segments));
         Value::Object(o)
     }
 }
 
-const PATH_FIELDS: [&str; 5] = ["formatVersion", "name", "loop", "keyframes", "segments"];
+const PATH_FIELDS: [&str; 6] = [
+    "formatVersion",
+    "name",
+    "loop",
+    "followSmoothingS",
+    "keyframes",
+    "segments",
+];
 const KEYFRAME_FIELDS: [&str; 8] = [
     "t",
     "position",

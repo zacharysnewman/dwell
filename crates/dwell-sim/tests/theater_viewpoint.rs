@@ -34,6 +34,11 @@ fn floor(fx: &mut Fixture, f: FaceFrame, x0: i32, z0: i32, n: i32) {
 /// A server in `mode` on an empty world: player 1 on a small floor at the origin, a floor for the
 /// fixture creatures far along +x. Its client said this build's capabilities when `caps`.
 fn scene(f: FaceFrame, mode: &str, caps: bool) -> Fixture {
+    scene_over(f, mode, caps, TransportKind::WebTransport)
+}
+
+/// `scene` with player 1 joined over `transport` (`Loopback`: the hosting page's own player).
+fn scene_over(f: FaceFrame, mode: &str, caps: bool, transport: TransportKind) -> Fixture {
     let mut fx = Fixture::new(ServerConfig {
         generator_override: Some(empty_generator()),
         spawn: Some(f.point([0.5, m_of_row(BASE), 0.5])),
@@ -43,7 +48,7 @@ fn scene(f: FaceFrame, mode: &str, caps: bool) -> Fixture {
     fx.server.set_creature_table(Table::FIXTURE);
     floor(&mut fx, f, -1, -1, 3);
     floor(&mut fx, f, FAR_X - 2, -2, 36);
-    fx.join(1, &Client::new(1));
+    fx.join_over(1, &Client::new(1), transport);
     // Full chunks (no generator check): every chunk is sent as it is.
     fx.send(1, Message::WorldgenCheck(0));
     if caps {
@@ -208,5 +213,47 @@ dwell_world::both_faces!(
         // The host switches the world to adventure: the viewpoint stops counting at once.
         assert!(fx.server.set_mode("adventure"));
         assert_eq!(fx.server.viewpoint_of_player(1), None);
+    }
+);
+
+dwell_world::both_faces!(
+    fn theater_guests_off_ignores_a_guests_viewpoint_but_never_the_hosts(f: FaceFrame) {
+        // THEATER_MODE.md §7: the host can disable theater mode for guests; the host always may.
+        let eye = far_eye(f);
+        let mut guest = scene(f, "creative", true);
+        guest.server.set_theater_guests(false);
+        // The joined client hears of it (its shell stops offering the mode).
+        let defaults = dwell_sim::server::default_settings(1.0);
+        let resent = guest.take_all().get(&1).is_some_and(|ms| {
+            ms.iter().any(|m| {
+                matches!(m, Message::WorldSettings(w)
+                    if w.settings(defaults).is_ok_and(|s| !s.theater_guests))
+            })
+        });
+        assert!(
+            resent,
+            "the world's settings go out again, theater off for guests"
+        );
+        guest.send(1, Message::TheaterViewpoint(Some(eye)));
+        assert_eq!(
+            guest.server.viewpoint_of_player(1),
+            None,
+            "a guest's is ignored"
+        );
+        let (sent, _) = stream_for(&mut guest, 240);
+        assert!(!sent.iter().any(|&c| near(c, chunk_of_point(eye))));
+        // Turned on again, the one it holds counts.
+        guest.server.set_theater_guests(true);
+        guest.send(1, Message::TheaterViewpoint(Some(eye)));
+        assert_eq!(guest.server.viewpoint_of_player(1), Some(eye));
+
+        let mut host = scene_over(f, "creative", true, TransportKind::Loopback);
+        host.server.set_theater_guests(false);
+        host.send(1, Message::TheaterViewpoint(Some(eye)));
+        assert_eq!(
+            host.server.viewpoint_of_player(1),
+            Some(eye),
+            "the host's is used"
+        );
     }
 );

@@ -14,6 +14,11 @@
     "padLookDegPerS": 120,
     "deadzone": 0.15
   },
+  "touch": {
+    "$comment": "A phone's flying controls (src/theater/touch.ts): stickRadiusPx: how far (CSS px) the thumb moves the stick to full speed; verticalFactor: the Up and Down buttons' share of the flying speed.",
+    "stickRadiusPx": 56,
+    "verticalFactor": 0.75
+  },
   "keyframes": {
     "$comment": "gapS: the path seconds a new keyframe is placed after the last; moves: the segment moves offered (dwell_theater's vocabulary).",
     "gapS": 5,

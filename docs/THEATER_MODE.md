@@ -5,13 +5,13 @@ character stays put while a free camera flies, follows paths built from presets 
 own time of day and time-lapse, hides the HUD and records the canvas to a file. The `record` skill
 (`.claude/skills/record/`) drives the same engine for the showcase videos (item 40).
 
-Status: **T-1 built** (the camera path engine `crates/dwell-theater`, the presets file, the client wiring, the
-dev API `__dwell.theater` and the bench's `theater` step). **T-2 and T-3 built** (2026-11-12; the mode, the free
-camera, the preset and keyframe panels, the timeline, the path store, recording; `client/src/theater/`), except
-the `theaterGuests` world setting (§7, outstanding: the mode is offered to everyone until it lands) and following
-a moving creature by id (the picker aims at its point). T-4 and T-5 planned (§10).
-dev API `__dwell.theater` and the bench's `theater` step). **T-4 built** (the creative simulation viewpoint, §7).
-T-2, T-3 and T-5 planned (§10).
+Status: **T-1 to T-4 built.** T-1: the camera path engine `crates/dwell-theater`, the presets file, the client
+wiring, the dev API `__dwell.theater` and the bench's `theater` step. T-2 and T-3 (2026-11-12, finished
+2026-11-13): the mode and its panel (§2.1), the free camera and a phone's flying controls, presets and keyframes,
+following a creature or NPC by id (§3.5), the path store, recording in real time and frame-exact (§6), and the
+host's `theaterGuests` world setting (§7). T-4: the creative simulation viewpoint (§7.1). T-5 (an MCP server) is a
+nice-to-have, not planned. Not yet run in a browser on a GPU or a phone (cloud session): the panel's layouts are
+checked in headless Chromium, the recording and the touch controls by unit tests.
 
 ## 1. The owner's answers (2026-11-12)
 
@@ -56,8 +56,11 @@ What is data and what is code (CLAUDE.md "extendable system"):
 
 **As built (T-2, `client/src/theater/`):** the key, the controller button and the free camera's tunables are data
 in `shared/theater/theater.json` (`F9`, the right stick press; speed, wheel step, run factor, look rates); Settings
-→ Theater has the button; a touch screen gets a Theater button (`#theater-open`) and flies with the left half of
-the screen (a virtual stick) and looks with the right. The free camera is `Client.theaterFly` (`game.rs`
+→ Theater has the button; a touch screen gets a Theater button (`#theater-open`), flies with a stick and Up and
+Down buttons (`touch.ts`, `#theater-touch`: the stick at the bottom left, its full tilt at theater.json
+`touch.stickRadiusPx`, a diagonal no faster; Up and Down at `touch.verticalFactor` of the speed; the mapping is
+`touchFly`, tested) and looks by dragging anywhere else on the view. In portrait the controls show while the bottom
+sheet is collapsed (its chevron), in landscape beside the side sheet; they hide while a path plays. The free camera is `Client.theaterFly` (`game.rs`
 `fly_step`, face-local through `FaceFrame`, tested on both faces): WASD, Space/E up, C/Q down, Shift faster, the
 wheel sets the speed; the controller's sticks and triggers. The shell's input goes to the camera, not the body,
 while the mode is on. The toolbar (`mode.ts`) has three panels: **Presets** (a preset, its sliders from
@@ -65,6 +68,34 @@ presets.json's ranges, a target — the player, the creature nearest the crossha
 and To keyframes), **Keyframes** (+ Key at the camera with speed, fov and time of day; Set, Delete, each segment's
 move; Play; Save/Saved…/Export/Import) and **Record**; the timeline strip shows the keys (drag to move, click to
 select), the segments' moves and the playhead. The editor's model is `keyframes.ts` `KeyframeEditor` (tested).
+
+### 2.1 The panel (owner, 2026-11-13: "Improve the UI on the theater mode. It's really bad, it doesn't even have a proper X button or responsive layout.")
+
+- **The menu's design system** (#892, WORK_QUEUE item 23): the glass, the block buttons (green primary, red
+  record), round chips for one-of choices, a segmented row of tabs, the disclosure chevron for **Advanced**, the
+  focus ring on every control; every control has an accessible name (`aria-label` or its label), the panel is a
+  `dialog` named by its title.
+- **A close X** at the top right (`#theater-close`, "Close theater mode"). The mode is one of the panels
+  `ui/panels.ts` owns (`theater`): opening it frees the mouse (a drag on the view turns the camera), the X or Esc
+  closes it and locks the mouse again. Esc first stops a take or a playing path (`PanelViews.escape`), and the
+  panel stays.
+- **Responsive** (`layout.ts` `layoutFor`): at 900 × 560 CSS px or more a compact panel docked at the top left
+  (340 px wide) that leaves the view free; smaller, a **bottom sheet** in portrait (the full width, at most 58% of
+  the height, 48 px targets, a chevron to collapse it to its header) or a **side sheet** in landscape (the right
+  side, the full height). No horizontal scroll at 360 px (a test lays it out in headless Chromium at 360 × 740 with
+  every tool and Advanced open).
+- **Sections:** Presets — *Target and move* (chips: Me, Creature, Point; a creature list and a Crosshair pick; the
+  move), *Settings* (the preset's sliders), Preview and To keyframes. Keyframes — the key list (each key's time and
+  the move after it, the selected one marked), + Add key, Delete, Preview (from the selected key), Play; Advanced:
+  Set key to camera, the move to the next key, speed, field of view, up, time of day, name, Save, Open, Export,
+  Import. Record — *Format* (aspect and frame rate chips), *Take* (Record path, Record free, Download); Advanced:
+  the height, frame-exact path takes.
+- **States:** while a path plays or a take records only the header shows: a badge (a red blinking dot and the
+  take's timer while recording, `REC 0:12`; "Playing" or "Paused"), Pause/Resume while a path plays, Stop, the X.
+  A finished take waits for Download (the dev API's takes still download unless `download: false`).
+- **The controller** (`layout.ts` `PadNav`): the d-pad moves the focus through the panel's controls (a closed
+  Advanced only its summary), left and right step a slider or a choice, A presses, B stops a take or a path or else
+  closes; the sticks and triggers still fly the camera.
 
 ## 3. Camera paths (T-1, built)
 
@@ -126,7 +157,13 @@ One segment per pair of keyframes (`segments[i]` from keyframe i to i+1; a missi
 | `crane` | across with the easing, up with `upEasing` | slerped (at a target when the keyframes aim at one) | `upEasing` (outCubic) | inOutCubic |
 | `pan` | stays at keyframe i (keyframe i+1 may not move it) | slerped | — | inOutSine |
 
-A keyframe aimed at a moving target keeps looking at it (its aim is re-resolved every frame). A tracking move
+A keyframe aimed at a moving target keeps looking at it (its aim is re-resolved every frame). A creature or NPC
+(`{"creature": id}`, `{"npc": id}`) is followed through a **smoothed** position: the path's optional top-level
+`followSmoothingS` (seconds, default 0.35, 0 follows exactly, at most 10; written only when not the default) is the
+time constant of an exponential solved exactly for a target moving straight through the frame, so the camera turns
+evenly at any frame rate rather than stepping with each update on the wire (`Player`; tests: a creature arriving in
+20 Hz steps is followed evenly, the same at 30 and 144 fps). The player's own body is smooth already and isn't
+smoothed again. A tracking move
 starts from the keyframe's position and eases onto the target. A target that isn't known (gone, out of range)
 holds the last aim.
 
@@ -212,18 +249,28 @@ A new preset is a data entry (a test adds one from a fixture file no code names)
 - **Crops:** 16:9 or 9:16 (theater.json `aspects`). The canvas is resized for the recording to the chosen aspect
   at a chosen height (720/1080/1440/1920; `recordSize`, both sides even), shown fitted on screen, not cropped after, so nothing is wasted and the LOD selects for the real view.
 - **Frame rate:** 24/30/60 (the stream's rate). A path's playback is real-time; a slow page records a lower real
-  rate, so the recorder shows the frames it is dropping. An offline mode (step the path by 1/fps per drawn frame,
-  frame-exact whatever the page's speed) is the agent's path through the bench (`theater` step + the record
-  skill's screencast) until T-3 adds it in game.
+  rate, so the recorder shows the frames it is dropping.
+- **Frame-exact takes** (Record → Advanced, or `exact: true` on the dev API's take; a path only): the path moves
+  one frame of the rate per **drawn** frame whatever the page's speed (`Client.theaterExact` / `theaterAdvance`,
+  `game.rs` `theater_dt`: a frame given no step holds the pose), the canvas is captured once per stepped pose that
+  was drawn (`TheaterMode.afterFrame`, `new VideoFrame(canvas)`), stamped at i / fps and encoded by WebCodecs
+  (VP8; the next step waits while the encoder is 4 frames behind), and written as a WebM by `webm.ts` `muxWebm`
+  (a cluster per key frame, every 2 s). The video is smooth however slow the machine; the world itself (creatures,
+  water) still runs in real time, and the take is silent (the sound runs in real time). Needs WebCodecs (Chrome,
+  Edge, Safari 16.4+).
 
 ## 7. Multiplayer, permissions and the simulation viewpoint
 
 - **Local only:** the camera, the time of day and the time-lapse are this viewer's; nothing goes on the wire. The
   character stays where it was and simulates as an idle player.
-- **The host's permission:** a world setting `theaterGuests` (ADR 0054's optional tag, so older builds on the line
-  ignore it) sent at join; when off, guests' clients don't offer the mode (the host always may). Enforcement is
-  client-side because the mode reveals nothing the client hasn't already streamed — except the viewpoint below,
-  which the server checks.
+- **The host's permission (built):** the world setting `theaterGuests` (`WorldSettings` tag `THEATER_GUESTS`
+  0x87, ADR 0054's optional tag, so older builds on the line ignore it: `u8` 0 off; a world that lets guests writes
+  none, so its fields and join are byte-identical to before) sent at join and again when the host changes it (Host…
+  → *Theater for guests*, saved with the world at once). When off, a guest's client doesn't offer the mode and
+  leaves it if it was on (`TheaterMode.setAllowed`); **the host always may**: the hosting page's own player (the
+  loopback session) or an op. Enforcement is client-side for the mode itself, which reveals nothing the client hasn't
+  already streamed; the server ignores a guest's **viewpoint** while it is off (`Server::theater_allowed`). A
+  dedicated server's world keeps the setting it was saved with (no command-line switch yet).
 - **The simulation viewpoint (owner, 2026-11-12; T-4):** in **creative** the theater camera's position is sent to
   the server as a *viewpoint*, behind the capability exchange (a capability `theater.viewpoint`), and the server
   treats it as it treats a player's body for simulation: it streams chunks and the LOD around it, spawns and
@@ -298,19 +345,22 @@ far one is capped. `server/theater.rs` checks the rate (the last one arrives) an
 `dwell_theater::viewpoint` the client's rate, stillness and single clear; `dwell-client` `game_local.rs` that a
 playing path sends viewpoints only where the server takes them.
 
+The rest (2026-11-13): `theater_guests_off_ignores_a_guests_viewpoint_but_never_the_hosts` (both faces; the
+settings go out again), `world_settings.rs` (the tag round-trips, is written only when off), `session.rs` (a guest's
+client follows the host's switch, back on included); `engine.rs` `a_followed_creature_is_smoothed`,
+`following_is_frame_rate_independent` (both faces) and the field's round trip; `game.rs` `theater_dt` and the
+subjects' JSON; `client/src/theater/panel.test.ts` (happy-dom, and headless Chromium for the 360 px layout): the X
+and Esc through the panels, Pause while playing, the layout classes, accessible names, the controller, the creature
+picker's `{creature: id}`, the touch mapping and controls, the WebM's blocks at i / fps.
+
 ## 10. Phases
 
 - **T-1 — the engine (built):** `crates/dwell-theater`, `shared/theater/presets.json`, the client's
   `step_theater`/`ViewOverride::fov_deg`/`theater_time`, `__dwell.theater`, the bench step, the record skill.
-- **T-2 — the mode and editor (local; built but the `theaterGuests` setting):** the toggle (key, Settings, controller), free-fly input, the preset and
-  keyframe panels and timeline, the target picker, the path store and export/import, the `theaterGuests` world
-  setting.
-- **T-3 — recording (local; built but the offline frame-exact mode):** MediaRecorder, aspect and size, frame
-  rate, the download; the offline frame-exact mode still to come.
-- **T-4 — the simulation viewpoint (creative):** the `theaterViewpoint` ability, the `theater.viewpoint`
-  capability and message, the server's interest set and chunk budget for it, tests that adventure ignores it.
-- **T-3 — recording (local):** MediaRecorder, aspect and size, frame rate, the download; the offline frame-exact
-  mode.
+- **T-2 — the mode and editor (built):** the toggle (key, Settings, controller), free-fly input and a phone's
+  flying controls, the panel (§2.1), the preset and keyframe panels and timeline, the target picker and following a
+  creature or NPC by id, the path store and export/import, the `theaterGuests` world setting.
+- **T-3 — recording (built):** MediaRecorder, aspect and size, frame rate, the download; frame-exact path takes.
 - **T-4 — the simulation viewpoint (creative) (built):** the `theaterViewpoint` ability, the `theater.viewpoint`
   capability and `TheaterViewpoint` message, the server's interest set and chunk budget for it, tests that adventure
   ignores it (§7.1). Not yet run in a browser (cloud session).

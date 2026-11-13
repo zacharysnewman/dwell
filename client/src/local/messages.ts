@@ -59,6 +59,8 @@ export type ToWorker =
   | { t: 'save' }
   /** The host switches the world's game mode (ADR 0065, by name); answered with `mode`. */
   | { t: 'setMode'; mode: string }
+  /** The host turns theater mode on or off for guests (THEATER_MODE.md §7); saved at once. */
+  | { t: 'theaterGuests'; on: boolean }
   /**
    * The host retunes the world's worldgen config (Chisel in the game, Phase 56 B7): the chunks
    * within `radius` chunks of the player generated again, edits kept, saved; answered with `retuned`.
@@ -107,7 +109,7 @@ export type ToWorker =
 export type FromWorker =
   /** `persisted`: the world is saved in the browser (OPFS, §6.4). */
   /** `mode`: the world's game mode (ADR 0065), as its file has it. */
-  | { t: 'ready'; persisted: boolean; mode?: string }
+  | { t: 'ready'; persisted: boolean; mode?: string; theaterGuests?: boolean }
   /** The world's game mode after a `setMode` (unchanged if the name was refused). */
   | { t: 'mode'; mode: string }
   /** After a `retune`: faces A's and B's new maps for the page's instances, or the refusal. */

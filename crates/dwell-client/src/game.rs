@@ -719,6 +719,25 @@ impl ViewOverride {
     }
 }
 
+/// A frame's step of the theater path (s): the real time since the last frame, or in frame-exact
+/// recording (`exact`) only the step the shell gave (none: the path holds still while the page
+/// catches up).
+pub fn theater_dt(exact: bool, step: Option<f64>, last_ms: Option<f64>, now_ms: f64) -> f64 {
+    if exact {
+        return step.unwrap_or(0.0);
+    }
+    last_ms.map_or(0.0, |t| (now_ms - t) / 1000.0)
+}
+
+/// Theater mode's subjects as the shell's picker reads them (`Client.theaterSubjects`).
+pub fn subjects_json(subjects: &[(u32, &str, [f64; 3], bool)]) -> String {
+    let list: Vec<serde_json::Value> = subjects
+        .iter()
+        .map(|(id, name, at, npc)| serde_json::json!({ "id": id, "name": name, "npc": npc, "at": at }))
+        .collect();
+    serde_json::Value::Array(list).to_string()
+}
+
 /// The targets a theater path names (docs/THEATER_MODE.md §3.1), as this client sees them.
 pub struct TheaterTargets<'a> {
     player: [f64; 3],
@@ -1102,6 +1121,10 @@ pub struct Game<S: Scene> {
     /// Theater mode's camera path playing (docs/THEATER_MODE.md): it drives the placed view, the
     /// field of view and the time of day this viewer sees while it plays.
     theater: Option<dwell_theater::Player>,
+    /// Frame-exact recording (THEATER_MODE.md §6): the path moves only by the steps the shell
+    /// gives (`theater_advance`), one a drawn frame, whatever the real frame time.
+    theater_exact: bool,
+    theater_step: Option<f64>,
     /// The last frame `step_theater` ran (ms), for its frame time.
     theater_ms: Option<f64>,
     /// The time of day the theater shows (this viewer only), over the dev override.
@@ -1304,6 +1327,8 @@ impl<S: Scene> Game<S> {
             theater_ms: None,
             theater_time: None,
             theater_viewpoint: false,
+            theater_exact: false,
+            theater_step: None,
             viewpoint_sender: Default::default(),
             world_day: DAY_NIGHT,
             day: DayState::default(),
@@ -1534,11 +1559,28 @@ impl<S: Scene> Game<S> {
         self.send_viewpoint(now_ms);
     }
 
+    /// Frame-exact recording on or off (THEATER_MODE.md §6): on, the path holds still but for
+    /// the steps `theater_advance` gives.
+    pub fn set_theater_exact(&mut self, on: bool) {
+        self.theater_exact = on;
+        self.theater_step = None;
+    }
+    /// The next frame's step of the path (seconds of real time at the path's speed), in
+    /// frame-exact recording: one frame of the take's rate.
+    pub fn theater_advance(&mut self, dt_s: f64) {
+        self.theater_step = Some(dt_s.max(0.0));
+    }
+
     fn step_theater_path(&mut self, now_ms: f64) {
         let Some(mut player) = self.theater.take() else {
             return;
         };
-        let dt = self.theater_ms.map_or(0.0, |t| (now_ms - t) / 1000.0);
+        let dt = theater_dt(
+            self.theater_exact,
+            self.theater_step.take(),
+            self.theater_ms,
+            now_ms,
+        );
         self.theater_ms = Some(now_ms);
         let pose = player.step(dt, &self.theater_targets());
         self.theater = Some(player);
@@ -6667,6 +6709,37 @@ fn held_of(inventory_slot_empty: bool, block: StateId, brush: bool) -> Held {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn frame_exact_recording_steps_the_path_only_by_the_given_frames() {
+        // THEATER_MODE.md §6: a slow page (500 ms between frames) still moves the path by one
+        // frame of the take's rate per drawn frame; a frame the shell gave no step holds still.
+        // face-a-only: no face, a clock.
+        let fps = 30.0;
+        assert_eq!(
+            theater_dt(true, Some(1.0 / fps), Some(0.0), 500.0),
+            1.0 / fps
+        );
+        assert_eq!(theater_dt(true, None, Some(0.0), 500.0), 0.0);
+        // Real time otherwise.
+        assert!((theater_dt(false, None, Some(0.0), 500.0) - 0.5).abs() < 1e-12);
+        assert_eq!(theater_dt(false, None, None, 500.0), 0.0);
+    }
+
+    #[test]
+    fn theater_subjects_list_ids_names_and_kinds() {
+        // face-a-only: a list, no face.
+        let j = subjects_json(&[
+            (7, "deer", [1.0, 2.0, 3.0], false),
+            (9, "villager", [0.0; 3], true),
+        ]);
+        let v: serde_json::Value = serde_json::from_str(&j).unwrap();
+        assert_eq!(v[0]["id"], 7);
+        assert_eq!(v[0]["name"], "deer");
+        assert_eq!(v[0]["npc"], false);
+        assert_eq!(v[0]["at"][2], 3.0);
+        assert_eq!(v[1]["npc"], true);
+    }
 
     #[test]
     fn a_placed_camera_draws_your_whole_body() {

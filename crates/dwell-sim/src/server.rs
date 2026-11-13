@@ -390,6 +390,7 @@ pub fn default_settings(water_speed: f64) -> WorldSettings {
         size: dwell_protocol::world_size::WorldSize::DEFAULT,
         moon_phase: None,
         orbit: None,
+        theater_guests: true,
     }
 }
 
@@ -4900,6 +4901,7 @@ impl Server {
                     size: dwell_protocol::world_size::WorldSize::DEFAULT,
                     moon_phase: None,
                     orbit: None,
+                    theater_guests: true,
                     ..self.settings
                 };
                 match f.settings(before) {
