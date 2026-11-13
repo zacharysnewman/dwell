@@ -4449,6 +4449,18 @@ dwell_world::both_faces!(
             m.ground_m.unwrap() < 0.3 && m.up_mps.abs() < 0.1
         });
         assert!(landed, "landed on the moon's ground");
+        // Standing on it, not in it: the feet on its cells' top (BUGS.md: a landing read
+        // −0.11 m on face A, −0.24 m on face B against the smooth height).
+        rig.run_until(60, |_| false);
+        let g = rig
+            .game
+            .as_ref()
+            .unwrap()
+            .moon_report()
+            .unwrap()
+            .ground_m
+            .unwrap();
+        assert!(g.abs() < 0.05, "standing {g} m over the moon's ground");
     }
 );
 

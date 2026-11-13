@@ -61,6 +61,22 @@ fn dot(a: [f64; 3], b: [f64; 3]) -> f64 {
     a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
 }
 
+/// The maps' note off home (WORK_QUEUE item 27): the maps show home's terrain only, so on another
+/// grid they are hidden and this label shows instead, named by the grid (`dwell:moon` → "No map on
+/// the moon"); `None` at home.
+pub fn map_away_label(grid: u8) -> Option<String> {
+    if grid == 0 {
+        return None;
+    }
+    let name = dwell_worldgen::grids::grids()
+        .get(usize::from(grid))
+        .map_or("another world", |g| {
+            g.name.split_once(':').map_or(g.name.as_str(), |(_, n)| n)
+        })
+        .replace('_', " ");
+    Some(format!("No map on the {name}"))
+}
+
 /// Whether grid `grid` (its `grids.json` index) has air (`atmosphere`); an unknown index has.
 pub fn grid_has_air(grid: u8) -> bool {
     grid_has_air_in(dwell_worldgen::grids::grids(), grid)
@@ -170,6 +186,14 @@ mod tests {
             }
         }
     );
+
+    /// The maps off home: hidden with a label named by the grid; at home none.
+    // both-faces: the grid's name; no face enters.
+    #[test]
+    fn off_home_the_map_is_a_label() {
+        assert_eq!(map_away_label(0), None);
+        assert_eq!(map_away_label(1).as_deref(), Some("No map on the moon"));
+    }
 
     dwell_world::both_faces!(
         /// Across a crossing from home's face A onto a turned grid's face `f`, the look continued
