@@ -102,6 +102,20 @@ pub struct CreatureView {
     pub pose: Option<&'static str>,
     /// Seconds in its NPC pose so far (a defeated NPC's kneel and stand play from their start).
     pub pose_s: f64,
+    /// Its hurt flash (sRGB 0..1 and the strength mixed toward it; strength 0: none), its kind's
+    /// `hurtLook` after a hit that connected (WORK_QUEUE item 35, round 2).
+    pub tint: [f32; 4],
+}
+
+/// The hurt look of a creature drawn with `model` (an NPC's by its `kind`): its kind's data, else
+/// the first kind with that model, else the file's defaults (the first creature's).
+fn hurt_look_of(model: &str, npc_kind: Option<&str>) -> dwell_sim::creatures::HurtLook {
+    let t = Table::SHIPPED;
+    npc_kind
+        .and_then(|k| t.creatures.iter().find(|c| c.name == k))
+        .or_else(|| t.creatures.iter().find(|c| c.model == model))
+        .unwrap_or(&t.creatures[0])
+        .hurt_look
 }
 
 #[derive(Clone, Debug)]
@@ -116,6 +130,9 @@ struct Seen {
     pose: u8,
     /// Its NPC pose last drawn and the seconds since it began.
     npc_pose: (u8, f64),
+    /// A hit that connected: seconds since, and the blow's way along the ground (face-local unit
+    /// x, z: away from the striker).
+    hurt: Option<(f64, [f64; 2])>,
 }
 
 #[derive(Debug, Default)]
@@ -147,6 +164,7 @@ impl ClientCreatures {
                 npc: None,
                 npc_pose: (0, 0.0),
                 pose: 0,
+                hurt: None,
             });
             if let Some(p) = &poses {
                 e.pose = p.get(&c.id).copied().unwrap_or(0);
@@ -166,6 +184,27 @@ impl ClientCreatures {
             }
             e.net = c;
         }
+    }
+
+    /// Creature `id` was hit by a blow from `from` (world: where the blades met, or the striker):
+    /// its kind's hurt look plays from now (WORK_QUEUE item 35, round 2). False: not seen.
+    pub fn hurt(&mut self, id: u32, from: [f64; 3]) -> bool {
+        let Some(s) = self.seen.get_mut(&id) else {
+            return false;
+        };
+        let f = FaceFrame::at_height(s.shown[1]);
+        let (me, them) = (f.point(s.shown), f.point(from));
+        let (dx, dz) = (me[0] - them[0], me[2] - them[2]);
+        let d = dx.hypot(dz);
+        // From right on it: back along its heading.
+        let away = if d > 1e-6 {
+            [dx / d, dz / d]
+        } else {
+            let y = s.yaw.to_radians();
+            [-y.sin(), -y.cos()]
+        };
+        s.hurt = Some((0.0, away));
+        true
     }
 
     /// Moves each drawn point toward its latest by `dt` seconds and returns them.
@@ -193,11 +232,29 @@ impl ClientCreatures {
                 };
                 let dyaw = (f64::from(s.net.yaw) - s.yaw + 540.0).rem_euclid(360.0) - 180.0;
                 s.yaw += dyaw * k;
+                // The hurt look: a flinch away from the blow and a fading flash, over the data's time.
+                let look = hurt_look_of(s.model, s.npc.as_ref().map(|(n, _)| n.kind.as_str()));
+                let (mut feet, mut yaw, mut tint) = (s.shown, s.yaw, [0.0; 4]);
+                if let Some((t, away)) = &mut s.hurt {
+                    *t += dt.max(0.0);
+                    let (flash, flinch) = look.at(*t);
+                    if flash <= 0.0 && flinch <= 0.0 {
+                        s.hurt = None;
+                    } else {
+                        let f = FaceFrame::at_height(s.shown[1]);
+                        let m = look.flinch_m * flinch;
+                        let v = f.vector([away[0] * m, 0.0, away[1] * m]);
+                        feet = std::array::from_fn(|i| feet[i] + v[i]);
+                        yaw += look.flinch_deg * flinch;
+                        let c = look.tint;
+                        tint = [c[0] as f32, c[1] as f32, c[2] as f32, flash as f32];
+                    }
+                }
                 CreatureView {
                     id: s.net.id,
                     model: s.model,
-                    feet: s.shown,
-                    yaw: s.yaw,
+                    feet,
+                    yaw,
                     face: FaceFrame::at_height(s.shown[1]),
                     role: match &s.npc {
                         Some((n, l)) => npc_role(s.net.speed, n.pose, npc_armed(l)),
@@ -208,6 +265,7 @@ impl ClientCreatures {
                         .then(|| CREATURE_POSES.get(usize::from(s.pose)).copied())
                         .flatten(),
                     pose_s: s.npc_pose.1,
+                    tint,
                 }
             })
             .collect();
@@ -261,6 +319,50 @@ mod tests {
         assert_eq!(npc_role(0.0, 6, false), "stand");
         assert_eq!(npc_role(0.0, 6, true), "stand_sword");
     }
+
+    // WORK_QUEUE item 35, round 2: a hit creature flinches away from the blow and flashes its
+    // kind's tint, by its `hurtLook` data, then is drawn as before.
+    dwell_world::both_faces!(
+        fn a_hit_creature_flinches_from_the_blow_and_flashes_then_settles(f: FaceFrame) {
+            let mut c = ClientCreatures::default();
+            let at = f.point([3.0, 20.0, -2.0]);
+            c.apply(CreaturesMessage {
+                creatures: vec![CreatureNet {
+                    id: 4,
+                    model: "wolf".into(),
+                    position: at.map(|v| v as f32),
+                    yaw: 90.0,
+                    speed: 0.0,
+                }],
+                gone: vec![],
+                npcs: None,
+                poses: None,
+            });
+            let rest = c.advance(0.0)[0].clone();
+            assert_eq!(rest.tint[3], 0.0, "no flash before a hit");
+            let look = hurt_look_of("wolf", None);
+            assert!(look.flinch_m > 0.0 && look.strength > 0.0);
+            assert!(!c.hurt(99, at), "an unseen creature");
+            // Struck from face-local -x of it: it flinches toward +x.
+            assert!(c.hurt(4, f.point([1.5, 20.0, -2.0])));
+            let v = c.advance(0.2 * look.seconds)[0].clone();
+            let moved = f.point(v.feet);
+            assert!(
+                (moved[0] - 3.0 - look.flinch_m).abs() < 1e-6,
+                "at the flinch's peak: {moved:?}"
+            );
+            assert!((moved[1] - 20.0).abs() < 1e-9 && (moved[2] + 2.0).abs() < 1e-9);
+            assert!((v.yaw - 90.0 - look.flinch_deg).abs() < 1e-6);
+            let tint = look.tint.map(|x| x as f32);
+            assert_eq!(&v.tint[..3], &tint[..]);
+            assert!(v.tint[3] > 0.0 && f64::from(v.tint[3]) <= look.strength);
+            // Over: drawn where it stands, unflashed.
+            let after = c.advance(look.seconds)[0].clone();
+            assert_eq!(after.tint, [0.0; 4]);
+            assert_eq!(after.feet, rest.feet);
+            assert_eq!(after.yaw, rest.yaw);
+        }
+    );
 
     #[test]
     fn the_client_picks_idle_walk_or_run_from_speed() {

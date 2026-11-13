@@ -3098,6 +3098,10 @@ impl<S: Scene> Game<S> {
     fn on_clash(&mut self, c: &dwell_protocol::ClashNet, now_ms: f64) {
         let show = crate::swordplay::show(c, self.player_id);
         let at = c.point.map(f64::from);
+        // A hit past the defender's block: a creature shows its hurt look (WORK_QUEUE item 35).
+        if let Some(id) = crate::swordplay::hurt_creature(c) {
+            self.creatures.hurt(id, at);
+        }
         if let Some((name, volume)) = show.sound
             && let Some(k) = SoundKind::ALL.into_iter().find(|k| k.name() == name)
         {

@@ -437,6 +437,14 @@ impl Near {
                         m.hurt_from = [p[0], p[2]];
                         m.sleep_s = 0.0;
                     }
+                    // An angry one (its creature's `attack`) closes on where its striker is now,
+                    // not where the blow came from, so its bite can reach (WORK_QUEUE item 35).
+                    if m.hurt_s > 0.0
+                        && let Some(to) = c.chase_to
+                    {
+                        let p = f.point(to);
+                        m.hurt_from = [p[0], p[2]];
+                    }
                 }
             }
         }
