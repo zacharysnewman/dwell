@@ -480,14 +480,14 @@ impl LocalCore {
             ("moonApproach", [margin, face]) => self.moon_approach(*margin, *face),
             ("moonLand", [face]) => self.moon_land(*face),
             ("sunLand", [face]) => self.grid_land("dwell:sun", *face),
-            // Beside a river head, where its lava field runs (BUGS.md #142).
+            // Beside a river head, where its lava field runs (BUGS.md #143).
             ("sunLand", [face, river]) if *river != 0.0 => {
                 self.grid_land_by_river("dwell:sun", *face)
             }
             ("sunLand", [face, _]) => self.grid_land("dwell:sun", *face),
             ("sunApproach", [margin, face]) => self.grid_approach("dwell:sun", *margin, *face),
             ("placeHome", [x, y, z]) => self.place_home([*x, *y, *z]),
-            // `__dwell.teleport`, answered (BUGS.md #144: it failed silently).
+            // `__dwell.teleport`, answered (BUGS.md #145: it failed silently).
             ("teleport", [x, y, z]) => match self.teleport_checked([*x, *y, *z]) {
                 Ok(()) => serde_json::json!({ "at": [x, y, z] }).to_string(),
                 Err(e) => serde_json::json!({ "error": e }).to_string(),
@@ -698,7 +698,7 @@ impl LocalCore {
 
     /// [`Self::grid_land`] beside the river head nearest the grid's stand point, on dry ground
     /// (`moon_probe::grid_river_bank_point`): the bench's `sunLand` with `river`, where the head's
-    /// lava field is placed and runs (BUGS.md #142: from the stand point, 390 m from the nearest
+    /// lava field is placed and runs (BUGS.md #143: from the stand point, 390 m from the nearest
     /// head on seed 7, none ran).
     pub fn grid_land_by_river(&mut self, name: &str, face: f64) -> String {
         self.grid_land_at(name, face, true)
@@ -735,7 +735,7 @@ impl LocalCore {
         let t = f64::from(self.server.tick()) / f64::from(dwell_protocol::SIM_HZ);
         let (at, _) = map.frame(index, t).release(local, [0.0; 3]);
         // Carried onto the grid here, not left to the tick's capture, which takes only fliers
-        // (BUGS.md #143: from a fresh spawn the player stayed at home, out in space).
+        // (BUGS.md #144: from a fresh spawn the player stayed at home, out in space).
         if !self.server.carry_onto_grid(id, index, local, [0.0; 3]) {
             return format!(r#"{{"error":"could not move the player onto {name}"}}"#);
         }
@@ -782,7 +782,7 @@ impl LocalCore {
     }
 
     /// [`Self::teleport_local_player`], saying why when it can't (the dev tools' `teleport`,
-    /// BUGS.md #144: a point far outside the disc was taken, the player left past the rim where
+    /// BUGS.md #145: a point far outside the disc was taken, the player left past the rim where
     /// no world streams, and nothing said so). Refused: no local player at home, feet not finite,
     /// a point on the other face (a teleport keeps the face), or one past the disc's rim.
     pub fn teleport_checked(&mut self, feet: [f64; 3]) -> Result<(), String> {

@@ -199,7 +199,7 @@ export type Step =
   /**
    * `moonLand` onto the sun's dry crust instead (`__dwell.sunLand`, SUN_WORLD.md): the same wait,
    * draw counts and report. Scenario `sun-draw`. `river`: beside a river head instead, where its
-   * lava field runs (BUGS.md #142).
+   * lava field runs (BUGS.md #143).
    */
   | { do: 'sunLand'; face?: 'a' | 'b'; river?: boolean; maxS?: number; waitS?: number }
   /**
@@ -751,7 +751,7 @@ export function parseStep(where: string, v: unknown): Step {
         to: o.to,
         ...(o.face === undefined ? {} : { face: o.face }),
         // `__dwell.flyTo`'s `marginM` (moonTrip.ts `TripOptions`): how far outside the capture
-        // sphere the dev move starts the flight (BUGS.md #146: the step rejected it).
+        // sphere the dev move starts the flight (BUGS.md #147: the step rejected it).
         ...(o.marginM === undefined ? {} : { marginM: num(at('marginM'), o.marginM, 0, 100_000) }),
         ...(o.landM === undefined ? {} : { landM: num(at('landM'), o.landM, 5, 500) }),
         ...(o.maxS === undefined ? {} : { maxS: num(at('maxS'), o.maxS, 1, 600) }),

@@ -17,7 +17,7 @@ Last updated: 2026-11-11 (0.52.108).
 ## Queued next, in order (2026-11-12)
 
 - **Space travel bugs from a browser check (brief, 2026-11-13, on 0.60.16, seed 7, local world, M1; BUGS.md
-  #142–#146):** "No lava flowing on the sun: after sunLand on face A, `d.lava('report')` gives `fields: []` … Travel stuck
+  #143–#147):** "No lava flowing on the sun: after sunLand on face A, `d.lava('report')` gives `fields: []` … Travel stuck
   after the spyglass … Teleporting to a point far outside the disc fails silently: make it either work or fail with a
   message. The moon was not drawn from 7–25 km out during a flyTo approach … Small: the bench `flyTo` step rejects
   `marginM` although `__dwell.flyTo` takes it — accept it." Fixed on `claude/space-bugs` (each with a red → green test):
@@ -195,6 +195,8 @@ Still open:
    - Next: the owner's iPhone on a build with the cards off. If still slow: the arms pass (its own pass: a store and
      reload on a tile GPU), the composite (~2.2 ms), the caustic tile (0.9 ms every other frame); why 0.52.101+
      releases still 404 under the bench.
+   - Built (branch `claude/collision-ahead`, owner's brief 2026-11-13: "build a newly reached chunk's collision ahead
+     of the player"): see item 16's fps-moving-5 status.
 
 5. **Leaves, option 5, with matching far trees.**
    - Leaf Lab option 5 at its defaults ("#5 looks really good with defaults"): canopy normals 75 %,
@@ -743,6 +745,15 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    (`collisionCellsPerTick`, the cells in reach at once; the player moves the same); the 6× ticks' worst 15.8–19.8 →
    10.9–18.8 ms (BUGS.md #72 round 6); #642's contact hook costs nothing measurable here. Left: building a newly
    reached chunk's collision ahead of the player, a real iPhone check while moving.
+   **Status (fps-moving-5, branch `claude/collision-ahead`):** owner's brief (2026-11-13): "build colliders for chunks
+   in the player's direction of travel before they're entered (a look-ahead by speed and heading, data), spread across
+   frames with a per-frame budget (data), off the critical frame where possible; a test that walking/flying at speed
+   into new chunks never waits on a collider … and that the per-frame budget holds; both faces." Built: the chunks a
+   moving player heads into built a few a tick (`collisionAhead` in `shared/render/streaming.json`: 1 s, ≤ 48 m, the
+   reach + 1 m, ≥ 1 m/s; 2 a tick desktop and server, 1 phone), only once their neighbours are held; natively no chunk
+   reached unbuilt and the phone's worst terrain tick 3.2 → 1.5 ms flying (BUGS.md #72 round 7). Still on the main
+   thread, spread rather than moved off it (the prediction's collider lives in the tick). Left: the `phone-moving`
+   bench at 6× locally, a real iPhone check while moving.
 17. **Axe swing directions and animation tools** (owner 2026-11-11: "The axe animations are still trash. They
    don't swing in the right direction at all. Make yourself some tools to properly observe animations, movement
    directions, positions over time, etc. Should swing right to left for horizontal and up to down for vertical";
@@ -1249,6 +1260,15 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    16:48). **Waiting on the owner:** pick A–D (or a value between); its numbers move to the top of fog.json.
    **Owner, 2026-11-12: "Yeah let's go with D on haze."** Done: fog.json's half distance 6 km (was 16 km) and scale
    height 1 km (was 1.8 km), density 0.95; the pinned fog values updated.
+
+   **A bluer day sky** (owner, 2026-11-13, after sharing a Monument Valley photo — deep saturated blue overhead fading
+   to a lighter, slightly hazy blue at the horizon: **"Also can you make our sky a bit bluer like in that screenshot,
+   with blue to lighter blue gradient on the horizons?"**). **Done (branch `claude/sky-blue`):** daynight.json's
+   morning, noon and afternoon keyframes: zenith #2b68c4 / #2563c6 / #2a66c4 (was #6098d8 / #649ada / #6098d6),
+   horizon #a8c6e6 / #9cc0ea / #a9c5e4 (was a near-white #e2e2d8 / #e5e5e1 / #e6e2d4). The fog takes the sky's colour
+   below the horizon, so far hills now fade into the lighter blue. Sunrise, the golden hours, sunset, dusk, night and
+   the atmosphere's fade to space are unchanged (a test pins both). **Owner should see:** midday at the spawn looking
+   at the horizon and 45° up, and far hills from a height — side-by-sides in the PR.
 30. **Desktop frame rate on the M1 and hidden graphics settings (P0)** (owner 2026-11-12: "It seems like we're
    hiding some performance settings. I don't see 'tree' options in our settings for graphics. I think cards are
    killing my m1 mac too." / "Running 26fps." / "GPU at 31ms"). The desktop default preset is High (leaf cards
@@ -1713,6 +1733,10 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    scaling for the new player model. It's likely shorter and may need to be scaled up."** (items 37/38: the Peasant
    is your body, other players' and the villagers'). **Fixed (BUGS.md #140):** its soles were on the ground but its
    eyes 7.3 cm under the camera's; `models.json` `scale` 1.04 → 1.09 puts them at the camera's 1.62 m eye.
+   Owner, 2026-11-13: **"Is the first person model lined up with the ground though? The feet were first person
+   feet that didn't line up / seemed to be floating?"** **Fixed (BUGS.md #142):** your first-person body was moved
+   back whole (0.1–0.4 m) off its feet and their shadow; it now leans back from its soles, which stand where you do
+   on flat ground, ramps and slopes.
 39. **Livelier animals** (owner 2026-11-12, after the video had no chase or fleeing — on day one every pack is
    kilometres from any herd and players can't scare deer): chose **deer flee from players** (they notice a player
    within a distance by data, closer when crouching, and run off; wolves keep their distance unless hungry),

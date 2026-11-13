@@ -1159,6 +1159,12 @@ the players' and pieces' reach at once (`TerrainCollision::catch_up`, `COLLISION
 PLAYER_CONTROLLER.md §5), so a teleport's buried chunks no longer land on one tick; the client's
 prediction on a phone takes fewer of the rest a tick (`Players::set_collision_cells_per_tick`,
 `shared/render/streaming.json` `collisionCellsPerTick`; the cells within reach still at once);
+**[built]** the chunks a moving player is heading into are built **ahead** of its reach, a few a tick
+(`CollisionAhead`: along the velocity a second of travel, at most 48 m, within the reach plus 1 m, for a
+player moving at least 1 m/s; 2 chunks a tick on the server and a desktop's prediction, 1 on a phone's,
+`Players::set_collision_ahead`, `shared/render/streaming.json` `collisionAhead`), their cells first in
+the background budget, so no tick builds a chunk its player just reached (WORK_QUEUE item 16; a chunk
+waits until the world holds the 26 around it, or a streamed neighbour's arrival would rebuild it);
 a chunk with no solid cell holds nothing, so open sky costs no collision memory. Cells that collide
 as their full cube go into the `Voxels` collider; **shaped cells** — the generated ramps (below,
 Phase 41) — go into **one triangle mesh per chunk** (Parry `TriMesh`, `FIX_INTERNAL_EDGES`, placed
@@ -4244,6 +4250,7 @@ in the code yet.
 | `STREAM_MESH_SHARE` (client, `stream_budget.rs`) | 0.4 | The budget's share the light leaves to the mesh starts while chunks wait to be meshed |
 | `LIGHT_SLICE_CELLS` (client, `chunk_stream.rs`) | 1024 | Cells of a chunk's flood light between looks at the clock: ~0.1 ms natively, ~0.5 ms on a phone's CPU; one chunk's light was 15–20 ms of a frame at CPU 6× (BUGS.md #72) |
 | `collisionCellsPerTick` (client prediction, data: `shared/render/streaming.json`) | desktop 8192 (the server's `COLLISION_CELLS_PER_TICK`), phone 1024 | Terrain collider cells a prediction tick puts in outside the player's reach; the cells within reach go in at once, so the player moves the same. The 8192 were 8–10 ms of a tick at CPU 6× (BUGS.md #72) |
+| `collisionAhead` (server and client prediction, data: `shared/render/streaming.json`; the server's `CollisionAhead::default`) | 1 s of travel, ≤ 48 m, reach + 1 m, ≥ 1 m/s; desktop/server 2 chunks a tick, phone 1 | Terrain collision built for the chunks a moving player is heading into before its reach gets there; what is built ahead only arrives sooner, so the player moves the same. Natively flying at level 6 over the seed-0 terrain no chunk was reached unbuilt (62 were) and the worst terrain tick fell (BUGS.md #72 round 7) |
 | `uploadBytesPerFrame` (client, data: `shared/render/streaming.json`) | desktop 4 MiB, phone 512 KiB | The chunk mesh bytes one frame uploads (the first mesh always goes; the rest wait in order); a mesh larger than it is written over several frames, this much a frame (`render/staged.rs`). On the bench's phone page at CPU 4× an upload costs ~4 ms a MB and moving brought bursts of 1.8–3.7 MB in a frame (BUGS.md #72) |
 | **LOD (§6.6), Phase 4** | | |
 | `LOD_SECTION_CELLS` | 32 | Cells per LOD section edge (level 0 = a chunk) |

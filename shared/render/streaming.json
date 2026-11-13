@@ -1,5 +1,5 @@
 {
-  "$comment": "Per-frame streaming budgets by device tier (docs/ARCHITECTURE.md §7.4, docs/BUGS.md #72; loaded by dwell-client render/streaming.rs). `uploadBytesPerFrame`: how many bytes of finished chunk meshes one frame uploads (the first mesh of a frame always goes; the rest wait, in arrival order, dwell-game upload_budget.rs). A phone page (the shell's prefersTouch) takes `phone`, every other page `desktop`. Measured on the bench's --touch page at Low with Chrome's CPU throttled 4x: a mesh upload costs ~4 ms a MB there, and moving brought 0.1-0.3 MB a frame on average but bursts of 1.8-3.7 MB (jobs.apply up to 15 ms). `collisionCellsPerTick`: how many terrain collider cells the prediction's tick puts in outside the player's reach (dwell-physics Players::set_collision_cells_per_tick; the cells within reach go in at once whatever this is, so the player moves the same): desktop the server's 8192 (COLLISION_CELLS_PER_TICK), phone fewer (the 8192 were 8-10 ms of a tick at CPU 6x, BUGS.md #72).",
+  "$comment": "Per-frame streaming budgets by device tier (docs/ARCHITECTURE.md §7.4, docs/BUGS.md #72; loaded by dwell-client render/streaming.rs). `uploadBytesPerFrame`: how many bytes of finished chunk meshes one frame uploads (the first mesh of a frame always goes; the rest wait, in arrival order, dwell-game upload_budget.rs). A phone page (the shell's prefersTouch) takes `phone`, every other page `desktop`. Measured on the bench's --touch page at Low with Chrome's CPU throttled 4x: a mesh upload costs ~4 ms a MB there, and moving brought 0.1-0.3 MB a frame on average but bursts of 1.8-3.7 MB (jobs.apply up to 15 ms). `collisionCellsPerTick`: how many terrain collider cells the prediction's tick puts in outside the player's reach (dwell-physics Players::set_collision_cells_per_tick; the cells within reach go in at once whatever this is, so the player moves the same): desktop the server's 8192 (COLLISION_CELLS_PER_TICK), phone fewer (the 8192 were 8-10 ms of a tick at CPU 6x, BUGS.md #72). `collisionAhead`: the prediction builds the terrain collision of the chunks the player is heading into before its reach gets there (dwell-physics CollisionAhead, WORK_QUEUE item 16): along the velocity `seconds` of travel (at most `maxMetres`), within the reach plus `marginMetres`, for a player moving at least `minSpeed` m/s, at most `chunksPerTick` chunks a tick by tier (desktop the server's, CollisionAhead::default). Natively flying at level 6 over the seed-0 terrain, no chunk reached unbuilt (62 were) and the worst terrain tick at the phone's 1 a tick 2.8-3.3 -> 1.7 ms (BUGS.md #72 round 7).",
   "collisionCellsPerTick": {
     "desktop": 8192,
     "phone": 1024
@@ -7,5 +7,15 @@
   "uploadBytesPerFrame": {
     "desktop": 4194304,
     "phone": 524288
+  },
+  "collisionAhead": {
+    "seconds": 1.0,
+    "maxMetres": 48,
+    "marginMetres": 1,
+    "minSpeed": 1,
+    "chunksPerTick": {
+      "desktop": 2,
+      "phone": 1
+    }
   }
 }

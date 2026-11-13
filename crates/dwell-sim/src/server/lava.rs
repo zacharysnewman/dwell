@@ -151,7 +151,7 @@ impl Server {
     /// `centre` its first vent (else its tiles' middle), `origin`, `w` and `h` the box its tiles
     /// cover now (a field grows with its flow, V2).
     pub fn lava_report(&self) -> String {
-        // Home's fields, then each other grid's (the sun's rivers, SUN_WORLD.md §6; BUGS.md #142:
+        // Home's fields, then each other grid's (the sun's rivers, SUN_WORLD.md §6; BUGS.md #143:
         // the report listed home's only, so a player by a sun river read `fields: []`).
         let home = self.lava.fields.iter().map(|p| lava_field_json(p, "home"));
         let grids = self.grids.slots.iter().flat_map(|g| {

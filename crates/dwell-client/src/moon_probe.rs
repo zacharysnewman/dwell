@@ -224,7 +224,7 @@ pub fn grid_landing_point(
 }
 
 /// Where the dev tools put a player beside a river head of grid `name` on face `f` (the bench's
-/// `sunLand` with `river`, BUGS.md #142): `up_m` over the first dry column (at least a metre over
+/// `sunLand` with `river`, BUGS.md #143): `up_m` over the first dry column (at least a metre over
 /// the lava it borders, its neighbours 2 m off not molten) 8–96 m from the river head nearest the
 /// grid's stand point, so the head's lava field (grids.json `flow`, placed within `nearM` of a
 /// player and run within lava.json `nearRadiusM`) runs beside it. `None` on a grid with no rivers

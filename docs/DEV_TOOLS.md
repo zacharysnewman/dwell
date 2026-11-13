@@ -469,7 +469,7 @@ the `goto` step.
 - `__dwell.teleport(feet)`: moves the local player's feet there, at rest (a local world, on the
   face it is on, inside the disc's rim; the local core's `teleport_checked`, the worker's `teleport`
   op, not a network message). It resolves true once moved and rejects with why it can't: a point on
-  the other face, past the rim (no world there), or the player on another grid (BUGS.md #144). The client follows: a player the server moved while the prediction waits for terrain
+  the other face, past the rim (no world there), or the player on another grid (BUGS.md #145). The client follows: a player the server moved while the prediction waits for terrain
   takes the server's place (`game.rs`), so it waits for the terrain there.
 - `__dwell.spawnHerd(kind, size?, offset?)`: a deer herd (`'deer'`) or a wolf pack (`'wolf'`) of
   `size` (5) put `offset` m (12) along +x from the local player as a far record, which the near
@@ -526,7 +526,7 @@ the descent, ⅙ g ± 10 %, the landing).
 flying, for checking what the moon draws (owner, 2026-11-13: "We should just teleport to the moon to see if ground
 draws, flying there is an inefficient test of drawing"): the worker's `moonLand` op (`LocalCore::moon_land`) puts
 the player 1.5 m over the moon's spawn on face `face`, moving with it, carried onto the moon at once
-(`Server::carry_onto_grid`: the tick's capture takes only fliers, BUGS.md #143); flight off, it waits until the player stands there with the chunk under the feet held. `flyTo('home')` comes back: the way home is kept before each trip starts (`tripStartOf`, home ground only), so a
+(`Server::carry_onto_grid`: the tick's capture takes only fliers, BUGS.md #144); flight off, it waits until the player stands there with the chunk under the feet held. `flyTo('home')` comes back: the way home is kept before each trip starts (`tripStartOf`, home ground only), so a
 trip that fails still leaves it. The bench step
 `moonLand {face?, maxS?, waitS?}` then waits `waitS` (3) s and prints the frame's draw calls, triangles and mesh
 bytes (saved in `trips`); `npm run bench -- --warm moon-draw` lands on face A, shoots `moon-a-across` and
@@ -535,7 +535,7 @@ calls, not tens (BUGS.md #123: 16–17).
 
 **`__dwell.sunLand({face?, maxS?, river?})`** is the same onto the sun (`LocalCore::grid_land("dwell:sun", …)`: 1.5 m over
 its stand point, dry crust away from lava; with `river: true`, `grid_land_by_river`: over dry ground 8–96 m from the
-river head nearest the stand point, where the head's lava field is placed and runs, BUGS.md #142 — the stand point is
+river head nearest the stand point, where the head's lava field is placed and runs, BUGS.md #143 — the stand point is
 out of every head's reach on some seeds, and a field runs only within lava.json `nearRadiusM`, 96 m, of a player), with `__dwell.sun()` its report (the moon report's fields for
 `dwell:sun`); the worker also takes `sunApproach` [margin, face]. `npm run bench -- --warm sun-draw` lands on face A
 and shoots `sun-a-across` and `sun-a-down` with the frame's draw calls and triangles.

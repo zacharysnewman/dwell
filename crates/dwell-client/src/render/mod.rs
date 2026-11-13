@@ -91,7 +91,7 @@ const TERRAIN_TOP_M: f64 = 1024.0;
 /// `nearest_piece_m` is the distance from the eye to the nearest shown piece's bounding sphere
 /// (∞ with none): the plane stays short of it too. The moon's near mesh is a piece (M-5): from home
 /// ~600 km up its orbit, near it, the plane sat at ~480 km by the altitude alone and clipped the
-/// whole mesh, its far disc already off, so nothing drew (BUGS.md #145).
+/// whole mesh, its far disc already off, so nothing drew (BUGS.md #146).
 pub fn far_pass_near(eye_y: f64, drawn_top: f64, nearest_piece_m: f64) -> f64 {
     let altitude = eye_y - TERRAIN_TOP_M.max(drawn_top);
     (NEAR_SPLIT * 0.95).max((altitude * 0.8).min(nearest_piece_m * 0.8))
@@ -6643,6 +6643,9 @@ impl crate::game::Scene for Renderer {
     fn collision_cells_per_tick(&self) -> usize {
         streaming::StreamingBudgets::get().collision_cells(self.phone)
     }
+    fn collision_ahead(&self) -> dwell_physics::terrain::CollisionAhead {
+        streaming::StreamingBudgets::get().collision_ahead(self.phone)
+    }
     fn draws_heightfield(&self) -> bool {
         heightfield_drawn(self.water().tier().heightfield, self.heightfield_override)
     }
@@ -6788,7 +6791,7 @@ mod tests {
     #[test]
     fn the_far_pass_keeps_the_moons_near_mesh_from_home_high_up() {
         // face-a-only: `far_pass_near` takes face-local heights and a distance, no face.
-        // BUGS.md #145: from home's grid ~600 km up the moon's orbit, 20 km from its near mesh
+        // BUGS.md #146: from home's grid ~600 km up the moon's orbit, 20 km from its near mesh
         // (a piece, its far disc off inside `farM`), the far pass's near plane sat at
         // 0.8 × (600 km − 1024 m) ≈ 479 km and clipped the whole mesh: the moon drew nothing.
         let eye_y = 600_000.0;

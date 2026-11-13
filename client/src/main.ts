@@ -330,7 +330,7 @@ interface DwellDebug {
   goto(query: string, options?: GotoOptions): Promise<GotoResult>;
   /**
    * Moves the local player's feet there (a local world, on its face, inside the disc's rim):
-   * resolves true once the local server has, rejects with why it can't (BUGS.md #144: a point
+   * resolves true once the local server has, rejects with why it can't (BUGS.md #145: a point
    * past the rim failed silently).
    */
   teleport(feet: Vec3): Promise<boolean>;
@@ -1474,7 +1474,7 @@ async function start(): Promise<App | null> {
     teleport: (feet) => teleportAnswered(app, feet),
     moon: () => moonOf(app),
     // The way home is kept before each trip starts, so one that fails still leaves it (BUGS.md
-    // #143); a spot off home ground (in space) is never one.
+    // #144); a spot off home ground (in space) is never one.
     flyTo: async (to, options) => {
       const host = tripHost(app);
       if (to === 'moon') {

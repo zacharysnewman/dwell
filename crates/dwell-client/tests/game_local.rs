@@ -4826,7 +4826,7 @@ dwell_world::both_faces!(
 );
 
 dwell_world::both_faces!(
-    /// BUGS.md #143: from a fresh spawn (never flown) after the spyglass zoomed in and out, the
+    /// BUGS.md #144: from a fresh spawn (never flown) after the spyglass zoomed in and out, the
     /// dev teleport onto the moon (`moon_land`) put the player inside the capture sphere but the
     /// server captures only fliers, so it stayed on the home grid out in space, its ground never
     /// held (the browser's `moonLand` timed out "grid home, chunk held false"). The teleport
@@ -4881,7 +4881,7 @@ dwell_world::both_faces!(
 );
 
 dwell_world::both_faces!(
-    /// BUGS.md #142: on the sun, `__dwell.lava('report')` read `fields: []` and its lava looked
+    /// BUGS.md #143: on the sun, `__dwell.lava('report')` read `fields: []` and its lava looked
     /// still. The report listed home's fields only, and the sun's stand point (`sunLand`) is out
     /// of every river head's reach (390 m from the nearest on seed 7, `flow.nearM` 384 m). Landed
     /// beside a river head (`sunLand` with `river`), the head's field is placed and runs: the
@@ -4938,7 +4938,7 @@ dwell_world::both_faces!(
 #[test]
 fn a_teleport_past_the_rim_fails_with_a_message() {
     // face-a-only: the rim is the same on both faces; the face check is the other refusal.
-    // BUGS.md #144: the dev tools' teleport took a point far outside the disc, the player left
+    // BUGS.md #145: the dev tools' teleport took a point far outside the disc, the player left
     // past the rim where no world streams (server and client stood on different ground), and
     // nothing said why. Now refused with a message, the player left where it was; inside the rim
     // it moves as before.
