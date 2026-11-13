@@ -1932,7 +1932,7 @@ impl Server {
             return;
         }
         let s = self.sessions.get_mut(&id).expect("session");
-        if s.handle.is_none() || amount <= 0 {
+        if (s.handle.is_none() && s.away.is_none()) || amount <= 0 {
             return;
         }
         s.health = (s.health - amount).max(0);
@@ -1951,20 +1951,36 @@ impl Server {
     }
 
     fn kill(&mut self, id: SessionId, cause: DamageCause) {
-        let Some(h) = self.sessions[&id].handle else {
-            return;
+        // On another grid (the sun's lava, SUN_WORLD.md §6): out of its space, the inventory kept
+        // (items aren't on other grids yet), up again at the world's spawn.
+        let (death, away) = match (self.sessions[&id].handle, self.sessions[&id].away) {
+            (Some(h), _) => {
+                let p = self.players.position(&self.physics, h);
+                let death = [p.x, self.feet_y(h), p.z];
+                self.players.despawn(&mut self.physics, h);
+                (death, false)
+            }
+            (None, Some(_)) => match self.remove_away(id) {
+                Some(d) => (d, true),
+                None => return,
+            },
+            _ => return,
         };
-        let p = self.players.position(&self.physics, h);
-        let death = [p.x, self.feet_y(h), p.z];
-        self.players.despawn(&mut self.physics, h);
         let respawn_tick = self.tick + (pc::RESPAWN_SECONDS as u32) * SIM_HZ;
-        let respawn = self.respawn_after_death(self.sessions[&id].player_id, death);
+        let pid = self.sessions[&id].player_id;
+        let respawn = if away {
+            self.respawn_feet(pid)
+        } else {
+            self.respawn_after_death(pid, death)
+        };
         let half = f64::from(self.config.player_config.half_height(false));
         let preload = self
             .config
             .respawn_preload_radius_chunks
             .map(|_| body_centre_chunk(respawn, half));
-        self.drop_inventory(id, death);
+        if !away {
+            self.drop_inventory(id, death);
+        }
         let s = self.sessions.get_mut(&id).expect("session");
         s.death_position = death;
         s.handle = None;
@@ -2000,6 +2016,16 @@ impl Server {
         }
         self.drown(id);
         self.burn(id);
+    }
+
+    /// After the other grids' step: an away player burns in its grid's lava (SUN_WORLD.md §6, the
+    /// same `burn` rules as home's).
+    fn after_away_tick(&mut self, id: SessionId) {
+        let Some(a) = self.sessions[&id].away else {
+            return;
+        };
+        let in_lava = self.away_hot_fluid(a);
+        self.burn_by(id, in_lava);
     }
 
     /// Advances the simulation by one 1/SIM_HZ step.
@@ -2152,6 +2178,11 @@ impl Server {
         self.physics.step(1.0 / f64::from(SIM_HZ));
         // The other grids' spaces, their players and physics.
         self.grids.step(1.0 / f64::from(SIM_HZ));
+        for &id in &ids {
+            if self.sessions.get(&id).is_some_and(Session::joined) {
+                self.after_away_tick(id);
+            }
+        }
         self.phase_ms[6] += watch.lap_ms();
         self.rejoin_apart();
         self.tick += 1;
@@ -2160,6 +2191,7 @@ impl Server {
         self.flow_water();
         // Lava flows, cools and quenches (docs/proposals/VOLCANOES.md §6).
         self.flow_lava();
+        self.flow_grid_lava();
         self.send_lava_steam();
         // Trees grow by the world's days (ADR 0079 S3).
         self.grow_trees();
