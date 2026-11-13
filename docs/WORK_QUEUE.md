@@ -1361,6 +1361,25 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    green. Left: the in-game look from high up at night (a local check).
 
    Owner, 2026-11-12, on the 48 m hand-over side-by-sides: **"Distant trees looks solid handover."**
+   **The rest, round 1 (2026-11-13, cloud, `claude/impostors-rest`; brief: felled trees out, trunks handed over,
+   AO + mips in the bake, the phone atlas by data, I-4, I-5 shadows last; any visible change opt-in data until the
+   owner approves it from same-spot before/after shots):** **felled trees left out** — each far tree carries its
+   stem (`Planter::stem`: the trunk column's bottom cell and up to 16 solid cells above), and the game drops a tree
+   whose held stem has air in it, remembers it after its chunk unloads, and re-filters a tile when its chunks arrive
+   or change (`impostors::standing_trees`; tests `a_far_trees_stem_is_its_trunk_and_air_in_it_fells_it`, both faces,
+   and `a_felled_tree_leaves_its_tile_and_stays_out_after_its_chunk_unloads`). Not seen: a tree felled in a chunk
+   the client never held (past the loaded chunks the generator's tree is drawn). **AO and mips baked, opt-in
+   (off):** `impostors.json` `ao.strength` (0 off; try 0.5) and `mips` (false); tests on the bake (occlusion deep in a
+   crown, coverage unchanged, a mip halves each view alone keeping coverage and palette colours) and on the upload's
+   chain. **For the orchestrator (local GPU):** same-spot before/after at `forest:edge` and 80/150 m with
+   `ao.strength` 0.5 and `mips` true (each alone and both); expected: far crowns darker inside (closer to the near
+   crowns' shade at 48 m), less sparkle and noise past ~120 m. **Phone atlas by data:** already `viewPx.phone`
+   (32 px); the pick is now `impostors::tier_for`, with a test that the phone's atlas is a quarter of the
+   desktop's. **Not done:** the trunks' hand-over (logs are in the opaque mesh; handing them over means moving tree
+   logs into the cutout mesh with the leaves' fade marker, and the mesher can't tell a tree's log from a player's
+   log wall, which would vanish past 48 m with no impostor: needs an owner call); I-4 (`lod_trees.rs` still draws
+   the far trees until the impostors are ready, BUGS.md #106's gate, and for `?impostors=0` / the bench's
+   `impostors-off`); I-5 shadows (GPU work, local).
 32. **A tall dense forest for performance reference** (owner 2026-11-12: "We should have a tall dense forest
    biome/climate for performance reference on trees."). A biome preset (tall, closely spaced mature trees — an
    old-growth temperate rainforest of tall pines and broadleaf, thick undergrowth) placed by climate (cool and very
