@@ -484,10 +484,10 @@ the moon's unedited chunks never evicted, tier 1 bodies in the moon's space (non
     mesh, not the LOD tree per grid, and a switch at `farM`, not a crossfade (the disc and the mesh differ
     in shading at the switch).
   - **The roll upright at a crossing**: the view eases from the one drawn before upright onto the new face
-    over `motion.json` `gridCrossingRollS` (0.6 s; BUGS.md #137).
+    over `motion.json` `gridCrossingRollS` (0.6 s; BUGS.md #138).
   - **The maps on the moon**: hidden off home with a label ("No map on the moon", named by the grid): the
     simpler of the two (the moon's own map would need its generator in the map's workers and tile store).
-  - **Landing under the ground** (BUGS.md #138): the report's `groundM`, not the landing: it read the smooth
+  - **Landing under the ground** (BUGS.md #139): the report's `groundM`, not the landing: it read the smooth
     height, not the cells' top.
 - **Not yet:** the browser checks (`moon-draw`, `moon-trip`, on a GPU, local); home seen from the moon (M-6's
   drawing: its bake as a far body or a mesh, from the world map the client does not hold on the main thread);

@@ -16,7 +16,7 @@
 //! phase's direction of travel, the peak speed and the contact; `--csv` prints every sample in
 //! every space instead; `--svg` writes the views' paths as a panel sheet.
 
-use dwell_client::clip_probe::{Fit, Point, Probe, Target, VIEWS, csv, fit, probe, svg, table};
+use dwell_client::clip_probe::{Fit, Point, Probe, Target, VIEWS, csv, fit_at, probe, svg, table};
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -152,7 +152,7 @@ fn run(args: &[String]) -> Result<(), String> {
             }
         };
         for (t, w) in fits {
-            let f = fit(&role, p.item, body, w, from);
+            let f = fit_at(&role, p.item, body, w, from, t);
             println!("{}", f.json(t));
             eprintln!(
                 "  t {t}: grip {:+.2} {:+.2} {:+.2} (want {:?}), head {:+.2} {:+.2} {:+.2} (want {:?}), blade {:+.2} {:+.2} {:+.2}",

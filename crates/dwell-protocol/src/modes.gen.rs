@@ -10,12 +10,12 @@ pub static MODES: &[GameMode] = &[
         name: "creative",
         label: "Creative",
         experimental: false,
-        abilities: Ability::Flight.bit() | Ability::Brushes.bit() | Ability::UnlimitedBlocks.bit() | Ability::Map.bit() | Ability::MapRevealed.bit() | Ability::InstantBreaks.bit() | Ability::Structures.bit() | Ability::TheaterViewpoint.bit(),
+        abilities: Ability::Flight.bit() | Ability::Brushes.bit() | Ability::UnlimitedBlocks.bit() | Ability::Map.bit() | Ability::MapRevealed.bit() | Ability::InstantBreaks.bit() | Ability::Structures.bit() | Ability::TheaterViewpoint.bit() | Ability::Blueprints.bit(),
     },
     GameMode {
         name: "adventure",
         label: "Adventure",
         experimental: true,
-        abilities: Ability::Damage.bit() | Ability::Map.bit() | Ability::Stamina.bit() | Ability::Oxygen.bit(),
+        abilities: Ability::Damage.bit() | Ability::Map.bit() | Ability::Stamina.bit() | Ability::Oxygen.bit() | Ability::Blueprints.bit(),
     },
 ];

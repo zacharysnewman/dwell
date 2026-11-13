@@ -754,7 +754,7 @@ fn a_hard_fall_damages_a_lethal_one_kills_and_every_client_sees_the_respawn() {
         assert_eq!(sim.clients[c].count(PlayerEventKind::Death), 1);
     }
     assert_ne!(sim.clients[b].remotes[&pa].flags & player_flags::DEAD, 0);
-    sim.step(players::RESPAWN_SECONDS as i32 * SIM_HZ as i32 + 30);
+    sim.step(dwell_sim::server::defeat_ticks(dwell_protocol::defeat::PLAYER) as i32 + 30);
     assert_eq!(sim.server.health_of(pa), players::MAX_HEALTH as i32);
     assert!(sim.clients[a].predictor.active());
     for c in [a, b] {

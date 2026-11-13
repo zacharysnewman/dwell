@@ -50,10 +50,14 @@ pub enum Ability {
     /// and the water there as near a body. Without it the server ignores a client's
     /// `TheaterViewpoint` and the camera sees only what is loaded near the player.
     TheaterViewpoint,
+    /// Players place and remove blueprints (WORK_QUEUE item 56, docs/BLUEPRINTS.md): a structure
+    /// placed as ghost blocks everyone in the world sees and builds. Without it the server refuses
+    /// a client's `Blueprints` `Place` and `Remove` (builders still build the world's own).
+    Blueprints,
 }
 
 impl Ability {
-    pub const ALL: [Ability; 11] = [
+    pub const ALL: [Ability; 12] = [
         Ability::Damage,
         Ability::Flight,
         Ability::Brushes,
@@ -65,6 +69,7 @@ impl Ability {
         Ability::InstantBreaks,
         Ability::Structures,
         Ability::TheaterViewpoint,
+        Ability::Blueprints,
     ];
     /// The data's name (`shared/modes/gen.mjs` `ABILITIES`).
     pub const fn name(self) -> &'static str {
@@ -80,6 +85,7 @@ impl Ability {
             Ability::InstantBreaks => "instantBreaks",
             Ability::Structures => "structures",
             Ability::TheaterViewpoint => "theaterViewpoint",
+            Ability::Blueprints => "blueprints",
         }
     }
     pub const fn bit(self) -> u32 {

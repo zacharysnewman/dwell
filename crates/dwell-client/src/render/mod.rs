@@ -504,8 +504,6 @@ pub struct PlayerView {
     pub face: FaceFrame,
     /// Degrees; 0 = +Z.
     pub yaw: f64,
-    /// Lying on the ground (cosmetic death pose).
-    pub dead: bool,
     /// The look it wears (a variant of the player character's data; `DEFAULT_LOOK` for everyone
     /// until looks are chosen, CHARACTERS.md §9.4).
     pub look: &'static str,
@@ -4635,7 +4633,6 @@ impl Renderer {
                 feet: v.feet,
                 yaw: v.yaw,
                 face: v.face,
-                dead: v.dead,
                 look: v.look,
                 pose: v.pose,
                 held: v.held,
@@ -8205,22 +8202,10 @@ mod tests {
         // Characters: a body holding the brush, one on face B holding a block, a dead one, and
         // your arms (their own pass).
         let grass = dwell_blocks::require("dwell:grass");
-        for (id, feet, face, dead, held) in [
-            (
-                1,
-                [16.0, 1.0, 20.0],
-                FaceFrame::A,
-                false,
-                Held::Brush(grass),
-            ),
-            (
-                2,
-                [18.0, -3.0, 20.0],
-                FaceFrame::B,
-                false,
-                Held::Block(grass),
-            ),
-            (3, [14.0, 1.0, 20.0], FaceFrame::A, true, Held::Empty),
+        for (id, feet, face, held) in [
+            (1, [16.0, 1.0, 20.0], FaceFrame::A, Held::Brush(grass)),
+            (2, [18.0, -3.0, 20.0], FaceFrame::B, Held::Block(grass)),
+            (3, [14.0, 1.0, 20.0], FaceFrame::A, Held::Empty),
         ] {
             r.set_player(
                 id,
@@ -8228,7 +8213,6 @@ mod tests {
                     feet,
                     face,
                     yaw: 30.0,
-                    dead,
                     look: dwell_characters::DEFAULT_LOOK,
                     pose: Default::default(),
                     role: "idle",

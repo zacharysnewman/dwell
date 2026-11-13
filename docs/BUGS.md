@@ -558,7 +558,7 @@ space at every hour, the stars out, the sun white, no fog (`DayState::airless`, 
 `flying_up_from_home_the_day_layer_fades_to_space`, `homes_day_and_night_look_as_before` (both faces). Left: the
 ground's ambient on the moon is still home's hemisphere light, and its sunlight follows home's keyframes.
 
-### 138. A moon landing read 0.11–0.24 m under the ground (fixed 2026-11-13)
+### 139. A moon landing read 0.11–0.24 m under the ground (fixed 2026-11-13)
 
 Owner's brief, 2026-11-13: "Landing sits slightly below the ground (groundM −0.11 m face A, −0.24 m face B after
 landing): find why and fix." Cause: the report, not the landing. `__dwell.moon()`'s `groundM` measured the feet
@@ -568,7 +568,7 @@ against the moon's smooth generated height, but the ground a player stands on is
 `standing_on_the_moons_ground_reads_zero` (both faces; red before: 0.12 m off), `game_local`
 `the_moon_report_steers_a_flight_into_its_capture` (the landing stands within 5 cm of it, both faces).
 
-### 137. The view turned at once at a crossing onto the moon (fixed 2026-11-13)
+### 138. The view turned at once at a crossing onto the moon (fixed 2026-11-13)
 
 At a capture or release the look kept its world direction but the view's up jumped to the new grid's face up in
 one frame. Now it eases upright from the view drawn before over `shared/look/motion.json` `gridCrossingRollS`
@@ -577,6 +577,22 @@ which before did not carry the look across at all. Tests: `grid_view`
 `the_crossing_roll_draws_the_view_before_then_eases_to_the_new_up`, `face_flip`
 `a_grid_crossing_eases_the_view_upright_over_the_data` (both faces), `game_local`'s flight to the moon (a roll at
 the capture, none after; red before: no roll at all).
+
+### 137. Opening the inventory opened the game menu on top of it (fixed after 0.60.7)
+
+Owner, 2026-11-13: "Opening your inventory currently opens the menu too, on top of your inventory. Which isn't correct.
+Should just open your inventory and free your mouse. Closing it, should immediately lock your mouse again, same for menuz"
+
+Cause: opening the inventory (E, the controller's inventory button, the touch bag) released the pointer lock, and the
+game menu opened on any lock loss (`enableGameMenu`'s `pointerlockchange`), as for the browser's Esc. Closing the
+inventory never asked for the lock again, and the big map (M) had the same menu-on-open path. Fix: one owner of which
+panel is open, `client/src/ui/panels.ts` (`Panels`: playing, the inventory, the game menu, the big map; one at a time).
+Opening a panel frees the mouse and a lock it freed opens nothing; a lock lost while playing (Esc, alt-tab) still opens
+the menu. Closing a panel (its key, Esc, Resume, Back, the backdrop, the controller) asks for the lock from the closing
+gesture; a request the browser refuses (Esc grants no user activation, the cooldown after an Esc) is retried on the next
+click on the game, without opening the menu. Esc goes through the owner too (closes the open panel, else opens the
+menu). Test: `client/src/ui/panels.test.ts` (fake document and pointer lock), red on the reported case (3 tests: the
+inventory and the big map opened the menu) with the old rule (any lock loss opens the menu), green with the fix.
 
 ### 136. Teleported onto the moon, the ground under the player never arrives (fixed after 0.58.9)
 

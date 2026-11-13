@@ -1016,8 +1016,8 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    −0.11 m face A, −0.24 m face B after landing): find why and fix."):** built — the sky as one layered model (space
    the base, day a layer of a grid's air, `grids.json` `atmosphere`; BUGS.md #126), M-5 as a coarse surface mesh
    inside `farM` and under the chunks on the moon (`grids.json` `nearMesh`, `grid_bodies.rs`), the view easing
-   upright over `motion.json` `gridCrossingRollS` (#137), the maps hidden off home with a label (the simpler),
-   `groundM` reading the cells' top (#138: the report, not the landing). **Left:** the browser checks on a GPU
+   upright over `motion.json` `gridCrossingRollS` (#138), the maps hidden off home with a label (the simpler),
+   `groundM` reading the cells' top (#139: the report, not the landing). **Left:** the browser checks on a GPU
    (local), home seen from the moon (M-6's drawing), the moon's ground light (MOON_WORLD.md §7.3).
    Owner, 2026-11-13: **"Sun and moon should be space, the same as night sky. Could perhaps just make space a more general skybox and have 'day' be a closer atmosphere skybox so it can fade out as you leave earth."** So the sky is one layered model: space (the night sky's stars and space colour) is the base skybox everywhere, home too; day is an atmosphere layer over it, belonging to a world with an atmosphere (home's blue day sky, sunsets, haze), its strength fading with altitude (item 28's thinning) and with day and night; each grid declares its atmosphere as data (home has one; the moon and the sun none), so on the moon or the sun you see space as the night sky, with the sun, home and the moon where they are; one system, no grid-specific branches in the shader. Tests on both faces: on the moon or the sun day colours never show; flying up from home the day layer fades to space; home's day and night look as before.
    **Left:** the browser flight (local, GPU), the roll upright at a crossing, M-5 (the moon's LOD), M-8. Earlier
@@ -2029,6 +2029,24 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
 
 ## Smaller items, after the queue
 
+- **The inventory opened the game menu too (BUGS.md #137, 2026-11-13, `claude/inventory-lock`), done.** Owner: "Opening
+  your inventory currently opens the menu too, on top of your inventory. Which isn't correct. Should just open your
+  inventory and free your mouse. Closing it, should immediately lock your mouse again, same for menuz". One owner of
+  which panel is open (`client/src/ui/panels.ts`: playing, inventory, menu, big map) holds the pointer lock with it:
+  opening frees the mouse and opens nothing else, closing (key, Esc, Resume, Back, controller) re-locks from that
+  gesture, a refused re-lock waits for the next click; a lock the browser takes (Esc, alt-tab) still opens the menu.
+  Next (local): a check in Chrome on the GPU (E, Esc, Resume, M).
+
+- **Softer shore foam edge (2026-11-13, `claude/foam-soft`), done.** Owner: "The water foam edge is a little too hard
+  now, the softness of the old version was better and the consistency of the new one along the edge is better. Combine
+  those concepts and share screenshots when you've got it." The hard edge came from 0.52.6's solid contact line (#502:
+  a 0.06 m line ending in a 3 cm step) and its flat-topped bands; the old rim (before 0.52.6) was a ~0.2 m soft fade
+  but multiplied by noise, so it broke into blotches. Now the contact line keeps a thin solid core (`shore.lineM` 0.02)
+  and feathers into the water over `shore.featherM` (0.2 m), with no noise cutting it, and the bands' sides soften by
+  `shore.bandSoftness` (0.75) (`shared/look/waterflow.json`, WATER_RENDERING.md §20). The mirror
+  `dwell_look::waterflow::shore_foam` pins the profile: no step over 0.08 between samples 5 mm apart (0.52.6's
+  stepped 0.28) and never under half strength along the edge's first 0.1 m. Outstanding: the owner's look.
+
 - **The full-sky flood test on main (2026-11-13, `claude/flood-sky-test`), done.** Owner: "`cargo test -p dwell-mesh --lib
   flood_tests::open_terrain_takes_the_full_sky` fails on main (face a: 3 dark vertices) … find which merge broke it, decide
   whether the 3 dark vertices are a real lighting bug or a fixture made stale by an intended change. Check face b too."
@@ -2233,6 +2251,15 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    radius, and marks; by facet, every level; `node --test shared/models/decor.test.mjs`), not yet applied to the
    Peasant. **Left:** eyes as geometry; the hat band and a waist band wired into models.json `decor` once the eyes
    land, with renders for the owner.
+   **The waist ring** (owner, 2026-11-13): **"There's a ring that goes around the waist with alternating triangles
+   that already looked pretty good they were just inconsistently colored."**
+   **Built (branch `claude/outfit-2`, 2026-11-13):** the eyes as geometry (decor `piece`: a dark quad and a glint a
+   side on the head joint, added to every detail level, the part map listing them with no part); the hat's crown
+   band (the hat part inside r 0.19 m, never the brim; bark and wool_red strictly alternating); the waist ring (the
+   outermost facets at the belt's height, no spikes, leather and wool_green strictly alternating: the triangles
+   the paint vote coloured wood, canvas, brass and leaf). CHARACTERS.md §11.14. Renders before/after at 60 % and
+   100 % went to the owner. **Left:** the owner's look at the colours (data in models.json `decor`); at 35 % and
+   20 % the waist is long triangles, so the ring is a few facets or none.
 
 44. **Trees on slopes hang over the edge** (owner 2026-11-12: **"I notice a lot of trees on slopes are hanging out over
    the edge. Perhaps trees should always have flats under them? Don't limit trees to flats, since they might not
@@ -2428,6 +2455,41 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    Owner, 2026-11-13 (with the 0.59 terrain batch): **"Notched ramps seems fine. I've saved the water video, looks good.
    Good to move on to the next."** The shrine gaps branch (`claude/shrine-gaps`) is merged into the 0.59 batch (branch
    `claude/terrain-059-batch-v81i64`), so its shrine change ships on the new line.
+
+55. **The defeat kneel and the stand: humans don't die** (owner 2026-11-13: **"Can you setup a kneeling animation for
+   my human characters. Head down, hand on sword hilt, sword in the ground. And a stand too."** / **"This is their
+   'defeat' animation. Humans won't die in this game (general design rule)."**). Answers (2026-11-13): after the kneel,
+   **respawn at the nearest resurrection shrine** (the stand animation plays there); used by **players and
+   NPCs/villagers**; with **no sword in hand, kneel without one** (the hand resting on the knee). Brief: two clips as
+   data, `kneel` (one knee down, head bowed, a hand on the hilt of the sword planted point-down before them; unarmed
+   the hand on the raised knee) and `stand` (rising from the kneel to idle), fitted with `clip_probe`; defeat replaces
+   death for humans everywhere: at 0 health a player or NPC kneels (input locked, the camera pulled out to third
+   person), stays N s (data), fades and stands up at the nearest shrine to where they fell, on that face, playing
+   `stand`; others see both; the wire change additive; data for the kneel's time, the fade, the camera and
+   per-character overrides; tests by data on both faces. Design rule recorded in docs/CHARACTERS.md §1a. Built on
+   branch `claude/defeat-kneel` (docs/CHARACTERS.md §11.13, docs/SHRINES.md §5).
+
+56. **Blueprints and builder NPCs** (owner 2026-11-13: **"I also want to add a new version of the human NPC, same looks, no
+   sword capable of building blueprints like the ones you can save right now. In adventure you can place "blueprints" but
+   not as actual blocks as an entity that shows ghost blocks. When you hold build, it auto places only within the correct
+   placement, only the correct blocks where you're aiming like our drag building today. If you don't have a block, it
+   won't place it, it will show blocks you don't have as red. Should also show n/n logs, etc all required blocks on hover
+   in a compact UI. NPCs will use this to build towns and cities from blueprints I provide. Feel free to add simple test
+   ones."**). Answers (2026-11-13): builder NPCs have **unlimited blocks for now** (gathering later); towns at **worldgen
+   sites for now** (**"Eventually both, but just world gen sites for now"** — player-placed later); a placed blueprint is
+   **visible to and buildable by everyone in the world**, saved with it. Phases: B1 blueprint entities (a saved structure
+   placed as a ghost entity: position, face, turn; saved with the world; synced behind a capability), B2 building from one
+   (held Place fills only ghost cells with the ghost's block, missing blocks red, a have/need panel on hover), B3 builder
+   NPCs (the villager without a sword, data-defined, steady pace, unlimited blocks, foundation up), B4 town sites from
+   worldgen (deterministic per face, a town plan of blueprints, builders spawning; a new compatibility line). Test
+   blueprints as structure data: a hut, a wall segment, a well, a watchtower. Design and status in docs/BLUEPRINTS.md.
+   **B1–B3 built (2026-11-13, cloud, branch `claude/builder-npcs-blueprints-rs25zj`):** blueprints as world entities
+   (`blueprints.world`, the world's `blueprints` table, the `blueprints` mode ability in creative and adventure),
+   placed from the Structures page (catalog or library, a turn) at the crosshair; held Place into one fills only its
+   ghost cells with their block from what the player has (red ghosts where not), a compact have/need panel; a
+   completed blueprint disappears (the blocks are the record). Builders (`dwell:builder`) come to a blueprint with a
+   player near and build it foundation up, unlimited blocks, from outside its box, skipping occupied cells. Left:
+   B4 (towns at worldgen sites, a new compatibility line), a placing preview ghost; BLUEPRINTS.md §7.
 
 ## Future (needs owner answers)
 

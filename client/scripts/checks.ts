@@ -61,6 +61,7 @@ export const AREAS: Record<string, Area> = {
       'shared/modes/gen.mjs',
       'shared/tools/gen.mjs',
       'shared/vitals/gen.mjs',
+      'shared/defeat/gen.mjs',
       'shared/protocol/make_vectors.py',
       'shared/master/make_vectors.mjs',
     ],
@@ -70,6 +71,7 @@ export const AREAS: Record<string, Area> = {
       'shared/modes/gen.test.mjs',
       'shared/tools/gen.test.mjs',
       'shared/vitals/gen.test.mjs',
+      'shared/defeat/gen.test.mjs',
     ],
     crates: ['dwell-protocol', 'dwell-net'],
     vitest: ['src/net/', 'src/ui/modes.test.ts'],
@@ -104,6 +106,7 @@ export const AREAS: Record<string, Area> = {
       'src/ui/creativeInventory.test.ts',
       'src/ui/hotbar.test.ts',
       'src/ui/brush',
+      'src/ui/blueprints.test.ts',
     ],
   },
   worldgen: {
@@ -175,6 +178,7 @@ export const AREAS: Record<string, Area> = {
     generators: [
       'shared/physics/gen.mjs',
       'shared/creatures/gen.mjs',
+      'shared/blueprints/gen.mjs',
       'shared/explosives/gen.mjs',
       'shared/fluids/gen.mjs',
       'shared/fluids/falls.mjs',
@@ -184,6 +188,7 @@ export const AREAS: Record<string, Area> = {
     nodeTests: [
       'shared/physics/gen.test.mjs',
       'shared/creatures/gen.test.mjs',
+      'shared/blueprints/gen.test.mjs',
       'shared/explosives/gen.test.mjs',
       'shared/fluids/gen.test.mjs',
       'shared/fluids/falls.test.mjs',
