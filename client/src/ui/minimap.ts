@@ -24,7 +24,7 @@ import {
 import { GAMEPAD } from '../input/gamepad.gen';
 import { MAP } from './map.gen';
 import { compatibilityLine } from '../version/semver';
-import { World } from '../protocol/constants.gen';
+import { CHUNK_SIZE, World } from '../protocol/constants.gen';
 import { ExploredChanges, type ExploredStore } from './exploredStore';
 import {
   MapFilters,
@@ -48,6 +48,7 @@ import {
   iconSvg,
   markersInRange,
   markerGroundY,
+  regroundMarkers,
   markerRows,
   directionWord,
   pickMarker,
@@ -1439,6 +1440,10 @@ export class MapUi {
   private wasDead = false;
   /** When the seen portals were last read (ms). */
   private portalsAt = -Infinity;
+  /** Markers placed this session over unloaded ground, put back on it when it loads (#153). */
+  private readonly provisional = new Set<number>();
+  /** Whether the last `placeY` read the loaded ground (else the height is provisional). */
+  private placedSettled = true;
   /** The big map's markers list (docs/MAP_MARKERS.md), its button and its rows. */
   private readonly listButton: HTMLButtonElement;
   private readonly listPanel: HTMLDivElement;
@@ -2174,9 +2179,24 @@ export class MapUi {
     if (this.client.seenPortals && now - this.portalsAt >= 500) {
       this.portalsAt = now;
       for (const at of seenPortalSpots(this.client.seenPortals(), (f, px, pz) =>
-        this.placeY(f, px, pz),
+        this.mapGroundY(f, px, pz),
       ))
-        this.markers.noteAuto('portal', at);
+        this.markers.noteAuto('portal', at, at.settled);
+      // Markers placed over unloaded ground (or saved at a wrong height) put back on it once its
+      // column loads (BUGS.md #153).
+      const ground = this.client.markerGround?.bind(this.client);
+      if (ground) {
+        // Only those within the render radius, where a column can be loaded.
+        const reach = World.renderRadiusChunks * CHUNK_SIZE;
+        const near = this.markers.all.filter((m) => Math.hypot(m.x - x, m.z - z) <= reach);
+        for (const [id, gy] of regroundMarkers(near, face, this.provisional, (mx, mz) =>
+          ground(face, mx, mz),
+        )) {
+          this.provisional.delete(id);
+          const m = this.markers.get(id);
+          if (m && Math.abs(m.y - gy) >= 0.01) this.markers.move(id, { ...m, y: gy });
+        }
+      }
     }
     this.drawWaypoints(face, x, z);
   }
@@ -2251,6 +2271,18 @@ export class MapUi {
    */
   private placeY(face: number, x: number, z: number): number {
     const [pf = 0, , py = 0] = Array.from(this.client.markerPose?.() ?? []);
+    const loaded = this.client.markerGround?.(face, x, z);
+    this.placedSettled = typeof loaded === 'number' && Number.isFinite(loaded);
+    return markerGroundY(loaded, this.mapCode(face, x, z), pf === face ? py : 0);
+  }
+
+  /** The map's height for (x, z) on `face` alone (an auto marker's guess), null where unknown. */
+  private mapGroundY(face: number, x: number, z: number): number | null {
+    return markerGroundY(undefined, this.mapCode(face, x, z), null);
+  }
+
+  /** The map's height code for (x, z) on `face`: the finest level's, else the explored cell's. */
+  private mapCode(face: number, x: number, z: number): number {
     const revealed = this.client.mapRevealed();
     let code = NO_HEIGHT;
     for (const cellM of [levelCellM(0), MAP.explored.cellM]) {
@@ -2267,7 +2299,14 @@ export class MapUi {
         break;
       }
     }
-    return markerGroundY(this.client.markerGround?.(face, x, z), code, pf === face ? py : 0);
+    return code;
+  }
+
+  /** A marker placed or moved at `placeY`'s height: provisional while its column wasn't loaded. */
+  private notePlaced(id: number | null | undefined): void {
+    if (id === null || id === undefined) return;
+    if (this.placedSettled) this.provisional.delete(id);
+    else this.provisional.add(id);
   }
 
   /** The pending pin: the spot the picker is open to place a marker at, in the draft's look. */
@@ -2294,7 +2333,8 @@ export class MapUi {
     this.picker.openFor(undefined, (r) => {
       this.pending = null;
       this.bigStale = true;
-      if (r.kind === 'save') this.markers.place(r.look, { face, x, y: this.placeY(face, x, z), z });
+      if (r.kind === 'save')
+        this.notePlaced(this.markers.place(r.look, { face, x, y: this.placeY(face, x, z), z }));
     });
     this.drawBig();
   }
@@ -2547,8 +2587,10 @@ export class MapUi {
       up(e);
       if (p?.id !== e.pointerId) return;
       const m = p.marker === null ? undefined : this.markers.get(p.marker);
-      if (p.moved && m) this.markers.move(m.id, { ...m, y: this.placeY(m.face, m.x, m.z) });
-      else if (!p.moved) this.mapClick(p.x, p.y);
+      if (p.moved && m) {
+        this.markers.move(m.id, { ...m, y: this.placeY(m.face, m.x, m.z) });
+        this.notePlaced(m.id);
+      } else if (!p.moved) this.mapClick(p.x, p.y);
     });
     c.addEventListener('pointercancel', (e) => {
       press = null;

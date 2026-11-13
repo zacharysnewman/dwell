@@ -547,6 +547,23 @@ face, or the placement check against its shape.
 
 ## Fixed
 
+### 153. A portal's marker floated hundreds of metres above the portal (fixed after 0.63.3)
+
+Owner, 2026-11-13: "Another bug, Im not sure if it's because I was flying high at the time, but the portal indicator
+showed up several hundred meters in the air over the portal." Cause: a seen portal's marker took its rim's loaded top,
+read only within 256 m of the eye (`map_markers::ground`); flying higher, nothing was found (NaN), and the shell's
+fallback chain (`markerGroundY`: the map's height, else **the player's height**) put the marker at the player's
+altitude; `noteAuto` never moved a portal marker once noted, so it stayed there for good. Now `seen_portals` gives the
+opening's height from the generator's shafts (`world.portals`, the same the controller's exit push uses), known from
+the seed wherever the player is; an unknown height takes only the map's (provisional) or waits, never the player's; a
+portal seen again at its known height corrects its marker (the saved bad ones too); a marker placed on the map over
+unloaded ground is put back on its ground once the column loads, and one saved more than `regroundAboveM` (8 m,
+`shared/ui/markers.json`) above its loaded ground is corrected (`regroundMarkers`). Tests: `dwell-client`
+`a_portal_seen_from_far_overhead_stands_at_its_openings_height` (both faces; red: `[1.0, 10.5, NaN, 0.5]`),
+`markers.test.ts` "never notes a portal at the player height while flying high over it", "corrects a saved portal
+marker far above its opening when the portal is seen again", "puts placed markers back on their ground once it loads"
+(red on the old code: 472 kept, `regroundMarkers` missing).
+
 ### 152. A villager's neck and jaw were another skin colour than its face and arms (fixed after 0.63.3)
 
 Owner, 2026-11-13: "face should always match arms, etc. shouldn't have different skin colors on different skin parts."
