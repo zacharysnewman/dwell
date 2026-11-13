@@ -102,12 +102,12 @@ pub fn quat_of_axes(axes: [V3; 3]) -> [f64; 4] {
 /// at the sun's place on its path, face A toward home. A moving grid moves with its path (its
 /// velocity and spin by a central difference over ½ s, smooth to well under a µm/s at these speeds).
 pub fn grid_frame_at(celestial: &Celestial, def: &GridDef, world_s: f64) -> GridFrame {
-    let (position, axes): (fn(&Celestial, f64) -> V3, fn(&Celestial, f64) -> [V3; 3]) =
-        match def.frame {
-            GridFrameKind::Rest => return GridFrame::HOME,
-            GridFrameKind::Orbit => (Celestial::moon_position, Celestial::moon_axes),
-            GridFrameKind::SunPath => (Celestial::sun_position, Celestial::sun_axes),
-        };
+    type Path = (fn(&Celestial, f64) -> V3, fn(&Celestial, f64) -> [V3; 3]);
+    let (position, axes): Path = match def.frame {
+        GridFrameKind::Rest => return GridFrame::HOME,
+        GridFrameKind::Orbit => (Celestial::moon_position, Celestial::moon_axes),
+        GridFrameKind::SunPath => (Celestial::sun_position, Celestial::sun_axes),
+    };
     const H: f64 = 0.25;
     let origin = position(celestial, world_s);
     let now = axes(celestial, world_s);

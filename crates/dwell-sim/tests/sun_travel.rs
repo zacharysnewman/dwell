@@ -32,6 +32,7 @@ fn dot(a: V3, b: V3) -> f64 {
     a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
 }
 
+// face-a-only: home sees the sun's face A (it turns face A toward home, as the moon does).
 #[test]
 fn the_sun_grid_sits_on_the_sun_s_path_at_the_sky_disc_s_size() {
     let c = Celestial::new(DAY_NIGHT, None);
@@ -57,7 +58,7 @@ fn the_sun_grid_sits_on_the_sun_s_path_at_the_sky_disc_s_size() {
         // It moves with the sun's path: the frame's velocity is the centre's rate.
         if let Some(p) = prev {
             let v = sub(centre, p).map(|x| x / 5.0);
-            let fv = f.point_velocity(GRID_CENTRE);
+            let fv = f.point_velocity(centre);
             assert!(len(sub(v, fv)) < 0.02 * len(fv) + 50.0, "{v:?} vs {fv:?}");
         }
         prev = Some(centre);
@@ -121,6 +122,8 @@ fn check(x: &Transfer) {
 
 /// From just outside the sun's capture sphere a flier steers at it, is captured (nothing jumps),
 /// flies on its ground's side away from it and is released home past `captureM × releaseFactor`.
+// face-a-only: the capture and release are of the sun's grid frame, flown in and out over its face A
+// (the moon's travel test covers the crossing round a grid's rim to face B).
 #[test]
 fn a_flier_is_captured_by_the_sun_and_released_home() {
     let mut tr = sun_travel();
