@@ -34,6 +34,10 @@
     {
       "name": "theater.viewpoint",
       "description": "The client sends `TheaterViewpoint` (docs/THEATER_MODE.md \u00a77, T-4): theater mode's camera position while a camera path plays (at most world.theaterViewpointHz a second), and an empty one when it ends. The server adds it to the player's interest (chunks streamed around it, creatures and NPCs spawned and simulated near it, the near ecology and the water stepped there) only where the world's mode has the `theaterViewpoint` ability (shared/modes/modes.json: creative), within world.theaterViewpointMaxM of the body; elsewhere it ignores it. Without it the client never sends one."
+    },
+    {
+      "name": "hits.at_contact",
+      "description": "A breaking tool's hit (one with a `contactS`, shared/tools/tools.json; docs/BLOCK_DAMAGE.md \u00a711) is sent at its swing's contact, aimed at what the crosshair targets then, and the server lands it on arrival (reach, line of sight and the edit rate checked from the eye at that tick) instead of `contactS` after it arrives. Without it (either side) the client sends the hit at the click, at the cell clicked, and the server lands it `contactS` after it arrives."
     }
   ]
 }

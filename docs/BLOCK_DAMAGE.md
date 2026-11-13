@@ -73,8 +73,8 @@ D3 (tuning) to come. The owner's direction and answers are §1; §2 was the prop
   2.5), rounded up; else `default`. A block without `damage` breaks in one hit, as before.
   Prototype values: stone and its ramp `{ default: null, pickaxe: 7 }` (stone pickaxe 5, metal 3, by
   hand or another tool: can't); dirt, grass, snowy grass, sand and their ramps `{ default: 11, shovel: 7 }`
-  (shovel 5, metal 3, by hand or another tool 11). Logs keep the axe's chopping (no `damage`: felling
-  and its notches unchanged).
+  (shovel 5, metal 3, by hand or another tool 11). Logs: *superseded by §12* (they take damage
+  like the others since WORK_QUEUE item 51).
 - **Generator and validation:** `shared/tools/gen.mjs` reads every block's `damage` (as it does
   `breakWith`), emits `BLOCK_DAMAGE` into `dwell_protocol::chopping`'s table and `client/src/ui/tools.gen.ts`,
   and fails on a missing `default`, a count outside 1..255, an unknown class or item, or a non-object
@@ -298,7 +298,7 @@ damage." Built, in addition to the carve (not instead of it):
   the wasm32 clippy and the Vitest files were not run here (no wasm target or `node_modules` in the
   container). The wood set is drawn round the axe's bites on a cut log (§6.4, the wood's `cut.cracks`).
 
-### 6.5 Ramps show their hits (BUGS.md #111)
+### 6.5 Ramps show their hits (BUGS.md #112)
 
 Owner, 2026-11-12: "Slopes aren't affected visually by tools when hit, though they do break." A stored ramp
 (HALF_HEIGHT_GRID.md; the ½ m `ramp` and the 45° `steep_lower`/`steep_upper` halves) is drawn as its shape's
@@ -650,3 +650,82 @@ the block's volume / number of swings required to break it."** One rule in one p
   volume, k = 1..n, half at the break, metal 5/3 of stone), `the_bite_rules_cell_is_the_worlds`;
   `dwell-client` `a_hits_pieces_total_its_bite` (stone, dirt, grass, wood chips); `dwell-sim` `damage`
   (marks' chunks 26/43, both faces); `shared/tools/gen.test.mjs` (the ramp's volume, no tier chunk).
+
+## 11. A hit strikes what is aimed at its contact (BUGS.md #111)
+
+Owner, 2026-11-12: "I've noticed on tool hits they don't check where they're aimed at hit time, if I click on a
+block, and move my cursor to aim at the block below it, I'll see and hear the tool hit, but it won't be on the
+block I'm aiming at, it'll be the one I clicked on first before the hit played." §8 moved the hit's *time* to
+the contact but kept the click's *target*: the `BlockEditRequest` named the cell clicked, and the server and the
+client's sound and chips landed on it `contactS` later.
+
+- **Client:** with a breaking tool that has a `contactS` (the pickaxes, the shovels) the click starts the swing
+  (the arms, the click's rate, one swing at a time) and sends nothing. At the contact, after that frame's aim
+  (`Game::land_aimed_hit`, run after `target`), the crosshair's block is the target: its `BlockEditRequest`
+  (`BlockInteraction::break_request`, with the struck point) is sent then, and its hit sound and chips, or a
+  one-hit break's sound, play at that block. Nothing aimed at (air, or a moving body nearer than any block) is
+  a miss: nothing is sent or shown, so nothing wears. A held swing (`repeatOnHold`) is a new click each
+  `repeatS`, each aimed at its own contact.
+- **Server:** a session whose client said `hits.at_contact` has its tool hits land on arrival (no `contactS`
+  wait: the client already waited), through the usual checks from the eye at that tick (reach, line of sight,
+  the edit rate's token bucket) and the held tool (damage, drops, wear once per landed hit).
+- **Compatibility:** the capability `hits.at_contact` (`shared/protocol/capabilities.json`, ARCHITECTURE.md
+  §8.3). Not breaking: the message is unchanged, and with an older peer on either side the client sends at the
+  click and the server waits `contactS`, as in §8 (`Game::set_hits_at_contact`, from the session's
+  capabilities).
+- **Not changed:** the axe's swing (`Chop::Sweep`) keeps its committed arc, aimed at the click and swept again
+  from the eye at contact (§8); a hand or a block in hand lands at once.
+- **Tests:** `dwell-sim` `damage` `a_hit_sent_at_its_contact_lands_on_arrival_checked_from_the_eye_then` (both
+  faces; a buried cell is refused, no wear); `dwell-client` `game_local`
+  `a_pickaxe_hit_lands_on_what_is_aimed_at_its_contact_not_the_block_clicked` (A clicked, B aimed at by the
+  contact: B's damage and sound, A untouched, nothing refused or left pending),
+  `a_pickaxe_swing_aimed_at_air_by_its_contact_is_a_miss`, `a_held_pickaxe_swing_strikes_what_is_aimed_at_each_contact`
+  (each swing turned before its contact). All red on the old code (the hit on A; a hit sound and a sent hit on
+  the miss).
+
+## 12. The axe like the other tools (WORK_QUEUE item 51)
+
+Owner, 2026-11-12: "Also the axe doesn't behave like the other tools. I think it should." Answer to how:
+**"Like the others, felling on top"**: logs take block damage like stone or dirt, and breaking a trunk's log
+fells the tree above as a body, as before.
+
+- **Data:** the log's `damage` (`shared/blocks/dwell.json`): `{ default: 24, axe: 15, chips }`, so the stone
+  axe breaks it in **10** hits (15 ÷ 1.5, rounded up: the old fell's 11 swings scaled to the 50 % rule,
+  11 × 0.5 ÷ 0.55), the metal axe in **5** (15 ÷ 3), anything else 24 where it may break a log at all
+  (adventure: only an axe, `breakWith`; creative: a hand or a block breaks it in one hit, a tool keeps its
+  hits). The stump's `dwell:log_ramp` (an older world's) `{ default: 12, axe: 8 }` (6 and 3; half a cell).
+  The `axe` class already named both (`breaking.classes`). Its `chips` are the wood's.
+- **Server** (`server/chopping.rs` `chop_hit`): an axe swing that lands on a wood with `damage` (aimed or
+  swept, at its contact, §8) is a block-damage hit: one wear, a `HitMark` (the edit face struck, the point,
+  the bite rule's chunk: `hit_chunk(log, axe)`), the hit's share of the log's drops (`hit_share`: 8 wood,
+  4 over the hits before the last); the hit that reaches the count breaks the block (`drop_destroyed`, the
+  rest), sends its damage gone and fells what it held: a standing trunk above as **one body**, tipped toward
+  the side struck (the uncut side the hinge, as the deepest notch steered before), a lying log's
+  neighbours as after any break (bucking a settled trunk is the same hits). No fell wedges: the cell is
+  broken whole (the gash of WORK_QUEUE item 24 is no longer left; an older world's stump ramps stay and take
+  damage too). A moving body's logs still break in one hit (`BodyEditRequest`, as every block on a body).
+  The chopping prototype (`chop2`, off) keeps its cuts.
+- **No new cuts:** a new hit records no `Cut` (no notch, kerfs, bands, bind or grain share; a vertical
+  swing hits as a level one). **Older saves' cuts** still load (the `cuts` table, `Cuts::from_bytes`
+  unchanged), are sent to clients that said `ChopAction::Hello` and drawn as before (notch and kerfs, or
+  bites); the next hit on such a cell carries its progress over as hits (`Cut::progress` × the hits to
+  break, rounded down), drops the cut (`Cuts` `gone`) and goes on as damage.
+- **Client** (`dwell-mesh` `mesh_cells`): a damaged wood cell (any block of `woods`) with no cut is drawn
+  with the axe's head-sized bites at its marks (`chopping::cut_of_marks`: each mark's side, band and place
+  across), grown by its damage fraction as the progress: the same carve as §6.4's bites, which follows the
+  bite rule on the octagon (k of n hits carve k × ½ × the log's volume ÷ n); the wood's cracks (`cut.cracks`,
+  `wood` set) by the fraction. The chips of a chop are sized by `bite_m3_of(log, axe)`. Only the newest four
+  marks are kept (`MAX_HIT_MARKS`), so a cell's bites are its last four hits, the V deepening with the rest.
+- **Compatibility:** additive. A new `damage` entry, a new client drawing an existing message (`Damage`) on
+  a new block; the `cuts` record and the `Cuts` wire are unchanged and still read. An older client on the
+  line gets `Damage` for logs (it would draw nothing on an octagon; a cube's carve skips octagons) and no
+  new cuts; no new compatibility line.
+- **Tests:** `dwell-sim` `chopping` `an_axe_breaks_a_log_in_its_damage_hits_stone_ten_metal_five`,
+  `each_axe_hit_marks_where_it_struck_with_the_bite_rules_chunk_and_wears_once`,
+  `breaking_a_trunk_log_fells_the_tree_above_as_one_body_toward_the_side_struck`,
+  `a_lone_log_breaks_in_its_hits_drops_its_wood_and_nothing_falls` (all both faces),
+  `creative_breaks_a_log_in_its_hits_and_drops_nothing`,
+  `an_older_saves_cut_still_loads_and_draws_and_its_progress_carries_into_damage`; `dwell-mesh`
+  `a_damaged_log_is_carved_by_its_marks_k_bites_after_k_hits` (both faces, the closed mesh's volume). The
+  old model's tests of notches, kerfs, the gash and bites recorded by the server were removed with it.
+- **Not done:** no browser check (cloud session, no GPU): the look in game is for the owner's check.

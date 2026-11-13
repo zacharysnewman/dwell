@@ -20,8 +20,18 @@ import { SKILL, clipPath, fingerprint, loadVideo, metaPath, selectShots, spliceP
 const DRIVER = `http://localhost:${process.env.RECORD_PORT || 4999}`;
 const REPO = resolve(SKILL, '../../..');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+/** A fetch that retries once when it went out on a keep-alive socket the server had already closed (Node's http
+ * server drops idle ones after 5 s, so the first request after a long encode failed with "fetch failed"): such a
+ * request never reached the server, so a retry can't run it twice. */
+export async function fetchRetrying(url, init, f = fetch) {
+  try { return await f(url, init); } catch (e) {
+    const code = e?.cause?.code;
+    if (code !== 'UND_ERR_SOCKET' && code !== 'ECONNRESET') throw e;
+    return f(url, init);
+  }
+}
 const post = async (p, body = '') => {
-  const r = await fetch(DRIVER + p, { method: 'POST', body });
+  const r = await fetchRetrying(DRIVER + p, { method: 'POST', body });
   const text = await r.text();
   if (!r.ok) throw new Error(`driver ${p}: ${text}`);
   return text;
@@ -46,12 +56,13 @@ function args(argv) {
 }
 
 /** A driver frame folder (f00000.jpg … + times.json) → an h264 mp4 at the measured rate (splice.py's timeline). */
-export function encodeClip(dir, out, { fps, crf = 18 } = {}) {
+export function encodeClip(dir, out, { fps, crf = 16, preset = 'veryfast' } = {}) {
+  // an intermediate (splice.py re-encodes it): veryfast at crf 16 is ~3x quicker than medium at 18 and as clean
   const times = JSON.parse(readFileSync(join(dir, 'times.json'), 'utf8'));
   const rate = times.length > 1 ? (times.length - 1) / Math.max(times[times.length - 1] - times[0], 1e-6) : 30;
   const tmp = out.replace(/\.mp4$/, '.part.mp4');
   const r = spawnSync('ffmpeg', ['-v', 'error', '-y', '-framerate', rate.toFixed(3), '-i', join(dir, 'f%05d.jpg'),
-    ...(fps ? ['-r', String(fps)] : []), '-c:v', 'libx264', '-crf', String(crf), '-preset', 'medium', '-pix_fmt', 'yuv420p', tmp], { stdio: 'inherit' });
+    ...(fps ? ['-r', String(fps)] : []), '-c:v', 'libx264', '-crf', String(crf), '-preset', preset, '-pix_fmt', 'yuv420p', tmp], { stdio: 'inherit' });
   if (r.status !== 0) throw new Error(`ffmpeg failed encoding ${dir}`);
   renameSync(tmp, out);
   return { frames: times.length, rate };

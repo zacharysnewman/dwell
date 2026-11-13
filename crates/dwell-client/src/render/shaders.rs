@@ -189,9 +189,16 @@ struct Fluid {
     // cells, dark gaps), y the sun patch's strength, z its tightness (a power), w the cells'
     // scale against the floor's caustics (a whole number, so the pattern still wraps)
     underside: vec4f,
-    // Snell's window seen from below (WATER_RENDERING.md §16): x the share of the underside's
-    // cells over the sky in it, y the sun's and moon's discs' strength in it; zw spare
+    // Snell's window seen from below (WATER_RENDERING.md §16, §19): x the share of the underside's
+    // cells over the sky in it, y the sun's and moon's discs' strength in it, z the sun's glow in
+    // it (× the sun's light), w that glow's tightness (a power)
     window: vec4f,
+    // The underwater colour grade (WATER_RENDERING.md §19): rgb the colour the fog's in-scatter
+    // is pulled toward (linear), a by how much (0: the fluid's scatter)
+    tone: vec4f,
+    // x the in-scatter's brightness (×), y the mirror's outside the window (×), z the share of the
+    // absorption the light down to the floor takes, w the window rim's glow (× the zenith's light)
+    lift: vec4f,
 };
 @group(0) @binding(4) var<storage, read> fluids: array<Fluid>;
 // The water's tiles (render/water_tiles.rs): gradient noise and its derivatives over NOISE_TILE
@@ -539,10 +546,12 @@ fn schlick(cos: f32, f0: f32) -> f32 {
 // `dist` metres of the fluid, Beer–Lambert absorption of what is behind and the fluid's in-scatter,
 // lit as the face's up is.
 // The underwater look's fog: none over its clear distance, then its rates × its density.
+// The in-scatter is graded by the look's `tone` (WATER_RENDERING.md §19): its colour pulled toward
+// `tone.rgb` and brightened by `lift.x` (a fluid without a look: as before).
 fn underwater(lin: vec3f, dist: f32, f: Fluid) -> vec3f {
     let d = max(dist - f.under.y, 0.0) * f.under.z;
     let t = exp(-(f.absorption.rgb + f.extra.w) * d);
-    let inscatter = lambert(f.scatter.rgb, face_up(frame.eye.y), frame.eye.x);
+    let inscatter = lambert(mix(f.scatter.rgb, f.tone.rgb, f.tone.a), face_up(frame.eye.y), frame.eye.x) * f.lift.x;
     return lin * t + inscatter * (1.0 - t);
 }
 
@@ -2018,6 +2027,10 @@ fn window_sky(out: vec3f, out_px: vec3f, bodies: f32) -> vec3f {
 // The composite with the eye under a fluid's surface (the W4 stub): the fluid's fog over the
 // distance in it — to what the pixel shows, or to the surface where the ray reaches it first —
 // replaces the height fog; past the surface, the sky.
+// How far from the flat surface a pixel's depth may be and still count as the surface's own mesh
+// from below (m, along the face's up; render/water.rs `SURFACE_SLACK_M`).
+const SURFACE_SLACK_M: f32 = 0.3;
+
 fn composite_underwater(p: vec2i, ray: vec3f, c: vec4f) -> vec3f {
     let fluid = min(u32(frame.water.y), arrayLength(&fluids) - 1u);
     let f = eye_fluid();
@@ -2046,8 +2059,21 @@ fn composite_underwater(p: vec2i, ray: vec3f, c: vec4f) -> vec3f {
         depth = scene_depth_at(p).x;
         dist = select(1e6, depth * length(ray), depth > 0.0);
     }
+    // A pixel showing the surface's own mesh from below (within `SURFACE_SLACK_M` of the surface
+    // the ray is measured to) takes the composite's surface: the window's sky or the mirror, not
+    // the mesh's tinted body, which near the window's rim (Fresnel) read as flat blue blobs in a
+    // brighter mirror (WATER_RENDERING.md §19). What stands above the surface (a tree seen
+    // through the window) still shows.
+    let slack = SURFACE_SLACK_M / max(rise, 0.05);
+    let past = dist > to_surface - slack;
+    let at_surface = reaches && c.a > 0.0 && abs(dist - to_surface) < slack;
     var back = vec3f(0.0);
-    if (reaches && (c.a < 1.0 || (!leaves && dist > to_surface))) {
+    // The mirror and the window's share where the ray leaves (§19): toward the window's rim what
+    // the pixel shows past the surface fades into the mirror, as the sky does, so the rim has no
+    // hard-edged bits of the scene (the surface's mesh drawn opaque there by its Fresnel).
+    var rim_mirror = vec3f(0.0);
+    var rim_inside = 1.0;
+    if (reaches && (c.a < 1.0 || at_surface || past)) {
         // The underside where the ray meets the surface: its cells and sun patch, under the fog
         // over the distance to it (`underwater` to to_surface), so toward level they fade into
         // the fog with no hard horizon (render/water.rs `underside_contrast`).
@@ -2055,7 +2081,14 @@ fn composite_underwater(p: vec2i, ray: vec3f, c: vec4f) -> vec3f {
         let look = underside_look(hit, dir, fp, f, fluid);
         let light = look.x * (1.0 + look.y);
         // The mirror: the water's in-scatter, textured.
-        let mirror = moonlit(display(underwater(underwater(vec3f(0.0), 1e6, f) * light, to_surface, f)));
+        // Brighter by the look's `lift.y`, and round the window's rim a soft glow of the sky's light
+        // straight up (`lift.w`), so the ceiling reads as lit water, not a dark lid (§19).
+        let up_n = face_up(frame.eye.y);
+        let zen = sky_radiance(up_n);
+        let crit = sqrt(max(1.0 - 1.0 / (ior * ior), 0.0));
+        let near_rim = smoothstep(crit * 0.55, crit, rise) * f.lift.w;
+        let ceiling = underwater(vec3f(0.0), 1e6, f) * light * f.lift.y + zen * near_rim * 0.35;
+        let mirror = moonlit(display(underwater(ceiling, to_surface, f)));
         if (leaves) {
             // Out through the window: the sky, under the window's glow (shafts.json `window`: a
             // bright white-cyan, strongest at its middle), with the patch's light round the sun;
@@ -2082,8 +2115,17 @@ fn composite_underwater(p: vec2i, ray: vec3f, c: vec4f) -> vec3f {
             // The sky through the window, waved by the underside's cells at the look's share. The
             // sun patch is the mirror's (the sun's own disc is in the window's sky), so it does not
             // wash the sky with the water's colour.
-            let window = display(underwater(sky_in * mix(1.0, look.x, f.window.x), to_surface, f));
+            // The sun's blown-out glow round its image (`window.z`, `window.w`; §19): the sun's light,
+            // brightest at the image and soft round it, so the window's sun reads as the reference's
+            // white disc with light radiating from it; gone at night with the sun.
+            let sun = frame.day.sun.xyz;
+            let sun_lit = select(frame.day.sun_b.rgb, frame.day.sun_a.rgb, frame.eye.y > 0.0);
+            let glow = sun_lit * f.window.z * pow(max(dot(dir, sun_through(sun, ior)), 0.0), max(f.window.w, 1.0))
+                * own(sun, frame.eye.y);
+            let window = display(underwater(sky_in * mix(1.0, look.x, f.window.x) + glow, to_surface, f));
             back = mix(mirror, window, inside);
+            rim_mirror = mirror;
+            rim_inside = inside;
         } else {
             back = mirror;
         }
@@ -2091,7 +2133,7 @@ fn composite_underwater(p: vec2i, ray: vec3f, c: vec4f) -> vec3f {
         back = display(underwater(sky_radiance(dir), to_surface, f));
     }
     // Past a mirroring surface nothing above it shows.
-    if (reaches && !leaves && (c.a <= 0.0 || dist > to_surface)) {
+    if (at_surface || (reaches && !leaves && (c.a <= 0.0 || past))) {
         return back;
     }
     if (c.a <= 0.0) {
@@ -2104,11 +2146,16 @@ fn composite_underwater(p: vec2i, ray: vec3f, c: vec4f) -> vec3f {
         let rel = ray * depth;
         let under = face_y(frame.eye.y, frame.water.z) - face_y(frame.eye.y, frame.eye.x + rel.y);
         // Lit by light that came down through the fluid, focused into caustics.
-        lit *= exp(-f.absorption.rgb * max(under, 0.0))
+        // The absorption's share `lift.z` (§19): lower, the floor keeps more of its colour.
+        lit *= exp(-f.absorption.rgb * f.lift.z * max(under, 0.0))
             * caustic_light(frame.wrap.xy + rel.xz, under, frame.eye.x + rel.y, pixel_m(p, ray, depth), UNDERWATER_CAUSTICS, f, fluid);
     }
     let shown = moonlit(display(underwater(lit, min(dist, to_surface), f)));
-    return mix(back, shown, min(c.a, 1.0));
+    let out = mix(back, shown, min(c.a, 1.0));
+    if (reaches && leaves && past) {
+        return mix(rim_mirror, out, rim_inside);
+    }
+    return out;
 }
 
 // The time of day's saturation (`frame.day.horizon.a`, lower by moonlight) on a colour the water

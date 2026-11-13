@@ -16,6 +16,27 @@ Last updated: 2026-11-11 (0.52.108).
 
 ## Queued next, in order (2026-11-12)
 
+**State at 16:00 PST 2026-11-12 (orchestrator handover).** Owner: cloud sessions paused until 17:30 PST (the Mac's
+clock); locally **one feature at a time** ("Only run 1 task at a time locally", "Like work on one feature at a
+time"). Notes ride with real changes (no notes-only PRs; CI skips docs-only changes).
+- **In progress (local):** underwater look pass toward the owner's ABZÛ reference (item 40: the surface seen from
+  below first — "This is more what I want from the underwater surface" — then shafts, turquoise fog, caustics);
+  branch `claude/underwater-look`; the reference image at the session scratchpad `abzu-ref.jpg` (not in the repo).
+  Video 2 (water/underwater, plan in item 40) waits for the owner's look approval.
+- **Next, in order:** (1) PR #856 slopes show tool hits (`claude/ramp-hit-marks-eaj3ru`) — conflicts with main,
+  resolve and merge; (2) big-world terrain quick fix (item 51) — WIP on `claude/notes-batch-2` (also carries the
+  v5 approval and ABZÛ notes; the cloud session was stopped mid-work: read its status note on that branch); needs
+  the 0.56 line raised by the owner; (3) the moon's client side M-7c (item 27) — WIP on `claude/moon-m7c`;
+  (4) browser check of Realistic worlds (R6 merged #858: create, play, reload); (5) the forest edge (~9 ms over at
+  High on the M1; impostors save ~4 ms, #848); (6) the in-game cloud check (#822 shapes/colour, #790, #801, #823).
+- **Merged today (late):** #857 the axe like the other tools; #858 Realistic in New world; #854 hits at contact;
+  #852 sound placement; #853/#855 one-command video re-records (`take.mjs`); #851 big-world placing; #848 far-tree
+  impostors fixed (BUGS #106); #845 big-world LOD; #846 portal exit on face B; #847 leaves flush with logs; #841 the
+  0.55 line (tree pads, tall grass stages); #842 more animals; #833 grass sounds and leg cadence; #836 underwater
+  audio; #829 floating trees, leaves let water through; #832 deny sound; wind only when flying.
+- **Showcase videos (item 40):** video 1 (bifacial) approved at v5; its clips cleared. Tool: `take.mjs <video>
+  [--only sN]` (SKILL.md §0).
+
 **Current order (2026-11-12, evening; owner asked "What is the current priority of upcoming items"):**
 Releases were blocked ~18:45–21:40 (a test type error); unblocked, so everything merged since ships in the next
 releases (incl. the first-person body #791). Local (the Mac, one at a time): (1) bifacial video v3 (portal exit
@@ -25,6 +46,15 @@ showcase videos, each with a shot plan first; (5) Realistic world R6 in New worl
 and leg speed (#103), underwater/surface swim audio (#104), floating trees + leaves (item 45), tree pads (item 44,
 needs the owner's 0.55 line), tall grass height (item 14), far-sky rim/band (#823, conflicts). Then: the moon's
 client side (item 27), orbits O4–O5, big worlds memory (#76/#77).
+
+Owner, 2026-11-12 (before showcase video 2), with a screenshot from ABZÛ: **"Underwater reference photo from the
+game abzu for pretty underwater with transparent surface, light rays etc."**, then **"This is more what I want from
+the underwater surface."** → an underwater look pass: the surface from below first (bright and see-through, the sky
+in Snell's window, the sun a blown-out disc with light radiating from it, the ripples catching the light, a soft
+glow round the window, the mirror outside it turquoise rather than dark), then the shafts and a turquoise fog with
+a longer clear view and a colourful floor. **Built (`claude/underwater-look`):** the look's `window.sunGlow`,
+`sunPower`, `rimGlow` and a `tone` grade (fog colour, brightness, mirror, floor light) as data
+(WATER_RENDERING.md §19), shafts longer. Next: the owner's look.
 
 Owner, 2026-11-12 (BUGS.md #110): **"I think the sound 'source' direction might be the issue with some of our sound
 effects. They sound like they're coming from right behind your head. Are we using 2D sound?"**, then **"Like
@@ -570,8 +600,17 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    `CELESTIAL` world setting (0x86); the server rolls it at creation for a Sky preset (`--sky`, the browser's New
    world → More options → Sky, shown for a world whose climate reads the sky, and `&sky=` on a `?worldgen=test:realistic`
    link); the sky (server and clients) draws the world's orbit; default and starter today's sky exactly (golden).
-   Realistic is not in the World list yet (R6), so the Sky field shows once it is. **O3 not built** (the climate
+   Realistic is in the World list since R6, so the Sky field shows for it. **O3 not built** (the climate
    reading the orbit needs it carried to the map workers): next.
+   Owner, 2026-11-12: **"Do we have realistic worlds yet?"** (R1–R5 and O1–O2 were built; the world was reachable
+   only by link as the test world `test:realistic`.) **R6 built (2026-11-12, the browser check outstanding):**
+   New world → World → Realistic (`realistic.json` `newWorld`), its Sky preset under More options, its worldgen,
+   seed and Sky saved with the world; its own goldens (`shared/worldgen/golden/realistic-hashes.txt`,
+   `tests/realistic_golden.rs`; the default's unchanged); the big map's debug layers as data
+   (`shared/ui/mapLayers.json`: plates with their outlines and kinds, uplift, rain, rocks; `dwell-worldgen`
+   `map_layers.rs`; the map's Layer button and `L`); the memory natively: Realistic's biome sets 14.1 MB both faces
+   against the starter's 15.9 MB. **Not done:** the overlays in Chisel (next with its other overlays); the browser's
+   create → play → reload and the phone page's total at load, for a local session (REALISTIC_WORLD.md R6).
 16. **Phone frame rate (P0)** (owner 2026-11-11, iPhone 17, Safari, setting Low: "I'm only getting ~23 fps on
    mobile, seeing lots of z-fighting on tree trunks with the leaf cards. What might be dropping frames since the
    last while. Used to get 60 fps"). Suspect: leaf cards are on in every tier but CPU, Low included; cards lying
@@ -738,7 +777,7 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    it; by the fell the gash's V, both faces turned out of the notch. Fell and stump unchanged. Left: in the
    octagon the fell's half is more than a V holds (0.36 of 0.41, never drawn: the cell splits); the chips are
    half the cell's, ~20 % over an octagon's carve; the owner's look in game (checked locally after).
-   Owner, 2026-11-12 (BUGS.md #111): **"Slopes aren't affected visually by tools when hit, though they do break."**
+   Owner, 2026-11-12 (BUGS.md #112): **"Slopes aren't affected visually by tools when hit, though they do break."**
    **Status (ramp-hit-marks):** built (BLOCK_DAMAGE.md §6.5): a ramp's struck planes carved by the bite rule (a
    ramp's volume ½), inside the solid and watertight, cracks over its planes once staged; the pieces already were
    the bite. Left: a 45° upper half holds ¼ cell, under the rule's ½, so its carve is capped by its solid; the
@@ -815,6 +854,11 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    Built (cloud, needs the owner's look in game): tool data `contactS` (pickaxes, shovels 0.26 s; the axe its
    swing's), the server lands hits at contact and drops cancelled ones, the client's sound and chips at
    contact, a bounce wears once and leaves alone don't (docs/BLOCK_DAMAGE.md §8).
+   Owner, 2026-11-12, follow-up (BUGS.md #111): "I've noticed on tool hits they don't check where they're aimed at
+   hit time, if I click on a block, and move my cursor to aim at the block below it, I'll see and hear the tool
+   hit, but it won't be on the block I'm aiming at, it'll be the one I clicked on first before the hit played."
+   Built: the hit is aimed at its contact, the target what the crosshair holds then, a miss there landing
+   nothing (capability `hits.at_contact`; docs/BLOCK_DAMAGE.md §11). The axe's committed arc is unchanged.
 26. **Axe bites like the other tools' marks** (owner 2026-11-12: "The tree chopping slice doesn't match the other
    tools style. It cuts a line all the way across which is much bigger than the tool head. It should align more
    with the dirt and stone ones."). Today an axe hit cuts a kerf slit across the log's whole width. Wanted: each
@@ -1960,6 +2004,21 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    encoded and deleted right after capture), reuses the rest, splices with `splice.py`. Tests without a browser
    (`take.test.mjs`, in CI): the manifest validates, shot selection and the cache, and the generated plan equals v4's
    hand-written one. Not yet run against the real browser (the first use is the v5 re-record, on the Mac).
+
+51. **The axe behaves like the other tools** (owner 2026-11-12: **"Also the axe doesn't behave like the other tools. I
+   think it should. What about how it's designed is different currently?"**). Explained: today the axe on a log uses a
+   separate chopping system (ADR 0067: no hits-to-break; a notch cut across the trunk in bands; after ~11 swings, 5
+   metal, the tree above falls as a body; the log block never breaks), while every other tool uses block damage
+   (BLOCK_DAMAGE.md: hits to break per tool, each hit carves a bite of ½ the block ÷ hits, chips fly, cracks spread,
+   at 50 % the block breaks and drops). Owner's answer: **"Like the others, felling on top"** — logs take block
+   damage like stone or dirt (hits to break by tool, bites, chips, cracks; the block breaks and drops a log), and
+   breaking a trunk's base log fells the tree above as a body, as today. **Built 2026-11-12** (cloud, branch
+   `claude/axe-like-tools`), waiting on the owner's look in game: the log's `damage` data (stone axe 10 hits,
+   metal 5), each axe hit a block-damage hit (a mark, a wear, its share of the 8 wood), the last breaking the log
+   and felling the trunk above as one body toward the side struck; a lying log the same hits (bucking); the log
+   drawn with the axe's head-sized bites at its marks grown by the bite rule, the wood cracks by the fraction. No
+   new cuts (no notch, kerfs or gash wedges); older saves' cuts still load and draw, the next hit carrying their
+   progress into damage. Additive: no new compatibility line (docs/BLOCK_DAMAGE.md §12, ADR 0067 note).
 
 ## Future (needs owner answers)
 

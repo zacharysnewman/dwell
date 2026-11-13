@@ -260,6 +260,56 @@ export function validateMap(data) {
   return data;
 }
 
+// The big map's debug layers (shared/ui/mapLayers.json; REALISTIC_WORLD.md R6): read as JSON by
+// the shell (`ui/mapLayers.ts`), checked here. The fields are the generator's fixed vocabulary
+// (`dwell-worldgen` `map_layers.rs` `MapField`, whose test reads the same file).
+export const LAYER_FIELDS = { plates: 'category', uplift: 'value', rain: 'value', rocks: 'category' };
+
+const layersFail = (m) => {
+  throw new Error(`mapLayers.json: ${m}`);
+};
+const isColor = (v) => typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v);
+
+/** Checks the debug layers' data; returns it. Throws naming the entry. */
+export function validateMapLayers(data) {
+  if (typeof data !== 'object' || data === null || Array.isArray(data)) layersFail('(root) must be an object');
+  for (const k of Object.keys(data)) if (!['$comment', 'key', 'samples', 'layers'].includes(k)) layersFail(`unknown entry ${k}`);
+  if (typeof data.key !== 'string' || !/^Key[A-Z]$/.test(data.key)) layersFail(`key must be a letter key's code (KeyA–KeyZ), got ${JSON.stringify(data.key)}`);
+  if (!Number.isInteger(data.samples) || data.samples < 16 || data.samples > 512) layersFail(`samples must be a whole number within 16–512, got ${JSON.stringify(data.samples)}`);
+  if (!Array.isArray(data.layers) || data.layers.length === 0) layersFail('layers must be a list of at least one layer');
+  const names = new Set();
+  data.layers.forEach((l, i) => {
+    const at = `layers[${i}]`;
+    if (typeof l !== 'object' || l === null || Array.isArray(l)) layersFail(`${at} must be an object`);
+    for (const k of Object.keys(l)) if (!['$comment', 'name', 'label', 'field', 'opacity', 'colors', 'outlineColor', 'ramp'].includes(k)) layersFail(`unknown entry ${at}.${k}`);
+    if (typeof l.name !== 'string' || !/^[a-z][a-z0-9_]*$/.test(l.name)) layersFail(`${at}.name must be a lower-case name, got ${JSON.stringify(l.name)}`);
+    if (names.has(l.name)) layersFail(`${at}.name ${l.name} is used twice`);
+    names.add(l.name);
+    if (typeof l.label !== 'string' || l.label.length < 1 || l.label.length > 24) layersFail(`${at}.label must be 1 to 24 characters`);
+    const kind = LAYER_FIELDS[l.field];
+    if (!kind) layersFail(`${at}.field must be one of ${Object.keys(LAYER_FIELDS).join(', ')}, got ${JSON.stringify(l.field)}`);
+    if (typeof l.opacity !== 'number' || !(l.opacity > 0 && l.opacity <= 1)) layersFail(`${at}.opacity must be a number within 0 (exclusive) and 1`);
+    if (kind === 'category') {
+      if (l.ramp !== undefined) layersFail(`${at}.ramp: a ${l.field} layer is coloured by category (colors), not a ramp`);
+      if (typeof l.colors !== 'object' || l.colors === null || Array.isArray(l.colors)) layersFail(`${at}.colors must be an object of category → #rrggbb`);
+      for (const [c, v] of Object.entries(l.colors)) if (!isColor(v)) layersFail(`${at}.colors.${c} must be a #rrggbb colour, got ${JSON.stringify(v)}`);
+      if (l.outlineColor !== undefined && !isColor(l.outlineColor)) layersFail(`${at}.outlineColor must be a #rrggbb colour`);
+    } else {
+      if (l.colors !== undefined || l.outlineColor !== undefined) layersFail(`${at}: a ${l.field} layer is coloured by a ramp, not colors`);
+      if (!Array.isArray(l.ramp) || l.ramp.length < 2) layersFail(`${at}.ramp must be a list of at least two { at, color } stops`);
+      l.ramp.forEach((s, k) => {
+        const where = `${at}.ramp[${k}]`;
+        if (typeof s !== 'object' || s === null || Array.isArray(s)) layersFail(`${where} must be an object`);
+        for (const sk of Object.keys(s)) if (sk !== 'at' && sk !== 'color') layersFail(`unknown entry ${where}.${sk}`);
+        if (typeof s.at !== 'number' || !Number.isFinite(s.at)) layersFail(`${where}.at must be a number`);
+        if (k > 0 && !(s.at > l.ramp[k - 1].at)) layersFail(`${where}.at must be above the stop before it (${l.ramp[k - 1].at})`);
+        if (!isColor(s.color)) layersFail(`${where}.color must be a #rrggbb colour, got ${JSON.stringify(s.color)}`);
+      });
+    }
+  });
+  return data;
+}
+
 const snake = (k) => k.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
 const rsNum = (v) => (Number.isInteger(v) ? `${v}.0` : String(v));
 
@@ -515,6 +565,7 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
   const map = validateMap(JSON.parse(readFileSync(join(here, 'map.json'), 'utf8')));
   writeFileSync(join(root, 'crates/dwell-game/src/map.gen.rs'), mapRs(map));
   writeFileSync(join(root, 'client/src/ui/map.gen.ts'), mapTs(map));
+  validateMapLayers(JSON.parse(readFileSync(join(here, 'mapLayers.json'), 'utf8')));
   const layout = validateLayout(JSON.parse(readFileSync(join(here, 'layout.json'), 'utf8')));
   writeFileSync(join(root, 'client/src/ui/layout.gen.ts'), layoutTs(layout));
   const backgrounds = validateMenuBackgrounds(

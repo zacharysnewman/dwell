@@ -657,6 +657,16 @@ frame. The count left needs no scan (each coarse level's reach total less its ke
 "Mapping · N tiles" count shows in the panel's bottom-right corner (`.map-progress`) while any are left.
 ADR 0068's 0.52.13 amendment (replacing 0.52.10's every-level build round the view).
 
+**[built, REALISTIC_WORLD.md R6] The big map's debug layers** (owner, 2026-11-12, §7 q8: the plates and climate
+overlays "also on the big map"): layers as data (`shared/ui/mapLayers.json`, checked by `shared/ui/gen.mjs`), each
+naming a field of the generator's fixed vocabulary (`dwell-worldgen` `map_layers.rs` `MapField`: plates, uplift,
+rain, rocks) with its colours (category `colors` and an `outlineColor`, or a value `ramp`) and `opacity`. The shell
+(`mapLayers.ts`) asks for a field over the face's disc once per face (`requestMapLayer`, `samples`² samples) and
+the job workers sample it (`Job::Map` with `layer` = the field's index + 1; `LayerGrid::encode`: the categories'
+names and own colours, then a category, id and value per sample; nothing for a world without the field); the
+big map draws the coloured grid over its tiles, mirrored as the face's view is. The map's Layer button and the
+data's `key` (L) step through the layers.
+
 **[built, 0.50.46; per level and kept, 0.50.61] The big map's tiles** (owner, 2026-11-08: "big map should be fully explored on
 creative"; 2026-11-09: built "only once", "invisibly"): every level's ground comes from the generator, a
 tile at the level's cell size at a time (`requestReveal(face, ti, tk, cellM)`), kept per world and compatibility line (0.50.75: a new patch reuses them) in
@@ -4611,7 +4621,11 @@ its NPC part's pose is 3 (level) or 4 (vertical) (`NPC_STRIKE_POSES`), and the c
 chop clip; without it the server sends the NPC's idle pose, as older clients (whose decode refuses a
 pose past 2) read it. The eighth is `theater.viewpoint` (THEATER_MODE.md §7, §5.5): the client sends
 `TheaterViewpoint` 0x6B (C→S, control: u8 0 cleared | 1 then f64 × 3, finite) while a camera path plays,
-used by the server only in a mode with `theaterViewpoint`; an older server is never sent one.
+used by the server only in a mode with `theaterViewpoint`; an older server is never sent one. The ninth
+is `hits.at_contact` (BUGS.md #111, BLOCK_DAMAGE.md §11): a breaking tool's `BlockEditRequest` (one with a
+`contactS`) leaves at its swing's contact, naming the cell aimed at then, and the server lands it on
+arrival instead of `contactS` after; without it on either side the request leaves at the click and the
+server waits, as before. The message itself is unchanged.
 ```
 S→C  WorldSettings field 0x85 (optional): u8 count (≤ 64), each str name (≤ 48 bytes, no repeat)
 C→S  Capabilities 0x69, control: the same form — the client's capabilities, once after Welcome,
