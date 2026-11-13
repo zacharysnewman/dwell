@@ -1,8 +1,8 @@
 # Dwell — Sound Effects
 
 > **Status: [in progress, Phase 28]** — built and tested; waiting for the owner's listening review
-> of the WAV renders and answers to §9. The music (§2a, §6a; the owner's four picks from Andrew Sitkov's
-> Total Music Collection, shuffled) is built and tested. Decisions in [ADR 0032](./adr/0032-audio.md); the built
+> of the WAV renders and answers to §9. The music (§2a, §6a; the owner's eight picks from Andrew Sitkov's
+> Total Music Collection, shuffled, one for nights only) is built and tested. Decisions in [ADR 0032](./adr/0032-audio.md); the built
 > mechanisms are summarised in [`ARCHITECTURE.md`](./ARCHITECTURE.md) §5.2 and §6.1 (the
 > registry's `sound` field). The sounds themselves are **prototype content** (§6.1), like the
 > block set: they exercise the system and are expected to be replaced.
@@ -151,6 +151,13 @@ One file per namespace (`music.json`), its audio files beside it; one file sets 
   84–159 s each. Converted with ffmpeg: gain to −18 LUFS integrated (sources −15.8 to −25.0), a limiter at
   −1 dBFS, a 0.3 s fade in and 2.5 s fade out, stereo AAC (AudioToolbox) at 96 kbps, 44.1 kHz, no metadata,
   faststart: 1.0–1.9 MB each, 5.6 MB together. The other 19 casual candidates of the audition were dropped.
+  Four more (owner 2026-11-13, after round-3 previews: "I want these songs from the music you shared. Piano: 2,
+  4, 5 day or night. Electronic: 1 for night only."): *Massive Game Music Collection / Fire VS Ice - Fantasy
+  Dramatic & Peaceful Music Pack / Quiet Theme #1*, *Big Multi-Genre Music Collection / Positive and Calm
+  Orchestral Music Pack 2 / Theme #5* and *Big Cinematic Collection / Sentimental and Romantic Music Pack /
+  Sentimental Moment* for day and night, and *Massive Game Music Collection / Lyric & Peaceful Space Music Pack
+  / Theme #2* for nights only (`times: ["night"]`), full versions of 83–142 s converted the same way (sources
+  −12.7 to −17.3 LUFS): 1.0–1.7 MB each; the eight 11.6 MB together.
   Credited in `THIRD_PARTY_NOTICES` (`shared/licenses/third_party.json`) under the Unity Asset Store EULA, as
   the Imphenzia samples.
   Starry Sunshine, the AI-generated track they replace, is removed.
@@ -643,7 +650,7 @@ right-handed (right = forward × up, ahead −z), which is the drawn view's righ
 5. Should the main menu (launcher) have its own volume control, or only the in-game Settings?
 6. iOS's silent switch mutes Web Audio: acceptable?
 7. Who will author sound sets later — is a sound editor page (like the Adaptive Block Lab) wanted?
-8. Music: (picked 2026-11-12: four tracks, §2a.) Is the level right (`volume`
+8. Music: (picked 2026-11-12: four tracks; four more 2026-11-13, one for nights only, §2a.) Is the level right (`volume`
    0.6 under a 60 % Music default) and the gap (20–60 s of silence, no cross-fade)? Should it play in
    the main menu too (it does), or only once in a world? What decides which plays later (biome,
    time of day, menus)?

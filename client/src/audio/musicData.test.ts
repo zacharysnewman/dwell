@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { loadMusic, MUSIC_DIR, readMusicFiles } from '../../../shared/music/load.mjs';
 import { contentHash, MAX_BYTES, resolveMusic } from '../../../shared/music/validate.mjs';
-import { playable } from './playlist';
+import { forTime, playable, timeOfDay } from './playlist';
 import { MUSIC_DATA } from './music.gen';
 
 type File = {
@@ -55,17 +55,33 @@ describe('music data', () => {
     expect(loadMusic()).toEqual(MUSIC_DATA);
   });
 
-  it("plays the owner's four picks (Andrew Sitkov) everywhere, day and night, shuffled", () => {
+  it("plays the owner's eight picks (Andrew Sitkov) everywhere, one for nights only, shuffled", () => {
     const ts = playable(MUSIC_DATA);
     // Owner, 2026-11-12: "I really only like Night: 1, 4, 5 for both day and night", and of
-    // Casual Classic #1: "I like that one" (WORK_QUEUE item 33).
+    // Casual Classic #1: "I like that one"; 2026-11-13: "I want these songs from the music you
+    // shared. Piano: 2, 4, 5 day or night. Electronic: 1 for night only." (WORK_QUEUE item 33).
     expect(ts.map((t) => t.title).sort()).toEqual([
       'Casual Classic #1',
       'Close Your Eyes And Fly - Variation #5',
       'Dream On',
+      'Lyric & Peaceful Space Theme #2',
       'Lyric Fantasy Theme #4',
+      'Positive and Calm Orchestral Theme #5',
+      'Quiet Theme #1',
+      'Sentimental Moment',
     ]);
-    for (const t of ts) expect(t.times).toEqual(['day', 'night']);
+    for (const t of ts) {
+      expect(t.times).toEqual(
+        t.id === 'dwell:lyric_peaceful_space_2' ? ['night'] : ['day', 'night'],
+      );
+    }
+    // The night-only track is drawn at night and never in the day (the menu counts as day).
+    const night = forTime(ts, timeOfDay(MUSIC_DATA.playlist, 0));
+    const day = forTime(ts, timeOfDay(MUSIC_DATA.playlist, 1));
+    expect(night).toHaveLength(8);
+    expect(night).toContain('dwell:lyric_peaceful_space_2');
+    expect(day).toHaveLength(7);
+    expect(day).not.toContain('dwell:lyric_peaceful_space_2');
     expect(MUSIC_DATA.playlist.order).toBe('shuffle');
     for (const t of ts) {
       expect(t.author).toBe('Andrew Sitkov');

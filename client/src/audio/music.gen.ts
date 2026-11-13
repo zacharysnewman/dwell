@@ -83,6 +83,69 @@ export const MUSIC_DATA: MusicData = {
         "day",
         "night"
       ]
+    },
+    {
+      "id": "dwell:quiet_theme_1",
+      "title": "Quiet Theme #1",
+      "author": "Andrew Sitkov",
+      "source": "quiet-theme-1.m4a",
+      "file": "quiet-theme-1-5a55b2bc.m4a",
+      "volume": 0.6,
+      "loop": false,
+      "fadeInS": 2,
+      "fadeOutS": 3,
+      "when": "always",
+      "times": [
+        "day",
+        "night"
+      ]
+    },
+    {
+      "id": "dwell:positive_orchestral_2_theme_5",
+      "title": "Positive and Calm Orchestral Theme #5",
+      "author": "Andrew Sitkov",
+      "source": "positive-orchestral-2-theme-5.m4a",
+      "file": "positive-orchestral-2-theme-5-bf2871f1.m4a",
+      "volume": 0.6,
+      "loop": false,
+      "fadeInS": 2,
+      "fadeOutS": 3,
+      "when": "always",
+      "times": [
+        "day",
+        "night"
+      ]
+    },
+    {
+      "id": "dwell:sentimental_moment",
+      "title": "Sentimental Moment",
+      "author": "Andrew Sitkov",
+      "source": "sentimental-moment.m4a",
+      "file": "sentimental-moment-cd89f0f9.m4a",
+      "volume": 0.6,
+      "loop": false,
+      "fadeInS": 2,
+      "fadeOutS": 3,
+      "when": "always",
+      "times": [
+        "day",
+        "night"
+      ]
+    },
+    {
+      "id": "dwell:lyric_peaceful_space_2",
+      "title": "Lyric & Peaceful Space Theme #2",
+      "author": "Andrew Sitkov",
+      "source": "lyric-peaceful-space-2.m4a",
+      "file": "lyric-peaceful-space-2-7b0141e4.m4a",
+      "volume": 0.6,
+      "loop": false,
+      "fadeInS": 2,
+      "fadeOutS": 3,
+      "when": "always",
+      "times": [
+        "night"
+      ]
     }
   ]
 };
