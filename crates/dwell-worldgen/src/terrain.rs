@@ -4332,28 +4332,27 @@ impl TerrainGenerator {
         self.pieces_with(column, x0 + lx, z0 + lz, &col, top)
     }
 
-    /// [`Self::top_pieces`] for column (x, z), its neighbours' columns from `column`.
-    fn pieces_with(
+    /// The stored ramp topping column (x, z) by the generation rule (HALF_HEIGHT_GRID.md §4),
+    /// every ramp backed (BUGS.md #153), its neighbours' columns from `column`.
+    fn shape_with(
         &self,
-        column: impl Fn(i32, i32) -> Column,
+        column: &impl Fn(i32, i32) -> Column,
         x: i32,
         z: i32,
         col: &Column,
-        top: i32,
-    ) -> &[StateId] {
-        if self.ramps.by.is_empty() || col.lip {
-            return &[];
-        }
-        let cols: [[Column; 3]; 3] = std::array::from_fn(|r| {
+    ) -> Top {
+        // The 5 × 5 window: the column's 3 × 3 and, for the backed rule (BUGS.md #153), the column
+        // behind each ramp's high side with its own neighbours.
+        let cols: [[Column; 5]; 5] = std::array::from_fn(|r| {
             std::array::from_fn(|c| {
-                if (r, c) == (1, 1) {
+                if (r, c) == (2, 2) {
                     *col
                 } else {
-                    column(x + c as i32 - 1, z + r as i32 - 1)
+                    column(x + c as i32 - 2, z + r as i32 - 2)
                 }
             })
         });
-        let around: ramps_rule::Around = std::array::from_fn(|r| {
+        let around5: ramps_rule::Around5 = std::array::from_fn(|r| {
             std::array::from_fn(|c| {
                 let col = &cols[r][c];
                 // Beyond the rim, nothing: lower than any ground.
@@ -4368,17 +4367,47 @@ impl TerrainGenerator {
         // contours too (owner, 2026-11-13): everywhere (`all`, 0.59–0.61), or only at a rock
         // wall's edge (`mesaEdges`: the column or a neighbour shows a wall; owner, 2026-11-13: "I'd
         // like the old rule to apply except for mesa edges").
+        // The rule of the column at (dx, dz) (within ±1): its own 3 × 3 decides `mesaEdges`.
         let geo = &self.biomes.geology.geology;
-        let notched = match geo.notched {
-            crate::geology::Notched::None => false,
-            crate::geology::Notched::All => true,
-            crate::geology::Notched::MesaEdges => cols.iter().flatten().any(|c| c.wall),
+        let rule = |(dx, dz): (i32, i32)| {
+            let notched = match geo.notched {
+                crate::geology::Notched::None => false,
+                crate::geology::Notched::All => true,
+                crate::geology::Notched::MesaEdges => (dz + 1..=dz + 3)
+                    .any(|r| (dx + 1..=dx + 3).any(|c| cols[r as usize][c as usize].wall)),
+            };
+            if notched && geo.strength > 0.0 {
+                ramps_rule::RampRule::Notched
+            } else {
+                ramps_rule::RampRule::Strict
+            }
         };
-        let shape = if notched && geo.strength > 0.0 {
-            ramps_rule::top_of_notched(&around, rows_for_m(1.0))
-        } else {
-            ramps_rule::top_of(&around, rows_for_m(1.0))
-        };
+        ramps_rule::top_backed_by(&around5, rows_for_m(1.0), rule)
+    }
+
+    /// The stored ramp the generation rule tops column (x, z) with (Flat: a full block; a lip's or
+    /// a column without ramp pieces may still be drawn flat), from the columns alone.
+    pub fn ramp_top_at(&self, x: i32, z: i32) -> Top {
+        let col = self.column_at(x, z);
+        if col.outside {
+            return Top::Flat;
+        }
+        self.shape_with(&|nx, nz| self.column_at(nx, nz), x, z, &col)
+    }
+
+    /// [`Self::top_pieces`] for column (x, z), its neighbours' columns from `column`.
+    fn pieces_with(
+        &self,
+        column: impl Fn(i32, i32) -> Column,
+        x: i32,
+        z: i32,
+        col: &Column,
+        top: i32,
+    ) -> &[StateId] {
+        if self.ramps.by.is_empty() || col.lip {
+            return &[];
+        }
+        let shape = self.shape_with(&column, x, z, col);
         // Dry pieces: `generate` floods each one under the water (`under_water`).
         let cells = self
             .ramps

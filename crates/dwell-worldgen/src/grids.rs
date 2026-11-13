@@ -1278,12 +1278,13 @@ impl CrateredTerrain {
         let Some(t) = top(x, z) else {
             return &[];
         };
-        let around: crate::ramps::Around = std::array::from_fn(|r| {
+        let around: crate::ramps::Around5 = std::array::from_fn(|r| {
             std::array::from_fn(|c| {
-                top(x + c as i64 - 1, z + r as i64 - 1).map_or(i32::MIN / 2, |t| (t + 1) as i32)
+                top(x + c as i64 - 2, z + r as i64 - 2).map_or(i32::MIN / 2, |t| (t + 1) as i32)
             })
         });
-        let (facing, steep) = match self.rules.ramps.top(&around, rows_for_m(1.0)) {
+        // Every ramp backed by its neighbour (BUGS.md #153).
+        let (facing, steep) = match self.rules.ramps.top_backed(&around, rows_for_m(1.0)) {
             Top::Flat => return &[],
             Top::Gentle(f) => (f, false),
             Top::Steep(f) => (f, true),
