@@ -1,0 +1,1 @@
+{ "changes": ["Behind the scenes: a camera placed at your own eyes (the benchmarks) no longer draws your whole body around it, which filled every forest benchmark shot with grey"] }
