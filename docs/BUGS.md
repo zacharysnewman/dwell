@@ -554,6 +554,17 @@ face, or the placement check against its shape.
 
 ## Fixed
 
+### 136. Teleported onto the moon, the ground under the player never arrives (fixed after 0.58.9)
+
+Found by the teleport the owner asked for (2026-11-13, below #123's test): put straight onto the moon's ground, the
+client never held the chunk under its feet. Cause: the server captures first and at once streams the moon's chunks
+round the player, each sent once, while the client is still on home's grid; the game dropped `ChunkData` of another
+grid than the one drawn. A flight in from far up hid it (the chunks round the capture point are air, and the ground
+ones are asked for later). Fixed (`game.rs`): another grid's chunks are held (at most `OTHER_GRID_CHUNKS_MAX`, a
+`ChunkUnload` drops them) and fed to the streamer at the crossing into it; the rest are dropped then. Test: the
+teleport in `on_the_moon_its_chunks_are_drawn_and_homes_lod_meshes_dropped` (both faces): red on the unfixed code
+(the moon's chunk under the player never meshed), green after.
+
 ### 134. Red sand wasn't on the red desert's floors (fixed in 0.60.0)
 
 Browser check of 0.59 (#888) on a022b0d0, brief 2026-11-13: "Red sand isn't where the owner asked ('We need a red

@@ -279,7 +279,8 @@ interface Run {
   spots: Spot[];
   /** Each placed `shot`'s camera and how long its view took to settle. */
   shots: ShotResult[];
-  /** Each `flyTo` step's trip (`__dwell.flyTo`: debug/moonTrip.ts `MoonTrip`, `HomeTrip`). */
+  /** Each `flyTo` step's trip (`__dwell.flyTo`: debug/moonTrip.ts `MoonTrip`, `HomeTrip`) and
+   * each `moonLand`'s (`MoonLanding` with the frame's `calls`, `triangles`, `meshBytes`). */
   trips: Record<string, unknown>[];
 }
 
@@ -904,6 +905,30 @@ async function step(run: Run, s: Step): Promise<void> {
         s.to === 'moon'
           ? `  flyTo moon: captured after ${n('captureS')} s, down in ${n('descentS')} s, landed in ${n('landS')} s; fell at ${n('fallMps2')} m/s² (the moon's ${n('gravity')})`
           : `  flyTo home: released after ${n('releaseS')} s, home's ground back in ${n('returnS')} s`,
+      );
+      return;
+    }
+    case 'moonLand': {
+      const options = { ...(s.face ? { face: s.face } : {}), ...(s.maxS ? { maxS: s.maxS } : {}) };
+      const r = await call<{ ok?: Record<string, unknown>; error?: string } | null>(
+        page,
+        `d.moonLand(${JSON.stringify(options)}).then((ok) => ({ ok }), (e) => ({ error: String(e?.message ?? e) }))`,
+      );
+      if (!r?.ok) throw new Error(`moonLand: ${r?.error ?? 'not playing'}`);
+      await sleep(page, s.waitS ?? 3);
+      const stats = await call<{ calls: number; triangles: number; meshBytes: number } | null>(
+        page,
+        'd.renderStats()',
+      );
+      const drawn = {
+        calls: stats?.calls ?? null,
+        triangles: stats?.triangles ?? null,
+        meshBytes: stats?.meshBytes ?? null,
+      };
+      run.trips.push({ ...r.ok, ...drawn });
+      const landS = typeof r.ok.landS === 'number' ? f(r.ok.landS) : '–';
+      console.log(
+        `  moonLand: on the moon's ground in ${landS} s; drawn: ${String(drawn.calls)} calls, ${String(drawn.triangles)} triangles, meshes ${String(drawn.meshBytes === null ? null : Math.round(drawn.meshBytes / 1e6))} MB`,
       );
       return;
     }
