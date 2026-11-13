@@ -6,6 +6,31 @@ pins it.
 
 ## Open
 
+### 132. A fresh Realistic world never loads without a start point (not reproduced; a spawn cost fixed)
+
+Brief, 2026-11-13: "a fresh Realistic world never loads without a start point. On 0.59 (a022b0d0),
+`?worldgen=test:realistic&seed=42&fresh=1` with no `at` showed only sky for over 105 s and `__dwell.state()` stayed
+null; with an `at` it loads in seconds." Suspects named: the spawn search with 0.58's "every spawn at a shrine" rule
+(#873), or the spawn search itself on Realistic.
+
+**Not reproduced (2026-11-13, a022b0d).** Natively (`cargo run --release -p dwell-worldgen --example spawn_cost
+<seed> test:realistic`): seeds 1, 7, 42 resolve the spawn search in 2–57 ms and the spawn's shrine in 118–185 ms a
+face; a local-style server join (single-threaded, jobs remote, the Realistic sky) spawns on its first tick; the native
+client with its local server (`game_local.rs`' rig) reaches `terrainReady` in ~2 s on seed 42. In Chromium (the cloud's
+SwiftShader under Xvfb, the release WASM build): the exact link, the bench's form (`?local=1&seed=42&worldgen=…&fresh=1`),
+and fresh links after an `at` link in one profile all joined in 4.6–7.6 s ("Finding a place to stand" 1.3–1.6 s on the
+loading screen) and reached `terrainReady` in 27–33 s. `state()` null means the page never got its Welcome, so the
+owner's stall was before the join: the map build (`Shaping the world map`), the local worker's start or its spawn.
+**Next, on the owner's Mac:** with the loading screen on, which stage it sits on and the console (a worker's error).
+
+**Fixed along the way (0.59.x):** the spawn's shrine on Realistic cost 134 ms of its 143 ms a face natively in its
+cache key (`TerrainGenerator::spawn_key` hashed the `Debug` text of the whole biome set, its whole-map biome field and
+drainage grids included; several times that in WASM, again in every generator that resolves the spawn's shrine). The
+key now names the set's config (`BiomeSet::config_text`, the grids derived from the map and it): 1 ms, the spawn's
+shrine 5–10 ms. Test: `dwell-worldgen` `tests/realistic_spawn.rs` (`the_spawn_keys_cost_is_small_on_realistic`, red at
+136 ms before the fix; `the_realistic_spawn_resolves_in_budget_at_a_shrine`, seeds 1, 7, 42 on both faces within 2 s
+at the nearest shrine: passed before and after, the hang being unreproduced).
+
 ### 131. After a face B return from the moon the held stone block looked pink (not reproduced natively)
 
 Second browser moon flight (0.58.8 on facaaaf1, seed 7, M1), brief 2026-11-13: "After a face B return the held stone

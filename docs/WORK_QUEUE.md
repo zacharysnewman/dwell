@@ -16,9 +16,15 @@ Last updated: 2026-11-11 (0.52.108).
 
 ## Queued next, in order (2026-11-12)
 
-**State at 16:00 PST 2026-11-12 (orchestrator handover).** Owner: cloud sessions paused until 17:30 PST (the Mac's
-clock); locally **one feature at a time** ("Only run 1 task at a time locally", "Like work on one feature at a
-time"). Notes ride with real changes (no notes-only PRs; CI skips docs-only changes).
+- **Realistic spawn without `at` (brief, 2026-11-13; BUGS.md #132):** "a fresh Realistic world never loads without a
+  start point … fix (bounded search with a fallback; the whole spawn ≤ ~2 s natively); a test that the Realistic spawn
+  resolves within a time/step budget on seeds 1, 7, 42 and stands at a shrine. Also check whether the client shows a
+  stage for it in the loading screen (if a spawn search is slow, the loading screen should say so)." Done on
+  `claude/realistic-spawn-9poyrj` as far as it reproduces: not reproduced natively or in the cloud's Chromium (the
+  spawn ≤ 0.25 s a face natively; the search was already bounded, `spawn_wider`, with a fallback); the spawn's shrine's
+  cache key cost 134 ms a face on Realistic and now 1 ms; the budget test is `tests/realistic_spawn.rs`. The loading
+  screen has the stage: "Finding a place to stand" (the local worker's `spawn`, `shared/look/loading.json`), seen in
+  the browser at 1.3–1.6 s. **Open:** the owner's repro on the Mac (which stage it sits on, the console).
 - **In progress (local):** underwater look pass toward the owner's ABZÛ reference (item 40: the surface seen from
   below first — "This is more what I want from the underwater surface" — then shafts, turquoise fog, caustics);
   branch `claude/underwater-look`; the reference image at the session scratchpad `abzu-ref.jpg` (not in the repo).
