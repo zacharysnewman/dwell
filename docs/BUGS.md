@@ -6,21 +6,29 @@ pins it.
 
 ## Open
 
-### 116. A cliff-edge ramp can't be aimed at from above at some angles
+### 124. A cliff-edge ramp can't be aimed at from above at some angles
 
 Brief, 2026-11-13 (screenshot pass on 0.58, after #856): "Aiming at a cliff-edge ramp: from 2 m back, pitches −35° to
 −45° target nothing — the ray passes over the wedge into the drop. The pick ray must hit the wedge's sloped face (its
-real shape), so the ramp is targetable from every angle its face is visible." In progress on
-`claude/creative-hit-fixes-th5974`.
+real shape), so the ramp is targetable from every angle its face is visible." **Not reproduced natively (2026-11-13):**
+`dwell-world` `tests/ramp_targeting.rs` (both faces) builds a cliff with a red sandstone ramp on its edge (the steep
+pair and the ½ m ramp; shaped into the edge, and placed on it uphill and downhill; every facing) and sweeps the pick
+ray from 1, 2 and 3 m back, 0–30° off the edge, pitches −15° to −70°, against an oracle marching each ray through the
+cells' solids in 0.25 mm steps: `raycast_block` meets the ramp's cell at the oracle's distance (within 2 mm) on every
+ray, and the server's `check_block_edit` takes the break (its sight lines reach it). The mesher draws ramps from the
+same shape (`faces_of`), and the generated terrain near the default spawn has no ramp over a real drop. So the miss
+is not in the pick ray as tested; suspects left are the client's side (its store's state for the cell, the eye it aims
+from, or the outline not drawn), which needs the screenshot's world, position and look (or a bench trace) to chase.
+The test stays as a guard (it passes on main: not a red → green).
 
-### 115. In creative a stone pickaxe only damaged a red sandstone steep ramp
+### 123. In creative a stone pickaxe only damaged a red sandstone steep ramp
 
 Brief, 2026-11-13 (screenshot pass on 0.58): "the New world form says Creative breaks 'any block … in one hit', but in a
-Creative world 4 stone-pickaxe hits only damaged a red_sandstone steep ramp (slopes take damage like Adventure). Fix so
-Creative breaks every block, slopes included, in one hit (both faces)." Found so far: not slope-specific. The owner's
-2026-11-11 rule (BLOCK_DAMAGE.md §7) keeps a tool's hits in creative (a stone pickaxe takes 5 on stone cubes too,
-pinned by `hits_to_break_come_from_the_tool_held_in_both_modes`); the form says "without a tool". Waiting on the
-owner: change the rule (tools one hit in creative too) or keep it.
+Creative world 4 stone-pickaxe hits only damaged a red_sandstone steep ramp (slopes take damage like Adventure)."
+Not slope-specific: by the owner's 2026-11-11 rule (BLOCK_DAMAGE.md §7) a held tool keeps its hits in creative (a stone
+pickaxe takes 5 on stone cubes too, pinned by `hits_to_break_come_from_the_tool_held_in_both_modes`). Whether creative
+tools should also break in one hit is the owner's to decide (asked 2026-11-13); until then the rule stays and only the
+form's wording is checked against it.
 
 ### 100. Volumetric clouds look like "crazy triangles"
 
