@@ -888,7 +888,7 @@ impl Server {
     /// (capsule centre) with grid-local velocity `v`, flying or not: the dev teleport onto a grid
     /// (the bench's `moonLand`/`sunLand`). The tick's capture takes only fliers, so a player
     /// teleported into the capture sphere on foot stayed on the home grid out in space, its ground
-    /// never held (BUGS.md #144). The move is recorded as a capture's is. False when the player is
+    /// never held (BUGS.md #147). The move is recorded as a capture's is. False when the player is
     /// not at home, the grid is unknown, or its client may not be on it.
     pub fn carry_onto_grid(&mut self, player_id: u16, index: u8, p: V3, v: V3) -> bool {
         let Some(id) = self.session_of_player(player_id) else {

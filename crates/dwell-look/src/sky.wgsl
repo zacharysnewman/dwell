@@ -35,7 +35,9 @@ fn dwell_sky(dir: vec3f, face: f32, day: DaySky) -> vec3f {
     let toward = select(0.5, 0.5 + 0.5 * dot(dh, sh) / max(lens, 1e-6), lens > 1e-6);
     let band = day.band.a * pow(max(toward, 1e-6), BAND_SPREAD) * (1.0 - smoothstep(0.0, BAND_HEIGHT, e));
     c = mix(c, day.band.rgb, clamp(band, 0.0, 1.0));
-    let g = day.glow.a * dwell_halo(dot(d, sun), SUN_BLOOM, SUN_BLOOM_K, SUN_GLOW, SUN_GLOW_K);
+    // None on the sun itself (other_stars.z, BUGS.md #145).
+    let g = day.glow.a * (1.0 - day.other_stars.z)
+        * dwell_halo(dot(d, sun), SUN_BLOOM, SUN_BLOOM_K, SUN_GLOW, SUN_GLOW_K);
     // Capped, so the sun's disc stays brighter than the sky around it.
     c = mix(c, day.glow.rgb, clamp(g, 0.0, GLOW_CAP));
     let m = day.disc.a * dwell_halo(dot(d, day.moon.xyz), MOON_BLOOM, MOON_BLOOM_K, MOON_GLOW, MOON_GLOW_K);
@@ -208,7 +210,8 @@ fn dwell_sun_disc(dir: vec3f, up: vec3f, day: DaySky, px: f32) -> vec4f {
     let sun = day.sun.xyz;
     // In space no air swells it at the horizon (docs/DAY_NIGHT.md §15).
     let radius = SUN_RADIUS * mix(SUN_HORIZON_SCALE, 1.0, max(smoothstep(0.0, 0.35, abs(dot(sun, up))), day.space.x));
-    if (dot(dir, sun) < cos(radius + 3.0 * px)) {
+    // Not seen from the sun itself (other_stars.z, BUGS.md #145).
+    if (dot(dir, sun) < cos(radius + 3.0 * px) || day.other_stars.z > 0.5) {
         return vec4f(0.0);
     }
     let r = asin(min(length(cross(dir, sun)), 1.0)) / radius;

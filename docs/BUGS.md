@@ -555,17 +555,17 @@ face, or the placement check against its shape.
 
 ## Fixed
 
-### 147. The bench's `flyTo` step rejected `marginM` (fixed after 0.61.7)
+### 150. The bench's `flyTo` step rejected `marginM` (fixed after 0.63.1)
 
 Brief, 2026-11-13 (browser check on 0.60.16, seed 7, local world, M1): "the bench `flyTo` step rejects `marginM` although
 `__dwell.flyTo` takes it — accept it." The step's key list (`scenarios.ts` `STEP_KEYS.flyTo`) left it out. Now accepted
 for a trip to the moon (0–100 km) and passed through. Test: `scripts/scenarios.test.ts` "flies to the moon and home"
 (red before: the step with `marginM: 500` failed the parse).
 
-### 146. The moon was not drawn from near it on the home grid (fixed after 0.61.7)
+### 149. The moon was not drawn from near it on the home grid (fixed after 0.63.1)
 
 Brief, 2026-11-13: "The moon was not drawn from 7–25 km out during a flyTo approach (14 calls, 1.7 k triangles, no near
-mesh), possibly a side effect of 2." Partly #144: after the failed `moonLand` the player was on the home grid inside the
+mesh), possibly a side effect of 2." Partly #147: after the failed `moonLand` the player was on the home grid inside the
 moon's capture sphere, not captured. There, and anywhere on the home grid inside the moon's `farM` (150 km), the moon is
 its near mesh (M-5), a piece, its far disc off; the far pass's near plane (`render::far_pass_near`) moves out to 0.8 × the
 eye's altitude over home's terrain, ~480 km at the moon's ~600 km, and clipped the whole mesh. On the moon grid the mesh
@@ -574,7 +574,7 @@ plane also stays short of the nearest shown piece's bounding sphere (`Renderer::
 `render::tests::the_far_pass_keeps_the_moons_near_mesh_from_home_high_up` (red before: the plane at 479 km with the moon
 20 km off). **Not checked in a browser** (no GPU in the cloud session): the owner's re-check of a `flyTo` approach.
 
-### 145. A teleport far outside the disc failed silently (fixed after 0.61.7)
+### 148. A teleport far outside the disc failed silently (fixed after 0.63.1)
 
 Brief, 2026-11-13: "Teleporting to a point far outside the disc fails silently: make it either work or fail with a
 message." `__dwell.teleport` posted the move to the worker and returned true; the local core moved the player past the
@@ -584,7 +584,7 @@ teleport_checked`) and rejects with why: past the rim ("… m from the disc's ce
 on the other face ("a teleport keeps the face"), or the player not at home. Test: `game_local`
 `a_teleport_past_the_rim_fails_with_a_message` (red before: the far point was taken).
 
-### 144. `moonLand` from a fresh spawn never landed, and travel stuck after it (fixed after 0.61.7)
+### 147. `moonLand` from a fresh spawn never landed, and travel stuck after it (fixed after 0.63.1)
 
 Brief, 2026-11-13: "Travel stuck after the spyglass: fresh spawn → spyglass(true, 3) → spyglass(false) → setTime →
 moonLand timed out ('not standing on the moon in 60 s (grid home, chunk held false)'); after that every flyTo('home')
@@ -600,7 +600,7 @@ from home ground only (`moonTrip.ts` `tripStartOf`). Tests: `game_local`
 `moon_land_from_a_fresh_spawn_after_the_spyglass_lands_on_the_moon` (both faces; red before: "client grid 0, server
 Some(0)"), `moonTrip.test.ts` "tripStartOf".
 
-### 143. No lava flowing on the sun (fixed after 0.61.7)
+### 146. No lava flowing on the sun (fixed after 0.63.1)
 
 Brief, 2026-11-13: "after sunLand on face A, `d.lava('report')` gives `fields: []` and two frames 4 s apart look the
 same … find why no field runs near a player standing on the sun." Two causes: the report listed home's fields only
@@ -613,6 +613,52 @@ ground beside the river head nearest the stand point. Test: `game_local`
 `by_a_sun_river_head_the_report_lists_a_running_field` (both faces, seed 7; red before: no sun field in the report),
 its field's molten columns growing over 20 s.
 
+
+### 145. The sun draws no terrain past its chunks and has no light but the lava's
+
+Owner, 2026-11-13: "In addition to the moon, the sun doesn't render chunks past high detail. It needs some directional
+lighting, let's make it from the earth and moon reflections." / "Sun should also be glowing generally 'due to the
+lava'." As #143 on the moon; and the sun's ground is lit by home's sunlight keyframes turned into its frame (the sun
+lights nothing from inside it). WORK_QUEUE items 27, 42.
+
+**Fixed (0.63.0, natively; the browser look a local check on a GPU):** the sun's rings to its horizon as #143's;
+a light rig per grid (`grids.json` `light`, `dwell-client` `grid_light.rs`): the sun `sunlit` false, lit by home and
+the moon from their true directions by albedo × phase × (apparent size)², an ambient floor and its lava `glow` from
+below; its own sun disc and halo not drawn there (`DayState::on_sun`). Tests (both faces): `grid_light`
+`on_the_sun_the_ground_is_lit_from_home_and_the_moon` (lit side toward home, the strength by the phase),
+`the_sun_glows_warm_from_below_and_the_moon_and_home_do_not`, `homes_lighting_is_unchanged`,
+`on_the_moon_home_is_a_faint_fill`; `grid_lod` `on_the_sun_its_terrain_is_drawn_to_its_horizon`. Not done:
+shadows from home's or the moon's light (the shadow maps follow the sun's direction); the rig lights terrain and
+pieces (`lambert_lit`), not yet water or characters.
+
+### 144. The moon's ground is ½ m steps with no ramps
+
+Owner, 0.61, iPhone, 2026-11-13: "And moon rock should have slopes, seems to only be generating half blocks." 0.59 gave
+moon dust its ramp family (HALF_HEIGHT_GRID.md §10), but the `cratered` generator (`grids.rs`
+`CrateredTerrain::generate`) fills each column with full cells to its top row and never runs the §4 rule. WORK_QUEUE
+item 27.
+
+**Fixed (0.63.0, a new compatibility line: the moon's terrain changes):** a grid generator's `ramps` (`none`, `strict`,
+`notched`; the moon `notched`, home's Realistic rule; HALF_HEIGHT_GRID.md §10). Red → green:
+`dwell-worldgen` `tests/grids.rs` `moon_slopes_are_ramps_not_bare_half_metre_stairs` (both faces): every ½ m edge bare
+before, under 1 % after (the strict rule left 36–43 %).
+
+### 143. The moon draws no terrain past its chunks; a cratered disc in its own sky; home not in it
+
+Owner, 0.61, iPhone, 2026-11-13: "3 things on the moon: it doesn't seem to have real LODs, can't see terrain very far in a
+meaningful way. Is there a moon visible from the moon?" Screenshots: standing on the moon the ground ends at the chunk
+distance in a flat pale band (M-5's coarse near mesh, under the chunks), then black sky; looking up, a cratered disc in
+the starry sky; home is not drawn (M-6's drawing not built). WORK_QUEUE item 27.
+
+**Fixed (0.63.0, natively; the browser look a local check on a GPU):** (1) the sky on the moon drew no moon disc
+already (#869), but still packed the moon's halo, its water glint and its moonlight: `DayState::on_moon` zeroes them
+(red → green: `grid_view` `the_moon_is_never_in_its_own_sky`, both faces, 108 moments, failed on the halo). The
+cratered disc in the screenshot is most likely the **sun**: its disc is shaded by the sun world's baked crust and
+cones (S-3, `sun.surface` 0.45) and goes white in space. (2) The moon's (and the sun's) terrain past the chunks:
+`grids.json` `lod`, rings of the grid's real surface round the viewer out past its rim (`dwell-client` `grid_lod.rs`),
+in place of M-5's identity mesh on the grid (tests: `grid_lod` on both faces, `game_local`
+`the_moon_up_close_is_its_surface_mesh_then_under_its_chunks`). (3) Home in the moon's sky (M-6): home's `nearMesh`
+from its world maps (`HomeFar`), drawn from the moon at its true place and size (`skyDisc` false).
 ### 142. Your own feet in first person seemed to float (fixed after 0.61.3)
 
 Owner, 2026-11-13 (after #140): "Is the first person model lined up with the ground though? The feet were first

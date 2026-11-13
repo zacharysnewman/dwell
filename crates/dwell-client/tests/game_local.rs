@@ -4292,15 +4292,63 @@ dwell_world::both_faces!(
             rig.run_until(120, |r| r.game.as_ref().unwrap().grid() == 1),
             "captured"
         );
+        // Home's world maps, as the shell installs them (home seen from the moon, M-6).
+        rig.game.as_mut().unwrap().far_terrain = Some(std::sync::Arc::new(
+            dwell_worldgen::BifacialTerrain::new(SEED),
+        ));
         rig.run_until(10, |_| false);
         let scene = rig.scene.borrow();
-        let pose = scene.poses.iter().find(|p| p.0 == moon_id);
+        assert!(
+            !scene.poses.iter().any(|p| p.0 == moon_id),
+            "on the moon its coarse mesh gives way to its rings (BUGS.md #143)"
+        );
+        // Its distant terrain: every ring of its `lod` held and drawn in its own frame.
+        let rule = dwell_worldgen::grids::grid("dwell:moon")
+            .unwrap()
+            .lod
+            .unwrap();
+        let rings: Vec<_> = (0..rule.levels)
+            .map(dwell_client::grid_lod::id)
+            .filter(|id| {
+                scene.pieces.contains(id)
+                    && scene
+                        .poses
+                        .iter()
+                        .any(|p| p.0 == *id && p.1 == [0.0; 3] && p.2 == [0.0, 0.0, 0.0, 1.0])
+            })
+            .collect();
         assert_eq!(
-            pose.map(|p| (p.1, p.2)),
-            Some(([0.0; 3], [0.0, 0.0, 0.0, 1.0])),
-            "on the moon its mesh is drawn in its own frame"
+            rings.len(),
+            rule.levels,
+            "every ring drawn out to the horizon"
         );
         assert!(!scene.day.unwrap().moon_shown);
+        // Home in the moon's sky at its true place: its mesh at home's origin in the moon's frame.
+        let home_id = dwell_client::grid_bodies::id(0);
+        assert!(
+            scene.pieces.contains(&home_id),
+            "home's mesh built from its maps"
+        );
+        let pose = scene
+            .poses
+            .iter()
+            .find(|p| p.0 == home_id)
+            .expect("home drawn");
+        let t = f64::from(rig.core.server().tick()) / 60.0;
+        let moon = rig.core.server().grids().frame(0, t);
+        let want = moon.to_grid([0.0; 3]);
+        let d = (0..3)
+            .map(|k| (pose.1[k] - want[k]).powi(2))
+            .sum::<f64>()
+            .sqrt();
+        let dist = (0..3).map(|k| want[k].powi(2)).sum::<f64>().sqrt();
+        assert!(d < 200.0, "at home's place: {:?} vs {want:?}", pose.1);
+        assert!(dist > 400_000.0, "~600 km off: {dist}");
+        // Its size in the sky: the world's radius at that distance (~4.8°).
+        let deg = (dwell_world::WorldBounds::default().radius() as f64 / dist)
+            .atan()
+            .to_degrees();
+        assert!((3.5..6.5).contains(&deg), "home spans {deg:.1}° in radius");
     }
 );
 
@@ -4826,7 +4874,7 @@ dwell_world::both_faces!(
 );
 
 dwell_world::both_faces!(
-    /// BUGS.md #144: from a fresh spawn (never flown) after the spyglass zoomed in and out, the
+    /// BUGS.md #147: from a fresh spawn (never flown) after the spyglass zoomed in and out, the
     /// dev teleport onto the moon (`moon_land`) put the player inside the capture sphere but the
     /// server captures only fliers, so it stayed on the home grid out in space, its ground never
     /// held (the browser's `moonLand` timed out "grid home, chunk held false"). The teleport
@@ -4881,7 +4929,7 @@ dwell_world::both_faces!(
 );
 
 dwell_world::both_faces!(
-    /// BUGS.md #143: on the sun, `__dwell.lava('report')` read `fields: []` and its lava looked
+    /// BUGS.md #146: on the sun, `__dwell.lava('report')` read `fields: []` and its lava looked
     /// still. The report listed home's fields only, and the sun's stand point (`sunLand`) is out
     /// of every river head's reach (390 m from the nearest on seed 7, `flow.nearM` 384 m). Landed
     /// beside a river head (`sunLand` with `river`), the head's field is placed and runs: the
@@ -4938,7 +4986,7 @@ dwell_world::both_faces!(
 #[test]
 fn a_teleport_past_the_rim_fails_with_a_message() {
     // face-a-only: the rim is the same on both faces; the face check is the other refusal.
-    // BUGS.md #145: the dev tools' teleport took a point far outside the disc, the player left
+    // BUGS.md #148: the dev tools' teleport took a point far outside the disc, the player left
     // past the rim where no world streams (server and client stood on different ground), and
     // nothing said why. Now refused with a message, the player left where it was; inside the rim
     // it moves as before.

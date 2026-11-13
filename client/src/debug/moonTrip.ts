@@ -62,7 +62,7 @@ export interface TripOptions {
   /** The moon's face to land on: `a` (default) or `b`. */
   face?: 'a' | 'b';
   /** `sunLand` only: beside the river head nearest the sun's stand point, on dry ground, where
-   * its lava field runs (BUGS.md #143), not on the stand point's crust away from lava. */
+   * its lava field runs (BUGS.md #146), not on the stand point's crust away from lava. */
   river?: boolean;
   /** How far outside the capture sphere the dev move puts the player (m; default 2000). */
   marginM?: number;
@@ -195,7 +195,7 @@ export function onHomeGround(m: MoonReport): boolean {
 /**
  * Where a trip starting now would come back to (`flyTo('home')`): the feet when on home ground,
  * else null. Taken before the trip starts, so a trip that fails still leaves the way home (BUGS.md
- * #144: a `moonLand` that timed out left none, and `flyTo('home')` then went back to the feet out
+ * #147: a `moonLand` that timed out left none, and `flyTo('home')` then went back to the feet out
  * in space, waiting for ground there that never came).
  */
 export function tripStartOf(m: MoonReport | null): Vec3 | null {

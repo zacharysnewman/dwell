@@ -1,6 +1,7 @@
 // Which panel is open over the game, and the pointer lock that goes with it (BUGS.md #69).
 //
-// One owner of "what is open": playing (no panel), the inventory, the game menu or the big map.
+// One owner of "what is open": playing (no panel), the inventory, the game menu, the big map or
+// theater mode's panel.
 // Opening a panel frees the mouse; closing one locks it again at once, from the closing gesture
 // (the key, the button, Resume). A lock lost while a panel is open is the panel's own doing and
 // opens nothing; a lock lost while playing is the browser's (Esc, alt-tab) and opens the game
@@ -8,7 +9,7 @@
 // an Esc) is retried on the next click on the game, still without opening the menu.
 
 /** What is open over the game: `none` while playing. */
-export type Panel = 'none' | 'inventory' | 'menu' | 'map';
+export type Panel = 'none' | 'inventory' | 'menu' | 'map' | 'theater';
 
 /**
  * The panels' own views, shown or hidden by the owner. `show` returns false when the panel has no
@@ -16,6 +17,11 @@ export type Panel = 'none' | 'inventory' | 'menu' | 'map';
  */
 export interface PanelViews {
   show(panel: Exclude<Panel, 'none'>, open: boolean): boolean;
+  /**
+   * Esc while `panel` is open: true when the panel used it itself and stays open (theater mode
+   * stops a take or a playing path first); absent or false, Esc closes it.
+   */
+  escape?(panel: Exclude<Panel, 'none'>): boolean;
 }
 
 /** The parts of `document` the owner reads. */
@@ -121,7 +127,7 @@ export class Panels {
       return true;
     }
     if (this.current !== 'none') {
-      this.close();
+      if (!this.views.escape?.(this.current)) this.close();
       return true;
     }
     if (this.locked) return false;

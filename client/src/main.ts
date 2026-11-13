@@ -330,7 +330,7 @@ interface DwellDebug {
   goto(query: string, options?: GotoOptions): Promise<GotoResult>;
   /**
    * Moves the local player's feet there (a local world, on its face, inside the disc's rim):
-   * resolves true once the local server has, rejects with why it can't (BUGS.md #145: a point
+   * resolves true once the local server has, rejects with why it can't (BUGS.md #148: a point
    * past the rim failed silently).
    */
   teleport(feet: Vec3): Promise<boolean>;
@@ -815,13 +815,19 @@ function forwardInput(app: App): void {
     // A lock lost while playing (Esc, alt-tab) opens the game menu; one a panel freed doesn't.
     app.panels.lockChanged(performance.now());
   });
+  // In theater mode the panel keeps the mouse free: a drag on the view turns the camera.
+  let theaterDrag = false;
   canvas.addEventListener('mousedown', (e) => {
-    if (app.theater?.active) return;
+    if (app.theater?.active) {
+      theaterDrag = true;
+      return;
+    }
     client.mouseDown(e.button, performance.now(), e.altKey);
   });
   // Letting go of Place stops building on (docs/ITEMS.md §5); on the document, so a release off
   // the canvas counts too.
   document.addEventListener('mouseup', (e) => {
+    theaterDrag = false;
     client.mouseUp(e.button);
   });
   canvas.addEventListener('contextmenu', (e) => {
@@ -829,7 +835,8 @@ function forwardInput(app: App): void {
   });
   document.addEventListener('mousemove', (e) => {
     if (app.theater?.active) {
-      if (document.pointerLockElement === canvas) app.theater.mouse(e.movementX, e.movementY);
+      if (document.pointerLockElement === canvas || theaterDrag)
+        app.theater.mouse(e.movementX, e.movementY);
       return;
     }
     client.mouseMove(e.movementX, e.movementY);
@@ -1109,6 +1116,7 @@ async function start(): Promise<App | null> {
     theater: null,
     panels: new Panels(document, canvas, {
       show: (panel, open) => showPanel(app, panel, open),
+      escape: (panel) => panel === 'theater' && (app.theater?.escape() ?? false),
     }),
   };
   // On-screen controls on touch devices (shown on the first touch too, e.g. a tablet with a mouse).
@@ -1474,7 +1482,7 @@ async function start(): Promise<App | null> {
     teleport: (feet) => teleportAnswered(app, feet),
     moon: () => moonOf(app),
     // The way home is kept before each trip starts, so one that fails still leaves it (BUGS.md
-    // #144); a spot off home ground (in space) is never one.
+    // #147); a spot off home ground (in space) is never one.
     flyTo: async (to, options) => {
       const host = tripHost(app);
       if (to === 'moon') {
@@ -1697,14 +1705,26 @@ async function start(): Promise<App | null> {
     touch: (shown) => {
       touch.visible = shown && touchWanted;
     },
+    touchDevice: () => touchWanted,
     canvasSize: (size) => {
       canvasOverride = size;
       resize();
     },
     where: () => (app.world ? { seed: app.world.seed.toString() } : {}),
     audioTap: () => audio().tapStream({ music: false, ui: false }),
+    panels: {
+      open: () => {
+        app.panels.open('theater');
+      },
+      close: () => {
+        app.panels.close('theater');
+      },
+    },
   });
   app.theater = theater;
+  window.addEventListener('resize', () => {
+    theater.relayout(innerWidth, innerHeight);
+  });
   settings.addTheaterPage(
     THEATER.key,
     () => {
@@ -1720,11 +1740,15 @@ async function start(): Promise<App | null> {
     const down = gp?.buttons[theaterButton]?.pressed ?? false;
     if (down && !theaterButtonWas && app.playing && !settings.isOpen) theater.toggle();
     theaterButtonWas = down;
+    // The host may turn theater mode off for guests (THEATER_MODE.md §7); the host always may.
+    theater.setAllowed(app.loopback !== null || client.theaterGuests());
     theater.frame(now, theater.active ? gp : null);
     theater.showOpenButton(touchWanted && app.playing);
     if (!theater.active) pad.poll(now);
     // Only the frames drawn count (one is skipped while the GPU is behind).
-    app.fps.frame(now, client.frame(now));
+    const drawn = client.frame(now);
+    app.fps.frame(now, drawn);
+    theater.afterFrame(drawn);
     handleEvents(app);
     playSounds(app, sounds, beds);
     showHud(app, now);
@@ -1890,6 +1914,9 @@ function showPanel(app: App, panel: Exclude<Panel, 'none'>, open: boolean): bool
   } else if (panel === 'menu') {
     if (!app.settings) return false;
     app.settings.setOpen(open);
+  } else if (panel === 'theater') {
+    if (!app.theater) return false;
+    return app.theater.setShown(open);
   } else {
     if (!app.minimap) return false;
     app.minimap.setBig(open);
@@ -2125,6 +2152,7 @@ function theaterModeOp(app: App, op: string, args: Record<string, unknown>): unk
           fps: args.fps as number | undefined,
           download: args.download as boolean | undefined,
           audio: args.audio as boolean | undefined,
+          exact: args.exact as boolean | undefined,
         })
         .then(async (r) => {
           if (!r) return null;

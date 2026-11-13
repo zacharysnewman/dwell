@@ -78,6 +78,37 @@ pub fn top_of_notched(n: &Around, steep_rows: i32) -> Top {
     }
 }
 
+/// Which rule shapes a generator's tops, as data (a grid generator's `ramps`, `grids.json`):
+/// none (every top flat), [`top_of`] (HALF_HEIGHT_GRID.md §4, V2) or [`top_of_notched`] (§10).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum RampRule {
+    #[default]
+    None,
+    Strict,
+    Notched,
+}
+
+impl RampRule {
+    /// The data's name: `"none"`, `"strict"` or `"notched"`.
+    pub fn parse(name: &str) -> Option<Self> {
+        match name {
+            "none" => Some(Self::None),
+            "strict" => Some(Self::Strict),
+            "notched" => Some(Self::Notched),
+            _ => None,
+        }
+    }
+
+    /// The top of a column by this rule.
+    pub fn top(self, n: &Around, steep_rows: i32) -> Top {
+        match self {
+            Self::None => Top::Flat,
+            Self::Strict => top_of(n, steep_rows),
+            Self::Notched => top_of_notched(n, steep_rows),
+        }
+    }
+}
+
 /// Rule 1 for one facing.
 fn accepts(n: &Around, facing: RampFacing) -> bool {
     let t = n[1][1];

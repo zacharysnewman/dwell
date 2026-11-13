@@ -5,7 +5,7 @@
 // records or a path plays, the bar hides too.
 
 /** The elements the clean frame keeps: the game canvas, and theater's bar (except in a take). */
-export const HUD_KEEP = ['view', 'theater-bar'] as const;
+export const HUD_KEEP = ['view', 'theater-bar', 'theater-touch'] as const;
 
 /**
  * Every HUD part the shell puts on the page, by what makes it (a class built on `document.body`,
@@ -46,14 +46,15 @@ export const TAKE_CLASS = 'theater-take';
  * hidden parent); in a take, the bar too.
  */
 export const HUD_RULES = [
-  'body.theater-clean > *:not(#view):not(#theater-bar):not(script):not(style)',
+  'body.theater-clean > *:not(#view):not(#theater-bar):not(#theater-touch):not(script):not(style)',
   'body.theater-take > #theater-bar',
+  'body.theater-take > #theater-touch',
 ] as const;
 
 /** Whether a child of `body` with this id shows in the clean frame (`take`: while recording). */
 export function shownWhenClean(id: string, take: boolean): boolean {
   if (id === 'view') return true;
-  if (id === 'theater-bar') return !take;
+  if (id === 'theater-bar' || id === 'theater-touch') return !take;
   return false;
 }
 

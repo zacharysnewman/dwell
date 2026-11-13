@@ -131,6 +131,14 @@ export class LocalCore {
   setMode(name: string): boolean {
     return this.world.setMode(name);
   }
+  /** The host turns theater mode on or off for guests (THEATER_MODE.md §7). */
+  setTheaterGuests(on: boolean): void {
+    this.world.setTheaterGuests(on);
+  }
+  /** Whether guests may use theater mode in this world. */
+  get theaterGuests(): boolean {
+    return this.world.theaterGuests;
+  }
   /**
    * The host retunes the world's worldgen config (Chisel in the game, Phase 56 B7); faces A's and
    * B's new maps. Throws the refusal's message.

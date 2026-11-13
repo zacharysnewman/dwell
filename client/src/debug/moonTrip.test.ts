@@ -280,7 +280,7 @@ describe('flyHome', () => {
 });
 
 describe('tripStartOf', () => {
-  it('is the feet on home ground, else nothing (BUGS.md #144)', () => {
+  it('is the feet on home ground, else nothing (BUGS.md #147)', () => {
     const { host, sim } = fake();
     expect(tripStartOf(host.moon())).toEqual([600_000, 0, 0]);
     // Left out in space on the home grid by a teleport that was never captured.
@@ -315,7 +315,7 @@ describe('teleportToMoon', () => {
     expect(calls.land).toEqual([-1]);
   });
 
-  it('lands on the sun beside a river head when asked (BUGS.md #143)', async () => {
+  it('lands on the sun beside a river head when asked (BUGS.md #146)', async () => {
     const { host, calls } = fake();
     await teleportToMoon(host, { river: true }, 'sun').catch(() => undefined);
     expect(calls.land).toEqual([[1, 1]]);
