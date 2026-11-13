@@ -1,0 +1,5 @@
+{
+  "changes": [
+    "The big map's debug layers (L) now cover only the world's disc, not the square around it."
+  ]
+}
