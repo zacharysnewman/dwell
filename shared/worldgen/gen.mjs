@@ -1825,7 +1825,7 @@ export function validateShrines(data, structures = registryStructures()) {
   if (typeof m !== "object" || m === null) fail("map must be an object");
   const me = Object.keys(m).filter(
     (k) =>
-      !["$comment", "reveal", "icon", "color", "iconPx", "clusterPx", "minSpacingPx", "siteMsPerDraw"].includes(k),
+      !["$comment", "reveal", "icon", "color", "iconPx", "clusterPx", "siteMsPerDraw"].includes(k),
   );
   const icons = JSON.parse(readFileSync(join(root, "shared/ui/markers.json"), "utf8")).icons;
   if (!icons.some((i) => i.id === m.icon))
@@ -1839,8 +1839,6 @@ export function validateShrines(data, structures = registryStructures()) {
   // The big map's thinning (BUGS.md: the zoomed-out map's overlapping block of icons).
   if (!(Number.isInteger(m.clusterPx) && m.clusterPx >= m.iconPx && m.clusterPx <= 256))
     fail("map.clusterPx must be a whole number from map.iconPx to 256 (merged icons must not overlap)");
-  if (!(Number.isInteger(m.minSpacingPx) && m.minSpacingPx >= 4 && m.minSpacingPx <= 512))
-    fail("map.minSpacingPx must be a whole number in [4, 512]");
   if (!(typeof m.siteMsPerDraw === "number" && m.siteMsPerDraw >= 1 && m.siteMsPerDraw <= 100))
     fail("map.siteMsPerDraw must be a number in [1, 100]");
   return { rules: data, worlds };

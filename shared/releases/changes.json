@@ -2,6 +2,15 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.58.5",
+      "changes": [
+        "The big map zooms in smaller steps (about 2× each), with the buttons, keys, wheel, pinch and controller",
+        "After \"Center on me\" the big map keeps you in the middle as you zoom",
+        "Zoomed out to the whole world, the big map shows shrines as clusters with counts",
+        "A new map marker's picker no longer shows Delete"
+      ]
+    },
+    {
       "version": "0.58.4",
       "changes": [
         "Behind the scenes: a test tool for the moon"

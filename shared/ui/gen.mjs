@@ -135,6 +135,8 @@ export const MAP_FIELDS = {
     // across the panel is computed (`levelSpans`).
     levels: ['levels'],
     startLevel: ['int', 0, 4],
+    // The zoom's steps between the levels' spans (BUGS.md #120: once a level a step).
+    zoomRatio: ['num', 1.25, 4],
     wheelStepPx: ['num', 1, 2000],
     pinchStep: ['num', 1.05, 8],
     fogColor: ['color'],
