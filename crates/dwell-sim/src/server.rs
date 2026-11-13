@@ -50,6 +50,7 @@ pub use grass::{Grass, GrassEnvelope};
 mod grass;
 mod grids;
 pub use grids::{GridSlot, Grids};
+mod blueprints;
 mod ground;
 mod growth;
 mod items;
@@ -690,6 +691,8 @@ struct Session {
     markers: Option<dwell_protocol::markers::Markers>,
     markers_loaded: bool,
     markers_sent: bool,
+    /// Whether the world's blueprints went to its client (`blueprints.world`, BLUEPRINTS.md).
+    blueprints_sent: bool,
     /// The last damage cause its client understands (`CausesHello`; 0: it never said, so only the
     /// causes every build knows, and `Drown` with `vitals_hello`).
     known_cause: u8,
@@ -796,6 +799,7 @@ impl Session {
             markers: None,
             markers_loaded: false,
             markers_sent: false,
+            blueprints_sent: false,
             burn: dwell_lava::Burn::default(),
             creatures_hello: false,
             damage_hello: false,
@@ -1059,6 +1063,8 @@ pub struct Server {
     departed_vitals: Vec<([u8; 32], Vec<u8>)>,
     /// The markers of players who left since the last save (docs/MAP_MARKERS.md).
     departed_markers: Vec<([u8; 32], Vec<u8>)>,
+    /// The world's blueprints and their builders (docs/BLUEPRINTS.md).
+    blueprints: blueprints::Blueprints,
     /// The loose items lying in the world (ADR 0066), and the moved ones not yet sent.
     loose: crate::loose_items::LooseItems,
     loose_moved: HashSet<u32>,
@@ -1271,6 +1277,7 @@ impl Server {
             departed_inventories: Vec::new(),
             departed_vitals: Vec::new(),
             departed_markers: Vec::new(),
+            blueprints: Default::default(),
             loose: Default::default(),
             loose_moved: HashSet::default(),
             creatures: Default::default(),
@@ -1836,9 +1843,11 @@ impl Server {
                 s.capabilities = c;
                 self.swordplay_hello(id);
                 self.send_markers(id);
+                self.send_blueprints(id);
             }
             Message::TheaterViewpoint(at) => self.theater_viewpoint(id, at),
             Message::Markers(m) => self.set_markers(id, m),
+            Message::Blueprints(m) => self.blueprints_message(id, m),
             Message::WorldgenRequest => {
                 let m = Message::WorldgenConfig(self.worldgen_text.clone());
                 self.send_reliable(id, &m, Channel::Control);
@@ -2171,6 +2180,8 @@ impl Server {
         // Creatures spawn near players, wander and despawn far away (ADR 0073).
         self.step_creatures();
         self.step_npc_fights();
+        // Blueprints complete, and their builders build (docs/BLUEPRINTS.md).
+        self.step_blueprints();
 
         // 5. Respawns, then snapshots at SNAPSHOT_HZ.
         for &id in &ids {
@@ -4809,6 +4820,7 @@ impl Server {
             self.flush_water();
         }
         *self.saved.lock().expect("saved index") = saved;
+        self.blueprints.restore(db.blueprints());
         if let Some(saved) = db
             .loose_items()
             .and_then(|b| crate::loose_items::LooseItems::from_bytes(&b))
@@ -4976,6 +4988,7 @@ impl Server {
             batch.markers.extend(Self::markers_record(s));
         }
         batch.loose_items = Some(self.loose.to_bytes());
+        batch.blueprints = self.blueprints.record_to_save();
         if !self.cuts_unread {
             batch.cuts = Some(self.cuts.to_bytes());
         }

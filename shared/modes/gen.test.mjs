@@ -8,7 +8,7 @@ test("the build's data validates: creative is the default, adventure is experime
   assert.equal(d.defaultMode, 'creative');
   const creative = d.modes.find((m) => m.name === 'creative');
   const adventure = d.modes.find((m) => m.name === 'adventure');
-  assert.deepEqual(creative.abilities, ['flight', 'brushes', 'unlimitedBlocks', 'map', 'mapRevealed', 'instantBreaks', 'structures', 'theaterViewpoint']);
+  assert.deepEqual(creative.abilities, ['flight', 'brushes', 'unlimitedBlocks', 'map', 'mapRevealed', 'instantBreaks', 'structures', 'theaterViewpoint', 'blueprints']);
   // The big map shows everything in creative; adventure explores it (owner, 2026-11-08).
   assert.ok(!adventure.abilities.includes('mapRevealed'));
   assert.ok(!adventure.abilities.includes('instantBreaks'));
@@ -18,7 +18,9 @@ test("the build's data validates: creative is the default, adventure is experime
   // used for cheating in adventure"; docs/THEATER_MODE.md §7).
   assert.ok(!adventure.abilities.includes('theaterViewpoint'));
   assert.match(modesRust(d), /Ability::Map\.bit\(\) \| Ability::MapRevealed\.bit\(\)/);
-  assert.deepEqual(adventure.abilities, ['damage', 'map', 'stamina', 'oxygen']);
+  // Blueprints are placed in both (owner, 2026-11-13, WORK_QUEUE item 55: "In adventure you can place
+  // "blueprints"").
+  assert.deepEqual(adventure.abilities, ['damage', 'map', 'stamina', 'oxygen', 'blueprints']);
   assert.equal(adventure.experimental, true);
   assert.match(modesRust(d), /pub const DEFAULT_MODE: &str = "creative";/);
   assert.match(modesTs(d), /export const GAME_MODES/);

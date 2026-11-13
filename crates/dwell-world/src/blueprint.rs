@@ -136,6 +136,13 @@ pub fn built(now: StateId, want: StateId) -> bool {
     block_of(now).name == block_of(want).name
 }
 
+/// The item a cell of `state` costs to place (its block's `cost`, a ramp's base, else the block;
+/// the server's own rule, ADR 0066).
+pub fn cost_item(state: StateId) -> &'static str {
+    let name = block_of(state).name;
+    dwell_protocol::inventory::drops_of(name).map_or(name, |d| d.cost)
+}
+
 /// Whether a block can be put in a cell holding `m`: air, a liquid, or a replaceable plant.
 pub fn free(m: StateId) -> bool {
     !targetable(m) || info(m).replaceable
@@ -248,9 +255,7 @@ impl Ghost {
                 continue;
             }
             last = Some(c);
-            let Some(now) = get(c) else {
-                return None;
-            };
+            let now = get(c)?;
             if let Some(&i) = self.index.get(&c) {
                 let g = self.cells[i];
                 if free(now) && !built(now, g.state) && has(g.state) && self.supported(c, get) {
@@ -277,9 +282,9 @@ impl Ghost {
         false
     }
 
-    /// The panel's rows: each block still needed, by name (`dwell:log`), with how many of it the player has
-    /// (`have`, by block name) and how many cells of it are left, most needed first; and the
-    /// cells left in all.
+    /// The panel's rows: each item still needed (`dwell:log`: what a cell costs, `cost_item`), with
+    /// how many of it the player has (`have`, by item name) and how many cells of it are left,
+    /// most needed first; and the cells left in all.
     pub fn needs(
         &self,
         get: &dyn Fn([i32; 3]) -> Option<StateId>,
@@ -289,7 +294,7 @@ impl Ghost {
         let mut left = 0;
         for c in self.remaining(get) {
             left += 1;
-            let name = block_of(c.state).name;
+            let name = cost_item(c.state);
             match by.iter_mut().find(|n| n.block == name) {
                 Some(n) => n.need += 1,
                 None => by.push(Need {
@@ -305,8 +310,13 @@ impl Ghost {
 
     /// A builder's next cell: of the cells left that are free (an occupied one, a player's other
     /// block, is skipped), the lowest face-local row first, and within a row the ones resting on
-    /// something solid first, then the structure's order. None when nothing is left it can build.
-    pub fn builder_next(&self, get: &dyn Fn([i32; 3]) -> Option<StateId>) -> Option<GhostCell> {
+    /// something solid first, then the nearest to `near` (the builder's face-local feet, so it
+    /// works its way round), then the structure's order. None when nothing is left it can build.
+    pub fn builder_next_near(
+        &self,
+        get: &dyn Fn([i32; 3]) -> Option<StateId>,
+        near: Option<[f64; 3]>,
+    ) -> Option<GhostCell> {
         let f = self.face;
         self.remaining(get)
             .filter(|c| get(c.world).is_some_and(free))
@@ -314,9 +324,21 @@ impl Ghost {
             .min_by_key(|(i, c)| {
                 let down = f.cell([c.local[0], c.local[1] - 1, c.local[2]]);
                 let resting = get(down).is_some_and(|m| !free(m));
-                (c.local[1], !resting, !self.supported(c.world, get), *i)
+                let d = near.map_or(0, |p| {
+                    let (dx, dz) = (
+                        f64::from(c.local[0]) + 0.5 - p[0],
+                        f64::from(c.local[2]) + 0.5 - p[2],
+                    );
+                    (dx.hypot(dz) * 4.0) as i64
+                });
+                (c.local[1], !resting, !self.supported(c.world, get), d, *i)
             })
             .map(|(_, c)| *c)
+    }
+
+    /// [`Ghost::builder_next_near`] in the structure's order.
+    pub fn builder_next(&self, get: &dyn Fn([i32; 3]) -> Option<StateId>) -> Option<GhostCell> {
+        self.builder_next_near(get, None)
     }
 
     /// Whether any cell is left that a builder can put (free and left to build).
@@ -328,7 +350,7 @@ impl Ghost {
 /// One panel row: a block still needed.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Need {
-    /// The block's name (`dwell:log`; the item a cell costs is its block's).
+    /// The item's name (`dwell:log`: what its cells cost).
     pub block: &'static str,
     /// How many the player has.
     pub have: u32,

@@ -215,6 +215,40 @@ impl BlueprintsMessage {
     }
 }
 
+/// The saved list's format version.
+pub const LIST_VERSION: u8 = 1;
+
+/// The world's blueprints as saved (the `blueprints` table): `u8 version` (1), `u32 next id`,
+/// `u16 count`, each a record.
+pub fn list_to_bytes(next_id: u32, list: &[Blueprint]) -> Vec<u8> {
+    let mut out = Vec::new();
+    let mut w = ByteWriter::new(&mut out);
+    w.u8(LIST_VERSION);
+    w.u32(next_id);
+    w.u16(list.len() as u16);
+    for b in list {
+        b.encode_into(&mut w);
+    }
+    out
+}
+
+/// A saved list, or None for a damaged one or a later version.
+pub fn list_from_bytes(bytes: &[u8]) -> Option<(u32, Vec<Blueprint>)> {
+    let mut r = ByteReader::new(bytes);
+    let version = r.u8();
+    r.check(version == LIST_VERSION);
+    let next = r.u32();
+    let n = usize::from(r.u16());
+    let mut list = Vec::new();
+    for _ in 0..n {
+        if !r.ok() {
+            break;
+        }
+        list.push(Blueprint::decode_from(&mut r));
+    }
+    (r.ok() && r.at_end()).then_some((next, list))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -253,6 +287,13 @@ mod tests {
             assert_eq!(BlueprintsMessage::decode_from(&mut r), m);
             assert!(r.ok() && r.at_end());
         }
+    }
+
+    #[test]
+    fn the_saved_list_round_trips() {
+        let list = vec![sample(), Blueprint { id: 9, ..sample() }];
+        assert_eq!(list_from_bytes(&list_to_bytes(10, &list)), Some((10, list)));
+        assert_eq!(list_from_bytes(&[2, 0, 0, 0, 0, 0, 0]), None);
     }
 
     #[test]
