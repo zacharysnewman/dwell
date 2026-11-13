@@ -953,7 +953,7 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    3. After a face B return the held stone block looked pink … 4. Also note in the PR (don't fix): page JS heap 40 →
    169 MB over three trips, not dropping at home (one page; may not be a leak)." Fixed: 1 (BUGS.md #129: `placeHome`
    asked again until the server's release, a home saved only on home ground), 2 (#130: a cross-grid correction
-   measured in world coordinates). 3: see BUGS.md #131. 4: recorded, not chased (one page's reading).
+   measured in world coordinates). 3: not reproduced natively, open with its suspects (BUGS.md #131). 4: recorded, not chased (one page's reading).
    **Left:** the browser flight (local, GPU), the roll upright at a crossing, M-5 (the moon's LOD), M-8. Earlier
    **M-7c status (2026-11-12, branch `claude/moon-m7c-x07vsc`, local):** owner, 2026-11-12: "Do we have the real physical moon yet?" (no: the client doesn't draw the moon
    up close yet (M-5) and there are no moon spawns (M-8)). **Built:** `carry` moved into `dwell-physics`; a

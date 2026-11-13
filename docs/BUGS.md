@@ -6,6 +6,21 @@ pins it.
 
 ## Open
 
+### 131. After a face B return from the moon the held stone block looked pink (not reproduced natively)
+
+Second browser moon flight (0.58.8 on facaaaf1, seed 7, M1), brief 2026-11-13: "After a face B return the held stone
+block looked pink (first-person held item's colour/lighting after the crossing — likely the face/grid frame or a light
+uniform not restored)." Read through natively (2026-11-13), not reproduced: nothing in `render/` or the arms' inputs
+is set at a grid crossing and left in place. The held block's tiles and colour (`characters.rs` `block_uniforms`), its
+flood light (`game.rs` `eased_light(ARMS_LIGHT, …)`), the frame block (eye, face sign, the day from `day_on_grid`) and
+the arms' placement are all rebuilt every frame. Suspects, most likely first: (1) `block_uniforms`' fallback colour is
+magenta (`[1, 0, 1]`, untextured) when `dwell_blocks::try_info` doesn't know the held state, and a lit, dimmed magenta
+reads pink: the held id is the hotbar's raw `selected_material()`, never mapped through the session's registry;
+(2) the eye adaptation `adapted_a` (`render/mod.rs`) eases back from face B's look over a few seconds after the
+return; (3) the eased arms light is not reset at `follow_grid` and starts from the moon's last sample while home's
+chunks are missing (open sky). If the pink lasts, check (1) in the browser (`__dwell` the held state id against the
+client's table); if it fades in seconds, (2) or (3). Needs a browser repro (local, GPU) before a red test.
+
 ### 128. A cliff-edge ramp can't be aimed at from above at some angles
 
 Brief, 2026-11-13 (screenshot pass on 0.58, after #856): "Aiming at a cliff-edge ramp: from 2 m back, pitches −35° to
