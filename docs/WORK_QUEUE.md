@@ -1312,6 +1312,11 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    Relaxing Themes), *Lyric Fantasy Theme #4* (Massive *Lyric Fantasy Background Music Pack*) and *Dream On*
    (*Beautiful and Emotional Music Pack*), encoded as before (−18 LUFS, AAC 96 kbps, 1.0–1.9 MB each, 5.6 MB
    together); the other 19 removed. Casual Classic #1 is kept from the earlier remark; one entry to drop.
+   Owner (2026-11-13), after the round-3 piano and electronic previews: "I want these songs from the music you
+   shared. Piano: 2, 4, 5 day or night. Electronic: 1 for night only." **Built (branch `claude/music-picks-2`):**
+   the playlist is eight: the four above plus *Quiet Theme #1* (Fire VS Ice), *Positive and Calm Orchestral Pack
+   2 Theme #5* and *Sentimental Moment* (Sentimental and Romantic) for day and night, and *Lyric & Peaceful Space
+   Theme #2* for nights only (`times: ["night"]`), encoded as before (1.0–1.7 MB each).
 
 34. **The in-game Chisel editor and the Textures tab extras** (owner 2026-11-12: "these all seem solid yes"): open
    Chisel's biome sliders inside a running world with the terrain around the player regenerating as they tune
