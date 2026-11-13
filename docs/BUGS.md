@@ -6,14 +6,6 @@ pins it.
 
 ## Open
 
-### 142. `dwell-sim` `items.rs` `dying_in_adventure_drops_everything_where_the_player_died` fails on main
-
-Found 2026-11-13 (branch `claude/collision-ahead`, not caused by it: the same failure on main at 0.61.1 and after
-merging main): both faces fail at `items.rs:202`, `a stack a slot: []`: `kill_player` in adventure leaves no loose
-items (4 expected: the starting axe, two stacks of dirt, the sticks). Suspect: the defeat kneel (WORK_QUEUE item 55,
-"humans don't die") changed what a kill does, and the test still expects the old death drop. Not investigated
-further; the owner decides whether a defeated player drops their items.
-
 ### 135. Flat ground on a plateau can show a sandstone wall's face (red sandstone) instead of a tread
 
 Found 2026-11-13 while fixing #134 (Realistic, seed 42 face A, e.g. (−6000, −3500) and (−4250, 0)): a few wide, flat
@@ -555,6 +547,17 @@ face, or the placement check against its shape.
 
 ## Fixed
 
+### 151. `dwell-sim` `items.rs` `dying_in_adventure_drops_everything_where_the_player_died` failed on main (fixed after 0.63.1)
+
+Found 2026-11-13 (branch `claude/collision-ahead`, not caused by it: the same failure on main at 0.61.1 and after
+merging main): both faces failed at `items.rs:202`, `a stack a slot: []`: `kill_player` in adventure left no loose
+items at once (4 expected: the starting axe, two stacks of dirt, the sticks). Cause: the defeat kneel (WORK_QUEUE
+item 55, "humans don't die") moved the drop to the stand, and the test still expected the old death drop at once.
+(Numbered 142 at first, a duplicate of the first-person feet's #142.) The owner decided (2026-11-13, "Keep
+everything"): a defeat drops nothing. Fixed: the stand's drop is gone (`drop_on_stand`, `drop_inventory`); the test is
+now `a_defeat_in_adventure_keeps_everything_and_drops_nothing` (both faces: the inventory, held slot and wallet
+exactly as before the defeat, at the shrine, no loose items), red on the old code (the axe, dirt and sticks dropped
+at the stand) and green after.
 ### 150. The bench's `flyTo` step rejected `marginM` (fixed after 0.63.1)
 
 Brief, 2026-11-13 (browser check on 0.60.16, seed 7, local world, M1): "the bench `flyTo` step rejects `marginM` although
