@@ -2016,6 +2016,14 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
 
 ## Smaller items, after the queue
 
+- **The inventory opened the game menu too (BUGS.md #137, 2026-11-13, `claude/inventory-lock`), done.** Owner: "Opening
+  your inventory currently opens the menu too, on top of your inventory. Which isn't correct. Should just open your
+  inventory and free your mouse. Closing it, should immediately lock your mouse again, same for menuz". One owner of
+  which panel is open (`client/src/ui/panels.ts`: playing, inventory, menu, big map) holds the pointer lock with it:
+  opening frees the mouse and opens nothing else, closing (key, Esc, Resume, Back, controller) re-locks from that
+  gesture, a refused re-lock waits for the next click; a lock the browser takes (Esc, alt-tab) still opens the menu.
+  Next (local): a check in Chrome on the GPU (E, Esc, Resume, M).
+
 - **Softer shore foam edge (2026-11-13, `claude/foam-soft`), done.** Owner: "The water foam edge is a little too hard
   now, the softness of the old version was better and the consistency of the new one along the edge is better. Combine
   those concepts and share screenshots when you've got it." The hard edge came from 0.52.6's solid contact line (#502:

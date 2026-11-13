@@ -1,0 +1,6 @@
+{
+  "changes": [
+    "Opening the inventory no longer opens the game menu on top of it, and frees the mouse",
+    "Closing the inventory, the game menu or the big map locks the mouse again straight away"
+  ]
+}
