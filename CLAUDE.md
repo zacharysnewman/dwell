@@ -153,6 +153,12 @@ it arrives**, in the owner's words, before or alongside starting the work: not o
 a scratch note or an agent's brief. Commit it with the next change (or on its own). An item nobody recorded
 doesn't exist for the next session.
 
+Owner, 2026-11-13: "Make a rule that when I request something like I just did with red sand you document it so
+we don't lose if." Each request is recorded in `docs/WORK_QUEUE.md` in the owner's words (quoted) plus an
+**"Owner should see:"** line stating the concrete result in game. That line is the acceptance check in every
+agent brief. An item is done only when a screenshot or the owner's look confirms it, not when the code
+merges. When a later request shows an earlier one fell short, the item says so and links them.
+
 ## Lighter paperwork for small changes
 
 Owner, 2026-11-11. Small changes — bug fixes, tuning, tests, docs — update only `docs/WORK_QUEUE.md`
