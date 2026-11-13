@@ -27,6 +27,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { applyCoat, applyRepaint } from "./coat.mjs";
+import { addPieces, addedVertices, applyDecor, decorBase } from "./decor.mjs";
 import { paletteStops, resolveColor } from "./gen.mjs";
 import {
   allLevelParts,
@@ -93,7 +94,26 @@ const stops = paletteStops(palette, data.palette?.exclude ?? []).map((s) => [
 function coat(name) {
   const m = data.models[name];
   const path = join(here, m.glb);
-  // Its `repaint` first (a part given a ramp of its own; shared/models/coat.mjs), by its part map
+  // Its decor's pieces first (geometry: shared/models/decor.mjs), added after the mesh's own vertices;
+  // the part map gains a row of no part for each (it lists the full mesh's vertices).
+  if (m?.decor) {
+    const bytes = addPieces(readFileSync(path), m.decor, palette);
+    writeFileSync(path, bytes);
+    console.log("PIECES", path, addedVertices(bytes, "detail_0"), "vertices on the full mesh");
+    if (m.parts) {
+      const partsPath = join(here, m.parts);
+      const file = JSON.parse(readFileSync(partsPath, "utf8"));
+      const count = readMesh(bytes, "detail_0").count;
+      const own = count - addedVertices(bytes, "detail_0");
+      const vs = file.vertices.join("");
+      if (vs.length !== count && vs.length >= own) {
+        const v = Uint8Array.from(vs.slice(0, own) + "0".repeat(count - own), Number);
+        writeFileSync(partsPath, `${JSON.stringify({ ...file, vertices: rows(v) }, null, 2)}\n`);
+        console.log("PARTS", partsPath, `${count - own} piece vertices, no part`);
+      }
+    }
+  }
+  // Its `repaint` next (a part given a ramp of its own; shared/models/coat.mjs), by its part map
   // (shared/models/parts.mjs), seeded again if the mesh no longer matches it (a re-import).
   if (m?.repaint) {
     const bytes = readFileSync(path);
@@ -112,10 +132,19 @@ function coat(name) {
     writeFileSync(path, applyRepaint(bytes, m.repaint, palette, parts));
     console.log("REPAINT", path);
   }
-  if (!m?.coat) return;
-  writeFileSync(path, applyCoat(readFileSync(path), m.coat, palette));
-  console.log("COAT", path);
+  if (m?.coat) {
+    writeFileSync(path, applyCoat(readFileSync(path), m.coat, palette));
+    console.log("COAT", path);
+  }
+  // Its decor's paint last (bands and marks over the repainted colours), a band's part by the part map.
+  if (m?.decor) {
+    const bytes = readFileSync(path);
+    const file = m.parts && JSON.parse(readFileSync(join(here, m.parts), "utf8"));
+    writeFileSync(path, applyDecor(bytes, m.decor, palette, file && decorBase(bytes, file)));
+    console.log("DECOR", path);
+  }
 }
+
 if (coatOnly) {
   for (const name of args.length ? args : Object.keys(data.models)) coat(name);
   process.exit(0);

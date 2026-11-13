@@ -2016,6 +2016,24 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
 
 ## Smaller items, after the queue
 
+- **The inventory opened the game menu too (BUGS.md #137, 2026-11-13, `claude/inventory-lock`), done.** Owner: "Opening
+  your inventory currently opens the menu too, on top of your inventory. Which isn't correct. Should just open your
+  inventory and free your mouse. Closing it, should immediately lock your mouse again, same for menuz". One owner of
+  which panel is open (`client/src/ui/panels.ts`: playing, inventory, menu, big map) holds the pointer lock with it:
+  opening frees the mouse and opens nothing else, closing (key, Esc, Resume, Back, controller) re-locks from that
+  gesture, a refused re-lock waits for the next click; a lock the browser takes (Esc, alt-tab) still opens the menu.
+  Next (local): a check in Chrome on the GPU (E, Esc, Resume, M).
+
+- **Softer shore foam edge (2026-11-13, `claude/foam-soft`), done.** Owner: "The water foam edge is a little too hard
+  now, the softness of the old version was better and the consistency of the new one along the edge is better. Combine
+  those concepts and share screenshots when you've got it." The hard edge came from 0.52.6's solid contact line (#502:
+  a 0.06 m line ending in a 3 cm step) and its flat-topped bands; the old rim (before 0.52.6) was a ~0.2 m soft fade
+  but multiplied by noise, so it broke into blotches. Now the contact line keeps a thin solid core (`shore.lineM` 0.02)
+  and feathers into the water over `shore.featherM` (0.2 m), with no noise cutting it, and the bands' sides soften by
+  `shore.bandSoftness` (0.75) (`shared/look/waterflow.json`, WATER_RENDERING.md §20). The mirror
+  `dwell_look::waterflow::shore_foam` pins the profile: no step over 0.08 between samples 5 mm apart (0.52.6's
+  stepped 0.28) and never under half strength along the edge's first 0.1 m. Outstanding: the owner's look.
+
 - **The full-sky flood test on main (2026-11-13, `claude/flood-sky-test`), done.** Owner: "`cargo test -p dwell-mesh --lib
   flood_tests::open_terrain_takes_the_full_sky` fails on main (face a: 3 dark vertices) … find which merge broke it, decide
   whether the 3 dark vertices are a real lighting bug or a fixture made stale by an intended change. Check face b too."
@@ -2220,6 +2238,15 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    radius, and marks; by facet, every level; `node --test shared/models/decor.test.mjs`), not yet applied to the
    Peasant. **Left:** eyes as geometry; the hat band and a waist band wired into models.json `decor` once the eyes
    land, with renders for the owner.
+   **The waist ring** (owner, 2026-11-13): **"There's a ring that goes around the waist with alternating triangles
+   that already looked pretty good they were just inconsistently colored."**
+   **Built (branch `claude/outfit-2`, 2026-11-13):** the eyes as geometry (decor `piece`: a dark quad and a glint a
+   side on the head joint, added to every detail level, the part map listing them with no part); the hat's crown
+   band (the hat part inside r 0.19 m, never the brim; bark and wool_red strictly alternating); the waist ring (the
+   outermost facets at the belt's height, no spikes, leather and wool_green strictly alternating: the triangles
+   the paint vote coloured wood, canvas, brass and leaf). CHARACTERS.md §11.14. Renders before/after at 60 % and
+   100 % went to the owner. **Left:** the owner's look at the colours (data in models.json `decor`); at 35 % and
+   20 % the waist is long triangles, so the ring is a few facets or none.
 
 44. **Trees on slopes hang over the edge** (owner 2026-11-12: **"I notice a lot of trees on slopes are hanging out over
    the edge. Perhaps trees should always have flats under them? Don't limit trees to flats, since they might not

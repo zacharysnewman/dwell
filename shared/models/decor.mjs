@@ -1,4 +1,4 @@
-// A model's decor (models.json `decor`, docs/CHARACTERS.md §11.13, WORK_QUEUE item 43): colours painted
+// A model's decor (models.json `decor`, docs/CHARACTERS.md §11.14, WORK_QUEUE item 43): colours painted
 // over the imported mesh by position, for what the pack's texture had and the per-face import lost
 // (the Peasant's eyes: painted in the texture, smaller than a face of the mesh) and for patterns the
 // pack never had (a band of alternating colours round the hat's crown or the waist). The importer
@@ -20,6 +20,23 @@
 //     "colours": ["bark", "brass"],   `segments` equal sectors, sector k taking colours[k mod n]
 //     "segments": 12, "phase": 0 }    (a multiple of the colours' count), turned by `phase` degrees
 //
+//   A band with "order": true colours its facets by their place round the ring instead (sorted by
+//   angle, the k-th taking colours[k mod n]: strictly alternating, whatever the facets' widths; no
+//   `segments`). "span": s keeps only the facets no taller than s (no long spikes); "outer": true
+//   only the outermost (no other triangle of the mesh further out along the facet's direction from
+//   the axis: the ring a viewer sees, not what is under it).
+//
+//   { "kind": "piece",                small geometry added to every detail level (the Peasant's eyes:
+//     "joint": "spine.006",           smaller than a face of the mesh, which paint can't show): flat
+//     "at": [x, y, z], "facing": "+z",  quads laid on the level's surface where a ray from `at`
+//     "lift": 0.003, "mirror": true,  (moved out along `facing`) back along -`facing` first hits it,
+//     "quads": [                      `lift` off it along that triangle's normal, each `size` [w, h]
+//       { "colour": "hair_black",     (metres: across, up) at `at` [u, v] in the surface's frame (u
+//         "at": [0, 0], "size": [w, h], "lift": 0 } ] }   across, v up; mirrored, u flips), skinned
+//                                     wholly to `joint`. A quad's own `lift` adds to the piece's.
+//   The added vertices sit after the mesh's own (the part map lists them, no part), recorded in the
+//   primitive's `extras.decor` so a second run replaces them rather than adding more.
+//
 // Colours are palette references (shared/textures/palette.json), written as the GLB's linear
 // COLOR_0 as `repaint` does. A decor colour may not be a `repaint` source ramp (the repaint would
 // take it on the next run). Applying it again changes nothing.
@@ -27,8 +44,10 @@ import { resolveColor } from "./gen.mjs";
 
 const KINDS = {
   mark: new Set(["kind", "colour", "at", "radius", "mirror", "$comment"]),
-  band: new Set(["kind", "part", "y", "r", "colours", "segments", "phase", "$comment"]),
+  band: new Set(["kind", "part", "y", "r", "colours", "segments", "phase", "order", "span", "outer", "$comment"]),
+  piece: new Set(["kind", "joint", "at", "facing", "lift", "mirror", "quads", "$comment"]),
 };
+const QUAD_KEYS = new Set(["colour", "at", "size", "lift", "$comment"]);
 
 const hexRgb = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255);
 const toLinear = (c) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
@@ -37,7 +56,7 @@ const toLinear = (c) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4
  * Checks a model's `decor` (`at` names it); `parts`: the model's part names; `repaint`: its repaint
  * list (a decor colour may not be one of its `from` ramps). Throws naming the bad entry.
  */
-export function validateDecor(list, palette, at = "decor", parts = undefined, repaint = []) {
+export function validateDecor(list, palette, at = "decor", parts = undefined, repaint = [], joints = undefined) {
   const fail = (msg) => {
     throw new Error(`${at}: ${msg}`);
   };
@@ -69,6 +88,23 @@ export function validateDecor(list, palette, at = "decor", parts = undefined, re
       point(d.at, `${w}.at`);
       if (!(d.radius > 0)) fail(`${w}.radius is a positive distance`);
       if (d.mirror !== undefined && typeof d.mirror !== "boolean") fail(`${w}.mirror is true or false`);
+    } else if (d.kind === "piece") {
+      if (typeof d.joint !== "string" || (joints && !joints.includes(d.joint)))
+        fail(`${w}.joint: the model's skin has no joint ${d.joint}`);
+      point(d.at, `${w}.at`);
+      if (!/^[+-][xyz]$/.test(d.facing ?? "")) fail(`${w}.facing is an axis (+z, -x, ...)`);
+      if (d.lift !== undefined && !(d.lift >= 0)) fail(`${w}.lift is a distance (0 or more)`);
+      if (d.mirror !== undefined && typeof d.mirror !== "boolean") fail(`${w}.mirror is true or false`);
+      if (!Array.isArray(d.quads) || !d.quads.length) fail(`${w}.quads is a non-empty list`);
+      d.quads.forEach((q, k) => {
+        const qw = `${w}.quads[${k}]`;
+        for (const key of Object.keys(q ?? {})) if (!QUAD_KEYS.has(key)) fail(`${qw}: unknown key ${key}`);
+        colour(q.colour, `${qw}.colour`);
+        if (!Array.isArray(q.at) || q.at.length !== 2 || !q.at.every(Number.isFinite)) fail(`${qw}.at is [u, v]`);
+        if (!Array.isArray(q.size) || q.size.length !== 2 || !q.size.every((x) => x > 0))
+          fail(`${qw}.size is [w, h], both positive`);
+        if (q.lift !== undefined && !(q.lift >= 0)) fail(`${qw}.lift is a distance (0 or more)`);
+      });
     } else {
       if (d.part !== undefined && parts && !parts.includes(d.part))
         fail(`${w}.part: the model's part map has no part ${d.part}`);
@@ -80,8 +116,12 @@ export function validateDecor(list, palette, at = "decor", parts = undefined, re
       }
       if (!Array.isArray(d.colours) || d.colours.length < 2) fail(`${w}.colours is a list of two or more`);
       d.colours.forEach((c, k) => colour(c, `${w}.colours[${k}]`));
-      if (!Number.isInteger(d.segments) || d.segments < d.colours.length || d.segments % d.colours.length)
+      if (d.order !== undefined && d.order !== true) fail(`${w}.order is true (or left out)`);
+      if (d.order && d.segments !== undefined) fail(`${w}: an ordered band has no segments`);
+      if (!d.order && (!Number.isInteger(d.segments) || d.segments < d.colours.length || d.segments % d.colours.length))
         fail(`${w}.segments is a whole multiple of the colours' count (${d.colours.length})`);
+      if (d.span !== undefined && !(d.span > 0)) fail(`${w}.span is a positive height`);
+      if (d.outer !== undefined && typeof d.outer !== "boolean") fail(`${w}.outer is true or false`);
       if (d.phase !== undefined && !Number.isFinite(d.phase)) fail(`${w}.phase is degrees`);
     }
   });
@@ -128,7 +168,7 @@ export function facets(indices, count) {
  * Which facets of one mesh each decor entry paints, and with what: a list of [vertices, colourRef].
  * `pos(i)` a vertex's position; `partOf(p)` the part name at a point (for bands with `part`).
  */
-export function decorPlan(list, groups, pos, partOf) {
+export function decorPlan(list, groups, pos, partOf, indices = undefined) {
   const centre = groups.map((vs) => {
     const c = [0, 0, 0];
     for (const v of vs) pos(v).forEach((x, k) => (c[k] += x / vs.length));
@@ -144,15 +184,99 @@ export function decorPlan(list, groups, pos, partOf) {
         if (!hit.length) hit = [dist.indexOf(Math.min(...dist))];
         for (const g of hit) out.push([groups[g], d.colour]);
       }
-    } else {
+    } else if (d.kind === "band") {
+      const ring = [];
       groups.forEach((vs, g) => {
         const [x, y, z] = centre[g];
         if (y < d.y[0] || y > d.y[1]) return;
         const r = Math.hypot(x, z);
         if (d.r && (r < d.r[0] || r > d.r[1])) return;
+        if (d.span !== undefined) {
+          const ys = vs.map((v) => pos(v)[1]);
+          if (Math.max(...ys) - Math.min(...ys) > d.span) return;
+        }
         if (d.part !== undefined && partOf(pos(vs[0])) !== d.part) return;
-        out.push([vs, d.colours[bandSector(d, x, z)]]);
+        if (d.outer && indices && covered(centre[g], vs, indices, pos)) return;
+        ring.push([vs, x, z]);
       });
+      if (d.order) {
+        const deg = ([, x, z]) => ((((Math.atan2(x, z) * 180) / Math.PI - (d.phase ?? 0)) % 360) + 360) % 360;
+        ring.sort((a, b) => deg(a) - deg(b));
+        ring.forEach(([vs], k) => out.push([vs, d.colours[k % d.colours.length]]));
+      } else for (const [vs, x, z] of ring) out.push([vs, d.colours[bandSector(d, x, z)]]);
+    }
+  }
+  return out;
+}
+
+/** Whether a triangle not of facet `vs` lies further out from the vertical axis, along the
+ * horizontal ray from the facet's centre `c` away from it (the facet is under something). */
+function covered(c, vs, indices, pos) {
+  const r = Math.hypot(c[0], c[2]) || 1;
+  const d = [c[0] / r, 0, c[2] / r];
+  const own = new Set(vs);
+  for (let t = 0; t < indices.length; t += 3) {
+    if (own.has(indices[t])) continue;
+    if (rayHit(c, d, pos(indices[t]), pos(indices[t + 1]), pos(indices[t + 2])) > 1e-4) return true;
+  }
+  return false;
+}
+
+/** The distance along the ray (o, d) to triangle (a, b, c), or -1 (Moller-Trumbore). */
+export function rayHit(o, d, a, b, c) {
+  const e1 = b.map((v, k) => v - a[k]);
+  const e2 = c.map((v, k) => v - a[k]);
+  const p = cross(d, e2);
+  const det = dot(e1, p);
+  if (Math.abs(det) < 1e-12) return -1;
+  const s = o.map((v, k) => v - a[k]);
+  const u = dot(s, p) / det;
+  if (u < 0 || u > 1) return -1;
+  const q = cross(s, e1);
+  const v = dot(d, q) / det;
+  if (v < 0 || u + v > 1) return -1;
+  return dot(e2, q) / det;
+}
+const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const norm = (a) => {
+  const l = Math.hypot(...a) || 1;
+  return a.map((x) => x / l);
+};
+const AXES = { x: 0, y: 1, z: 2 };
+
+/**
+ * A piece's quads on one mesh (`indices`, `pos(i)`): a list of { corners: [4 x [x,y,z]] (counter-
+ * clockwise seen from outside), normal, colour }; throws when its ray misses the mesh.
+ */
+export function pieceQuads(d, indices, pos) {
+  const axis = [0, 0, 0];
+  axis[AXES[d.facing[1]]] = d.facing[0] === "-" ? -1 : 1;
+  const out = [];
+  for (const side of d.mirror ? [1, -1] : [1]) {
+    const at = [d.at[0] * side, d.at[1], d.at[2]];
+    const o = at.map((v, k) => v + axis[k]);
+    const dir = axis.map((v) => -v);
+    let best = Infinity;
+    let tri = -1;
+    for (let t = 0; t < indices.length; t += 3) {
+      const h = rayHit(o, dir, pos(indices[t]), pos(indices[t + 1]), pos(indices[t + 2]));
+      if (h > 0 && h < best) [best, tri] = [h, t];
+    }
+    if (tri < 0) throw new Error(`a piece at [${at}] facing ${d.facing} misses the mesh`);
+    const [a, b, c] = [0, 1, 2].map((k) => pos(indices[tri + k]));
+    let n = norm(cross(b.map((v, k) => v - a[k]), c.map((v, k) => v - a[k])));
+    if (dot(n, axis) < 0) n = n.map((x) => -x);
+    const hit = o.map((v, k) => v + dir[k] * best);
+    // The surface's frame: v up (the world's +y off the normal), u across (u, v, n right-handed).
+    const up = norm([0, 1, 0].map((x, k) => x - n[1] * n[k]));
+    const u = cross(up, n);
+    for (const q of d.quads) {
+      const lift = (d.lift ?? 0) + (q.lift ?? 0);
+      const centre = hit.map((x, k) => x + n[k] * lift + u[k] * q.at[0] * side + up[k] * q.at[1]);
+      const [hw, hh] = [q.size[0] / 2, q.size[1] / 2];
+      const corner = (su, sv) => centre.map((x, k) => x + u[k] * su * hw + up[k] * sv * hh);
+      out.push({ corners: [corner(-1, -1), corner(1, -1), corner(1, 1), corner(-1, 1)], normal: n, colour: q.colour });
     }
   }
   return out;
@@ -214,7 +338,7 @@ export function applyDecor(bytes, list, palette, base = undefined) {
       const ix = view(b, json, binAt, p.indices);
       const indices = Array.from({ length: ix.count }, (_, i) => ix.get(i));
       const at = (i) => [0, 1, 2].map((k) => pos.get(i, k));
-      for (const [vs, ref] of decorPlan(list, facets(indices, pos.count), at, partOf)) {
+      for (const [vs, ref] of decorPlan(list, facets(indices, pos.count), at, partOf, indices)) {
         const c = linear(ref);
         for (const v of vs) {
           for (let k = 0; k < 3; k++) col.set(v, k, c[k]);
@@ -223,4 +347,159 @@ export function applyDecor(bytes, list, palette, base = undefined) {
       }
     }
   return b;
+}
+
+/**
+ * The GLB with its decor's pieces added to every mesh (a new buffer): the vertices any earlier run
+ * added (the primitive's `extras.decor`) are removed first, so running it again changes nothing.
+ */
+export function addPieces(bytes, list, palette) {
+  const pieces = list.filter((d) => d.kind === "piece");
+  const { b, json, binAt } = chunks(bytes);
+  const jointNames = (json.skins?.[0]?.joints ?? []).map((j) => json.nodes[j].name);
+  // Each buffer view's bytes, laid out again at the end (every attribute has a view of its own).
+  const views = json.bufferViews.map((v) =>
+    Buffer.from(b.subarray(binAt + (v.byteOffset ?? 0), binAt + (v.byteOffset ?? 0) + v.byteLength)),
+  );
+  const linear = (ref) => hexRgb(resolveColor(palette, ref)).map(toLinear);
+  const SIZE = { 5126: 4, 5123: 2, 5121: 1, 5125: 4 };
+  const WIDTH = { SCALAR: 1, VEC2: 2, VEC3: 3, VEC4: 4, MAT4: 16 };
+  const stride = (a) => SIZE[a.componentType] * WIDTH[a.type];
+  for (const m of json.meshes ?? [])
+    for (const p of m.primitives) {
+      if (p.indices === undefined || p.attributes.POSITION === undefined) continue;
+      const names = Object.keys(p.attributes);
+      for (const i of [...names.map((k) => p.attributes[k]), p.indices]) {
+        const a = json.accessors[i];
+        if (a.byteOffset || json.bufferViews[a.bufferView].byteStride)
+          throw new Error(`mesh ${m.name}: an accessor shares or strides its buffer view`);
+      }
+      // Remove what an earlier run added.
+      const had = p.extras?.decor ?? { vertices: 0, indices: 0 };
+      const keep = json.accessors[p.attributes.POSITION].count - had.vertices;
+      for (const k of names) {
+        const a = json.accessors[p.attributes[k]];
+        a.count = keep;
+        views[a.bufferView] = views[a.bufferView].subarray(0, keep * stride(a));
+      }
+      const ia = json.accessors[p.indices];
+      ia.count -= had.indices;
+      views[ia.bufferView] = views[ia.bufferView].subarray(0, ia.count * stride(ia));
+      if (p.extras) delete p.extras.decor;
+      if (p.extras && !Object.keys(p.extras).length) delete p.extras;
+      const posAcc = json.accessors[p.attributes.POSITION];
+      const posView = views[posAcc.bufferView];
+      const pos = (i) => [0, 1, 2].map((k) => posView.readFloatLE(i * 12 + k * 4));
+      const idxSize = SIZE[ia.componentType];
+      const idxView = views[ia.bufferView];
+      const indices = Array.from({ length: ia.count }, (_, i) =>
+        idxSize === 2 ? idxView.readUInt16LE(i * 2) : idxView.readUInt32LE(i * 4),
+      );
+      const quads = pieces.flatMap((d) => {
+        const joint = jointNames.indexOf(d.joint);
+        if (joint < 0) throw new Error(`a piece's joint ${d.joint} is not in the skin`);
+        return pieceQuads(d, indices, pos).map((q) => ({ ...q, joint }));
+      });
+      const add = quads.length * 4;
+      if (idxSize === 2 && keep + add > 65535) throw new Error(`mesh ${m.name}: too many vertices for 16-bit indices`);
+      for (const k of names) {
+        const a = json.accessors[p.attributes[k]];
+        const size = SIZE[a.componentType];
+        const w = WIDTH[a.type];
+        const extra = Buffer.alloc(add * w * size);
+        const put = (i, c, x) => {
+          const off = (i * w + c) * size;
+          const unit = (max) => (a.normalized ? Math.round(Math.min(1, Math.max(0, x)) * max) : x);
+          if (a.componentType === 5126) extra.writeFloatLE(x, off);
+          else if (a.componentType === 5123) extra.writeUInt16LE(unit(65535), off);
+          else if (a.componentType === 5121) extra.writeUInt8(unit(255), off);
+          else extra.writeUInt32LE(x, off);
+        };
+        quads.forEach((q, n) => {
+          const c = linear(q.colour);
+          for (let v = 0; v < 4; v++) {
+            const vals =
+              {
+                POSITION: q.corners[v],
+                NORMAL: q.normal,
+                COLOR_0: [...c, 1],
+                JOINTS_0: [q.joint, 0, 0, 0],
+                WEIGHTS_0: [1, 0, 0, 0],
+              }[k] ?? [];
+            for (let cc = 0; cc < w; cc++) put(n * 4 + v, cc, vals[cc] ?? 0);
+          }
+        });
+        views[a.bufferView] = Buffer.concat([views[a.bufferView], extra]);
+        a.count = keep + add;
+      }
+      // POSITION's bounds (glTF requires them).
+      const pv = views[posAcc.bufferView];
+      posAcc.min = [Infinity, Infinity, Infinity];
+      posAcc.max = [-Infinity, -Infinity, -Infinity];
+      for (let i = 0; i < posAcc.count; i++)
+        for (let c = 0; c < 3; c++) {
+          const x = pv.readFloatLE((i * 3 + c) * 4);
+          posAcc.min[c] = Math.min(posAcc.min[c], x);
+          posAcc.max[c] = Math.max(posAcc.max[c], x);
+        }
+      if (!quads.length) continue;
+      const extraIdx = Buffer.alloc(quads.length * 6 * idxSize);
+      quads.forEach((_, n) =>
+        [0, 1, 2, 0, 2, 3].forEach((v, j) => {
+          const x = keep + n * 4 + v;
+          if (idxSize === 2) extraIdx.writeUInt16LE(x, (n * 6 + j) * 2);
+          else extraIdx.writeUInt32LE(x, (n * 6 + j) * 4);
+        }),
+      );
+      views[ia.bufferView] = Buffer.concat([views[ia.bufferView], extraIdx]);
+      ia.count += quads.length * 6;
+      p.extras = { ...(p.extras ?? {}), decor: { vertices: add, indices: quads.length * 6 } };
+    }
+  // The buffer laid out again (views 4-byte aligned) and the GLB written.
+  let off = 0;
+  const bins = [];
+  json.bufferViews.forEach((v, i) => {
+    const pad = (4 - (off % 4)) % 4;
+    if (pad) bins.push(Buffer.alloc(pad));
+    off += pad;
+    v.byteOffset = off;
+    v.byteLength = views[i].length;
+    bins.push(views[i]);
+    off += views[i].length;
+  });
+  if (off % 4) bins.push(Buffer.alloc(4 - (off % 4)));
+  const bin = Buffer.concat(bins);
+  json.buffers[0].byteLength = bin.length;
+  let text = Buffer.from(JSON.stringify(json), "utf8");
+  if (text.length % 4) text = Buffer.concat([text, Buffer.alloc(4 - (text.length % 4), 0x20)]);
+  const u32 = (...xs) => {
+    const h = Buffer.alloc(xs.length * 4);
+    xs.forEach((x, i) => h.writeUInt32LE(x, i * 4));
+    return h;
+  };
+  return Buffer.concat([
+    u32(0x46546c67, 2, 28 + text.length + bin.length),
+    u32(text.length, 0x4e4f534a),
+    text,
+    u32(bin.length, 0x004e4942),
+    bin,
+  ]);
+}
+
+/** The full mesh's positions and parts (a part map file), which a band's `part` is read from. */
+export function decorBase(bytes, partsFile) {
+  const { json, b, binAt } = chunks(bytes);
+  const m = json.meshes.find((x) => x.name === "detail_0") ?? json.meshes[0];
+  const pos = view(b, json, binAt, m.primitives[0].attributes.POSITION);
+  return {
+    positions: Array.from({ length: pos.count }, (_, i) => [0, 1, 2].map((k) => pos.get(i, k))),
+    parts: Uint8Array.from(partsFile.vertices.join(""), Number),
+    names: partsFile.parts,
+  };
+}
+
+/** How many vertices the pieces added to a GLB's mesh `name` (its primitive's `extras.decor`). */
+export function addedVertices(bytes, name) {
+  const { json } = chunks(bytes);
+  return json.meshes?.find((m) => m.name === name)?.primitives?.[0]?.extras?.decor?.vertices ?? 0;
 }
