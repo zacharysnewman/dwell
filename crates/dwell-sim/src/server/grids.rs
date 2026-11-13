@@ -154,7 +154,8 @@ impl Grids {
                 )
             })
             .fold(home, f64::min);
-        self.rules.far_speed(d)
+        self.rules
+            .far_speed(d, crate::travel::space_at(p, self.home_radius_m))
     }
 
     /// The slot whose capture sphere holds world point `p`, among those a client with the

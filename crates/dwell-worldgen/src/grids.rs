@@ -532,20 +532,24 @@ pub struct TravelRules {
     pub far_above_m: f64,
     /// Far flight's speed per metre of that distance (1/s): `v = perS × d`.
     pub far_per_s: f64,
-    /// Far flight's top speed (m/s).
+    /// Far flight's space speed (m/s): its top, reached only in space (`space` 1 in
+    /// [`TravelRules::far_speed`]).
     pub far_max_mps: f64,
     /// A captured player is released past `captureM` × this (> 1: hysteresis).
     pub release_factor: f64,
 }
 
 impl TravelRules {
-    /// The far-flight speed at `d` m from the nearest grid's slab: 0 nearer than `aboveM` (the
-    /// slider's speed alone), else `perS × d` up to the top.
-    pub fn far_speed(&self, d: f64) -> f64 {
+    /// The far-flight speed (the least fly speed, m/s) at `d` m from the nearest grid's slab and
+    /// `space` (0–1) of the way into space, the sky's value (the atmosphere's thinning, docs/
+    /// DAY_NIGHT.md §15; owner, 2026-11-13: "a much faster fly speed for creative. But only in
+    /// space."): 0 nearer than `aboveM` or in the air (the slider's speed alone), else
+    /// `perS × d` (easing down toward every body's surface) up to `maxMps × space`.
+    pub fn far_speed(&self, d: f64, space: f64) -> f64 {
         if d <= self.far_above_m {
             0.0
         } else {
-            (self.far_per_s * d).min(self.far_max_mps)
+            (self.far_per_s * d).min(self.far_max_mps * space.clamp(0.0, 1.0))
         }
     }
 }

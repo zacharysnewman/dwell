@@ -1008,6 +1008,7 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    #136 (the moon's chunks sent before the client crossed were dropped; now held for the crossing); the bench has a
    `moonLand` step and a `moon-draw` scenario (draw calls, triangles, mesh bytes, shots on both faces). **Left:**
    `npm run bench -- --warm moon-draw` on a GPU (local); the moon's sky.
+   Owner, 2026-11-13: **"If you can actually fly to the moon/sun, we need a much faster fly speed for creative. But only in space."** So creative flight speeds up in space: by the same atmosphere value the sky uses (how far into space the player is), the normal fly speed inside the air and near any grid's ground, ramping to a space speed set in data (the moon's ~550–640 km in about 20–40 s at full speed, smoothly), slowing by the distance to the nearest grid's surface so landing on the moon or the sun stays controllable; unified with (not beside) the far flight; the predictor and the server reading the same data; a fast capture without a snap.
    **Moon follow-ups after the first browser trips (2026-11-13, branch `claude/moon-m5`; the brief: "1. The moon's
    own sky … 2. M-5: the moon seen up close while approaching … 3. The view eases upright at a crossing (today it
    turns at once) … 4. The minimap/big map on the moon: today a blank grey disc — show the moon's surface … or hide
