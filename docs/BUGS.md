@@ -547,6 +547,25 @@ face, or the placement check against its shape.
 
 ## Fixed
 
+### 140. The player character floats a bit above the ground (scaled up, 2026-11-13)
+
+Owner, 2026-11-13: "I think my player character is floating a bit above the ground now. We didn't talk about
+scaling for the new player model. It's likely shorter and may need to be scaled up." Measured (`models.json`
+`scale` 1.04): the collider rests exactly on the ground (feet 0.000 m over a flat floor, head 1.800 m, natively);
+the Peasant's lowest sole is 0.0005 m over its feet at rest and −0.7 to −0.2 cm in the idle clip (−3.0 to +2.5 cm
+through the walk), on every detail level, so its soles were on the ground; its whole height with the hat is
+1.82 m, but its **eyes were 1.546 m over the feet, 7.3 cm under the camera's 1.62 m eye** (the body under the hat
+~5 % small), which reads as a short body seen from a camera that sits above it. Side-on screenshots on the flat
+world (bench `player-scale`) showed the boots touching the ground. Fixed by data: the Peasant's `scale` 1.09, so
+its eyes (the decor piece's) are at 1.621 m (the hat's top 1.91 m). Test: `render::skinned`
+`the_peasant_stands_on_its_soles_with_its_eyes_at_the_cameras` (both faces; red before: eyes 1.546 m): at idle
+the lowest sole within 2 cm of the feet, the eyes within 3 cm of the camera's eye, your own first-person body's
+soles on the same ground as another player's. The held item still sits within 0.161 m and 5.2° of the rig's hand
+(`the_retargeted_hand_follows_the_rigs_hand_in_the_world`, 0.2 m bar); the first-person arm is scaled to the
+rig's reach, so its fits are unchanged. Not checked: on a ramp the capsule touches the slope off its axis, so
+the feet point (and the body) sits r·(1/cos θ − 1) over the slope under it (~3.5 cm on a ½ m-in-1 m ramp); a
+remote body plants its feet there (`plant_feet`), your own whole body seen from a placed camera does not.
+
 ### 126. Home's sky shows on the moon (fixed 2026-11-13)
 
 Same flight: home's blue sky and clouds show on the moon. Home's clouds were hidden off home first
