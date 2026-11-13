@@ -111,9 +111,12 @@ fn fnv(h: &mut u64, bytes: &[u8]) {
 /// mesa's floors and talus are `dwell:red_sand` (its own stack `dwell:red_desert_beds`), the state ids
 /// grew (red sand and the new ramp families appended), and where the starter's rock shapes the ground
 /// (`shaping.strength` 0.25) the stored ramps notch on diagonal contours and soft beds take ledges.
-/// Both together (the 0.59 line):
+/// Both together (the 0.59 line).
+///
+/// Re-pinned 2026-11-13 for red sand on the red desert's floors (BUGS.md #133): the sandstone's
+/// treads show its `cap`, now `dwell:red_sand` (shared/worldgen/rocks.json), not red sandstone.
 const STARTER_PIN: [(Face, &str); 2] =
-    [(Face::A, "65f4d1679ef42d3c"), (Face::B, "83052f693ade43ce")];
+    [(Face::A, "13cfe2cb0e926f8b"), (Face::B, "603940b3e4fc36fc")];
 
 #[test]
 fn the_starter_worlds_terrain_is_unchanged() {

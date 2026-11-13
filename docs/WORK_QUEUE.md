@@ -663,6 +663,17 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    ground 61 % (0.58) → 0 %, ledges ≥ 2 m ~1.3×. (4) Sand's `"settlesAs": "full"` (blocks gen.mjs, `SETTLES_AS`,
    `dwell_blocks::settled_state`): a falling block's ramp family falls too and a fallen sand or red sand ramp settles as
    the full block (felling.rs, both faces). Rule chosen: always the full block on settling.
+   **Follow-ups (brief 2026-11-13, browser check of 0.59 on a022b0d0; branch `claude/red-sand-fix-rwxphd`):** "Every
+   red_sand cell (and likely red_sand_ramp) draws as the magenta/black missing checker … Fix, and make the guard real
+   … Better still: derive TILE_ORDER from the texture data so it can't drift" and "Red sand isn't where the owner
+   asked … Make the red desert floors (the arid sedimentary/mesa areas of Realistic and the default world's red mesas)
+   surface as red_sand, by data". **Done:** the atlas layout is the texture set's list (BUGS.md #132); sandstone's
+   `cap` is red sand, so every red rock tread (Realistic's red-bed basins, the badlands, mesa floors and tops) is red
+   sand under red sandstone walls (#133). Open for the owner: (a) red sand shows wherever sandstone treads do, in any
+   climate (they showed red sandstone there before); limiting it to arid climates needs a climate rule on a rock's
+   cap (new vocabulary); (b) mesa tops are treads, so they are red sand too, not bare caprock; (c) the default
+   world (`dwell:default` only) has no red rock at the surface, so nothing changed there; the Starter's and
+   Realistic's terrain did (Starter re-pinned, Realistic golden rewritten): a terrain change on the 0.59 line.
 16. **Phone frame rate (P0)** (owner 2026-11-11, iPhone 17, Safari, setting Low: "I'm only getting ~23 fps on
    mobile, seeing lots of z-fighting on tree trunks with the leaf cards. What might be dropping frames since the
    last while. Used to get 60 fps"). Suspect: leaf cards are on in every tier but CPU, Low included; cards lying

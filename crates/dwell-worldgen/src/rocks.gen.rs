@@ -13,7 +13,7 @@ pub const ROCKS: &[Rock] = &[
         bed: 24.0,
         solubility: 0.0,
         face: "dwell:red_sandstone",
-        cap: "dwell:red_sandstone",
+        cap: "dwell:red_sand",
         scree: "dwell:red_sand",
         color: 0xc0623a,
     },

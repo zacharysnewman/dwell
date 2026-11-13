@@ -13,7 +13,7 @@ use dwell_worldgen::config::world_config;
 use dwell_worldgen::geology::{GEOLOGY, PlateSetting};
 use dwell_worldgen::plate_tectonics::PlateTectonics;
 use dwell_worldgen::plates::{BoundaryKind, PLATES};
-use dwell_worldgen::terrain::TerrainGenerator;
+use dwell_worldgen::terrain::{Band, TerrainGenerator};
 use dwell_worldgen::worldmap::WorldMap;
 
 const NAME: &str = "test:realistic";
@@ -176,5 +176,52 @@ dwell_world::both_faces!(
             }
         }
         assert!(seen > 0, "the noise's provinces are met");
+    }
+);
+
+dwell_world::both_faces!(
+    /// BUGS.md #133 (owner, 2026-11-13: "We need a red brown sand for the red desert areas"): the
+    /// red desert's floors (the ground between the walls where a red rock shapes it: the
+    /// sandstone's treads in the basins' red beds, the badlands and the mesas, the soft beds'
+    /// talus) are red sand, its walls red sandstone (rocks.json sandstone `cap`). Before 0.59.2
+    /// the sandstone's treads showed the sandstone, and on seed 42 the nearest red sand lay 23 km
+    /// from its mesas.
+    fn the_red_desert_floors_are_red_sand(f: FaceFrame) {
+        let sand = ["dwell:red_sand", "dwell:red_sand_ramp"];
+        let mut floors = 0;
+        for world in SEEDS {
+            let g = generator(face_seed(world, f.face));
+            let r = g.world().radius() as i32;
+            let mut wrong = Vec::new();
+            for x in (-r..=r).step_by(250) {
+                for z in (-r..=r).step_by(250) {
+                    let col = g.column_at(x, z);
+                    // A floor: a rock's ground (a wall is the rock band).
+                    if col.outside
+                        || col.wet()
+                        || !g.is_rock_palette(&col)
+                        || col.band != Band::Ground
+                    {
+                        continue;
+                    }
+                    let Some(y) = g.ground_y(x, z) else { continue };
+                    let top = dwell_blocks::info(g.state_at(x, y, z)).name;
+                    let block = top.split('[').next().unwrap_or(top);
+                    if block.starts_with("dwell:red_") {
+                        floors += 1;
+                        if !sand.contains(&block) {
+                            wrong.push((x, z, block));
+                        }
+                    }
+                }
+            }
+            assert!(
+                wrong.is_empty(),
+                "seed {world}: {} floors not red sand: {:?}",
+                wrong.len(),
+                &wrong[..wrong.len().min(8)]
+            );
+        }
+        assert!(floors >= 200, "only {floors} red desert floors sampled");
     }
 );

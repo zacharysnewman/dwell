@@ -6,6 +6,15 @@ pins it.
 
 ## Open
 
+### 134. Flat ground on a plateau can show a sandstone wall's face (red sandstone) instead of a tread
+
+Found 2026-11-13 while fixing #133 (Realistic, seed 42 face A, e.g. (−6000, −3500) and (−4250, 0)): a few wide, flat
+patches are the rock band (`Band::Rock`, the rock's `face`, red sandstone) though nothing there is a wall. Suspect: the
+rock shaping (`geology.rs` `Profile::map`) labels a column by the piece its natural height falls in; where the natural
+ground is a plateau whose height lies inside a bedded rock's narrow wall piece, every column maps to the same output
+height, so the plateau is flat yet each column is `Part::Wall`. A fix would label a flat wall column (the shaped slope
+under the tread's) a tread. Rare (2 of ~1,000 sampled red floors on seeds 1, 7, 42); not fixed.
+
 ### 131. After a face B return from the moon the held stone block looked pink (not reproduced natively)
 
 Second browser moon flight (0.58.8 on facaaaf1, seed 7, M1), brief 2026-11-13: "After a face B return the held stone
@@ -519,6 +528,34 @@ shallow ramp, maybe same problem with steep ramps too?" Not investigated yet: ta
 face, or the placement check against its shape.
 
 ## Fixed
+
+### 133. Red sand wasn't on the red desert's floors (fixed after 0.59.1)
+
+Browser check of 0.59 (#888) on a022b0d0, brief 2026-11-13: "Red sand isn't where the owner asked ('We need a red
+brown sand for the red desert areas'): in a Realistic world (seed 42 face A around (−6000, −9000)) the red mesa floors
+are red_sandstone, and the nearest red_sand surface is a small patch 23 km away at a grass edge." Cause: 0.59.0 gave
+red sand to the red rock mesa preset's bands and its own stack (`dwell:red_desert_beds`), but Realistic's red mesas
+are the basins' `dwell:red_beds` (plate provinces) under steppe, meadow and cold desert, and the Starter's badlands and
+mesa tops are sandstone treads: a rock's tread shows its `cap`, and sandstone's was red sandstone. Fix (data):
+`shared/worldgen/rocks.json` sandstone `cap` → `dwell:red_sand`, so every red rock floor (sandstone treads, the soft
+beds' talus) is red sand and its walls stay red sandstone; mesa tops are treads, so red sand too. Pinned by
+`dwell-worldgen` `tests/realistic_rocks.rs` `the_red_desert_floors_are_red_sand` (both faces, seeds 1, 7, 42: every
+red-rock floor column is red sand or its ramp; red before: 1,139 and 3,127 sandstone floors on seed 1). Realistic's
+golden rewritten, the Starter re-pinned (`starter_memory.rs`), the Starter mesa test now looks for red sand tops.
+Follow-up: #134.
+
+### 132. Red sand drew as the magenta and black checker (fixed after 0.59.1)
+
+Browser check of 0.59 (#888) on a022b0d0, brief 2026-11-13: "Every red_sand cell (and likely red_sand_ramp) draws as
+the magenta/black missing checker: `redSand` is baked (painterly.gen.rs) but not in the atlas layout TILE_ORDER, so
+drawable() fails." Cause: the atlas layout was a hand-kept list (`dwell-mesh` `textures.rs` `TILE_ORDER`) beside the
+texture set's own (`PAINTERLY_TILES`); 0.59.0 added `redSand` to the set only. The guard existed
+(`every_build_state_draws_with_its_own_look`) but runs in the `mesh` check, not the `data` one the block change ran.
+Fix: `TILE_ORDER` is now `PAINTERLY_TILES` (the set's order), so it can't drift; `shared/textures/gen.mjs` already
+fails on a tile a block asks for that the set doesn't paint. Tests (`dwell-mesh` `lib.rs`):
+`every_tile_a_block_asks_for_is_in_the_atlas_layout` (faces, `sideUnder` skirts, log hearts; red sand and its ramps
+drawable) and `a_fixture_block_with_an_unpainted_tile_fails_the_atlas_guard` (the fixture's `test:glow`, by data
+alone). Red before the fix: `every_build_state_draws_with_its_own_look` failed on `dwell:red_sand[flooded=false]`.
 
 ### 130. A capture or release counted as a ~600 km snap, hiding the real snaps around a moon trip (fixed after 0.58.8)
 

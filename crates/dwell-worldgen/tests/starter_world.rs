@@ -700,14 +700,15 @@ fn mesa_arch_counts() {
 dwell_world::both_faces!(
     /// The mesa's beds show at every height (0.52.66): its high columns' tops are its own stack's
     /// rock (red sandstone or shale by the bed), not the band's stone over the cut-back's remnants
-    /// (before, about 64 % over 300 m: 60 % at 600 m, 20 % at 700 m), and red sandstone tops some of them.
+    /// (before, about 64 % over 300 m: 60 % at 600 m, 20 % at 700 m), and red sand tops some of them
+    /// (the sandstone's treads, its `cap`, since 0.59.2: BUGS.md #133; its walls are red sandstone).
     fn the_mesas_beds_show_at_every_height(f: FaceFrame) {
         let (g, names) = generator(f, 0);
         let mesa = names
             .iter()
             .position(|n| *n == "preset:red_rock_mesa")
             .unwrap();
-        let red = dwell_blocks::state("dwell:red_sandstone").expect("red sandstone");
+        let red = dwell_blocks::state("dwell:red_sand").expect("red sand");
         let r = WORLD_RADIUS * 3 / 4;
         let (mut high, mut rock, mut reds) = (0u32, 0u32, 0u32);
         for z in (-r..=r).step_by(100) {
@@ -730,7 +731,7 @@ dwell_world::both_faces!(
             share >= 0.85,
             "{rock} of {high} high mesa tops show the beds"
         );
-        assert!(reds > 0, "no red sandstone top in {high}");
+        assert!(reds > 0, "no red sand top in {high}");
     }
 );
 

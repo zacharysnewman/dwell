@@ -1,0 +1,6 @@
+{
+  "changes": [
+    "Red sand draws with its own texture instead of the magenta and black checker",
+    "Red desert floors (red rock basins, badlands, mesa floors and tops) are red sand, under red sandstone walls"
+  ]
+}
