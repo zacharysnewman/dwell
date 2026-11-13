@@ -29,6 +29,8 @@ pub fn remote_input(v: &RemoteView, holding: bool) -> MoveInput {
         foot_ground: [0.0; 2],
         jumped: v.jumped,
         guard: None,
+        defeat: None,
+        armed: false,
     }
 }
 
@@ -66,6 +68,8 @@ pub fn local_input(
         foot_ground: [0.0; 2],
         jumped: false,
         guard: None,
+        defeat: None,
+        armed: false,
     }
 }
 
@@ -162,6 +166,33 @@ struct RemoteBody {
     /// Each foot's (left, right) position in the character's frame (x left, z ahead) in the last
     /// pose drawn: where its ground is read.
     feet_xz: [[f32; 2]; 2],
+    /// Defeated in its last snapshot (it kneels: CHARACTERS.md §11.13), and the seconds left of its
+    /// stand once it stood up at a shrine.
+    was_defeated: bool,
+    standing_s: f64,
+}
+
+/// Defeat's input for a body (§11.13): kneeling while `defeated`, else standing up for the
+/// `standing_s` left after it stood up at a shrine (`STAND_S` from the moment it was placed
+/// there), else none. Counts `standing_s` down by `dt`.
+pub fn defeat_input(
+    defeated: bool,
+    was_defeated: &mut bool,
+    standing_s: &mut f64,
+    dt: f64,
+) -> Option<dwell_characters::animator::Defeat> {
+    use dwell_characters::animator::Defeat;
+    if *was_defeated && !defeated {
+        *standing_s = dwell_protocol::defeat::STAND_S;
+    }
+    *was_defeated = defeated;
+    if defeated {
+        *standing_s = 0.0;
+        return Some(Defeat::Kneel);
+    }
+    let standing = *standing_s > 0.0;
+    *standing_s = (*standing_s - dt).max(0.0);
+    standing.then_some(Defeat::Stand)
 }
 
 /// The ground under a point, face-local (BIFACIAL_WORLD.md §11): `(frame, point)` → the height of
@@ -272,6 +303,8 @@ impl Bodies {
                 steps: StepSmoother::new(),
                 stepped: None,
                 feet_xz: [[0.0; 2]; 2],
+                was_defeated: false,
+                standing_s: 0.0,
             });
         if let Some(s) = swing_of(body.swing, v.swing, v.swing_kind) {
             body.animator.swing(s);
@@ -294,6 +327,13 @@ impl Bodies {
         );
         let drawn = local[1] + body.steps.offset();
         let mut input = remote_input(v, held != Held::Empty);
+        input.defeat = defeat_input(
+            v.is_dead(),
+            &mut body.was_defeated,
+            &mut body.standing_s,
+            dt,
+        );
+        input.armed = held.is_weapon();
         input.guard = self.guards.get(&v.player_id).copied();
         if grounded {
             // Each foot's place in the world: the body's frame (render/characters.rs
@@ -329,7 +369,6 @@ impl Bodies {
             feet: f.point([local[0], drawn, local[2]]),
             face: f,
             yaw: f64::from(v.yaw),
-            dead: v.is_dead(),
             look: dwell_characters::DEFAULT_LOOK,
             pose,
             role: body.animator.role(),
@@ -344,19 +383,33 @@ impl Bodies {
         self.remotes.retain(|id, _| keep(*id));
     }
 
-    /// Your body lying where you died.
-    pub fn own_dead(&mut self, feet: [f64; 3], yaw: f64, face: FaceFrame, dt: f64) -> PlayerView {
-        let pose = self.own.update(&MoveInput::default(), dt as f32);
+    /// Your body kneeling where you were defeated, or standing up at the shrine (`defeat`), holding
+    /// `held` (a sword is planted: CHARACTERS.md §11.13), seen from the defeat camera.
+    pub fn own_defeated(
+        &mut self,
+        feet: [f64; 3],
+        yaw: f64,
+        face: FaceFrame,
+        defeat: dwell_characters::animator::Defeat,
+        held: Held,
+        dt: f64,
+    ) -> PlayerView {
+        let input = MoveInput {
+            holding: held != Held::Empty,
+            defeat: Some(defeat),
+            armed: held.is_weapon(),
+            ..MoveInput::default()
+        };
+        let pose = self.own.update(&input, dt as f32);
         PlayerView {
             feet,
             face,
             yaw,
-            dead: true,
             look: dwell_characters::DEFAULT_LOOK,
             pose,
             role: self.own.role(),
             action: None,
-            held: Held::Empty,
+            held,
             light: [1.0, 0.0],
         }
     }
@@ -377,7 +430,6 @@ impl Bodies {
             feet,
             face,
             yaw,
-            dead: false,
             look: dwell_characters::DEFAULT_LOOK,
             pose,
             role: self.own.role(),
@@ -815,5 +867,37 @@ mod tests {
             swing_of(Some(place), swing_flags::PLACE | 4, 0),
             Some(Swing::Place)
         );
+    }
+}
+
+#[cfg(test)]
+mod defeat_input_tests {
+    use super::*;
+    use dwell_characters::animator::Defeat;
+
+    // WORK_QUEUE item 55: a remote player whose snapshots say `DEAD` (defeated) kneels — never the
+    // old lying body — and once it stands up at the shrine it plays the stand for `STAND_S`.
+    #[test]
+    fn a_defeated_remote_kneels_then_stands_for_the_stand() {
+        let (mut was, mut left) = (false, 0.0);
+        assert_eq!(defeat_input(false, &mut was, &mut left, 0.1), None);
+        assert_eq!(
+            defeat_input(true, &mut was, &mut left, 0.1),
+            Some(Defeat::Kneel)
+        );
+        assert_eq!(
+            defeat_input(true, &mut was, &mut left, 2.0),
+            Some(Defeat::Kneel)
+        );
+        let stand = dwell_protocol::defeat::STAND_S;
+        assert_eq!(
+            defeat_input(false, &mut was, &mut left, 0.1),
+            Some(Defeat::Stand)
+        );
+        assert_eq!(
+            defeat_input(false, &mut was, &mut left, stand),
+            Some(Defeat::Stand)
+        );
+        assert_eq!(defeat_input(false, &mut was, &mut left, 0.1), None);
     }
 }

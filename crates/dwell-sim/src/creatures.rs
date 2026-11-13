@@ -13,7 +13,7 @@ use std::collections::{HashMap, HashSet};
 
 use dwell_blocks::{StateId, VoxelShape, find_block, try_info};
 use dwell_protocol::chopping::{Clash, WeaponDef};
-use dwell_protocol::{CreatureNet, NPC_POSES, NpcNet, SIM_HZ};
+use dwell_protocol::{CreatureNet, NPC_POSES, NPC_STRIKE_POSES, NpcNet, SIM_HZ};
 use dwell_world::{CHUNK_SIZE, FaceFrame, cell_of_pos, m_of_row};
 
 #[rustfmt::skip]
@@ -318,7 +318,20 @@ pub struct Creature {
     /// Ticks until it may start its own swing, and its own swing's ticks to its contact.
     fight_wait: u32,
     own_swing: Option<u32>,
+    /// A defeated NPC (docs/CHARACTERS.md §11.13: humans never die): kneeling where it fell, then
+    /// standing up at a shrine; ticks left in that phase.
+    pub defeat: Option<(NpcDefeat, u32)>,
     rng: u64,
+}
+
+/// A defeated NPC's phase ([`Creature::defeat`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NpcDefeat {
+    /// Kneeling where it fell (its defeat's kneel and fade, shared/defeat), until the server
+    /// stands it up at the nearest shrine ([`Creatures::take_stand_ups`]).
+    Kneeling,
+    /// Standing up at the shrine (`standS`): still, unhurt, then wandering again.
+    Standing,
 }
 
 /// A defender's sword (WORK_QUEUE item 35; owner, 2026-11-12: the Wii Resort model): the weapon it
@@ -394,6 +407,22 @@ impl Creature {
             pose: striking.unwrap_or(self.pose as u8),
             variant: self.variant,
         })
+    }
+
+    /// [`Self::npc_net`] for a client that may also have `humans.defeat`: a defeated NPC is sent
+    /// kneeling or standing up (`NPC_DEFEAT_POSES`) to it, and standing (pose 0) to one without.
+    pub fn npc_net_for(&self, table: &Table, swings: bool, defeat: bool) -> Option<NpcNet> {
+        let mut n = self.npc_net(table, swings)?;
+        if let Some((phase, _)) = self.defeat {
+            n.pose = if defeat {
+                (NPC_POSES.len()
+                    + NPC_STRIKE_POSES.len()
+                    + usize::from(phase == NpcDefeat::Standing)) as u8
+            } else {
+                0
+            };
+        }
+        Some(n)
     }
 
     /// Starts its own swing now (tests and the dev tools: an NPC mid-strike).
@@ -660,6 +689,7 @@ impl Creatures {
             foe_player: None,
             fight_wait: 0,
             own_swing: None,
+            defeat: None,
             rng,
         });
         Some(self.next_id)
@@ -817,6 +847,7 @@ impl Creatures {
                     foe_player: None,
                     fight_wait: 0,
                     own_swing: None,
+                    defeat: None,
                     rng: mix(seed, [x + dx, yy, z + dz], 99),
                 };
                 c.look_base = c.yaw;
@@ -845,6 +876,9 @@ impl Creatures {
         let Some(c) = self.get_mut(id) else {
             return false;
         };
+        if c.defeat.is_some() {
+            return false; // kneeling or standing up: it fights no one (§11.13)
+        }
         match table.creatures[c.kind].npc.map(|n| n.combat) {
             Some(Combat::FightBack) => {
                 let give_up = table.creatures[c.kind]
@@ -1004,6 +1038,16 @@ impl Creatures {
             let local = f.point(c.position);
             if let Some(g) = &mut c.guard {
                 g.attacking = g.attacking.saturating_sub(1);
+            }
+            // Defeated (§11.13): still while it kneels and while it stands up.
+            if let Some((phase, left)) = &mut c.defeat {
+                c.speed = 0.0;
+                if *left > 0 {
+                    *left -= 1;
+                } else if *phase == NpcDefeat::Standing {
+                    c.defeat = None;
+                }
+                continue;
             }
             // A hit's knockback slides it first, over ground it could walk (a wall, water or a
             // cliff's edge stops it), walking nothing meanwhile.
@@ -1337,7 +1381,7 @@ impl Creatures {
         let table = self.table;
         let c = self.get_mut(id)?;
         let def = &table.creatures[c.kind];
-        if def.health <= 0.0 {
+        if def.health <= 0.0 || c.defeat.is_some() {
             return None;
         }
         c.health -= damage;
@@ -1352,11 +1396,31 @@ impl Creatures {
         };
         c.knock = [ax * knockback_m, az * knockback_m];
         c.hurt_from = Some(from);
+        let down = c.health <= 1e-9;
+        // A human is never killed (§11.13): it kneels where it fell, unhurt from now on, and no
+        // drops; an animal dies and is removed.
+        let human = def.npc.is_some();
         let hurt = Hurt {
             kind: c.kind,
             position: c.position,
-            killed: c.health <= 1e-9,
+            killed: down && !human,
+            defeated: down && human,
         };
+        if hurt.defeated {
+            c.health = 0.0;
+            c.knock = [0.0; 2];
+            c.speed = 0.0;
+            c.target = None;
+            c.foe = None;
+            c.foe_ticks = 0;
+            c.foe_player = None;
+            c.own_swing = None;
+            if let Some(g) = &mut c.guard {
+                g.raised = false;
+                g.attacking = 0;
+            }
+            c.defeat = Some((NpcDefeat::Kneeling, defeat_ticks(def.name)));
+        }
         if hurt.killed {
             self.remove(id);
         }
@@ -1380,6 +1444,43 @@ pub struct Hurt {
     /// Where it stood (world feet).
     pub position: [f64; 3],
     pub killed: bool,
+    /// A human (an NPC) brought to 0 health: defeated, kneeling (never killed, §11.13).
+    pub defeated: bool,
+}
+
+/// Ticks a defeated `name` (an NPC kind) kneels before it stands up at a shrine.
+fn defeat_ticks(name: &str) -> u32 {
+    (dwell_protocol::defeat::of(name).down_s() * f64::from(SIM_HZ)).round() as u32
+}
+
+impl Creatures {
+    /// The defeated NPCs whose kneel is over, once each: (id, where it knelt, world feet). The
+    /// server stands each up at the shrine nearest that ([`Self::stand_at`]).
+    pub fn take_stand_ups(&mut self) -> Vec<(u32, [f64; 3])> {
+        let mut out = Vec::new();
+        for c in &mut self.list {
+            if let Some((NpcDefeat::Kneeling, 0)) = c.defeat {
+                out.push((c.id, c.position));
+                c.defeat = None;
+            }
+        }
+        out
+    }
+
+    /// Stands defeated NPC `id` up at `feet` (world: a shrine's stand point), whole again, playing
+    /// its stand for `standS` before it wanders again.
+    pub fn stand_at(&mut self, id: u32, feet: [f64; 3]) {
+        let table = self.table;
+        if let Some(c) = self.get_mut(id) {
+            c.position = feet;
+            c.health = table.creatures[c.kind].health;
+            c.idle = 0;
+            c.defeat = Some((
+                NpcDefeat::Standing,
+                (dwell_protocol::defeat::STAND_S * f64::from(SIM_HZ)).round() as u32,
+            ));
+        }
+    }
 }
 
 /// The sword a creature of `def` holds from its spawn: an NPC whose `held` is a weapon, in its level

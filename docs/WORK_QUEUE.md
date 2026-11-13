@@ -2416,6 +2416,19 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    Good to move on to the next."** The shrine gaps branch (`claude/shrine-gaps`) is merged into the 0.59 batch (branch
    `claude/terrain-059-batch-v81i64`), so its shrine change ships on the new line.
 
+55. **The defeat kneel and the stand: humans don't die** (owner 2026-11-13: **"Can you setup a kneeling animation for
+   my human characters. Head down, hand on sword hilt, sword in the ground. And a stand too."** / **"This is their
+   'defeat' animation. Humans won't die in this game (general design rule)."**). Answers (2026-11-13): after the kneel,
+   **respawn at the nearest resurrection shrine** (the stand animation plays there); used by **players and
+   NPCs/villagers**; with **no sword in hand, kneel without one** (the hand resting on the knee). Brief: two clips as
+   data, `kneel` (one knee down, head bowed, a hand on the hilt of the sword planted point-down before them; unarmed
+   the hand on the raised knee) and `stand` (rising from the kneel to idle), fitted with `clip_probe`; defeat replaces
+   death for humans everywhere: at 0 health a player or NPC kneels (input locked, the camera pulled out to third
+   person), stays N s (data), fades and stands up at the nearest shrine to where they fell, on that face, playing
+   `stand`; others see both; the wire change additive; data for the kneel's time, the fade, the camera and
+   per-character overrides; tests by data on both faces. Design rule recorded in docs/CHARACTERS.md §1a. Built on
+   branch `claude/defeat-kneel` (docs/CHARACTERS.md §11.13, docs/SHRINES.md §5).
+
 ## Future (needs owner answers)
 
 - **Waterlogging** (owner 2026-11-12: "Eventually we'll want to make it so some blocks if they don't move for a little

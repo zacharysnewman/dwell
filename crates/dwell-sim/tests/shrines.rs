@@ -1,6 +1,7 @@
-//! A dead player stands up at the resurrection shrine nearest its death, on the face it died on
+//! A defeated player stands up at the resurrection shrine nearest where it fell, on that face
 //! (docs/SHRINES.md; owner, 2026-11-12: "You respawn at the nearest shrine when you die"), in every
-//! game mode; the server readies the terrain round that shrine while the player is dead.
+//! game mode; the server readies the terrain round that shrine while the player kneels. Humans
+//! never die (WORK_QUEUE item 55): a defeated player or NPC kneels first (CHARACTERS.md §11.13).
 
 mod common;
 
@@ -97,5 +98,184 @@ dwell_world::both_faces!(
         );
         assert!((got[1] - want[1]).abs() <= CELL_H, "{got:?} vs {want:?}");
         assert_eq!(FaceFrame::at_height(respawn_at[1]).face, f.face);
+    }
+);
+
+dwell_world::both_faces!(
+    /// WORK_QUEUE item 55 (owner, 2026-11-13: "Humans won't die in this game (general design
+    /// rule)"): health 0 is a defeat, never the old death. The player kneels where it fell (others
+    /// see it there, `DEAD` being the defeat on the wire), keeps its things while it kneels (the
+    /// death dropped them at once), and stands up at the shrine nearest where it fell after its
+    /// defeat's kneel and fade (shared/defeat), leaving its things where it knelt.
+    fn a_defeated_player_kneels_where_it_fell_then_stands_at_the_shrine(f: FaceFrame) {
+        let mut fx = Fixture::new(terrain("adventure"));
+        fx.join(1, &Client::new(1));
+        fx.join(2, &Client::new(2));
+        let world = f.point([2_600.5, 140.0, -2_300.5]);
+        fx.move_to(1, world[0], world[1], world[2]);
+        fx.move_to(2, world[0] + 2.0, world[1], world[2]);
+        fx.server.step();
+        fx.server.give(1, "dwell:stone_axe", 1);
+        let knelt = fx.server.feet_of(1).expect("joined");
+        let want = expected(f, 1, knelt);
+        fx.server.kill_player(1);
+        assert_eq!(fx.server.health_of(1), 0);
+        let down = dwell_sim::server::defeat_ticks(dwell_protocol::defeat::PLAYER);
+        assert_eq!(
+            down,
+            (dwell_protocol::defeat::DEFAULT.down_s() * 60.0).round() as u32
+        );
+        let (mut stood, mut seen_kneeling) = (None, 0);
+        for t in 0..down + 60 {
+            fx.server.step();
+            let out: Vec<Message> = fx
+                .server
+                .take_outbox()
+                .into_iter()
+                .filter_map(|o| Message::decode(&o.bytes))
+                .collect();
+            for m in out {
+                match m {
+                    Message::PhysicsSnapshot(s) if stood.is_none() => {
+                        // Player 2's view of player 1.
+                        let Some(r) = s.remotes.iter().find(|r| r.player_id == 1) else {
+                            continue;
+                        };
+                        assert!(r.flags & player_flags::DEAD != 0, "kneeling at {t}");
+                        let off = (0..3)
+                            .map(|k| (r.position[k] - knelt[k]).abs())
+                            .fold(0.0, f64::max);
+                        assert!(off < 0.01, "where it fell: {:?}", r.position);
+                        seen_kneeling += 1;
+                    }
+                    Message::PlayerEvent(e) if e.kind == PlayerEventKind::Respawn => {
+                        stood = Some((t, e.position));
+                    }
+                    _ => {}
+                }
+            }
+            if stood.is_none() {
+                assert!(fx.server.loose_items().is_empty(), "nothing left at {t}");
+            }
+            if stood.is_some() {
+                break;
+            }
+        }
+        assert!(seen_kneeling > 10, "seen kneeling {seen_kneeling} times");
+        let (t, at) = stood.expect("stood up");
+        assert!(t + 1 >= down && t <= down + 1, "at tick {t} of {down}");
+        let got = f.point(at);
+        assert!(
+            (got[0] - want[0]).abs() < 1e-6 && (got[2] - want[2]).abs() < 1e-6,
+            "{got:?} vs {want:?}"
+        );
+        assert_eq!(FaceFrame::at_height(at[1]).face, f.face);
+        assert_eq!(fx.server.health_of(1), players::MAX_HEALTH as i32);
+        // Its things were left where it knelt.
+        let items = fx.server.loose_items();
+        assert!(!items.is_empty());
+        assert!(items.iter().all(|it| {
+            let p = f.point(it.position);
+            let k = f.point(knelt);
+            (p[0] - k[0]).hypot(p[2] - k[2]) < 1.5
+        }));
+    }
+);
+
+dwell_world::both_faces!(
+    /// WORK_QUEUE item 55: an NPC brought to 0 health is defeated, not killed: it stays (no drops,
+    /// not removed), kneels still and unhurt where it fell for its kind's kneel (the villager's
+    /// override, shared/defeat), sent kneeling (pose 5) to a client with `humans.defeat` and
+    /// standing (0) to one without; then it stands up whole at the shrine nearest where it fell, on
+    /// that face (pose 6), and wanders again.
+    fn a_defeated_npc_kneels_then_stands_at_the_nearest_shrine(f: FaceFrame) {
+        let mut fx = Fixture::new(terrain("adventure"));
+        fx.join(1, &Client::new(1));
+        let world = f.point([2_600.5, 140.0, -2_300.5]);
+        fx.move_to(1, world[0], world[1], world[2]);
+        fx.server.step();
+        let feet = fx.server.feet_of(1).expect("joined");
+        let at = {
+            let l = f.point(feet);
+            f.point([l[0] + 3.0, l[1], l[2]])
+        };
+        let ids = fx.server.spawn_npcs_dev("dwell:villager", at, 1, 0.0, 0);
+        let id = ids[0];
+        let knelt = fx
+            .server
+            .creatures()
+            .iter()
+            .find(|c| c.id == id)
+            .unwrap()
+            .position;
+        let hurt = fx
+            .server
+            .creatures_mut()
+            .hurt(id, 1e6, 0.0, feet)
+            .expect("hurt");
+        assert!(hurt.defeated && !hurt.killed, "{hurt:?}");
+        assert!(
+            fx.server.creatures_mut().hurt(id, 1.0, 0.0, feet).is_none(),
+            "unhurt while kneeling"
+        );
+        let table = fx.server.creatures_mut().table;
+        let c = fx.server.creatures().iter().find(|c| c.id == id).unwrap();
+        assert_eq!(c.npc_net_for(&table, true, true).unwrap().pose, 5);
+        assert_eq!(c.npc_net_for(&table, true, false).unwrap().pose, 0);
+        // A second player waits at the shrine, so the NPC standing up there isn't despawned as
+        // far from every player.
+        let shrine = BifacialTerrain::new(SEED)
+            .nearest_shrine(f.face, knelt[0], knelt[2])
+            .expect("a shrine")
+            .1;
+        fx.join(2, &Client::new(2));
+        let by = f.point(shrine);
+        let by = f.point([by[0] - 3.0, by[1] + 1.0, by[2]]);
+        fx.move_to(2, by[0], by[1], by[2]);
+        let down = (dwell_protocol::defeat::of("dwell:villager").down_s() * 60.0).round() as u32;
+        assert!(down > (dwell_protocol::defeat::DEFAULT.down_s() * 60.0) as u32);
+        for t in 0..down - 1 {
+            fx.server.step();
+            let c = fx
+                .server
+                .creatures()
+                .iter()
+                .find(|c| c.id == id)
+                .expect("kept");
+            let (a, b) = (f.point(c.position), f.point(knelt));
+            assert!(
+                (a[0] - b[0]).hypot(a[2] - b[2]) < 0.05,
+                "still where it fell at {t}: {a:?} vs {b:?}"
+            );
+        }
+        for _ in 0..3 {
+            fx.server.step();
+        }
+        let c = fx
+            .server
+            .creatures()
+            .iter()
+            .find(|c| c.id == id)
+            .expect("kept");
+        let (got, want) = (f.point(c.position), f.point(shrine));
+        assert!(
+            (got[0] - want[0]).hypot(got[2] - want[2]) < 2.0,
+            "{got:?} by the shrine {want:?}"
+        );
+        assert_eq!(FaceFrame::at_height(c.position[1]).face, f.face);
+        assert_eq!(c.npc_net_for(&table, true, true).unwrap().pose, 6);
+        assert!(c.health > 0.0);
+        let stand = (dwell_protocol::defeat::STAND_S * 60.0).round() as u32;
+        for _ in 0..stand + 2 {
+            fx.server.step();
+        }
+        let c = fx
+            .server
+            .creatures()
+            .iter()
+            .find(|c| c.id == id)
+            .expect("kept");
+        assert!(c.defeat.is_none(), "standing again");
+        assert!(c.npc_net_for(&table, true, true).unwrap().pose < 5);
     }
 );
