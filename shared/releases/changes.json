@@ -4,11 +4,16 @@
     {
       "version": "0.61.0",
       "changes": [
-        "Hold Break with an empty hand (or holding a block or any non-tool item) to keep punching: dig dirt by hand without clicking every hit",
-        "Punches land at a steady rate, the same whether clicked or held, and the controller's trigger holds them too",
         "Towns: hamlets of blueprints are sited across both faces of every world, and builders come to build them when you are near",
         "A hamlet: a well, two huts, a watchtower and a wall, laid out from data, kept clear of the shrines and portals",
         "New compatibility line: generated worlds now hold towns, so worlds from 0.60 open in 0.60 builds"
+      ]
+    },
+    {
+      "version": "0.60.17",
+      "changes": [
+        "Hold Break with an empty hand (or holding a block or any non-tool item) to keep punching: dig dirt by hand without clicking every hit",
+        "Punches land at a steady rate, the same whether clicked or held, and the controller's trigger holds them too"
       ]
     },
     {
