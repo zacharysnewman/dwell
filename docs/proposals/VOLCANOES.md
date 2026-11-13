@@ -90,7 +90,7 @@ look and the in-game check come next, locally). ARCHITECTURE.md §6.8 has the mo
   once wired) and the steam events.
 - **Flow:** the viscous gravity-current law with a yield depth (a Bingham plug), far slower than the
   water's for the same slope (tested against the water's own Manning speed).
-- **Cooling:** from the edges and top into `dwell:basalt` (new land); the quench edge with water is
+- **Cooling:** (replaced 2026-11-13 by hardening by rule, §6.6) into `dwell:basalt` (new land); the quench edge with water is
   `dwell:obsidian` plus a steam event. Both blocks are added (break, drop and sound like stone;
   placeholder looks: stone's tile under a dark tint).
 - **Vents as data:** lake (held at its level: the crater fills to its rim and stays molten under its
@@ -223,10 +223,8 @@ beside V1's lakes. §6.2's note stood: a 25-column field can't reach a coast 2.6
   of them, nothing else (`Field::work` counts them); links across tile edges are cached per column.
   A long river's tick near a player is tested under a budget (columns a substep ≤ the molten tiles' and
   their edges'; under 20 ms a tick).
-- **Tubes (`tubeSpeedMs`, per fluid).** Moving lava keeps its heat under its crust: a column's cooling
-  is divided by `1 + speed / tubeSpeedMs` (its outflow over its depth). Without it a river crusted in
-  ~6 m; with the build's 0.002 m/s it runs a kilometre molten and its front, once stopped, cools at the
-  full rate (the V1 river test runs 480 s now, not 240, for its front to crust).
+- **Tubes (`tubeSpeedMs`)** kept a moving river's heat; removed 2026-11-13 with the timed cooling
+  (§6.6): flowing lava never hardens now.
 - **Ponds (`stepDepthM`).** A substep is sized for lava up to 2 m deep; each face's flow is limited to
   the explicit law's stable share of the two surfaces' difference, so a deeper pond levels instead of
   shrinking every substep (it had cut the step to 2 ms behind a crusted dam).
@@ -290,6 +288,45 @@ beside V1's lakes. §6.2's note stood: a 25-column field can't reach a coast 2.6
   down a stone ramp and its lava is in the chunks past where it started.
 - **Fixed on the way:** none shipped (a stale lake index after a tile's removal was caught by the
   server tests before commit).
+
+### 6.6 Hardening by rule, not by expiring (2026-11-13)
+
+Owner, 2026-11-13: "Another thing I observed, I think Lava needs to not just expire into rock, since it
+all just goes away then, it should solidify when it stops moving, touches water, or is a source block,
+not while flowing." Clarified: sources never solidify (molten unless water touches them); only lava that
+has stopped moving hardens; flowing lava never does; water hardens any lava. And: "We may need lava to
+not harden when within a distance of a sourceblock too."
+
+- **The rules, per fluid as data** (`lava.json`; `coolingSeconds`, `edgeCooling`, `thinDepthM` and
+  `tubeSpeedMs` are gone): a column whose lava moves faster than `stillMs` (0.005 m/s: its throughflow,
+  m³/s through its four faces, over twice its depth) is flowing, its heat held at 1; one at rest loses
+  heat at `1 / restSeconds` (20 s) and at 0 hardens into the fluid's `rock`, its lava added to its bed,
+  so its volume stays as rock in the cells it filled. Heat is now this rest clock (it is no longer carried
+  with the flow), so the heat stops (§6.5) darken a resting flow before it hardens; the save is unchanged.
+- **Sources.** A vent's column, the lava joined to it through at most `sourceKeepM` (4 m) of lava
+  columns, and a lake vent's lake below its level are held molten. The distance is counted along the
+  connected lava columns (breadth first from every vent each substep, bounded by `sourceKeepM`), not in a
+  straight line, so a pool beside a source across a wall or a dry gap hardens.
+- **Water** hardens any lava at once, a source's included, as before: lava in a water column turns to
+  the quench rock (`dwell:obsidian`) with a steam event; a vent in water quenches what it pours, builds
+  its column up out of the water, and then pours molten lava on top. Lava beside a water column (not in
+  it) is not quenched: the lava runs into the water column and quenches there, which is how a river
+  builds land out into the sea (quenching at the shoreline would pile a wall there instead).
+- **What changes in play:** a river fed by its vent stays molten its whole length (the sun's
+  always-flowing rivers too: their sources are river vents); its still margins and a stopped front harden;
+  a vent turned off leaves its river to drain downhill, molten while it moves, and harden where it stops
+  (on the fixture flank all of it is rock about 95 lava minutes after). A weak vent no longer "crusts and
+  stops short": while it pours its front runs on (the fixture's 0.2 m³/s on a 0.03 slope ~47 m every
+  15 lava minutes), against the 2026-11-11 outcome "sometimes it may not reach the sea" (WORK_QUEUE item 8,
+  for the owner). Viscous lava levelling in a trench counts as flowing for minutes before it rests.
+- **Tests (both faces):** `crates/dwell-lava/tests/lava.rs`: a river stays molten while it flows; a
+  tongue hardens where it stops, rock in the cells its lava filled and its volume kept; a source stays
+  molten for 50 rests; a still pool within `sourceKeepM` of a source stays molten while the rest, and the
+  same pool with no source or a source in the next basin, harden; water hardens a source. `rivers.rs`: a
+  stopped river drains and every tile drops; a weak vent's river runs on while it pours. `dwell-sim`
+  `tests/lava.rs`: a trench's still lava past `sourceKeepM` is basalt in the chunks, by its vent still
+  lava; resting lava's cells show darker stops. Red on the old code: the river, tongue and source-distance
+  tests.
 
 **Next:** the rest of the look (heat per cell); the water grid's columns as the fields' water (and the sea's level taken back where
 lava builds land); eruptions (V3–V5).

@@ -236,6 +236,39 @@ pub fn shrine_respawn_for_sized(
     }))
 }
 
+/// How far a town's footprint keeps from a shrine's clear ground (m).
+const TOWN_SHRINE_MARGIN_M: i32 = 8;
+
+/// The ground a town site needs (docs/BLUEPRINTS.md §6): at a face's face-local column, the ground's
+/// height (face-local m) where it is dry land (no sea, lake, river or stream, inside the world) within
+/// `blueprints.json` `towns.heightM` above sea level, clear of the shrines and the portals, else None.
+pub type TownGround = Arc<dyn Fn(dwell_world::Face, i32, i32) -> Option<f64> + Send + Sync>;
+
+/// The town ground of a generator version's world; `None` for one without a height field (the flat
+/// world, the sandbox): it has no towns.
+pub fn town_ground_for_sized(version: u32, world_seed: u64, size: WorldSize) -> Option<TownGround> {
+    let terrain = Arc::new(BifacialTerrain::for_generator_sized(
+        version, world_seed, size,
+    )?);
+    let [lo, hi] = dwell_world::blueprint::SHIPPED.towns.height_m;
+    let sea = dwell_world::SEA_LEVEL_M;
+    Some(Arc::new(move |face, x, z| {
+        let g = terrain.local(face);
+        let c = g.column_at(x, z);
+        let h = f64::from(c.height);
+        let dry = !c.outside
+            && c.water == terrain::Water::None
+            && !c.stream
+            && h >= sea + lo
+            && h <= sea + hi;
+        // Clear of the resurrection shrines (their clear ground, and a margin) and the portals.
+        (dry && !g
+            .shrines()
+            .is_some_and(|sh| sh.crowds(g, x, z, TOWN_SHRINE_MARGIN_M)))
+        .then_some(h)
+    }))
+}
+
 /// Feet position players spawn at: near the origin, on open level ground.
 pub fn spawn_point_for(version: u32, world_seed: u64) -> [f64; 3] {
     spawn_point_for_sized(version, world_seed, WorldSize::DEFAULT)

@@ -1,6 +1,0 @@
-{
-  "changes": [
-    "Hold Break with an empty hand (or holding a block or any non-tool item) to keep punching: dig dirt by hand without clicking every hit",
-    "Punches land at a steady rate, the same whether clicked or held, and the controller's trigger holds them too"
-  ]
-}

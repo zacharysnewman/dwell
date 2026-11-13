@@ -7,4 +7,5 @@ pub const SHIPPED: Rules = Rules {
     ghost_face_cap: 24000,
     builder: BuilderRules { creature: "dwell:builder", pace_s: 0.75, reach_m: 4.0, near_m: 96.0, per_blueprint: 1 },
     catalog: &["dwell:bp_hut", "dwell:bp_wall", "dwell:bp_well", "dwell:bp_watchtower"],
+    towns: TownRules { spacing_m: 1200, jitter: 0.6, attempts: 8, height_m: [2.0, 600.0], max_slope_deg: 12.0, footprint_m: 32, found_m: 128.0, plans: &[TownPlan { name: "dwell:hamlet", weight: 1, blueprints: &[PlanBlueprint { structure: "dwell:bp_well", at: [0, 0], turn: 0 }, PlanBlueprint { structure: "dwell:bp_hut", at: [-9, -2], turn: 1 }, PlanBlueprint { structure: "dwell:bp_hut", at: [9, -2], turn: 3 }, PlanBlueprint { structure: "dwell:bp_watchtower", at: [0, 10], turn: 0 }, PlanBlueprint { structure: "dwell:bp_wall", at: [0, -11], turn: 0 }] }] },
 };

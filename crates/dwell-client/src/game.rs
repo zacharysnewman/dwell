@@ -1431,6 +1431,7 @@ impl<S: Scene> Game<S> {
         if let Some((vertical, _)) = held {
             self.chop.vertical = vertical;
         }
+        self.bodies.own_tool = self.held_tool().map(|t| t.name);
         self.bodies.hold_swing(held.map(|(vertical, t)| {
             let s = if vertical {
                 Swing::ChopVertical
@@ -3125,6 +3126,10 @@ impl<S: Scene> Game<S> {
     fn on_clash(&mut self, c: &dwell_protocol::ClashNet, now_ms: f64) {
         let show = crate::swordplay::show(c, self.player_id);
         let at = c.point.map(f64::from);
+        // A hit past the defender's block: a creature shows its hurt look (WORK_QUEUE item 35).
+        if let Some(id) = crate::swordplay::hurt_creature(c) {
+            self.creatures.hurt(id, at);
+        }
         if let Some((name, volume)) = show.sound
             && let Some(k) = SoundKind::ALL.into_iter().find(|k| k.name() == name)
         {
@@ -4792,6 +4797,12 @@ impl<S: Scene> Game<S> {
         let views = self.remotes.sample(now_ms);
         // Each one's footsteps this frame, for the rustle layered on them (BUGS.md #103).
         let mut strides = dwell_world::hash::HashMap::default();
+        // Their swings play their tool's clips (WORK_QUEUE item 35: the sword's slashes).
+        self.bodies.tools = self
+            .remote_tools
+            .iter()
+            .map(|(&id, &(name, _))| (id, name))
+            .collect();
         // Their raised blocks (the server's guards, WORK_QUEUE item 35), by the weapon in hand.
         self.bodies.guards = self
             .remote_guards
@@ -4921,6 +4932,10 @@ impl<S: Scene> Game<S> {
                 // on a body (docs/DEV_TOOLS.md `puppets`).
                 if tool.is_some() {
                     use dwell_protocol::swing_flags as sf;
+                    // Your tool's clips (the sword's slashes), as another player's arrive.
+                    if let Some(t) = self.held_tool() {
+                        self.bodies.tools.insert(v.player_id, t.name);
+                    }
                     v.swing = sf::BREAK | ((now_ms / 800.0) as u64 as u8 & sf::COUNT_MASK);
                     // The chop your hand would swing, as another player's arrives (`SwingHello`).
                     v.swing_kind = if self.chop.vertical {
@@ -6006,6 +6021,7 @@ impl<S: Scene> Game<S> {
             return false;
         };
         self.chop.set_cleared(&swept.cleared);
+        self.bodies.own_tool = Some(tool.name);
         self.bodies.swing_arms(if self.chop.vertical {
             dwell_characters::animator::Swing::ChopVertical
         } else {

@@ -44,11 +44,50 @@ pub struct Rules {
     pub builder: BuilderRules,
     /// The repository's blueprints offered in the Blueprints list.
     pub catalog: &'static [&'static str],
+    /// Town sites from the world seed (B4).
+    pub towns: TownRules,
+}
+
+/// One blueprint of a town plan: its structure, its anchor's offset from the site (m, x and z)
+/// and its quarter turns.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PlanBlueprint {
+    pub structure: &'static str,
+    pub at: [i32; 2],
+    pub turn: u8,
+}
+
+/// A town plan: its blueprints, laid out about the site.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TownPlan {
+    pub name: &'static str,
+    pub weight: u32,
+    pub blueprints: &'static [PlanBlueprint],
+}
+
+/// The town sites' rules (`blueprints.json` `towns`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct TownRules {
+    /// One site at most per grid cell this wide (m).
+    pub spacing_m: i32,
+    /// A cell's points lie within this share of half a cell of its centre.
+    pub jitter: f64,
+    /// Points tried per cell, in order; the first that suits is its site.
+    pub attempts: u32,
+    /// Ground this high above sea level (m); the worldgen's ground test applies it.
+    pub height_m: [f64; 2],
+    /// The most the ground may rise across the footprint (degrees).
+    pub max_slope_deg: f64,
+    /// The footprint's half width (m).
+    pub footprint_m: i32,
+    /// A living player this near (m) founds it.
+    pub found_m: f64,
+    pub plans: &'static [TownPlan],
 }
 
 #[rustfmt::skip]
 mod generated {
-    use super::{BuilderRules, Rules};
+    use super::{BuilderRules, PlanBlueprint, Rules, TownPlan, TownRules};
     include!("blueprints.gen.rs");
 }
 pub use generated::SHIPPED;
@@ -347,6 +386,141 @@ impl Ghost {
     }
 }
 
+/// A town site: on a face, the grid cell it is in, its centre (face-local column) and its plan.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct TownSite {
+    pub face: FaceFrame,
+    pub cell: [i32; 2],
+    pub x: i32,
+    pub z: i32,
+    /// Its plan's index in `TownRules::plans`.
+    pub plan: usize,
+}
+
+/// The ground test a site needs: the ground's height (face-local m) at a face-local column where it
+/// is dry land within the rules' height band, else None (water, a stream, past the world's edge).
+pub type TownGround<'a> = &'a dyn Fn(i32, i32) -> Option<f64>;
+
+fn splitmix(mut z: u64) -> u64 {
+    z = z.wrapping_add(0x9E37_79B9_7F4A_7C15);
+    z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+    z ^ (z >> 31)
+}
+
+/// A word from the seed, the face, the cell, a stream: integer hashing only (ADR 0010).
+fn town_hash(seed: u64, f: FaceFrame, [i, k]: [i32; 2], stream: u64) -> u64 {
+    let mut h = splitmix(seed ^ 0x70E5_0000_0000_0000 ^ u64::from(f.is_b()));
+    h = splitmix(h ^ (i as u32 as u64));
+    h = splitmix(h ^ ((k as u32 as u64) << 32));
+    splitmix(h ^ stream)
+}
+
+impl TownRules {
+    /// The grid cell holding a face-local column.
+    pub fn cell_of(&self, x: i32, z: i32) -> [i32; 2] {
+        [x.div_euclid(self.spacing_m), z.div_euclid(self.spacing_m)]
+    }
+
+    /// The site in grid cell `cell` on face `f`, if any: the first of its seeded points whose
+    /// footprint's ground (its centre and four corners) is all dry land in the band and rises at
+    /// most `max_slope_deg` across it. A pure function of the seed, the face, the cell and the
+    /// ground: never of another cell.
+    pub fn site_in(
+        &self,
+        seed: u64,
+        f: FaceFrame,
+        cell: [i32; 2],
+        ground: TownGround,
+    ) -> Option<TownSite> {
+        if self.plans.is_empty() {
+            return None;
+        }
+        let s = f64::from(self.spacing_m);
+        let spread = s * 0.5 * self.jitter;
+        let r = self.footprint_m;
+        let rise = 2.0 * f64::from(r) * self.max_slope_deg.to_radians().tan();
+        for a in 0..self.attempts {
+            let off = |stream: u64| {
+                let u = (town_hash(seed, f, cell, 2 * u64::from(a) + stream) >> 11) as f64
+                    / (1u64 << 53) as f64;
+                ((u * 2.0 - 1.0) * spread).floor() as i32
+            };
+            let x = cell[0] * self.spacing_m + self.spacing_m / 2 + off(0);
+            let z = cell[1] * self.spacing_m + self.spacing_m / 2 + off(1);
+            let hs: Option<Vec<f64>> = [(0, 0), (-r, -r), (r, -r), (-r, r), (r, r)]
+                .iter()
+                .map(|&(dx, dz)| ground(x + dx, z + dz))
+                .collect();
+            let Some(hs) = hs else {
+                continue;
+            };
+            let (lo, hi) = hs
+                .iter()
+                .fold((f64::MAX, f64::MIN), |(l, h), &v| (l.min(v), h.max(v)));
+            if hi - lo > rise {
+                continue;
+            }
+            let total: u64 = self.plans.iter().map(|p| u64::from(p.weight)).sum();
+            let mut pick = town_hash(seed, f, cell, 1000) % total.max(1);
+            let plan = self
+                .plans
+                .iter()
+                .position(|p| {
+                    let w = u64::from(p.weight);
+                    if pick < w {
+                        return true;
+                    }
+                    pick -= w;
+                    false
+                })
+                .unwrap_or(0);
+            return Some(TownSite {
+                face: f,
+                cell,
+                x,
+                z,
+                plan,
+            });
+        }
+        None
+    }
+
+    /// The sites on face `f` whose centre lies within `radius` m of face-local (x, z).
+    pub fn sites_near(
+        &self,
+        seed: u64,
+        f: FaceFrame,
+        x: f64,
+        z: f64,
+        radius: f64,
+        ground: TownGround,
+    ) -> Vec<TownSite> {
+        let lo = self.cell_of((x - radius).floor() as i32, (z - radius).floor() as i32);
+        let hi = self.cell_of((x + radius).ceil() as i32, (z + radius).ceil() as i32);
+        let mut out = Vec::new();
+        for k in lo[1]..=hi[1] {
+            for i in lo[0]..=hi[0] {
+                if let Some(t) = self.site_in(seed, f, [i, k], ground)
+                    && (f64::from(t.x) + 0.5 - x).hypot(f64::from(t.z) + 0.5 - z) <= radius
+                {
+                    out.push(t);
+                }
+            }
+        }
+        out
+    }
+
+    /// A site's blueprints: each structure's name, its anchor's face-local column and its turn.
+    pub fn layout(&self, t: &TownSite) -> Vec<(&'static str, [i32; 2], u8)> {
+        self.plans[t.plan]
+            .blueprints
+            .iter()
+            .map(|b| (b.structure, [t.x + b.at[0], t.z + b.at[1]], b.turn))
+            .collect()
+    }
+}
+
 /// One panel row: a block still needed.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Need {
@@ -508,6 +682,39 @@ mod tests {
             let (rows, left2) = g.needs(&get, &have);
             assert_eq!((rows[1].need, left2), (49, left - 1));
             assert_eq!(g.complete(&get), Some(false));
+        }
+    );
+
+    both_faces!(
+        fn town_sites_are_deterministic_per_cell_and_only_on_suitable_ground(f: FaceFrame) {
+            let rules = SHIPPED.towns;
+            let flat = |_: i32, _: i32| Some(40.0);
+            let a = rules.sites_near(7, f, 0.0, 0.0, 5000.0, &flat);
+            let b = rules.sites_near(7, f, 0.0, 0.0, 5000.0, &flat);
+            assert_eq!(a, b);
+            assert!(a.len() > 10, "{} sites", a.len());
+            // A cell's site is its own, whatever is asked round it.
+            for t in &a {
+                assert_eq!(rules.site_in(7, f, t.cell, &flat), Some(*t));
+                assert_eq!(rules.cell_of(t.x, t.z), t.cell);
+                let near = rules.sites_near(7, f, f64::from(t.x), f64::from(t.z), 10.0, &flat);
+                assert_eq!(near, vec![*t]);
+            }
+            // Another seed or face puts them elsewhere.
+            assert_ne!(rules.sites_near(8, f, 0.0, 0.0, 5000.0, &flat), a);
+            assert_ne!(
+                rules.sites_near(7, f.other(), 0.0, 0.0, 5000.0, &flat)[0].x,
+                a[0].x
+            );
+            // No dry land, no towns; a steep slope, none.
+            let sea = |_: i32, _: i32| None;
+            assert!(rules.sites_near(7, f, 0.0, 0.0, 5000.0, &sea).is_empty());
+            let steep = |x: i32, _: i32| Some(f64::from(x));
+            assert!(rules.sites_near(7, f, 0.0, 0.0, 5000.0, &steep).is_empty());
+            // A site's layout: the plan's blueprints about its centre.
+            let l = rules.layout(&a[0]);
+            assert_eq!(l.len(), rules.plans[a[0].plan].blueprints.len());
+            assert_eq!(l[0].1, [a[0].x, a[0].z]);
         }
     );
 

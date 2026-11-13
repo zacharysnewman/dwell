@@ -8,15 +8,15 @@
 //! substep is at most `cfl × cell² / (4 × g h³ / 3ν)`. Water's grid (`dwell-sim` `water.rs`) moves
 //! by the local-inertial law instead; lava's is slower by orders of magnitude for the same slope.
 //!
-//! **Heat and cooling.** A column's heat runs from 1 (as a vent gives it) to 0 (rock). Heat is
-//! carried with the flow (upwind), and each column loses it at `1 / coolingSeconds` a second, faster
-//! by `edgeCooling` per dry neighbour (its edges) and in proportion to `thinDepthM` over its depth
-//! (its top's share: thin lava cools fast, a deep lake slowly). A
-//! column at 0 turns to the fluid's rock: its lava is added to its bed and the cells whose centres
-//! it now covers become the rock block, so a river crusts over behind its front and builds land.
-//!
-//! A lake vent keeps the lava joined to it below its level molten (a lava lake convects); what
-//! runs over the rim cools.
+//! **Hardening by rule** (owner, 2026-11-13: lava solidifies "when it stops moving, touches water,
+//! or is a source block, not while flowing"; sources stay molten). A column's heat is its rest
+//! clock: 1 while its lava flows (faster than `stillMs`: its throughflow over twice its depth), falling at
+//! `1 / restSeconds` a second while it is still, and at 0 the column turns to the fluid's rock: its
+//! lava is added to its bed and the cells it filled become the rock block, so the lava's volume
+//! stays as land where it stopped. Flowing lava never hardens. A source never hardens by rest: a
+//! vent's column, the lava joined to it through at most `sourceKeepM` m of lava columns (counted
+//! along the connected columns, not in a straight line), and a lake vent's whole lake below its level
+//! (a lava lake convects) are held at heat 1; what runs over the rim hardens once it stops.
 //!
 //! **Quench.** Lava in a water column turns to the quench rock at once, with a steam event (one per
 //! quench row) that takes `steamWaterM` of that water (the water grid applies it once wired).
@@ -33,10 +33,8 @@
 //! its cost follows the molten area, not the field's size. A fixed field ([`Field::new`], V1's
 //! rectangle) never grows: its edges are walls.
 //!
-//! **Tubes and the sea (V2).** Moving lava keeps its heat (a crust roofs it over: a lava tube):
-//! a column's cooling is divided by `1 + speed / tubeSpeedMs`, its speed the lava's outflow over its
-//! depth, so a river carries molten lava far and its front, once it stops, cools at the full rate.
-//! Lava that runs into a water column quenches there, raising the sea floor; once the rock stands
+//! **The sea (V2).** A river stays molten as far as it flows (it never hardens while moving), and
+//! its front, once it stops, hardens after `restSeconds`. Lava that runs into a water column quenches there, raising the sea floor; once the rock stands
 //! above the water's surface the column is dry land: the coastline moves out.
 //!
 //! Face-local: a field's columns, beds and depths are face-local (+y up); a world point or cell
@@ -212,8 +210,8 @@ pub struct Field {
     qx: Vec<f32>,
     qz: Vec<f32>,
     scale: Vec<f32>,
-    content: Vec<f32>,
-    speed: Vec<f32>,
+    /// Each visited column's lava speed this substep (m/s): flowing above `stillMs`.
+    through: Vec<f32>,
     /// This step's lake columns (held molten by their vent).
     held: Vec<bool>,
     held_list: Vec<usize>,
@@ -264,8 +262,7 @@ impl Field {
             qx: Vec::new(),
             qz: Vec::new(),
             scale: Vec::new(),
-            content: Vec::new(),
-            speed: Vec::new(),
+            through: Vec::new(),
             held: Vec::new(),
             held_list: Vec::new(),
             outside: Vec::new(),
@@ -298,7 +295,7 @@ impl Field {
         Self::empty(rules, fluid, true)
     }
 
-    fn per_column(&mut self) -> [&mut dyn Cols; 15] {
+    fn per_column(&mut self) -> [&mut dyn Cols; 14] {
         [
             &mut self.ground,
             &mut self.depth,
@@ -311,8 +308,7 @@ impl Field {
             &mut self.qx,
             &mut self.qz,
             &mut self.scale,
-            &mut self.content,
-            &mut self.speed,
+            &mut self.through,
             &mut self.held,
             &mut self.links,
         ]
@@ -858,7 +854,6 @@ impl Field {
             let sent = out * dt;
             let d = self.depth[i];
             self.scale[i] = if sent > d { d / sent } else { 1.0 };
-            self.speed[i] = if d > 0.0 { out.min(d / dt) / d } else { 0.0 };
         }
         for &i in &visit {
             if self.qx[i] != 0.0 {
@@ -876,9 +871,17 @@ impl Field {
                 };
             }
         }
-        // Depth and heat content, the heat carried upwind.
+        // Each column's throughflow (m³/s through its faces), over twice its depth once moved: its
+        // speed, whether it is flowing.
         for &i in &visit {
-            self.content[i] = self.depth[i] * self.heat[i];
+            let mut through = self.qx[i].abs() + self.qz[i].abs();
+            if let Some(w) = self.link(i, 1) {
+                through += self.qx[w].abs();
+            }
+            if let Some(n) = self.link(i, 3) {
+                through += self.qz[n].abs();
+            }
+            self.through[i] = through;
         }
         for &i in &visit {
             for (d, q) in [(0, self.qx[i]), (2, self.qz[i])] {
@@ -889,11 +892,8 @@ impl Field {
                     continue;
                 };
                 let v = q * dt;
-                let t = if v > 0.0 { self.heat[i] } else { self.heat[j] };
                 self.depth[i] -= v;
                 self.depth[j] += v;
-                self.content[i] -= v * t;
-                self.content[j] += v * t;
             }
         }
         for &i in &visit {
@@ -905,15 +905,15 @@ impl Field {
                 self.crust[i] += d.max(0.0);
                 self.depth[i] = 0.0;
                 self.heat[i] = 0.0;
+                self.through[i] = 0.0;
             } else {
-                self.heat[i] = (self.content[i] / d).clamp(0.0, 1.0);
+                self.through[i] /= 2.0 * d;
             }
             self.qx[i] = 0.0;
             self.qz[i] = 0.0;
-            self.content[i] = 0.0;
         }
-        self.hold_lakes();
-        // Quench, then cooling.
+        self.hold_sources();
+        // Quench, then hardening by rest.
         let fl = self.fluid;
         for &i in &visit {
             if self.depth[i] <= 0.0 {
@@ -935,22 +935,12 @@ impl Field {
                 }
                 continue;
             }
-            if self.held[i] {
+            // A source's lava, and flowing lava, stay molten: the rest clock starts over.
+            if self.held[i] || self.through[i] > fl.still_ms {
+                self.heat[i] = 1.0;
                 continue;
             }
-            let dry = (0..4)
-                .filter(|&d| self.link(i, d).is_none_or(|j| self.depth[j] <= 0.0))
-                .count() as f32;
-            // From its top: its top's share of it, so deep lava keeps its heat longer.
-            let thin = if fl.thin_depth_m > 0.0 {
-                fl.thin_depth_m / self.depth[i]
-            } else {
-                1.0
-            };
-            // Moving lava keeps its heat under its crust (a tube).
-            let tube = 1.0 + self.speed[i] / fl.tube_speed_ms;
-            let rate = (1.0 + fl.edge_cooling * dry) * thin / fl.cooling_seconds / tube;
-            self.heat[i] -= rate * dt;
+            self.heat[i] -= dt / fl.rest_seconds;
             if self.heat[i] <= 0.0 {
                 self.solidify(i, fl.rock);
             }
@@ -1014,10 +1004,12 @@ impl Field {
         }
     }
 
-    /// A lake vent keeps its lake molten (it convects): every molten column joined to the vent
-    /// through columns whose bed is below the lake's level is as hot as the vent and does not
-    /// cool. A flow over the rim leaves the lake there and cools as any other.
-    fn hold_lakes(&mut self) {
+    /// The sources' lava stays molten: every vent's column and the molten columns joined to it
+    /// through at most `sourceKeepM` m of molten columns (steps along the connected lava), and a
+    /// lake vent's lake (it convects): every molten column joined to the vent through columns whose
+    /// bed is below the lake's level. A flow over the rim leaves the lake there and hardens once it
+    /// stops, as any other.
+    fn hold_sources(&mut self) {
         for i in std::mem::take(&mut self.held_list) {
             self.held[i] = false;
         }
@@ -1047,6 +1039,41 @@ impl Field {
                         list.push(j);
                         stack.push(j);
                     }
+                }
+            }
+        }
+        // Within `sourceKeepM` of any vent, along the connected lava (breadth first, so a column's
+        // distance is its shortest path).
+        let keep = self.fluid.source_keep_m.max(0.0).floor() as u32;
+        let mut seen: HashMap<usize, u32> = HashMap::new();
+        let mut queue = std::collections::VecDeque::new();
+        for k in 0..self.vents.len() {
+            let v = self.vents[k];
+            if let Some(i) = self.slot(v.x, v.z)
+                && self.depth[i] > 0.0
+                && !seen.contains_key(&i)
+            {
+                seen.insert(i, 0);
+                queue.push_back(i);
+            }
+        }
+        while let Some(i) = queue.pop_front() {
+            let at = seen[&i];
+            if !self.held[i] {
+                self.held[i] = true;
+                list.push(i);
+            }
+            self.heat[i] = 1.0;
+            if at >= keep {
+                continue;
+            }
+            for d in 0..4 {
+                let Some(j) = self.link(i, d) else {
+                    continue;
+                };
+                if self.depth[j] > 0.0 && !seen.contains_key(&j) {
+                    seen.insert(j, at + 1);
+                    queue.push_back(j);
                 }
             }
         }

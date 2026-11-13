@@ -49,6 +49,14 @@ Last updated: 2026-11-11 (0.52.108).
   after the 0.55 re-pin changed the starter world's terrain … If intended … re-pin with the commit cited; if it was
   NOT meant to change the starter … fix the leak." Done (BUGS.md #114): no merge changed it; the 0.55 line's
   combined pin (58f72da) was wrong from the start, re-pinned to what 0.55.0 onward generates.
+- **game_local green (brief, 2026-11-13):** "four `dwell-client` `tests/game_local.rs` tests fail on main … For each
+  failing test: bisect main's recent merges to the commit that broke it, decide real regression … or a test made stale
+  by an intended change"; added: "also include the dwell-client lib test render::characters
+  your_body_never_comes_near_the_camera_or_fills_the_view". Done (branch `claude/game-local-green`), all stale, no code
+  bug: the four game_local tests broke at 3bf8080 (#873, the spawn is a shrine's stand point; they assumed natural
+  ground: the dais's stone under the aim, the shrine in a sprint's way, player 1's spread on the dais's edge, a stall
+  that reached `UNACKED_HOLD`); the lib test at 90df521 (#899, the defeat's kneel swept as a first-person body,
+  which defeated is third person).
 - **Merged today (late):** #857 the axe like the other tools; #858 Realistic in New world; #854 hits at contact;
   #852 sound placement; #853/#855 one-command video re-records (`take.mjs`); #851 big-world placing; #848 far-tree
   impostors fixed (BUGS #106); #845 big-world LOD; #846 portal exit on face B; #847 leaves flush with logs; #841 the
@@ -296,6 +304,18 @@ Still open:
    solidifies):** heat stops as data (`lava.json` `heat`), a `heat` property on `dwell:lava` written by the
    server as a column cools past a stop and drawn per cell, orange-red stops that keep their hue; **left:**
    the bloom pass (VOLCANOES.md §6.5).
+   **Lava hardens by rule, not by expiring (owner, 2026-11-13):** "Another thing I observed, I think Lava
+   needs to not just expire into rock, since it all just goes away then, it should solidify when it stops
+   moving, touches water, or is a source block, not while flowing." Clarified: sources never solidify (they
+   stay molten forever unless water touches them); only lava that has stopped moving hardens; flowing lava
+   never hardens; water contact hardens any lava. And (owner, 2026-11-13): "We may need lava to not harden
+   when within a distance of a sourceblock too." **Built (pending release, `claude/lava-solidify`, BUGS.md
+   #141):** `lava.json` `restSeconds` (20), `stillMs` (0.005 m/s), `sourceKeepM` (4 m, along the connected
+   lava columns) replace the timed cooling (`coolingSeconds`, `edgeCooling`, `thinDepthM`, `tubeSpeedMs`);
+   water quenches any lava as before, a source's included (VOLCANOES.md §6.6). **For the owner:** a fed
+   river now always runs on (a weak vent no longer crusts and stops short), which replaces the 2026-11-11
+   outcome "sometimes it may, other times it may not" reach the sea; viscous lava levelling in a pit counts
+   as flowing for a few minutes before it rests and hardens.
    **Next:** heat per cell; the water grid's columns as the fields' water; eruptions.
 9. ~~**Loading-time display bug.**~~ Done (0.52.71): the 10 s was the graphics' start (one long task on the
    main thread making the renderer's pipelines) begun in the same task that ended the game's load, so the
@@ -879,6 +899,9 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    lifts the dark crust's cells toward orange (one number, `intensity`). Left: the crust covering less of hot
    lava (one number, `crust` of the hot stop, waiting on the owner's look); the cooling river not yet seen in
    game.
+   Since 2026-11-13 (item 8, hardening by rule) a column's heat is its rest clock: a flowing river stays at
+   the hot stop its whole length, and resting lava darkens through the stops over `restSeconds` before it
+   hardens.
 20. **Starter world on iPhone, again** (owner 2026-11-11: "iOS can't handle the starter world. It crashes and
    restarts quite often. What's so much heavier about it?"). 0.52.99–0.52.104: ecology 12.5 → 0.9 MB, starter
    biome grids 53.6 → 15.9 MB a process. Re-measured at 0.53.2 on the `--touch` page (BUGS.md #70): the
@@ -1567,6 +1590,18 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    stance's raised blade is now data (`guard.stances.*.blade`, grip and tip from the feet, fitted to the
    raised clips and kept in step by a `clip_probe` test), and the point is where the swing's arc meets it.
    Not yet seen in game (a duel screencast on the local machine).
+   **Second slice (cloud, 2026-11-13; owner's brief: "sword clips of their own as data … the hurt look on the
+   client … wolves bite players: an attack in reach with a cooldown and damage as data, leading to the defeat
+   kneel at 0 health, not death; animals only remain the sword's targets (no PvP)"):** wolves bite: a
+   creature's `attack` (shared/creatures: reach, cooldown, damage, push, `angryS`, front arc) turns it on the
+   player that struck it, its mind closing on where that player stands, biting through the damage rules
+   (none in creative); at 0 health the player kneels in defeat (§11.13), never dies; only the striker is
+   bitten, and swords still strike animals and NPCs only. The hurt look: a creature hit past its block (the
+   `weapons.clash` outcome) flinches from the blow and flashes its tint by its `hurtLook` data (the file's
+   default, per-creature overrides; the skinned shader's flash). Tests on both faces (`tests/weapons.rs`,
+   `creatures.rs`). The sword's own clips as data: a tool's `clips` (shared/tools) names the role each swing kind plays; the sword plays `slash_level` (a straight-armed sweep right to left) and `slash_overhead` (raised high, cut straight down), arms and body fitted with `clip_probe --fit` to the 1 m blade and timed to its swing (contact 0.355 s on a key), played on your arms, others (from `HeldTools`) and NPCs; clip_probe tests pin direction, contact on the crosshair and the world on both faces; sheets `docs/clip_probe/sword_*.svg`.
+   **Outstanding:** a thrust; an edge check for the sword model; a wolf bite pose/clip on the clients (the bite shows as the player's damage and push only);
+   seen in game (local, a GPU).
 36. **A showcase video of the deer and wolves** (owner 2026-11-12: "have you observed the animals simulation? Make
    some clips of the deer/wolves behavior, really showcase it and try to get good angles. Keep it under 2 minutes
    of video. Splice it together into a single video."). Queued (local, after item 30).
@@ -2537,6 +2572,10 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    completed blueprint disappears (the blocks are the record). Builders (`dwell:builder`) come to a blueprint with a
    player near and build it foundation up, unlimited blocks, from outside its box, skipping occupied cells. Left:
    B4 (towns at worldgen sites, a new compatibility line), a placing preview ghost; BLUEPRINTS.md §7.
+   **B4 built (2026-11-13, cloud, branch `claude/blueprints-towns`, the 0.61 line):** town sites per face from the
+   seed (a 1200 m grid, dry land in a height band, gentle slope, clear of shrines and portals; `blueprints.json`
+   `towns`), each a plan of blueprints (the hamlet: a well, two huts, a watchtower, a wall) founded once a player is
+   within 128 m and its ground is loaded, saved so it is founded once; builders then build it. BLUEPRINTS.md §6.
 
 ## Future (needs owner answers)
 

@@ -160,7 +160,7 @@ The server (`server/grids.rs` `flow_grid_lava`, every lava tick): for each grid 
 at each river head near its players not yet placed (`GridSlot::place_river_heads`), runs the fields near them only
 (`Lava::tick_with(.., far: false)`: no fast-forward, a far river is steady), writes their cells into the grid's
 chunks and sends each changed chunk whole to that grid's clients holding it (as an away player's edit). Same flow,
-cooling (with tubes), crusting and breakouts as home's. The generated rivers and oceans stay as generated where no
+hardening by rule (molten while it flows, rock where it stops, VOLCANOES.md §6.6) and breakouts as home's. The generated rivers and oceans stay as generated where no
 field runs; a field's lava fills its channel from the bed (generated lava cells are open to it) and runs downhill.
 
 Not saved: a grid's fields are placed again at the river heads after a restart; the cells they wrote are in

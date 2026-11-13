@@ -22,7 +22,11 @@ const TOP_FIELDS = ['formatVersion', 'tools', 'woods', 'breaking', 'durability',
 const CHOP2_TOOL_FIELDS = ['bite'];
 const CHOP2_WOOD_FIELDS = ['fellFraction', 'along', 'fellWedgeTrunk'];
 const CHOP2_FIELDS = ['enabled'];
-const TOOL_FIELDS = ['name', 'kind', 'repeatOnHold', 'swingSeconds', 'biteM', 'bindM', 'across', 'along', 'sharpness', 'held', 'heldVertical', 'swing', 'clears', 'chop2', 'weapon'];
+const TOOL_FIELDS = ['name', 'kind', 'repeatOnHold', 'swingSeconds', 'biteM', 'bindM', 'across', 'along', 'sharpness', 'held', 'heldVertical', 'clips', 'swing', 'clears', 'chop2', 'weapon'];
+/** A tool's swing clips (WORK_QUEUE item 35): the character role each swing kind plays. */
+const CLIPS_FIELDS = ['level', 'vertical'];
+/** The roles a tool without `clips` plays (the axe's chops). */
+const DEFAULT_CLIPS = { level: 'chop_level', vertical: 'chop_vertical' };
 /** An axe's cutting fields: a weapon has none (it cuts no wood). */
 const AXE_FIELDS = ['biteM', 'bindM', 'across', 'along', 'sharpness', 'clears', 'chop2'];
 /** A weapon's strike (WORK_QUEUE item 35): damage and knockback per hit, the most creatures a
@@ -245,6 +249,13 @@ export function validateTools(data, items, blocks, heldItems = loadHeldItems(), 
     // What the hand shows holding it: an item of shared/characters/characters.json.
     if (t.held !== undefined && !heldItems.has(t.held)) fail(`${at}.held: no item ${JSON.stringify(t.held)} in shared/characters/characters.json`);
     if (t.heldVertical !== undefined && !heldItems.has(t.heldVertical)) fail(`${at}.heldVertical: no item ${JSON.stringify(t.heldVertical)} in shared/characters/characters.json`);
+    // The clips its swings play (WORK_QUEUE item 35: the sword's slashes): a role per swing kind,
+    // each one the player character's `clips` and `firstPerson.clips` have (a dwell-client test
+    // checks every role on the characters); none: the axe's chops.
+    if (t.clips !== undefined && (typeof t.clips !== 'object' || t.clips === null || Array.isArray(t.clips))) fail(`${at}.clips must be { level?, vertical? } role names`);
+    known(t.clips ?? {}, CLIPS_FIELDS, `${at}.clips`);
+    const clips = { ...DEFAULT_CLIPS, ...(t.clips ?? {}) };
+    for (const k of CLIPS_FIELDS) if (typeof clips[k] !== 'string' || !/^[a-z][a-z0-9_]*$/.test(clips[k])) fail(`${at}.clips.${k} must be a role name (lowercase: the character's clips and firstPerson.clips for it, shared/characters)`);
     // The swing (the client's feel, the server's sweep): timings, the arc, the camera's kick, a
     // stamina cost for when stamina exists (unused until then), its sounds by event name.
     const sw = { ...SWING_DEFAULTS, ...(t.swing ?? {}) };
@@ -282,7 +293,7 @@ export function validateTools(data, items, blocks, heldItems = loadHeldItems(), 
     const c2 = { bite: 0.045, ...(t.chop2 ?? {}) };
     known(t.chop2 ?? {}, CHOP2_TOOL_FIELDS, `${at}.chop2`);
     inRange(c2, 'bite', 0, 1, `${at}.chop2`, true);
-    return { ...t, held: t.held ?? null, heldVertical: t.heldVertical ?? t.held ?? null, swing: sw, clears, chop2: c2, weapon };
+    return { ...t, held: t.held ?? null, heldVertical: t.heldVertical ?? t.held ?? null, clips, swing: sw, clears, chop2: c2, weapon };
   });
   if (!Array.isArray(data.woods)) fail('woods must be a list');
   const woodNames = new Set();
@@ -703,7 +714,7 @@ export function toolsRust(d) {
   for (const t of d.tools) {
     const kind = t.kind[0].toUpperCase() + t.kind.slice(1);
     rs.push(
-      `    ToolDef { name: "${t.name}", kind: ToolKind::${kind}, held: ${t.held === null ? 'None' : `Some("${t.held}")`}, swing_seconds: ${f64(t.swingSeconds)}, bite_m: ${f64(t.biteM)}, bind_m: ${f64(t.bindM)}, across: ${f64(t.across)}, along: ${f64(t.along)}, sharpness: ${f64(t.sharpness)}, held_vertical: ${optStr(t.heldVertical)}, swing: ${swingRust(t.swing)}, clears: &[${t.clears.map((b) => `"${b}"`).join(', ')}], chop2_bite: ${f64(t.chop2.bite)}, weapon: ${t.weapon === null ? 'None' : `Some(WeaponDef { damage: ${f64(t.weapon.damage)}, knockback_m: ${f64(t.weapon.knockbackM)}, knockback_mps: ${f64(t.weapon.knockbackMps)}, lift_mps: ${f64(t.weapon.liftMps)}, max_targets: ${t.weapon.maxTargets}, guard: GuardDef { level_roll_deg: ${f64(t.weapon.guard.levelRollDeg)}, vertical_roll_deg: ${f64(t.weapon.guard.verticalRollDeg)}, block_within_deg: ${f64(t.weapon.guard.blockWithinDeg)}, connect_within_deg: ${f64(t.weapon.guard.connectWithinDeg)}, glance_damage: ${f64(t.weapon.guard.glanceDamage)}, recoil_s: ${f64(t.weapon.guard.recoilS)}, front_deg: ${f64(t.weapon.guard.frontDeg)}, raise_after_s: ${f64(t.weapon.guard.raiseAfterS)}, level_pose: ${optStr(t.weapon.guard.levelPose)}, vertical_pose: ${optStr(t.weapon.guard.verticalPose)}, level_blade: ${bladeRust(t.weapon.guard.levelBlade)}, vertical_blade: ${bladeRust(t.weapon.guard.verticalBlade)}, clash: ClashLook { sound: ${optStr(t.weapon.guard.clash.sound)}, hear_m: ${f64(t.weapon.guard.clash.hearM)}, sparks: ${chipsOpt(t.weapon.guard.clash.sparks)}, glance_share: ${f64(t.weapon.guard.clash.glanceShare)} } } })`}, repeat_on_hold: ${t.repeatOnHold} },`,
+      `    ToolDef { name: "${t.name}", kind: ToolKind::${kind}, held: ${t.held === null ? 'None' : `Some("${t.held}")`}, swing_seconds: ${f64(t.swingSeconds)}, bite_m: ${f64(t.biteM)}, bind_m: ${f64(t.bindM)}, across: ${f64(t.across)}, along: ${f64(t.along)}, sharpness: ${f64(t.sharpness)}, held_vertical: ${optStr(t.heldVertical)}, swing: ${swingRust(t.swing)}, clears: &[${t.clears.map((b) => `"${b}"`).join(', ')}], chop2_bite: ${f64(t.chop2.bite)}, weapon: ${t.weapon === null ? 'None' : `Some(WeaponDef { damage: ${f64(t.weapon.damage)}, knockback_m: ${f64(t.weapon.knockbackM)}, knockback_mps: ${f64(t.weapon.knockbackMps)}, lift_mps: ${f64(t.weapon.liftMps)}, max_targets: ${t.weapon.maxTargets}, guard: GuardDef { level_roll_deg: ${f64(t.weapon.guard.levelRollDeg)}, vertical_roll_deg: ${f64(t.weapon.guard.verticalRollDeg)}, block_within_deg: ${f64(t.weapon.guard.blockWithinDeg)}, connect_within_deg: ${f64(t.weapon.guard.connectWithinDeg)}, glance_damage: ${f64(t.weapon.guard.glanceDamage)}, recoil_s: ${f64(t.weapon.guard.recoilS)}, front_deg: ${f64(t.weapon.guard.frontDeg)}, raise_after_s: ${f64(t.weapon.guard.raiseAfterS)}, level_pose: ${optStr(t.weapon.guard.levelPose)}, vertical_pose: ${optStr(t.weapon.guard.verticalPose)}, level_blade: ${bladeRust(t.weapon.guard.levelBlade)}, vertical_blade: ${bladeRust(t.weapon.guard.verticalBlade)}, clash: ClashLook { sound: ${optStr(t.weapon.guard.clash.sound)}, hear_m: ${f64(t.weapon.guard.clash.hearM)}, sparks: ${chipsOpt(t.weapon.guard.clash.sparks)}, glance_share: ${f64(t.weapon.guard.clash.glanceShare)} } } })`}, repeat_on_hold: ${t.repeatOnHold}, clip_level: "${t.clips.level}", clip_vertical: "${t.clips.vertical}" },`,
     );
   }
   rs.push('];');

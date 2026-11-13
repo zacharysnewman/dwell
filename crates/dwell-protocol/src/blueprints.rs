@@ -215,12 +215,13 @@ impl BlueprintsMessage {
     }
 }
 
-/// The saved list's format version.
-pub const LIST_VERSION: u8 = 1;
+/// The saved list's format version: 2 adds the towns founded (1 had none).
+pub const LIST_VERSION: u8 = 2;
 
-/// The world's blueprints as saved (the `blueprints` table): `u8 version` (1), `u32 next id`,
-/// `u16 count`, each a record.
-pub fn list_to_bytes(next_id: u32, list: &[Blueprint]) -> Vec<u8> {
+/// The world's blueprints as saved (the `blueprints` table): `u8 version` (2), `u32 next id`,
+/// `u16 count`, each a record; then `u32 count` towns founded, each `u8 face`, `i32 i, k` (its
+/// grid cell). Version 1 ends after the records.
+pub fn list_to_bytes(next_id: u32, list: &[Blueprint], towns: &[(u8, i32, i32)]) -> Vec<u8> {
     let mut out = Vec::new();
     let mut w = ByteWriter::new(&mut out);
     w.u8(LIST_VERSION);
@@ -229,14 +230,23 @@ pub fn list_to_bytes(next_id: u32, list: &[Blueprint]) -> Vec<u8> {
     for b in list {
         b.encode_into(&mut w);
     }
+    w.u32(towns.len() as u32);
+    for &(f, i, k) in towns {
+        w.u8(f);
+        w.i32(i);
+        w.i32(k);
+    }
     out
 }
 
-/// A saved list, or None for a damaged one or a later version.
-pub fn list_from_bytes(bytes: &[u8]) -> Option<(u32, Vec<Blueprint>)> {
+/// What a saved list holds: the next id, the blueprints, the towns founded.
+pub type SavedList = (u32, Vec<Blueprint>, Vec<(u8, i32, i32)>);
+
+/// A saved list (version 1 or 2), or None for a damaged one or a later version.
+pub fn list_from_bytes(bytes: &[u8]) -> Option<SavedList> {
     let mut r = ByteReader::new(bytes);
     let version = r.u8();
-    r.check(version == LIST_VERSION);
+    r.check(version == 1 || version == 2);
     let next = r.u32();
     let n = usize::from(r.u16());
     let mut list = Vec::new();
@@ -246,7 +256,18 @@ pub fn list_from_bytes(bytes: &[u8]) -> Option<(u32, Vec<Blueprint>)> {
         }
         list.push(Blueprint::decode_from(&mut r));
     }
-    (r.ok() && r.at_end()).then_some((next, list))
+    let mut towns = Vec::new();
+    if version >= 2 {
+        let t = r.u32() as usize;
+        r.check(t <= 1 << 20);
+        for _ in 0..t {
+            if !r.ok() {
+                break;
+            }
+            towns.push((r.u8(), r.i32(), r.i32()));
+        }
+    }
+    (r.ok() && r.at_end()).then_some((next, list, towns))
 }
 
 #[cfg(test)]
@@ -292,8 +313,17 @@ mod tests {
     #[test]
     fn the_saved_list_round_trips() {
         let list = vec![sample(), Blueprint { id: 9, ..sample() }];
-        assert_eq!(list_from_bytes(&list_to_bytes(10, &list)), Some((10, list)));
-        assert_eq!(list_from_bytes(&[2, 0, 0, 0, 0, 0, 0]), None);
+        let towns = vec![(0, 3, -4), (1, -1, 2)];
+        assert_eq!(
+            list_from_bytes(&list_to_bytes(10, &list, &towns)),
+            Some((10, list.clone(), towns))
+        );
+        // Version 1 (B1–B3's): no towns after the records.
+        let mut v1 = list_to_bytes(10, &list, &[]);
+        v1.truncate(v1.len() - 4);
+        v1[0] = 1;
+        assert_eq!(list_from_bytes(&v1), Some((10, list, vec![])));
+        assert_eq!(list_from_bytes(&[3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]), None);
     }
 
     #[test]

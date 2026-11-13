@@ -639,7 +639,7 @@ waypoint over the spot, faded with distance, clamped to the screen's edge), plus
 (spawn, last death; portals once there are any). The set, palette, auto kinds and limits are data
 (`shared/ui/markers.json` → `shared/ui/gen.mjs` → `markers.gen.ts` and `dwell-protocol`'s
 `markers.gen.rs`); the record is saved per player in the world's `markers` table and synced to that
-player only (`markers.private`). **[in progress, WORK_QUEUE item 56] Blueprints**
+player only (`markers.private`). **[built, WORK_QUEUE item 56] Blueprints**
 ([BLUEPRINTS.md](BLUEPRINTS.md)): a structure placed as an entity shown as ghost blocks (the brush
 preview's renderer; red where the player lacks the block), placed from the game menu's Structures page
 where the mode has the `blueprints` ability (creative and adventure), seen and built by everyone in the
@@ -648,7 +648,7 @@ one piece every `player.paceMs` (one-cell region fills), and a compact panel sho
 Builder NPCs (`dwell:builder`, the villager without a sword) build them on the server with unlimited
 blocks, foundation up. The rules are data (`shared/blueprints/blueprints.json` → `shared/blueprints/gen.mjs`
 → `dwell-world`'s `blueprints.gen.rs`); the geometry is `dwell_world::blueprint`; the world's list is
-saved in its optional `blueprints` table and synced behind `blueprints.world`. **[built, 0.52.3]** A save (every 10 s while cells
+saved in its optional `blueprints` table and synced behind `blueprints.world`. **[built, 0.61] Towns** (B4): town sites per face from the world seed (`blueprints.json` `towns`; `dwell_world::blueprint::TownRules`, the ground from `dwell_worldgen::town_ground_for_sized`), each a plan of blueprints the server places once a player comes near, recorded in the `blueprints` table so it is founded once. **[built, 0.52.3]** A save (every 10 s while cells
 change) hands the store only the cells changed since the last one (`ExploredChanges`,
 `client/src/ui/exploredStore.ts`), and the store merges them into the record in its own worker
 (`exploredWorker.ts`; on the page only when the page is closing or has no workers): the merge reads
@@ -2459,7 +2459,7 @@ lives in side files. Chunk and LOD blobs are the protocol's palette + RLE compre
 | `inventories` | **[built, 0.50.33]** Keyed by device public key: the player's inventory record (`Inventory::to_bytes`, version 1: held slot, wallet and money, each non-empty slot's index, item name and count; ADR 0066). Optional: older builds leave it; an unreadable record is kept, not overwritten |
 | `vitals` | **[built, 0.50.57]** Keyed by device public key: the player's stamina and oxygen (version 1: f32 stamina, f32 seconds of air, u8 exhausted; ADR 0069), rewritten each save. Optional: older builds leave it; a player without one, or with a record this build can't read, starts rested |
 | `markers` | **[built, WORK_QUEUE item 53]** Keyed by device public key: the player's own map markers (`dwell_protocol::markers::Markers::to_bytes`, version 1: each marker's id, icon name, colour, label, face, face-local point and auto kind; [MAP_MARKERS.md](MAP_MARKERS.md)), rewritten each save for every player who has a record. Optional and additive: a world without it has no markers, older builds on the line never open it; an unreadable record reads as none and is replaced only when the player changes their markers |
-| `blueprints` | **[in progress, WORK_QUEUE item 56]** One record (key 0), rewritten on a save after a change: the world's blueprints (`dwell_protocol::blueprints::list_to_bytes`, version 1: the next id, a count, then each record; BLUEPRINTS.md §2). Optional and additive: older builds leave it; an unreadable record is kept, not overwritten |
+| `blueprints` | **[built, WORK_QUEUE item 56]** One record (key 0), rewritten on a save after a change: the world's blueprints (`dwell_protocol::blueprints::list_to_bytes`, version 2: the next id, a count, then each record, then the town sites founded; version 1 had no towns and is still read; BLUEPRINTS.md §2, §6). Optional and additive: older builds leave it; an unreadable record is kept, not overwritten |
 | `loose_items` | **[built, 0.50.33]** One record (key 0), rewritten each save: the loose items lying in the world (version 1: item name, count, point, age each; ADR 0066) |
 | `ground_gone` | **[built, 0.50.68]** One record (key 0), rewritten each save: the ground items gone from the scatter (`dwell_world::ground::GroundGone::to_bytes`, version 1: a count, then each cell as i32×3, sorted; ADR 0071), the scatter's tombstones. Optional: older builds leave it; an unreadable record is kept, not overwritten |
 | `block_damage` | **[built, 0.52.28]** One record (key 0), rewritten each save: the blocks hit short of breaking (`dwell_protocol::damage::Damage::to_bytes`, version 1: each cell, its state, hits and up to four hit marks; ADR 0078). Optional: a world without it loads undamaged, older builds leave it; an unreadable record is kept, not overwritten |
@@ -3440,7 +3440,14 @@ into the striker's view): blocked (nothing lands, the striker's next swing waits
 connected; what lands takes `damage` × its share from the creature's `health` (shared/creatures, per
 creature with its `hitRadiusM` and `drops`; none: it can't be hurt), slides it `knockbackM` away along
 walkable ground (`KNOCK_SPEED_MPS`) and sets its `hurt_from` for the near ecology's reaction
-(docs/ECOLOGY.md §8.1). A creature killed is removed (the clients told) and drops its `drops` as loose
+(docs/ECOLOGY.md §8.1). A creature with an `attack` (shared/creatures; the wolf's bite, round 2)
+turns on its striker for `angryS` (`Creatures::provoke`), its near mind closing on where that
+player stands (`Creature::chase_to`), and bites them in `reachM` and `frontDeg` every `cooldownS`
+(`Creatures::step_attacks`, `Server::step_creature_attacks`): `damage` through the damage rules,
+cause `Weapon`, and a push; at 0 health the player is defeated (CHARACTERS.md §11.13). Only the
+striker is bitten; players still never strike players. A connecting hit shows on clients as the
+creature's `hurtLook` (a fading tint flash and a flinch from the blow, by data; the skinned
+instance's `light.w` carries the packed tint). A creature killed is removed (the clients told) and drops its `drops` as loose
 items; the weapon wears once a creature struck. The client's sweep treats a wood as a bounce for a
 weapon. **Swordplay [built: server, wire, client logic; the raised poses' clips and drawing local]**
 (round 2), behind the `weapons.clash` capability: (1) each strike on a creature goes as `Swordplay`'s
@@ -3927,12 +3934,13 @@ surface, open or a wall), keyed by tile, with its vents and its schedule (V2, VO
   outflow limited to what a column holds, and each face's flow to its stable share of the two
   surfaces' difference (`cfl / 4`: it binds only in ponds deeper than `stepDepthM`, which level instead
   of ringing or shrinking every substep).
-- **Heat and cooling:** heat carried upwind with the flow; a column loses it at `1 / coolingSeconds`,
-  faster per dry neighbour (`edgeCooling`) and by `thinDepthM / depth` (its top's share), slower by
-  `1 + speed / tubeSpeedMs` while it moves (a crust roofs a running river over: a tube, V2); at 0 its lava
-  joins its bed as the fluid's `rock` (`dwell:basalt`), and the rows whose centres it covers are a
-  `LavaEvent::Rock`: a river crusts behind its front and builds land. A lake vent keeps the molten
-  columns joined to it below its level hot (a lake convects); what overflows the rim cools.
+- **Hardening by rule (2026-11-13, VOLCANOES.md §6.6):** a column's heat is its rest clock. Lava moving
+  faster than `stillMs` (its throughflow over twice its depth) is flowing and held at heat 1; at rest it
+  loses heat at `1 / restSeconds`, and at 0 its lava joins its bed as the fluid's `rock` (`dwell:basalt`),
+  the rows it filled a `LavaEvent::Rock`: lava hardens where it stops, never while it flows, its volume
+  kept as land. Sources never harden by rest: each vent's column, the lava joined to it through at most
+  `sourceKeepM` m of lava columns (breadth first along the connected lava), and a lake vent's columns
+  below its level (a lake convects) are held hot. Water quenches any lava, a source's included.
 - **Breakouts (V2):** a column remembers the rock its own lava laid (`crust`); molten lava
   `breakoutDepthM` deep beside a dry column of it standing over its bed melts it down to the bed again
   (`LavaEvent::Melt`, cleared to air by the server before the lava is written), so a pond behind a

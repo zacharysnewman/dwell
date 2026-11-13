@@ -143,38 +143,233 @@ both_faces!(
 );
 
 both_faces!(
-    fn a_river_vent_reaches_lower_ground_and_cools_behind_its_front(f: FaceFrame) {
+    fn a_river_vent_reaches_lower_ground_and_stays_molten_while_it_flows(f: FaceFrame) {
+        // Owner, 2026-11-13: lava solidifies "when it stops moving, touches water, or is a source
+        // block, not while flowing". A source pouring for many times `restSeconds` keeps its river
+        // molten from the vent to its front (the sun's always-flowing rivers).
         let mut field = slope(48, 16, 20.0, 0.3);
         let vent = FIXTURE.vent("test:river").expect("fixture vent");
         field.add_vent(vent).unwrap();
         let bed = field.ground.clone();
-        // Long enough for its front to stop and crust (moving lava keeps its heat: a tube).
+        let rest = field.fluid.rest_seconds;
         let events = near(&mut field, 480.0);
+        assert!(480.0 > 10.0 * rest, "the run is many rests long");
         check_cells(f, &field, &events);
         let reach = front(&field, &bed);
         assert!(
             bed[field.at(reach, 8)] <= bed[field.at(3, 8)] - 3.0,
             "front at x {reach}"
         );
-        let rock: Vec<_> = events
+        let channel: Vec<_> = events
             .iter()
-            .filter_map(|e| match e {
-                LavaEvent::Rock { x, rock, .. } => Some((*x, *rock)),
-                _ => None,
-            })
+            .filter(|e| matches!(e, LavaEvent::Rock { x, z, .. } if *z == 8 && *x >= 3))
             .collect();
-        assert!(rock.iter().all(|&(_, r)| r == "dwell:basalt"));
         assert!(
-            rock.iter().any(|&(x, _)| (x as usize) < reach),
-            "basalt behind the front"
+            channel.is_empty(),
+            "the flowing channel hardened: {channel:?}"
         );
-        let land = field
-            .columns()
-            .map(|i| field.ground[i] - bed[i])
-            .fold(0.0, f32::max);
-        // Half a metre and more (it was 1 m before ponds broke out through their crust dams,
-        // breakoutDepthM: the rock no longer piles behind them).
-        assert!(land >= 0.5, "new land: {land} m");
+        for x in 3..=reach.min(40) {
+            let i = field.at(x, 8);
+            assert!(field.depth[i] > 0.0, "x {x} lost its lava");
+            assert_eq!(field.heat[i], 1.0, "x {x} is cooling while it flows");
+        }
+    }
+);
+
+/// Lava rows each column fills now (field-local column → rows).
+fn rows_now(field: &Field) -> std::collections::HashMap<[i32; 2], std::ops::Range<i32>> {
+    field
+        .columns()
+        .map(|i| (field.col(i), field.lava_rows(i)))
+        .collect()
+}
+
+both_faces!(
+    fn a_tongue_stays_molten_while_it_moves_and_hardens_where_it_stops(f: FaceFrame) {
+        // A tongue of lava with no source: while it runs downhill nothing hardens; once its front
+        // stands still (the yield depth) each column hardens `restSeconds` later, its lava's volume
+        // left as basalt where the lava was, the same cells.
+        let mut field = slope(40, 8, 20.0, 0.25);
+        let mut put = 0.0f64;
+        for z in 2..6 {
+            for x in 0..4 {
+                let i = field.at(x, z);
+                field.depth[i] = 1.5;
+                field.heat[i] = 1.0;
+                put += 1.5;
+            }
+        }
+        field.settle();
+        let rest = field.fluid.rest_seconds;
+        let mut cells = 0usize;
+        let mut first_rock = None;
+        let mut t = 0.0f32;
+        while t < 1200.0 {
+            let before = rows_now(&field);
+            field.advance(0.1, true);
+            t += 0.1;
+            for e in field.take_events() {
+                check_cells(f, &field, std::slice::from_ref(&e));
+                if let LavaEvent::Rock { x, z, rows, rock } = e {
+                    assert_eq!(rock, "dwell:basalt");
+                    // The rock fills the cells its lava filled the step before (give or take the
+                    // top row: a column still creeping below `stillMs` can cross one in the step).
+                    let was = &before[&[x, z]];
+                    assert_eq!(rows.start, was.start, "column ({x}, {z})");
+                    assert!(
+                        rows.len().abs_diff(was.len()) <= 1,
+                        "column ({x}, {z}): {rows:?} {was:?}"
+                    );
+                    cells += rows.len();
+                    first_rock.get_or_insert(t);
+                }
+            }
+        }
+        let first = first_rock.expect("the tongue hardened");
+        assert!(
+            first >= rest,
+            "hardened at {first} s, before a rest of {rest} s"
+        );
+        assert!(field.stored() < 1e-3, "lava left: {} m³", field.stored());
+        assert!(
+            (field.rocked - put).abs() < 1e-2,
+            "rock {} m³ of {put} m³",
+            field.rocked
+        );
+        assert!(
+            cells as f64 >= put * 2.0 * 0.6,
+            "{cells} rock cells for {put} m³"
+        );
+    }
+);
+
+both_faces!(
+    fn a_source_stays_molten_indefinitely(f: FaceFrame) {
+        // A lake vent's still, full lake for 50 rests: not a cell of it hardens.
+        let mut field = Field::new(&DATA, "dwell:lava", 24, 24).expect("dwell:lava");
+        for z in 0..24 {
+            for x in 0..24 {
+                let i = field.at(x, z);
+                let r = ((x as f32 - 12.0).powi(2) + (z as f32 - 12.0).powi(2)).sqrt();
+                field.ground[i] = if r < 6.0 { 9.0 } else { 12.0 };
+            }
+        }
+        let lake = VentDef {
+            name: "test:lake",
+            fluid: "dwell:lava",
+            kind: VentKind::Lake,
+            x: 12,
+            z: 12,
+            rate_m3s: 2.0,
+            level_m: 10.0,
+        };
+        field.add_vent(&lake).unwrap();
+        let secs = field.fluid.rest_seconds * 50.0;
+        let events = near(&mut field, secs);
+        check_cells(f, &field, &events);
+        assert!(
+            !events.iter().any(|e| matches!(e, LavaEvent::Rock { .. })),
+            "the source's lava hardened"
+        );
+        let v = field.at(12, 12);
+        assert!(field.depth[v] > 0.5);
+        assert_eq!(field.heat[v], 1.0);
+    }
+);
+
+/// A still pool on flat ground, `x0..x1` along row 0 of a 32 × 1 field, 0.5 m deep, walled in:
+/// columns 20..25 stand 5 m high, and 25..32 are a second basin 2 m up, full too when `second`.
+fn still_pool(x0: usize, x1: usize, second: bool) -> Field {
+    let mut field = Field::new(&DATA, "dwell:lava", 32, 1).expect("dwell:lava");
+    for x in 0..32 {
+        let i = field.at(x, 0);
+        field.ground[i] = match x {
+            20..25 => 5.0,
+            25.. => 2.0,
+            _ => 0.0,
+        };
+        if (x0..x1).contains(&x) || (second && x >= 25) {
+            field.depth[i] = 0.5;
+            field.heat[i] = 1.0;
+        }
+    }
+    field.settle();
+    field
+}
+
+/// A source pouring nothing now (a still source block) at column `x` of row 0.
+fn still_source(x: u32) -> VentDef {
+    VentDef {
+        name: "test:still",
+        fluid: "dwell:lava",
+        kind: VentKind::River,
+        x,
+        z: 0,
+        rate_m3s: 0.0,
+        level_m: 0.0,
+    }
+}
+
+both_faces!(
+    fn a_still_pool_beside_a_source_stays_molten_and_far_from_one_hardens(f: FaceFrame) {
+        // Owner, 2026-11-13: "We may need lava to not harden when within a distance of a source
+        // block too." Lava joined to a source through at most `sourceKeepM` m of lava columns stays
+        // molten; the rest of the same pool, and the same pool with no source, harden.
+        let keep = DATA.fluid("dwell:lava").unwrap().source_keep_m as usize;
+        assert!(keep >= 1);
+        let secs = DATA.fluid("dwell:lava").unwrap().rest_seconds * 3.0;
+        let mut beside = still_pool(0, 20, false);
+        beside.add_vent(&still_source(0)).unwrap();
+        let events = near(&mut beside, secs);
+        check_cells(f, &beside, &events);
+        for x in 0..20 {
+            let i = beside.at(x, 0);
+            if x <= keep {
+                assert!(
+                    beside.depth[i] > 0.0,
+                    "x {x}, {x} m from the source, hardened"
+                );
+            } else {
+                assert_eq!(beside.depth[i], 0.0, "x {x}, past {keep} m, still molten");
+                assert!(beside.ground[i] >= 0.5 - 1e-4, "x {x}: its lava is rock");
+            }
+        }
+        // The same pool with no source, and with a source in the next basin over (not joined to
+        // it by lava): all of it hardens.
+        for mut far in [still_pool(0, 20, false), {
+            let mut p = still_pool(0, 20, true);
+            p.add_vent(&still_source(31)).unwrap();
+            p
+        }] {
+            near(&mut far, secs);
+            for x in 0..20 {
+                assert_eq!(far.depth[far.at(x, 0)], 0.0, "x {x} far from a source");
+            }
+        }
+    }
+);
+
+both_faces!(
+    fn water_hardens_a_source_at_once(f: FaceFrame) {
+        // Today's quench rule holds for a source too: a vent whose column is water quenches its
+        // lava to obsidian as it comes (and builds up out of the water).
+        let mut field = slope(16, 8, 10.0, 0.0);
+        let i = field.at(2, 4);
+        field.water[i] = true;
+        field.water_top[i] = 12.0;
+        field.add_vent(&RIVER).unwrap();
+        let events = near(&mut field, 2.0);
+        check_cells(f, &field, &events);
+        assert!(events.iter().any(|e| matches!(
+            e,
+            LavaEvent::Rock {
+                x: 2,
+                z: 4,
+                rock: "dwell:obsidian",
+                ..
+            }
+        )));
+        assert!(events.iter().any(|e| matches!(e, LavaEvent::Steam { .. })));
     }
 );
 
