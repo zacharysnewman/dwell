@@ -1285,6 +1285,12 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    tracks' optional `times` (`day`, `night`, default both) drawn by the listener's daylight against
    `playlist.dayAt`, the menu as day, a playing track finishing when day turns to night (AUDIO.md §2a, §6a).
    **Waiting on the owner:** which tracks are night ones (none is marked yet).
+   Owner (2026-11-12), of Casual Classic #1: "I like that one". Then, after the night candidates' previews: "I
+   really only like Night: 1, 4, 5 for both day and night." **Built (branch `claude/music-picks`):** the playlist
+   is those four, each for day and night: Casual Classic #1, *Close Your Eyes And Fly* Variation #5 (UPDATE 1.28,
+   Relaxing Themes), *Lyric Fantasy Theme #4* (Massive *Lyric Fantasy Background Music Pack*) and *Dream On*
+   (*Beautiful and Emotional Music Pack*), encoded as before (−18 LUFS, AAC 96 kbps, 1.0–1.9 MB each, 5.6 MB
+   together); the other 19 removed. Casual Classic #1 is kept from the earlier remark; one entry to drop.
 
 34. **The in-game Chisel editor and the Textures tab extras** (owner 2026-11-12: "these all seem solid yes"): open
    Chisel's biome sliders inside a running world with the terrain around the player regenerating as they tune

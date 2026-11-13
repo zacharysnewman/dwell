@@ -55,9 +55,17 @@ describe('music data', () => {
     expect(loadMusic()).toEqual(MUSIC_DATA);
   });
 
-  it('plays the casual tracks (Andrew Sitkov) everywhere, shuffled, each small enough to ship', () => {
+  it("plays the owner's four picks (Andrew Sitkov) everywhere, day and night, shuffled", () => {
     const ts = playable(MUSIC_DATA);
-    expect(ts.length).toBeGreaterThanOrEqual(10);
+    // Owner, 2026-11-12: "I really only like Night: 1, 4, 5 for both day and night", and of
+    // Casual Classic #1: "I like that one" (WORK_QUEUE item 33).
+    expect(ts.map((t) => t.title).sort()).toEqual([
+      'Casual Classic #1',
+      'Close Your Eyes And Fly - Variation #5',
+      'Dream On',
+      'Lyric Fantasy Theme #4',
+    ]);
+    for (const t of ts) expect(t.times).toEqual(['day', 'night']);
     expect(MUSIC_DATA.playlist.order).toBe('shuffle');
     for (const t of ts) {
       expect(t.author).toBe('Andrew Sitkov');
@@ -105,7 +113,7 @@ describe('music data', () => {
     const both = resolveMusic(
       [
         ...files(),
-        { namespace: 'zz', tracks: { fixture: { ...track, file: 'casual-theme-1.m4a' } } },
+        { namespace: 'zz', tracks: { fixture: { ...track, file: 'casual-classic-1.m4a' } } },
       ],
       MUSIC_DIR,
     );
@@ -204,35 +212,35 @@ describe('music data', () => {
     ],
     [
       'an unknown time of day',
-      (f) => (f.tracks.x = { ...track, file: 'casual-theme-1.m4a', times: ['dusk'] }),
+      (f) => (f.tracks.x = { ...track, file: 'casual-classic-1.m4a', times: ['dusk'] }),
       /track dwell:x\.times: "dusk" is not one of day, night/,
     ],
     [
       'no times of day',
-      (f) => (f.tracks.x = { ...track, file: 'casual-theme-1.m4a', times: [] }),
+      (f) => (f.tracks.x = { ...track, file: 'casual-classic-1.m4a', times: [] }),
       /track dwell:x\.times: must be a non-empty list of day, night/,
     ],
     [
       'a time of day twice',
-      (f) => (f.tracks.x = { ...track, file: 'casual-theme-1.m4a', times: ['day', 'day'] }),
+      (f) => (f.tracks.x = { ...track, file: 'casual-classic-1.m4a', times: ['day', 'day'] }),
       /track dwell:x\.times: lists a time twice/,
     ],
     [
       'an unknown field',
-      (f) => (f.tracks.x = { ...track, file: 'casual-theme-1.m4a', tempo: 1 }),
+      (f) => (f.tracks.x = { ...track, file: 'casual-classic-1.m4a', tempo: 1 }),
       /track dwell:x: unknown field "tempo"/,
     ],
     [
       'a missing field',
       (f) => {
-        f.tracks.x = { ...track, file: 'casual-theme-1.m4a' };
+        f.tracks.x = { ...track, file: 'casual-classic-1.m4a' };
         delete f.tracks.x.author;
       },
       /track dwell:x: missing "author"/,
     ],
     [
       'an empty title',
-      (f) => (f.tracks.x = { ...track, file: 'casual-theme-1.m4a', title: ' ' }),
+      (f) => (f.tracks.x = { ...track, file: 'casual-classic-1.m4a', title: ' ' }),
       /track dwell:x\.title: must be a non-empty string/,
     ],
     [
@@ -247,27 +255,27 @@ describe('music data', () => {
     ],
     [
       'a volume past 1',
-      (f) => (f.tracks.x = { ...track, file: 'casual-theme-1.m4a', volume: 1.5 }),
+      (f) => (f.tracks.x = { ...track, file: 'casual-classic-1.m4a', volume: 1.5 }),
       /track dwell:x\.volume: 1\.5 is outside \[0, 1\]/,
     ],
     [
       'a loop that is not a flag',
-      (f) => (f.tracks.x = { ...track, file: 'casual-theme-1.m4a', loop: 'yes' }),
+      (f) => (f.tracks.x = { ...track, file: 'casual-classic-1.m4a', loop: 'yes' }),
       /track dwell:x\.loop: must be true or false/,
     ],
     [
       'a negative fade',
-      (f) => (f.tracks.x = { ...track, file: 'casual-theme-1.m4a', fadeInS: -1 }),
+      (f) => (f.tracks.x = { ...track, file: 'casual-classic-1.m4a', fadeInS: -1 }),
       /track dwell:x\.fadeInS: -1 is outside/,
     ],
     [
       'an unknown condition',
-      (f) => (f.tracks.x = { ...track, file: 'casual-theme-1.m4a', when: 'night' }),
+      (f) => (f.tracks.x = { ...track, file: 'casual-classic-1.m4a', when: 'night' }),
       /track dwell:x\.when: "night" is not one of always/,
     ],
     [
       'a bad name',
-      (f) => (f.tracks['Bad Name'] = { ...track, file: 'casual-theme-1.m4a' }),
+      (f) => (f.tracks['Bad Name'] = { ...track, file: 'casual-classic-1.m4a' }),
       /track dwell:Bad Name: bad name/,
     ],
     ['no tracks', (f) => (f.tracks = {}), /shared\/music: tracks: none/],

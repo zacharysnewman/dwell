@@ -353,8 +353,8 @@ There are **no official game servers**; players host (ADR 0003, details in §10)
                      controls), samples/ (recorded variations, mono .m4a) + gen.mjs (→ TS for client/src/audio, Rust for dwell-game) and
                      validate.mjs (also used by shared/blocks/gen.mjs and the client's tests).
 /shared/music        Music (music.json: the playlist — order, gaps, cross-fade — and tracks — title,
-                     author, file, volume, loop, fades, when — with their .m4a files, 20 casual
-                     tracks by Andrew Sitkov) + gen.mjs (→ TS
+                     author, file, volume, loop, fades, when — with their .m4a files, the owner's
+                     four tracks by Andrew Sitkov) + gen.mjs (→ TS
                      music.gen.ts, each file's published name with its content hash), validate.mjs.
 /shared/worldgen     golden/: chunk and LOD-section hashes of generator version 23 (§6.3); terrain.json: the world's elevation and water (the height field, rivers, lakes, spawn, the `defaultBiome`), biomes/: the biomes layered on it (where they belong, fine relief, banks, water look, elevation bands, rule references; fixtures/ for tests; ADR 0074), worlds/: example world settings (the archipelago), decorations.json: the terrain's decoration rules, placements.json: the structure placements (the pines, ADR 0043; broadleaf trees and boulders that preset biomes list, ADR 0074 B5; tree species by name, ADR 0079), midplane.json: the bedrock between the faces and the portals through it, gen.mjs (→ Rust tables for dwell-worldgen) (§6.3).
 /shared/structures   Structure files (*.json; test/ holds fixtures) + gen.mjs (→ Rust tables for

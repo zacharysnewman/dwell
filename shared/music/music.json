@@ -1,5 +1,5 @@
 {
-  "$comment": "Music (docs/AUDIO.md §2a): one entry per track, its file beside this one; `playlist` (one file sets it) says how they follow each other: shuffled, never the same twice in a row, a gap of silence drawn in [gapMinS, gapMaxS] after each (minutes, Minecraft-style: music comes and goes at random times), the next starting crossfadeS early (an overlap); `contexts` gives each place the playlist plays (`menu`, `game`) its wait before the first track, drawn in [firstDelayMinS, firstDelayMaxS] (the menu's 0: music at once; a track carried over from the previous page plays on without a wait). A track's optional `times` (`day`, `night`, default both) says when it may be drawn: day while the listener's daylight (the ambience's `day`, 0 night to 1 day) is at least `dayAt`; the menu counts as day, and a playing track finishes when day turns to night. shared/music/gen.mjs validates it and emits client/src/audio/music.gen.ts; the build ships each file once per site under media/ (client/vite.config.ts, scripts/site.ts). `when` picks where a track plays (now only \"always\"). The tracks: Andrew Sitkov's Total Music Collection (Unity Asset Store), its casual packs, AAC 96 kbps at -18 LUFS (docs/AUDIO.md §2a).",
+  "$comment": "Music (docs/AUDIO.md §2a): one entry per track, its file beside this one; `playlist` (one file sets it) says how they follow each other: shuffled, never the same twice in a row, a gap of silence drawn in [gapMinS, gapMaxS] after each (minutes, Minecraft-style: music comes and goes at random times), the next starting crossfadeS early (an overlap); `contexts` gives each place the playlist plays (`menu`, `game`) its wait before the first track, drawn in [firstDelayMinS, firstDelayMaxS] (the menu's 0: music at once; a track carried over from the previous page plays on without a wait). A track's optional `times` (`day`, `night`, default both) says when it may be drawn: day while the listener's daylight (the ambience's `day`, 0 night to 1 day) is at least `dayAt`; the menu counts as day, and a playing track finishes when day turns to night. shared/music/gen.mjs validates it and emits client/src/audio/music.gen.ts; the build ships each file once per site under media/ (client/vite.config.ts, scripts/site.ts). `when` picks where a track plays (now only \"always\"). The tracks: Andrew Sitkov's Total Music Collection (Unity Asset Store), the owner's four picks, AAC 96 kbps at -18 LUFS (docs/AUDIO.md §2a).",
   "namespace": "dwell",
   "playlist": {
     "order": "shuffle",
@@ -23,190 +23,30 @@
       "fadeOutS": 3,
       "when": "always"
     },
-    "casual_classic_2": {
-      "title": "Casual Classic #2",
+    "close_your_eyes_and_fly_5": {
+      "title": "Close Your Eyes And Fly - Variation #5",
       "author": "Andrew Sitkov",
-      "file": "casual-classic-2.m4a",
+      "file": "close-your-eyes-and-fly-5.m4a",
       "volume": 0.6,
       "loop": false,
       "fadeInS": 2,
       "fadeOutS": 3,
       "when": "always"
     },
-    "casual_classic_3": {
-      "title": "Casual Classic #3",
+    "lyric_fantasy_theme_4": {
+      "title": "Lyric Fantasy Theme #4",
       "author": "Andrew Sitkov",
-      "file": "casual-classic-3.m4a",
+      "file": "lyric-fantasy-theme-4.m4a",
       "volume": 0.6,
       "loop": false,
       "fadeInS": 2,
       "fadeOutS": 3,
       "when": "always"
     },
-    "casual_classic_4": {
-      "title": "Casual Classic #4",
+    "dream_on": {
+      "title": "Dream On",
       "author": "Andrew Sitkov",
-      "file": "casual-classic-4.m4a",
-      "volume": 0.6,
-      "loop": false,
-      "fadeInS": 2,
-      "fadeOutS": 3,
-      "when": "always"
-    },
-    "casual_classic_5": {
-      "title": "Casual Classic #5",
-      "author": "Andrew Sitkov",
-      "file": "casual-classic-5.m4a",
-      "volume": 0.6,
-      "loop": false,
-      "fadeInS": 2,
-      "fadeOutS": 3,
-      "when": "always"
-    },
-    "casual_theme_1": {
-      "title": "Casual Theme #1",
-      "author": "Andrew Sitkov",
-      "file": "casual-theme-1.m4a",
-      "volume": 0.6,
-      "loop": false,
-      "fadeInS": 2,
-      "fadeOutS": 3,
-      "when": "always"
-    },
-    "casual_theme_2": {
-      "title": "Casual Theme #2",
-      "author": "Andrew Sitkov",
-      "file": "casual-theme-2.m4a",
-      "volume": 0.6,
-      "loop": false,
-      "fadeInS": 2,
-      "fadeOutS": 3,
-      "when": "always"
-    },
-    "casual_theme_3": {
-      "title": "Casual Theme #3",
-      "author": "Andrew Sitkov",
-      "file": "casual-theme-3.m4a",
-      "volume": 0.6,
-      "loop": false,
-      "fadeInS": 2,
-      "fadeOutS": 3,
-      "when": "always"
-    },
-    "casual_theme_4": {
-      "title": "Casual Theme #4",
-      "author": "Andrew Sitkov",
-      "file": "casual-theme-4.m4a",
-      "volume": 0.6,
-      "loop": false,
-      "fadeInS": 2,
-      "fadeOutS": 3,
-      "when": "always"
-    },
-    "casual_theme_5": {
-      "title": "Casual Theme #5",
-      "author": "Andrew Sitkov",
-      "file": "casual-theme-5.m4a",
-      "volume": 0.6,
-      "loop": false,
-      "fadeInS": 2,
-      "fadeOutS": 3,
-      "when": "always"
-    },
-    "casual_theme_1_acoustic": {
-      "title": "Casual Theme #1 (Acoustic)",
-      "author": "Andrew Sitkov",
-      "file": "casual-theme-1-acoustic.m4a",
-      "volume": 0.6,
-      "loop": false,
-      "fadeInS": 2,
-      "fadeOutS": 3,
-      "when": "always"
-    },
-    "casual_theme_2_acoustic": {
-      "title": "Casual Theme #2 (Acoustic)",
-      "author": "Andrew Sitkov",
-      "file": "casual-theme-2-acoustic.m4a",
-      "volume": 0.6,
-      "loop": false,
-      "fadeInS": 2,
-      "fadeOutS": 3,
-      "when": "always"
-    },
-    "casual_theme_3_acoustic": {
-      "title": "Casual Theme #3 (Acoustic)",
-      "author": "Andrew Sitkov",
-      "file": "casual-theme-3-acoustic.m4a",
-      "volume": 0.6,
-      "loop": false,
-      "fadeInS": 2,
-      "fadeOutS": 3,
-      "when": "always"
-    },
-    "casual_theme_4_acoustic": {
-      "title": "Casual Theme #4 (Acoustic)",
-      "author": "Andrew Sitkov",
-      "file": "casual-theme-4-acoustic.m4a",
-      "volume": 0.6,
-      "loop": false,
-      "fadeInS": 2,
-      "fadeOutS": 3,
-      "when": "always"
-    },
-    "casual_theme_5_acoustic": {
-      "title": "Casual Theme #5 (Acoustic)",
-      "author": "Andrew Sitkov",
-      "file": "casual-theme-5-acoustic.m4a",
-      "volume": 0.6,
-      "loop": false,
-      "fadeInS": 2,
-      "fadeOutS": 3,
-      "when": "always"
-    },
-    "simple_positive_1": {
-      "title": "Simple and Positive Track #1",
-      "author": "Andrew Sitkov",
-      "file": "simple-positive-1.m4a",
-      "volume": 0.6,
-      "loop": false,
-      "fadeInS": 2,
-      "fadeOutS": 3,
-      "when": "always"
-    },
-    "simple_positive_2": {
-      "title": "Simple and Positive Track #2",
-      "author": "Andrew Sitkov",
-      "file": "simple-positive-2.m4a",
-      "volume": 0.6,
-      "loop": false,
-      "fadeInS": 2,
-      "fadeOutS": 3,
-      "when": "always"
-    },
-    "simple_positive_3": {
-      "title": "Simple and Positive Track #3",
-      "author": "Andrew Sitkov",
-      "file": "simple-positive-3.m4a",
-      "volume": 0.6,
-      "loop": false,
-      "fadeInS": 2,
-      "fadeOutS": 3,
-      "when": "always"
-    },
-    "simple_positive_4": {
-      "title": "Simple and Positive Track #4",
-      "author": "Andrew Sitkov",
-      "file": "simple-positive-4.m4a",
-      "volume": 0.6,
-      "loop": false,
-      "fadeInS": 2,
-      "fadeOutS": 3,
-      "when": "always"
-    },
-    "simple_positive_5": {
-      "title": "Simple and Positive Track #5",
-      "author": "Andrew Sitkov",
-      "file": "simple-positive-5.m4a",
+      "file": "dream-on.m4a",
       "volume": 0.6,
       "loop": false,
       "fadeInS": 2,
