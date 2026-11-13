@@ -769,8 +769,16 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    only on beaches and non-red areas; the mesa stacks' layers limited to a named red/orange/cream banding (2–3 tones);
    part B's province mixing must not drop unrelated stacks into a mesa (else mesas take a single-family mix).
    This shows the red sand of 0.59/0.60 (#891, BUGS.md #134) fell short: it covered only arid red-rock treads.
-   **Owner should see:** red desert and mesa country: slopes, talus, washes, floors and tops' loose cover are red
-   sand; tan sand only on beaches and non-red areas; mesa layers in 2–3 harmonious red/cream tones.
+   ~~Owner should see: red desert and mesa country: slopes, talus, washes, floors and tops' loose cover are red sand;
+   tan sand only on beaches and non-red areas; mesa layers in 2–3 harmonious red/cream tones.~~ Replaced by the owner's
+   correction (2026-11-13, with a Monument Valley photo): "Why does it say red and cream tones? Isn't cream
+   essentially tan? Real monument valley uses a blend of red, brown and tan, with brown leading to tan, always smooth
+   color changes." No cream band: walls deep red-brown (darker, sheer, vertical streaks); talus aprons and stepped
+   skirts red-brown to red-orange in thin ledges; the valley floor bright red-orange sand with boulders and paler tan
+   patches blending in (dune patches, washes, tracks); low rounded red outcrops with rubble; colours change smoothly
+   red ↔ brown ↔ tan over distance, never in hard bands or a checkerboard. **Owner should see:** Monument Valley-like
+   country. Dark red-brown buttes with stepped red talus skirts, standing on a red-orange sand floor with paler tan
+   patches blending smoothly, boulders and low rounded red outcrops. No cream bands, no abrupt colour changes.
    Owner, 2026-11-13, also added to the batch: "Im not seeing any tan deserts is that not a thing yet?" The biome
    exists (`preset:sand_desert`, in realistic.json's list, with dunes: ≥ 14 °C, rain ≤ 250 mm, wetness ≤ 0.25), but on
    seed 2741893632 it did not appear (cold desert 40 %, sand desert ~0 %): the climate's dry ground is too cold. Change:
