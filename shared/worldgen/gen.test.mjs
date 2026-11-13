@@ -747,6 +747,18 @@ test('the checked-in rocks are valid, generate the checked-in Rust, and take a r
   bad((x) => (x.rocks[1].face = 'dwell:nothing'), /rock dwell:shale: face "dwell:nothing" is not in the registry/);
   bad((x) => (x.stacks[0].layers[0].rock = 'dwell:nothing'), /stack dwell:red_beds: layer rock "dwell:nothing"/);
   bad((x) => (x.shaping.strength = 3), /shaping.strength must be in \[0, 1\]/);
+  // 0.62: notched ramps by a word, the mesa relief, the ground blends (a blend added by data alone).
+  bad((x) => (x.shaping.notched = 'some'), /shaping.notched must be one of none, mesaEdges, all/);
+  bad((x) => (x.mesaRelief.topAmplitude = 99), /mesaRelief.topAmplitude must be in \[0, 50\]/);
+  bad((x) => (x.blends[0].shares = [0.5, 0.5, 0.5]), /shares must sum to 1/);
+  bad((x) => (x.blends[0].blocks[0] = 'dwell:nothing'), /block "dwell:nothing" is not in the registry/);
+  bad((x) => (x.blends[0].stacks = ['dwell:nothing']), /stack "dwell:nothing" is not a stack/);
+  bad((x) => (x.blends[0].dither = 0.2), /dither must be under half the smallest share/);
+  {
+    const x = rocks();
+    x.blends.push({ name: 'test:greys', stacks: ['dwell:granite_core'], blocks: ['dwell:stone', 'dwell:dirt'], shares: [0.5, 0.5], wavelength: 50, slope: 0, dither: 0.1, ditherWavelength: 2 });
+    assert.match(rocksRust(validateRocks(x, blocks)), /Blend \{ name: "test:greys", stacks: &\["dwell:granite_core"\]/);
+  }
   bad((x) => (x.extra = 1), /unknown extra/);
   // The erosion (T4): its knobs by data alone; bad ones named.
   const e = rocks();
