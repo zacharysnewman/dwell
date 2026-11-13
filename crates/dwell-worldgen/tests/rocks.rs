@@ -16,6 +16,7 @@ const CAP: Rock = Rock {
     solubility: 0.0,
     face: "dwell:stone",
     cap: "dwell:stone",
+    cap_by: &[],
     scree: "dwell:sand",
     color: 0xaa3322,
 };
@@ -27,6 +28,7 @@ const SOFT: Rock = Rock {
     solubility: 0.0,
     face: "dwell:dirt",
     cap: "dwell:dirt",
+    cap_by: &[],
     scree: "dwell:sand",
     color: 0x886655,
 };
@@ -38,6 +40,7 @@ const DOME: Rock = Rock {
     solubility: 0.0,
     face: "dwell:stone",
     cap: "dwell:stone",
+    cap_by: &[],
     scree: "dwell:stone",
     color: 0xbbbbbb,
 };
@@ -67,13 +70,76 @@ const STACKS: &[Stack] = &[
     },
 ];
 
+/// The fixture geology with the plain profile (no ledges, flat treads, strict ramps): the T2
+/// shaping these tests pin; `ledges_break_a_soft_beds_slope_and_treads_keep_relief` adds them.
 fn geology(strength: f64) -> Geology {
     Geology {
         rocks: ROCKS,
         stacks: STACKS,
         strength,
+        ledge: 0.0,
+        tread_relief: 0.0,
+        notched: false,
         ..GEOLOGY
     }
+}
+
+#[test]
+fn ledges_break_a_soft_beds_slope_and_treads_keep_relief() {
+    // face-a-only: the profile maps a face-local height (as above). Owner, 2026-11-13: bedded
+    // slopes are ramped runs broken by ledges, not a field of ½ m stairs; mesa tops keep a little
+    // relief. With `ledge` 2 m every half bed and `treadRelief` 0.1, the soft bed's 30 m rises in
+    // runs with near-vertical 2 m ledges between, and the cap's tread rises 2 m (a tenth of 20 m).
+    let g = Geology {
+        ledge: 2.0,
+        ledge_every: 0.5,
+        tread_relief: 0.1,
+        ..geology(1.0)
+    };
+    let p = Profile::of(&g, &STACKS[0]);
+    let plain = Profile::of(&geology(1.0), &STACKS[0]);
+    assert_eq!(p.period(), plain.period());
+    // Over a period sampled finely: steps of ≥ 1.5 m in under 0.1 m of input in the soft rock.
+    let n = 200_000;
+    let du = 50.0 / n as f64;
+    let (mut ledges, mut plain_ledges) = (0, 0);
+    let mut tread_rise = 0.0;
+    let climb = |p: &Profile, count: &mut i32, tread: Option<&mut f64>| {
+        let mut tread = tread;
+        let (mut run_start, mut run_v, mut in_wall) = (0.0, 0.0, false);
+        let mut last = p.map(100.0);
+        for i in 1..=n {
+            let h = 100.0 + du * i as f64;
+            let now = p.map(h);
+            let soft = ROCKS[now.1].name == "test:soft";
+            let steep = now.2 == Part::Wall && soft;
+            if steep && !in_wall {
+                (run_start, run_v) = (h, last.0);
+            }
+            if !steep && in_wall && now.0 - run_v >= 1.5 && h - run_start < 0.1 {
+                *count += 1;
+            }
+            in_wall = steep;
+            if let Some(t) = tread.as_deref_mut()
+                && now.2 == Part::Tread
+                && last.2 == Part::Tread
+            {
+                *t += now.0 - last.0;
+            }
+            last = now;
+        }
+    };
+    climb(&p, &mut ledges, Some(&mut tread_rise));
+    climb(&plain, &mut plain_ledges, None);
+    assert_eq!(plain_ledges, 0, "no ledges in the plain profile's talus");
+    assert!(
+        ledges >= 2,
+        "the soft bed's slope is broken by ledges: {ledges}"
+    );
+    assert!(
+        (tread_rise - 0.1 * 50.0).abs() < 0.5,
+        "the treads keep a tenth of their beds' height: {tread_rise}"
+    );
 }
 
 fn biome(stack: &'static str) -> Biome {

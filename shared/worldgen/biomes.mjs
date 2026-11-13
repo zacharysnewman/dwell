@@ -794,7 +794,15 @@ export const PLATE_SETTINGS = [
 /** The geology's groups' ranges (rocks.json `provinces`, `shaping`), as `TERRAIN`'s. */
 export const GEOLOGY = {
   provinces: { wavelength: [256, 1_000_000, true] },
-  shaping: { strength: [0, 1], tread: [0, 10], sheer: [0, 10] },
+  shaping: {
+    strength: [0, 1],
+    tread: [0, 10],
+    sheer: [0, 10],
+    ledge: [0, 50],
+    ledgeEvery: [0.05, 1],
+    treadRelief: [0, 0.5],
+    notched: [0, 1, true],
+  },
   erosion: {
     strength: [0, 1],
     reach: [0, 10_000],
@@ -812,6 +820,9 @@ export const GEOLOGY = {
     gullyDepth: [0, 100],
   },
 };
+
+/** The climates a rock's `capBy` may name (the code's vocabulary, geology.rs `CapClimate`). */
+export const CAP_CLIMATES = ["arid"];
 
 /**
  * Checks the geology (shared/worldgen/rocks.json, systemic terrain T2): the rock types, the strata
@@ -834,6 +845,7 @@ export function validateRocks(data, blocks) {
         "erosion",
         "tectonic",
         "plateProvinces",
+        "arid",
       ].includes(k),
   );
   if (extra.length) fail(`unknown ${extra.join(", ")}`);
@@ -857,6 +869,7 @@ export function validateRocks(data, blocks) {
       "face",
       "cap",
       "scree",
+      "capBy",
       "color",
       "$comment",
     ];
@@ -873,8 +886,33 @@ export function validateRocks(data, blocks) {
       if (!b) rf(`${k} ${JSON.stringify(r[k])} is not in the registry`);
       if (b.shape !== "full") rf(`${k} ${r[k]} must be a full block`);
     }
+    // capBy (BUGS.md #134): the treads' block by the climate, the first whose climate holds.
+    if (r.capBy !== undefined) {
+      if (!Array.isArray(r.capBy) || r.capBy.length === 0)
+        rf("capBy must be a list of at least one {\"<climate>\": block}");
+      for (const e of r.capBy) {
+        const ks = typeof e === "object" && e !== null && !Array.isArray(e) ? Object.keys(e) : [];
+        if (ks.length !== 1)
+          rf("a capBy entry must be one {\"<climate>\": block}");
+        if (!CAP_CLIMATES.includes(ks[0]))
+          rf(`capBy: unknown climate ${ks[0]} (one of ${CAP_CLIMATES.join(", ")})`);
+        const b = blocks.get(e[ks[0]]);
+        if (!b) rf(`capBy ${ks[0]} ${JSON.stringify(e[ks[0]])} is not in the registry`);
+        if (b.shape !== "full") rf(`capBy ${ks[0]} ${e[ks[0]]} must be a full block`);
+      }
+      if (data.arid === undefined) rf("capBy needs the geology's arid");
+    }
     if (typeof r.color !== "string" || !/^#[0-9a-fA-F]{6}$/.test(r.color))
       rf('color must be "#rrggbb"');
+  }
+  if (data.arid !== undefined) {
+    const a = data.arid;
+    if (typeof a !== "object" || a === null || Array.isArray(a)) fail("arid must be an object");
+    const ex = Object.keys(a).filter((k) => !["$comment", "rain", "wetness", "celsius"].includes(k));
+    if (ex.length) fail(`arid: unknown ${ex.join(", ")}`);
+    if (!between(a.rain, 0, 20_000)) fail("arid.rain must be in [0, 20000] mm");
+    if (!between(a.wetness, 0, 1)) fail("arid.wetness must be in [0, 1]");
+    if (!between(a.celsius, -100, 100)) fail("arid.celsius must be in [-100, 100] °C");
   }
   if (!Array.isArray(data.stacks) || data.stacks.length === 0)
     fail("stacks must be a list of at least one stack");

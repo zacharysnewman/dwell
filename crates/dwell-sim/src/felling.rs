@@ -1353,6 +1353,13 @@ impl Felling {
             })
         };
         for (c, m) in placed {
+            // A falling block settles as its `settlesAs` says: a sand ramp lands as flat sand
+            // (owner, 2026-11-13), never a lone ramp.
+            let m = if falls(m) {
+                dwell_blocks::settled_state(m)
+            } else {
+                m
+            };
             let at = raised(c, up_of(c));
             if !taken(world, at, m) {
                 out.cells.push((at, m));
@@ -1934,6 +1941,67 @@ mod tests {
                     world.get_voxel(below[0], below[1], below[2]),
                     M.air,
                     "column x {x} floats: {logs:?}"
+                );
+            }
+        }
+    );
+
+    dwell_world::both_faces!(
+        /// Owner, 2026-11-13: "gravity blocks like sand settling ... shouldn't settle ramps away
+        /// from other blocks they should transform into flat blocks". A sand ramp (its family falls
+        /// as sand does) undercut falls, and settles as full sand, its base block's `settlesAs`
+        /// "full"; red sand the same by data alone. Red before: the ramp stood in the air (its
+        /// family was ground, not falling), and a falling ramp settled as a ramp.
+        fn an_undercut_sand_ramp_falls_and_settles_as_full_sand(f: dwell_world::FaceFrame) {
+            for (ramp, full) in [
+                (
+                    "dwell:sand_ramp[facing=east,half=bottom,shape=ramp]",
+                    "dwell:sand",
+                ),
+                (
+                    "dwell:red_sand_ramp[facing=east,half=bottom,shape=ramp]",
+                    "dwell:red_sand",
+                ),
+            ] {
+                let mut world = VoxelWorld::new(dwell_world::empty_generator(), None);
+                let mut physics = Physics::new(dwell_physics::PhysicsConfig::default());
+                let mut felling = Felling::default();
+                let (ramp, full) = (
+                    dwell_blocks::parse_state(ramp).expect("the ramp"),
+                    dwell_blocks::require(full),
+                );
+                assert_eq!(
+                    info(ramp).support_role,
+                    dwell_blocks::SupportRole::Falls,
+                    "{ramp}: a falling block's ramp falls"
+                );
+                let set = |w: &mut VoxelWorld, r: i32, m: StateId| {
+                    let [x, y, z] = f.cell([0, r, 0]);
+                    w.set_voxel(x, y, z, f.state(m));
+                };
+                set(&mut world, 39, dwell_blocks::require("dwell:stone"));
+                set(&mut world, 40, full);
+                set(&mut world, 41, ramp);
+                // Undercut: the sand under the ramp is dug out.
+                let cut = f.cell([0, 40, 0]);
+                world.set_voxel(cut[0], cut[1], cut[2], M.air);
+                let mut clear =
+                    |w: &mut VoxelWorld, c: [i32; 3], m: StateId| w.set_voxel(c[0], c[1], c[2], m);
+                let new = felling.detach(&mut world, &mut physics, &[cut], 0, None, &mut clear);
+                assert_eq!(new.len(), 1, "the ramp falls");
+                assert_eq!(felling.pieces[new[0]].cells.len(), 1);
+                let taken = |w: &mut VoxelWorld, c: [i32; 3], _: StateId| {
+                    w.get_voxel(c[0], c[1], c[2]) != M.air
+                };
+                let settled = felling.settle(&mut world, &mut physics, new[0], &taken);
+                assert_eq!(settled.cells.len(), 1, "{:?}", settled.cells);
+                let m = settled.cells[0].1;
+                assert_eq!(
+                    m,
+                    f.state(full),
+                    "settles as {}, not {}",
+                    info(full).name,
+                    info(m).name
                 );
             }
         }

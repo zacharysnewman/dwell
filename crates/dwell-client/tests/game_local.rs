@@ -4080,7 +4080,7 @@ dwell_world::both_faces!(
 );
 
 dwell_world::both_faces!(
-    /// BUGS.md #123, #124, #132 (MOON_WORLD.md §7.3): teleported onto the moon (`moon_land`) with the LOD
+    /// BUGS.md #123, #124, #136 (MOON_WORLD.md §7.3): teleported onto the moon (`moon_land`) with the LOD
     /// on, home's section meshes are dropped at the capture (they stayed uploaded while away, the mesh memory growing each trip), and the
     /// moon's chunks under the player are drawn: `Game::chunk_fade` (the renderer's draw decision
     /// for a chunk) is not asked of home's LOD selection, made in home's coordinates, for the

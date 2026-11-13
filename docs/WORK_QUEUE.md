@@ -16,9 +16,15 @@ Last updated: 2026-11-11 (0.52.108).
 
 ## Queued next, in order (2026-11-12)
 
-**State at 16:00 PST 2026-11-12 (orchestrator handover).** Owner: cloud sessions paused until 17:30 PST (the Mac's
-clock); locally **one feature at a time** ("Only run 1 task at a time locally", "Like work on one feature at a
-time"). Notes ride with real changes (no notes-only PRs; CI skips docs-only changes).
+- **Realistic spawn without `at` (brief, 2026-11-13; BUGS.md #132):** "a fresh Realistic world never loads without a
+  start point … fix (bounded search with a fallback; the whole spawn ≤ ~2 s natively); a test that the Realistic spawn
+  resolves within a time/step budget on seeds 1, 7, 42 and stands at a shrine. Also check whether the client shows a
+  stage for it in the loading screen (if a spawn search is slow, the loading screen should say so)." Done on
+  `claude/realistic-spawn-9poyrj` as far as it reproduces: not reproduced natively or in the cloud's Chromium (the
+  spawn ≤ 0.25 s a face natively; the search was already bounded, `spawn_wider`, with a fallback); the spawn's shrine's
+  cache key cost 134 ms a face on Realistic and now 1 ms; the budget test is `tests/realistic_spawn.rs`. The loading
+  screen has the stage: "Finding a place to stand" (the local worker's `spawn`, `shared/look/loading.json`), seen in
+  the browser at 1.3–1.6 s. **Open:** the owner's repro on the Mac (which stage it sits on, the console).
 - **In progress (local):** underwater look pass toward the owner's ABZÛ reference (item 40: the surface seen from
   below first — "This is more what I want from the underwater surface" — then shafts, turquoise fog, caustics);
   branch `claude/underwater-look`; the reference image at the session scratchpad `abzu-ref.jpg` (not in the repo).
@@ -644,6 +650,41 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    faces): massive ground < 1 % stepped (as unshaped), bedded 3–4 %, no column reshaped by the volume. Default world
    unchanged (goldens); Realistic golden rewritten (REALISTIC_WORLD.md R5). Open for the owner: the collision cores'
    schist is `bedded` (steps every 10 m); `massive` would make the cores smooth throughout (data).
+   Owner, 2026-11-13, on a screenshot of Realistic's bedded-rock slopes (a field of single-cell ½ m stair bumps, no
+   ramps on them; mesa tops perfectly flat; the mesas and scarps read well): **"We need a red brown sand for the red
+   desert areas I think. Not sure if I've clarified this but we should support ramps for all terrain blocks. Does that
+   change layered steps?"** / **"Notched ramps seems fine."** And: **"The only thing about gravity blocks like sand
+   settling is they shouldn't settle ramps away from other blocks they should transform into flat blocks."** (the
+   settled state as data on the falling rule, e.g. `"settlesAs": "full"`).
+   **Done (2026-11-13, 0.59.0, a new line; branch `claude/terrain-059-batch-v81i64`):** (1) `dwell:red_sand` (sand's
+   physics, tools and drops, the palette's `red_sand` ramp, its ramps) floors the red rock mesa (its preset's bands) and
+   is the talus of its own stack `dwell:red_desert_beds` (sandstone over a new red `dwell:siltstone`; rocks.json), data
+   only. (2) Ramps for every terrain block: basalt, obsidian, moon dust, moon mare dust and red sand joined
+   `rampFamilies`; `shared/worldgen/gen.mjs` `validateSurfaceRamps` fails naming any block a worldgen surface rule can
+   place (biome bands, rocks, soils, grids, lava's rock) without ramps. The moon generator (`grids.rs`) doesn't shape
+   ramps yet: its dust has them for when it does. (3) Layered steps as ledges (rocks.json `shaping`: `notched` 1,
+   `ledge` 2 m every `ledgeEvery` 1 of a soft bed (one a bed), `treadRelief` 0.08): where the rock shapes the ground the stored
+   ramps also top diagonal contours (`ramps::top_of_notched`), a soft bedded rock's slope is ramped runs broken by 2 m
+   ledges, and treads keep 8 % of a bed's relief. `tests/realistic_steps.rs` (both faces): bare ½ m steps on bedded
+   ground 61 % (0.58) → 0 %, ledges ≥ 2 m ~1.3×. (4) Sand's `"settlesAs": "full"` (blocks gen.mjs, `SETTLES_AS`,
+   `dwell_blocks::settled_state`): a falling block's ramp family falls too and a fallen sand or red sand ramp settles as
+   the full block (felling.rs, both faces). Rule chosen: always the full block on settling.
+   **Follow-ups (brief 2026-11-13, browser check of 0.59 on a022b0d0; branch `claude/red-sand-fix-rwxphd`):** "Every
+   red_sand cell (and likely red_sand_ramp) draws as the magenta/black missing checker … Fix, and make the guard real
+   … Better still: derive TILE_ORDER from the texture data so it can't drift" and "Red sand isn't where the owner
+   asked … Make the red desert floors (the arid sedimentary/mesa areas of Realistic and the default world's red mesas)
+   surface as red_sand, by data". **Done:** the atlas layout is the texture set's list (BUGS.md #133); red rock
+   floors are red sand where arid (#134). Orchestrator, 2026-11-13, before merge: **"Climate: the owner asked for red
+   sand in the red DESERT areas, so don't put it under forest. Add a small climate rule on a rock's cap as data …
+   Red-rock floors in arid places become red sand; elsewhere they stay red sandstone. Keep mesa tops red sand only
+   where it's arid."** and **"Line: this changes worldgen after 0.59.0 shipped, so raise 0.60 yourself in this PR
+   (the owner delegated minor bumps)."** Built: sandstone `cap` red sandstone with `capBy: [{"arid":
+   "dwell:red_sand"}]`, rocks.json `arid` (rain ≤ 450 mm, wetness ≤ 0.3, ≥ 6 °C: the mesa preset's `where` plus a
+   temperature floor so dry tundra and boreal ground stays rock); the 0.60 line (the Realistic and Starter terrain
+   changed; the default world, `dwell:default` only, has no red rock at the surface and is unchanged). Open for the
+   owner: the 6 °C floor counts the steppe's and cold desert's red rock floors as desert (the reported spot's red
+   mesas are steppe at ~8 °C); the mesa's own 12 °C would keep red sand to hot deserts (face B of seeds 1, 7, 42
+   then has none).
 16. **Phone frame rate (P0)** (owner 2026-11-11, iPhone 17, Safari, setting Low: "I'm only getting ~23 fps on
    mobile, seeing lots of z-fighting on tree trunks with the leaf cards. What might be dropping frames since the
    last while. Used to get 60 fps"). Suspect: leaf cards are on in every tier but CPU, Low included; cards lying
@@ -939,11 +980,11 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    the fall checked against ⅙ g, landing; `home`: out past the release, home's chunks back) and the `moon-trip`
    scenario (DEV_TOOLS.md "The moon"). **Left:** running `moon-trip` on a GPU (local).
    **First browser flight (owner's findings, 0.58 on e4220fcd, M1, seed 7, both faces; branch
-   `claude/moon-chunks-culling-pfqgty`, 2026-11-13; BUGS.md #123–#125, #132):** "the moon's ground is not drawn" (232 chunks held and meshed, 16–17
+   `claude/moon-chunks-culling-pfqgty`, 2026-11-13; BUGS.md #123–#125, #136):** "the moon's ground is not drawn" (232 chunks held and meshed, 16–17
    draw calls; sky above, starfield below); "(b) snaps … after the face A landing 2 snaps + 1 reset (last correction
    34 m); face B trip snaps 3 → 11 (last 18.7 m); (c) mesh memory grows across trips: 44 MB first moon visit, 164 MB
    back home, 256 MB second visit … (d) home's blue sky and clouds show on the moon … leave unless trivial: at least
-   hide home's clouds on the moon." Fixed (BUGS.md #123–#125, #132, #126 partly; MOON_WORLD.md §7.3): chunks drawn off
+   hide home's clouds on the moon." Fixed (BUGS.md #123–#125, #136, #126 partly; MOON_WORLD.md §7.3): chunks drawn off
    home, home's LOD dropped at each crossing, carries' clock-slip corrections smoothed, home's clouds hidden on the
    moon. **Left:** re-running `moon-trip` on a GPU (local); the moon's sky.
    **Second browser flight (0.58.8 on facaaaf1, seed 7, M1; brief 2026-11-13, branch `claude/moon-trip-fixes-df1uke`):**
@@ -957,7 +998,7 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    **Teleport for the drawing check:** owner, 2026-11-13 (via the orchestrator): **"We should just teleport to the moon to see if ground draws,
    flying there is an inefficient test of drawing. Fine if testing the flight itself."** So the drawing test
    teleports onto the moon (`LocalCore::moon_land`, a dev move onto its ground captured the next tick), which found
-   #132 (the moon's chunks sent before the client crossed were dropped; now held for the crossing); the bench has a
+   #136 (the moon's chunks sent before the client crossed were dropped; now held for the crossing); the bench has a
    `moonLand` step and a `moon-draw` scenario (draw calls, triangles, mesh bytes, shots on both faces). **Left:**
    `npm run bench -- --warm moon-draw` on a GPU (local); the moon's sky.
    **Left:** the browser flight (local, GPU), the roll upright at a crossing, M-5 (the moon's LOD), M-8. Earlier
@@ -1296,6 +1337,51 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    timings are samples, not per-frame series: "not recorded"). Next: fewer leaf triangles — impostors from
    nearer than 96 m (item 31) and a plainer leaf mesh with distance (no chamfer, merged faces past the cards'
    fade) — measured with `forest-edge`.
+   **Leaves past the hand-over not drawn (2026-11-13, local, `claude/forest-edge-perf`):** the mesher orders a
+   chunk's cutout triangles with its tree leaf faces last (`dwell_mesh::tree_leaves_from`), so a chunk past the
+   impostors' hand-over end (`fromM` + `fadeM` + 2 m, the tier's data) but within the plants' 90 m draws its grass
+   and cards alone (`render::impostors::cutout_draw`; tests pin the split and the data's switch distance). No
+   look change (those leaves were dropped by the shader). `forest-perf` on the M1 Air at High, `--unthrottled`,
+   `gpu.frame` p50 / p95 ms, two baselines → after: inside 13.9 / 18.1 and 13.2 / 16.8 → 13.5 / 16.6, **edge
+   24.2 / 27.0 and 23.1 / 25.6 → 23.4 / 25.4**, above 10.3 / 12.5 → 10.4 / 12.5: the edge's drawn triangles
+   fall (~5.4 M → 4.0 M) but its frame is within run-to-run noise of the second baseline, so the leaves
+   between 66 and 92 m were not its cost. Still **~6.5 ms over** at p50. Measured, not adopted: the hand-over
+   at 32 m (data) edge 21.5 / 24.3 (−1.7 ms, a visible hand-over nearer than the owner's approved 48 m).
+   The edge's frame now: `gpu.near` 14.5 (the leaf blocks within 66 m), `gpu.shadows` 7.1 p50 (the nearest
+   cascade, redrawn every frame, ~1.5 M caster triangles: the canopy's leaves), composite 4.2, clouds 3.8.
+   Next levers: the leaves' shadow casters (a plainer leaf caster mesh, or leaves in the near cascade only within
+   a distance), a plainer leaf mesh past the cards' fade (no chamfer, merged faces). Also seen: the bench's
+   shots in `test:forest` came out flat grey at every spot (clouds off too), so they show nothing to compare;
+   and `flood_tests::open_terrain_takes_the_full_sky::a` fails on main (3 dark vertices), unrelated.
+   **Round 2, the leaf shadows (2026-11-13, local, `claude/forest-shadows`):** the grey shots were your own body:
+   the bench's `spot` shot stands the player at the camera, and a placed camera drew the whole body around it, so
+   every `test:forest` number before this measured a view covered by its inside, and the body, a moving caster,
+   redrew a far cascade every `refreshFrames` with the canopy's leaves in it (the edge's `gpu.shadows` 7.1 ms was
+   that, not the nearest cascade). Fixed: a placed camera within 1 m of your eyes draws you as first person
+   (`own_body_draw`, test red → green), and a far cascade is drawn again only for moving casters touching its box
+   (a player anywhere in the world redrew every far cascade every 4 frames at High; `moving_casters`, test red →
+   green). No look change; real shots now. `forest-perf`, M1 Air, High, `--unthrottled`, p50 / p95 ms, covered →
+   real: `gpu.frame` inside 13.6 / 17.0 → 14.1 / 15.4, **edge 21.5 / 25.7 → 20.6 / 25.4**, above 10.3 / 12.6 →
+   12.5 / 14.2; `gpu.shadows` edge 1.0 / 9.0 → 0.8 / 1.1 (inside 3.0 / 6.1 → 0.7 / 1.2). With the shadows ~1 ms,
+   no leaf caster change was made (a plainer caster or a near-only leaf distance would save under 1 ms). The
+   edge's real frame: `gpu.near` 16.0 (the leaf blocks), `composite` 6.5, `clouds` 5.4 p50; next levers are those.
+   **Round 3, the leaves' vertices (2026-11-13, local, `claude/forest-near`):** the near pass's cost is the vertex
+   data its ~4 M leaf triangles read, so the terrain and cutout vertices are packed: the normal as snorm8x4 and the
+   baked light, flood light (and a cutout's bare flag) as unorm8x4, one float's slot each (`render::packed_lit`;
+   terrain 84 → 64 bytes, cutout 92 → 72; test `terrain_and_cutout_vertices_pack_normal_and_light_into_bytes`, both
+   faces' meshes, every value within one 8-bit step). No look change: the shaders clamp light to 0–1 and read bare
+   as over or under ½; the same-spot shots differ only where the clouds drift and the wind moves cards and grass
+   between runs. `forest-perf`, M1 Air, High, `--unthrottled`, `gpu.frame` p50 / p95 ms, before → cutout packed →
+   both packed: inside 13.4 / 14.1 → 13.0 / 13.7 → **12.6 / 13.0**, **edge 20.5 / 21.1 → 19.7 / 20.2 → 18.7 /
+   19.3**, above 12.4 / 12.8 → 12.5 / 12.9 → **12.0 / 12.4** (`gpu.near` edge 16.0 → 15.2 → 14.3). Profiled, not
+   changed: hidden leaf faces inside a canopy were already culled (no face between two leaf cells), and a leaf's
+   pieces can't share vertices (each takes its own face's leaned normal and tint); `clouds` at High is the
+   Medium tier already (quarter resolution, 10 steps), and the GPU's pass timestamps overlap on the M1 (near +
+   composite + clouds + far sum to ~32 ms of a 20 ms frame), so `clouds` 5.6 and `composite` 6.7 at the edge
+   are not their own cost: measure them by switching them off (`--compare`), not by their pass times. The edge
+   is still **~2.6 ms over** at p95. Next: the cutout's vertex outputs (26 floats a vertex to the tiler: tile,
+   fade and draw could be flat or packed), the colour as unorm8x4 (its tints can pass 1: needs a range),
+   then `clouds`/`composite` measured by `--compare` with them off.
 33. **Licensed music replaces the generated music** (owner 2026-11-12: "I downloaded a big music set as a Unity
    asset, I'd like the casual game music setup in a prototype and make it play randomly in the game. Probably
    needs compression. It'll replace the current music which is AI generated."). The pack: *Andrew Sitkov Music*
@@ -1634,6 +1720,8 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    a seed-7 hill river followed down its valley — it ends in a lake, no seed-7 river reached the sea in the scan —,
    the waterline crane, the underwater swim, treading water at sunset; sound lifted 26 dB in the splice). Waits on
    the owner's review.
+   **Video 2 v2 approved and saved** (owner, 2026-11-13: "I've saved the water video, looks good. Good to move on to
+   the next.").
    weird", confirmed by the v2 comparison).
    **Built 2026-11-12:** a keyframe `up` ("a" | "b" | "auto", default auto) holds a face's up, roll and look frame
    across the midplane (THEATER_MODE.md §3.1; presets and the keyframe editor's Up take it); the next take uses
@@ -1873,6 +1961,16 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
   hits; creative doesn't wear, metal tools are unlimited).
 
 ## Smaller items, after the queue
+
+- **The full-sky flood test on main (2026-11-13, `claude/flood-sky-test`), done.** Owner: "`cargo test -p dwell-mesh --lib
+  flood_tests::open_terrain_takes_the_full_sky` fails on main (face a: 3 dark vertices) … find which merge broke it, decide
+  whether the 3 dark vertices are a real lighting bug or a fixture made stale by an intended change. Check face b too."
+  A stale fixture, not a lighting bug: a first-parent bisect of #823..#885 puts it at #873 (resurrection shrines), which
+  moved every spawn to a shrine, so the test's window around `spawn_point()` slid onto the shrine's levelled ground. The
+  3 vertices are a ramp at sky 12–13 straight under a tree's crown, correct shade. That window also has no open
+  terraces: with the ramp-corner fix the test was written for (`Flood::shaped`) disabled, every vertex it darkens there
+  is under the same crown, so no filter that lets crown shade through could tell the two apart. The test now centres on `spawn_search_point()`, the open ground it was written for: green on both
+  faces, and red again (face A, 13 dark) with `Flood::shaped` disabled, as face B was before #873. Face B passed on main.
 
 - **Downhill water's steps (BUGS.md #92; owner, 2026-11-12: "I'm seeing some edge triangles and thin lines at slope
   transitions on downhill water.")** — fixed 2026-11-12 (`claude/water-steps`, WATER_RENDERING.md §18): the open
@@ -2230,6 +2328,20 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    buttons jump between 20 m, 500 m and 20 km — too coarse; steps of ~2× (data), wheel too"; (3) "After 'Center on
    me' and a zoom, the player arrow was off the view: zoom about the centred player"; (4) "The picker shows 'Delete'
    for a marker not yet saved: hide it (Cancel only)".
+   **Pillars with gaps (owner, 2026-11-13, after a screenshot where the stepped pillars read as one solid wall and the
+   quarter-circle lintel didn't stand out):** **"Yes, shrine pillars have gaps."** Brief: the pillars on the back
+   semicircle stand apart with at least one full cell of air between neighbours at every height (pillar width as data,
+   spacing derived from the arc and the count; fewer pillars by data if 9 don't fit); the lintel spans only the tallest
+   half's tops (a quarter circle), bridging the gaps so it reads as an arch; the terraced filled dais and the torches
+   kept. Built on branch `claude/shrine-gaps` (`design.pillars.width` 1 m; a gap check in `gen.mjs` fails a count or
+   width that leaves no air): 9 pillars don't fit the 3.5 m arc with gaps and 7 can't make the joined half a quarter
+   circle, so **5 pillars**, 45° apart, 2.5–3.5 m tall (`lowest` 2.5, `rise` 0.5), the tallest 3 joined by a lintel
+   rising from top to top over the gaps (air under it), the middle pillar ½ m off the axis (a 1 m pillar can't centre
+   on the 8 m grid's axis). Changes the terrain seeds generate: the 0.59 line, carried by `claude/terrain-059`
+   (orchestrator, 2026-11-13: that branch merges this one and raises 0.59 for both worldgen changes).
+   Owner, 2026-11-13 (with the 0.59 terrain batch): **"Notched ramps seems fine. I've saved the water video, looks good.
+   Good to move on to the next."** The shrine gaps branch (`claude/shrine-gaps`) is merged into the 0.59 batch (branch
+   `claude/terrain-059-batch-v81i64`), so its shrine change ships on the new line.
 
 ## Future (needs owner answers)
 

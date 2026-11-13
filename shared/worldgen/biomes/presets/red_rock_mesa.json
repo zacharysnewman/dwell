@@ -1,7 +1,7 @@
 {
   "name": "preset:red_rock_mesa",
   "label": "Red-rock canyon / mesa",
-  "description": "Sand floors under stone mesas, cliff bands on every steep face (stone stands in for red rock until rock types).",
+  "description": "Red-brown sand floors under red sandstone mesas, cliff bands on every steep face.",
   "where": {
     "weight": 1,
     "celsius": {
@@ -51,10 +51,10 @@
   "bands": [
     {
       "name": "canyon_floor",
-      "ground": "dwell:sand",
-      "under": "dwell:sand",
+      "ground": "dwell:red_sand",
+      "under": "dwell:red_sand",
       "rock": "dwell:stone",
-      "shoreBlock": "dwell:sand"
+      "shoreBlock": "dwell:red_sand"
     },
     {
       "name": "mesa",
@@ -62,7 +62,7 @@
       "ground": "dwell:stone",
       "under": "dwell:stone",
       "rock": "dwell:stone",
-      "shoreBlock": "dwell:sand"
+      "shoreBlock": "dwell:red_sand"
     }
   ],
   "decorations": [],
@@ -70,7 +70,7 @@
   "ground": { "dwell:ground_rock": 2.5 },
   "trees": { "boulders": 1.5 },
   "water": "dwell:water",
-  "rockStack": "dwell:red_beds",
+  "rockStack": "dwell:red_desert_beds",
   "erosion": 1,
   "arches": {
     "$comment": "Arches (ADR 0074 B8): openings carved through narrow fins of the bedded sandstone the cut-back leaves (Arches NP): density sites per km² (one chance per 32 m square), span across the fin, rise of its crown over the floor, lintel the rock left above (each [min, max] m), fin the thickest fin cut through (m); overhangs: a scarp's site (low on one side) cut as an overhang from its low side. Absent or density 0: none.",

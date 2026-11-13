@@ -8,6 +8,7 @@
     "stone": "stone",
     "bedrock": "bedrock",
     "sand": "sand",
+    "redSand": "red_sand",
     "water": "water",
     "logSide": "bark",
     "logTop": "log_end",
@@ -231,6 +232,15 @@
       "layers": [
         { "kind": "fill", "color": "@base" },
         { "kind": "streak", "count": 7, "colors": ["@light"], "width": [2.5, 3.5], "length": [12, 20], "angle": 0, "angleJitter": 7, "bend": [-1.5, 1.5], "opacity": 0.5 },
+        { "kind": "streak", "count": 6, "colors": ["@shadow"], "width": [1.5, 2.2], "length": [10, 16], "angle": 0, "angleJitter": 7, "bend": [-1.5, 1.5], "opacity": 0.3, "seed": 1 }
+      ]
+    },
+    "red_sand": {
+      "$comment": "Red-brown desert sand (0.59.0): sand's wind streaks in the red_sand ramp.",
+      "use": "block", "ramp": "red_sand", "overlay": 1,
+      "layers": [
+        { "kind": "fill", "color": "@base" },
+        { "kind": "streak", "count": 7, "colors": ["@light"], "width": [2.5, 3.5], "length": [12, 20], "angle": 0, "angleJitter": 7, "bend": [-1.5, 1.5], "opacity": 0.45 },
         { "kind": "streak", "count": 6, "colors": ["@shadow"], "width": [1.5, 2.2], "length": [10, 16], "angle": 0, "angleJitter": 7, "bend": [-1.5, 1.5], "opacity": 0.3, "seed": 1 }
       ]
     },

@@ -35,12 +35,57 @@ pub struct Rock {
     pub solubility: f64,
     /// The block its walls show.
     pub face: &'static str,
-    /// The block its treads show.
+    /// The block its treads show where no `cap_by` rule holds.
     pub cap: &'static str,
+    /// The treads' block by the climate (rocks.json `capBy`, the first whose climate holds; BUGS.md
+    /// #134): red sand on a sandstone's treads where it is arid, its `cap` elsewhere.
+    pub cap_by: &'static [CapRule],
     /// The block its talus shows.
     pub scree: &'static str,
     /// Its colour (0xrrggbb), Chisel's rock overlay's.
     pub color: u32,
+}
+
+/// A climate a rock's tread block depends on (rocks.json `capBy`; the code's vocabulary).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CapClimate {
+    /// Dry ground: [`Arid`]'s rain and wetness or less.
+    Arid,
+}
+
+/// One `capBy` entry: in `climate`, a tread shows `cap`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct CapRule {
+    pub climate: CapClimate,
+    pub cap: &'static str,
+}
+
+/// What arid ground is (rocks.json `arid`): the biomes' climate values (as a preset's `where`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Arid {
+    /// Annual rain (mm) at most, where the world has a climate (a world without one: any).
+    pub rain: f64,
+    /// The geography's wetness (0..1: the rain shadow's rainfall and the rivers') at most.
+    pub wetness: f64,
+    /// °C at least: a hot desert's, not a cold one's (the tundra and the boreal's dry ground).
+    pub celsius: f64,
+}
+
+impl Arid {
+    /// Whether ground of `celsius` °C, `wetness` and `rain` (mm; None without a climate) is arid.
+    pub fn holds(&self, celsius: f64, wetness: f64, rain: Option<f64>) -> bool {
+        celsius >= self.celsius && wetness <= self.wetness && rain.is_none_or(|r| r <= self.rain)
+    }
+}
+
+impl CapClimate {
+    /// Whether this climate holds on ground of `celsius` °C, `wetness` and `rain` (mm, None
+    /// without a climate).
+    pub fn holds(self, arid: &Arid, celsius: f64, wetness: f64, rain: Option<f64>) -> bool {
+        match self {
+            CapClimate::Arid => arid.holds(celsius, wetness, rain),
+        }
+    }
 }
 
 /// One layer of a stack: a rock and its thickness (m).
@@ -71,6 +116,17 @@ pub struct Geology {
     pub tread: f64,
     /// How narrow a hard wall is: a bed's rise takes (1 − hardness)^sheer of its height as input.
     pub sheer: f64,
+    /// A bedded soft rock's ledges (m, 0: none; owner 2026-11-13): its bed's slope is broken by a
+    /// near-vertical step this tall every `ledge_every` of the bed, ramped between them.
+    pub ledge: f64,
+    /// How often a ledge breaks a bed's slope, as a share of the bed (0.5: two a bed).
+    pub ledge_every: f64,
+    /// The share of a bed's height its tread rises over (0: a dead-flat cap): a mesa's top keeps a
+    /// little of the ground's relief.
+    pub tread_relief: f64,
+    /// Where the rock shapes the ground (`strength` > 0), the stored ramps also top a column on a
+    /// diagonal contour (a notched ramp, `ramps::top_of_notched`), not only on straight edges.
+    pub notched: bool,
     /// The rule-based erosion (T4).
     pub erosion: Erosion,
     /// The tectonic provinces' stacks (T5, `rocks.json` `tectonic`): a volcano's, the old core's.
@@ -82,6 +138,8 @@ pub struct Geology {
     pub ice_block: &'static str,
     /// The rock provinces from plate history (`rocks.json` `plateProvinces`, R5).
     pub plate_provinces: PlateProvinces,
+    /// What arid ground is, for the rocks' `capBy` (`rocks.json` `arid`).
+    pub arid: Arid,
 }
 
 /// A column's setting on its face's plate layout (R5; the code's vocabulary, `plateProvinces`
@@ -289,6 +347,10 @@ pub enum Part {
     Plain,
 }
 
+/// The input height a ledge takes per m of its height: near-vertical (1 m of ledge over 2 cm of
+/// the ground's rise, at most half its run's).
+const LEDGE_INPUT: f64 = 0.02;
+
 /// One piece of a profile: input heights `u0..u1` of the period map to `v0..v1`.
 #[derive(Clone, Copy, Debug)]
 struct Piece {
@@ -330,9 +392,33 @@ impl Profile {
                         (1.0, 0.25)
                     };
                     let dd = d / n;
+                    // The tread keeps `tread_relief` of the bed's height (a cap with a little of
+                    // the ground's relief); the rise takes the rest.
+                    let relief = dd * g.tread_relief.clamp(0.0, 0.5);
+                    let up = dd - relief;
+                    // A soft bedded rock's slope: ramped runs broken by a ledge `ledge` m tall
+                    // every `ledge_every` of the bed (the run and its ledge share the rise's
+                    // input, the ledge near-vertical); hard rock stands as its wall.
+                    let ledges = if r.jointing == Jointing::Bedded && part == Part::Talus {
+                        let m = (1.0 / g.ledge_every.clamp(0.05, 1.0)).round().max(1.0);
+                        let h = g.ledge.min(up / m);
+                        (h > 0.0).then_some((m, h))
+                    } else {
+                        None
+                    };
                     for _ in 0..n as u32 {
-                        raw.push((rise(dd, steep), dd, ri as u16, part));
-                        raw.push((dd * k * k * g.tread, 0.0, ri as u16, Part::Tread));
+                        match ledges {
+                            Some((m, h)) => {
+                                let input = rise(up, steep) / m;
+                                let ledge_in = (h * LEDGE_INPUT).min(input * 0.5);
+                                for _ in 0..m as u32 {
+                                    raw.push((input - ledge_in, up / m - h, ri as u16, part));
+                                    raw.push((ledge_in, h, ri as u16, Part::Wall));
+                                }
+                            }
+                            None => raw.push((rise(up, steep), up, ri as u16, part)),
+                        }
+                        raw.push((dd * k * k * g.tread, relief, ri as u16, Part::Tread));
                     }
                 }
             }

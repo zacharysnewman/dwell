@@ -465,10 +465,10 @@ the moon's unedited chunks never evicted, tier 1 bodies in the moon's space (non
 - **Teleporting onto the moon** (owner, 2026-11-13: "We should just teleport to the moon to see if ground draws"):
   `LocalCore::moon_land` puts the local player 1.5 m over the moon's spawn on a face, moving with it, inside the
   capture sphere, so the next tick captures it there; the drawing test and the bench's `moonLand` step and
-  `moon-draw` scenario use it (DEV_TOOLS.md "The moon"). It found BUGS.md #132: the server, having captured first,
+  `moon-draw` scenario use it (DEV_TOOLS.md "The moon"). It found BUGS.md #136: the server, having captured first,
   streams the moon's chunks before the client crosses, each once; the game now holds another grid's `ChunkData`
   (`other_grid_chunks`) and feeds those of the grid it crosses into to the streamer.
-- **Not yet (after M-7c):** the browser check after #123–#125, #132 (`moon-draw`, then `moon-trip`, on a GPU, a local check; no GPU in cloud sessions); the view's roll upright at the crossing (it is turned at once, keeping the look's direction); the
+- **Not yet (after M-7c):** the browser check after #123–#125, #136 (`moon-draw`, then `moon-trip`, on a GPU, a local check; no GPU in cloud sessions); the view's roll upright at the crossing (it is turned at once, keeping the look's direction); the
   moon's own LOD and home's far disc from the moon (M-5, M-6's drawing); the sky's colours and air on the moon
   (home's clouds already hidden, #126)
   (home's face samples, `at_eye` by the grid-local height); remote players on another grid (sent at world

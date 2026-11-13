@@ -3273,3 +3273,65 @@ dwell_world::both_faces!(
         assert_flush_round_the_trunk(&m);
     }
 );
+
+dwell_world::both_faces!(
+    /// The forest edge (WORK_QUEUE item 32): a chunk's cutout mesh has its trees' leaf faces last,
+    /// so a chunk past the far trees' hand-over draws `0..tree_leaves_from` (its plants, the
+    /// leaves' cards) and none of the leaves the shader would drop there. Leaves and tall grass
+    /// mixed along a row: every triangle before the split is a plant's or a card's, every one from
+    /// it a tree leaf's, and the leaves' faces are all still there.
+    fn a_chunks_cutout_puts_its_tree_leaves_after_its_plants(f: FaceFrame) {
+        let leaf = require("dwell:leaves");
+        let ground = cube_block();
+        let mut cells = Vec::new();
+        for x in 2..14 {
+            cells.push((x, 4, 8, ground));
+            cells.push((x, 5, 8, if x % 2 == 0 { tall_grass() } else { leaf }));
+            cells.push((x, 9, 8, leaf));
+        }
+        let padded = voxels(&cells);
+        let m = super::mesh_chunk_flags(
+            &padded,
+            &[],
+            f.is_b(),
+            [0; 3],
+            &[],
+            None,
+            ChunkFlags {
+                water_tops: true,
+                cards: true,
+                plants: 100,
+                ..ChunkFlags::default()
+            },
+        )
+        .expect("padded")
+        .cutout;
+        let leafy = |v: u32| m.plants[v as usize * 4 + 3] == crate::TREE_LEAF_FADE;
+        let split = crate::tree_leaves_from(&m);
+        assert!(
+            split > 0 && split < m.indices.len(),
+            "{split} of {}",
+            m.indices.len()
+        );
+        assert_eq!(split % 3, 0);
+        assert!(
+            m.indices[..split].iter().all(|&v| !leafy(v)),
+            "a leaf before the split"
+        );
+        assert!(
+            m.indices[split..].iter().all(|&v| leafy(v)),
+            "a plant after the split"
+        );
+        let leaf_vertices = (0..m.positions.len() as u32 / 3)
+            .filter(|&v| leafy(v))
+            .count();
+        let mut drawn: Vec<u32> = m.indices[split..].to_vec();
+        drawn.sort_unstable();
+        drawn.dedup();
+        assert_eq!(
+            drawn.len(),
+            leaf_vertices,
+            "every leaf face drawn from the split"
+        );
+    }
+);

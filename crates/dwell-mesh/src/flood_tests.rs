@@ -329,7 +329,9 @@ dwell_world::both_faces!(
         let mut lit = VoxelWorld::streamed();
         lit.enable_light();
         let terrain = dwell_worldgen::BifacialTerrain::new(seed);
-        let sp = terrain.local(f.face).spawn_point();
+        // The spawn search's point, open level ground: the spawn itself is at a shrine since 0.58
+        // (docs/SHRINES.md), whose levelled ground under a tree's crown holds no open terraces.
+        let sp = terrain.local(f.face).spawn_search_point();
         let local = ChunkCoord::new(
             (sp[0] as i32).div_euclid(N),
             ((sp[1] / CELL_H) as i32).div_euclid(N),

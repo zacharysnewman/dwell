@@ -433,7 +433,8 @@ hillside (0.52.8).
 ## Rock types and shaping (2026-11-10, ADR 0075 T2)
 
 Systemic terrain's geology layer: `shared/worldgen/rocks.json` holds the rock types (hardness, jointing
-`bedded`/`vertical`/`massive`, bed thickness, solubility, the `face`/`cap`/`scree` blocks they show, a
+`bedded`/`vertical`/`massive`, bed thickness, solubility, the `face`/`cap`/`scree` blocks they show,
+an optional `capBy` (the treads' block by the climate, against the geology's `arid`; 0.60), a
 colour), the strata stacks (layers top to bottom, repeating with height from sea level), the provinces
 (a stack per region by a noise of `provinces.wavelength` m, by the stacks' weights) and the shaping. A
 biome may name its own `rockStack` (the red-rock mesa and badlands presets). Each stack is a monotone
@@ -442,6 +443,16 @@ bed a talus slope, vertical jointing one sheer wall, massive rock unstepped; the
 `shaping.strength` of the way to it (0 in the default world: the terrain unchanged), and at half strength
 a wall shows its rock's face, talus its scree, a tread its cap. Tuned in Chisel (the Rock group and the
 rock overlay). Prototype content (§6.1 of the architecture): today's blocks stand in for the rocks.
+
+**Ledges, notched ramps and the red desert (0.59.0; owner, 2026-11-13).** Realistic's bedded slopes read as
+fields of single-cell ½ m stairs and its mesa tops were dead flat. `shaping.ledge` (2 m) and `ledgeEvery`
+(1: one a bed): a soft bedded rock's talus is ramped runs broken by a near-vertical ledge that tall every that share
+of its bed; `treadRelief` (0.08): every tread rises over that share of its bed (a mesa top keeps a little of
+the ground's roll); `notched` 1: where the shaping is on, the stored ramps also top diagonal contours
+(`HALF_HEIGHT_GRID.md` §10). The red-rock mesa's floors are `dwell:red_sand` (its preset's bands) and its own
+stack `dwell:red_desert_beds` (weight 0) is sandstone over a red `dwell:siltstone` whose talus is red sand.
+`tests/realistic_steps.rs` (both faces): bare ½ m steps on bedded ground 61 % → 0 %, ledges of 2 m ~1.3×, red
+sand and no plain sand on the mesa's surface. Before/after top-down dump: `dump_a_bedded_slope` (ignored test).
 
 ## Tectonics (2026-11-10, ADR 0075 T5)
 

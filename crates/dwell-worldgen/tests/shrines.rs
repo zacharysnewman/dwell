@@ -184,6 +184,150 @@ dwell_world::both_faces!(
 );
 
 dwell_world::both_faces!(
+    /// On face `f`, the shrine as placed at its sites (each turned its own way): 8 × 8 m, its
+    /// pillars standing apart with a full cell of air between neighbours at every height (owner,
+    /// 2026-11-13: "Yes, shrine pillars have gaps."), air under the lintel, and the lintel on the
+    /// tallest half only, joining their tops over a quarter circle into one arch.
+    fn the_shrines_pillars_stand_apart_under_a_lintel_on_the_tallest_half(f: FaceFrame) {
+        let g = BifacialTerrain::new(0);
+        let t = g.local(f.face);
+        let sh = t.shrines().expect("shrines");
+        let (stone, torch) = (require("dwell:stone"), require("dwell:torch"));
+        let mut turns = std::collections::HashSet::new();
+        for s in shrines_of(&g, f.face).into_iter().take(8) {
+            turns.insert(s.turn);
+            let placed = t.shrine(sh, s);
+            let cells: HashMap<[i32; 3], StateId> = placed.cells().collect();
+            let [x0, _, z0] = placed.min;
+            assert_eq!(placed.max[0] - x0 + 1, 8, "{s:?} 8 m across x");
+            assert_eq!(placed.max[2] - z0 + 1, 8, "{s:?} 8 m across z");
+            let is_stone = |x: i32, y: i32, z: i32| cells.get(&[x, y, z]) == Some(&stone);
+            // Above the dais's top (the torches' row) only the pillars and the lintel stand.
+            let dais = cells
+                .iter()
+                .filter(|(_, st)| **st == torch)
+                .map(|(p, _)| p[1])
+                .min()
+                .expect("torches");
+            // The pillars: the 8-connected groups of stone columns at the dais's top.
+            let mut cols: Vec<[i32; 2]> = Vec::new();
+            for z in z0..z0 + 8 {
+                for x in x0..x0 + 8 {
+                    if is_stone(x, dais, z) {
+                        cols.push([x, z]);
+                    }
+                }
+            }
+            let touch =
+                |a: [i32; 2], b: [i32; 2]| (a[0] - b[0]).abs().max((a[1] - b[1]).abs()) <= 1;
+            let mut pillars: Vec<Vec<[i32; 2]>> = Vec::new();
+            for c in cols {
+                let near: Vec<usize> = (0..pillars.len())
+                    .filter(|&i| pillars[i].iter().any(|&q| touch(q, c)))
+                    .collect();
+                let mut merged = vec![c];
+                for &i in near.iter().rev() {
+                    merged.extend(pillars.remove(i));
+                }
+                pillars.push(merged);
+            }
+            assert!(pillars.len() >= 3, "{s:?}: {} pillars", pillars.len());
+            let top = |p: &Vec<[i32; 2]>| {
+                let [x, z] = p[0];
+                let mut y = dais;
+                while is_stone(x, y, z) {
+                    y += 1;
+                }
+                y
+            };
+            let pillar_of = |x: i32, z: i32| pillars.iter().position(|p| p.contains(&[x, z]));
+            // The tallest half (by top), and the lintel: the stone above the dais off the pillars.
+            let mut by_top: Vec<usize> = (0..pillars.len()).collect();
+            by_top.sort_by_key(|&i| std::cmp::Reverse(top(&pillars[i])));
+            let tall: Vec<usize> = by_top[..pillars.len().div_ceil(2)].to_vec();
+            let lintel: Vec<[i32; 3]> = cells
+                .iter()
+                .filter(|(p, st)| **st == stone && p[1] >= dais && pillar_of(p[0], p[2]).is_none())
+                .map(|(p, _)| *p)
+                .collect();
+            assert!(!lintel.is_empty(), "{s:?} has a lintel");
+            for &[x, y, z] in &lintel {
+                // Air under it, down to the dais's top.
+                for r in dais..y {
+                    assert!(
+                        !cells.contains_key(&[x, r, z]) || lintel.contains(&[x, r, z]),
+                        "{s:?}: {x},{r},{z} under the lintel"
+                    );
+                }
+                assert!(
+                    !is_stone(x, dais, z),
+                    "{s:?}: air under the lintel at {x},{z}"
+                );
+                // Beside the tallest half's pillars only.
+                for (i, p) in pillars.iter().enumerate() {
+                    if p.iter().any(|&q| touch(q, [x, z])) {
+                        assert!(
+                            tall.contains(&i),
+                            "{s:?}: the lintel at {x},{y},{z} by a lower pillar"
+                        );
+                    }
+                }
+            }
+            // One arch: lintel and pillar-top cells connected join every tall pillar, and no other.
+            let mut seen = std::collections::HashSet::new();
+            let p0 = pillars[tall[0]][0];
+            let mut stack = vec![[p0[0], top(&pillars[tall[0]]) - 1, p0[1]]];
+            while let Some(c) = stack.pop() {
+                if !seen.insert(c) {
+                    continue;
+                }
+                for dy in -1..=1 {
+                    for dz in -1..=1 {
+                        for dx in -1..=1 {
+                            let n = [c[0] + dx, c[1] + dy, c[2] + dz];
+                            let arch = lintel.contains(&n)
+                                || pillar_of(n[0], n[2]).is_some_and(|i| {
+                                    is_stone(n[0], n[1], n[2]) && n[1] + 1 >= top(&pillars[i])
+                                });
+                            if arch && !seen.contains(&n) {
+                                stack.push(n);
+                            }
+                        }
+                    }
+                }
+            }
+            for (i, p) in pillars.iter().enumerate() {
+                let joined = seen.contains(&[p[0][0], top(p) - 1, p[0][1]]);
+                assert_eq!(joined, tall.contains(&i), "{s:?}: pillar {i} joined");
+            }
+            // The joined tops span a quarter circle about the footprint's centre.
+            let (cx, cz) = (f64::from(x0) + 4.0, f64::from(z0) + 4.0);
+            let angle = |p: &Vec<[i32; 2]>| {
+                let n = p.len() as f64;
+                let x = p.iter().map(|q| f64::from(q[0]) + 0.5).sum::<f64>() / n - cx;
+                let z = p.iter().map(|q| f64::from(q[1]) + 0.5).sum::<f64>() / n - cz;
+                z.atan2(x).to_degrees()
+            };
+            let mut span: f64 = 0.0;
+            for &a in &tall {
+                for &b in &tall {
+                    let d = (angle(&pillars[a]) - angle(&pillars[b])).rem_euclid(360.0);
+                    span = span.max(d.min(360.0 - d));
+                }
+            }
+            assert!(
+                (80.0..=100.0).contains(&span),
+                "{s:?}: the arch spans {span}°"
+            );
+        }
+        assert!(
+            turns.len() >= 2,
+            "sites turned more than one way: {turns:?}"
+        );
+    }
+);
+
+dwell_world::both_faces!(
     /// A shrine on a hillside faces out of it: its open half the quarter turn nearest downhill;
     /// on ground flatter than the rule, the seed's turn (owner, 2026-11-12: "rotate it so it faces
     /// out from hillsides").

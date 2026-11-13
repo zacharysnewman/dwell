@@ -548,10 +548,14 @@ pub fn geology_from_json(v: &Value) -> Result<Geology, String> {
             solubility: num(r, "solubility").map_err(at)?,
             face: text(r, "face").map_err(at)?,
             cap: text(r, "cap").map_err(at)?,
+            cap_by: cap_by_from_json(r.get("capBy")).map_err(at)?,
             scree: text(r, "scree").map_err(at)?,
             color,
         };
-        for id in [rock.face, rock.cap, rock.scree] {
+        for id in [rock.face, rock.cap, rock.scree]
+            .into_iter()
+            .chain(rock.cap_by.iter().map(|c| c.cap))
+        {
             if dwell_blocks::state(id).is_none() {
                 return Err(at(format!("{id} is not in the registry")));
             }
@@ -589,6 +593,11 @@ pub fn geology_from_json(v: &Value) -> Result<Geology, String> {
             .ok_or(format!("rocks.json: {grp} is missing"))
             .and_then(|o| num(o, k).map_err(|e| format!("rocks.json: {grp}.{e}")))
     };
+    let opt = |k: &str| {
+        v.get("shaping")
+            .and_then(|o| o.get(k))
+            .and_then(Value::as_f64)
+    };
     Ok(Geology {
         rocks: Box::leak(rocks.into_boxed_slice()),
         stacks: Box::leak(stacks.into_boxed_slice()),
@@ -596,6 +605,11 @@ pub fn geology_from_json(v: &Value) -> Result<Geology, String> {
         strength: g("shaping", "strength")?.clamp(0.0, 1.0),
         tread: g("shaping", "tread")?,
         sheer: g("shaping", "sheer")?,
+        // Absent (an edit stored before 0.59): none, as before.
+        ledge: opt("ledge").unwrap_or(0.0),
+        ledge_every: opt("ledgeEvery").unwrap_or(1.0),
+        tread_relief: opt("treadRelief").unwrap_or(0.0),
+        notched: opt("notched").is_some_and(|n| n >= 1.0),
         erosion: erosion_from_json(v.get("erosion"))?,
         // The tectonic provinces' stacks (T5); absent (an edit stored before T5): the build's.
         volcanic_stack: v
@@ -619,7 +633,41 @@ pub fn geology_from_json(v: &Value) -> Result<Geology, String> {
             .and_then(Value::as_str)
             .map_or(GEOLOGY.ice_block, leak),
         plate_provinces: plate_provinces_from_json(v.get("plateProvinces"))?,
+        // Absent (an edit stored before 0.60): the build's.
+        arid: match v.get("arid") {
+            None => GEOLOGY.arid,
+            Some(a) => crate::geology::Arid {
+                rain: num(a, "rain").map_err(|e| format!("rocks.json: arid.{e}"))?,
+                wetness: num(a, "wetness").map_err(|e| format!("rocks.json: arid.{e}"))?,
+                celsius: num(a, "celsius").map_err(|e| format!("rocks.json: arid.{e}"))?,
+            },
+        },
     })
+}
+
+/// A rock's `capBy` (its treads' block by the climate; BUGS.md #134): absent, none.
+fn cap_by_from_json(v: Option<&Value>) -> Result<&'static [crate::geology::CapRule], String> {
+    use crate::geology::{CapClimate, CapRule};
+    let Some(v) = v else { return Ok(&[]) };
+    let list = v.as_array().ok_or("capBy must be a list")?;
+    let mut out = Vec::new();
+    for e in list {
+        let o = e
+            .as_object()
+            .filter(|o| o.len() == 1)
+            .ok_or("a capBy entry must be one {\"<climate>\": block}")?;
+        let (k, b) = o.iter().next().expect("one entry");
+        let climate = match k.as_str() {
+            "arid" => CapClimate::Arid,
+            _ => return Err(format!("capBy: unknown climate {k} (arid)")),
+        };
+        let cap = b.as_str().ok_or("a capBy block must be a name")?;
+        out.push(CapRule {
+            climate,
+            cap: leak(cap),
+        });
+    }
+    Ok(Box::leak(out.into_boxed_slice()))
 }
 
 /// The rock provinces from plate history (rocks.json `plateProvinces`, R5); absent (an edit

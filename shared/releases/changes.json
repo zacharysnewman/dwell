@@ -2,6 +2,56 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.60.0",
+      "changes": [
+        "Red sand draws with its own texture instead of the magenta and black checker",
+        "Red desert floors are red sand: the flat red rock in dry, warm places (red rock basins, badlands, mesa floors and tops), under red sandstone walls; in forests and meadows the red rock stays red sandstone",
+        "New compatibility line: the Realistic and starter worlds' terrain changed, so worlds from 0.59 open in 0.59 builds"
+      ]
+    },
+    {
+      "version": "0.59.3",
+      "changes": [
+        "A Realistic world finds its spawn shrine faster: the spawn search no longer spends time re-reading the whole biome map."
+      ]
+    },
+    {
+      "version": "0.59.2",
+      "changes": [
+        "Behind the scenes: the open-ground lighting test checks open ground again, not the shrine at the spawn"
+      ]
+    },
+    {
+      "version": "0.59.1",
+      "changes": [
+        "Smoother frames in forests and everywhere: the world's blocks and leaves take less memory on the graphics card (about 2 ms a frame faster at a forest's edge on High)"
+      ]
+    },
+    {
+      "version": "0.59.0",
+      "changes": [
+        "Red desert: the red rock mesa's floors and talus are a new red-brown sand.",
+        "Every terrain block has ramps now, basalt, obsidian and the moon's dust included.",
+        "Realistic's layered rock slopes are smooth ramps broken by ledges, not fields of little stairs, and mesa tops keep a little of the ground's roll.",
+        "Sand ramps fall like sand and land as flat sand.",
+        "Resurrection shrines' pillars now stand apart with gaps between them, and the tallest three are joined by an arched lintel.",
+        "New compatibility line: the Realistic and starter worlds' terrain changed, so worlds from 0.58 open in 0.58 builds."
+      ]
+    },
+    {
+      "version": "0.58.11",
+      "changes": [
+        "Smoother frames with other players online: a player far away no longer makes the sun shadows redraw every few frames",
+        "Behind the scenes: a camera placed at your own eyes no longer draws your whole body around it, which hid the view in every forest benchmark"
+      ]
+    },
+    {
+      "version": "0.58.10",
+      "changes": [
+        "Forests draw fewer hidden leaves: past the far trees' hand-over, the ground no longer sends the GPU tree leaves that were already faded out."
+      ]
+    },
+    {
       "version": "0.58.9",
       "changes": [
         "The moon trip test tool waits for the server to release you before flying you home, and never saves a spot in space as home.",

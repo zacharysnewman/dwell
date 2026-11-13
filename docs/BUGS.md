@@ -6,6 +6,40 @@ pins it.
 
 ## Open
 
+### 135. Flat ground on a plateau can show a sandstone wall's face (red sandstone) instead of a tread
+
+Found 2026-11-13 while fixing #134 (Realistic, seed 42 face A, e.g. (−6000, −3500) and (−4250, 0)): a few wide, flat
+patches are the rock band (`Band::Rock`, the rock's `face`, red sandstone) though nothing there is a wall. Suspect: the
+rock shaping (`geology.rs` `Profile::map`) labels a column by the piece its natural height falls in; where the natural
+ground is a plateau whose height lies inside a bedded rock's narrow wall piece, every column maps to the same output
+height, so the plateau is flat yet each column is `Part::Wall`. A fix would label a flat wall column (the shaped slope
+under the tread's) a tread. Rare (2 of ~1,000 sampled red floors on seeds 1, 7, 42); not fixed.
+
+### 132. A fresh Realistic world never loads without a start point (not reproduced; a spawn cost fixed)
+
+Brief, 2026-11-13: "a fresh Realistic world never loads without a start point. On 0.59 (a022b0d0),
+`?worldgen=test:realistic&seed=42&fresh=1` with no `at` showed only sky for over 105 s and `__dwell.state()` stayed
+null; with an `at` it loads in seconds." Suspects named: the spawn search with 0.58's "every spawn at a shrine" rule
+(#873), or the spawn search itself on Realistic.
+
+**Not reproduced (2026-11-13, a022b0d).** Natively (`cargo run --release -p dwell-worldgen --example spawn_cost
+<seed> test:realistic`): seeds 1, 7, 42 resolve the spawn search in 2–57 ms and the spawn's shrine in 118–185 ms a
+face; a local-style server join (single-threaded, jobs remote, the Realistic sky) spawns on its first tick; the native
+client with its local server (`game_local.rs`' rig) reaches `terrainReady` in ~2 s on seed 42. In Chromium (the cloud's
+SwiftShader under Xvfb, the release WASM build): the exact link, the bench's form (`?local=1&seed=42&worldgen=…&fresh=1`),
+and fresh links after an `at` link in one profile all joined in 4.6–7.6 s ("Finding a place to stand" 1.3–1.6 s on the
+loading screen) and reached `terrainReady` in 27–33 s. `state()` null means the page never got its Welcome, so the
+owner's stall was before the join: the map build (`Shaping the world map`), the local worker's start or its spawn.
+**Next, on the owner's Mac:** with the loading screen on, which stage it sits on and the console (a worker's error).
+
+**Fixed along the way (0.59.x):** the spawn's shrine on Realistic cost 134 ms of its 143 ms a face natively in its
+cache key (`TerrainGenerator::spawn_key` hashed the `Debug` text of the whole biome set, its whole-map biome field and
+drainage grids included; several times that in WASM, again in every generator that resolves the spawn's shrine). The
+key now names the set's config (`BiomeSet::config_text`, the grids derived from the map and it): 1 ms, the spawn's
+shrine 5–10 ms. Test: `dwell-worldgen` `tests/realistic_spawn.rs` (`the_spawn_keys_cost_is_small_on_realistic`, red at
+136 ms before the fix; `the_realistic_spawn_resolves_in_budget_at_a_shrine`, seeds 1, 7, 42 on both faces within 2 s
+at the nearest shrine: passed before and after, the hang being unreproduced).
+
 ### 131. After a face B return from the moon the held stone block looked pink (not reproduced natively)
 
 Second browser moon flight (0.58.8 on facaaaf1, seed 7, M1), brief 2026-11-13: "After a face B return the held stone
@@ -520,7 +554,7 @@ face, or the placement check against its shape.
 
 ## Fixed
 
-### 132. Teleported onto the moon, the ground under the player never arrives (fixed after 0.58.9)
+### 136. Teleported onto the moon, the ground under the player never arrives (fixed after 0.58.9)
 
 Found by the teleport the owner asked for (2026-11-13, below #123's test): put straight onto the moon's ground, the
 client never held the chunk under its feet. Cause: the server captures first and at once streams the moon's chunks
@@ -530,6 +564,39 @@ ones are asked for later). Fixed (`game.rs`): another grid's chunks are held (at
 `ChunkUnload` drops them) and fed to the streamer at the crossing into it; the rest are dropped then. Test: the
 teleport in `on_the_moon_its_chunks_are_drawn_and_homes_lod_meshes_dropped` (both faces): red on the unfixed code
 (the moon's chunk under the player never meshed), green after.
+
+### 134. Red sand wasn't on the red desert's floors (fixed in 0.60.0)
+
+Browser check of 0.59 (#888) on a022b0d0, brief 2026-11-13: "Red sand isn't where the owner asked ('We need a red
+brown sand for the red desert areas'): in a Realistic world (seed 42 face A around (−6000, −9000)) the red mesa floors
+are red_sandstone, and the nearest red_sand surface is a small patch 23 km away at a grass edge." Cause: 0.59.0 gave
+red sand to the red rock mesa preset's bands and its own stack (`dwell:red_desert_beds`), but Realistic's red mesas
+are the basins' `dwell:red_beds` (plate provinces) under steppe, cold desert, meadow and forest, and the Starter's
+badlands and mesa tops are sandstone treads: a rock's tread shows its `cap`, and sandstone's was red sandstone.
+Orchestrator, 2026-11-13: red sand only in the red *desert*, not under forest, by a climate rule on the cap as data.
+Fix: a rock's optional `capBy` (`[{"arid": "dwell:red_sand"}]` on sandstone, its `cap` red sandstone) and the
+geology's `arid` (rocks.json: rain ≤ 450 mm where the world has a climate, wetness ≤ 0.3, the red rock mesa's `where`
+values, and ≥ 6 °C so the tundra's and the boreal's dry ground is not desert), validated by `biomes.mjs`
+`validateRocks` and read by `config.rs` for world edits. Arid red rock floors are red sand, the rest red sandstone;
+the walls red sandstone everywhere. At the reported spot the steppe's and cold desert's floors are red sand, the
+meadows' and forests' red sandstone. Pinned by `dwell-worldgen` `tests/realistic_rocks.rs`
+`the_red_desert_floors_are_red_sand` (both faces, seeds 1, 7, 42: every flat sandstone tread is red sand where arid
+and not in a forest, red sandstone otherwise; red before: 283 and 1,345 arid floors of red sandstone on seed 1),
+`gen.test.mjs` (the field's validation) and `worldgen_config.rs` `a_geology_edit_reads_cap_by_and_arid`. Realistic's
+golden rewritten, the Starter re-pinned, the 0.60 line raised. Follow-up: #135.
+
+### 133. Red sand drew as the magenta and black checker (fixed in 0.60.0)
+
+Browser check of 0.59 (#888) on a022b0d0, brief 2026-11-13: "Every red_sand cell (and likely red_sand_ramp) draws as
+the magenta/black missing checker: `redSand` is baked (painterly.gen.rs) but not in the atlas layout TILE_ORDER, so
+drawable() fails." Cause: the atlas layout was a hand-kept list (`dwell-mesh` `textures.rs` `TILE_ORDER`) beside the
+texture set's own (`PAINTERLY_TILES`); 0.59.0 added `redSand` to the set only. The guard existed
+(`every_build_state_draws_with_its_own_look`) but runs in the `mesh` check, not the `data` one the block change ran.
+Fix: `TILE_ORDER` is now `PAINTERLY_TILES` (the set's order), so it can't drift; `shared/textures/gen.mjs` already
+fails on a tile a block asks for that the set doesn't paint. Tests (`dwell-mesh` `lib.rs`):
+`every_tile_a_block_asks_for_is_in_the_atlas_layout` (faces, `sideUnder` skirts, log hearts; red sand and its ramps
+drawable) and `a_fixture_block_with_an_unpainted_tile_fails_the_atlas_guard` (the fixture's `test:glow`, by data
+alone). Red before the fix: `every_build_state_draws_with_its_own_look` failed on `dwell:red_sand[flooded=false]`.
 
 ### 130. A capture or release counted as a ~600 km snap, hiding the real snaps around a moon trip (fixed after 0.58.8)
 
