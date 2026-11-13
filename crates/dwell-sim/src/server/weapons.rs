@@ -81,6 +81,15 @@ fn in_front(yaw: f64, me: [f64; 3], them: [f64; 3], front_deg: f64) -> bool {
 /// The most strikes kept for tests and the dev report ([`Server::strikes`]).
 const STRIKE_LOG: usize = 64;
 
+/// One creature's attack landing on a player ([`Server::bites`]).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct BiteLog {
+    pub creature: u32,
+    pub player_id: u16,
+    /// Health taken (0 where players aren't hurt: creative).
+    pub damage: i32,
+}
+
 /// One creature struck by a player's weapon.
 #[derive(Clone, Debug, PartialEq)]
 pub struct StrikeLog {
@@ -183,6 +192,7 @@ impl Server {
                 continue;
             };
             self.creatures.set_foe_player(creature, player_id);
+            self.creatures.provoke(creature, player_id);
             blocked |= strike.clash == Some(Clash::Blocked);
             // The outcome to the clients near (a strike on a creature holding no block connects).
             if let Some((guard, feet, yaw, rows)) = pre {
@@ -575,6 +585,64 @@ impl Server {
 }
 
 impl Server {
+    /// The creatures' attacks on players a tick (WORK_QUEUE item 35, round 2: wolves bite): each
+    /// one angry at the player that struck it follows that player and bites in reach (its kind's
+    /// `attack`, shared/creatures), through the damage rules (cause `Weapon`: none in creative);
+    /// at 0 health the player is defeated and kneels (CHARACTERS.md §11.13).
+    pub(super) fn step_creature_attacks(&mut self) {
+        if self.creatures.list.iter().all(|c| c.angry.is_none()) {
+            return;
+        }
+        let mut feet = std::collections::HashMap::new();
+        for s in self.sessions.values().filter(|s| s.joined()) {
+            if let Some(h) = s.handle {
+                let p = self.players.position(&self.physics, h);
+                feet.insert(s.player_id, [p.x, self.feet_y(h), p.z]);
+            }
+        }
+        let bites = self.creatures.step_attacks(&|p| feet.get(&p).copied());
+        for b in bites {
+            let Some(id) = self.session_of_player(b.player) else {
+                continue;
+            };
+            let Some(at) = feet.get(&b.player).copied() else {
+                continue;
+            };
+            let before = self.sessions[&id].health;
+            if self.settings.allows(Ability::Damage) {
+                let f = FaceFrame::at_height(at[1]);
+                let (me, them) = (f.point(at), f.point(b.from));
+                let (dx, dz) = (me[0] - them[0], me[2] - them[2]);
+                let len = dx.hypot(dz);
+                let (ax, az) = if len > 1e-9 {
+                    (dx / len, dz / len)
+                } else {
+                    (0.0, 0.0)
+                };
+                let a = b.attack;
+                let v = f.vector([ax * a.knockback_mps, a.lift_mps, az * a.knockback_mps]);
+                if v.iter().any(|x| *x != 0.0) {
+                    self.knockback(b.player, Vec3::new(v[0] as f32, v[1] as f32, v[2] as f32));
+                }
+                self.damage(id, a.damage.round() as i32, DamageCause::Weapon);
+            }
+            let after = self.sessions.get(&id).map_or(before, |s| s.health);
+            self.bite_log.push(BiteLog {
+                creature: b.creature,
+                player_id: b.player,
+                damage: before - after,
+            });
+            if self.bite_log.len() > STRIKE_LOG {
+                self.bite_log.remove(0);
+            }
+        }
+    }
+
+    /// The creatures' latest attacks on players (tests and the dev report).
+    pub fn bites(&self) -> &[BiteLog] {
+        &self.bite_log
+    }
+
     /// A strike past a player's block (an NPC's: WORK_QUEUE item 38): `share` of the weapon's
     /// damage through the damage rules (cause `Weapon`) and its push away from the striker at `from`
     /// (face-local, as the player's eye `at`, both on face `f`): `knockbackMps` along the ground and

@@ -13,9 +13,12 @@ import { loadBlocks, loadInventory } from '../inventory/gen.mjs';
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, '..', '..');
 
-const TOP_FIELDS = ['formatVersion', 'limits', 'creatures', 'rules'];
+const TOP_FIELDS = ['formatVersion', 'limits', 'hurtLook', 'creatures', 'rules'];
 const LIMIT_FIELDS = ['spawnChunks', 'despawnM', 'max', 'gapM', 'pushMps'];
-const CREATURE_FIELDS = ['name', 'model', 'walkSpeed', 'wanderM', 'idleSeconds', 'rows', 'climbRows', 'dropRows', 'npc', 'health', 'hitRadiusM', 'bodyRadiusM', 'drops'];
+const CREATURE_FIELDS = ['name', 'model', 'walkSpeed', 'wanderM', 'idleSeconds', 'rows', 'climbRows', 'dropRows', 'npc', 'health', 'hitRadiusM', 'bodyRadiusM', 'drops', 'attack', 'hurtLook'];
+const HURT_LOOK_FIELDS = ['seconds', 'tint', 'strength', 'flinchM', 'flinchDeg'];
+const HURT_LOOK_DEFAULTS = { seconds: 0.4, tint: '#e0402a', strength: 0.6, flinchM: 0.12, flinchDeg: 10 };
+const ATTACK_FIELDS = ['reachM', 'cooldownS', 'damage', 'knockbackMps', 'liftMps', 'angryS', 'frontDeg'];
 /** A death's drop (WORK_QUEUE item 35): an item and how many, [min, max] or n. */
 const DROP_FIELDS = ['item', 'count'];
 const RULE_FIELDS = ['creature', 'on', 'chance', 'group', 'mix', 'spacingM', 'biomes'];
@@ -168,7 +171,30 @@ export function validateCreatures(data, namespaces, models, ramps = loadRamps(),
     });
     if (drops.length > 0 && health === 0) fail(`${at}: drops need health (a creature that can't be hurt never dies)`);
     if (c.npc !== undefined) validateNpc(c.npc, `${at}.npc`, ramps, items);
-    creatures.set(c.name, { ...c, health, hitRadiusM, bodyRadiusM, drops, index: i });
+    // Its attack on players (WORK_QUEUE item 35, round 2: wolves bite): only on the player that
+    // struck it, for `angryS` after the hit, within `reachM` in front of it (`frontDeg`), every
+    // `cooldownS`, taking `damage` health and pushing the player away and up.
+    let attack = null;
+    if (c.attack !== undefined) {
+      const a = c.attack;
+      const aat = `${at}.attack`;
+      if (!isObject(a)) fail(`${aat} must be an object`);
+      unknown(a, ATTACK_FIELDS, aat);
+      if (health === 0) fail(`${aat} needs health (it attacks only the player that struck it)`);
+      if (!num(a.reachM) || a.reachM <= 0 || a.reachM > 4) fail(`${aat}.reachM must be in (0, 4] m`);
+      if (!num(a.cooldownS) || a.cooldownS < 0.1 || a.cooldownS > 30) fail(`${aat}.cooldownS must be in [0.1, 30] s`);
+      if (!num(a.damage) || a.damage <= 0 || a.damage > 1000) fail(`${aat}.damage must be in (0, 1000]`);
+      const knockbackMps = a.knockbackMps ?? 0;
+      const liftMps = a.liftMps ?? 0;
+      if (!num(knockbackMps) || knockbackMps < 0 || knockbackMps > 30) fail(`${aat}.knockbackMps must be in [0, 30] m/s`);
+      if (!num(liftMps) || liftMps < 0 || liftMps > 30) fail(`${aat}.liftMps must be in [0, 30] m/s`);
+      if (!num(a.angryS) || a.angryS <= 0 || a.angryS > 600) fail(`${aat}.angryS must be in (0, 600] s`);
+      const frontDeg = a.frontDeg ?? 120;
+      if (!num(frontDeg) || frontDeg <= 0 || frontDeg > 360) fail(`${aat}.frontDeg must be in (0, 360]`);
+      attack = { reachM: a.reachM, cooldownS: a.cooldownS, damage: a.damage, knockbackMps, liftMps, angryS: a.angryS, frontDeg };
+    }
+    const hurtLook = validateHurtLook(c.hurtLook, `${at}.hurtLook`, data.hurtLook);
+    creatures.set(c.name, { ...c, health, hitRadiusM, bodyRadiusM, drops, attack, hurtLook, index: i });
   });
   if (!Array.isArray(data.rules) || data.rules.length === 0) fail('rules must be a non-empty list');
   const rules = data.rules.map((r, i) => {
@@ -254,14 +280,47 @@ function npcRust(n) {
   return `Some(NpcDef { look_at_m: ${f(n.lookAtM)}, turn_deg_per_s: ${f(n.turnDegPerS)}, bump_m: ${f(n.bumpM)}, sidestep_m: ${f(n.sidestepM)}, held: ${n.held ? `Some(${JSON.stringify(n.held)})` : 'None'}, disposition: Disposition::${pose(n.disposition ?? 'neutral')}, combat: Combat::${pose(n.combat ?? 'none')}, fight: ${fightRust({ ...FIGHT_DEFAULTS, ...(n.fight ?? {}) })}, idles: &[${idles}], colours: &[${colours}] })`;
 }
 
+/**
+ * A hit creature's look on the clients (WORK_QUEUE item 35, round 2): for `seconds` after a hit that
+ * connects, its body flashes `tint` (#rrggbb) at up to `strength` (0..1, fading) and flinches
+ * `flinchM` away from the blow and `flinchDeg` round, easing back. A creature's own `hurtLook`
+ * overrides the file's `hurtLook` field by field; the file's the built-in defaults.
+ */
+export function validateHurtLook(own, at, base) {
+  const merged = { ...HURT_LOOK_DEFAULTS };
+  for (const [src, where] of [[base, 'hurtLook'], [own, at]]) {
+    if (src === undefined) continue;
+    if (!isObject(src)) fail(`${where} must be an object`);
+    unknown(src, HURT_LOOK_FIELDS, where);
+    Object.assign(merged, src);
+  }
+  const h = merged;
+  if (!num(h.seconds) || h.seconds <= 0 || h.seconds > 5) fail(`${at}: hurtLook.seconds must be in (0, 5] s`);
+  if (typeof h.tint !== 'string' || !/^#[0-9a-fA-F]{6}$/.test(h.tint)) fail(`${at}: hurtLook.tint must be #rrggbb`);
+  if (!num(h.strength) || h.strength < 0 || h.strength > 1) fail(`${at}: hurtLook.strength must be in [0, 1]`);
+  if (!num(h.flinchM) || h.flinchM < 0 || h.flinchM > 1) fail(`${at}: hurtLook.flinchM must be in [0, 1] m`);
+  if (!num(h.flinchDeg) || h.flinchDeg < 0 || h.flinchDeg > 45) fail(`${at}: hurtLook.flinchDeg must be in [0, 45]`);
+  return h;
+}
+
+function hurtLookRust(h) {
+  const rgb = [1, 3, 5].map((k) => f(Math.round((parseInt(h.tint.slice(k, k + 2), 16) / 255) * 1000) / 1000));
+  return `HurtLook { seconds: ${f(h.seconds)}, tint: [${rgb.join(', ')}], strength: ${f(h.strength)}, flinch_m: ${f(h.flinchM)}, flinch_deg: ${f(h.flinchDeg)} }`;
+}
+
+function attackRust(a) {
+  if (!a) return 'None';
+  return `Some(AttackDef { reach_m: ${f(a.reachM)}, cooldown_s: ${f(a.cooldownS)}, damage: ${f(a.damage)}, knockback_mps: ${f(a.knockbackMps)}, lift_mps: ${f(a.liftMps)}, angry_s: ${f(a.angryS)}, front_deg: ${f(a.frontDeg)} })`;
+}
+
 export function creaturesRust(d, source) {
-  const rs = [`// Generated by shared/creatures/gen.mjs from ${source}. Do not edit.`, '', '#[allow(unused_imports)]', 'use crate::creatures::{ColourSlot, Combat, CreatureDef, Disposition, FightDef, FightStance, Idle, Limits, MixPart, NpcDef, Pose, SpawnRule};', ''];
+  const rs = [`// Generated by shared/creatures/gen.mjs from ${source}. Do not edit.`, '', '#[allow(unused_imports)]', 'use crate::creatures::{AttackDef, ColourSlot, Combat, CreatureDef, Disposition, FightDef, FightStance, HurtLook, Idle, Limits, MixPart, NpcDef, Pose, SpawnRule};', ''];
   const l = d.limits;
   rs.push(`pub const LIMITS: Limits = Limits { spawn_chunks: ${l.spawnChunks}, despawn_m: ${f(l.despawnM)}, max: ${l.max}, gap_m: ${f(l.gapM)}, push_mps: ${f(l.pushMps)} };`, '');
   rs.push(`pub const CREATURES: [CreatureDef; ${d.creatures.length}] = [`);
   for (const c of d.creatures) {
     rs.push(
-      `    CreatureDef { name: ${JSON.stringify(c.name)}, model: ${JSON.stringify(c.model)}, walk_speed: ${f(c.walkSpeed)}, wander_m: ${f(c.wanderM)}, idle_seconds: [${c.idleSeconds.map(f).join(', ')}], rows: ${c.rows}, climb_rows: ${c.climbRows}, drop_rows: ${c.dropRows}, npc: ${npcRust(c.npc)}, health: ${f(c.health)}, hit_radius_m: ${f(c.hitRadiusM)}, body_radius_m: ${f(c.bodyRadiusM)}, drops: &[${c.drops.map((d) => `(${JSON.stringify(d.item)}, ${d.min}, ${d.max})`).join(', ')}] },`,
+      `    CreatureDef { name: ${JSON.stringify(c.name)}, model: ${JSON.stringify(c.model)}, walk_speed: ${f(c.walkSpeed)}, wander_m: ${f(c.wanderM)}, idle_seconds: [${c.idleSeconds.map(f).join(', ')}], rows: ${c.rows}, climb_rows: ${c.climbRows}, drop_rows: ${c.dropRows}, npc: ${npcRust(c.npc)}, health: ${f(c.health)}, hit_radius_m: ${f(c.hitRadiusM)}, body_radius_m: ${f(c.bodyRadiusM)}, drops: &[${c.drops.map((d) => `(${JSON.stringify(d.item)}, ${d.min}, ${d.max})`).join(', ')}], attack: ${attackRust(c.attack)}, hurt_look: ${hurtLookRust(c.hurtLook)} },`,
     );
   }
   rs.push('];', '');

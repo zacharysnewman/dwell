@@ -213,6 +213,7 @@
       "swingSeconds": 0.5,
       "held": "sword",
       "heldVertical": "sword_vertical",
+      "clips": { "level": "slash_level", "vertical": "slash_overhead" },
       "swing": {
         "windupS": 0.3,
         "activeS": 0.12,

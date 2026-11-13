@@ -762,6 +762,7 @@ pub fn creature_draw(
             super::skinned::remap_floats(&dwell_models::part_remap(parts.as_ref(), &n.colours))
         }),
         idle_pose: c.pose,
+        tint: c.tint,
     };
     (draw, held)
 }
@@ -1293,6 +1294,7 @@ impl CharacterRenderer {
                         grip: None,
                         remap: super::skinned::NO_REMAP,
                         idle_pose: None,
+                        tint: crate::render::skinned::NO_TINT,
                     },
                     forward: basis.forward(),
                     body: b,
@@ -1329,6 +1331,7 @@ impl CharacterRenderer {
                     grip: item_name(d.held),
                     remap: super::skinned::NO_REMAP,
                     idle_pose: None,
+                    tint: crate::render::skinned::NO_TINT,
                 });
                 held_items.push(HeldOnSkin {
                     held: d.held,
@@ -1937,6 +1940,7 @@ mod tests {
                         grip: Some(name),
                         remap: crate::render::skinned::NO_REMAP,
                         idle_pose: None,
+                        tint: crate::render::skinned::NO_TINT,
                     };
                     let place = body_matrix(&d, data, [0.0; 3]);
                     let p = dwell_models::anim::Player::new(data, model, "idle");
@@ -1995,6 +1999,7 @@ mod tests {
                 npc,
                 pose: None,
                 pose_s: 0.0,
+                tint: [0.0; 4],
             };
             let (a, held) = creature_draw(ch, &view(Some(npc(99))), [1.0, 0.0], 0.0);
             assert_eq!(held, Held::Model { hold: "sword", model: "sword" });
@@ -2821,6 +2826,7 @@ mod tests {
                 grip: None,
                 remap: crate::render::skinned::NO_REMAP,
                 idle_pose: None,
+                tint: crate::render::skinned::NO_TINT,
             }
         }
 

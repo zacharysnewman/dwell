@@ -3202,6 +3202,38 @@ impl Client {
             ((p[0] - eye[0]).powi(2) + (p[1] - eye[1]).powi(2) + (p[2] - eye[2]).powi(2)).sqrt();
         vec![sx, sy, depth, d]
     }
+    /// The loaded ground under face-local (`x`, `z`) on `face` (0 A, 1 B): its face-local height
+    /// (m), for a marker placed on the big map (`crate::map_markers::ground`); undefined where
+    /// nothing is loaded (the shell takes the map's height).
+    #[wasm_bindgen(js_name = markerGround)]
+    pub fn marker_ground(&self, face: u8, x: f64, z: f64) -> Option<f64> {
+        let mut s = self.inner.borrow_mut();
+        let g = s.game.as_mut()?;
+        let pos = g.position();
+        let me = dwell_world::FaceFrame::at_height(pos[1]);
+        let f = if face == 1 {
+            dwell_world::FaceFrame::B
+        } else {
+            dwell_world::FaceFrame::A
+        };
+        let eye_y = me.point(pos)[1];
+        crate::map_markers::ground(g.world(), f, x, z, eye_y)
+    }
+    /// The portals the player sees now (the `portal` auto markers): [face, x, y, z]* face-local,
+    /// y NaN where the rim isn't loaded (`crate::map_markers::seen_portals`).
+    #[wasm_bindgen(js_name = seenPortals)]
+    pub fn seen_portals(&self) -> Vec<f64> {
+        let mut s = self.inner.borrow_mut();
+        let Some(g) = s.game.as_mut() else {
+            return Vec::new();
+        };
+        let pos = g.position();
+        let axes = g.portal_axes().to_vec();
+        crate::map_markers::seen_portals(g.world(), &axes, pos)
+            .into_iter()
+            .flatten()
+            .collect()
+    }
     /// The player's saved markers the server sent (a `dwell_protocol::markers` record), once.
     #[wasm_bindgen(js_name = takeMarkers)]
     pub fn take_markers(&self) -> Option<Vec<u8>> {
