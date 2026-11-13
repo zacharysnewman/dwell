@@ -49,6 +49,14 @@ Last updated: 2026-11-11 (0.52.108).
   after the 0.55 re-pin changed the starter world's terrain … If intended … re-pin with the commit cited; if it was
   NOT meant to change the starter … fix the leak." Done (BUGS.md #114): no merge changed it; the 0.55 line's
   combined pin (58f72da) was wrong from the start, re-pinned to what 0.55.0 onward generates.
+- **game_local green (brief, 2026-11-13):** "four `dwell-client` `tests/game_local.rs` tests fail on main … For each
+  failing test: bisect main's recent merges to the commit that broke it, decide real regression … or a test made stale
+  by an intended change"; added: "also include the dwell-client lib test render::characters
+  your_body_never_comes_near_the_camera_or_fills_the_view". Done (branch `claude/game-local-green`), all stale, no code
+  bug: the four game_local tests broke at 3bf8080 (#873, the spawn is a shrine's stand point; they assumed natural
+  ground: the dais's stone under the aim, the shrine in a sprint's way, player 1's spread on the dais's edge, a stall
+  that reached `UNACKED_HOLD`); the lib test at 90df521 (#899, the defeat's kneel swept as a first-person body,
+  which defeated is third person).
 - **Merged today (late):** #857 the axe like the other tools; #858 Realistic in New world; #854 hits at contact;
   #852 sound placement; #853/#855 one-command video re-records (`take.mjs`); #851 big-world placing; #848 far-tree
   impostors fixed (BUGS #106); #845 big-world LOD; #846 portal exit on face B; #847 leaves flush with logs; #841 the

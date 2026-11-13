@@ -641,7 +641,10 @@ fn a_region_fill_comes_back_from_the_server_and_undo_restores_it() {
     };
     assert!(region_edits, "the local server announces region edits");
     rig.game.as_mut().unwrap().region.enabled = region_edits;
-    // A cell clear of the player, ahead of the feet.
+    // A cell clear of the player, ahead of the feet. The spawn is a resurrection shrine's stand
+    // point since 0.58.0 (#873, docs/SHRINES.md): its stone dais lies toward +z (yaw 0), so the
+    // player looks the other way, at the ground, which is not stone.
+    rig.input.look.yaw = 180.0;
     rig.input.look.pitch = -40.0;
     assert!(rig.run_until(30, |r| {
         r.game.as_ref().unwrap().debug_state().target.is_some()
@@ -1327,6 +1330,10 @@ fn sprinting_widens_the_view_for_the_renderer_and_the_lod_alike() {
     );
     assert_eq!(rig.scene.borrow().wind.intensity, 0.0);
 
+    // The spawn is a resurrection shrine's stand point since 0.58.0 (#873, docs/SHRINES.md): its
+    // dais and pillars lie toward +z (yaw 0) and stopped a sprint that way within 5 m; run out of
+    // its open half instead.
+    rig.input.look.yaw = 180.0;
     rig.input.set_key("ShiftLeft", true);
     rig.input.set_key("KeyW", true);
     rig.run_until(90, |_| false);
@@ -2199,10 +2206,14 @@ fn a_stalled_server_catches_up_without_dropping_the_players_inputs() {
     rig.input.set_key("KeyW", true);
     rig.run_until(30, |_| false);
     let before = rig.game.as_ref().unwrap().debug_state().stats;
-    // The server stalls for 1.5 s three times (its fixed step drops the backlog), the game keeps
-    // running its frames.
+    // The server stalls for 1.25 s three times (its fixed step drops the backlog), the game keeps
+    // running its frames. 75 frames: more inputs than the server buffers (MAX_BUFFERED_INPUTS, 60),
+    // the bug's case, and fewer than the client sends unacked before it holds (UNACKED_HOLD, 90).
+    // At 90 the client held its last ticks, the server repeated an input for them and the catch-up
+    // corrected 0.93 m at the old spawn and 1.33 m (a snap, over 1 m) at the shrine's (#873): that
+    // is the hold, not this bug.
     for _ in 0..3 {
-        for _ in 0..90 {
+        for _ in 0..75 {
             rig.game_frame();
             rig.now += 1000.0 / 60.0;
         }
@@ -2231,7 +2242,10 @@ fn a_stalled_server_catches_up_without_dropping_the_players_inputs() {
 fn placing_a_block_into_your_own_body_is_not_predicted() {
     // docs/BUGS.md 7: the client predicted edits without its own body, so a block placed where the
     // player stands showed until the server refused it (into a player), then vanished.
-    let mut rig = Rig::new();
+    // On the sandbox's flat floor: since 0.58.0 (#873) the terrain's spawn is a shrine's stand point,
+    // where player 1's spread stands it on the dais's edge over a lower cell, and a block placed
+    // there is clear of the body (the server takes it).
+    let mut rig = Rig::with_generator(GENERATOR_SANDBOX);
     rig.input.look.pitch = -90.0;
     assert!(
         rig.run_until(60 * 20, |r| r
