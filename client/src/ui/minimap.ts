@@ -1018,6 +1018,8 @@ export interface MapClient extends RevealClient, LiveClient, MinimapFeed {
   mapPose(): Float64Array;
   takeExplored(): Int32Array;
   mapAllowed(): boolean;
+  /** Off home: the label shown instead of the maps (home's terrain only); "" at home. */
+  mapAway?(): string;
   /** The `mapRevealed` ability (creative): the big map shows everything. */
   mapRevealed(): boolean;
   cpuAdapter(): boolean;
@@ -1358,6 +1360,8 @@ export function tilesShowing(
 export class MapUi {
   readonly root: HTMLDivElement;
   private readonly disc: HTMLCanvasElement;
+  /** Off home: the note shown instead of the disc (`mapAway`). */
+  private readonly awayLabel: HTMLElement;
   private readonly image: HTMLCanvasElement;
   private readonly big: HTMLDivElement;
   private readonly panel: HTMLDivElement;
@@ -1463,6 +1467,9 @@ export class MapUi {
     this.disc = doc.createElement('canvas');
     this.disc.width = this.disc.height = px;
     this.root.append(this.disc);
+    this.awayLabel = doc.createElement('div');
+    this.awayLabel.className = 'map-away-label';
+    this.root.append(this.awayLabel);
     this.image = doc.createElement('canvas');
     this.image.width = this.image.height = px;
     // The big map: a framed panel over the game (the world showing round it), a title bar with
@@ -1836,9 +1843,13 @@ export class MapUi {
   /** Each frame: the disc when the client drew it again, the dots, the explored cells. */
   frame(now: number): void {
     const allowed = this.client.mapAllowed();
+    // Off home (the moon) the maps, home's terrain, are hidden: a label shows instead.
+    const away = allowed ? (this.client.mapAway?.() ?? '') : '';
     this.root.classList.toggle('map-off', !allowed);
+    this.root.classList.toggle('map-away', away !== '');
+    this.awayLabel.textContent = away;
     this.doc.body.classList.toggle('minimap-on', allowed);
-    if (!allowed) {
+    if (!allowed || away !== '') {
       this.setBig(false);
       return;
     }

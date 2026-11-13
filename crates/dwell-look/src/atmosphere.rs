@@ -122,6 +122,14 @@ impl Air {
         limb_weight: 1.0,
     };
 
+    /// No air at all (a grid without an atmosphere, the moon): space at every height, and no limb
+    /// (the limb is home's air seen edge-on; an airless grid has none).
+    pub const SPACE: Air = Air {
+        thin: 1.0,
+        limb: 0.0,
+        limb_weight: 0.0,
+    };
+
     /// The same air seen in the other face's frame (its up the other way): the limb's rise flips.
     pub fn other(self) -> Air {
         Air {

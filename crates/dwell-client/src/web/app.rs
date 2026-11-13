@@ -3372,6 +3372,14 @@ impl Client {
         let t = &dwell_game::minimap::MAP;
         dwell_game::minimap::shade_grid(t, &colours, &codes, w as usize, h as usize)
     }
+    /// The maps' label off home (`grid_view::map_away_label`): "" at home; on another grid the
+    /// maps (home's terrain) are hidden and this shows instead.
+    #[wasm_bindgen(js_name = mapAway)]
+    pub fn map_away(&self) -> String {
+        let s = self.inner.borrow();
+        let grid = s.game.as_ref().map_or(0, |g| g.grid());
+        crate::grid_view::map_away_label(grid).unwrap_or_default()
+    }
     /// Whether the world's game mode shows the maps (the `map` ability, ADR 0068): a server that
     /// names no mode shows them.
     #[wasm_bindgen(js_name = mapAllowed)]
