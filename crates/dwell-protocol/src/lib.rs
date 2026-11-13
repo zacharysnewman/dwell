@@ -9,6 +9,7 @@ pub mod chopping;
 pub mod damage;
 pub mod fragment;
 pub mod inventory;
+pub mod markers;
 mod messages;
 pub mod modes;
 pub mod vitals;

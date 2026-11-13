@@ -231,6 +231,23 @@ fn decoded_fields_are_the_vectors_values() {
         panic!("capabilities_none")
     };
     assert!(none.is_empty());
+    // A player's map markers (docs/MAP_MARKERS.md): face-local points, the auto kind by name.
+    let Some(Message::Markers(m)) = Message::decode(&get("markers")) else {
+        panic!("markers")
+    };
+    assert_eq!(m.0.len(), 2);
+    assert_eq!(
+        (m.0[0].icon.as_str(), m.0[0].label.as_str()),
+        ("home", "Base")
+    );
+    assert_eq!(
+        (m.0[1].face, m.0[1].position, m.0[1].auto.as_str()),
+        (1, [-40.0, 66.5, 900.25], "death")
+    );
+    let Some(Message::Markers(none)) = Message::decode(&get("markers_none")) else {
+        panic!("markers_none")
+    };
+    assert!(none.0.is_empty());
     let Some(Message::WorldSettings(f)) = Message::decode(&get("world_settings_capabilities"))
     else {
         panic!("world_settings_capabilities")

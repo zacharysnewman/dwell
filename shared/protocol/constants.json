@@ -157,7 +157,8 @@
     "Steam": 104,
     "Capabilities": 105,
     "Swordplay": 106,
-    "TheaterViewpoint": 107
+    "TheaterViewpoint": 107,
+    "Markers": 108
   },
   "rejectReasons": {
     "ProtocolVersion": 1,

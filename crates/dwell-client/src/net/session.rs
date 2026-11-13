@@ -745,6 +745,10 @@ impl Session {
                 self.world_fields = Some(f);
             }
             Message::WorldSettings(f) if self.joined() => self.on_settings_changed(f),
+            // A player's own map markers (docs/MAP_MARKERS.md): to the game, sent after `Welcome`.
+            Message::Markers(m) if self.joined() => {
+                self.game.push_back((Message::Markers(m), bytes.to_vec()));
+            }
             Message::Inventory(i) if self.joined() => {
                 self.game.push_back((Message::Inventory(i), bytes.to_vec()));
             }

@@ -2125,6 +2125,22 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    maps on demand around the player (25.6 km squares, seams agreed). Changes big worlds' terrain: the 0.56 line
    (the owner raises it), 1× unchanged.
 
+53. **Map markers you place yourself** — **Built 2026-11-13** (branch `claude/map-markers`; needs the owner's
+   look in the browser: the picker, the minimap icons and the world waypoints were not drawn on a GPU here).
+   Built: the data, generator and validator; the record (`dwell_protocol::markers`, golden vector); the
+   world's `markers` table; the `markers.private` capability and `Markers` 0x6C; the big map's place / edit /
+   drag / delete; the minimap; the world waypoints (a HUD part); spawn and last-death auto markers. **Left:**
+   a list view of the markers; portals (the `portal` kind is data, nothing notes one until portals exist);
+   a marker placed on the big map takes the player's height on that face, not the ground's under the click. Owner 2026-11-12:
+   **"Let's use non-Unicode vector style symbols to let you annotate your own map so you can find your way
+   around."** / **"Add that to the queue."** Answers: shown on the **big map (M), the minimap and in the world** (a
+   waypoint over its spot with its distance); **private to the player** (saved with the world for that player); a
+   marker carries **an icon from a set, a colour, a short label**; plus **auto markers** (spawn, last death, portals
+   once seen). Icons are vector (SVG paths or the game's own vector draw), never emoji or Unicode glyphs. Design:
+   [MAP_MARKERS.md](MAP_MARKERS.md) — the icon set, palette and auto kinds as data (`shared/ui/markers.json` →
+   `markers.gen.ts`), a player's markers as one record per device key in the world's optional `markers` table,
+   synced to that player only behind the `markers.private` capability.
+
 ## Future (needs owner answers)
 
 - **Waterlogging** (owner 2026-11-12: "Eventually we'll want to make it so some blocks if they don't move for a little

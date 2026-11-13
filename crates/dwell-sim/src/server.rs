@@ -54,6 +54,7 @@ mod ground;
 mod growth;
 mod items;
 mod lava;
+mod markers;
 mod theater;
 pub use theater::{VIEWPOINT_EVERY_TICKS, VIEWPOINT_MAX_M};
 mod vitals;
@@ -684,6 +685,11 @@ struct Session {
     /// and the ticks it has been out of air since the last drowning damage.
     vitals_hello: bool,
     drown_ticks: u32,
+    /// Its map markers (docs/MAP_MARKERS.md): none until loaded or sent; whether the record was
+    /// read at join, and whether it went to the client (`markers.private`).
+    markers: Option<dwell_protocol::markers::Markers>,
+    markers_loaded: bool,
+    markers_sent: bool,
     /// The last damage cause its client understands (`CausesHello`; 0: it never said, so only the
     /// causes every build knows, and `Drown` with `vitals_hello`).
     known_cause: u8,
@@ -785,6 +791,9 @@ impl Session {
             vitals_hello: false,
             known_cause: 0,
             drown_ticks: 0,
+            markers: None,
+            markers_loaded: false,
+            markers_sent: false,
             burn: dwell_lava::Burn::default(),
             creatures_hello: false,
             damage_hello: false,
@@ -1045,6 +1054,8 @@ pub struct Server {
     departed_inventories: Vec<([u8; 32], Vec<u8>)>,
     /// Vitals records of players who left since the last save (ADR 0069).
     departed_vitals: Vec<([u8; 32], Vec<u8>)>,
+    /// The markers of players who left since the last save (docs/MAP_MARKERS.md).
+    departed_markers: Vec<([u8; 32], Vec<u8>)>,
     /// The loose items lying in the world (ADR 0066), and the moved ones not yet sent.
     loose: crate::loose_items::LooseItems,
     loose_moved: HashSet<u32>,
@@ -1240,6 +1251,7 @@ impl Server {
             departed: Vec::new(),
             departed_inventories: Vec::new(),
             departed_vitals: Vec::new(),
+            departed_markers: Vec::new(),
             loose: Default::default(),
             loose_moved: HashSet::default(),
             creatures: Default::default(),
@@ -1390,6 +1402,7 @@ impl Server {
             }
             let record = self.vitals_record(&s);
             self.departed_vitals.push((s.public_key, record));
+            self.departed_markers.extend(Self::markers_record(&s));
         }
         if let Some(h) = s.handle {
             self.players.despawn(&mut self.physics, h);
@@ -1648,6 +1661,7 @@ impl Server {
             .as_ref()
             .and_then(|st| st.db().load_player(&key));
         self.load_inventory(id, &key);
+        self.load_markers(id, &key);
         match &saved {
             Some(p) if p.health > 0 => {
                 let feet = (!self.config.join_at_spawn).then_some(p.feet);
@@ -1802,8 +1816,10 @@ impl Server {
             Message::Capabilities(c) => {
                 s.capabilities = c;
                 self.swordplay_hello(id);
+                self.send_markers(id);
             }
             Message::TheaterViewpoint(at) => self.theater_viewpoint(id, at),
+            Message::Markers(m) => self.set_markers(id, m),
             Message::WorldgenRequest => {
                 let m = Message::WorldgenConfig(self.worldgen_text.clone());
                 self.send_reliable(id, &m, Channel::Control);
@@ -4912,6 +4928,10 @@ impl Server {
         batch.vitals = std::mem::take(&mut self.departed_vitals);
         for s in self.sessions.values().filter(|s| s.joined()) {
             batch.vitals.push((s.public_key, self.vitals_record(s)));
+        }
+        batch.markers = std::mem::take(&mut self.departed_markers);
+        for s in self.sessions.values().filter(|s| s.joined()) {
+            batch.markers.extend(Self::markers_record(s));
         }
         batch.loose_items = Some(self.loose.to_bytes());
         if !self.cuts_unread {

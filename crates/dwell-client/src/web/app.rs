@@ -637,6 +637,9 @@ impl Client {
                 game.set_hits_at_contact(
                     session.capability(dwell_protocol::capability_names::HITS_AT_CONTACT),
                 );
+                game.set_markers_synced(
+                    session.capability(dwell_protocol::capability_names::MARKERS_PRIVATE),
+                );
                 // The theater camera as a simulation viewpoint (THEATER_MODE.md §7): creative
                 // on a server that takes it.
                 game.set_theater_viewpoint(
@@ -3084,6 +3087,76 @@ impl Client {
         }
         out
     }
+    /// Map markers (docs/MAP_MARKERS.md): the player's place for them, [face (0 A, 1 B), x, y, z
+    /// (face-local m, the feet), dead (1/0), then while dead the death's face, x, y, z].
+    #[wasm_bindgen(js_name = markerPose)]
+    pub fn marker_pose(&self) -> Vec<f64> {
+        let s = self.inner.borrow();
+        let Some(g) = &s.game else {
+            return Vec::new();
+        };
+        let local = |p: [f64; 3]| {
+            let f = dwell_world::FaceFrame::at_height(p[1]);
+            let [x, y, z] = f.point(p);
+            [f64::from(u8::from(f.is_b())), x, y, z]
+        };
+        let mut out = local(g.position()).to_vec();
+        match g.death_feet() {
+            Some(d) => {
+                out.push(1.0);
+                out.extend(local(d));
+            }
+            None => out.push(0.0),
+        }
+        out
+    }
+    /// A marker's spot in the view (docs/MAP_MARKERS.md): its face (0 A, 1 B) and face-local point
+    /// → [x, y (−1..1 across the view, +y up), depth along the view (≤ 0 behind), distance from the
+    /// eye (m)].
+    #[wasm_bindgen(js_name = markerScreen)]
+    pub fn marker_screen(&self, face: u8, x: f64, y: f64, z: f64) -> Vec<f64> {
+        let s = self.inner.borrow();
+        let f = if face == 1 {
+            dwell_world::FaceFrame::B
+        } else {
+            dwell_world::FaceFrame::A
+        };
+        let p = f.point([x, y, z]);
+        let r = s.renderer.borrow();
+        let [sx, sy, depth] = r.project(p);
+        let eye = r.eye();
+        let d =
+            ((p[0] - eye[0]).powi(2) + (p[1] - eye[1]).powi(2) + (p[2] - eye[2]).powi(2)).sqrt();
+        vec![sx, sy, depth, d]
+    }
+    /// The player's saved markers the server sent (a `dwell_protocol::markers` record), once.
+    #[wasm_bindgen(js_name = takeMarkers)]
+    pub fn take_markers(&self) -> Option<Vec<u8>> {
+        let mut s = self.inner.borrow_mut();
+        s.game.as_mut()?.take_markers().map(|m| m.to_bytes())
+    }
+    /// Whether the server keeps the player's markers (`markers.private`); else they last the
+    /// session only.
+    #[wasm_bindgen(js_name = markersSynced)]
+    pub fn markers_synced(&self) -> bool {
+        self.inner
+            .borrow()
+            .game
+            .as_ref()
+            .is_some_and(|g| g.markers_synced())
+    }
+    /// The player's markers now (a `dwell_protocol::markers` record), to the server; false if the
+    /// record is malformed.
+    #[wasm_bindgen(js_name = setMarkers)]
+    pub fn set_markers(&self, record: &[u8]) -> bool {
+        let Some(m) = dwell_protocol::markers::Markers::from_bytes(record) else {
+            return false;
+        };
+        if let Some(g) = self.inner.borrow_mut().game.as_mut() {
+            g.send_markers(m);
+        }
+        true
+    }
     /// The player on the explored map: [face (0 A, 1 B), x, z (face-local m), heading (degrees)].
     #[wasm_bindgen(js_name = mapPose)]
     pub fn map_pose(&self) -> Vec<f64> {
@@ -3590,6 +3663,9 @@ impl Inner {
             game.set_swordplay(s.capability(dwell_protocol::capability_names::WEAPONS_CLASH));
             game.set_hits_at_contact(
                 s.capability(dwell_protocol::capability_names::HITS_AT_CONTACT),
+            );
+            game.set_markers_synced(
+                s.capability(dwell_protocol::capability_names::MARKERS_PRIVATE),
             );
             game.set_theater_viewpoint(
                 s.capability(dwell_protocol::capability_names::THEATER_VIEWPOINT)

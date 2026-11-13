@@ -25,6 +25,21 @@ import { MAP } from './map.gen';
 import { compatibilityLine } from '../version/semver';
 import { World } from '../protocol/constants.gen';
 import { ExploredChanges, type ExploredStore } from './exploredStore';
+import {
+  MarkerList,
+  type MapMarker,
+  decodeMarkers,
+  drawIcon,
+  encodeMarkers,
+  formatMarkerDistance,
+  iconSvg,
+  markersInRange,
+  pickMarker,
+  waypointAlpha,
+  waypointOnScreen,
+} from './markers';
+import { MARKER_WORLD } from './markers.gen';
+import { MarkerPicker } from './markerPicker';
 
 /** An explored cell's key: its face (0 A, 1 B) and its index along face-local x and z. */
 export function cellKey(face: number, i: number, k: number): string {
@@ -978,6 +993,19 @@ export interface MapClient extends RevealClient, LiveClient, MinimapFeed {
   takeMapLayer?(): Uint8Array | undefined;
   /** The generator's layer fields by index (`map_layers.rs` `MapField`). */
   mapLayerFields?(): string[];
+  /**
+   * Map markers (docs/MAP_MARKERS.md): the player's feet, face-local [face, x, y, z, dead, then
+   * while dead the death's face, x, y, z].
+   */
+  markerPose?(): ArrayLike<number>;
+  /** The player's saved markers record the server sent, once. */
+  takeMarkers?(): Uint8Array | undefined;
+  /** Whether the server keeps the player's markers (`markers.private`). */
+  markersSynced?(): boolean;
+  /** The player's markers record now, to the server. */
+  setMarkers?(record: Uint8Array): boolean;
+  /** A face-local point in the view: [x, y (−1..1, +y up), depth (≤ 0 behind), distance (m)]. */
+  markerScreen?(face: number, x: number, y: number, z: number): ArrayLike<number>;
 }
 
 /** A nice scale bar: the longest 1, 2 or 5 × 10ⁿ metres no wider than `maxPx` at `pxPerM`. */
@@ -1281,6 +1309,15 @@ export class MapUi {
   /** The disc's last draw (ms), for the bench's cost readout. */
   costMs = 0;
   shading: boolean = MAP.heightShading.default;
+  /** The player's map markers (docs/MAP_MARKERS.md), their picker and their world waypoints. */
+  readonly markers = new MarkerList();
+  private readonly picker: MarkerPicker;
+  private readonly waypoints: HTMLDivElement;
+  private readonly waypointEls = new Map<number, HTMLDivElement>();
+  /** The server's record arrived (or the server keeps none), so the auto markers may be noted. */
+  private markersReady = false;
+  private markersWaitFrom = -1;
+  private wasDead = false;
   /** The big map opened or closed (the shell holds the game's input while it is open). */
   onOpenChange: ((open: boolean) => void) | null = null;
   /** A zoom button or key zoomed the big map (its sound). */
@@ -1343,7 +1380,8 @@ export class MapUi {
     title.textContent = 'Map';
     const hint = doc.createElement('span');
     hint.className = 'map-hint';
-    hint.textContent = 'Drag to move · scroll, pinch or + − to zoom a level · M or Esc to close';
+    hint.textContent =
+      'Drag to move · scroll, pinch or + − to zoom a level · click to mark, drag a marker to move it · M or Esc to close';
     const close = this.button('map-close', '✕', 'Close map (M or Esc)');
     bar.append(title, hint, close);
     const body = doc.createElement('div');
@@ -1367,7 +1405,18 @@ export class MapUi {
     this.progress = doc.createElement('div');
     this.progress.className = 'map-progress';
     this.progress.hidden = true;
-    body.append(this.bigCanvas, controls, this.scaleEl, this.progress);
+    this.picker = new MarkerPicker(doc);
+    body.append(this.bigCanvas, controls, this.scaleEl, this.progress, this.picker.root);
+    // The waypoints over the world: a layer under the HUD (hud.json "waypoints").
+    this.waypoints = doc.createElement('div');
+    this.waypoints.id = 'map-waypoints';
+    this.waypoints.setAttribute('aria-hidden', 'true');
+    doc.body.append(this.waypoints);
+    this.markers.onChange = (list) => {
+      this.client.setMarkers?.(encodeMarkers(list));
+      this.drawDisc();
+      if (this.bigOpen) this.drawBig();
+    };
     this.panel.append(bar, body);
     this.big.append(this.panel);
     doc.body.append(this.root, this.big);
@@ -1471,6 +1520,7 @@ export class MapUi {
       if (this.doc.pointerLockElement) this.doc.exitPointerLock();
       this.drawBig();
     } else {
+      this.picker.close();
       this.state.close();
     }
     this.onOpenChange?.(open);
@@ -1561,6 +1611,7 @@ export class MapUi {
     const r = this.state.padFrame(values, axes, now);
     if (this.state.view && this.state.view.level !== level) this.onZoom?.();
     if (r.closed) {
+      this.picker.close();
       this.big.hidden = true;
       this.onOpenChange?.(false);
     } else if (r.moved) this.drawBig();
@@ -1601,6 +1652,7 @@ export class MapUi {
     }
     this.fillReveal();
     this.takeLayer();
+    this.markersFrame(now);
     if (this.bigStale && this.bigOpen && now - this.lastBigDraw >= MAP.revealed.redrawMs) {
       this.drawBig();
     }
@@ -1714,7 +1766,144 @@ export class MapUi {
     for (let n = 0; n + 1 < d.length; n += 2) {
       dot(half + (d[n] ?? 0) * perM, half - (d[n + 1] ?? 0) * perM, MAP.minimap.otherColor);
     }
+    // The markers on the disc (heading up, as the dots), their icons over the ground.
+    const [face = 0, x = 0, z = 0, yaw = 0] = this.client.mapPose();
+    const iconPx = Math.max(8, Math.round(px * 0.09));
+    for (const { marker: m, right, up } of markersInRange(
+      this.markers.all,
+      { face, x, z, yaw },
+      MAP.minimap.radiusM,
+    )) {
+      drawIcon(ctx, m.icon, m.rgb, half + right * perM, half - up * perM, iconPx);
+    }
     dot(half, half, MAP.minimap.playerColor);
+  }
+
+  /**
+   * The markers each frame: the server's record once (the auto markers wait for it, or for a server
+   * that keeps none), spawn the first time the player is placed, the last death when they die, and
+   * the world waypoints.
+   */
+  private markersFrame(now: number): void {
+    const got = this.client.takeMarkers?.();
+    if (got) {
+      const list = decodeMarkers(got);
+      // The server's record replaces what this session had; markers placed before it arrived
+      // are kept.
+      if (list) {
+        const before = this.markers.all.filter((m) => m.auto === '');
+        this.markers.load(list);
+        for (const m of before) this.markers.place(m, m);
+      }
+      this.markersReady = true;
+      this.drawDisc();
+    }
+    const pose = Array.from(this.client.markerPose?.() ?? []);
+    if (pose.length < 5) return;
+    if (!this.markersReady) {
+      if (this.client.markersSynced?.()) return;
+      // A server without `markers.private`: wait a moment for the session's capabilities.
+      if (this.markersWaitFrom < 0) this.markersWaitFrom = now;
+      if (now - this.markersWaitFrom < 2000) return;
+      this.markersReady = true;
+    }
+    const [face = 0, x = 0, y = 0, z = 0, dead = 0] = pose;
+    if (!this.markers.hasAuto('spawn') && dead === 0)
+      this.markers.noteAuto('spawn', { face, x, y, z });
+    if (dead !== 0 && !this.wasDead) {
+      const [, , , , , df = 0, dx = 0, dy = 0, dz = 0] = pose;
+      this.markers.noteAuto('death', { face: df, x: dx, y: dy, z: dz });
+    }
+    this.wasDead = dead !== 0;
+    this.drawWaypoints(face);
+  }
+
+  /** The waypoints over the markers' spots on the player's face (none while the big map is open). */
+  private drawWaypoints(face: number): void {
+    const screen = this.client.markerScreen?.bind(this.client);
+    const shown = new Set<number>();
+    const w = this.doc.defaultView?.innerWidth ?? 1000;
+    const h = this.doc.defaultView?.innerHeight ?? 1000;
+    if (screen && !this.bigOpen) {
+      for (const m of this.markers.all) {
+        if (m.face !== face) continue;
+        // The marker's spot, a little over the ground it was placed on.
+        const [nx = 0, ny = 0, depth = 0, dist = 0] = Array.from(
+          screen(m.face, m.x, m.y + 1.5, m.z),
+        );
+        if (dist > MARKER_WORLD.showM) continue;
+        shown.add(m.id);
+        const el = this.waypoint(m);
+        const at = waypointOnScreen(nx, ny, depth, w, h);
+        el.style.transform = `translate(${at.x.toFixed(1)}px, ${at.y.toFixed(1)}px)`;
+        el.style.opacity = waypointAlpha(dist).toFixed(2);
+        el.classList.toggle('edge', !at.onScreen);
+        const d = el.lastChild as HTMLSpanElement;
+        d.textContent = formatMarkerDistance(dist);
+      }
+    }
+    for (const [id, el] of this.waypointEls) {
+      if (!shown.has(id)) {
+        el.remove();
+        this.waypointEls.delete(id);
+      }
+    }
+  }
+
+  /** A marker's waypoint element (made again when its look changed). */
+  private waypoint(m: MapMarker): HTMLDivElement {
+    const key = `${m.icon}|${m.rgb}|${m.label}`;
+    const had = this.waypointEls.get(m.id);
+    if (had?.dataset.key === key) return had;
+    had?.remove();
+    const el = this.doc.createElement('div');
+    el.className = 'waypoint';
+    el.dataset.key = key;
+    const label = this.doc.createElement('span');
+    label.className = 'waypoint-label';
+    label.textContent = m.label;
+    const dist = this.doc.createElement('span');
+    dist.className = 'waypoint-distance';
+    el.append(iconSvg(this.doc, m.icon, m.rgb, MARKER_WORLD.sizePx), label, dist);
+    this.waypoints.append(el);
+    this.waypointEls.set(m.id, el);
+    return el;
+  }
+
+  /** A marker's spot on the open big map (pixels from its top left), or null off its face. */
+  private markerPx(m: MapMarker): [number, number] | null {
+    const v = this.state.view;
+    if (!v || m.face !== v.face) return null;
+    const c = this.bigCanvas;
+    const [sx, sy] = toScreen(v, m.x, m.z);
+    return [(c.width || 800) / 2 + sx, (c.height || 600) / 2 + sy];
+  }
+
+  /** The ground's height for a marker placed on the map: the player's when on their face. */
+  private placeY(face: number): number {
+    const [pf = 0, , py = 0] = Array.from(this.client.markerPose?.() ?? []);
+    return pf === face ? py : 0;
+  }
+
+  /** A click on the open map: edit the marker under it, else place one there. */
+  private mapClick(px: number, py: number): void {
+    const v = this.state.view;
+    if (!v) return;
+    const hit = pickMarker(this.markers.all, (m) => this.markerPx(m), px, py);
+    if (hit) {
+      this.picker.openFor(hit, (r) => {
+        if (r.kind === 'save') this.markers.edit(hit.id, r.look);
+        else if (r.kind === 'delete') this.markers.remove(hit.id);
+      });
+      return;
+    }
+    if (this.markers.full) return;
+    const c = this.bigCanvas;
+    const [x, z] = toWorld(v, px - (c.width || 800) / 2, py - (c.height || 600) / 2);
+    const face = v.face;
+    this.picker.openFor(undefined, (r) => {
+      if (r.kind === 'save') this.markers.place(r.look, { face, x, y: this.placeY(face), z });
+    });
   }
 
   /** Tile (ti, tk) of a level's tinted image (null: nothing in it to draw), made again when stale. */
@@ -1798,6 +1987,11 @@ export class MapUi {
       ctx.restore();
     }
     this.updateControls();
+    // The markers on this face.
+    for (const m of this.markers.all) {
+      const p = this.markerPx(m);
+      if (p) drawIcon(ctx, m.icon, m.rgb, p[0], p[1], 22);
+    }
     const [face = 0, x = 0, z = 0, yaw = 0] = this.client.mapPose();
     if (face !== v.face) return;
     const [px, py] = toScreen(v, x, z);
@@ -1846,8 +2040,26 @@ export class MapUi {
       const steps = this.wheel.add(-px);
       this.zoomBy(steps, e.clientX - r.left - r.width / 2, e.clientY - r.top - r.height / 2);
     });
+    // A press on a marker drags it; a press that doesn't move is a click (place or edit).
+    let press: { id: number; x: number; y: number; moved: boolean; marker: number | null } | null =
+      null;
+    const px = (e: PointerEvent): [number, number] => {
+      const r = c.getBoundingClientRect();
+      return [e.clientX - r.left, e.clientY - r.top];
+    };
     c.addEventListener('pointerdown', (e) => {
       const [x, y] = local(e);
+      const [ax, ay] = px(e);
+      press =
+        down.size === 0
+          ? {
+              id: e.pointerId,
+              x: ax,
+              y: ay,
+              moved: false,
+              marker: pickMarker(this.markers.all, (m) => this.markerPx(m), ax, ay)?.id ?? null,
+            }
+          : null;
       down.set(e.pointerId, { x, y });
       c.setPointerCapture(e.pointerId);
       c.classList.add('dragging');
@@ -1858,6 +2070,22 @@ export class MapUi {
       const v = this.state.view;
       if (!was || !v) return;
       const [x, y] = local(e);
+      if (press?.id === e.pointerId) {
+        const [ax, ay] = px(e);
+        if (Math.hypot(ax - press.x, ay - press.y) > 4) press.moved = true;
+        if (press.moved && press.marker !== null) {
+          // Dragging a marker moves it (drawn as it goes, saved once on release).
+          const m = this.markers.get(press.marker);
+          const r = c.getBoundingClientRect();
+          if (m) {
+            const [wx, wz] = toWorld(v, ax - r.width / 2, ay - r.height / 2);
+            Object.assign(m, { x: wx, z: wz });
+          }
+          down.set(e.pointerId, { x, y });
+          this.drawBig();
+          return;
+        }
+      }
       if (down.size >= 2) {
         const other = [...down.entries()].find(([id]) => id !== e.pointerId)?.[1];
         if (other) {
@@ -1878,7 +2106,18 @@ export class MapUi {
       down.delete(e.pointerId);
       if (down.size === 0) c.classList.remove('dragging');
     };
-    c.addEventListener('pointerup', up);
-    c.addEventListener('pointercancel', up);
+    c.addEventListener('pointerup', (e) => {
+      const p = press;
+      press = null;
+      up(e);
+      if (p?.id !== e.pointerId) return;
+      const m = p.marker === null ? undefined : this.markers.get(p.marker);
+      if (p.moved && m) this.markers.move(m.id, { ...m, y: this.placeY(m.face) });
+      else if (!p.moved) this.mapClick(p.x, p.y);
+    });
+    c.addEventListener('pointercancel', (e) => {
+      press = null;
+      up(e);
+    });
   }
 }

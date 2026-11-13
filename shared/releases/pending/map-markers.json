@@ -1,0 +1,8 @@
+{
+  "changes": [
+    "Map markers: click the big map (M) to place one, with an icon, a colour and a short label; drag to move, click to edit or delete",
+    "Your markers show on the minimap and as waypoints in the world with their distance",
+    "Spawn and your last death are marked for you",
+    "Markers are yours alone, saved with the world"
+  ]
+}
