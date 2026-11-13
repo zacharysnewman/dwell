@@ -1122,10 +1122,7 @@ mod tests {
         const SPACE_W: usize = 23 * 4 + 3;
         let day = D.state(0.0, Some(0.0), Some(0.5));
         assert!(day.moon_shown);
-        assert_eq!(
-            day.pack(FaceFrame::A, 1.0, 0.0, 0.001)[SPACE_W],
-            1.0
-        );
+        assert_eq!(day.pack(FaceFrame::A, 1.0, 0.0, 0.001)[SPACE_W], 1.0);
         let away = DayState {
             moon_shown: false,
             ..day

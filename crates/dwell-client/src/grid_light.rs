@@ -109,8 +109,8 @@ mod tests {
         let mut e = [0.0; 3];
         for (dir, light) in [(24, 25), (26, 27)] {
             let k = dot(n, v(dir)).max(0.0);
-            for c in 0..3 {
-                e[c] += k * v(light)[c];
+            for (e, l) in e.iter_mut().zip(v(light)) {
+                *e += k * l;
             }
         }
         let (sky, ground) = if f.is_b() {
@@ -119,10 +119,7 @@ mod tests {
             (v(11), v(12))
         };
         let up = dot(n, f.vector([0.0, 1.0, 0.0])) * 0.5 + 0.5;
-        for c in 0..3 {
-            e[c] += ground[c] + (sky[c] - ground[c]) * up;
-        }
-        e
+        std::array::from_fn(|c| e[c] + ground[c] + (sky[c] - ground[c]) * up)
     }
 
     fn luma(c: V3) -> f64 {
