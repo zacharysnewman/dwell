@@ -142,6 +142,7 @@ export const AREAS: Record<string, Area> = {
       ...lookTests(RENDER_LOOKS),
       'shared/textures/gen.test.mjs',
       'shared/models/gen.test.mjs',
+      'shared/models/painter.test.mjs',
       'shared/characters/gen.test.mjs',
     ],
     crates: ['dwell-look', 'dwell-models', 'dwell-characters', 'dwell-client', 'dwell-native'],
