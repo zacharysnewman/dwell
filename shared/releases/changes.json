@@ -4,12 +4,12 @@
     {
       "version": "0.64.0",
       "changes": [
-        "Realistic worlds: a new compatibility line, their terrain redrawn from the seed (older Realistic worlds open in their own version); rifts are chains of lakes, coasts end in shelves, no sliver plates, ranges rise and dip, continents run out toward the world's edge",
-        "Realistic interiors mix rock provinces and vary rain and temperature by district; rolling ground is flat-topped again, with notched ramps only along mesa and rock-wall edges",
-        "Mesa country reads like Monument Valley: dark red-brown walls over red dirt floors blending with red sand and pale tan, tops that rise and tilt with knobs, floors with washes, mounds and talus fans, and grey-green sagebrush",
+        "Realistic worlds: a new compatibility line, their terrain redrawn from the seed (older Realistic worlds open in their own version)",
+        "Realistic plates and coasts: rifts are chains of lakes, coasts end in shelves, no sliver plates, ranges rise and dip, continents run out toward the world's edge",
+        "Realistic interiors mix rock provinces and vary rain and temperature by district; rolling ground is flat-topped again, notched ramps only along mesa and rock-wall edges",
+        "Mesa country reads like Monument Valley: dark red-brown walls over red dirt with red sand and pale tan blending, rising tops with knobs, washes and talus fans, sagebrush",
         "Hot tan sand deserts with dunes fill the warm dry lowlands of subtropical faces, separate from the red mesa country",
-        "Theater mode's panel is redone (a close button, Esc, a docked panel or phone sheet, grouped sections, a recording timer, controller navigation), phones get flying controls, and the camera can follow a creature or NPC",
-        "Theater mode records frame by frame for smooth video on slow machines, and hosts can turn it off for guests"
+        "Theater mode: a redone panel (close button, Esc, phone sheets, recording timer, controller), phone flying controls, following a creature, frame-exact recording, hosts can turn it off for guests"
       ]
     },
     {
