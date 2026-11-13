@@ -134,6 +134,18 @@ pub fn grid_frame_at(celestial: &Celestial, def: &GridDef, world_s: f64) -> Grid
 /// A grid's centre in the grid's space: its midplane's centre.
 pub const GRID_CENTRE: V3 = [0.0, MIDPLANE_M, 0.0];
 
+/// How far into space (0 the air, 1 space) world point `p` is: the sky's value, the atmosphere's
+/// thinning (docs/DAY_NIGHT.md §15) at its height over sea level on home's face it is over, and
+/// past the rim of home's disc (`home_radius_m`) at its distance from that air (the height and the
+/// distance past the rim together), which far flight's space speed scales with
+/// ([`TravelRules::far_speed`]).
+pub fn space_at(p: V3, home_radius_m: f64) -> f64 {
+    let f = FaceFrame::at_height(p[1]);
+    let up = (f.y(p[1]) - dwell_world::SEA_LEVEL_M).max(0.0);
+    let out = (p[0].hypot(p[2]) - home_radius_m).max(0.0);
+    dwell_look::atmosphere::ATMOSPHERE.thinning(up.hypot(out))
+}
+
 /// How far (m) a grid-local point is from the grid's slab: its disc of `radius_m`, `surface_m`
 /// each side of the midplane (0 inside it).
 pub fn slab_distance(radius_m: f64, surface_m: f64, p: V3) -> f64 {
@@ -260,7 +272,7 @@ impl TravelMap {
             .iter()
             .map(|&(i, def, r)| slab_distance(r, def.surface_m, self.frame(i, world_s).to_grid(p)))
             .fold(home, f64::min);
-        self.rules.far_speed(d)
+        self.rules.far_speed(d, space_at(p, self.home_radius_m))
     }
 }
 
@@ -415,7 +427,9 @@ impl Travel {
                 slab_distance(s.radius_m, s.def.surface_m, local)
             })
             .fold(f64::INFINITY, f64::min);
-        self.rules.far_speed(d)
+        // The home grid's space is the first (`grids.json` lists home first).
+        let home_r = self.spaces.first().map_or(0.0, |s| s.radius_m);
+        self.rules.far_speed(d, space_at(p, home_r))
     }
 
     /// Before a tick at `world_s`: captures a flier inside a grid's `captureM`, releases a player
@@ -540,10 +554,13 @@ mod tests {
     fn far_flight_is_zero_near_and_grows_far_out() {
         // both-faces: the slab is measured each side of the midplane.
         let r = dwell_worldgen::grids::travel();
-        assert_eq!(r.far_speed(10.0), 0.0);
-        assert_eq!(r.far_speed(r.far_above_m), 0.0);
-        assert!(r.far_speed(r.far_above_m * 2.0) > 300.0);
-        assert_eq!(r.far_speed(1e9), r.far_max_mps);
+        assert_eq!(r.far_speed(10.0, 1.0), 0.0);
+        assert_eq!(r.far_speed(r.far_above_m, 1.0), 0.0);
+        assert!(r.far_speed(r.far_above_m * 2.0, 1.0) > 300.0);
+        assert_eq!(r.far_speed(1e9, 1.0), r.far_max_mps);
+        // In the air none, whatever the distance; half way into space half the top.
+        assert_eq!(r.far_speed(1e9, 0.0), 0.0);
+        assert_eq!(r.far_speed(1e9, 0.5), r.far_max_mps * 0.5);
         assert_eq!(
             slab_distance(100.0, 10.0, [50.0, MIDPLANE_M + 5.0, 0.0]),
             0.0

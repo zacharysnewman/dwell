@@ -1,8 +1,8 @@
 {
-  "$comment": "The world's voxel grids (docs/proposals/MOON_WORLD.md): every buildable two-faced disc a world has, each with its own frame (where it sits and how it turns: `rest` is the home world, the grid everything else is placed against; `orbit` follows the sky's moon path, docs/DAY_NIGHT.md; `sunPath` sits on the sky's sun path at daynight.json `sun.distanceM`, its face A toward home, docs/proposals/SUN_WORLD.md), its disc radius (`radiusM`, or `world` for the world's own size, docs/proposals/BIG_MAP.md), its seed (`seedSalt` mixed into the world seed; none keeps the world seed), its surface gravity (`gravityScale` × the home world's), the distance from its centre inside which a flying player is captured into its frame (`captureM`, moving grids only) and the distance past which it is drawn as a far body from its baked maps (`farM`), how high its ground reaches over its midplane (`surfaceM`, far flight's slab) and the capability a client must say to be captured into it (`capability`, optional: a client without it flies on through and sees the grid as a far body; the sun's `grid.sun`, docs/proposals/SUN_WORLD.md §5), its generator by kind (`terrain`: today's home generator, crates/dwell-worldgen TerrainGenerator; `cratered`: the moon rules below; `volcanic`: the sun's, below). Heights are face-local metres (+y up from the grid's midplane, the same frame as the home terrain's), and each face is generated from its own seed stream like the home world's (bifacial::face_seed). Read by crates/dwell-worldgen/src/grids.rs, which validates every entry with a message. The content is prototype (ARCHITECTURE.md §6.1).",
+  "$comment": "The world's voxel grids (docs/proposals/MOON_WORLD.md): every buildable two-faced disc a world has, each with its own frame (where it sits and how it turns: `rest` is the home world, the grid everything else is placed against; `orbit` follows the sky's moon path, docs/DAY_NIGHT.md; `sunPath` sits on the sky's sun path at daynight.json `sun.distanceM`, its face A toward home, docs/proposals/SUN_WORLD.md), its disc radius (`radiusM`, or `world` for the world's own size, docs/proposals/BIG_MAP.md), its seed (`seedSalt` mixed into the world seed; none keeps the world seed), its surface gravity (`gravityScale` × the home world's), the distance from its centre inside which a flying player is captured into its frame (`captureM`, moving grids only) and the distance past which it is drawn as a far body from its baked maps (`farM`), how high its ground reaches over its midplane (`surfaceM`, far flight's slab), whether it has air (`atmosphere`, none unless declared: the day sky is a layer over space that thins with height, docs/DAY_NIGHT.md §15; without, the sky is space at every hour, the night sky's: the moon, the sun), the coarse mesh of its surface drawn nearer than `farM` and under its chunks while on it (`nearMesh`: `cells` quads across its diameter, each vertex the lowest ground round it less `sinkM` so the chunks cover it; MOON_WORLD.md §7.3 M-5) and the capability a client must say to be captured into it (`capability`, optional: a client without it flies on through and sees the grid as a far body; the sun's `grid.sun`, docs/proposals/SUN_WORLD.md §5), its generator by kind (`terrain`: today's home generator, crates/dwell-worldgen TerrainGenerator; `cratered`: the moon rules below; `volcanic`: the sun's, below). Heights are face-local metres (+y up from the grid's midplane, the same frame as the home terrain's), and each face is generated from its own seed stream like the home world's (bifacial::face_seed). Read by crates/dwell-worldgen/src/grids.rs, which validates every entry with a message. The content is prototype (ARCHITECTURE.md §6.1).",
   "travel": {
-    "$comment": "Travel between the grids (MOON_WORLD.md §7). Far flight: farther than `aboveM` from every grid's slab (its disc, `surfaceM` thick each side of its midplane) a flier goes at least `perS` × that distance m/s, up to `maxMps`, so the moon's ~597 km take about a minute and a half and the speed falls smoothly toward either surface. A player captured inside a grid's `captureM` is released past `captureM` × `releaseFactor`.",
-    "farFlight": { "aboveM": 2000, "perS": 0.12, "maxMps": 20000 },
+    "$comment": "Travel between the grids (MOON_WORLD.md §7). Far flight (creative flight in space; owner 2026-11-13: \"a much faster fly speed for creative. But only in space.\"): farther than `aboveM` from every grid's slab (its disc, `surfaceM` thick each side of its midplane) a flier goes at least `perS` × that distance m/s (easing down toward every body's surface), up to `maxMps` × how far into space it is (the atmosphere's thinning, the sky's value, docs/DAY_NIGHT.md §15: none in home's air, all of it in space), so the moon's ~597 km take about 35 s and the speed falls smoothly toward either surface. A player captured inside a grid's `captureM` is released past `captureM` × `releaseFactor`.",
+    "farFlight": { "aboveM": 2000, "perS": 0.8, "maxMps": 30000 },
     "releaseFactor": 1.1
   },
   "grids": [
@@ -13,6 +13,7 @@
       "gravityScale": 1,
       "farM": 400000,
       "surfaceM": 2400,
+      "atmosphere": true,
       "generator": {
         "kind": "terrain",
         "$comment": "The home world's far bake (MOON_WORLD.md §5, M-6) is made from its world map: heights and water from the map's cells, the colour from each column's surface block (its biome's palette, blocks.json `color`). `bake.size` is its texels a side per face (256: 390 m texels over the 50 km disc).",
@@ -28,6 +29,8 @@
       "captureM": 40000,
       "farM": 150000,
       "surfaceM": 200,
+      "atmosphere": false,
+      "nearMesh": { "cells": 96, "sinkM": 8 },
       "generator": {
         "kind": "cratered",
         "$comment": "Cratered plains over a datum, ridged noise for the ridges, maria as smooth low basins (fewer craters, flatter, and their ground `maria.block`, a darker dust: a column is the mare's block where it is at least half in a mare, `block` elsewhere; the far bake's colour is each block's `color`, blended by how far in a mare a texel is), and a crater field of size classes, each `perKm2` craters a km² with radii drawn in `radiusM`. Heights never go under `minM` (the grid's floor over its midplane, where overlapping craters would dig through). A crater's profile, by radius R: a floor `depthRatio` × R deep (at most `maxDepthM`) flat over `floorFraction` of R, a bowl up to a rim `rimRatio` × R high (at most `maxRimM`) at R, and ejecta falling off as the cube of the distance out to `reach` × R. `bake.size` is the far-LOD map's texels a side per face.",
@@ -73,6 +76,7 @@
       "captureM": 60000,
       "farM": 300000,
       "surfaceM": 420,
+      "atmosphere": false,
       "capability": "grid.sun",
       "generator": {
         "kind": "volcanic",
