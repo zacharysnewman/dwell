@@ -4,103 +4,11 @@
 // panels' owner (which locks the mouse again), the layout follows the viewport, every control has
 // an accessible name, the controller works it, and at 360 px nothing is wider than the screen.
 
-import { existsSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
-
 import { describe, expect, it } from 'vitest';
 
-import { Panels } from '../ui/panels';
 import { LAYOUT_CLASS, PadNav, accessibleName, focusables, layoutFor, timerText } from './layout';
-import { type Subject, TheaterMode, type TheaterModeClient, nearestSubjects } from './mode';
-import { PathStore } from './store';
-
-const PRESETS = readFileSync(join(__dirname, '../../../shared/theater/presets.json'), 'utf8');
-
-/** A fake WASM client: a camera at the origin, a path that plays until `finish`. */
-function fakeClient(subjects: Subject[] = []) {
-  const calls: string[] = [];
-  const state = { playing: false, finished: false };
-  const client: TheaterModeClient = {
-    theaterFly: () => [0, 50, 0, 0, 0],
-    theaterPlay: () => {
-      calls.push('play');
-      state.playing = true;
-      state.finished = false;
-    },
-    theaterStop: () => {
-      calls.push('stop');
-      state.playing = false;
-    },
-    theaterPause: (p) => calls.push(p ? 'pause' : 'resume'),
-    theaterExact: (on) => calls.push(`exact ${String(on)}`),
-    theaterAdvance: (dt) => calls.push(`advance ${dt.toFixed(4)}`),
-    theaterState: () => (state.playing ? { time: 1, finished: state.finished } : null),
-    theaterSubjects: () => JSON.stringify(subjects),
-    theaterPresets: () => PRESETS,
-    theaterPreset: (name) =>
-      JSON.stringify({
-        formatVersion: 1,
-        name,
-        keyframes: [
-          { t: 0, position: [0, 50, 0], look: [0, 0] },
-          { t: 4, position: [4, 50, 0], look: [0, 0] },
-        ],
-        segments: [{ move: 'ease' }],
-      }),
-    theaterUp: () => undefined,
-    releaseCamera: () => calls.push('release'),
-    setTimeOfDay: () => undefined,
-    creatures: () => [],
-    placement: () => null,
-  };
-  return { client, calls, state };
-}
-
-/** Theater mode with the panels' owner and a canvas whose pointer lock is recorded. */
-function rig(subjects: Subject[] = []) {
-  document.body.replaceChildren();
-  const canvas = document.createElement('canvas');
-  canvas.id = 'view';
-  document.body.append(canvas);
-  const locks: number[] = [];
-  const lockDoc = { pointerLockElement: null as Element | null, exitPointerLock: () => undefined };
-  const target = {
-    requestPointerLock: () => {
-      locks.push(1);
-      return Promise.resolve();
-    },
-  };
-  const { client, calls, state } = fakeClient(subjects);
-  let theater: TheaterMode | null = null;
-  const panels = new Panels(lockDoc, target, {
-    show: (p, open) => (p === 'theater' && theater ? theater.setShown(open) : false),
-    escape: (p) => p === 'theater' && (theater?.escape() ?? false),
-  });
-  const memory = new Map<string, string>();
-  theater = new TheaterMode({
-    doc: document,
-    canvas,
-    client,
-    store: new PathStore({
-      getItem: (k) => memory.get(k) ?? null,
-      setItem: (k, v) => memory.set(k, v),
-    }),
-    arms: () => undefined,
-    touch: () => undefined,
-    canvasSize: () => undefined,
-    where: () => ({}),
-    audioTap: () => null,
-    panels: {
-      open: () => {
-        panels.open('theater');
-      },
-      close: () => {
-        panels.close('theater');
-      },
-    },
-  });
-  return { theater, panels, locks, calls, state, bar: theater.bar };
-}
+import { type Subject, type TheaterMode, type TheaterModeClient, nearestSubjects } from './mode';
+import { fakeClient, rig } from './panelRig';
 
 describe('the theater panel', () => {
   it('opens through the panels; the X closes it and locks the mouse again', () => {
@@ -267,64 +175,6 @@ describe('the theater panel', () => {
 function bar(t: TheaterMode): HTMLElement {
   return t.bar;
 }
-
-/** The browser this checkout can launch (CI's e2e Chromium, the sandbox's, or Playwright's own). */
-function chromiumPath(): string | undefined {
-  const env = process.env.DWELL_CHROMIUM;
-  if (env) return env;
-  const sandbox = '/opt/pw-browsers/chromium';
-  return existsSync(sandbox) ? sandbox : undefined;
-}
-
-describe('the theater panel at 360 px', () => {
-  it('has nothing wider than the viewport, in every tool and with Advanced open', async (ctx) => {
-    const { theater, bar } = rig();
-    theater.enter();
-    theater.relayout(360, 740);
-    for (const d of bar.querySelectorAll('details')) d.open = true;
-    const html = bar.outerHTML;
-    const css = readFileSync(join(__dirname, '../style.css'), 'utf8');
-    let browser;
-    try {
-      const { chromium } = await import('@playwright/test');
-      const executablePath = chromiumPath();
-      browser = await chromium.launch(executablePath ? { executablePath } : {});
-    } catch (e) {
-      console.warn(`no Chromium to lay the panel out in: ${String(e).slice(0, 120)}`);
-      ctx.skip();
-      return;
-    }
-    try {
-      const page = await browser.newPage({ viewport: { width: 360, height: 740 } });
-      await page.setContent(
-        `<!doctype html><html><head><style>${css}</style></head><body>${html}</body></html>`,
-      );
-      for (const tool of ['presets', 'keys', 'record']) {
-        const wide = await page.evaluate((t) => {
-          const panels = [...document.querySelectorAll<HTMLElement>('[role="tabpanel"]')];
-          const order = ['presets', 'keys', 'record'];
-          panels.forEach((p, i) => {
-            p.hidden = order[i] !== t;
-          });
-          const out: string[] = [];
-          for (const e of document.querySelectorAll<HTMLElement>('#theater-bar *')) {
-            const r = e.getBoundingClientRect();
-            if (r.width > 0 && (r.right > 360.5 || r.left < -0.5))
-              out.push(
-                `${e.tagName}.${e.className} ${String(Math.round(r.left))}–${String(Math.round(r.right))}`,
-              );
-          }
-          if (document.documentElement.scrollWidth > 360)
-            out.push(`page ${String(document.documentElement.scrollWidth)} px`);
-          return out;
-        }, tool);
-        expect(wide, `${tool}: wider than 360 px`).toEqual([]);
-      }
-    } finally {
-      await browser.close();
-    }
-  }, 30_000);
-});
 
 describe('the phone’s flying controls', () => {
   it('map the stick and the Up and Down buttons onto the camera’s move', async () => {

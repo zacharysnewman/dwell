@@ -350,7 +350,8 @@ export class TheaterMode {
       setHud(this.host.doc, this.host, false);
       this.host.touch(false);
       this.show('keys');
-      this.relayout(innerWidth, innerHeight);
+      const view = this.host.doc.defaultView;
+      this.relayout(view?.innerWidth ?? 0, view?.innerHeight ?? 0);
       this.refresh();
       return true;
     }
