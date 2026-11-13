@@ -70,7 +70,7 @@ impl Parts {
 /// model's shading inside the part it keeps (0: one flat colour, 1: every shade as modelled).
 pub type PartRemap = ([f32; 3], [f32; 3], f32);
 
-/// A colour by name: a palette ramp's base, or `#rrggbb` (an appearance tone, BUGS.md #144).
+/// A colour by name: a palette ramp's base, or `#rrggbb` (an appearance tone, BUGS.md #151).
 pub fn colour_base(name: &str) -> Option<u32> {
     match name.strip_prefix('#') {
         Some(hex) if hex.len() == 6 => u32::from_str_radix(hex, 16).ok(),
@@ -114,7 +114,7 @@ pub fn luma(c: [f32; 3]) -> f32 {
 
 /// A vertex's colour (sRGB 0..1) after its body's remap (the skinned shader's `remap_colour`): a
 /// vertex of a remapped part takes the part's new base, at the vertex's shade of the old one
-/// (luminance over the old base's) kept by the part's share (BUGS.md #144: the skin's tan neck
+/// (luminance over the old base's) kept by the part's share (BUGS.md #151: the skin's tan neck
 /// nearly its face's tone), at most 1; any other as modelled.
 pub fn recolour(c: [f32; 3], part: u8, remap: &[Option<PartRemap>]) -> [f32; 3] {
     let Some(Some((from, to, keep))) = (part as usize).checked_sub(1).and_then(|k| remap.get(k))
@@ -503,7 +503,11 @@ mod remap_tests {
         );
         assert_eq!(r[0], None, "an unknown ramp is left out");
         let srgb = |c: u32| [16, 8, 0].map(|s| ((c >> s) & 0xff) as f32 / 255.0);
-        assert_eq!(r[1], Some((srgb(0x6b4329), srgb(0x302a3a), 1.0)), "hair, slot 2");
+        assert_eq!(
+            r[1],
+            Some((srgb(0x6b4329), srgb(0x302a3a), 1.0)),
+            "hair, slot 2"
+        );
         assert!(
             r[2..].iter().all(Option::is_none),
             "a part the model lacks: none"
@@ -551,7 +555,7 @@ mod remap_tests {
         );
     }
 
-    // BUGS.md #144: a tone by `#rrggbb` (shared/creatures/appearance.json) recolours the part, and
+    // BUGS.md #151: a tone by `#rrggbb` (shared/creatures/appearance.json) recolours the part, and
     // its shade share pulls the modelled shades (the Peasant's skin_tan neck, a ramp darker than
     // its skin_fair face) toward the tone: at 0 the whole part is one colour.
     #[test]
@@ -566,7 +570,10 @@ mod remap_tests {
             assert_eq!(recolour(fair, 1, &r), tone, "the base takes the tone");
             let neck = recolour(tan, 1, &r);
             let k = [0, 1, 2].map(|c| neck[c] / tone[c]);
-            assert!(k.iter().all(|x| (x - k[0]).abs() < 1e-4), "{neck:?}: a shade of the tone");
+            assert!(
+                k.iter().all(|x| (x - k[0]).abs() < 1e-4),
+                "{neck:?}: a shade of the tone"
+            );
             k[0]
         };
         assert_eq!(ratio(0.0), 1.0, "shade 0: one flat colour");

@@ -38,7 +38,7 @@ export const DISPOSITIONS = ['neutral'];
 export const COMBATS = ['none', 'fightBack'];
 const IDLE_FIELDS = ['pose', 'weight', 'seconds'];
 const COLOUR_FIELDS = ['part', 'from', 'to'];
-/** An NPC's skin and hair (BUGS.md #144): a set of shared/creatures/appearance.json and the model's
+/** An NPC's skin and hair (BUGS.md #151): a set of shared/creatures/appearance.json and the model's
  * part and ramp each recolours. */
 const APPEARANCE_FIELDS = ['set', 'skin', 'hair'];
 const APPEARANCE_SLOT_FIELDS = ['part', 'from'];
@@ -50,7 +50,7 @@ const HEX = /^#[0-9a-fA-F]{6}$/;
 const NAME = /^[a-z][a-z0-9_]*(:[a-z][a-z0-9_]*)?$/;
 
 /**
- * An appearance file (shared/creatures/appearance.json, BUGS.md #144): the hair colours by name
+ * An appearance file (shared/creatures/appearance.json, BUGS.md #151): the hair colours by name
  * and the sets of skin tones, each tone with the hair colours that go with it. A bad colour, an
  * unknown hair name or an empty list fails naming the set and tone. Returns the sets by name, each
  * tone's hair resolved to colours.

@@ -1,5 +1,5 @@
 {
-  "$comment": "The fixture appearance set (tests only, BUGS.md #144): added by data alone; the fixture NPC (fixtures/npcs.json) picks from it. Two tones, the pale one with a hair colour only it has.",
+  "$comment": "The fixture appearance set (tests only, BUGS.md #151): added by data alone; the fixture NPC (fixtures/npcs.json) picks from it. Two tones, the pale one with a hair colour only it has.",
   "formatVersion": 1,
   "hair": { "silver": "#c8c8d0", "jet": "#101010" },
   "sets": {
