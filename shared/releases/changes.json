@@ -2,6 +2,13 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.60.2",
+      "changes": [
+        "Main menu: All versions and Third-party notices are buttons like the rest of the menu, not web links.",
+        "Main menu: Back, All versions and a world's ⋯ button light up on hover and press like the other buttons."
+      ]
+    },
+    {
       "version": "0.60.1",
       "changes": [
         "Arriving on the moon right at its ground no longer leaves the ground under you missing.",
