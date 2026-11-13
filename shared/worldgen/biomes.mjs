@@ -991,6 +991,7 @@ export function validateRocks(data, blocks) {
       "riftWidth",
       "basinDistance",
       "edgeFade",
+      "mixing",
       "rules",
     ];
     const pe = Object.keys(pp).filter((k) => !known.includes(k));
@@ -1001,6 +1002,20 @@ export function validateRocks(data, blocks) {
     // How far inside a setting's edge the shaping fades in (absent: 0, a sharp edge).
     if (pp.edgeFade !== undefined && !between(pp.edgeFade, 0, 10000))
       pf("edgeFade must be in [0, 10000] m");
+    // How a rule's stacks mix and the settings' edges wander (WORK_QUEUE item 15); optional.
+    const mx = pp.mixing;
+    if (mx !== undefined) {
+      const mk = ["$comment", "wavelength", "warp", "warpWavelength", "edgeShift", "edgeWavelength", "fade"];
+      if (typeof mx !== "object" || mx === null) pf("mixing must be an object");
+      const me = Object.keys(mx).filter((k) => !mk.includes(k));
+      if (me.length) pf(`mixing: unknown ${me.join(", ")}`);
+      for (const k of ["wavelength", "warpWavelength", "edgeWavelength"])
+        if (!between(mx[k], 100, 100000)) pf(`mixing.${k} must be in [100, 100000] m`);
+      for (const k of ["warp", "edgeShift"])
+        if (!between(mx[k], 0, 20000)) pf(`mixing.${k} must be in [0, 20000] m`);
+      if (mx.fade !== undefined && !between(mx.fade, 0, 10000))
+        pf("mixing.fade must be in [0, 10000] m");
+    }
     const rc = pp.rangeCore;
     if (
       !Array.isArray(rc) ||
@@ -1020,13 +1035,32 @@ export function validateRocks(data, blocks) {
       if (seen.has(r.setting)) pf(`rule ${r.setting} is listed twice`);
       seen.add(r.setting);
       const re = Object.keys(r).filter(
-        (k) => !["setting", "stack", "$comment"].includes(k),
+        (k) => !["setting", "stack", "mix", "$comment"].includes(k),
       );
       if (re.length) pf(`rule ${r.setting}: unknown ${re.join(", ")}`);
       if (!stacks.has(r.stack))
         pf(
           `rule ${r.setting}: stack ${JSON.stringify(r.stack)} is not a stack of rocks.json`,
         );
+      // The stacks the setting mixes in, each by its weight (the rule's own weighs 1).
+      if (r.mix !== undefined) {
+        if (!Array.isArray(r.mix) || r.mix.length > 7)
+          pf(`rule ${r.setting}: mix must be a list of at most 7 stacks`);
+        if (r.mix.length && pp.mixing === undefined)
+          pf(`rule ${r.setting}: mix needs plateProvinces.mixing`);
+        const named = new Set([r.stack]);
+        for (const m of r.mix) {
+          const mke = Object.keys(m ?? {}).filter((k) => !["stack", "weight"].includes(k));
+          if (mke.length) pf(`rule ${r.setting}: mix: unknown ${mke.join(", ")}`);
+          if (!stacks.has(m?.stack))
+            pf(
+              `rule ${r.setting}: mix stack ${JSON.stringify(m?.stack)} is not a stack of rocks.json`,
+            );
+          if (named.has(m.stack)) pf(`rule ${r.setting}: mix names ${m.stack} twice`);
+          named.add(m.stack);
+          if (!between(m.weight, 0, 10)) pf(`rule ${r.setting}: mix ${m.stack} weight must be in [0, 10]`);
+        }
+      }
     }
   }
   // The snow line's cover (terrain.json tectonics.snowBelowC): a full block.

@@ -685,6 +685,30 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    owner: the 6 °C floor counts the steppe's and cold desert's red rock floors as desert (the reported spot's red
    mesas are steppe at ~8 °C); the mesa's own 12 °C would keep red sand to hot deserts (face B of seeds 1, 7, 42
    then has none).
+   **Realistic geography batch (owner, 2026-11-13, on a Realistic world, seed 2741893632, 0.59.3):** "What's up with
+   realistic world having an enormous \"river\"? And a separated mountain range from the main continent? It's a very
+   weird geography that doesn't look realistic at all" / "I meant horizontal slices of noise" (large uniform swaths of
+   one terrain type in plan view) / "And noise also seems very uniform at a macro level, where the same terrain almost
+   looks tiled." / "Also are we hardcoding that there's an ocean edge dropoff always around? Or is that just super
+   common?" / after the diagnosis: "Yes make those changes as a realistic batch". Diagnosis (native, that seed's face
+   A): the "river" is a divergent boundary's rift flooded as one 45 km canal; the separated range a continental plate
+   clipped to a sliver at the disc's sea margin; plan view one province (red beds) over ~550 km² and the cold desert
+   on 40.5 % of the land, bands parallel to the boundaries; "tiled": no periodicity, but 45°/90° streak hatching at
+   100–300 m (the erosion's D8 routing); the rim: land capped at reach − seaMargin for every plate. Part A (branch
+   `claude/realistic-plates`, the 0.61 line): the rift, the separated range and the rim. **Part B (branch
+   `claude/realistic-geography-batch-b-3o44zr`, ships with part A): variety and the grid streaks, Realistic only**
+   (the default and starter goldens unchanged; `tests/realistic_variety.rs`, `examples/realistic_variety.rs`, seeds 1,
+   7, 42, 2741893632 on both faces): (1) mixed provinces: rocks.json `plateProvinces.mixing` and each rule's `mix`,
+   2–4 stacks per setting by a warped noise at 3.5 km, every boundary distance shifted ±1.5 km at 6 km, a `default`
+   rule's mix in place of the 12 km noise; largest province region 553 → 128 km² on the owner's face A (all seeds ≤
+   ~210), distinct per 4 km² 1.82 → 3.46 (all 3.1–3.6). (2) Biome variety: climate.json `variety` (rain × e^noise at
+   10 and 2.5 km, a one-sided 0–280 / 0–120 mm wetter-district rain at 9 and 2.2 km, ±3.5 / 1.5 °C at 7 and 1.8 km);
+   owner's face A largest biome 39.7 % (cold desert) → 33 %, its largest region 590 → 291 km², per 4 km² 3.1 → 3.9;
+   a subarctic band (seed 7) is still mostly tundra (84–88 → 69–72 %). Not done: aspect and slope as sub-biome
+   inputs (the geography has no slope yet). (3) Interior relief: plates.json `variety.relief`, a domain warp, hills
+   and bumps × a 13 km regional amplitude (0.35–1.6), octaves turned 37° and 2.13× finer, basins and swells ±150 m at
+   5.5 km kept whole and rising as domes against the erosion. (4) Grid streaks: plates.json `variety.flow` `random`
+   (each erosion step to a slope-weighted random lower neighbour); the eight-fold slope harmonic 0.12–0.29 → 0.01–0.08.
 16. **Phone frame rate (P0)** (owner 2026-11-11, iPhone 17, Safari, setting Low: "I'm only getting ~23 fps on
    mobile, seeing lots of z-fighting on tree trunks with the leaf cards. What might be dropping frames since the
    last while. Used to get 60 fps"). Suspect: leaf cards are on in every tier but CPU, Low included; cards lying

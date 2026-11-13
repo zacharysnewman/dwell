@@ -539,8 +539,11 @@ fn tectonic_map(
                 shield[i] = t.shield(&volcanoes, x, z);
             }
             if let Some(pt) = plates {
-                extra[i] += pt.height(x, z);
-                rising[i] += pt.boundary(x, z);
+                // The interior's basins and swells (plates.json `variety.relief`), kept whole;
+                // a swell keeps rising as a range does (a dome), so the erosion leaves it.
+                let swell = base.swell_at(x as i64, z as i64);
+                extra[i] += pt.height(x, z) + swell;
+                rising[i] += pt.boundary(x, z) + swell.max(0.0);
                 shield[i] = shield[i].max(pt.shield(x, z));
             }
         }

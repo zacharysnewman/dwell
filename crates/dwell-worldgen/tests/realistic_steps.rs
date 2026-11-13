@@ -104,9 +104,10 @@ dwell_world::both_faces!(
             "enough of each rock's land sampled: {shaped:?}"
         );
         // Massive granite: about none, as unshaped (the few are the hill's own steepest ground and
-        // the walls of a bedded layer or stack beside it).
+        // the walls of a bedded layer or stack beside it; since the regional hills, plates.json
+        // `variety.relief`, about 2 % of granite land is that steep unshaped too).
         assert!(
-            share(massive) < 0.01,
+            share(massive) < 0.025,
             "massive granite rises unstepped: {massive:?}"
         );
         assert!(

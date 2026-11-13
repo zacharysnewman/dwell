@@ -31,7 +31,7 @@ fn main() {
     };
     let e = world_config(NAME).unwrap().expect("the Realistic world");
     println!(
-        "seed face | prov maxkm2 per4km2 | biome maxshare maxkm2 per4km2 (top) | relief rms p90 m | aniso"
+        "seed face | prov maxkm2 per4km2 | biome maxshare maxkm2 per4km2 (top) | relief rms p90 m (1-8 km) | aniso"
     );
     for world in seeds {
         for face in [Face::A, Face::B] {
@@ -64,6 +64,11 @@ fn main() {
                 hi,
                 anisotropy(&map),
                 built.as_secs_f64(),
+            );
+            println!(
+                "      largest province {:?}, biome {:?}",
+                prov.largest_region(),
+                bio.largest_region()
             );
         }
     }

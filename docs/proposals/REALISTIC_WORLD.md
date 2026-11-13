@@ -13,7 +13,11 @@ plate history (`rocks.json` `plateProvinces`) and soils by rock × climate (`veg
 big map's debug layers (plates, uplift, rain, rocks); created, played and reloaded in the browser on the M1's GPU,
 the phone page's total at load under the starter's (R6 below). Steps by geology (2026-11-13, 0.57.0, WORK_QUEUE item
 15): the global `cliffs` volume off and the rock shaping on in Realistic worlds, so the ground steps only where its rock's
-jointing says (R5 below). §8 (2026-11-12, design only):
+jointing says (R5 below). Variety (2026-11-13, WORK_QUEUE item 15, the realistic batch part B): mixed provinces in the
+plates' settings (`rocks.json` `plateProvinces.mixing`, each rule's `mix`), regional and local climate noise
+(`climate.json` `variety`), basins and swells and turned, warped hills (`plates.json` `variety.relief`) and a
+randomized erosion routing in place of D8's grid streaks (`plates.json` `variety.flow`), measured by
+`dwell_worldgen::variety` (`tests/realistic_variety.rs`). §8 (2026-11-12, design only):
 orbits by seed set the latitude band, the sky and later seasons, in place of R3's picked band.
 
 ## 1. The owner's direction

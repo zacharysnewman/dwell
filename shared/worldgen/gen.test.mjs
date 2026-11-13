@@ -769,11 +769,16 @@ test('R5: plateProvinces map plate settings to stacks by name, by data alone; ba
   for (const n of ['dwell:arc_volcanics', 'dwell:hotspot_shield', 'dwell:collision_core', 'dwell:rift_fill'])
     assert.equal(stacks.get(n).weight, 0, n);
   // A rule swapped and one added by data alone.
-  d.plateProvinces.rules.find((r) => r.setting === 'core').stack = 'dwell:granite_core';
+  const core = d.plateProvinces.rules.find((r) => r.setting === 'core');
+  core.stack = 'dwell:basalt_flows';
+  core.mix = [{ stack: 'dwell:granite_core', weight: 0.5 }];
+  d.plateProvinces.rules = d.plateProvinces.rules.filter((r) => r.setting !== 'default');
   d.plateProvinces.rules.push({ setting: 'default', stack: 'dwell:badland_beds' });
+  d.plateProvinces.mixing.wavelength = 3100;
   const out = rocksRust(validateRocks(d, blocks));
-  assert.match(out, /PlateRule \{ setting: PlateSetting::Core, stack: "dwell:granite_core" \}/);
-  assert.match(out, /PlateRule \{ setting: PlateSetting::Default, stack: "dwell:badland_beds" \}/);
+  assert.match(out, /PlateRule \{ setting: PlateSetting::Core, stack: "dwell:basalt_flows", mix: &\[PlateMix \{ stack: "dwell:granite_core", weight: 0\.5 \}\] \}/);
+  assert.match(out, /PlateRule \{ setting: PlateSetting::Default, stack: "dwell:badland_beds", mix: &\[\] \}/);
+  assert.match(out, /mixing: Mixing \{ wavelength: 3100\.0,/);
   const bad = (f, msg) => {
     const x = rocks();
     f(x);
@@ -786,6 +791,13 @@ test('R5: plateProvinces map plate settings to stacks by name, by data alone; ba
   bad((x) => (x.plateProvinces.riftWidth = -1), /plateProvinces: riftWidth must be/);
   bad((x) => (x.plateProvinces.depth = 1), /plateProvinces: unknown depth/);
   bad((x) => (x.plateProvinces.edgeFade = -5), /plateProvinces: edgeFade must be/);
+  // The mixing (WORK_QUEUE item 15, part B).
+  bad((x) => (x.plateProvinces.mixing.wavelength = 10), /plateProvinces: mixing\.wavelength must be in \[100, 100000\]/);
+  bad((x) => (x.plateProvinces.mixing.swirl = 1), /plateProvinces: mixing: unknown swirl/);
+  bad((x) => (x.plateProvinces.rules[5].mix[0].stack = 'dwell:nothing'), /rule basin: mix stack "dwell:nothing" is not a stack/);
+  bad((x) => (x.plateProvinces.rules[5].mix[0].stack = 'dwell:red_beds'), /rule basin: mix names dwell:red_beds twice/);
+  bad((x) => (x.plateProvinces.rules[5].mix[0].weight = -1), /rule basin: mix dwell:limestone_shelf weight must be/);
+  bad((x) => delete x.plateProvinces.mixing, /rule accreted: mix needs plateProvinces\.mixing/);
 });
 
 test('item 15: the Realistic world steps by its rock, not the global cliffs volume (data)', () => {

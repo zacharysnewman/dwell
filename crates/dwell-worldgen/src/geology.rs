@@ -211,11 +211,40 @@ impl PlateSettings {
     }
 }
 
-/// A `plateProvinces` rule: a setting and the stack it takes (by name).
+/// A `plateProvinces` rule: a setting and the stack it takes (by name), with the stacks it mixes
+/// in (`mix`, absent none): the setting's province is then any of them, by the mixing noise.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct PlateRule {
     pub setting: PlateSetting,
     pub stack: &'static str,
+    /// Other stacks the setting mixes in, each by its weight (the rule's own `stack` weighs 1).
+    pub mix: &'static [PlateMix],
+}
+
+/// A stack a `plateProvinces` rule mixes in, and its weight (the rule's own stack's is 1).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PlateMix {
+    pub stack: &'static str,
+    pub weight: f64,
+}
+
+/// How a rule's stacks mix and how the settings' edges wander (`plateProvinces.mixing`, WORK_QUEUE
+/// item 15: no province hundreds of km² wide, no band parallel to a boundary). All 0 (absent): one
+/// stack per setting, edges at their widths.
+#[derive(Clone, Copy, Debug, PartialEq, Default)]
+pub struct Mixing {
+    /// The mixing noise's wavelength (m): the size of one stack's patch within a setting.
+    pub wavelength: f64,
+    /// The mixing noise's domain warp: amplitude (m) and wavelength (m).
+    pub warp: f64,
+    pub warp_wavelength: f64,
+    /// Every boundary distance shifted by a noise of about ±`edge_shift` m at `edge_wavelength` m,
+    /// so a width's line wanders instead of running parallel to its boundary.
+    pub edge_shift: f64,
+    pub edge_wavelength: f64,
+    /// How far (m) inside a mixed patch's edge the shaping fades in (in place of `edgeFade`, so
+    /// the patches' fades leave most of their ground stepped; 0: `edgeFade`'s).
+    pub fade: f64,
 }
 
 /// The rock provinces from plate history (`rocks.json` `plateProvinces`, R5): the settings'
@@ -231,6 +260,8 @@ pub struct PlateProvinces {
     /// How far (m) inside a setting's edge the shaping fades in (0: a sharp edge), so a rule's
     /// province meets the next with no wall where the shaping is on (WORK_QUEUE item 15).
     pub edge_fade: f64,
+    /// How the rules' stacks mix and the edges wander (WORK_QUEUE item 15).
+    pub mixing: Mixing,
     pub rules: &'static [PlateRule],
 }
 
@@ -253,6 +284,18 @@ impl PlateProvinces {
         x: f64,
         z: f64,
     ) -> (PlateSettings, f64) {
+        self.settings_shifted(t, x, z, 0.0)
+    }
+
+    /// [`PlateProvinces::settings_and_edge`] with every boundary distance `shift` m farther (the
+    /// mixing's wandering edges: `Resolved::province` passes its noise there).
+    pub fn settings_shifted(
+        &self,
+        t: &crate::plate_tectonics::PlateTectonics,
+        x: f64,
+        z: f64,
+        shift: f64,
+    ) -> (PlateSettings, f64) {
         use crate::plates::BoundaryKind;
         let mut s = PlateSettings::default();
         let mut edge = f64::INFINITY;
@@ -271,6 +314,7 @@ impl PlateProvinces {
         let plate = t.layout.plate_at(x, z);
         let mut nearest = f64::INFINITY;
         for (line, d) in t.lines_of(plate, x, z) {
+            let d = (d + shift).max(0.0);
             nearest = nearest.min(d);
             edge = edge.min(d);
             let mut near = |w: f64| edge = edge.min((d - w).abs());
@@ -484,10 +528,14 @@ pub struct Resolved {
     /// whose tectonics come from plates (R5).
     plates: Option<(
         std::sync::Arc<crate::plate_tectonics::PlateTectonics>,
-        Vec<usize>,
+        Vec<RuleStacks>,
     )>,
     world_seed: u64,
 }
+
+/// A `plateProvinces` rule's stacks (indices) with their cumulative weights over 0..1.
+#[derive(Clone, Debug)]
+struct RuleStacks(Vec<(usize, f64)>);
 
 /// The tectonics, their volcanoes, and the volcanic and core stacks (indices).
 type Tectonic = (
@@ -545,13 +593,26 @@ impl Resolved {
             .rules
             .iter()
             .map(|r| {
-                self.geology.stack(r.stack).unwrap_or_else(|| {
-                    panic!(
-                        "rocks.json plateProvinces {}: no stack {}",
-                        r.setting.name(),
-                        r.stack
-                    )
-                })
+                let find = |n: &str| {
+                    self.geology.stack(n).unwrap_or_else(|| {
+                        panic!(
+                            "rocks.json plateProvinces {}: no stack {n}",
+                            r.setting.name()
+                        )
+                    })
+                };
+                let mut all = vec![(find(r.stack), 1.0)];
+                all.extend(r.mix.iter().map(|m| (find(m.stack), m.weight.max(0.0))));
+                let total: f64 = all.iter().map(|a| a.1).sum::<f64>().max(1e-12);
+                let mut c = 0.0;
+                RuleStacks(
+                    all.into_iter()
+                        .map(|(i, w)| {
+                            c += w / total;
+                            (i, c)
+                        })
+                        .collect(),
+                )
             })
             .collect();
         self.plates = Some((t, stacks));
@@ -595,19 +656,57 @@ impl Resolved {
         self
     }
 
+    /// The plate provinces' mixing noise `k` at (x, z) m, of `wavelength` m: about ±0.5, its
+    /// octaves turned off the lattice (WORK_QUEUE item 15).
+    fn mixing_noise(&self, k: u32, x: f64, z: f64, wavelength: f64) -> f32 {
+        let seed = crate::noise::mix32(self.seed ^ crate::noise::mix32(0x31C5_0000 + k));
+        crate::noise::fbm2_turned(seed, x, z, wavelength.max(1.0), 3, 2.13, 37.0, 0.0)
+    }
+
     /// The province's stack at (x, z) and how fully it shapes there (fading to 0 at a border).
     pub fn province(&self, x: i64, z: i64) -> (usize, f64) {
         if let Some((t, stacks)) = &self.plates {
             let pp = &self.geology.plate_provinces;
-            let (s, edge) = pp.settings_and_edge(t, x as f64, z as f64);
+            let m = pp.mixing;
+            let (xf, zf) = (x as f64, z as f64);
+            // The settings' edges wander (`mixing.edgeShift`), not parallel to their boundary.
+            let shift = if m.edge_shift > 0.0 {
+                m.edge_shift * 2.0 * f64::from(self.mixing_noise(1, xf, zf, m.edge_wavelength))
+            } else {
+                0.0
+            };
+            let (s, mut edge) = pp.settings_shifted(t, xf, zf, shift);
             if let Some(k) = pp.rules.iter().position(|r| s.has(r.setting)) {
+                let RuleStacks(all) = &stacks[k];
+                let mut stack = all[0].0;
+                if all.len() > 1 && m.wavelength > 0.0 {
+                    // The rule's stacks by a warped noise (`mixing`), each by its weight.
+                    let w = |k| {
+                        m.warp * 2.0 * f64::from(self.mixing_noise(k, xf, zf, m.warp_wavelength))
+                    };
+                    let (wx, wz) = (xf + w(2), zf + w(3));
+                    let u = (0.5 + 1.6 * f64::from(self.mixing_noise(4, wx, wz, m.wavelength)))
+                        .clamp(0.0, 1.0 - 1e-9);
+                    let i = all.iter().position(|a| u < a.1).unwrap_or(all.len() - 1);
+                    stack = all[i].0;
+                    // The noise's distance to the next threshold, in m (its slope about 1.6 / λ).
+                    let lo = if i == 0 { -1.0 } else { all[i - 1].1 };
+                    let hi = if i + 1 == all.len() { 2.0 } else { all[i].1 };
+                    let to_edge = (u - lo).min(hi - u) * m.wavelength / 1.6;
+                    let scale = if m.fade > 0.0 {
+                        pp.edge_fade / m.fade
+                    } else {
+                        1.0
+                    };
+                    edge = edge.min(to_edge * scale);
+                }
                 // The shaping fades in from the setting's edge (rocks.json `edgeFade`).
                 let fade = if pp.edge_fade > 0.0 {
                     (edge / pp.edge_fade).clamp(0.0, 1.0)
                 } else {
                     1.0
                 };
-                return (stacks[k], fade);
+                return (stack, fade);
             }
         }
         if let Some((t, v, volcanic, core)) = &self.tectonic
@@ -939,13 +1038,25 @@ mod plate_province_tests {
             .stack
     }
 
+    /// The build's geology with no mixing (`plateProvinces.mixing` all 0): each setting its
+    /// rule's own stack, the edges at their widths.
+    fn unmixed() -> Geology {
+        Geology {
+            plate_provinces: PlateProvinces {
+                mixing: Mixing::default(),
+                ..GEOLOGY.plate_provinces
+            },
+            ..GEOLOGY
+        }
+    }
+
     #[test]
     fn each_setting_takes_its_rules_stack() {
         let pp = &GEOLOGY.plate_provinces;
         // Subduction: the continent (+x) overrides; its accreted strip by the line, the range's
         // core behind it, the arc's cones farther in, the quiet interior beyond.
         let t = fixture("ocean_under_continent");
-        let r = resolved(GEOLOGY, &t);
+        let r = resolved(unmixed(), &t);
         let cones: Vec<_> = t.volcanoes.iter().filter(|v| v.chain == 0).collect();
         assert!(!cones.is_empty(), "the fixture has an arc");
         for v in cones {
@@ -965,16 +1076,50 @@ mod plate_province_tests {
         assert_eq!(stack_at(&r, far, 0.0), rule(PlateSetting::Basin));
         // Collision: the core astride the line, on both plates.
         let t = fixture("continents_collide");
-        let r = resolved(GEOLOGY, &t);
+        let r = resolved(unmixed(), &t);
         for x in [-0.5 * pp.core_width, 0.5 * pp.core_width] {
             assert_eq!(stack_at(&r, x, 2000.0), rule(PlateSetting::Core), "x {x}");
         }
         // A rift: its fill along the line.
         let t = fixture("rift_opens");
-        let r = resolved(GEOLOGY, &t);
+        let r = resolved(unmixed(), &t);
         for x in [-0.5 * pp.rift_width, 0.5 * pp.rift_width] {
             assert_eq!(stack_at(&r, x, 2000.0), rule(PlateSetting::Rift), "x {x}");
         }
+    }
+
+    #[test]
+    fn a_setting_mixes_its_rules_stacks() {
+        // WORK_QUEUE item 15 (part B): with the build's mixing, a plate's quiet interior is
+        // patches of the basin rule's stacks (its own and its `mix`), each of them somewhere, no
+        // other; with the mixing off (by data alone), the rule's own stack everywhere.
+        let pp = GEOLOGY.plate_provinces;
+        let basin = pp
+            .rules
+            .iter()
+            .find(|r| r.setting == PlateSetting::Basin)
+            .unwrap();
+        assert!(basin.mix.len() >= 2, "the basin mixes stacks");
+        let mut names: Vec<&str> = vec![basin.stack];
+        names.extend(basin.mix.iter().map(|m| m.stack));
+        let t = fixture("ocean_under_continent");
+        let (mixed, plain) = (resolved(GEOLOGY, &t), resolved(unmixed(), &t));
+        let mut seen = Vec::new();
+        for z in (-12_000..=12_000).step_by(400) {
+            for dx in (0..=8_000).step_by(400) {
+                let x = pp.basin_distance + 2.0 * pp.mixing.edge_shift + f64::from(dx);
+                if !pp.settings(&t, x, f64::from(z)).has(PlateSetting::Basin) {
+                    continue;
+                }
+                let s = stack_at(&mixed, x, f64::from(z));
+                assert!(names.contains(&s), "{s} is the basin's");
+                if !seen.contains(&s) {
+                    seen.push(s);
+                }
+                assert_eq!(stack_at(&plain, x, f64::from(z)), basin.stack);
+            }
+        }
+        assert_eq!(seen.len(), names.len(), "every basin stack shows: {seen:?}");
     }
 
     #[test]
@@ -985,7 +1130,7 @@ mod plate_province_tests {
         let pp = GEOLOGY.plate_provinces;
         assert!(pp.edge_fade > 0.0, "the build fades the edges");
         let t = fixture("ocean_under_continent");
-        let r = resolved(GEOLOGY, &t);
+        let r = resolved(unmixed(), &t);
         let fade = |r: &Resolved, x: f64| r.province(x as i64, 0).1;
         let edge = pp.accreted_width;
         assert!(
@@ -1005,7 +1150,7 @@ mod plate_province_tests {
         let sharp = Geology {
             plate_provinces: PlateProvinces {
                 edge_fade: 0.0,
-                ..pp
+                ..unmixed().plate_provinces
             },
             ..GEOLOGY
         };

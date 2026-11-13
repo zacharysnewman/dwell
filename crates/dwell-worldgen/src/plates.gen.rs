@@ -47,7 +47,7 @@ pub const VARIETY: PlateVariety = PlateVariety {
     relief: InteriorRelief {
         warp_amplitude: 1200.0,
         warp_wavelength: 7000.0,
-        swell_height: 90.0,
+        swell_height: 150.0,
         swell_wavelength: 5500.0,
         swell_octaves: 2,
         hill_min: 0.35,

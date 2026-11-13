@@ -56,9 +56,15 @@ impl Labels {
 
     /// The largest 4-connected region of one label, km².
     pub fn largest_region_km2(&self) -> f64 {
+        self.largest_region().1
+    }
+
+    /// The label of the largest 4-connected region of one label, and its area (km²).
+    pub fn largest_region(&self) -> (&'static str, f64) {
         let n = self.n;
         let mut seen = vec![false; n * n];
         let mut best = 0usize;
+        let mut label = 0u16;
         let mut stack = Vec::new();
         for s in 0..n * n {
             let Some(l) = self.at[s] else { continue };
@@ -90,9 +96,17 @@ impl Labels {
                     go(c + n);
                 }
             }
-            best = best.max(size);
+            if size > best {
+                (best, label) = (size, l);
+            }
         }
-        best as f64 * self.cell * self.cell / 1e6
+        (
+            self.names
+                .get(usize::from(label))
+                .copied()
+                .unwrap_or("none"),
+            best as f64 * self.cell * self.cell / 1e6,
+        )
     }
 
     /// The mean count of distinct labels in the 2 km × 2 km blocks at least half land.
@@ -173,7 +187,7 @@ fn sea_distance(map: &WorldMap) -> Vec<u32> {
 }
 
 /// The interior's mid-frequency relief (basins and swells): over the land farther than 5 km from
-/// the sea, the root mean square (m) of the height's 1 km box mean minus its 4 km box mean, and
+/// the sea, the root mean square (m) of the height's 1 km box mean minus its 8 km box mean, and
 /// the 90th percentile of that difference's magnitude.
 pub fn interior_relief(map: &WorldMap) -> (f64, f64) {
     let n = map.n;
@@ -203,7 +217,7 @@ pub fn interior_relief(map: &WorldMap) -> (f64, f64) {
     };
     let (r1, r4) = (
         (500.0 / map.cell).round() as i64,
-        (2000.0 / map.cell).round() as i64,
+        (4000.0 / map.cell).round() as i64,
     );
     let mut v = Vec::new();
     for j in 0..n {

@@ -363,8 +363,9 @@ dwell_world::both_faces!(
     /// §7 q9 (owner, 2026-11-12: "Yes add those biomes"): the climates no preset covered at R4, where
     /// the default biome was the fallback, take the new presets: the cold, nearly rainless interior
     /// the cold desert, the hot, very wet tropics the tropical rainforest. On the same maps with the
-    /// two left out, the default is chosen there; with them, they are; and the default's share of
-    /// the land falls to under a quarter of what it was.
+    /// two left out, the default is chosen there (mostly: since the climate's district noise,
+    /// climate.json `variety`, a neighbouring preset's patch takes some of it); with them, they are;
+    /// and the default's share of the land falls to under a third of what it was.
     fn the_former_fallback_climates_take_the_new_presets(f: FaceFrame) {
         let e = edit();
         let without: Vec<Biome> = e
@@ -408,18 +409,18 @@ dwell_world::both_faces!(
         for (name, t) in [("cold desert", dry), ("tropical rainforest", hot)] {
             assert!(t[0] >= 20, "{:?}: {name} climate cells {t:?}", f.face);
             assert!(
-                f64::from(t[1]) >= 0.8 * f64::from(t[0]),
+                f64::from(t[1]) >= 0.7 * f64::from(t[0]),
                 "{:?}: the default was the fallback in the {name}'s climate {t:?}",
                 f.face
             );
             assert!(
-                f64::from(t[2]) >= 0.95 * f64::from(t[0]),
+                f64::from(t[2]) >= 0.9 * f64::from(t[0]),
                 "{:?}: the {name} takes its climate {t:?}",
                 f.face
             );
         }
         assert!(
-            4 * is < was,
+            3 * is < was,
             "{:?}: the default's land {was} -> {is}",
             f.face
         );

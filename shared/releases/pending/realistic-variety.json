@@ -1,0 +1,8 @@
+{
+  "changes": [
+    "Realistic worlds: plate interiors mix several rock provinces instead of one stack across hundreds of km²",
+    "Realistic worlds: rain and temperature vary by district, so one biome no longer fills a third of the land",
+    "Realistic worlds: rolling basins and swells inland, and hills that vary by region",
+    "Realistic worlds: no more grid-aligned streaks in the eroded slopes"
+  ]
+}
