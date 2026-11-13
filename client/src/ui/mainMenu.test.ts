@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { WorldMeta } from '../local/worldIndex';
 import {
   formatPlayed,
+  moreOptionsRoute,
   nearbyLabel,
   newWorldRoute,
   worldCardData,
@@ -9,6 +10,7 @@ import {
   worldModeLabel,
   worldSizeChoices,
 } from './mainMenu';
+import { moreOptionsFields } from './playAdvanced';
 
 const MIN = 60_000;
 
@@ -165,5 +167,32 @@ describe("New world → More options' World size (BIG_MAP.md M2b)", () => {
       ...plain,
       type: 'flat',
     });
+  });
+});
+
+// BUGS.md #118: New world → More options repeated World type, Seed and Spawn (already in the form
+// above), and its copy had no Realistic choice.
+describe('New world → More options', () => {
+  it("doesn't repeat the form's fields, and takes them from the form", () => {
+    const labels = moreOptionsFields().map((f) => f.label);
+    for (const l of ['World type', 'Seed', 'Spawn']) expect(labels).not.toContain(l);
+    expect(labels).toContain('Time of day');
+    const form = {
+      name: 'x',
+      seed: '42',
+      type: 'terrain',
+      mode: '',
+      spawn: 'b',
+      worldgen: 'realistic',
+      sky: '',
+    };
+    expect(moreOptionsRoute(form)).toMatchObject({ seed: '42', spawn: 'b', worldgen: 'realistic' });
+    expect(moreOptionsRoute(form).world).toBeUndefined();
+    expect(moreOptionsRoute({ ...form, type: 'flat', worldgen: '', spawn: '' })).toEqual({
+      seed: '42',
+      world: 'flat',
+    });
+    // A text seed is the same number the form's world would get.
+    expect(moreOptionsRoute({ ...form, seed: 'hello' }).seed).toMatch(/^\d+$/);
   });
 });

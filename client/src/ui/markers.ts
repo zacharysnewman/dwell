@@ -383,6 +383,53 @@ export function waypointAlpha(distanceM: number): number {
 }
 
 /**
+ * Whether a marker shows a waypoint: not within `hideWithinM` of the eye (`distanceM`) or across the
+ * ground (`flatM`, the face-local x–z distance from the player). A marker under or at the camera has
+ * no way to point to, so it is not pinned to the screen's edge (BUGS.md: standing on the spawn read
+ * "1 m" stuck to the top edge).
+ */
+export function waypointShown(
+  distanceM: number,
+  flatM: number,
+  hideWithinM: number = MARKER_WORLD.hideWithinM,
+): boolean {
+  return distanceM > hideWithinM && flatM > hideWithinM;
+}
+
+/** A pin the big map draws: a placed marker, or the pending one the picker is open to place. */
+export interface MapPin {
+  icon: string;
+  rgb: string;
+  x: number;
+  z: number;
+  pending: boolean;
+}
+
+/** The spot a new marker goes and the picker's look for it, while the picker is open to place it. */
+export interface PendingPin {
+  face: number;
+  x: number;
+  z: number;
+  icon: string;
+  rgb: string;
+}
+
+/** The big map's pins on `face`: the markers there, then the pending one (drawn over them). */
+export function bigMapPins(
+  markers: readonly MapMarker[],
+  face: number,
+  pending: PendingPin | null,
+): MapPin[] {
+  const out: MapPin[] = markers
+    .filter((m) => m.face === face)
+    .map((m) => ({ icon: m.icon, rgb: m.rgb, x: m.x, z: m.z, pending: false }));
+  if (pending?.face === face) {
+    out.push({ icon: pending.icon, rgb: pending.rgb, x: pending.x, z: pending.z, pending: true });
+  }
+  return out;
+}
+
+/**
  * Where a waypoint goes on a `w` × `h` screen from its projection ([x, y] −1..1 across the view, +y
  * up, and its depth; `Client.markerScreen`): its pixel, and whether it is on screen. Off screen
  * (or behind) it is pulled along the line from the centre to the screen's edge, `edgePx` inside.

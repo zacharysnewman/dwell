@@ -29,10 +29,13 @@ import {
   MapFilters,
   SHRINE_MAP,
   browserStorage,
-  cellsFor,
+  ShrineSites,
+  clusterShrines,
   filterLayers,
   markerLayer,
   parseShrines,
+  shrineCellsIn,
+  shrinesShownAt,
   visibleShrines,
 } from './mapShrines';
 import {
@@ -45,8 +48,11 @@ import {
   iconSvg,
   markersInRange,
   pickMarker,
+  type PendingPin,
+  bigMapPins,
   waypointAlpha,
   waypointOnScreen,
+  waypointShown,
 } from './markers';
 import { AUTO_MARKERS, MARKER_WORLD } from './markers.gen';
 import { MarkerPicker } from './markerPicker';
@@ -1315,6 +1321,10 @@ export class MapUi {
   private readonly exploredTiles = new Set<string>();
   private lastBigDraw = 0;
   private bigStale = false;
+  /** The big map's shrine cells: explored ones, sited ones (BUGS.md, the whole view's shrines). */
+  private readonly shrineSites = new ShrineSites();
+  /** The spot the picker is open to place a marker at (the pending pin), if it is. */
+  private pending: { face: number; x: number; z: number } | null = null;
   /** The debug layer shown (an index into `MAP_LAYERS.layers`; −1 none) and its button. */
   private layer = -1;
   private readonly layerButton: HTMLButtonElement;
@@ -1452,6 +1462,9 @@ export class MapUi {
     this.progress.className = 'map-progress';
     this.progress.hidden = true;
     this.picker = new MarkerPicker(doc);
+    this.picker.onChange = () => {
+      if (this.pending) this.bigStale = true;
+    };
     body.append(this.bigCanvas, controls, this.scaleEl, this.progress, this.picker.root);
     // The waypoints over the world: a layer under the HUD (hud.json "waypoints").
     this.waypoints = doc.createElement('div');
@@ -1614,17 +1627,40 @@ export class MapUi {
     return this.markers.all.filter((m) => this.filters.shows(markerLayer(m)));
   }
 
-  /** The shrines the big map shows in view `v` (the filter, the reveal rule). */
+  /**
+   * The shrines the big map shows in view `v` (the filter, the reveal rule, the zoom), over the
+   * whole view: the cells with explored ground (every one when revealed) sited within a budget a
+   * draw, the rest the next draws (BUGS.md: once a square patch round the view's centre).
+   */
   shownShrines(v: BigView, w: number, h: number): { x: number; z: number }[] {
     if (!this.client.mapShrines || !this.filters.shows('shrine')) return [];
-    const [cx, cz] = toWorld(v, 0, 0);
+    if (!shrinesShownAt(v.pxPerM)) return [];
     const [ax, az] = toWorld(v, -w / 2, -h / 2);
-    const span = Math.hypot(ax - cx, az - cz) * 2;
-    const sites = parseShrines(this.client.mapShrines(v.face, cx, cz, cellsFor(span)));
+    const [bx, bz] = toWorld(v, w / 2, h / 2);
+    const margin = SHRINE_MAP.iconPx / v.pxPerM;
+    const bounds = {
+      x0: Math.min(ax, bx) - margin,
+      z0: Math.min(az, bz) - margin,
+      x1: Math.max(ax, bx) + margin,
+      z1: Math.max(az, bz) + margin,
+    };
+    const revealed = this.client.mapRevealed() || SHRINE_MAP.reveal === 'all';
+    const cells = shrineCellsIn(bounds, worldRadiusM()).filter(
+      ([i, k]) => revealed || this.shrineSites.hasExplored(v.face, i, k),
+    );
+    const sites = this.client.mapShrines.bind(this.client);
+    const t0 = performance.now();
+    const { shrines, pending } = this.shrineSites.gather(
+      v.face,
+      cells,
+      (x, z) => sites(v.face, x, z, 0),
+      () => performance.now() - t0 > SHRINE_MAP.siteMsPerDraw,
+    );
+    if (pending > 0) this.bigStale = true;
     const cell = MAP.explored.cellM;
     const explored = (x: number, z: number) =>
       this.cells.has(cellKey(v.face, Math.floor(x / cell), Math.floor(z / cell)));
-    return visibleShrines(sites, true, explored, this.client.mapRevealed());
+    return visibleShrines(shrines, true, explored, this.client.mapRevealed());
   }
 
   stepLayer(): void {
@@ -1702,6 +1738,11 @@ export class MapUi {
   /** An explored cell came or changed: at every level its tiles have explored cells and are stale. */
   private noteCell(key: string): void {
     this.levels.note(key);
+    {
+      const [face = 0, i = 0, k = 0] = key.split(',').map(Number);
+      const e = MAP.explored.cellM;
+      this.shrineSites.noteExplored(face, (i + 0.5) * e, (k + 0.5) * e);
+    }
     const n = this.reveal.tileCells;
     for (const { cellM } of LEVELS) {
       const tiles = this.levels.tilesOf(cellM, key, n);
@@ -1921,11 +1962,11 @@ export class MapUi {
       this.markers.noteAuto('death', { face: df, x: dx, y: dy, z: dz });
     }
     this.wasDead = dead !== 0;
-    this.drawWaypoints(face);
+    this.drawWaypoints(face, x, z);
   }
 
   /** The waypoints over the markers' spots on the player's face (none while the big map is open). */
-  private drawWaypoints(face: number): void {
+  private drawWaypoints(face: number, px: number, pz: number): void {
     const screen = this.client.markerScreen?.bind(this.client);
     const shown = new Set<number>();
     const w = this.doc.defaultView?.innerWidth ?? 1000;
@@ -1938,6 +1979,8 @@ export class MapUi {
           screen(m.face, m.x, m.y + 1.5, m.z),
         );
         if (dist > MARKER_WORLD.showM) continue;
+        // One at or under the camera (standing on it) shows none, not one pinned to an edge.
+        if (!waypointShown(dist, Math.hypot(m.x - px, m.z - pz))) continue;
         shown.add(m.id);
         const el = this.waypoint(m);
         const at = waypointOnScreen(nx, ny, depth, w, h);
@@ -1991,6 +2034,13 @@ export class MapUi {
     return pf === face ? py : 0;
   }
 
+  /** The pending pin: the spot the picker is open to place a marker at, in the draft's look. */
+  private pendingPin(): PendingPin | null {
+    if (!this.pending || !this.picker.open) return null;
+    const { icon, rgb } = this.picker.look;
+    return { ...this.pending, icon, rgb };
+  }
+
   /** A click on the open map: edit the marker under it, else place one there. */
   private mapClick(px: number, py: number): void {
     const v = this.state.view;
@@ -2007,9 +2057,13 @@ export class MapUi {
     const c = this.bigCanvas;
     const [x, z] = toWorld(v, px - (c.width || 800) / 2, py - (c.height || 600) / 2);
     const face = v.face;
+    this.pending = { face, x, z };
     this.picker.openFor(undefined, (r) => {
+      this.pending = null;
+      this.bigStale = true;
       if (r.kind === 'save') this.markers.place(r.look, { face, x, y: this.placeY(face), z });
     });
+    this.drawBig();
   }
 
   /** Tile (ti, tk) of a level's tinted image (null: nothing in it to draw), made again when stale. */
@@ -2092,20 +2146,52 @@ export class MapUi {
       ctx.drawImage(layerImg, 0, 0, Math.abs(bx - ax), Math.abs(by - ay));
       ctx.restore();
     }
-    // The shrines (docs/SHRINES.md): their vector icon, glowing, under the markers.
-    for (const sh of this.shownShrines(v, w, h)) {
+    // The shrines (docs/SHRINES.md): their vector icon, glowing, under the markers; icons nearer
+    // than `clusterPx` merged into one with a count (BUGS.md: no overlapping block zoomed out).
+    const shrinePx = this.shownShrines(v, w, h).map((sh) => {
       const [sx, sy] = toScreen(v, sh.x, sh.z);
+      return { x: w / 2 + sx, y: h / 2 + sy };
+    });
+    for (const c of clusterShrines(shrinePx, SHRINE_MAP.clusterPx)) {
       ctx.save();
       ctx.shadowColor = SHRINE_MAP.color;
       ctx.shadowBlur = SHRINE_MAP.iconPx / 2;
-      drawIcon(ctx, SHRINE_MAP.icon, SHRINE_MAP.color, w / 2 + sx, h / 2 + sy, SHRINE_MAP.iconPx);
+      drawIcon(ctx, SHRINE_MAP.icon, SHRINE_MAP.color, c.x, c.y, SHRINE_MAP.iconPx);
       ctx.restore();
+      if (c.count > 1) {
+        ctx.save();
+        ctx.font = `bold ${String(Math.round(SHRINE_MAP.iconPx * 0.6))}px sans-serif`;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'top';
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = MAP.bigMap.fogColor;
+        const tx = c.x + SHRINE_MAP.iconPx * 0.35;
+        const ty = c.y + SHRINE_MAP.iconPx * 0.2;
+        ctx.strokeText(String(c.count), tx, ty);
+        ctx.fillStyle = SHRINE_MAP.color;
+        ctx.fillText(String(c.count), tx, ty);
+        ctx.restore();
+      }
     }
     this.updateControls();
-    // The markers on this face (those the filters show).
-    for (const m of this.shownMarkers()) {
-      const p = this.markerPx(m);
-      if (p) drawIcon(ctx, m.icon, m.rgb, p[0], p[1], 22);
+    // The markers on this face (those the filters show), and the pending one the picker is open
+    // to place, ringed, at the clicked spot until it is saved or cancelled (BUGS.md).
+    for (const pin of bigMapPins(this.shownMarkers(), v.face, this.pendingPin())) {
+      const [sx, sy] = toScreen(v, pin.x, pin.z);
+      const [px, py] = [w / 2 + sx, h / 2 + sy];
+      if (pin.pending) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(px, py, 15, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.35)';
+        ctx.fill();
+        ctx.setLineDash([4, 3]);
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = 'white';
+        ctx.stroke();
+        ctx.restore();
+      }
+      drawIcon(ctx, pin.icon, pin.rgb, px, py, 22);
     }
     const [face = 0, x = 0, z = 0, yaw = 0] = this.client.mapPose();
     if (face !== v.face) return;

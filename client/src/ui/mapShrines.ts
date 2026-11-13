@@ -14,6 +14,12 @@ export interface ShrineMapRules {
   icon: string;
   color: string;
   iconPx: number;
+  /** Icons nearer than this on screen (px, each axis) merge into one with a count. */
+  clusterPx: number;
+  /** None show when the grid's spacing draws under this many px (zoomed far out). */
+  minSpacingPx: number;
+  /** The most time (ms) a draw spends siting cells not sited before; the rest the next draws. */
+  siteMsPerDraw: number;
 }
 
 /** The map's rules for shrines (shrines.json `map`; `gen.mjs` validates them). */
@@ -35,9 +41,150 @@ export function parseShrines(flat: ArrayLike<number>): MapShrine[] {
   return out;
 }
 
-/** How many grid cells round the view's centre the map asks for to cover a view `spanM` across. */
-export function cellsFor(spanM: number, spacing: number = SHRINE_SPACING): number {
-  return Math.min(4, Math.max(1, Math.ceil(spanM / 2 / spacing)));
+/** A face-local box (m). */
+export interface MapBounds {
+  x0: number;
+  z0: number;
+  x1: number;
+  z1: number;
+}
+
+/**
+ * The shrine grid's cells (i, k) the box `b` touches, on the disc of `radiusM` (a cell whose
+ * nearest point lies off the disc holds no shrine): the whole view, however far out it is zoomed
+ * (BUGS.md: the map once asked for a square of at most 4 cells round the view's centre).
+ */
+export function shrineCellsIn(
+  b: MapBounds,
+  radiusM: number,
+  spacing: number = SHRINE_SPACING,
+): [number, number][] {
+  const near = (lo: number, hi: number) => Math.max(lo, Math.min(0, hi));
+  const i0 = Math.floor(Math.max(b.x0, -radiusM) / spacing);
+  const i1 = Math.ceil(Math.min(b.x1, radiusM) / spacing) - 1;
+  const k0 = Math.floor(Math.max(b.z0, -radiusM) / spacing);
+  const k1 = Math.ceil(Math.min(b.z1, radiusM) / spacing) - 1;
+  const out: [number, number][] = [];
+  for (let k = k0; k <= k1; k++) {
+    for (let i = i0; i <= i1; i++) {
+      const nx = near(i * spacing, (i + 1) * spacing);
+      const nz = near(k * spacing, (k + 1) * spacing);
+      if (nx * nx + nz * nz <= radiusM * radiusM) out.push([i, k]);
+    }
+  }
+  return out;
+}
+
+/** Whether the map shows shrines at `pxPerM`: the grid's spacing draws at least `minSpacingPx`. */
+export function shrinesShownAt(
+  pxPerM: number,
+  rules: ShrineMapRules = SHRINE_MAP,
+  spacing: number = SHRINE_SPACING,
+): boolean {
+  return spacing * pxPerM >= rules.minSpacingPx;
+}
+
+/** An icon the map draws for one shrine or several merged (`count`), at screen pixel (x, y). */
+export interface ShrineCluster {
+  x: number;
+  y: number;
+  count: number;
+}
+
+/**
+ * Screen points merged so no two icons lie nearer than `clusterPx` on either axis: each point joins
+ * the first icon within that, else starts its own (in order, so a view draws the same each time).
+ */
+export function clusterShrines(
+  points: readonly { x: number; y: number }[],
+  clusterPx: number,
+): ShrineCluster[] {
+  const out: ShrineCluster[] = [];
+  const buckets = new Map<string, ShrineCluster[]>();
+  const key = (bi: number, bk: number) => `${String(bi)},${String(bk)}`;
+  for (const p of points) {
+    const bi = Math.floor(p.x / clusterPx);
+    const bk = Math.floor(p.y / clusterPx);
+    let into: ShrineCluster | undefined;
+    for (let dk = -1; dk <= 1 && !into; dk++) {
+      for (let di = -1; di <= 1 && !into; di++) {
+        into = buckets
+          .get(key(bi + di, bk + dk))
+          ?.find((c) => Math.abs(c.x - p.x) < clusterPx && Math.abs(c.y - p.y) < clusterPx);
+      }
+    }
+    if (into) {
+      into.count++;
+      continue;
+    }
+    const c = { x: p.x, y: p.y, count: 1 };
+    out.push(c);
+    const k = key(bi, bk);
+    const list = buckets.get(k);
+    if (list) list.push(c);
+    else buckets.set(k, [c]);
+  }
+  return out;
+}
+
+/**
+ * The big map's shrine cells: which hold explored ground (so a fogged cell is never sited), and
+ * which were sited (the crate caches them, so asking again is cheap) — new cells are sited within
+ * a budget a draw, the rest the next draws.
+ */
+export class ShrineSites {
+  private readonly explored = new Set<string>();
+  private readonly sited = new Set<string>();
+
+  constructor(private readonly spacing: number = SHRINE_SPACING) {}
+
+  private key(face: number, i: number, k: number): string {
+    return `${String(face)},${String(i)},${String(k)}`;
+  }
+
+  /** Explored ground at face-local (x, z) on `face`. */
+  noteExplored(face: number, x: number, z: number): void {
+    const s = this.spacing;
+    this.explored.add(this.key(face, Math.floor(x / s), Math.floor(z / s)));
+  }
+
+  hasExplored(face: number, i: number, k: number): boolean {
+    return this.explored.has(this.key(face, i, k));
+  }
+
+  /**
+   * The shrines of `cells` on `face`: `site(x, z)` gives a cell's (asked at its centre; `mapShrines`
+   * with no cells round it), a cell not sited before only while `overBudget()` is false; `pending`
+   * counts those left. A shrine two cells give (the spawn's) is listed once.
+   */
+  gather(
+    face: number,
+    cells: readonly (readonly [number, number])[],
+    site: (x: number, z: number) => ArrayLike<number>,
+    overBudget: () => boolean,
+  ): { shrines: MapShrine[]; pending: number } {
+    const s = this.spacing;
+    const seen = new Set<string>();
+    const shrines: MapShrine[] = [];
+    let pending = 0;
+    for (const [i, k] of cells) {
+      const key = this.key(face, i, k);
+      if (!this.sited.has(key)) {
+        if (overBudget()) {
+          pending++;
+          continue;
+        }
+        this.sited.add(key);
+      }
+      for (const sh of parseShrines(site((i + 0.5) * s, (k + 0.5) * s))) {
+        const at = `${String(sh.x)},${String(sh.z)}`;
+        if (seen.has(at)) continue;
+        seen.add(at);
+        shrines.push(sh);
+      }
+    }
+    return { shrines, pending };
+  }
 }
 
 /**

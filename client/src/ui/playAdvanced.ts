@@ -29,6 +29,20 @@ export function spawnChoices(): OverrideOption[] {
   return field?.kind === 'choice' ? field.options.filter((o) => isSpawn(o.value)) : [];
 }
 
+/**
+ * The parameters the New world form above More options holds itself (its Type and World, Seed and
+ * Spawn): More options doesn't repeat them, and its Play takes them from the form (BUGS.md: the
+ * copies repeated the fields and had no Realistic choice).
+ */
+export const NEW_WORLD_FORM_PARAMS: readonly string[] = ['world', 'seed', 'spawn'];
+
+/** More options' fields: Play advanced's, less those the New world form holds. */
+export function moreOptionsFields(
+  fields: readonly OverrideField[] = OVERRIDE_FIELDS,
+): OverrideField[] {
+  return fields.filter((f) => !NEW_WORLD_FORM_PARAMS.includes(f.param));
+}
+
 /** Every parameter Play advanced may set (ui/launch.ts drops them on the next route). */
 export const OVERRIDE_PARAMS: readonly string[] = OVERRIDE_FIELDS.map((f) => f.param);
 
@@ -90,10 +104,14 @@ export function advancedRoute(
   return { route };
 }
 
-/** The panel: a field per override and its Play button, which calls `go` with the route. */
+/**
+ * The panel: a field per override and its Play button, which calls `go` with the route (with
+ * `base()`'s parameters, the fields another form holds, added).
+ */
 export function playAdvancedPanel(
   go: (route: Record<string, string>) => void,
   fields: readonly OverrideField[] = OVERRIDE_FIELDS,
+  base: () => Record<string, string> = () => ({}),
 ): HTMLFormElement {
   const form = document.createElement('form');
   form.className = 'play-advanced';
@@ -161,7 +179,7 @@ export function playAdvancedPanel(
       return;
     }
     problem.textContent = '';
-    go(result.route);
+    go({ ...result.route, ...base() });
   });
   return form;
 }
