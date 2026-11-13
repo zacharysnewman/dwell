@@ -1,4 +1,4 @@
 {
   "$comment": "The compatibility line local builds carry (docs/RELEASES.md §3): MAJOR.MINOR of client/package.json's version. crates/dwell-sim/build.rs and client/vite.config.ts read it, not package.json, so a patch release recompiles nothing; local builds are <line>.0-dev.local. Change it only with a new line (the owner's minor bump); client/src/version/line.test.ts fails when it disagrees with package.json.",
-  "line": "0.61"
+  "line": "0.62"
 }

@@ -223,7 +223,8 @@ dwell_world::both_faces!(
             .expect("the field at this river's head, on this face");
         let molten0 = p.field.depth.iter().filter(|d| **d > 0.0).count();
         // Two lava minutes later (held by the head).
-        let mut writes_seen = false;
+        let mut basalt_sent = false;
+        let basalt = dwell_blocks::require("dwell:basalt");
         for _ in 0..120 * SECOND / 60 {
             for _ in 0..60 {
                 assert!(fx.server.place_on_grid(1, at, [0.0; 3]));
@@ -233,8 +234,10 @@ dwell_world::both_faces!(
                 fx.server.step();
                 worst_ms = worst_ms.max(t0.elapsed().as_secs_f64() * 1e3);
                 for o in fx.server.take_outbox() {
-                    if let Some(Message::ChunkData(c)) = Message::decode(&o.bytes) {
-                        writes_seen |= c.grid == sun_index();
+                    if let Some(Message::ChunkData(c)) = Message::decode(&o.bytes)
+                        && c.grid == sun_index()
+                    {
+                        basalt_sent |= c.voxels.iter().any(|&m| f.state(m) == basalt);
                     }
                 }
             }
@@ -258,7 +261,16 @@ dwell_world::both_faces!(
         assert!(p.field.tiles().len() <= fl.max_tiles as usize);
         let at_vent = p.field.slot(0, 0).unwrap();
         assert!(p.field.depth[at_vent] > 0.0, "still flowing at its head");
-        assert!(writes_seen, "the sun's changed chunks go to its client");
+        // Constant flowing lava stays molten (owner, 2026-11-13: lava hardens when it stops, not
+        // while flowing): the head's river is all held hot, and no rock was written into the sun's
+        // chunks (a flowing river over the rift's own hot lava changes no cell, so none is sent).
+        assert!(!basalt_sent, "the sun's flowing river hardened");
+        let flowing = (0..p.field.depth.len()).filter(|&i| p.field.depth[i] > 0.0);
+        let hot = flowing.clone().filter(|&i| p.field.heat[i] >= 1.0).count();
+        assert!(
+            hot * 10 >= flowing.count() * 9,
+            "the river stays molten: {hot} hot columns"
+        );
         // Its hot cells are in the sun's chunks.
         let [x, z] = p.field.origin;
         let rows = p.field.lava_rows(at_vent);
@@ -268,6 +280,11 @@ dwell_world::both_faces!(
         assert!(
             dwell_sim::lava::hot_fluid_of(m).is_some(),
             "lava in the sun's chunk at its head"
+        );
+        assert_eq!(
+            m,
+            dwell_sim::lava::heat_states("dwell:lava")[0],
+            "the hottest stop at its head"
         );
         assert!(lava.fields.len() <= fl.max_fields as usize);
         // A tick with the sun's lava stays inside a frame's share (native debug build).

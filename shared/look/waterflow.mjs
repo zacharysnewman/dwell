@@ -68,6 +68,7 @@ const PARTS = {
     bandSoftness: [0, 1],
     strength: [0, 1],
     wobble: [0, 1],
+    cornerRadiusM: [0, 0.5],
   },
 };
 const COLORS = { foam: ['color'], particles: ['color'] };
@@ -160,6 +161,7 @@ export function waterFlowRust(data) {
       `        shore_band_softness: ${rf(s.bandSoftness)},`,
       `        shore_strength: ${rf(s.strength)},`,
       `        shore_wobble: ${rf(s.wobble)},`,
+      `        shore_corner_radius_m: ${rf(s.cornerRadiusM)},`,
       '    },',
     ].join('\n');
   });

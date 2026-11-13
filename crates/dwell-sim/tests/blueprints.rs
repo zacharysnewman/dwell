@@ -329,3 +329,160 @@ both_faces!(
         );
     }
 );
+
+/// Stone under `BASE` and air over it across x in `xs`, z in `zs` (face-local).
+fn ground_at(fx: &mut Fixture, f: FaceFrame, xs: std::ops::Range<i32>, zs: std::ops::Range<i32>) {
+    let stone = f.state(dwell_blocks::require("dwell:stone"));
+    let air = dwell_blocks::require("dwell:air");
+    for x in xs {
+        for z in zs.clone() {
+            for r in -2..24 {
+                let [x, y, z] = f.cell([x, BASE + r, z]);
+                fx.server
+                    .world()
+                    .set_voxel(x, y, z, if r < 0 { stone } else { air });
+            }
+        }
+    }
+}
+
+both_faces!(
+    fn a_town_site_near_a_player_is_founded_once_its_plan_s_blueprints_on_the_ground(f: FaceFrame) {
+        let db = WorldDb::in_memory().expect("db");
+        let rules = dwell_world::blueprint::Rules {
+            towns: dwell_world::blueprint::TownRules {
+                spacing_m: 256,
+                ..SHIPPED.towns
+            },
+            ..SHIPPED
+        };
+        let flat: dwell_worldgen::TownGround = std::sync::Arc::new(|_, _, _| Some(m_of_row(BASE)));
+        let seed = flat_seed();
+        let g = |_: i32, _: i32| Some(m_of_row(BASE));
+        let site = rules.towns.sites_near(seed, f, 0.0, 0.0, 600.0, &g)[0];
+        let layout = rules.towns.layout(&site);
+        {
+            let mut fx = Fixture::new(config(f, Some(&db)));
+            fx.server.set_blueprint_rules(rules);
+            fx.server.set_town_ground(Some(flat.clone()));
+            ground_at(
+                &mut fx,
+                f,
+                site.x - 24..site.x + 24,
+                site.z - 24..site.z + 24,
+            );
+            fx.join(1, &Client::new(1));
+            stand(
+                &mut fx,
+                f,
+                1,
+                f64::from(site.x) + 20.5,
+                f64::from(site.z) + 20.5,
+            );
+            step(&mut fx, 2 * 60 + 2);
+            let list = fx.server.blueprint_list();
+            assert_eq!(list.len(), layout.len(), "the plan's blueprints");
+            for (b, (name, [x, z], turn)) in list.iter().zip(&layout) {
+                assert_eq!(&b.name, name);
+                assert_eq!(
+                    (b.face, b.at, b.turn),
+                    (u8::from(f.is_b()), [*x, BASE, *z], *turn)
+                );
+            }
+            assert_eq!(
+                fx.server.towns_founded(),
+                vec![(u8::from(f.is_b()), site.cell[0], site.cell[1])]
+            );
+            step(&mut fx, 2 * 60 + 2);
+            assert_eq!(
+                fx.server.blueprint_list().len(),
+                layout.len(),
+                "founded once"
+            );
+            fx.server.save_now();
+            fx.server.flush_store();
+        }
+        let mut fx = Fixture::new(config(f, Some(&db)));
+        fx.server.set_blueprint_rules(rules);
+        fx.server.set_town_ground(Some(flat));
+        ground_at(
+            &mut fx,
+            f,
+            site.x - 24..site.x + 24,
+            site.z - 24..site.z + 24,
+        );
+        fx.join(1, &Client::new(1));
+        stand(
+            &mut fx,
+            f,
+            1,
+            f64::from(site.x) + 20.5,
+            f64::from(site.z) + 20.5,
+        );
+        step(&mut fx, 2 * 60 + 2);
+        assert_eq!(
+            fx.server.blueprint_list().len(),
+            layout.len(),
+            "not founded again"
+        );
+        assert_eq!(fx.server.towns_founded().len(), 1);
+    }
+);
+
+#[test]
+fn a_town_site_with_no_ground_yet_waits_and_a_world_without_a_height_field_has_none() {
+    // face-a-only: the waiting and the off switch, no geometry.
+    let f = FaceFrame::A;
+    let mut fx = Fixture::new(config(f, None));
+    fx.join(1, &Client::new(1));
+    // No town ground (a test generator, the flat world): nothing founded.
+    step(&mut fx, 2 * 60 + 2);
+    assert!(fx.server.towns_founded().is_empty());
+    let rules = dwell_world::blueprint::Rules {
+        towns: dwell_world::blueprint::TownRules {
+            spacing_m: 256,
+            ..SHIPPED.towns
+        },
+        ..SHIPPED
+    };
+    fx.server.set_blueprint_rules(rules);
+    fx.server
+        .set_town_ground(Some(std::sync::Arc::new(|_, _, _| Some(m_of_row(BASE)))));
+    let g = |_: i32, _: i32| Some(m_of_row(BASE));
+    let site = rules.towns.sites_near(flat_seed(), f, 0.0, 0.0, 600.0, &g)[0];
+    stand(
+        &mut fx,
+        f,
+        1,
+        f64::from(site.x) + 0.5,
+        f64::from(site.z) + 0.5,
+    );
+    step(&mut fx, 2 * 60 + 2);
+    assert!(
+        fx.server.towns_founded().is_empty(),
+        "no ground there yet: it waits"
+    );
+    assert!(fx.server.blueprint_list().is_empty());
+    // The ground there: founded.
+    ground_at(
+        &mut fx,
+        f,
+        site.x - 24..site.x + 24,
+        site.z - 24..site.z + 24,
+    );
+    // (The player fell through the empty world meanwhile: stood on the new ground.)
+    stand(
+        &mut fx,
+        f,
+        1,
+        f64::from(site.x) + 20.5,
+        f64::from(site.z) + 20.5,
+    );
+    step(&mut fx, 2 * 60 + 2);
+    assert_eq!(fx.server.towns_founded().len(), 1);
+}
+
+/// The seed the fixture's server runs with.
+fn flat_seed() -> u64 {
+    config(FaceFrame::A, None).world_seed
+}

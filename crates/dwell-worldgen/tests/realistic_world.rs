@@ -281,7 +281,7 @@ dwell_world::both_faces!(
 );
 
 /// The Realistic map builds in at most 1.6× the default's time (best of three each). 1.3× until
-/// the realistic batch (0.61): its plates run out to the rim (two to three times the land to
+/// the realistic batch (0.62): its plates run out to the rim (two to three times the land to
 /// erode), its relief reads turned, warped noise and its erosion draws each step's routing
 /// (part B: about +0.4 s each on seed 7 after the warp and coast were shared between the height
 /// and the swells and the routing's interior cells unchecked), so the map is ~1.45× the default's.

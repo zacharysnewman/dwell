@@ -547,7 +547,7 @@ face, or the placement check against its shape.
 
 ## Fixed
 
-### 141. Red sand on humid red-desert floors cut down to the siltstone (fixed in 0.61.0)
+### 142. Red sand on humid red-desert floors cut down to the siltstone (fixed in 0.62.0)
 
 Found 2026-11-13 by the realistic batch (parts A and B together, seed 1 face A, e.g. (−7750, −8500) in the red rock
 mesa): 14 of 2137 sandstone floors were red sand where the climate is not arid, against #134's rule. Cause: the
@@ -556,6 +556,18 @@ erosion snaps a floor down to the stack's soft layer (`Cut::Floor`), the red des
 cap is `dwell:red_sandstone` with `capBy` `[{"arid": "dwell:red_sand"}]`, as the sandstone's. Test:
 `tests/realistic_rocks.rs` `the_red_desert_floors_are_red_sand`, red at 14 of 2137 (over its 1 in 200), green after;
 the default's goldens unchanged; the starter's red rock mesa has the same stack, so its terrain pin (`tests/starter_memory.rs`) is re-pinned on this line.
+### 141. Lava expired into rock and "all just goes away" (fixed after 0.60.11)
+
+Owner, 2026-11-13: "Another thing I observed, I think Lava needs to not just expire into rock, since it all just goes
+away then, it should solidify when it stops moving, touches water, or is a source block, not while flowing." Cause: lava
+cooled by time (`coolingSeconds`, faster at its edges and when thin), flowing or not, so a river's spreading margins and
+its thinning sheet hardened while it still ran; lava under a quarter metre deep fills no ½ m cell, so a thin sheet
+hardening left no visible rock either, and the flow seemed to vanish. Fixed by hardening by rule (VOLCANOES.md §6.6,
+WORK_QUEUE item 8): flowing lava never hardens, lava at rest hardens after `restSeconds` into rock in the cells it
+filled, sources and lava within `sourceKeepM` of one stay molten, water quenches any. Tests (both faces,
+`crates/dwell-lava/tests/lava.rs`): the river, the tongue and the source-distance tests failed on the old code (the
+channel hardened while flowing; a tongue hardened at 18 s, before a rest; a pool 1 m from a source hardened) and pass.
+
 ### 140. The player character floats a bit above the ground (scaled up, 2026-11-13)
 
 Owner, 2026-11-13: "I think my player character is floating a bit above the ground now. We didn't talk about

@@ -250,10 +250,9 @@ fn the_starter_river_runs_its_course() {
                 match k {
                     "visc" => fl.viscosity_m2s = val,
                     "yield" => fl.yield_depth_m = val,
-                    "cool" => fl.cooling_seconds = val,
-                    "edge" => fl.edge_cooling = val,
-                    "thin" => fl.thin_depth_m = val,
-                    "tube" => fl.tube_speed_ms = val,
+                    "rest" => fl.rest_seconds = val,
+                    "still" => fl.still_ms = val,
+                    "keep" => fl.source_keep_m = val,
                     "breakout" => fl.breakout_depth_m = val,
                     "rate" => rate = val,
                     "step" => rules.step_depth_m = val,

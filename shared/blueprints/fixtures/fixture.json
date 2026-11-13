@@ -20,5 +20,33 @@
   },
   "catalog": [
     "test:ladder_post"
-  ]
+  ],
+  "towns": {
+    "spacingM": 1200,
+    "jitter": 0.6,
+    "attempts": 8,
+    "heightM": [
+      2,
+      600
+    ],
+    "maxSlopeDeg": 12,
+    "footprintM": 32,
+    "foundM": 128,
+    "plans": [
+      {
+        "name": "test:camp",
+        "weight": 2,
+        "blueprints": [
+          {
+            "structure": "test:ladder_post",
+            "at": [
+              1,
+              -1
+            ],
+            "turn": 2
+          }
+        ]
+      }
+    ]
+  }
 }

@@ -2,14 +2,56 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
-      "version": "0.61.0",
+      "version": "0.62.0",
       "changes": [
         "Realistic worlds: a new compatibility line, their terrain redrawn from the seed (older Realistic worlds open in their own version)",
         "Realistic rifts are chains of lakes that open as gulfs at the sea; a continent and an ocean pulling apart make a wide shelf, and closing oceans an island arc",
         "Realistic plates all have room inland, ranges rise and dip into peaks and saddles, and continents run out toward the world's edge instead of a ring of sea",
-        "Realistic interiors mix rock provinces, vary rain and temperature by district, roll in basins and swells, and lose the grid-aligned streaks in eroded slopes",
-        "Blueprints: place a structure as ghost blocks from the Structures page, and hold Place while aiming into it to fill its ghost cells; anyone in the world can build it",
-        "Builders (villagers without swords) come and build blueprints near you; ghosts you can't fill show red, a small panel lists the blocks you have and need, and four test blueprints are included (hut, wall, well, watchtower)"
+        "Realistic interiors mix rock provinces, vary rain and temperature by district, roll in basins and swells, and lose the grid-aligned streaks in eroded slopes"
+      ]
+    },
+    {
+      "version": "0.61.2",
+      "changes": [
+        "The sword has its own swings: a level slash and an overhead cut, timed so the blade lands as it hits",
+        "Other players and villagers swing their swords with the new slashes",
+        "Wolves bite back: strike one and it turns on you, and enough bites leave you kneeling in defeat",
+        "A creature struck by a sword flinches and flashes red"
+      ]
+    },
+    {
+      "version": "0.61.1",
+      "changes": [
+        "Behind the scenes: test fixes"
+      ]
+    },
+    {
+      "version": "0.61.0",
+      "changes": [
+        "Towns: hamlets of blueprints are sited across both faces of every world, and builders come to build them when you are near",
+        "A hamlet: a well, two huts, a watchtower and a wall, laid out from data, kept clear of the shrines and portals",
+        "New compatibility line: generated worlds now hold towns, so worlds from 0.60 open in 0.60 builds"
+      ]
+    },
+    {
+      "version": "0.60.18",
+      "changes": [
+        "Lava no longer hardens while it flows: a river fed by its vent stays molten its whole length.",
+        "Lava that stops moving darkens and hardens into basalt where it lies, keeping its volume as new rock.",
+        "Lava at a vent, and within a few metres of one, stays molten; water still turns any lava to obsidian at once."
+      ]
+    },
+    {
+      "version": "0.60.17",
+      "changes": [
+        "Hold Break with an empty hand (or holding a block or any non-tool item) to keep punching: dig dirt by hand without clicking every hit",
+        "Punches land at a steady rate, the same whether clicked or held, and the controller's trigger holds them too"
+      ]
+    },
+    {
+      "version": "0.60.16",
+      "changes": [
+        "Shore foam now rounds outer corners and curves into inner ones instead of squaring off at blocky edges."
       ]
     },
     {

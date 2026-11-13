@@ -263,9 +263,17 @@ impl Animator {
 
     /// Starts a swing (an edit's break or place) on the action layer.
     pub fn swing(&mut self, s: Swing) {
+        self.swing_as(s, s.role());
+    }
+
+    /// Starts swing `s` playing the character's `role` (a tool's `clips`: the sword's
+    /// `slash_level`, WORK_QUEUE item 35); a character without that role's clip plays the swing's
+    /// own role, then its `break`.
+    pub fn swing_as(&mut self, s: Swing, role: &'static str) {
         let found = self
-            .clip_of(s.role())
-            .map(|c| (s.role(), c))
+            .clip_of(role)
+            .map(|c| (role, c))
+            .or_else(|| self.clip_of(s.role()).map(|c| (s.role(), c)))
             .or_else(|| self.clip_of("break").map(|c| ("break", c)));
         if let Some((role, clip)) = found {
             self.action = Some(Playing { role, clip, t: 0.0 });

@@ -762,6 +762,7 @@ pub fn creature_draw(
             super::skinned::remap_floats(&dwell_models::part_remap(parts.as_ref(), &n.colours))
         }),
         idle_pose: c.pose,
+        tint: c.tint,
     };
     (draw, held)
 }
@@ -1293,6 +1294,7 @@ impl CharacterRenderer {
                         grip: None,
                         remap: super::skinned::NO_REMAP,
                         idle_pose: None,
+                        tint: crate::render::skinned::NO_TINT,
                     },
                     forward: basis.forward(),
                     body: b,
@@ -1329,6 +1331,7 @@ impl CharacterRenderer {
                     grip: item_name(d.held),
                     remap: super::skinned::NO_REMAP,
                     idle_pose: None,
+                    tint: crate::render::skinned::NO_TINT,
                 });
                 held_items.push(HeldOnSkin {
                     held: d.held,
@@ -1937,6 +1940,7 @@ mod tests {
                         grip: Some(name),
                         remap: crate::render::skinned::NO_REMAP,
                         idle_pose: None,
+                        tint: crate::render::skinned::NO_TINT,
                     };
                     let place = body_matrix(&d, data, [0.0; 3]);
                     let p = dwell_models::anim::Player::new(data, model, "idle");
@@ -1995,6 +1999,7 @@ mod tests {
                 npc,
                 pose: None,
                 pose_s: 0.0,
+                tint: [0.0; 4],
             };
             let (a, held) = creature_draw(ch, &view(Some(npc(99))), [1.0, 0.0], 0.0);
             assert_eq!(held, Held::Model { hold: "sword", model: "sword" });
@@ -2550,7 +2555,8 @@ mod tests {
             }
         }
 
-        /// The poses swept: each base role's clip at six phases, and the swings on the idle and walk
+        /// The poses swept: each base role's clip (but the defeat's, drawn only in third person)
+        /// at six phases, and the swings on the idle and walk
         /// (named `role phase` and `role+swing phase`), and whether the eye is the crouch's.
         fn poses() -> Vec<(String, bool, Pose)> {
             let ch = dwell_characters::player();
@@ -2559,6 +2565,11 @@ mod tests {
             for &(role, c) in ch.clips {
                 let clip = TABLES.clip(c);
                 if clip.layer != dwell_characters::Layer::Base {
+                    continue;
+                }
+                // The defeat's kneel and stand (§11.13, 0.60.7) are never your own body in first
+                // person: defeated, the view is third person over the body (`set_own_body(None)`).
+                if dwell_characters::animator::is_defeat_role(role) {
                     continue;
                 }
                 for k in 0..6 {
@@ -2815,6 +2826,7 @@ mod tests {
                 grip: None,
                 remap: crate::render::skinned::NO_REMAP,
                 idle_pose: None,
+                tint: crate::render::skinned::NO_TINT,
             }
         }
 

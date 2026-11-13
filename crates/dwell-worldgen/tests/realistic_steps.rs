@@ -16,7 +16,7 @@ use dwell_worldgen::terrain::TerrainGenerator;
 use dwell_worldgen::worldmap::WorldMap;
 
 const NAME: &str = "test:realistic";
-/// The seed the census reads (42 before the realistic batch's plates, 0.61, whose wider continents
+/// The seed the census reads (42 before the realistic batch's plates, 0.62, whose wider continents
 /// put its bedded ground on flat plains; 7 has bedded hills on both faces).
 const SEED: u64 = 7;
 /// A drop to a neighbouring column at least this tall (m) is a wall: the column is stepped.

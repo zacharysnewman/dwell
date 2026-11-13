@@ -222,14 +222,16 @@ fn the_tiles_followed_the_river(run: &Run) {
 
 both_faces!(
     fn a_field_adds_the_tiles_its_lava_reaches_and_drops_the_ones_all_rock(f: FaceFrame) {
-        // A short river: then its vent stops, it all cools to rock, and its tiles go.
+        // A short river: then its vent stops, its lava drains down the flank (flowing lava stays
+        // molten), stops, hardens to rock where it stopped, and its tiles go (in about 95 lava
+        // minutes: the draining sheet thins slowly toward the yield depth).
         let mut field = river(&FIXTURE);
         far(&mut field, 600.0);
         let grown = field.tiles().len();
         assert!(grown > 9, "grew: {grown} tiles");
         let rocked = field.rocked;
         field.vents.clear();
-        far(&mut field, 3600.0);
+        far(&mut field, 7200.0);
         assert_eq!(field.molten_tiles(), 0, "all rock");
         assert_eq!(field.tiles().len(), 0, "and every tile dropped");
         assert!(field.rocked > rocked, "its lava turned to rock first");
@@ -245,8 +247,14 @@ both_faces!(
             ..FIXTURE
         };
         let mut field = river(&rules);
-        let events = far(&mut field, 1800.0);
-        assert!(field.tiles().len() <= 16, "{} tiles", field.tiles().len());
+        let mut events = Vec::new();
+        // Every tile it held during the run (a tile all rock is dropped, freeing the cap).
+        let mut held = std::collections::BTreeSet::new();
+        for _ in 0..60 {
+            events.extend(far(&mut field, 30.0));
+            assert!(field.tiles().len() <= 16, "{} tiles", field.tiles().len());
+            held.extend(field.tiles().iter().copied());
+        }
         assert!(field.refused > 0, "the cap refused tiles");
         // Its lava stays within the tiles it has: walls at their edges.
         let edge = field
@@ -256,9 +264,10 @@ both_faces!(
             .max()
             .unwrap();
         assert!(reach(&field) < edge);
+        let t = TILE as i32;
         assert!(events.iter().all(|e| match e {
             LavaEvent::Rock { x, z, .. } | LavaEvent::Melt { x, z, .. } =>
-                field.slot_any(*x, *z).is_some() || *x < edge,
+                held.contains(&[x.div_euclid(t), z.div_euclid(t)]),
             LavaEvent::Steam { .. } => true,
         }));
         assert_eq!(field.check_links(), Ok(()));
@@ -484,12 +493,12 @@ both_faces!(
 );
 
 both_faces!(
-    // Whether a river reaches the sea is the physics' (owner, 2026-11-11: "sometimes it may, other
-    // times it may not"): the same lava from a weak vent on a shallow slope crusts and stops short,
-    // its front standing still far from the shore, while the strong vent on the steep flank above
-    // reaches it. (0.2 m³/s: the front runs ~150 m in 45 lava minutes and stands; at 0.3 it
-    // still ran ~50 m every 15 minutes at the hour.)
-    fn a_weak_vent_on_a_shallow_slope_crusts_and_stops_short(f: FaceFrame) {
+    // Owner, 2026-11-13: lava hardens "when it stops moving ..., not while flowing". A weak vent on
+    // a shallow slope keeps its river running as long as it pours: its front moves on every 15 lava
+    // minutes, slower than the strong vent on the steep flank, and only its still margins harden.
+    // (Before, cooling by time stopped it short: owner 2026-11-11, "sometimes it may, other times
+    // it may not" reach the sea. Under the rest rule a fed river always runs on; WORK_QUEUE item 8.)
+    fn a_weak_vents_river_runs_on_while_it_pours(f: FaceFrame) {
         let slope = 0.03;
         let mut field = Field::growing(&FIXTURE, "test:runny").unwrap();
         field.cover(
@@ -524,18 +533,13 @@ both_faces!(
             }
             at.push(reach_on(&field));
         }
-        // It ran a while (well past its vent), then its front crusted and stood still, far short
-        // of the shore 1.1 km off, with no land in the sea.
-        let (last, before) = (at[at.len() - 1], at[at.len() - 2]);
+        // It ran past its vent and moved on every 15 minutes, never crusting over its channel.
         assert!(at[0] > 20, "it ran: front every 15 min {at:?}");
-        assert!(last - before <= 5, "its front stopped: {at:?}");
-        assert!(last < SHORE / 4, "short of the shore: {at:?}");
-        assert_eq!(land(&field), 0, "no new land");
         assert!(
-            field.rocked > 100.0,
-            "it crusted: {:.0} m³ of rock",
-            field.rocked
+            at.windows(2).all(|w| w[1] > w[0] + 10),
+            "its front kept moving: {at:?}"
         );
+        assert!(field.stored() > 100.0, "molten: {:.0} m³", field.stored());
         let _ = f;
     }
 );

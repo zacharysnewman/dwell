@@ -93,7 +93,7 @@ dwell_world::both_faces!(
         let pp = &GEOLOGY.plate_provinces;
         let mut counts = [0usize; 5];
         // The seeds, and the face's first seed whose continents collide on land (since the
-        // realistic batch's plates, 0.61, the fixed seeds need not hold one).
+        // realistic batch's plates, 0.62, the fixed seeds need not hold one).
         let collide = (0..100u64)
             .find(|&w| {
                 let t = PlateTectonics::for_seed(face_seed(w, f.face));

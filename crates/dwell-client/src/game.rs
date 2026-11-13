@@ -858,6 +858,8 @@ pub struct Game<S: Scene> {
     body_target: Option<crate::pieces::BodyHit>,
     /// When the last body edit went (ms), for the edit interval.
     body_edit_ms: f64,
+    /// When the last punch short of breaking was sent (ms; `breaking.hand.repeatS` apart).
+    punch_ms: Option<f64>,
     /// Settled pieces drawn gliding into their blocks' places (docs/FELLING.md §4.1).
     glides: crate::settle_glide::Glides,
     recent: VecDeque<InputFrame>,
@@ -1155,6 +1157,7 @@ impl<S: Scene> Game<S> {
             pieces: crate::pieces::Pieces::default(),
             body_target: None,
             body_edit_ms: f64::NEG_INFINITY,
+            punch_ms: None,
             glides: crate::settle_glide::Glides::default(),
             recent: VecDeque::new(),
             accumulator: 0.0,
@@ -1428,6 +1431,7 @@ impl<S: Scene> Game<S> {
         if let Some((vertical, _)) = held {
             self.chop.vertical = vertical;
         }
+        self.bodies.own_tool = self.held_tool().map(|t| t.name);
         self.bodies.hold_swing(held.map(|(vertical, t)| {
             let s = if vertical {
                 Swing::ChopVertical
@@ -2566,6 +2570,20 @@ impl<S: Scene> Game<S> {
         if contact_s > 0.0 && self.pending_hits.busy(now_ms) {
             return false;
         }
+        // A punch short of breaking comes at most every `breaking.hand.repeatS`, as the server
+        // takes them (WORK_QUEUE item 17): clicked or held, one punch per swing of the arms.
+        let punch =
+            action == EditAction::Break && tool_item.is_none() && self.held_tool().is_none() && {
+                let [x, y, z] = target.cell;
+                let name = dwell_blocks::block_of(self.voxel(x, y, z)).name;
+                self.hits_to_break(name).is_some_and(|n| n > 1)
+            };
+        if punch
+            && let (Some(r), Some(last)) = (dwell_protocol::chopping::HAND_REPEAT_S, self.punch_ms)
+            && now_ms - last < r * 1000.0 - 1e-6
+        {
+            return false;
+        }
         // The click starts the swing; its hit is aimed at what the crosshair holds at the contact
         // and sent then (BUGS.md #111), a miss there landing nothing.
         if contact_s > 0.0 && self.hits_at_contact {
@@ -2592,6 +2610,9 @@ impl<S: Scene> Game<S> {
             .flatten();
         match self.interaction.act(action, now_ms) {
             Some(m) => {
+                if punch {
+                    self.punch_ms = Some(now_ms);
+                }
                 // The sound first: the prediction changes the block at once.
                 let mut predict = true;
                 match (action, placement) {
@@ -2971,11 +2992,21 @@ impl<S: Scene> Game<S> {
     pub fn use_repeats(&self) -> bool {
         match self.held_tool() {
             Some(t) => t.repeat_on_hold,
-            None => {
-                crate::held_use::Repeat::of_break(self.held_break_item())
-                    != crate::held_use::Repeat::No
-            }
+            None => self.break_repeat() != crate::held_use::Repeat::No,
         }
+    }
+
+    /// How Break held repeats with no chopping tool in hand: a pickaxe's or shovel's `repeatS`, a
+    /// punch's (`breaking.hand`; WORK_QUEUE item 17) with no tool in hand, unless Break is
+    /// something else now (a creative palette tool, the brush, paste mode: one per press).
+    fn break_repeat(&self) -> crate::held_use::Repeat {
+        let item = self.held_break_item();
+        if item.is_none()
+            && (self.palette_tool().is_some() || self.brush.active() || self.region.pasting())
+        {
+            return crate::held_use::Repeat::No;
+        }
+        crate::held_use::Repeat::of_break(item)
     }
 
     /// Break held with a tool whose data repeats (`repeatOnHold`): the next swing, a whole new
@@ -2990,10 +3021,7 @@ impl<S: Scene> Game<S> {
                 crate::held_use::Repeat::of_tool(t),
                 self.chop.ready(t, now_ms),
             ),
-            None => (
-                crate::held_use::Repeat::of_break(self.held_break_item()),
-                !self.pending_hits.busy(now_ms),
-            ),
+            None => (self.break_repeat(), !self.pending_hits.busy(now_ms)),
         };
         if self.held_use.due(repeat, ready, now_ms) && self.edit(EditAction::Break, now_ms) {
             self.held_use.started(now_ms);
@@ -3098,6 +3126,10 @@ impl<S: Scene> Game<S> {
     fn on_clash(&mut self, c: &dwell_protocol::ClashNet, now_ms: f64) {
         let show = crate::swordplay::show(c, self.player_id);
         let at = c.point.map(f64::from);
+        // A hit past the defender's block: a creature shows its hurt look (WORK_QUEUE item 35).
+        if let Some(id) = crate::swordplay::hurt_creature(c) {
+            self.creatures.hurt(id, at);
+        }
         if let Some((name, volume)) = show.sound
             && let Some(k) = SoundKind::ALL.into_iter().find(|k| k.name() == name)
         {
@@ -4760,6 +4792,12 @@ impl<S: Scene> Game<S> {
         let views = self.remotes.sample(now_ms);
         // Each one's footsteps this frame, for the rustle layered on them (BUGS.md #103).
         let mut strides = dwell_world::hash::HashMap::default();
+        // Their swings play their tool's clips (WORK_QUEUE item 35: the sword's slashes).
+        self.bodies.tools = self
+            .remote_tools
+            .iter()
+            .map(|(&id, &(name, _))| (id, name))
+            .collect();
         // Their raised blocks (the server's guards, WORK_QUEUE item 35), by the weapon in hand.
         self.bodies.guards = self
             .remote_guards
@@ -4889,6 +4927,10 @@ impl<S: Scene> Game<S> {
                 // on a body (docs/DEV_TOOLS.md `puppets`).
                 if tool.is_some() {
                     use dwell_protocol::swing_flags as sf;
+                    // Your tool's clips (the sword's slashes), as another player's arrive.
+                    if let Some(t) = self.held_tool() {
+                        self.bodies.tools.insert(v.player_id, t.name);
+                    }
                     v.swing = sf::BREAK | ((now_ms / 800.0) as u64 as u8 & sf::COUNT_MASK);
                     // The chop your hand would swing, as another player's arrives (`SwingHello`).
                     v.swing_kind = if self.chop.vertical {
@@ -5974,6 +6016,7 @@ impl<S: Scene> Game<S> {
             return false;
         };
         self.chop.set_cleared(&swept.cleared);
+        self.bodies.own_tool = Some(tool.name);
         self.bodies.swing_arms(if self.chop.vertical {
             dwell_characters::animator::Swing::ChopVertical
         } else {

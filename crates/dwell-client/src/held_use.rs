@@ -6,6 +6,10 @@
 //! targeted then), sent to the server as a click's would be: others see each swing by its swing
 //! count, and a tool wears only on a hit (the server's rule, unchanged).
 //!
+//! A punch repeats too (owner, 2026-11-13: "You should also be able to hold 'punch' to dig with
+//! your hand."): Break held with no tool in hand (an empty hand, a block, any other item) punches
+//! every `breaking.hand.repeatS`, each punch landing at once on what is aimed at then.
+//!
 //! The mouse, the controller's Break and a still touch in Break mode all hold it
 //! (`Game::edit_held` / `Game::release_use`).
 
@@ -41,15 +45,10 @@ impl Repeat {
         }
     }
 
-    /// The repeat of a break with `item` held (a pickaxe, a shovel), by its data.
+    /// The repeat of a break with `item` held, by its data: a pickaxe's or a shovel's `repeatS`,
+    /// a punch's (no tool in hand: an empty hand, a block, any other item; `breaking.hand`).
     pub fn of_break(item: Option<&str>) -> Self {
-        item.and_then(|i| {
-            dwell_protocol::chopping::BREAK_TOOLS
-                .iter()
-                .find(|t| t.item == i)
-        })
-        .and_then(|t| t.repeat_s)
-        .map_or(Repeat::No, Repeat::Every)
+        dwell_protocol::chopping::break_repeat_s(item).map_or(Repeat::No, Repeat::Every)
     }
 }
 
@@ -177,10 +176,14 @@ mod tests {
                 "{p}"
             );
         }
-        // A hand, a block, an axe's break-table entry: one per press.
-        assert_eq!(Repeat::of_break(None), Repeat::No);
-        assert_eq!(Repeat::of_break(Some("dwell:stone")), Repeat::No);
+        // A punch (an empty hand, a block, another item) at the hand's rate (`breaking.hand`).
+        let hand = dwell_protocol::chopping::HAND_REPEAT_S.expect("the hand repeats on hold");
+        assert_eq!(Repeat::of_break(None), Repeat::Every(hand));
+        assert_eq!(Repeat::of_break(Some("dwell:stone")), Repeat::Every(hand));
+        assert_eq!(Repeat::of_break(Some("dwell:torch")), Repeat::Every(hand));
+        // An axe's break-table entry and a chopping tool: not as a break (the swing repeats).
         assert_eq!(Repeat::of_break(Some("dwell:stone_axe")), Repeat::No);
+        assert_eq!(Repeat::of_break(Some("dwell:sword")), Repeat::No);
         // A tool added by data alone (shared/tools/fixtures: the stick club) repeats as its data says.
         let stick = dwell_protocol::chopping::fixture::TOOLS
             .iter()
@@ -236,6 +239,39 @@ mod tests {
         assert!(held.due(Repeat::WhenReady, true, 0.0));
         held.release(Holder::Mouse);
         assert!(!held.held());
+    }
+
+    #[test]
+    fn a_held_punch_lands_every_repeat_s_until_let_go() {
+        // Owner, 2026-11-13: hold "punch" to dig with your hand. Held 2 s at 60 fps: the press and
+        // a punch every `repeatS` after it; none once let go.
+        let r = Repeat::of_break(None);
+        let Repeat::Every(s) = r else {
+            panic!("a punch repeats")
+        };
+        let mut held = HeldUse::default();
+        held.press(Holder::Gamepad);
+        held.started(0.0);
+        let (hold_s, dt) = (2.0, 1000.0 / 60.0);
+        let (mut punches, mut now) = (1, 0.0);
+        while now < (hold_s + 2.0) * 1000.0 {
+            now += dt;
+            if now >= hold_s * 1000.0 {
+                held.release(Holder::Gamepad);
+            }
+            if held.due(r, true, now) {
+                held.started(now);
+                punches += 1;
+                assert!(now < hold_s * 1000.0, "none after the release");
+            }
+        }
+        // Each repeat waits for the first frame at or past `repeatS`: within a frame of the rate.
+        let most = (hold_s / s).floor() as usize + 1;
+        let least = (hold_s * 1000.0 / (s * 1000.0 + dt)).floor() as usize + 1;
+        assert!(
+            (least..=most).contains(&punches),
+            "{punches} punches in {hold_s} s at {s} s ({least}..={most})"
+        );
     }
 
     #[test]

@@ -840,3 +840,181 @@ dwell_world::both_faces!(
         );
     }
 );
+
+// --- WORK_QUEUE item 35, round 2: wolves bite (shared/creatures `attack`): the player that struck
+// one, in reach, every cooldown, by the data; at 0 health defeated (kneeling), never killed. ---
+
+fn wolf_attack() -> dwell_sim::creatures::AttackDef {
+    let t = dwell_sim::creatures::Table::SHIPPED;
+    let k = t
+        .creatures
+        .iter()
+        .position(|c| c.name == "dwell:wolf")
+        .expect("the wolf is data");
+    t.creatures[k].attack.expect("the wolf bites")
+}
+
+/// A driven wolf 1.2 m ahead of player 1 along face-local +x, facing it.
+fn wolf_ahead(fx: &mut Fixture, f: FaceFrame) -> u32 {
+    put(fx, f, "dwell:wolf", 1.7, 0.5, -90.0)
+}
+
+/// `ticks` ticks, player 1 held at its place (a bite's push undone) and player 2 beside it.
+fn held_still(fx: &mut Fixture, f: FaceFrame, ticks: u32) {
+    held_at(fx, f, 0.5, ticks);
+}
+
+/// `ticks` ticks, player 1 held at face-local (x, 0.5) and player 2 beside it.
+fn held_at(fx: &mut Fixture, f: FaceFrame, x: f64, ticks: u32) {
+    for _ in 0..ticks {
+        move_to(fx, 1, f, x, 0.5);
+        move_to(fx, 2, f, x + 0.4, 1.0);
+        fx.server.step();
+    }
+}
+
+/// Creature `id`'s feet, face-local.
+fn local_feet(fx: &Fixture, f: FaceFrame, id: u32) -> [f64; 3] {
+    let c = fx
+        .server
+        .creatures()
+        .iter()
+        .find(|c| c.id == id)
+        .expect("there");
+    f.point(c.position)
+}
+
+dwell_world::both_faces!(
+    fn a_struck_wolf_bites_its_striker_in_reach_by_its_data_never_another(f: FaceFrame) {
+        let mut fx = scene(f, "adventure");
+        let a = wolf_attack();
+        let wolf = wolf_ahead(&mut fx, f);
+        let hz = f64::from(SIM_HZ);
+        // Not struck: it bites no one.
+        held_still(&mut fx, f, (2.0 * hz) as u32);
+        assert!(fx.server.bites().is_empty(), "{:?}", fx.server.bites());
+        let before = [fx.server.health_of(1), fx.server.health_of(2)];
+        slash(&mut fx, f, false);
+        assert!(
+            fx.server.strikes().iter().any(|s| s.creature == wolf),
+            "the slash met the wolf: {:?}",
+            fx.server.strikes()
+        );
+        // It may bite in the swing's recovery already.
+        let early = fx.server.bites().len();
+        assert!(early <= 1, "{:?}", fx.server.bites());
+        let dmg = a.damage.round() as i32;
+        assert_eq!(fx.server.health_of(1), before[0] - dmg * early as i32);
+        let at = fx.server.health_of(1);
+        fx.take_all();
+        // Three cooldowns, well inside its anger: three bites.
+        let span = 3.0 * a.cooldown_s;
+        assert!(span < a.angry_s);
+        // The slash knocked it back: the player steps up to it (0.9 m off).
+        let x = local_feet(&fx, f, wolf)[0] - 0.9;
+        held_at(&mut fx, f, x, (span * hz) as u32 + 1);
+        let bites = fx.server.bites()[early..].to_vec();
+        assert_eq!(bites.len(), 3, "a bite each cooldown: {bites:?}");
+        assert!(
+            bites
+                .iter()
+                .all(|b| b.creature == wolf && b.player_id == 1 && b.damage == dmg)
+        );
+        assert_eq!(fx.server.health_of(1), at - dmg * 3);
+        assert_eq!(
+            fx.server.health_of(2),
+            before[1],
+            "only the striker is bitten"
+        );
+        let all = fx.take_all();
+        assert_eq!(damage_heard(of(&all, 1)).len(), 3);
+        assert!(!knockbacks_heard(of(&all, 1)).is_empty(), "a bite pushes");
+        // Its anger over, it bites no more.
+        held_at(&mut fx, f, x, (a.angry_s * hz) as u32);
+        let n = fx.server.bites().len();
+        held_at(&mut fx, f, x, (3.0 * a.cooldown_s * hz) as u32);
+        assert_eq!(fx.server.bites().len(), n, "calm again");
+    }
+);
+
+dwell_world::both_faces!(
+    fn a_wolf_out_of_reach_or_behind_bites_no_one(f: FaceFrame) {
+        let mut fx = scene(f, "adventure");
+        let a = wolf_attack();
+        let hz = f64::from(SIM_HZ);
+        // Facing away (+x) from the player it is angry at, then far off: no bite either way.
+        let wolf = put(&mut fx, f, "dwell:wolf", 1.7, 0.5, 90.0);
+        fx.server.creatures_mut().provoke(wolf, 1);
+        held_still(&mut fx, f, (2.0 * a.cooldown_s * hz) as u32);
+        assert!(
+            fx.server.bites().is_empty(),
+            "behind it: {:?}",
+            fx.server.bites()
+        );
+        let far = put(&mut fx, f, "dwell:wolf", 1.0, 0.5 + a.reach_m + 1.5, 180.0);
+        fx.server.creatures_mut().provoke(far, 1);
+        held_still(&mut fx, f, (2.0 * a.cooldown_s * hz) as u32);
+        assert!(
+            fx.server.bites().is_empty(),
+            "out of reach: {:?}",
+            fx.server.bites()
+        );
+    }
+);
+
+dwell_world::both_faces!(
+    fn creative_players_are_never_bitten(f: FaceFrame) {
+        let mut fx = scene(f, "creative");
+        let a = wolf_attack();
+        let wolf = wolf_ahead(&mut fx, f);
+        fx.server.creatures_mut().provoke(wolf, 1);
+        let before = fx.server.health_of(1);
+        held_still(&mut fx, f, (2.5 * a.cooldown_s * f64::from(SIM_HZ)) as u32);
+        assert!(!fx.server.bites().is_empty(), "it still snaps");
+        assert!(fx.server.bites().iter().all(|b| b.damage == 0));
+        assert_eq!(fx.server.health_of(1), before);
+    }
+);
+
+dwell_world::both_faces!(
+    fn bitten_to_zero_health_the_player_is_defeated_kneeling_never_killed(f: FaceFrame) {
+        let mut fx = scene(f, "adventure");
+        let a = wolf_attack();
+        let wolf = wolf_ahead(&mut fx, f);
+        let hz = f64::from(SIM_HZ);
+        fx.take_all();
+        let mut ticks = 0;
+        while fx.server.health_of(1) > 0 && ticks < 200_000 {
+            // Struck again before its anger ends.
+            if ticks % ((a.angry_s * hz) as u32 / 2) == 0 {
+                fx.server.creatures_mut().provoke(wolf, 1);
+            }
+            if fx.server.player_handle_of(1).is_some() {
+                move_to(&mut fx, 1, f, 0.5, 0.5);
+            }
+            fx.server.step();
+            ticks += 1;
+        }
+        assert_eq!(fx.server.health_of(1), 0);
+        // Down: out of the physics, kneeling where it fell (a Death event: the defeat), and the
+        // wolf calms (no player to bite).
+        assert!(fx.server.player_handle_of(1).is_none());
+        let all = fx.take_all();
+        assert!(of(&all, 1).iter().any(|m| matches!(
+            m,
+            Message::PlayerEvent(e) if e.kind == PlayerEventKind::Death && e.player_id == 1
+        )));
+        let n = fx.server.bites().len();
+        for _ in 0..(3.0 * a.cooldown_s * hz) as u32 {
+            fx.server.step();
+        }
+        assert_eq!(fx.server.bites().len(), n, "no bites on a kneeling player");
+        assert!(
+            fx.server
+                .creatures()
+                .iter()
+                .find(|c| c.id == wolf)
+                .is_some_and(|c| c.angry.is_none())
+        );
+    }
+);

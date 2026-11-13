@@ -421,7 +421,7 @@ dwell_world::both_faces!(
         }
         for (name, t) in [("cold desert", dry), ("tropical rainforest", hot)] {
             assert!(t[0] >= 20, "{:?}: {name} climate cells {t:?}", f.face);
-            // (Since the realistic batch's plates, 0.61, the default is no longer most of these
+            // (Since the realistic batch's plates, 0.62, the default is no longer most of these
             // cells' fallback without the two: the steppe and the sand desert share them; the
             // check is that each new preset takes most of its climate.)
             let _ = t[1];
@@ -432,7 +432,7 @@ dwell_world::both_faces!(
             );
         }
         // Cut by 40 % at least (to a quarter before the realistic batch's wider continents and
-        // district climate, 0.61).
+        // district climate, 0.62).
         assert!(
             5 * is < 3 * was,
             "{:?}: the default's land {was} -> {is}",
