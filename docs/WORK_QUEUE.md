@@ -2224,6 +2224,17 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    buttons jump between 20 m, 500 m and 20 km — too coarse; steps of ~2× (data), wheel too"; (3) "After 'Center on
    me' and a zoom, the player arrow was off the view: zoom about the centred player"; (4) "The picker shows 'Delete'
    for a marker not yet saved: hide it (Cancel only)".
+   **Pillars with gaps (owner, 2026-11-13, after a screenshot where the stepped pillars read as one solid wall and the
+   quarter-circle lintel didn't stand out):** **"Yes, shrine pillars have gaps."** Brief: the pillars on the back
+   semicircle stand apart with at least one full cell of air between neighbours at every height (pillar width as data,
+   spacing derived from the arc and the count; fewer pillars by data if 9 don't fit); the lintel spans only the tallest
+   half's tops (a quarter circle), bridging the gaps so it reads as an arch; the terraced filled dais and the torches
+   kept. Built on branch `claude/shrine-gaps` (`design.pillars.width` 1 m; a gap check in `gen.mjs` fails a count or
+   width that leaves no air): 9 pillars don't fit the 3.5 m arc with gaps and 7 can't make the joined half a quarter
+   circle, so **5 pillars**, 45° apart, 2.5–3.5 m tall (`lowest` 2.5, `rise` 0.5), the tallest 3 joined by a lintel
+   rising from top to top over the gaps (air under it), the middle pillar ½ m off the axis (a 1 m pillar can't centre
+   on the 8 m grid's axis). Changes the terrain seeds generate: the 0.59 line, carried by `claude/terrain-059`
+   (orchestrator, 2026-11-13: that branch merges this one and raises 0.59 for both worldgen changes).
 
 ## Future (needs owner answers)
 

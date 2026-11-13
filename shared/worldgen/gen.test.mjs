@@ -1090,7 +1090,7 @@ import { shrineStructure, shrinesRust, validateShrines } from './gen.mjs';
 const loadShrines = () =>
   JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'shrines.json'), 'utf8'));
 
-test('the shrine design builds the owner\'s shrine: 8 × 8 m, a half circle of stepping pillars, the tallest half joined over a quarter circle', () => {
+test('the shrine design builds the owner\'s shrine: 8 × 8 m, a half circle of stepping pillars with gaps, the tallest half joined over a quarter circle', () => {
   // Owner, 2026-11-12: "a 8x8m terraced and filled stone circle with stepping pillars forming a
   // half circle. Only the tallest pillars (half of them) are connected at the top. Forming a
   // quarter circle."
@@ -1145,6 +1145,72 @@ test('the shrine design builds the owner\'s shrine: 8 × 8 m, a half circle of s
   }
   const lintelCells = s.layers.flatMap((l) => l.join('')).join('').split('').filter((c) => c === 'l');
   assert.ok(lintelCells.length > 0);
+  // Owner, 2026-11-13: "Yes, shrine pillars have gaps." Each pillar is `width` m square and no two
+  // pillars' columns touch, side or corner: a full cell of air between neighbours at every height.
+  for (const i of ids)
+    assert.equal(pillars.filter((p) => p.i === i).length, d.design.pillars.width ** 2, `pillar ${i}'s width`);
+  for (const a of pillars)
+    for (const b of pillars)
+      if (a.i < b.i)
+        assert.ok(Math.max(Math.abs(a.x - b.x), Math.abs(a.z - b.z)) >= 2, `pillars ${a.i} and ${b.i} touch`);
+  const pillarOf = (x, z) => pillars.find((p) => p.x === x && p.z === z);
+  const floorTop = (x, z) => {
+    let t = 0;
+    while (t < s.size[1] && at(x, t, z) === 's') t++;
+    return t;
+  };
+  // Between neighbouring pillars: every column on the line between them holds air from the floor
+  // up to the lintel (a joined pair) or to the shorter top (any other pair), at least 1 m of it.
+  for (let k = 0; k + 1 < ids.length; k++) {
+    const [a, b] = [pillars.filter((p) => p.i === ids[k]), pillars.filter((p) => p.i === ids[k + 1])];
+    const centre = (ps) => [0, 1].map((j) => ps.reduce((t, q) => t + [q.x, q.z][j] + 0.5, 0) / ps.length);
+    const [ca, cb] = [centre(a), centre(b)];
+    const gap = new Set();
+    for (let t = 0; t <= 1; t += 0.01) {
+      const [x, z] = [0, 1].map((j) => Math.floor(ca[j] + (cb[j] - ca[j]) * t));
+      if (!pillarOf(x, z)) gap.add(`${x},${z}`);
+    }
+    assert.ok(gap.size >= 1, `a column between pillars ${ids[k]} and ${ids[k + 1]}`);
+    const upTo = Math.min(a[0].top, b[0].top);
+    for (const key of gap) {
+      const [x, z] = key.split(',').map(Number);
+      let y = floorTop(x, z);
+      const from = y;
+      while (y < upTo && at(x, y, z) === '.') y++;
+      for (let r = y; r < upTo; r++) assert.equal(at(x, r, z), 'l', `${x},${r},${z}: air, then only the lintel`);
+      assert.ok(y - from >= 2, `air between pillars ${ids[k]} and ${ids[k + 1]} at ${key} (${y - from} rows)`);
+    }
+  }
+  // The lintel sits on the tallest half only: no lintel cell beside a lower pillar, and it joins the
+  // tallest pillars' tops into one arch (connected through lintel and pillar cells above the floor).
+  for (let y = 0; y < s.size[1]; y++)
+    for (let z = 0; z < 8; z++)
+      for (let x = 0; x < 8; x++) {
+        if (at(x, y, z) !== 'l') continue;
+        for (const p of pillars.filter((q) => !q.joined))
+          assert.ok(Math.max(Math.abs(p.x - x), Math.abs(p.z - z)) >= 2, `lintel ${x},${y},${z} by lower pillar ${p.i}`);
+      }
+  const start = pillars.find((p) => p.joined);
+  const seen = new Set([`${start.x},${start.top - 1},${start.z}`]);
+  const stack = [[start.x, start.top - 1, start.z]];
+  while (stack.length) {
+    const [x, y, z] = stack.pop();
+    for (let dy = -1; dy <= 1; dy++)
+      for (let dz = -1; dz <= 1; dz++)
+        for (let dx = -1; dx <= 1; dx++) {
+          const [nx, ny, nz] = [x + dx, y + dy, z + dz];
+          if (nx < 0 || nz < 0 || nx >= 8 || nz >= 8 || ny < 0 || ny >= s.size[1]) continue;
+          const c = at(nx, ny, nz);
+          if (!(c === 'l' || (c === 'p' && ny >= pillarOf(nx, nz).top - 1))) continue;
+          const key = `${nx},${ny},${nz}`;
+          if (!seen.has(key)) {
+            seen.add(key);
+            stack.push([nx, ny, nz]);
+          }
+        }
+  }
+  for (const p of pillars)
+    assert.equal(seen.has(`${p.x},${p.top - 1},${p.z}`), p.joined, `pillar ${p.i}'s top ${p.joined ? 'joined' : 'apart'}`);
   // The light stands at the centre of the dais.
   assert.equal(at(4, top(4, 4), 4), 't');
 });
@@ -1178,5 +1244,14 @@ test('the shrine rules validate, each world\'s overrides too, and the generated 
   assert.throws(
     () => shrineStructure(d.structure, { ...d.design, pillars: { ...d.design.pillars, count: 8 } }, registryBlocks()),
     /pillars.count must be 1 more than a multiple of 4/,
+  );
+  // Too many pillars for the arc leave no air between them (9 on the 8 m shrine's 3.5 m arc).
+  assert.throws(
+    () => shrineStructure(d.structure, { ...d.design, pillars: { ...d.design.pillars, count: 9 } }, registryBlocks()),
+    /leave no air between pillars/,
+  );
+  assert.throws(
+    () => shrineStructure(d.structure, { ...d.design, pillars: { ...d.design.pillars, width: 3 } }, registryBlocks()),
+    /pillars.width must be/,
   );
 });

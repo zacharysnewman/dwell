@@ -1892,6 +1892,9 @@ export function shrineStructure(name, design, blocks, cell = 0.5) {
   const lightUp = light.extends?.up ?? null;
 
   const n = 2 * d.radius; // columns a side: the circle's centre is the corner point (radius, radius)
+  if (!(Number.isInteger(p.width) && p.width >= 1 && p.width <= 2))
+    fail("pillars.width must be a whole number of metres in [1, 2]");
+  const w = p.width;
   const mid = (p.count - 1) / 2;
   const half = (p.count - 1) / 4; // the joined pillars: |i − mid| ≤ half
   const dist = (x, z) => Math.hypot(x + 0.5 - d.radius, z + 0.5 - d.radius);
@@ -1901,30 +1904,55 @@ export function shrineStructure(name, design, blocks, cell = 0.5) {
     if (r > d.radius) return 0;
     return baseRows + steps.filter((s) => r <= s).length;
   };
-  // The arc's columns: the −x half rasterised, the +x half its mirror image (x → n − 1 − x), so
-  // the shrine is symmetric about its axis; the middle pillar, on the axis, is the two columns
-  // either side of it.
-  const raster = (deg) => {
+  const clean = (v) => Math.round(v * 1e9) / 1e9;
+  const point = (deg) => {
     const t = (deg * Math.PI) / 180;
-    const clean = (v) => Math.round(v * 1e9) / 1e9;
-    const x = Math.floor(d.radius + clean(p.arcRadius * Math.cos(t)) - 1e-6);
-    const z = Math.floor(d.radius + clean(p.arcRadius * Math.sin(t)));
-    return [x, z];
+    return [clean(d.radius + p.arcRadius * Math.cos(t)), clean(d.radius + p.arcRadius * Math.sin(t))];
   };
-  const at = (deg) => {
-    if (deg <= 270) return raster(deg);
-    const [x, z] = raster(540 - deg);
+  // The −x half is rasterised, the +x half is its mirror image (x → n − 1 − x), so the shrine is
+  // symmetric about its axis (an odd-width pillar on the axis itself stands on its +x side).
+  const mirror = (deg, f) => {
+    if (deg <= 270) return f(deg);
+    const [x, z] = f(540 - deg);
+    return [n - w - x, z];
+  };
+  // A pillar: the w × w columns nearest its point on the arc (its corner column returned).
+  const square = (deg) => {
+    const [x, z] = point(deg);
+    return [Math.round(clean(x - w / 2)), Math.round(clean(z - w / 2))];
+  };
+  // An arc column of the lintel: the column holding the arc's point.
+  const arc = (deg) => {
+    const [x, z] = point(deg);
+    return [Math.floor(x - 1e-6), Math.floor(z)];
+  };
+  const arcAt = (deg) => {
+    if (deg <= 270) return arc(deg);
+    const [x, z] = arc(540 - deg);
     return [n - 1 - x, z];
   };
   const pillars = [];
   for (let i = 0; i < p.count; i++) {
     const deg = 180 + (180 * i) / (p.count - 1); // the back half: −z
     const height = lowest + rise * (mid - Math.abs(i - mid));
-    const [x, z] = at(deg);
-    const cols = i === mid ? [[x, z], [n - 1 - x, z]] : [[x, z]];
-    for (const [cx, cz] of cols)
-      pillars.push({ i, x: cx, z: cz, deg, height, joined: Math.abs(i - mid) <= half, top: floor(cx, cz) + height });
+    const [x0, z0] = mirror(deg, square);
+    const cols = [];
+    for (let dz = 0; dz < w; dz++) for (let dx = 0; dx < w; dx++) cols.push([x0 + dx, z0 + dz]);
+    const top = Math.max(...cols.map(([x, z]) => floor(x, z))) + height;
+    for (const [x, z] of cols)
+      pillars.push({ i, x, z, deg, height, joined: Math.abs(i - mid) <= half, top });
   }
+  // The gaps: at least one column of air between neighbouring pillars (no two pillars' columns
+  // touching, side or corner), so each stands apart at every height.
+  for (const a of pillars)
+    for (const b of pillars)
+      if (a.i < b.i && Math.max(Math.abs(a.x - b.x), Math.abs(a.z - b.z)) < 2)
+        fail(
+          `pillars.count ${p.count} of width ${w} m leave no air between pillars ${a.i} and ${b.i} on a ${p.arcRadius} m arc: fewer pillars or a narrower width`,
+        );
+  for (const q of pillars)
+    if (floor(q.x, q.z) === 0) fail(`pillars: pillar ${q.i}'s column ${q.x},${q.z} lies off the platform`);
+  const pillarAt = (x, z) => pillars.find((q) => q.x === x && q.z === z);
   const height = Math.max(
     ...pillars.map((q) => q.top),
     floor(d.radius, d.radius) + (lightUp ? 2 : 1),
@@ -1936,20 +1964,24 @@ export function shrineStructure(name, design, blocks, cell = 0.5) {
   for (let z = 0; z < n; z++)
     for (let x = 0; x < n; x++) for (let y = 0; y < floor(x, z); y++) set(x, y, z, "s");
   for (const q of pillars) for (let y = floor(q.x, q.z); y < q.top; y++) set(q.x, y, q.z, "p");
-  // The lintel: along the arc between the first and last joined pillar, each arc column's top rows
-  // at the nearest joined pillar's top (so the joined tops step as the pillars do).
-  const joined = pillars.filter((q) => q.joined);
-  const [a0, a1] = [joined[0].deg, joined.at(-1).deg];
+  // The lintel: along the arc from the first joined pillar to the last (the tallest half: a quarter
+  // circle), over the gaps only. Each arc column's top is the joined tops either side of it,
+  // interpolated by angle and rounded to a row, so it bridges from top to top as an arch.
+  const tops = [...new Map(pillars.filter((q) => q.joined).map((q) => [q.i, q])).values()];
   const lintel = new Map();
-  for (let deg = a0; deg <= a1 + 1e-9; deg += 0.25) {
-    const [x, z] = at(deg);
-    const near = joined.reduce((b, q) => (Math.abs(q.deg - deg) < Math.abs(b.deg - deg) ? q : b));
-    const key = `${x},${z}`;
-    lintel.set(key, Math.max(lintel.get(key) ?? 0, near.top));
+  for (let k = 0; k + 1 < tops.length; k++) {
+    const [a, b] = [tops[k], tops[k + 1]];
+    for (let deg = a.deg; deg <= b.deg + 1e-9; deg += 0.25) {
+      const [x, z] = arcAt(deg);
+      if (pillarAt(x, z)) continue;
+      const top = Math.round(a.top + ((b.top - a.top) * (deg - a.deg)) / (b.deg - a.deg));
+      const key = `${x},${z}`;
+      lintel.set(key, Math.max(lintel.get(key) ?? 0, top));
+    }
   }
   for (const [key, top] of lintel) {
     const [x, z] = key.split(",").map(Number);
-    if (pillars.some((q) => q.x === x && q.z === z)) continue;
+    if (top - lintelRows <= floor(x, z)) fail(`lintel at ${key} leaves no air under it: taller pillars`);
     for (let y = top - lintelRows; y < top; y++) set(x, y, z, "l");
   }
   for (let z = 0; z < n; z++)
