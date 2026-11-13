@@ -1295,3 +1295,17 @@ reference:** the sun's glow is a broad white haze rather than a sharp blown-out 
 ripple highlights are fainter than the reference's bright cells; the floor is still the prototype sand, not a
 colourful reef; in the 1.5 m shallows a soft blue patch of the surface's mesh still shows near the window's rim.
 Outstanding: the owner's look; both faces checked in code and tests, not on screen.
+
+## 20. The shore foam's soft edge (2026-11-13)
+
+Owner, 2026-11-13: "The water foam edge is a little too hard now, the softness of the old version was better and the
+consistency of the new one along the edge is better. Combine those concepts." §14's contact line was solid to
+`lineM` (0.06 m) and gone 3 cm later: a hard line. The rim before it faded over ~0.2 m of depth but was multiplied by
+noise, so it broke into blotches along the shore. The contact line now keeps §14's continuity (noise only nudges its
+core's width, never multiplies it) and feathers into the water: full over half of `shore.lineM` (0.02 m), fading by
+smoothstep to nothing `shore.featherM` (0.2 m) past `lineM`. The bands' sides soften by `shore.bandSoftness` (0-1; 0
+§14's flat top, 1 a fade from the middle out to twice the half-width). Both are data in `shared/look/waterflow.json`,
+packed in the fluid table's last vec4 (`shore_soft`: x the feather, y the softness). `dwell_look::waterflow::shore_foam`
+is the WGSL `foam_amount`'s mirror; its test pins the profile across the edge (no step over 0.08 between samples 5 mm
+apart; 0.52.6's was 0.28) and along it (never under half strength within the feather's first half, whatever the
+noise or time). Same cost: one more smoothstep bound.

@@ -11,7 +11,7 @@ use dwell_look::water_tiers::{WATER_TIERS, WaterTier, tier_bits};
 use dwell_look::{hex, srgb_to_linear};
 
 /// vec4s per fluid in the buffer (`Fluid` in the WGSL).
-pub const FLUID_VEC4S: usize = 19;
+pub const FLUID_VEC4S: usize = 20;
 /// How far from the flat surface (m, along the face's up) a pixel's depth may be, seen from below,
 /// and still count as the surface's own mesh (the WGSL's `SURFACE_SLACK_M`; WATER_RENDERING.md
 /// §19): over the mesh's surface drop, under a block's height so what stands above still shows.
@@ -312,6 +312,16 @@ pub fn pack_fluids(fluids: &[FluidInfo]) -> Vec<f32> {
             u.tone_floor_light as f32,
             u.window_rim_glow as f32,
         ]);
+        // The shore foam's softness (shared/look/waterflow.json `shore`, WATER_RENDERING.md §20).
+        match dwell_look::waterflow::flow_look(f.name) {
+            Some(l) => out.extend_from_slice(&[
+                l.shore_feather_m as f32,
+                l.shore_band_softness as f32,
+                0.0,
+                0.0,
+            ]),
+            None => out.extend_from_slice(&[0.0; 4]),
+        }
     }
     if out.is_empty() {
         // A storage binding can't be empty: one zero fluid that nothing indexes.
@@ -1145,6 +1155,11 @@ mod tests {
                 u.window_rim_glow,
             ];
             assert_eq!(v[72..76], lift.map(|x| x as f32));
+            // the shore foam's softness (its feather, its bands' sides)
+            let soft = dwell_look::waterflow::flow_look(f.name).map_or([0.0; 2], |l| {
+                [l.shore_feather_m as f32, l.shore_band_softness as f32]
+            });
+            assert_eq!(v[76..78], soft);
         }
         // A fluid with no look of its own takes the default's (fog from the eye, the registry's rates).
         assert_eq!(underwater_look("test:oil"), &DEFAULT_UNDERWATER);
