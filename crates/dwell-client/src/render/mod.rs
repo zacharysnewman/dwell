@@ -580,12 +580,17 @@ struct GpuMesh {
 /// Bytes per vertex of each `Kind`'s interleaved format (the pipelines' vertex layouts), in the
 /// enum's order: `Kind as usize` indexes it.
 const STRIDES: [u64; 6] = [
-    4 * (3 + 3 + 3 + 2 + 4 + 1 + 2 + 1), // Terrain: position, normal, colour, uv, tile, light, flood, crack (4 bytes)
-    4 * (3 + 3 + 3),                     // Flat: position, normal, colour
-    4 * (3 + 3 + 3 + 1), // Line: position, colour, the other end, side (a quad corner)
-    4 * (3 + 3),         // Ghost: position, colour (triangles)
+    // Terrain: position, normal (snorm8x4), colour, uv, tile, light and flood (unorm8x4), crack
+    // (unorm8x4): 64 bytes (`packed_lit`, WORK_QUEUE item 32; 84 before).
+    4 * (3 + 1 + 3 + 2 + 4 + 1 + 1),
+    4 * (3 + 3 + 3),         // Flat: position, normal, colour
+    4 * (3 + 3 + 3 + 1),     // Line: position, colour, the other end, side (a quad corner)
+    4 * (3 + 3),             // Ghost: position, colour (triangles)
     4 * (3 + 3 + 3 + 1 + 2), // Fluid: position, normal, colour, fluid id, flood
-    4 * (3 + 3 + 3 + 2 + 4 + 4 + 1 + 1 + 2), // Cutout: the terrain's, plant (sway, wind speed, fade), bare, light, flood
+    // Cutout: position, normal (snorm8x4), colour, uv, tile, plant (sway, wind speed, fade), and
+    // light, flood and bare (unorm8x4): 72 bytes (`packed_cutout`, WORK_QUEUE item 32: the forest
+    // edge's near pass is its leaves' vertices; 92 bytes before).
+    4 * (3 + 1 + 3 + 2 + 4 + 4 + 1),
 ];
 
 pub(crate) fn floats(v: &[f32]) -> &[u8] {
@@ -654,13 +659,6 @@ fn interleave(streams: &[(&[f32], usize)]) -> Vec<f32> {
 /// A terrain or cutout mesh's interleaved vertices (`STRIDES`, the pipelines' layouts): position,
 /// normal, colour, uv, tile, (the cutout's plant and bare,) light and flood light.
 fn textured_vertices(m: &MeshArrays, kind: Kind) -> Vec<f32> {
-    let mut streams: Vec<(&[f32], usize)> = vec![
-        (&m.positions, 3),
-        (&m.normals, 3),
-        (&m.colors, 3),
-        (&m.uvs, 2),
-        (&m.tiles, 4),
-    ];
     // A mesh without baked light (an older mesher's, a hand-made one) is lit as open.
     let count = m.positions.len() / 3;
     let light: std::borrow::Cow<'_, [f32]> = if m.light.len() == count {
@@ -673,12 +671,18 @@ fn textured_vertices(m: &MeshArrays, kind: Kind) -> Vec<f32> {
     } else {
         std::borrow::Cow::Owned([1.0, 0.0].repeat(count))
     };
+    let (normals, lit) = packed_lit(m, &light, &flood, kind == Kind::Cutout);
+    let mut streams: Vec<(&[f32], usize)> = vec![
+        (&m.positions, 3),
+        (&normals, 1),
+        (&m.colors, 3),
+        (&m.uvs, 2),
+        (&m.tiles, 4),
+    ];
     if kind == Kind::Cutout {
         streams.push((&m.plants, 4));
-        streams.push((&m.bare, 1));
     }
-    streams.push((&light, 1));
-    streams.push((&flood, 2));
+    streams.push((&lit, 1));
     // The terrain's crack overlay (docs/BLOCK_DAMAGE.md §6.3): four unorm bytes a vertex in one
     // float's slot, its bits copied as they are (0: no crack, a chunk without cracks has none).
     let cracks: Vec<f32>;
@@ -691,6 +695,46 @@ fn textured_vertices(m: &MeshArrays, kind: Kind) -> Vec<f32> {
         streams.push((&cracks, 1));
     }
     interleave(&streams)
+}
+
+/// A unit vector as four snorm bytes (x, y, z, 0) in one float's slot, its bits as they are (the
+/// cutout pipeline reads it as snorm8x4); a zero vector stays zero.
+fn snorm8x3(n: [f32; 3]) -> f32 {
+    let len = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt();
+    let k = if len > 1e-12 { 1.0 / len } else { 0.0 };
+    let b = |c: f32| u32::from((((c * k).clamp(-1.0, 1.0) * 127.0).round() as i8) as u8);
+    f32::from_bits(b(n[0]) | b(n[1]) << 8 | b(n[2]) << 16)
+}
+
+/// Four 0–1 values as unorm bytes in one float's slot (the pipeline reads it as unorm8x4).
+fn unorm8x4(v: [f32; 4]) -> f32 {
+    let b = |c: f32| u32::from((c.clamp(0.0, 1.0) * 255.0).round() as u8);
+    f32::from_bits(b(v[0]) | b(v[1]) << 8 | b(v[2]) << 16 | b(v[3]) << 24)
+}
+
+/// A terrain or cutout mesh's packed streams (WORK_QUEUE item 32): each vertex's normal as
+/// snorm8x4 and its light, flood light (sky, block) and (`bare`: a cutout's) bare flag as
+/// unorm8x4. The shaders take light clamped to 0–1 and bare as below or over ½, so only the 8-bit
+/// rounding changes (under 1/255).
+fn packed_lit(m: &MeshArrays, light: &[f32], flood: &[f32], bare: bool) -> (Vec<f32>, Vec<f32>) {
+    let count = m.positions.len() / 3;
+    let normals = (0..count)
+        .map(|k| {
+            let n = m.normals.get(3 * k..3 * k + 3).unwrap_or(&[0.0, 1.0, 0.0]);
+            snorm8x3([n[0], n[1], n[2]])
+        })
+        .collect();
+    let lit = (0..count)
+        .map(|k| {
+            let bare = if bare {
+                m.bare.get(k).copied().unwrap_or(0.0)
+            } else {
+                0.0
+            };
+            unorm8x4([light[k], flood[2 * k], flood[2 * k + 1], bare])
+        })
+        .collect();
+    (normals, lit)
 }
 
 /// A fluid mesh's interleaved vertices (`STRIDES`' Fluid): position, normal, colour, fluid id
@@ -1840,25 +1884,22 @@ impl Renderer {
                 .collect();
             (offset, attributes)
         };
-        let mut terrain_attrs = attrs(&[(0, 3), (1, 3), (2, 3), (3, 2), (4, 4), (5, 1), (6, 2)]);
+        // The normal (snorm8x4) and the light and flood (unorm8x4) four bytes each (`packed_lit`).
+        let mut terrain_attrs = attrs(&[(0, 3), (1, 1), (2, 3), (3, 2), (4, 4), (5, 1)]);
+        terrain_attrs.1[1].format = wgpu::VertexFormat::Snorm8x4;
+        terrain_attrs.1[5].format = wgpu::VertexFormat::Unorm8x4;
         // The crack overlay (docs/BLOCK_DAMAGE.md §6.3): four unorm bytes.
         terrain_attrs.1.push(wgpu::VertexAttribute {
             format: wgpu::VertexFormat::Unorm8x4,
             offset: terrain_attrs.0,
-            shader_location: 7,
+            shader_location: 6,
         });
         terrain_attrs.0 += 4;
-        let cutout_attrs = attrs(&[
-            (0, 3),
-            (1, 3),
-            (2, 3),
-            (3, 2),
-            (4, 4),
-            (5, 4),
-            (6, 1),
-            (7, 1),
-            (8, 2),
-        ]);
+        // The cutout's normal (snorm8x4) and its light, flood and bare (unorm8x4) are four bytes
+        // each in one float's slot (`packed_cutout`).
+        let mut cutout_attrs = attrs(&[(0, 3), (1, 1), (2, 3), (3, 2), (4, 4), (5, 4), (6, 1)]);
+        cutout_attrs.1[1].format = wgpu::VertexFormat::Snorm8x4;
+        cutout_attrs.1[6].format = wgpu::VertexFormat::Unorm8x4;
         let flat_attrs = attrs(&[(0, 3), (1, 3), (2, 3)]);
         let line_attrs = attrs(&[(0, 3), (1, 3), (2, 3), (3, 1)]);
         let ghost_attrs = attrs(&[(0, 3), (1, 3)]);
@@ -6833,12 +6874,12 @@ mod tests {
     fn every_kind_has_its_own_stride() {
         let ghost = 4 * (3 + 3);
         for (kind, stride) in [
-            (Kind::Terrain, 4 * (3 + 3 + 3 + 2 + 4 + 1 + 2 + 1)),
+            (Kind::Terrain, 4 * (3 + 1 + 3 + 2 + 4 + 1 + 1)),
             (Kind::Flat, 4 * (3 + 3 + 3)),
             (Kind::Line, 4 * (3 + 3 + 3 + 1)),
             (Kind::Ghost, ghost),
             (Kind::Fluid, 4 * (3 + 3 + 3 + 1 + 2)),
-            (Kind::Cutout, 4 * (3 + 3 + 3 + 2 + 4 + 4 + 1 + 1 + 2)),
+            (Kind::Cutout, 4 * (3 + 1 + 3 + 2 + 4 + 4 + 1)),
         ] {
             assert_eq!(STRIDES.get(kind as usize), Some(&stride), "{kind:?}");
         }
@@ -6863,6 +6904,98 @@ mod tests {
                 STRIDES[kind as usize],
                 "{kind:?}"
             );
+        }
+    }
+
+    /// The cutout's packed vertex (WORK_QUEUE item 32, 92 → 72 bytes): the normal's direction
+    /// as snorm bytes and the light, flood light and bare flag as unorm bytes, each in its float's
+    /// slot as the pipeline reads them, within one 8-bit step of the mesher's values; on both
+    /// faces' meshes (face B's normals mirrored by the mesher before the packing).
+    #[test]
+    fn terrain_and_cutout_vertices_pack_normal_and_light_into_bytes() {
+        // both-faces: compares each face's packed normals with its own mesh's.
+        let leaves = dwell_blocks::require("dwell:leaves");
+        let grass = dwell_blocks::require("dwell:tall_grass");
+        let stone = dwell_blocks::require("dwell:stone[flooded=false]");
+        let mut padded = vec![0u16; dwell_mesh::PADDED_VOLUME];
+        padded[dwell_mesh::padded_index(3, 3, 3)] = leaves;
+        padded[dwell_mesh::padded_index(3, 4, 3)] = leaves;
+        padded[dwell_mesh::padded_index(6, 1, 6)] = stone;
+        padded[dwell_mesh::padded_index(6, 2, 6)] = grass;
+        for mirrored in [false, true] {
+            let m = dwell_mesh::mesh_chunk(&padded, mirrored)
+                .expect("meshed")
+                .cutout;
+            let count = m.positions.len() / 3;
+            assert!(count > 0);
+            let stride = (STRIDES[Kind::Cutout as usize] / 4) as usize;
+            let v = textured_vertices(&m, Kind::Cutout);
+            assert_eq!(v.len(), count * stride);
+            let snorm = |b: u32| f32::from(b as u8 as i8) / 127.0;
+            let unorm = |b: u32| f32::from(b as u8) / 255.0;
+            let mut bare = [false; 2];
+            for k in 0..count {
+                let at = &v[k * stride..(k + 1) * stride];
+                assert_eq!(&at[0..3], &m.positions[3 * k..3 * k + 3], "position");
+                let n = &m.normals[3 * k..3 * k + 3];
+                let len = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt();
+                let bits = at[3].to_bits();
+                for (a, c) in n.iter().enumerate() {
+                    let got = snorm(bits >> (8 * a));
+                    assert!((got - c / len).abs() <= 0.5 / 127.0 + 1e-6, "normal {a}");
+                }
+                assert_eq!(bits >> 24, 0, "w");
+                assert_eq!(&at[4..7], &m.colors[3 * k..3 * k + 3], "colour");
+                assert_eq!(&at[13..17], &m.plants[4 * k..4 * k + 4], "plant");
+                let bits = at[17].to_bits();
+                let want = [
+                    m.light[k].clamp(0.0, 1.0),
+                    m.flood[2 * k],
+                    m.flood[2 * k + 1],
+                ];
+                for (a, w) in want.iter().enumerate() {
+                    assert!(
+                        (unorm(bits >> (8 * a)) - w).abs() <= 0.5 / 255.0 + 1e-6,
+                        "lit {a}"
+                    );
+                }
+                let b = unorm(bits >> 24);
+                assert_eq!(b > 0.5, m.bare[k] > 0.5, "bare");
+                bare[usize::from(b > 0.5)] = true;
+            }
+            assert_eq!(
+                bare,
+                [true, true],
+                "both kinds of cutout (leaves inked, grass bare)"
+            );
+            // The terrain's: the same normal and light bytes, no bare flag, the crack last.
+            let t = dwell_mesh::mesh_chunk(&padded, mirrored)
+                .expect("meshed")
+                .opaque;
+            let stride = (STRIDES[Kind::Terrain as usize] / 4) as usize;
+            let v = textured_vertices(&t, Kind::Terrain);
+            assert_eq!(v.len(), t.positions.len() / 3 * stride);
+            for k in 0..t.positions.len() / 3 {
+                let at = &v[k * stride..(k + 1) * stride];
+                let n = &t.normals[3 * k..3 * k + 3];
+                for (a, c) in n.iter().enumerate() {
+                    let got = snorm(at[3].to_bits() >> (8 * a));
+                    assert!((got - c).abs() <= 0.5 / 127.0 + 1e-6, "terrain normal {a}");
+                }
+                let bits = at[13].to_bits();
+                let want = [
+                    t.light[k].clamp(0.0, 1.0),
+                    t.flood[2 * k],
+                    t.flood[2 * k + 1],
+                    0.0,
+                ];
+                for (a, w) in want.iter().enumerate() {
+                    assert!(
+                        (unorm(bits >> (8 * a)) - w).abs() <= 0.5 / 255.0 + 1e-6,
+                        "terrain lit {a}"
+                    );
+                }
+            }
         }
     }
 

@@ -1337,6 +1337,23 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    12.5 / 14.2; `gpu.shadows` edge 1.0 / 9.0 → 0.8 / 1.1 (inside 3.0 / 6.1 → 0.7 / 1.2). With the shadows ~1 ms,
    no leaf caster change was made (a plainer caster or a near-only leaf distance would save under 1 ms). The
    edge's real frame: `gpu.near` 16.0 (the leaf blocks), `composite` 6.5, `clouds` 5.4 p50; next levers are those.
+   **Round 3, the leaves' vertices (2026-11-13, local, `claude/forest-near`):** the near pass's cost is the vertex
+   data its ~4 M leaf triangles read, so the terrain and cutout vertices are packed: the normal as snorm8x4 and the
+   baked light, flood light (and a cutout's bare flag) as unorm8x4, one float's slot each (`render::packed_lit`;
+   terrain 84 → 64 bytes, cutout 92 → 72; test `terrain_and_cutout_vertices_pack_normal_and_light_into_bytes`, both
+   faces' meshes, every value within one 8-bit step). No look change: the shaders clamp light to 0–1 and read bare
+   as over or under ½; the same-spot shots differ only where the clouds drift and the wind moves cards and grass
+   between runs. `forest-perf`, M1 Air, High, `--unthrottled`, `gpu.frame` p50 / p95 ms, before → cutout packed →
+   both packed: inside 13.4 / 14.1 → 13.0 / 13.7 → **12.6 / 13.0**, **edge 20.5 / 21.1 → 19.7 / 20.2 → 18.7 /
+   19.3**, above 12.4 / 12.8 → 12.5 / 12.9 → **12.0 / 12.4** (`gpu.near` edge 16.0 → 15.2 → 14.3). Profiled, not
+   changed: hidden leaf faces inside a canopy were already culled (no face between two leaf cells), and a leaf's
+   pieces can't share vertices (each takes its own face's leaned normal and tint); `clouds` at High is the
+   Medium tier already (quarter resolution, 10 steps), and the GPU's pass timestamps overlap on the M1 (near +
+   composite + clouds + far sum to ~32 ms of a 20 ms frame), so `clouds` 5.6 and `composite` 6.7 at the edge
+   are not their own cost: measure them by switching them off (`--compare`), not by their pass times. The edge
+   is still **~2.6 ms over** at p95. Next: the cutout's vertex outputs (26 floats a vertex to the tiler: tile,
+   fade and draw could be flat or packed), the colour as unorm8x4 (its tints can pass 1: needs a range),
+   then `clouds`/`composite` measured by `--compare` with them off.
 33. **Licensed music replaces the generated music** (owner 2026-11-12: "I downloaded a big music set as a Unity
    asset, I'd like the casual game music setup in a prototype and make it play randomly in the game. Probably
    needs compression. It'll replace the current music which is AI generated."). The pack: *Andrew Sitkov Music*
