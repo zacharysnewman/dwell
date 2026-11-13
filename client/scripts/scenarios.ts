@@ -177,6 +177,14 @@ export type Step =
    */
   | { do: 'flyTo'; to: 'moon' | 'home'; face?: 'a' | 'b'; landM?: number; maxS?: number }
   /**
+   * Teleports onto the moon's ground on face `face` (`a`, `b`; `__dwell.moonLand`, a local world),
+   * no flight, waits until standing there with its chunk held (at most `maxS`, 60) and `waitS`
+   * (3) more, then prints the frame's draw calls, triangles and mesh bytes; saved in the report's
+   * `trips` (owner, 2026-11-13: "teleport to the moon to see if ground draws"). Scenario
+   * `moon-draw`.
+   */
+  | { do: 'moonLand'; face?: 'a' | 'b'; maxS?: number; waitS?: number }
+  /**
    * Stands the player on a raft `lift` m (default 1) above its feet and moves the raft at `speed`
    * m/s toward `yaw` (degrees, 0 = +Z, 90 = +X) for `s` seconds at a held height, then waits out
    * the ride (a local world only): "carried by a moving body" bugs (`__dwell.carry`).
@@ -451,6 +459,7 @@ const STEP_FIELDS: Record<Step['do'], readonly string[]> = {
   lava: ['op', 'args'],
   herd: ['kind', 'back'],
   flyTo: ['to', 'face', 'landM', 'maxS'],
+  moonLand: ['face', 'maxS', 'waitS'],
   mark: [],
   record: ['name', 'budget', 'reportOnly'],
   shot: ['name', ...PLACEMENT_FIELDS, 'quietFrames', 'maxS'],
@@ -711,6 +720,17 @@ export function parseStep(where: string, v: unknown): Step {
         ...(o.face === undefined ? {} : { face: o.face }),
         ...(o.landM === undefined ? {} : { landM: num(at('landM'), o.landM, 5, 500) }),
         ...(o.maxS === undefined ? {} : { maxS: num(at('maxS'), o.maxS, 1, 600) }),
+      };
+    }
+    case 'moonLand': {
+      if (o.face !== undefined && o.face !== 'a' && o.face !== 'b') {
+        throw new ViewError(`${at('face')}: expected "a" or "b"`);
+      }
+      return {
+        do: d,
+        ...(o.face === undefined ? {} : { face: o.face }),
+        ...(o.maxS === undefined ? {} : { maxS: num(at('maxS'), o.maxS, 1, 600) }),
+        ...(o.waitS === undefined ? {} : { waitS: num(at('waitS'), o.waitS, 0, 60) }),
       };
     }
     case 'give': {
