@@ -27,7 +27,7 @@
       "viscosityM2s": 4,
       "yieldDepthM": 0.15,
       "restSeconds": 20,
-      "stillM3s": 0.0005,
+      "stillM3s": 0.005,
       "sourceKeepM": 4,
       "breakoutDepthM": 3,
       "rock": "dwell:basalt",

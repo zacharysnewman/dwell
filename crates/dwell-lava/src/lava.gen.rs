@@ -19,7 +19,7 @@ pub const DATA: LavaData = LavaData {
             viscosity_m2s: 4.0,
             yield_depth_m: 0.15,
             rest_seconds: 20.0,
-            still_m3s: 0.0005,
+            still_m3s: 0.005,
             source_keep_m: 4.0,
             breakout_depth_m: 3.0,
             light: 13,

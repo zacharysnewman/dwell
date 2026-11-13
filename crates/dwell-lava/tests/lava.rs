@@ -212,8 +212,14 @@ both_faces!(
                 check_cells(f, &field, std::slice::from_ref(&e));
                 if let LavaEvent::Rock { x, z, rows, rock } = e {
                     assert_eq!(rock, "dwell:basalt");
-                    // The rock fills the cells its lava filled the step before.
-                    assert_eq!(rows, before[&[x, z]], "column ({x}, {z})");
+                    // The rock fills the cells its lava filled the step before (give or take the
+                    // top row: a column still creeping below `stillM3s` can cross one in the step).
+                    let was = &before[&[x, z]];
+                    assert_eq!(rows.start, was.start, "column ({x}, {z})");
+                    assert!(
+                        rows.len().abs_diff(was.len()) <= 1,
+                        "column ({x}, {z}): {rows:?} {was:?}"
+                    );
                     cells += rows.len();
                     first_rock.get_or_insert(t);
                 }
