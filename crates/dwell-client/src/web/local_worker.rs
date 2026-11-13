@@ -257,6 +257,20 @@ impl LocalWorld {
     pub fn set_mode(&mut self, name: &str) -> bool {
         self.core.set_mode(name)
     }
+    /// The host retunes the world's worldgen config (Chisel in the game, Phase 56 B7): the chunks
+    /// within `radius` chunks of the player generated again, edits kept, the config saved with the
+    /// world. Returns faces A's and B's new map bytes; throws the refusal's message.
+    #[wasm_bindgen(js_name = retuneWorldgen)]
+    pub fn retune_worldgen(&mut self, config: &str, radius: i32) -> Result<js_sys::Array, JsValue> {
+        let maps = self
+            .core
+            .retune_worldgen(config, radius)
+            .map_err(|e| JsValue::from_str(&e))?;
+        Ok(maps
+            .iter()
+            .map(|m| JsValue::from(js_sys::Uint8Array::from(&m[..])))
+            .collect())
+    }
     /// The world's game mode's name.
     #[wasm_bindgen(getter)]
     pub fn mode(&self) -> String {

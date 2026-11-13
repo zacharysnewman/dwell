@@ -30,6 +30,10 @@ pub trait Jobs {
     /// are done): the pool collects the result and starts the next queued job then, so a slow
     /// page's workers don't sit idle until its next frame.
     fn on_done(&mut self, _wake: Rc<dyn Fn()>) {}
+    /// Installs a retuned world's maps where the generation jobs run (Chisel in the game, Phase 56
+    /// B7): each generation worker installs them and makes its generator again. Inline jobs share
+    /// this instance's maps, so they need nothing.
+    fn install_maps(&mut self, _maps: &[Vec<u8>]) {}
 }
 
 /// Runs jobs on the calling thread when polled (tests, and a fallback without workers).
@@ -183,6 +187,13 @@ pub fn slow_frame_scale(frame_ms: f64) -> usize {
 }
 
 pub type PoolRef = Rc<RefCell<Pool>>;
+
+impl Pool {
+    /// [`Jobs::install_maps`].
+    pub fn install_maps(&mut self, maps: &[Vec<u8>]) {
+        self.jobs.install_maps(maps);
+    }
+}
 
 impl Pool {
     pub fn new(jobs: Box<dyn Jobs>) -> PoolRef {

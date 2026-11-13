@@ -1416,6 +1416,19 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    Chisel's biome sliders inside a running world with the terrain around the player regenerating as they tune
    (Phase 56 B7); the Textures tab adding new materials and blocks by data, editing water and sky colours, and
    painting item and model textures (B6's rest). Queued.
+   Brief (2026-11-13): "in a local world (creative, or a dev/creator toggle — say which), open Chisel's biome
+   sliders as an in-game panel; a change becomes a world edit (saved with the world, the existing edit path)
+   and the terrain around the player regenerates — the chunks within a radius re-generated and re-meshed
+   (player edits kept on top …), LOD refreshed; debounced; undo/reset. Multiplayer: host only (say so)."
+   **First slice built (branch `claude/chisel-in-game-phase-56-2jgr7e`):** the game menu's **Chisel** page in
+   local worlds, offered in **creative** mode (no separate dev toggle): per biome the `detail`, `shaping` and
+   `banks` sliders, Undo, Reset, a 400 ms debounce; a change retunes the world: the config saved in the world
+   file (settings `worldgen`) and the world record, the maps re-wrapped (no recompute; a ground-moving edit is
+   refused: a new world), the chunks within 3 chunks of the player generated again with the player's edits kept,
+   sent whole and their LOD sections recomputed. **Host only**: refused while guests are in the world.
+   Outstanding: the far LOD and far terrain follow only on reopening, edited chunks outside the radius keep
+   the old ground, the water grid isn't re-read, the browser check (cloud session: no GPU), the Textures tab
+   extras.
 35. **Swords as weapons** (owner 2026-11-12: "we'll want to bring in the swords from the model pack we got the
    tools from as weapons."). Answers: animals only for now (no PvP); a timed swing arc like the axe that hits what
    it crosses at contact, with damage, knockback and durability per sword as data (reusing the swing and

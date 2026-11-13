@@ -264,6 +264,19 @@ impl LocalCore {
     pub fn world_size(&self) -> dwell_protocol::world_size::WorldSize {
         self.server.world_settings().size
     }
+    /// The host retunes the world's worldgen config (Chisel in the game, Phase 56 B7): the chunks
+    /// within `radius` chunks of the local player generated again under `config`, their edits kept,
+    /// the config saved with the world (`Server::retune_worldgen`). Returns each face's new map
+    /// bytes, for the page's instances to install.
+    pub fn retune_worldgen(&mut self, config: &str, radius: i32) -> Result<Vec<Vec<u8>>, String> {
+        let center = self
+            .server
+            .player_of_session(LOCAL_SESSION)
+            .and_then(|p| self.server.feet_of(p))
+            .ok_or("no local player to tune around")?;
+        let r = self.server.retune_worldgen(config, center, radius)?;
+        Ok(r.maps)
+    }
     /// The world's game mode's name.
     pub fn mode(&self) -> &'static str {
         self.server.world_settings().mode
