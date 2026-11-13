@@ -2,6 +2,13 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.56.3",
+      "changes": [
+        "New music: 20 light, casual tracks replace the old theme, played in a shuffle that never repeats a track back to back, with a quiet gap between tracks.",
+        "The music files are smaller and levelled to the same loudness."
+      ]
+    },
+    {
       "version": "0.56.2",
       "changes": [
         "Behind the scenes: showcase recordings include the game's sound effects and ambience"
