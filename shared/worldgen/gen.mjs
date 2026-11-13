@@ -3040,6 +3040,7 @@ const CLIMATE_TOP = [
   "$comment",
   "bands",
   "seaLevel",
+  "rainByLatitude",
   "lapseRate",
   "winds",
   "windJitter",
@@ -3113,6 +3114,17 @@ export function validateClimate(data) {
     if (i > 0 && !(p[0] > data.seaLevel[i - 1][0]))
       fail(`seaLevel[${i}]: latitudes must ascend`);
   }
+  // The rain's factor by latitude (0.62: the subtropical dry belt), as seaLevel's curve.
+  if (!(Array.isArray(data.rainByLatitude) && data.rainByLatitude.length >= 2))
+    fail("rainByLatitude must be at least two [latitude, factor] points");
+  for (const [i, p] of data.rainByLatitude.entries()) {
+    if (!(Array.isArray(p) && p.length === 2 && isNum(p[0]) && isNum(p[1])))
+      fail(`rainByLatitude[${i}] must be [latitude, factor]`);
+    num(`rainByLatitude[${i}] latitude`, p[0], 0, 90);
+    num(`rainByLatitude[${i}] factor`, p[1], 0, 5);
+    if (i > 0 && !(p[0] > data.rainByLatitude[i - 1][0]))
+      fail(`rainByLatitude[${i}]: latitudes must ascend`);
+  }
   num("lapseRate", data.lapseRate, 0, 20);
   if (!(Array.isArray(data.winds) && data.winds.length > 0)) fail("winds must be a non-empty list");
   for (const [i, w] of data.winds.entries()) {
@@ -3179,6 +3191,9 @@ export function climateRust(data) {
     "    ],",
     "    sea_level: &[",
     ...data.seaLevel.map((p) => `        [${rf(p[0])}, ${rf(p[1])}],`),
+    "    ],",
+    "    rain_by_latitude: &[",
+    ...data.rainByLatitude.map((p) => `        [${rf(p[0])}, ${rf(p[1])}],`),
     "    ],",
     `    lapse_rate: ${rf(data.lapseRate)},`,
     "    winds: &[",

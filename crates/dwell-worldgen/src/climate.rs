@@ -82,6 +82,9 @@ pub struct ClimateRules {
     pub bands: &'static [Band],
     /// (latitude, sea-level °C), latitudes ascending.
     pub sea_level: &'static [[f64; 2]],
+    /// (latitude, the rain's factor), latitudes ascending (0.62: the subtropical dry belt under
+    /// the subtropical highs, dry deserts around 20–30°).
+    pub rain_by_latitude: &'static [[f64; 2]],
     /// °C per 1000 m.
     pub lapse_rate: f64,
     pub winds: &'static [WindCell],
@@ -109,19 +112,30 @@ impl ClimateRules {
     /// The sea-level temperature (°C) at `latitude` degrees: straight between the curve's points,
     /// held beyond its ends.
     pub fn sea_level_c(&self, latitude: f64) -> f64 {
-        let s = self.sea_level;
-        if latitude <= s[0][0] {
-            return s[0][1];
-        }
-        for w in s.windows(2) {
-            let ([a, ta], [b, tb]) = (w[0], w[1]);
-            if latitude <= b {
-                return ta + (tb - ta) * (latitude - a) / (b - a);
-            }
-        }
-        s[s.len() - 1][1]
+        curve(self.sea_level, latitude)
     }
 
+    /// The rain's factor at `latitude` degrees (`rainByLatitude`), as [`ClimateRules::sea_level_c`].
+    pub fn rain_factor(&self, latitude: f64) -> f64 {
+        curve(self.rain_by_latitude, latitude)
+    }
+}
+
+/// A curve of (latitude, value) points: straight between them, held beyond its ends.
+fn curve(s: &[[f64; 2]], latitude: f64) -> f64 {
+    if latitude <= s[0][0] {
+        return s[0][1];
+    }
+    for w in s.windows(2) {
+        let ([a, ta], [b, tb]) = (w[0], w[1]);
+        if latitude <= b {
+            return ta + (tb - ta) * (latitude - a) / (b - a);
+        }
+    }
+    s[s.len() - 1][1]
+}
+
+impl ClimateRules {
     /// The wind cell covering `latitude` (the last one beyond them all).
     pub fn wind_at(&self, latitude: f64) -> usize {
         self.winds
@@ -409,7 +423,8 @@ impl Climate {
                     .iter()
                     .map(|n| n.amplitude)
                     .sum::<f64>());
-        (self.band().rain_mm * factor * rain.at(x, z) / rain.flat + add)
+        let belt = self.rules.rain_factor(self.latitude(x, z));
+        (self.band().rain_mm * belt * factor * rain.at(x, z) / rain.flat + add)
             .clamp(0.0, self.rules.biomes.max_rain_mm)
     }
 }

@@ -3,7 +3,7 @@
   "label": "Sand desert",
   "description": "Hot and dry: dunes of sand to the horizon, rock only on the steepest faces.",
   "where": {
-    "weight": 1,
+    "weight": 2.5,
     "celsius": {
       "min": 14,
       "blend": 2
@@ -12,6 +12,7 @@
       "max": 250,
       "blend": 75
     },
+    "elevation": { "max": 800, "blend": 150 },
     "wetness": {
       "max": 0.25,
       "blend": 0.1

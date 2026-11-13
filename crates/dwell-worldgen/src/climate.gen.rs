@@ -18,6 +18,15 @@ pub const CLIMATE: ClimateRules = ClimateRules {
         [75.0, -10.0],
         [90.0, -24.0],
     ],
+    rain_by_latitude: &[
+        [0.0, 1.3],
+        [10.0, 1.1],
+        [18.0, 0.55],
+        [26.0, 0.4],
+        [34.0, 0.75],
+        [42.0, 1.0],
+        [90.0, 1.0],
+    ],
     lapse_rate: 6.5,
     winds: &[
         WindCell { name: "trade_winds", latitude: [0.0, 30.0], from: 60.0 },
