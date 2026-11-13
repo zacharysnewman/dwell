@@ -58,7 +58,9 @@ kneels where it fell (one knee down, head bowed, a hand on the hilt of its sword
 before it; with no sword, the hand on the raised knee), the view fades, and it **stands up at the
 resurrection shrine nearest where it fell**, on that face ([`SHRINES.md`](./SHRINES.md)), playing the
 stand. Nothing about a human is drawn or simulated as a death: no lying body, no "You died", no
-removal. Animals still die. §11.13 has how it is built.
+removal. A defeated human **keeps everything** it carries (owner, 2026-11-13: "Keep everything"): it
+stands up at the shrine with its hotbar and inventory exactly as before. Animals still die. §11.13 has
+how it is built.
 
 ## 2. Art direction for characters
 
@@ -1012,8 +1014,9 @@ they kneel without one, the hand on the knee.
   unknown field or name, or a value out of range.
 - **The server** (`dwell-sim` `server.rs` `kill`): at 0 health the player's body leaves the physics
   and its snapshots carry it `DEAD` (on the wire, now *defeated*) where it fell, with the facing it
-  knelt with; its inventory stays on it while it kneels and is left where it knelt when it stands up
-  (a mode with items), so a held sword is seen planted. After `kneelS + fadeS` (`defeat_ticks`) it
+  knelt with; it **keeps everything** it carries (owner, 2026-11-13: "Keep everything", Guild Wars
+  style): the hotbar, the inventory, the held slot and the wallet stay on it through the kneel and the
+  stand, in every mode and on every grid, and nothing drops (a held sword is seen planted). After `kneelS + fadeS` (`defeat_ticks`) it
   stands up at the shrine nearest where it fell (SHRINES.md §5). An NPC hurt to 0 health
   (`Creatures::hurt`: `Hurt::defeated`, no drops, not removed) kneels still and unhurt for its kind's
   kneel and fade, then the server stands it up whole at the stand point of the shrine nearest where

@@ -2633,6 +2633,12 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    `stand`; others see both; the wire change additive; data for the kneel's time, the fade, the camera and
    per-character overrides; tests by data on both faces. Design rule recorded in docs/CHARACTERS.md §1a. Built on
    branch `claude/defeat-kneel` (docs/CHARACTERS.md §11.13, docs/SHRINES.md §5).
+   **Items on defeat** (owner 2026-11-13, asked "When a human is defeated (kneels, then stands at a shrine), what
+   happens to their inventory?"): **"Keep everything"** (Guild Wars style). Before, a defeat dropped your things where
+   you knelt, at the stand. Built (branch `claude/defeat-keeps-items-xqlhag`): a defeated player keeps every item (hotbar,
+   inventory, held slot, wallet) through the kneel and the stand, in every mode and on every grid; nothing drops
+   (`dwell-sim` `items.rs` `a_defeat_in_adventure_keeps_everything_and_drops_nothing`; BUGS.md #146). **Owner should
+   see:** after being defeated and standing up at a shrine, the hotbar and inventory are exactly as before.
 
 56. **Blueprints and builder NPCs** (owner 2026-11-13: **"I also want to add a new version of the human NPC, same looks, no
    sword capable of building blueprints like the ones you can save right now. In adventure you can place "blueprints" but
