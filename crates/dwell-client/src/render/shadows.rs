@@ -525,7 +525,7 @@ pub enum CasterKind {
 /// Whether a caster of `kind` casts into cascade `i` of `tier`. A tree's leaves cast into every
 /// cascade: until 0.63.x they were plants here, so past `plantCascades` (the second cascade at
 /// Low, ~20 m out; the third at High, ~44 m) a crown cast nothing, and walking moved a tree
-/// between a cascade with its crown's shadow and one without (BUGS.md #151).
+/// between a cascade with its crown's shadow and one without (BUGS.md #153).
 pub fn casts(kind: CasterKind, i: usize, tier: &ShadowTier) -> bool {
     match kind {
         CasterKind::Plants => i < tier.plant_cascades as usize,
@@ -535,7 +535,7 @@ pub fn casts(kind: CasterKind, i: usize, tier: &ShadowTier) -> bool {
 
 /// The normal offset (m) of a receiver's lookup in cascade `c` (`shadow_lookup` in
 /// `SHADOW_WGSL`): `normalOffsetTexels` of the cascade's texels, and for a tree's leaves at least
-/// `leafNormalOffsetM`, the same in every cascade (BUGS.md #151: at a few centimetres, the fine
+/// `leafNormalOffsetM`, the same in every cascade (BUGS.md #153: at a few centimetres, the fine
 /// near cascade shaded a crown's top with its own cards' and leaf texels' shadows and the coarse
 /// far ones didn't, so a crown flipped between two looks as the camera moved).
 pub fn normal_offset_m(t: &ShadowTunables, c: &Cascade, leaf: bool) -> f64 {
@@ -561,7 +561,7 @@ pub fn edge(c: &Cascade, tier: &ShadowTier, rel: V3) -> f64 {
 /// The cascades an eye-relative point reads (`shadow_cascade` and `shadow_cascades`): the first
 /// whose map holds it, and the share (0–1) of the next one's lookup it blends toward, over the
 /// outer `blendBand` of the first's box (all of it at the edge), so a cascade's edge shows no step
-/// (BUGS.md #151). None: past every cascade.
+/// (BUGS.md #153). None: past every cascade.
 pub fn pick(
     t: &ShadowTunables,
     tier: &ShadowTier,
@@ -922,7 +922,7 @@ fn shadow_lookup(c: i32, rel: vec3f, n: vec3f) -> f32 {
 
 // The cascades' visibility of a point first held by cascade `c`: its lookup, blended over the
 // box's outer `pcf.z` toward the next cascade's (all of it at the edge), so a cascade's edge
-// shows no step (BUGS.md #151; render/shadows.rs `pick` is this, tested).
+// shows no step (BUGS.md #153; render/shadows.rs `pick` is this, tested).
 fn shadow_cascades(c: i32, rel: vec3f, n: vec3f) -> f32 {
     let vis = shadow_lookup(c, rel, n);
     let band = shadows.pcf.z;
@@ -1599,7 +1599,7 @@ mod tests {
         }
     );
 
-    // BUGS.md #151: a tree's shadows flipped between two looks as the camera moved (its crown
+    // BUGS.md #153: a tree's shadows flipped between two looks as the camera moved (its crown
     // shaded by itself in one cascade, not in another; a hard step at each cascade's edge). The
     // GPU can't run here, so the maps and the lookup are modelled on the CPU: each texel's depth
     // ray-cast against box casters (with the casters' slope-scaled bias), the shader's PCF of

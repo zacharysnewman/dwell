@@ -1427,7 +1427,7 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
 
    Owner, 2026-11-13: **"Also for trees the shadows seem to flip flop between two shadow types even on close trees as
    you move. Where shadows cast by the tree are only below, or they're both below the tree and on top of the tree.
-   Like the tree is casting a shadow onto itself."** (BUGS.md #151.) **Fixed (2026-11-13, cloud,
+   Like the tree is casting a shadow onto itself."** (BUGS.md #153.) **Fixed (2026-11-13, cloud,
    `claude/tree-shadow-flip`):** a tree's leaves cast into every cascade (they were plants, in the nearest
    `plantCascades` only); the shadow passes drop no leaf card for the camera's side of the crown; a tree's leaves look
    up 0.35 m out in every cascade (`bias.leafNormalOffsetM`), so no cascade shades a crown's top with its own cards;
@@ -1763,6 +1763,14 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    feet that didn't line up / seemed to be floating?"** **Fixed (BUGS.md #142):** your first-person body was moved
    back whole (0.1–0.4 m) off its feet and their shadow; it now leans back from its soles, which stand where you do
    on flat ground, ramps and slopes.
+   Owner, 2026-11-13: **"Can you make a collection of skin tone ranges with hair color ranges so it's not completely
+   random. Also, face should always match arms, etc. shouldn't have different skin colors on different skin parts."**
+   **Built (BUGS.md #152):** `shared/creatures/appearance.json` holds the skin tones (ten, porcelain to ebony) and, for
+   each, the hair colours that go with it by weight (light skins blond, ginger, auburn, brown; deep skins mostly black
+   and dark brown); a villager picks a tone from its seed, then a hair colour from that tone's list; clothes keep their
+   own `colours`. Every skin vertex draws the one tone (the neck and jaw had been a ramp darker than the face and
+   arms). No eyebrows exist on the Peasant yet (when they do, they take the hair colour). Owner should see: a lineup
+   of villagers with natural, consistent skin across face, neck, arms and hands, and hair colours that suit each tone.
 39. **Livelier animals** (owner 2026-11-12, after the video had no chase or fleeing — on day one every pack is
    kilometres from any herd and players can't scare deer): chose **deer flee from players** (they notice a player
    within a distance by data, closer when crouching, and run off; wolves keep their distance unless hungry),
@@ -2655,6 +2663,12 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    `stand`; others see both; the wire change additive; data for the kneel's time, the fade, the camera and
    per-character overrides; tests by data on both faces. Design rule recorded in docs/CHARACTERS.md §1a. Built on
    branch `claude/defeat-kneel` (docs/CHARACTERS.md §11.13, docs/SHRINES.md §5).
+   **Items on defeat** (owner 2026-11-13, asked "When a human is defeated (kneels, then stands at a shrine), what
+   happens to their inventory?"): **"Keep everything"** (Guild Wars style). Before, a defeat dropped your things where
+   you knelt, at the stand. Built (branch `claude/defeat-keeps-items-xqlhag`): a defeated player keeps every item (hotbar,
+   inventory, held slot, wallet) through the kneel and the stand, in every mode and on every grid; nothing drops
+   (`dwell-sim` `items.rs` `a_defeat_in_adventure_keeps_everything_and_drops_nothing`; BUGS.md #151). **Owner should
+   see:** after being defeated and standing up at a shrine, the hotbar and inventory are exactly as before.
 
 56. **Blueprints and builder NPCs** (owner 2026-11-13: **"I also want to add a new version of the human NPC, same looks, no
    sword capable of building blueprints like the ones you can save right now. In adventure you can place "blueprints" but

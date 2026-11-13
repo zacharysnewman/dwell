@@ -6,14 +6,6 @@ pins it.
 
 ## Open
 
-### 142. `dwell-sim` `items.rs` `dying_in_adventure_drops_everything_where_the_player_died` fails on main
-
-Found 2026-11-13 (branch `claude/collision-ahead`, not caused by it: the same failure on main at 0.61.1 and after
-merging main): both faces fail at `items.rs:202`, `a stack a slot: []`: `kill_player` in adventure leaves no loose
-items (4 expected: the starting axe, two stacks of dirt, the sticks). Suspect: the defeat kneel (WORK_QUEUE item 55,
-"humans don't die") changed what a kill does, and the test still expects the old death drop. Not investigated
-further; the owner decides whether a defeated player drops their items.
-
 ### 135. Flat ground on a plateau can show a sandstone wall's face (red sandstone) instead of a tread
 
 Found 2026-11-13 while fixing #134 (Realistic, seed 42 face A, e.g. (−6000, −3500) and (−4250, 0)): a few wide, flat
@@ -555,7 +547,7 @@ face, or the placement check against its shape.
 
 ## Fixed
 
-### 151. A tree's shadows flip between two looks as you move (fixed after 0.63.2; the owner's GPU check outstanding)
+### 153. A tree's shadows flip between two looks as you move (fixed after 0.63.2; the owner's GPU check outstanding)
 
 Owner, 2026-11-13: "Also for trees the shadows seem to flip flop between two shadow types even on close trees as you
 move. Where shadows cast by the tree are only below, or they're both below the tree and on top of the tree. Like the
@@ -583,6 +575,31 @@ at the edge), `a_trees_leaves_cast_into_every_cascade_and_plants_into_the_neares
 `a_trees_leaves_take_the_same_normal_offset_in_every_cascade`. **Owner should see:** walking and flying around
 trees, their shadows (on the ground and within the canopy) stay the same, with no flip between two looks.
 
+### 152. A villager's neck and jaw were another skin colour than its face and arms (fixed after 0.63.3)
+
+Owner, 2026-11-13: "face should always match arms, etc. shouldn't have different skin colors on different skin parts."
+The Peasant's skin part is modelled in two ramps (skin_fair face and arms, a skin_tan neck and jaw), and the recolour
+kept a vertex's whole shade of the part's base, so the neck and jaw drew 0.83 of the tone: a second skin. Skin and
+hair also came from independent random lists (a deep skin with blond hair as often as black). Now the skin and hair
+come from `shared/creatures/appearance.json` (tones, each with its hair colours), and the skin part keeps only the
+set's `shade` share (0.25) of the modelled shading. Tests: `dwell-client`
+`every_skin_vertex_of_a_villager_draws_its_one_skin_tone` (200 villagers, every level; red at a share of 1: "skin
+vertex 693 draws … x0.83"), `dwell-sim` `a_villagers_hair_always_goes_with_its_skin_tone`, `dwell-models`
+`a_tone_by_hex_keeps_its_share_of_the_parts_shading`, `shared/creatures/gen.test.mjs` (bad entries by name). Left: the
+coarser detail levels' part map puts a few sleeve-edge and lip vertices of other colours in the skin part; they draw
+the tone at 0.86–1.0.
+
+### 151. `dwell-sim` `items.rs` `dying_in_adventure_drops_everything_where_the_player_died` failed on main (fixed after 0.63.1)
+
+Found 2026-11-13 (branch `claude/collision-ahead`, not caused by it: the same failure on main at 0.61.1 and after
+merging main): both faces failed at `items.rs:202`, `a stack a slot: []`: `kill_player` in adventure left no loose
+items at once (4 expected: the starting axe, two stacks of dirt, the sticks). Cause: the defeat kneel (WORK_QUEUE
+item 55, "humans don't die") moved the drop to the stand, and the test still expected the old death drop at once.
+(Numbered 142 at first, a duplicate of the first-person feet's #142.) The owner decided (2026-11-13, "Keep
+everything"): a defeat drops nothing. Fixed: the stand's drop is gone (`drop_on_stand`, `drop_inventory`); the test is
+now `a_defeat_in_adventure_keeps_everything_and_drops_nothing` (both faces: the inventory, held slot and wallet
+exactly as before the defeat, at the shrine, no loose items), red on the old code (the axe, dirt and sticks dropped
+at the stand) and green after.
 ### 150. The bench's `flyTo` step rejected `marginM` (fixed after 0.63.1)
 
 Brief, 2026-11-13 (browser check on 0.60.16, seed 7, local world, M1): "the bench `flyTo` step rejects `marginM` although

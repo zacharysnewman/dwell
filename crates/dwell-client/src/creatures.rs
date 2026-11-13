@@ -75,7 +75,7 @@ fn npc_armed(l: &NpcLook) -> bool {
 #[derive(Clone, Debug, PartialEq)]
 pub struct NpcLook {
     pub kind: String,
-    pub colours: Vec<(&'static str, &'static str, &'static str)>,
+    pub colours: Vec<dwell_sim::creatures::NpcColour>,
     pub held: Option<&'static str>,
     /// Its raised block's role (`guard_level`, `guard_vertical`) while the server says it guards
     /// (`Swordplay`'s guards; WORK_QUEUE item 35), set by the game each frame; None lowered.

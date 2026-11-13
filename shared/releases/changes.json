@@ -2,6 +2,19 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.63.4",
+      "changes": [
+        "Villagers now have natural skin tones, from light to deep, with hair colours that suit them.",
+        "A villager's face, neck, arms and hands are always the same skin colour."
+      ]
+    },
+    {
+      "version": "0.63.3",
+      "changes": [
+        "Being defeated no longer drops your things: you stand up at the shrine with your hotbar and inventory exactly as before"
+      ]
+    },
+    {
       "version": "0.63.2",
       "changes": [
         "The moon draws as you fly near it from home, no longer cut away",

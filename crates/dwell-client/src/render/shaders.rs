@@ -910,7 +910,7 @@ struct CutoutOut {
     @location(8) light: f32,
     @location(9) flood: vec2f,
     // 1 for a tree's leaves (their faces and cards): their shadow lookup's normal offset is at
-    // least `leafNormalOffsetM` (render/shadows.rs `normal_offset_m`, BUGS.md #151).
+    // least `leafNormalOffsetM` (render/shadows.rs `normal_offset_m`, BUGS.md #153).
     @location(10) @interpolate(flat) leaf: f32,
 };
 
@@ -972,7 +972,7 @@ fn card_normal(packed: f32) -> vec3f {
 // out to the full-detail distance, all discarded in the fragment stage (WORK_QUEUE item 32, the
 // edge's 14 ms of cutout). `rel` the corner before the wind's sway, `n` the card's normal in the
 // world. `back_cull` false in the shadow passes: what casts follows the light, not the side of
-// the crown the camera is on (BUGS.md #151: the cards on the crown's far side and on its top, seen
+// the crown the camera is on (BUGS.md #153: the cards on the crown's far side and on its top, seen
 // from below, cast nothing, and the crown's shadow on itself came and went as the camera moved).
 fn card_dropped(rel: vec3f, n: vec3f, plant: vec4f, back_cull: bool) -> bool {
     if (plant.w > 0.0 && length(rel) > plant.w + 2.0) {

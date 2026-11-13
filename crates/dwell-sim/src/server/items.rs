@@ -1,5 +1,5 @@
 //! The server's side of inventories and loose items (docs/adr/0066-inventory-and-drops.md): what
-//! breaking drops and placing costs, pickup, death drops, and telling clients that understand them.
+//! breaking drops and placing costs, pickup (a defeat drops nothing), and telling clients that understand them.
 
 use super::{Server, SessionId};
 use dwell_blocks::{StateId, block_of, info};
@@ -10,7 +10,7 @@ use dwell_protocol::{
     Channel, InventoryAction, InventoryMessage, ItemDrops, MAX_ITEM_DROPS_PER_MESSAGE, Message,
     inventory_flags,
 };
-use dwell_world::{FaceFrame, M, chunk_of};
+use dwell_world::{M, chunk_of};
 
 /// Ticks between sends of falling items' points (20 a second at 60 Hz).
 const MOVED_EVERY: u32 = 3;
@@ -134,33 +134,6 @@ impl Server {
                 None => s.inventory_unread = true,
             },
             None => s.inventory = fresh,
-        }
-    }
-
-    /// Everything a dying player holds falls where it died (in a mode that uses items); the
-    /// wallet is kept.
-    pub(super) fn drop_inventory(&mut self, id: SessionId, at: [f64; 3]) {
-        if !self.uses_items() {
-            return;
-        }
-        let s = self.sessions.get_mut(&id).expect("session");
-        let stacks = s.inventory.take_all();
-        if stacks.is_empty() {
-            return;
-        }
-        s.inventory_dirty = true;
-        // Spread a little around the death point, face-local, so they don't sit in one spot.
-        let f = FaceFrame::at_height(at[1]);
-        let local = f.point(at);
-        for (i, st) in stacks.into_iter().enumerate() {
-            let a = i as f64 * 2.399_963; // the golden angle
-            let r = 0.15 * (i as f64).sqrt();
-            let p = f.point([
-                local[0] + r * a.cos(),
-                local[1] + 0.25,
-                local[2] + r * a.sin(),
-            ]);
-            self.loose.drop(st, p);
         }
     }
 
