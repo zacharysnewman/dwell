@@ -35,6 +35,12 @@ export const BLOCK_DAMAGE: readonly {
   { block: 'dwell:obsidian', default: null, tools: { pickaxe: 12 } },
   { block: 'dwell:moon_dust', default: 11, tools: { shovel: 7 } },
   { block: 'dwell:moon_mare_dust', default: 11, tools: { shovel: 7 } },
+  { block: 'dwell:red_sand', default: 11, tools: { shovel: 7 } },
+  { block: 'dwell:basalt_ramp', default: null, tools: { pickaxe: 7 } },
+  { block: 'dwell:obsidian_ramp', default: null, tools: { pickaxe: 12 } },
+  { block: 'dwell:moon_dust_ramp', default: 11, tools: { shovel: 7 } },
+  { block: 'dwell:moon_mare_dust_ramp', default: 11, tools: { shovel: 7 } },
+  { block: 'dwell:red_sand_ramp', default: 11, tools: { shovel: 7 } },
 ];
 
 /** Tools that wear (`durability.items`): the hits each survives (the slot's wear bar). */

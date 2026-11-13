@@ -778,6 +778,18 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    `breaking.tools`), validated in the generator with a fixture by data alone, each repeat a whole new swing sent
    as a click's (others see each by its swing count; wear on a hit only), mouse, controller and touch (a still
    hold in Break mode with such a tool). Left: the feel in game (no GPU in the cloud).
+   Owner, 2026-11-13: **"You should also be able to hold 'punch' to dig with your hand."**
+   **Status (hand-hold):** built (ITEMS.md "Hold to keep swinging", BLOCK_DAMAGE.md §13): a punch is a Break
+   holding no breaking or chopping tool (an empty hand, a block, any other item, as the damage rules already
+   count it); held, it punches every `breaking.hand.repeatS` (0.4 s, `shared/tools/tools.json`), each a hit
+   landing at once on what is aimed at then, the arms' break swing replayed per punch; mouse, controller trigger
+   and a still touch in Break mode. The server takes a punch short of breaking no faster than that rate (one
+   spare for network bunching), and the client sends no faster either, clicked or held. Not changed: a creative
+   punch breaks in one hit and is not rate-limited, a palette tool, the brush and paste mode don't repeat, the
+   punch has no `contactS` (it lands at the click as before). Tests: `dwell-sim` `damage` (rate accepted, twice
+   it refused, dirt broken after its hand hits; both faces, red → green), `dwell-client` `game_local`
+   `a_held_punch_digs_dirt_at_the_hands_rate_and_stops_when_let_go` (red → green), `held_use.rs`,
+   `gen.test.mjs`. Left: the feel in game (no GPU in the cloud).
 18. **Digging marks that look carved** (owner 2026-11-11: "the 'chunks' of dirt aren't at all what we
    discussed. It should be like a normal map change (do we support normal/bump maps)? It's completely flat
    should look like mesh deformation (preferably without actually doing it for performance)"; "That part was
