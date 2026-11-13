@@ -88,6 +88,9 @@ const RENDER_MODES = ['opaque', 'cutout', 'translucent'];
 const SUPPORTS = ['below', 'behind'];
 // What a block counts as for holding things up (docs/FELLING.md §2); absent: ground.
 const SUPPORT_ROLES = ['ground', 'carrier', 'rider', 'falls'];
+// What a falling block becomes where it settles (owner, 2026-11-13): `self` (the default) the state it
+// fell as; `full` its family's full block (a fallen sand ramp lands as sand, never a lone ramp).
+const SETTLES_AS = ['self', 'full'];
 const AXES = ['x', 'y', 'z'];
 // The natural, moldable material groups (`moldable`; docs/ITEMS.md): building with one of a group
 // onto a slope of the same group replaces the slope.
@@ -128,6 +131,9 @@ const familyBlock = (base, kind, extra = {}) => {
     palette: 'all',
     // A slope is of its block's moldable material (dirt's ramp is dirt).
     ...(base.moldable === undefined ? {} : { moldable: base.moldable }),
+    // A falling block's family falls too, and settles as its base block's `settlesAs` says
+    // (owner, 2026-11-13: a sand ramp that falls lands as flat sand, never a lone ramp).
+    ...(base.support === 'falls' ? { support: 'falls', settlesAs: base.settlesAs ?? 'self', familyOf: base.name } : {}),
   };
   if (kind === 'ramp') {
     // Stored cardinal ramps (docs/HALF_HEIGHT_GRID.md §3): placed by generation only, so not in
@@ -284,6 +290,10 @@ function validateRender(id, def, look, isAir) {
   if (def.onSlopes !== undefined && typeof def.onSlopes !== 'boolean') fail(`${id}: onSlopes must be true or false`);
   if (def.support !== undefined && !SUPPORT_ROLES.includes(def.support)) {
     fail(`${id}: support must be one of ${SUPPORT_ROLES.join(', ')}`);
+  }
+  if (def.settlesAs !== undefined) {
+    if (!SETTLES_AS.includes(def.settlesAs)) fail(`${id}: settlesAs must be one of ${SETTLES_AS.join(', ')}`);
+    if (def.support !== 'falls') fail(`${id}: settlesAs needs support falls (only a falling block settles)`);
   }
   if (def.passable !== undefined && typeof def.passable !== 'boolean') fail(`${id}: passable must be true or false`);
   if (def.leafFlush !== undefined && typeof def.leafFlush !== 'boolean') fail(`${id}: leafFlush must be true or false`);
@@ -745,6 +755,15 @@ if (!fixture) writeFileSync(join(root, 'client/src/world/blocks.gen.ts'), ts.joi
   rs.push('');
   rs.push(`pub static BLOCKS: [BlockDef; ${blocks.length}] = [`);
   rs.push(...blockRows);
+  rs.push('];');
+  rs.push('');
+  // A falling block's settled block (`settlesAs` "full": a shape family member settles as its base).
+  const settles = blocks
+    .filter((b) => b.def.settlesAs === 'full' && b.def.familyOf)
+    .map((b) => `    (${rstr(b.id)}, ${rstr(`${b.id.split(':')[0]}:${b.def.familyOf}`)}),`);
+  rs.push('/// Falling blocks that settle as another block (`settlesAs`): (block, the block it settles as).');
+  rs.push(`pub static SETTLES_AS: [(&str, &str); ${settles.length}] = [`);
+  rs.push(...settles);
   rs.push('];');
   rs.push('');
   const faces = [];

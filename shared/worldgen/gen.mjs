@@ -63,8 +63,84 @@ export function registryBlocks() {
   for (const f of readdirSync(dir).filter((f) => f.endsWith(".json"))) {
     const ns = JSON.parse(readFileSync(join(dir, f), "utf8"));
     for (const b of ns.blocks ?? []) out.set(`${ns.namespace}:${b.name}`, b);
+    // The stored ramps `rampFamilies` generates (shared/blocks/gen.mjs), unless declared.
+    for (const m of ns.rampFamilies ?? []) {
+      const id = `${ns.namespace}:${m}_ramp`;
+      if (!out.has(id)) out.set(id, { name: `${m}_ramp`, family: "ramp", of: m });
+    }
   }
   return out;
+}
+
+/**
+ * Every block a worldgen surface rule can place, with where it comes from (`[block, source]`): the
+ * biomes' bands (the build's, the presets, the fixture worlds': ground, under, rock, shoreBlock), the
+ * rocks' face, cap and scree and the snow line's covers (rocks.json), the soil types' blocks
+ * (vegetation.json), the grid worlds' ground (grids.json `block`, `maria.block`) and the rock lava
+ * cools into (shared/fluids/lava.json). `files` overrides any of them (tests).
+ */
+export function surfaceBlocks(files = {}) {
+  const read = (f) => files[f] ?? JSON.parse(readFileSync(join(here, f), "utf8"));
+  const out = [];
+  const bands = (biome, where) => {
+    for (const b of biome?.bands ?? []) {
+      for (const k of ["ground", "under", "rock", "shoreBlock"]) {
+        if (typeof b[k] === "string") out.push([b[k], `${where} band ${b.name ?? "?"} ${k}`]);
+      }
+    }
+  };
+  const biomes = files.biomes ?? [
+    ...loadBiomes(),
+    ...loadBiomes(join(here, "biomes/presets")),
+  ];
+  for (const b of biomes) bands(b, `biome ${b.name}`);
+  const worlds = files.worlds ?? loadBiomes(join(here, "worlds"));
+  for (const w of worlds) {
+    for (const b of w.biomes ?? []) if (typeof b === "object") bands(b, `world ${w.name} biome`);
+  }
+  const rocks = read("rocks.json");
+  for (const r of rocks.rocks ?? []) {
+    for (const k of ["face", "cap", "scree"]) out.push([r[k], `rocks.json rock ${r.name} ${k}`]);
+  }
+  for (const k of ["snow", "ice"]) {
+    if (rocks.tectonic?.[k]) out.push([rocks.tectonic[k], `rocks.json tectonic.${k}`]);
+  }
+  for (const t of read("vegetation.json").soilTypes ?? []) {
+    for (const k of ["ground", "under"]) if (t[k]) out.push([t[k], `vegetation.json soil ${t.name} ${k}`]);
+  }
+  const walk = (v, at) => {
+    if (Array.isArray(v)) v.forEach((x, i) => walk(x, `${at}[${i}]`));
+    else if (v && typeof v === "object") {
+      for (const [k, x] of Object.entries(v)) {
+        if (k === "block" && typeof x === "string") out.push([x, `grids.json ${at}.block`]);
+        else walk(x, `${at}.${k}`);
+      }
+    }
+  };
+  walk(read("grids.json"), "grids");
+  const lava = files["lava.json"] ?? JSON.parse(readFileSync(join(root, "shared/fluids/lava.json"), "utf8"));
+  for (const f of [lava, ...(lava.lavas ?? lava.fluids ?? Object.values(lava).filter(Array.isArray).flat())]) {
+    if (typeof f?.rock === "string") out.push([f.rock, `lava.json ${f.name ?? ""} rock`]);
+    if (typeof f?.quench?.rock === "string") out.push([f.quench.rock, `lava.json ${f.name ?? ""} quench.rock`]);
+  }
+  return out;
+}
+
+/**
+ * Ramps for every terrain block (owner, 2026-11-13: "we should support ramps for all terrain
+ * blocks"): each block a worldgen surface rule can place (`surface`, from `surfaceBlocks`) has a
+ * stored ramp family (its namespace's `rampFamilies`, or a declared `<m>_ramp`), so a new terrain
+ * block gets ramps by rule. Throws naming the block and where it is placed.
+ */
+export function validateSurfaceRamps(surface, blocks = registryBlocks()) {
+  for (const [id, where] of surface) {
+    if (!blocks.has(id)) throw new Error(`${where}: unknown block ${id}`);
+    if (!blocks.has(`${id}_ramp`)) {
+      throw new Error(
+        `${where}: ${id} is placed on the surface by worldgen but has no ramps: add ${id.split(":")[1]} to its namespace's rampFamilies (shared/blocks)`,
+      );
+    }
+  }
 }
 
 /** Checks the decorations against `blocks` (id → block data); throws naming the entry. */
@@ -590,6 +666,10 @@ export function rocksRust(data) {
   rs.push(`    strength: ${rf(data.shaping.strength)},`);
   rs.push(`    tread: ${rf(data.shaping.tread)},`);
   rs.push(`    sheer: ${rf(data.shaping.sheer)},`);
+  rs.push(`    ledge: ${rf(data.shaping.ledge)},`);
+  rs.push(`    ledge_every: ${rf(data.shaping.ledgeEvery)},`);
+  rs.push(`    tread_relief: ${rf(data.shaping.treadRelief)},`);
+  rs.push(`    notched: ${data.shaping.notched === 1},`);
   rs.push("    erosion: Erosion {");
   const snake = (k) => k.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
   for (const k of Object.keys(GEOLOGY.erosion))
@@ -2945,6 +3025,7 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
     JSON.parse(readFileSync(join(here, "rocks.json"), "utf8")),
     registryBlocks(),
   );
+  validateSurfaceRamps(surfaceBlocks());
   writeFileSync(
     join(root, "crates/dwell-worldgen/src/rocks.gen.rs"),
     rocksRust(rocks),

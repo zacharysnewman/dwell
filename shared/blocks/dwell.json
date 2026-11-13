@@ -11,7 +11,12 @@
     "snowy_grass",
     "snow",
     "glacier_ice",
-    "red_sandstone"
+    "red_sandstone",
+    "basalt",
+    "obsidian",
+    "moon_dust",
+    "moon_mare_dust",
+    "red_sand"
   ],
   "fluids": {
     "dwell:water": {
@@ -207,6 +212,8 @@
       "name": "sand",
       "damage": { "default": 11, "shovel": 7, "look": { "kind": "scoops", "size": 0.38, "color": "#a8865a", "crack": "#6e5636", "depth": 0.12, "cracks": { "set": "soil", "stages": [0.2, 0.45, 0.65, 0.85], "strength": 0.6 } }, "chips": { "count": 6, "shards": 3, "piece": "dwell:dirt_clump", "color": "#c9ad7c", "speed": 1.6, "size": 0.04 } },
       "support": "falls",
+      "$settlesAs": "Owner, 2026-11-13: \"gravity blocks like sand settling ... shouldn't settle ramps away from other blocks they should transform into flat blocks\": a fallen sand ramp (its family falls too) settles as full sand.",
+      "settlesAs": "full",
       "sound": "dwell:sand",
       "density": 1600,
       "shape": "full",
@@ -792,6 +799,52 @@
       "properties": { "flooded": ["false", "true"] },
       "color": "#555459",
       "textures": "moonMareDust"
+    },
+    {
+      "$comment": "Red-brown desert sand (0.59.0; owner, 2026-11-13: \"We need a red brown sand for the red desert areas\"): the surface of the red desert (the red rock mesa and badlands biomes, the sandstone's talus in shared/worldgen/rocks.json). Sand's physics, tools and drops in the palette's red_sand ramp; falls and settles flat like sand. Its ramps are stored (`rampFamilies`). Prototype content.",
+      "name": "red_sand",
+      "damage": { "default": 11, "shovel": 7, "look": { "kind": "scoops", "size": 0.38, "color": "#9a5434", "crack": "#5e3020", "depth": 0.12, "cracks": { "set": "soil", "stages": [0.2, 0.45, 0.65, 0.85], "strength": 0.6 } }, "chips": { "count": 6, "shards": 3, "piece": "dwell:dirt_clump", "color": "#c27a4e", "speed": 1.6, "size": 0.04 } },
+      "support": "falls",
+      "settlesAs": "full",
+      "sound": "dwell:sand",
+      "density": 1600,
+      "shape": "full",
+      "placeable": true,
+      "properties": { "flooded": ["false", "true"] },
+      "color": "#c27a4e",
+      "textures": "redSand",
+      "moldable": "sand"
+    },
+    {
+      "$comment": "Ramps for every terrain block (0.59.0; owner, 2026-11-13: \"we should support ramps for all terrain blocks\"); after every earlier block, so earlier state ids stay.",
+      "name": "basalt_ramp",
+      "damage": {"default": null, "pickaxe": 7, "look": {"kind": "shards", "profile": "spall", "flakes": 2, "grid": 12, "triangles": 512, "size": 0.34, "color": "#8c8a90", "crack": "#2a282c", "cracks": {"set": "stone", "stages": [0.5, 0.7, 0.85, 0.95], "strength": 0.3}}, "chips": {"count": 7, "shards": 4, "color": "#4a4648", "speed": 2.6, "size": 0.045}},
+      "family": "ramp",
+      "of": "basalt"
+    },
+    {
+      "name": "obsidian_ramp",
+      "damage": {"default": null, "pickaxe": 12, "look": {"kind": "shards", "profile": "spall", "flakes": 2, "grid": 12, "triangles": 512, "size": 0.34, "color": "#6e6080", "crack": "#0c0a10", "cracks": {"set": "stone", "stages": [0.5, 0.7, 0.85, 0.95], "strength": 0.3}}, "chips": {"count": 7, "shards": 4, "color": "#2a2236", "speed": 2.6, "size": 0.045}},
+      "family": "ramp",
+      "of": "obsidian"
+    },
+    {
+      "name": "moon_dust_ramp",
+      "damage": {"default": 11, "shovel": 7, "look": {"kind": "scoops", "size": 0.38, "color": "#6f6d78", "crack": "#4a4850", "depth": 0.12, "cracks": {"set": "soil", "stages": [0.2, 0.45, 0.65, 0.85], "strength": 0.6}}, "chips": {"count": 6, "color": "#8a8890", "speed": 1.6, "size": 0.04}},
+      "family": "ramp",
+      "of": "moon_dust"
+    },
+    {
+      "name": "moon_mare_dust_ramp",
+      "damage": {"default": 11, "shovel": 7, "look": {"kind": "scoops", "size": 0.38, "color": "#3a3940", "crack": "#27262c", "depth": 0.12, "cracks": {"set": "soil", "stages": [0.2, 0.45, 0.65, 0.85], "strength": 0.6}}, "chips": {"count": 6, "color": "#4a4950", "speed": 1.6, "size": 0.04}},
+      "family": "ramp",
+      "of": "moon_mare_dust"
+    },
+    {
+      "name": "red_sand_ramp",
+      "damage": { "default": 11, "shovel": 7, "look": { "kind": "scoops", "size": 0.38, "color": "#9a5434", "crack": "#5e3020", "depth": 0.12, "cracks": { "set": "soil", "stages": [0.2, 0.45, 0.65, 0.85], "strength": 0.6 } }, "chips": { "count": 6, "shards": 3, "piece": "dwell:dirt_clump", "color": "#c27a4e", "speed": 1.6, "size": 0.04 } },
+      "family": "ramp",
+      "of": "red_sand"
     }
   ]
 }

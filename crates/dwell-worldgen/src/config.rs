@@ -589,6 +589,11 @@ pub fn geology_from_json(v: &Value) -> Result<Geology, String> {
             .ok_or(format!("rocks.json: {grp} is missing"))
             .and_then(|o| num(o, k).map_err(|e| format!("rocks.json: {grp}.{e}")))
     };
+    let opt = |k: &str| {
+        v.get("shaping")
+            .and_then(|o| o.get(k))
+            .and_then(Value::as_f64)
+    };
     Ok(Geology {
         rocks: Box::leak(rocks.into_boxed_slice()),
         stacks: Box::leak(stacks.into_boxed_slice()),
@@ -596,6 +601,11 @@ pub fn geology_from_json(v: &Value) -> Result<Geology, String> {
         strength: g("shaping", "strength")?.clamp(0.0, 1.0),
         tread: g("shaping", "tread")?,
         sheer: g("shaping", "sheer")?,
+        // Absent (an edit stored before 0.59): none, as before.
+        ledge: opt("ledge").unwrap_or(0.0),
+        ledge_every: opt("ledgeEvery").unwrap_or(1.0),
+        tread_relief: opt("treadRelief").unwrap_or(0.0),
+        notched: opt("notched").is_some_and(|n| n >= 1.0),
         erosion: erosion_from_json(v.get("erosion"))?,
         // The tectonic provinces' stacks (T5); absent (an edit stored before T5): the build's.
         volcanic_stack: v

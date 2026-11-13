@@ -644,6 +644,25 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    faces): massive ground < 1 % stepped (as unshaped), bedded 3–4 %, no column reshaped by the volume. Default world
    unchanged (goldens); Realistic golden rewritten (REALISTIC_WORLD.md R5). Open for the owner: the collision cores'
    schist is `bedded` (steps every 10 m); `massive` would make the cores smooth throughout (data).
+   Owner, 2026-11-13, on a screenshot of Realistic's bedded-rock slopes (a field of single-cell ½ m stair bumps, no
+   ramps on them; mesa tops perfectly flat; the mesas and scarps read well): **"We need a red brown sand for the red
+   desert areas I think. Not sure if I've clarified this but we should support ramps for all terrain blocks. Does that
+   change layered steps?"** / **"Notched ramps seems fine."** And: **"The only thing about gravity blocks like sand
+   settling is they shouldn't settle ramps away from other blocks they should transform into flat blocks."** (the
+   settled state as data on the falling rule, e.g. `"settlesAs": "full"`).
+   **Done (2026-11-13, 0.59.0, a new line; branch `claude/terrain-059-batch-v81i64`):** (1) `dwell:red_sand` (sand's
+   physics, tools and drops, the palette's `red_sand` ramp, its ramps) floors the red rock mesa (its preset's bands) and
+   is the talus of its own stack `dwell:red_desert_beds` (sandstone over a new red `dwell:siltstone`; rocks.json), data
+   only. (2) Ramps for every terrain block: basalt, obsidian, moon dust, moon mare dust and red sand joined
+   `rampFamilies`; `shared/worldgen/gen.mjs` `validateSurfaceRamps` fails naming any block a worldgen surface rule can
+   place (biome bands, rocks, soils, grids, lava's rock) without ramps. The moon generator (`grids.rs`) doesn't shape
+   ramps yet: its dust has them for when it does. (3) Layered steps as ledges (rocks.json `shaping`: `notched` 1,
+   `ledge` 2 m every `ledgeEvery` 0.5 of a soft bed, `treadRelief` 0.08): where the rock shapes the ground the stored
+   ramps also top diagonal contours (`ramps::top_of_notched`), a soft bedded rock's slope is ramped runs broken by 2 m
+   ledges, and treads keep 8 % of a bed's relief. `tests/realistic_steps.rs` (both faces): bare ½ m steps on bedded
+   ground 61 % (0.58) → 0 %, ledges ≥ 2 m ~1.6×. (4) Sand's `"settlesAs": "full"` (blocks gen.mjs, `SETTLES_AS`,
+   `dwell_blocks::settled_state`): a falling block's ramp family falls too and a fallen sand or red sand ramp settles as
+   the full block (felling.rs, both faces). Rule chosen: always the full block on settling.
 16. **Phone frame rate (P0)** (owner 2026-11-11, iPhone 17, Safari, setting Low: "I'm only getting ~23 fps on
    mobile, seeing lots of z-fighting on tree trunks with the leaf cards. What might be dropping frames since the
    last while. Used to get 60 fps"). Suspect: leaf cards are on in every tier but CPU, Low included; cards lying
@@ -1628,6 +1647,8 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    a seed-7 hill river followed down its valley — it ends in a lake, no seed-7 river reached the sea in the scan —,
    the waterline crane, the underwater swim, treading water at sunset; sound lifted 26 dB in the splice). Waits on
    the owner's review.
+   **Video 2 v2 approved and saved** (owner, 2026-11-13: "I've saved the water video, looks good. Good to move on to
+   the next.").
    weird", confirmed by the v2 comparison).
    **Built 2026-11-12:** a keyframe `up` ("a" | "b" | "auto", default auto) holds a face's up, roll and look frame
    across the midplane (THEATER_MODE.md §3.1; presets and the keyframe editor's Up take it); the next take uses
@@ -2224,6 +2245,9 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    buttons jump between 20 m, 500 m and 20 km — too coarse; steps of ~2× (data), wheel too"; (3) "After 'Center on
    me' and a zoom, the player arrow was off the view: zoom about the centred player"; (4) "The picker shows 'Delete'
    for a marker not yet saved: hide it (Cancel only)".
+   Owner, 2026-11-13 (with the 0.59 terrain batch): **"Notched ramps seems fine. I've saved the water video, looks good.
+   Good to move on to the next."** The shrine gaps branch (`claude/shrine-gaps`) is merged into the 0.59 batch (branch
+   `claude/terrain-059-batch-v81i64`), so its shrine change ships on the new line.
 
 ## Future (needs owner answers)
 

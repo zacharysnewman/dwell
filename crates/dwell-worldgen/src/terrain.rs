@@ -4055,7 +4055,14 @@ impl TerrainGenerator {
         let around: ramps_rule::Around = std::array::from_fn(|r| {
             std::array::from_fn(|c| height(x + c as i32 - 1, z + r as i32 - 1))
         });
-        let shape = ramps_rule::top_of(&around, rows_for_m(1.0));
+        // Where the rock shapes the ground (rocks.json `shaping`), notched ramps on its diagonal
+        // contours too, so its slopes ramp rather than stair (owner, 2026-11-13).
+        let geo = &self.biomes.geology.geology;
+        let shape = if geo.notched && geo.strength > 0.0 {
+            ramps_rule::top_of_notched(&around, rows_for_m(1.0))
+        } else {
+            ramps_rule::top_of(&around, rows_for_m(1.0))
+        };
         // Dry pieces: `generate` floods each one under the water (`under_water`).
         let cells = self
             .ramps

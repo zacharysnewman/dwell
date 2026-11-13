@@ -103,8 +103,13 @@ fn fnv(h: &mut u64, bytes: &[u8]) {
 /// Re-pinned 2026-11-13 for the resurrection shrines (docs/SHRINES.md, the 0.58 line): face B's
 /// pinned area gains a shrine (face A's has none, its hash unchanged); with the shrines left out of
 /// `BifacialTerrain::joined` both faces match the earlier pin exactly.
+///
+/// Re-pinned 2026-11-13 for the 0.59 terrain batch (the 0.59 line; WORK_QUEUE item 15): the red rock
+/// mesa's floors and talus are `dwell:red_sand` (its own stack `dwell:red_desert_beds`), the state ids
+/// grew (red sand and the new ramp families appended), and where the starter's rock shapes the ground
+/// (`shaping.strength` 0.25) the stored ramps notch on diagonal contours and soft beds take ledges.
 const STARTER_PIN: [(Face, &str); 2] =
-    [(Face::A, "5e9869d57483a3a3"), (Face::B, "3f270f5b83ca4e54")];
+    [(Face::A, "cdbb18b9ed921c34"), (Face::B, "b72b73579e9457fa")];
 
 #[test]
 fn the_starter_worlds_terrain_is_unchanged() {

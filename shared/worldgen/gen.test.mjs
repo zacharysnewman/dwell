@@ -17,6 +17,8 @@ import {
   vegetationRust,
   validateVegetation,
   registryBlocks,
+  surfaceBlocks,
+  validateSurfaceRamps,
   registryStructures,
   terrainRust,
   loadBiomes,
@@ -1179,4 +1181,24 @@ test('the shrine rules validate, each world\'s overrides too, and the generated 
     () => shrineStructure(d.structure, { ...d.design, pillars: { ...d.design.pillars, count: 8 } }, registryBlocks()),
     /pillars.count must be 1 more than a multiple of 4/,
   );
+});
+
+// Ramps for every terrain block (owner, 2026-11-13): every block a worldgen surface rule places has
+// stored ramps, so a new terrain block gets them by rule.
+test('every block worldgen places on a surface has a ramp family', () => {
+  const surface = surfaceBlocks();
+  const ids = new Set(surface.map(([id]) => id));
+  for (const id of ['dwell:red_sand', 'dwell:basalt', 'dwell:moon_dust', 'dwell:moon_mare_dust', 'dwell:obsidian', 'dwell:red_sandstone']) {
+    assert.ok(ids.has(id), `${id} is a surface block`);
+  }
+  validateSurfaceRamps(surface);
+});
+
+test('a surface block without ramps fails naming it and where it is placed', () => {
+  const blocks = registryBlocks();
+  blocks.delete('dwell:basalt_ramp');
+  assert.throws(() => validateSurfaceRamps(surfaceBlocks(), blocks), /dwell:basalt is placed on the surface by worldgen but has no ramps: add basalt to its namespace's rampFamilies/);
+  // A fixture biome placing a block with no ramps (torch stands in for a new terrain block).
+  const biome = { name: 'test:new_ground', bands: [{ name: 'only', ground: 'dwell:torch', under: 'dwell:dirt', rock: 'dwell:stone', shoreBlock: 'dwell:sand' }] };
+  assert.throws(() => validateSurfaceRamps(surfaceBlocks({ biomes: [biome], worlds: [] })), /biome test:new_ground band only ground: dwell:torch .* no ramps/);
 });

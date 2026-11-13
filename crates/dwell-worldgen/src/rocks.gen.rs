@@ -14,7 +14,7 @@ pub const ROCKS: &[Rock] = &[
         solubility: 0.0,
         face: "dwell:red_sandstone",
         cap: "dwell:red_sandstone",
-        scree: "dwell:sand",
+        scree: "dwell:red_sand",
         color: 0xc0623a,
     },
     Rock {
@@ -84,6 +84,17 @@ pub const ROCKS: &[Rock] = &[
         color: 0x2c2c32,
     },
     Rock {
+        name: "dwell:siltstone",
+        hardness: 0.2,
+        jointing: Jointing::Bedded,
+        bed: 6.0,
+        solubility: 0.0,
+        face: "dwell:red_sand",
+        cap: "dwell:red_sand",
+        scree: "dwell:red_sand",
+        color: 0xb0603e,
+    },
+    Rock {
         name: "dwell:schist",
         hardness: 0.75,
         jointing: Jointing::Bedded,
@@ -104,6 +115,14 @@ pub const STACKS: &[Stack] = &[
         layers: &[
             Layer { rock: "dwell:sandstone", thickness: 24.0 },
             Layer { rock: "dwell:shale", thickness: 36.0 },
+        ],
+    },
+    Stack {
+        name: "dwell:red_desert_beds",
+        weight: 0.0,
+        layers: &[
+            Layer { rock: "dwell:sandstone", thickness: 24.0 },
+            Layer { rock: "dwell:siltstone", thickness: 36.0 },
         ],
     },
     Stack {
@@ -177,6 +196,10 @@ pub const GEOLOGY: Geology = Geology {
     strength: 0.0,
     tread: 1.5,
     sheer: 2.0,
+    ledge: 2.0,
+    ledge_every: 0.5,
+    tread_relief: 0.08,
+    notched: true,
     erosion: Erosion {
         strength: 1.0,
         reach: 450.0,

@@ -15,6 +15,7 @@ pub const VEGETATION: Vegetation = Vegetation {
     rock_soils: &[
         RockSoil { rock: "dwell:sandstone", depth: 1.0, soil_type: 0, celsius: [-1000.0, 1000.0], moisture: [-1000.0, 1000.0] },
         RockSoil { rock: "dwell:shale", depth: 1.6, soil_type: 1, celsius: [-1000.0, 1000.0], moisture: [-1000.0, 1000.0] },
+        RockSoil { rock: "dwell:siltstone", depth: 1.0, soil_type: 0, celsius: [-1000.0, 1000.0], moisture: [-1000.0, 1000.0] },
         RockSoil { rock: "dwell:granite", depth: 0.3, soil_type: 2, celsius: [-1000.0, 1000.0], moisture: [-1000.0, 1000.0] },
         RockSoil { rock: "dwell:basalt", depth: 0.8, soil_type: 1, celsius: [-1000.0, 1000.0], moisture: [-1000.0, 1000.0] },
         RockSoil { rock: "dwell:limestone", depth: 0.5, soil_type: 2, celsius: [-1000.0, 1000.0], moisture: [-1000.0, 1000.0] },
