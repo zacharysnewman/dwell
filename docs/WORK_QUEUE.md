@@ -2182,6 +2182,25 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    (refused when the vertex count isn't the GLB's `detail_0`). `node --test shared/models/painter.test.mjs` runs the
    page's core against `parts.mjs` (the Peasant's export byte for byte). Left: the owner repaints the Peasant's face
    and hair with it.
+   **Outfit patterns and the eyes** (owner 2026-11-13): **"I also want to improve the outfit texturing of the human
+   model. Alternating patterns around the hat, not on the brim. and also around the waist we have some of that now.
+   Also I think we lost the eyes, maybe other features in the low poly ization? Or it may not have had eyes?"**
+   Findings (branch `claude/outfit-patterns`, 2026-11-13): the Peasant's mesh has **no eye, brow or mouth geometry**
+   (`detail_0` is the pack's full mesh, ratio 1: the face is one smooth skin surface of ~70 front triangles; the head's
+   islands are the body, the hair cap and the hat). Whatever eyes the pack had were **painted in its texture** and
+   were lost at the import's paint step (`blender_import.py` `paint`: each face takes the median of five texture
+   samples, snapped to a palette base; an eye smaller than a face loses the vote), not by the decimation and not by
+   the part map. Nothing on the face is darker than `skin_deep` at any level; the nose and lip shading
+   (`skin_tan`) survived. The pack isn't in the repo, so its texture was not checked to prove it had eyes. The
+   **default level (60 %) draws the face as ~10 triangles** and the full mesh's facets are wide quads across the
+   face, so **painting eyes onto existing faces doesn't work** (tried: a dark wedge under the fringe at 60 %,
+   "sunglasses" at 100 %): eyes need **small geometry** (a few quads a side on the head joint, by data, added to
+   every level). The waist: the belt (`hair_brown`/`heartwood`, no part) is a ring at y 0.87–0.92 m mostly
+   inside the tunic; a band painted on the tunic at 60 % paints long spikes (its triangles run hip to chest).
+   **Built so far:** `shared/models/decor.mjs` (bands of alternating colours on a part's ring, by height and
+   radius, and marks; by facet, every level; `node --test shared/models/decor.test.mjs`), not yet applied to the
+   Peasant. **Left:** eyes as geometry; the hat band and a waist band wired into models.json `decor` once the eyes
+   land, with renders for the owner.
 
 44. **Trees on slopes hang over the edge** (owner 2026-11-12: **"I notice a lot of trees on slopes are hanging out over
    the edge. Perhaps trees should always have flats under them? Don't limit trees to flats, since they might not
