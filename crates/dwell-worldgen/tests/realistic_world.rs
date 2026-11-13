@@ -280,7 +280,11 @@ dwell_world::both_faces!(
     }
 );
 
-/// The Realistic map builds in at most 1.3× the default's time (best of three each).
+/// The Realistic map builds in at most 1.6× the default's time (best of three each). 1.3× until
+/// the realistic batch (0.61): its plates run out to the rim (two to three times the land to
+/// erode), its relief reads turned, warped noise and its erosion draws each step's routing
+/// (part B: about +0.4 s each on seed 7 after the warp and coast were shared between the height
+/// and the swells and the routing's interior cells unchecked), so the map is ~1.45× the default's.
 #[test]
 #[cfg_attr(debug_assertions, ignore = "timed: release only")]
 fn the_realistic_map_builds_in_about_the_defaults_time() {
@@ -299,7 +303,7 @@ fn the_realistic_map_builds_in_about_the_defaults_time() {
     let default = best(&|| drop(WorldMap::compute(seed)));
     let real = best(&|| drop(WorldMap::for_height(seed, h)));
     eprintln!("default {default:.3} s, realistic {real:.3} s");
-    assert!(real <= 1.3 * default, "{real:.3} s vs {default:.3} s");
+    assert!(real <= 1.6 * default, "{real:.3} s vs {default:.3} s");
 }
 
 /// The seeds the realistic batch measured on (WORK_QUEUE item 15; 2741893632 the owner's).

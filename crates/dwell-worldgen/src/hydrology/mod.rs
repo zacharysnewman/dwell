@@ -493,7 +493,7 @@ fn tectonic_map(
     base: BaseField,
     plates: Option<&crate::plate_tectonics::PlateTectonics>,
 ) -> HydrologyMap {
-    let (grid, x0, hs) = sample_field(&base, p.cell);
+    let (grid, x0, hs, swells) = sample_field_and_swells(&base, p.cell);
     // A Realistic world's erosion routing (plates.json `variety.flow`); every other world's D8.
     let routing = if plates.is_some() {
         crate::plates::VARIETY.flow
@@ -541,7 +541,7 @@ fn tectonic_map(
             if let Some(pt) = plates {
                 // The interior's basins and swells (plates.json `variety.relief`), kept whole;
                 // a swell keeps rising as a range does (a dome), so the erosion leaves it.
-                let swell = base.swell_at(x as i64, z as i64);
+                let swell = swells[i];
                 extra[i] += pt.height(x, z) + swell;
                 rising[i] += pt.boundary(x, z) + swell.max(0.0);
                 shield[i] = shield[i].max(pt.shield(x, z));
@@ -559,6 +559,36 @@ fn tectonic_map(
         climate.as_ref(),
         routing,
     )
+}
+
+/// [`sample_field`] with each cell's basins and swells (`BaseField::swell_at`; 0 without plates),
+/// the warp and the coast computed once per cell.
+fn sample_field_and_swells(g: &BaseField, cell: i32) -> (Grid, f64, Vec<f64>, Vec<f64>) {
+    let (grid, x0) = grid_for_radius(cell, g.world_radius());
+    let n = grid.n;
+    let cell = i64::from(cell);
+    let half = (n as i64 - 1) * cell / 2;
+    let (mut h, mut sw) = (
+        Vec::with_capacity(grid.len()),
+        Vec::with_capacity(grid.len()),
+    );
+    for row in 0..n {
+        if row % 64 == 0 {
+            crate::progress::report(crate::progress::MapStep::Base, row as f64 / n as f64);
+        }
+        for col in 0..n {
+            let x = col as i64 * cell - half;
+            let z = row as i64 * cell - half;
+            let (height, swell) = match g.height_and_swell_lod(x, z, cell) {
+                None => (f64::NEG_INFINITY, 0.0),
+                Some((height, swell)) => (f64::from(height) - SEA_LEVEL_M, swell),
+            };
+            h.push(height);
+            sw.push(swell);
+        }
+    }
+    crate::progress::report(crate::progress::MapStep::Base, 1.0);
+    (grid, x0, h, sw)
 }
 
 /// [`sample_seed`] of a given base field.

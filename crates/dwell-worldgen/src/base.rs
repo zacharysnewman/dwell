@@ -134,7 +134,8 @@ impl BaseField {
             coast = coast.min(h.island_cap) + h.island_amplitude * 2.0 * n;
         }
         if self.plates.is_some() {
-            return Some(self.plates_relief(x, z, coast, cell));
+            let (wx, wz) = self.warped(x, z);
+            return Some(self.plates_relief(x, z, wx, wz, coast, cell));
         }
         let hills = fbm2(
             self.hills_seed,
@@ -171,12 +172,12 @@ impl BaseField {
     /// look): the inland rise as the default world's, its hills and bumps read at a domain-warped
     /// point with turned, off-lattice octaves and an amplitude varying by region, and basins and
     /// swells over the interior. Octaves finer than `cell` m dropped.
-    fn plates_relief(&self, x: i64, z: i64, coast: f32, cell: i64) -> f32 {
+    #[allow(clippy::too_many_arguments)]
+    fn plates_relief(&self, x: i64, z: i64, wx: f64, wz: f64, coast: f32, cell: i64) -> f32 {
         let h = &self.h;
         let r = crate::plates::VARIETY.relief;
         let [_, _, vary_seed, _] = self.variety_seeds;
         let (fx, fz) = ((x + self.offset_x) as f64, (z + self.offset_z) as f64);
-        let (wx, wz) = self.warped(x, z);
         let kept = cell as f64;
         let turned = |seed, w: i32, o| {
             fbm2_turned(seed, wx, wz, f64::from(w), o, r.lacunarity, r.rotate, kept)
@@ -241,8 +242,31 @@ impl BaseField {
         if self.plates.is_none() {
             return 0.0;
         }
-        let r = crate::plates::VARIETY.relief;
         let (wx, wz) = self.warped(x, z);
+        self.swell_of(wx, wz, self.coast_at(x, z))
+    }
+
+    /// [`BaseField::height_lod`] and [`BaseField::swell_at`] together, the warp and the plates'
+    /// coast computed once (the world map samples both on every cell).
+    pub fn height_and_swell_lod(&self, x: i64, z: i64, cell: i64) -> Option<(f32, f64)> {
+        let Some(p) = &self.plates else {
+            return self.height_lod(x, z, cell).map(|h| (h, 0.0));
+        };
+        if !self.world.inside_disc(x, z) || self.h.island_amplitude > 0.0 {
+            return self
+                .height_lod(x, z, cell)
+                .map(|h| (h, self.swell_at(x, z)));
+        }
+        let coast = p.coast_distance(x as f64, z as f64) as f32;
+        let (wx, wz) = self.warped(x, z);
+        Some((
+            self.plates_relief(x, z, wx, wz, coast, cell),
+            self.swell_of(wx, wz, coast),
+        ))
+    }
+
+    fn swell_of(&self, wx: f64, wz: f64, coast: f32) -> f64 {
+        let r = crate::plates::VARIETY.relief;
         let swell = fbm2_turned(
             self.variety_seeds[3],
             wx,
@@ -253,11 +277,7 @@ impl BaseField {
             r.rotate,
             0.0,
         );
-        let land = smooth_step(
-            self.h.hill_fade_from,
-            self.h.hill_fade_to,
-            self.coast_at(x, z),
-        );
+        let land = smooth_step(self.h.hill_fade_from, self.h.hill_fade_to, coast);
         f64::from(land) * r.swell_height * 2.0 * f64::from(swell)
     }
 }

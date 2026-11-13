@@ -166,6 +166,23 @@ pub fn fbm2(seed: u32, x: i64, z: i64, wavelength: i32, octaves: u32, kept: Opti
     sum / norm
 }
 
+/// The sine and cosine of `degrees`, remembered for the last angle asked (the relief turns every
+/// octave by one data angle, millions of times a map).
+fn turn(degrees: f64) -> (f64, f64) {
+    thread_local! {
+        static LAST: std::cell::Cell<(f64, f64, f64)> = const { std::cell::Cell::new((0.0, 0.0, 1.0)) };
+    }
+    LAST.with(|l| {
+        let (d, s, c) = l.get();
+        if d == degrees {
+            return (s, c);
+        }
+        let (s, c) = degrees.to_radians().sin_cos();
+        l.set((degrees, s, c));
+        (s, c)
+    })
+}
+
 /// [`fbm2`] with its octaves turned and spaced off the lattice (a Realistic world's relief,
 /// plates.json `variety.relief`): each octave `rotate`° turned from the last and `lacunarity` ×
 /// finer, so no octave's grid lines up with another's and the sum shows no 45°/90° grain. `kept`
@@ -185,7 +202,7 @@ pub fn fbm2_turned(
     let mut norm = 0.0f32;
     let mut amplitude = 1.0f32;
     let mut w = wavelength;
-    let (s, c) = rotate.to_radians().sin_cos();
+    let (s, c) = turn(rotate);
     let (mut u, mut v) = (x, z);
     for o in 0..octaves {
         if w >= kept {

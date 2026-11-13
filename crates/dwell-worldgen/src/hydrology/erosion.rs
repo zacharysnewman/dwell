@@ -112,12 +112,16 @@ fn reroute(
 ) {
     let diag = cell * std::f64::consts::SQRT_2;
     let mut cand = [(0usize, 0.0f64); 8];
+    // The neighbours in `NEIGHBOURS`' order (the draw's order), as index offsets for a cell off
+    // the grid's border (the map's interior: no bounds checks).
+    let w = grid.n as isize;
+    let offsets = super::flood::NEIGHBOURS.map(|(dx, dz, d)| (dz as isize * w + dx as isize, d));
     for &c in &f.order {
         let c = c as usize;
         let lc = f.level[c];
         let mut k = 0;
         let mut total = 0.0;
-        for (j, d) in grid.neighbours(c) {
+        let mut take = |j: usize, d: bool| {
             let lj = if sea[j] { 0.0 } else { f.level[j] };
             if lj < lc {
                 let w = pow((lc - lj) / if d { diag } else { cell }, exponent);
@@ -126,6 +130,15 @@ fn reroute(
                     total += w;
                     k += 1;
                 }
+            }
+        };
+        if grid.on_border(c) {
+            for (j, d) in grid.neighbours(c) {
+                take(j, d);
+            }
+        } else {
+            for &(o, d) in &offsets {
+                take((c as isize + o) as usize, d);
             }
         }
         if k < 2 {
