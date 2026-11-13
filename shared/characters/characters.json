@@ -156,6 +156,8 @@
         "place": "biped_place",
         "chop_level": "biped_chop_level",
         "chop_vertical": "biped_chop_vertical",
+        "slash_level": "biped_slash_level",
+        "slash_overhead": "biped_slash_overhead",
         "guard_level": "biped_guard_level",
         "guard_vertical": "biped_guard_vertical",
         "kneel": "biped_kneel",
@@ -189,6 +191,8 @@
           "place": "fp_place",
           "chop_level": "fp_chop_level",
           "chop_vertical": "fp_chop_vertical",
+          "slash_level": "fp_slash_level",
+          "slash_overhead": "fp_slash_overhead",
           "guard_level": "fp_guard_level",
           "guard_vertical": "fp_guard_vertical"
         }
@@ -657,6 +661,42 @@
         { "t": 0.78, "bones": { "chest": [0, 0, 0], "arm_r": [-20, 0, -4], "forearm_r": [-65, 0, 0], "hand_r": [0, 0, 0] } }
       ]
     },
+    "biped_slash_level": {
+      "$comment": "The sword's level slash seen by others (third person; timed as fp_slash_level): drawn back to the right with the chest turned away, swept flat across in front at chest height through the cut at 0.355 s, followed through to the left, and back to the hold.",
+      "rig": "biped",
+      "layer": "action",
+      "duration": 0.78,
+      "loop": false,
+      "ease": "spline",
+      "keys": [
+        { "t": 0, "bones": { "chest": [0, 0, 0], "arm_r": [-20, 0, -4], "forearm_r": [-65, 0, 0], "hand_r": [0, 0, 0] } },
+        { "t": 0.12, "bones": { "chest": [0, -1, 0], "arm_r": [23, -30, 28], "forearm_r": [-101, 0, 0], "hand_r": [4, -3, 0] } },
+        { "t": 0.3, "bones": { "chest": [0, -19, 0], "arm_r": [-38, -66, 20], "forearm_r": [-127, 0, 0], "hand_r": [79, -15, -10] } },
+        { "t": 0.355, "bones": { "chest": [0, 16, 0], "arm_r": [-87, 41, 6], "forearm_r": [0, 0, 0], "hand_r": [79, 0, 1] } },
+        { "t": 0.42, "bones": { "chest": [0, 37, 0], "arm_r": [-89, 15, 30], "forearm_r": [0, 0, 0], "hand_r": [80, 5, 8] } },
+        { "t": 0.52, "bones": { "chest": [0, 34, 0], "arm_r": [-34, 39, 30], "forearm_r": [-43, 0, 0], "hand_r": [46, 15, 30] } },
+        { "t": 0.64, "bones": { "chest": [0, 1, 0], "arm_r": [-7, 26, 7], "forearm_r": [-75, 0, 0], "hand_r": [10, -4, 0] } },
+        { "t": 0.78, "bones": { "chest": [0, 0, 0], "arm_r": [-20, 0, -4], "forearm_r": [-65, 0, 0], "hand_r": [0, 0, 0] } }
+      ]
+    },
+    "biped_slash_overhead": {
+      "$comment": "The sword's overhead cut seen by others (timed as fp_slash_overhead): raised high over the head over 0.3 s, cut straight down in front through the strike at 0.355 s, followed through low, and back to the hold.",
+      "rig": "biped",
+      "layer": "action",
+      "duration": 0.78,
+      "loop": false,
+      "ease": "spline",
+      "keys": [
+        { "t": 0, "bones": { "chest": [0, 0, 0], "arm_r": [-20, 0, -4], "forearm_r": [-65, 0, 0], "hand_r": [0, 0, 0] } },
+        { "t": 0.12, "bones": { "chest": [0, -6, 0], "arm_r": [-75, 3, 2], "forearm_r": [-70, 0, 0], "hand_r": [40, 0, 0] } },
+        { "t": 0.3, "bones": { "chest": [0, -5, 0], "arm_r": [-177, 7, 4], "forearm_r": [0, 0, 0], "hand_r": [53, -1, 5] } },
+        { "t": 0.355, "bones": { "chest": [0, 26, 0], "arm_r": [-88, -31, -12], "forearm_r": [0, 0, 0], "hand_r": [80, 6, 40] } },
+        { "t": 0.42, "bones": { "chest": [0, 37, 0], "arm_r": [-54, -89, -20], "forearm_r": [0, 0, 0], "hand_r": [80, 12, 40] } },
+        { "t": 0.52, "bones": { "chest": [0, 9, 0], "arm_r": [-12, -15, 20], "forearm_r": [0, 0, 0], "hand_r": [78, -6, -8] } },
+        { "t": 0.64, "bones": { "chest": [0, 1, 0], "arm_r": [1, -9, 7], "forearm_r": [-49, 0, 0], "hand_r": [-2, 1, 0] } },
+        { "t": 0.78, "bones": { "chest": [0, 0, 0], "arm_r": [-20, 0, -4], "forearm_r": [-65, 0, 0], "hand_r": [0, 0, 0] } }
+      ]
+    },
     "biped_place": {
       "rig": "biped",
       "layer": "action",
@@ -971,6 +1011,46 @@
         { "t": 0.355, "root": [0.079, 0.031, -0.162], "bones": { "arm_r": [-99, 2, 30], "forearm_r": [0, 0, 0], "hand_r": [80, -11, 2] } },
         { "t": 0.42, "root": [0.109, 0.2, -0.052], "bones": { "arm_r": [-21, 7, 30], "forearm_r": [0, 0, 0], "hand_r": [67, -14, -7] } },
         { "t": 0.52, "root": [0.108, 0.2, 0.034], "bones": { "arm_r": [0, 9, 30], "forearm_r": [0, 0, 0], "hand_r": [58, -12, -11] } },
+        { "t": 0.64, "root": [-0.005, 0.044, -0.014], "bones": { "arm_r": [-14, 25, 7], "forearm_r": [-64, 0, 0], "hand_r": [27, 1, 0] } },
+        { "t": 0.78, "root": [0, 0, 0], "bones": { "arm_r": [-70, 22, 0], "forearm_r": [-40, 0, 0], "hand_r": [10, 0, 0] } }
+      ]
+    },
+    "fp_slash_level": {
+      "$comment": "The sword's level slash (WORK_QUEUE item 35; shared/tools `dwell:sword` `clips.level`), timed to the sword's miss (`swing`: windupS 0.3, activeS 0.12, recoverMissS 0.36): the blade drawn back flat past the right shoulder over 0.3 s, then swept right to left across the view with the arm reaching out, the blade through the crosshair at contact (0.355 s), followed through to the left and back. Fitted with `clip_probe --fit` (docs/DEV_TOOLS.md), pinned by the clip_probe sword tests.",
+      "rig": "biped",
+      "space": "arms",
+      "layer": "action",
+      "duration": 0.78,
+      "loop": false,
+      "ease": "spline",
+      "keys": [
+        { "t": 0, "root": [0, 0, 0], "bones": { "arm_r": [-70, 22, 0], "forearm_r": [-40, 0, 0], "hand_r": [10, 0, 0] } },
+        { "t": 0.12, "root": [-0.039, -0.107, -0.153], "bones": { "arm_r": [-115, -38, 30], "forearm_r": [0, 0, 0], "hand_r": [19, -26, -35] } },
+        { "t": 0.3, "root": [-0.04, -0.165, -0.138], "bones": { "arm_r": [-123, -62, 30], "forearm_r": [0, 0, 0], "hand_r": [10, -15, -40] } },
+        { "t": 0.33, "root": [-0.044, -0.072, -0.152], "bones": { "arm_r": [-103, -54, 30], "forearm_r": [0, 0, 0], "hand_r": [47, -30, -25] } },
+        { "t": 0.355, "root": [0.019, 0.06, -0.101], "bones": { "arm_r": [-93, -23, 30], "forearm_r": [0, 0, 0], "hand_r": [80, -3, 20] } },
+        { "t": 0.39, "root": [0.197, 0.06, -0.096], "bones": { "arm_r": [-105, 4, 30], "forearm_r": [0, 0, 0], "hand_r": [80, 29, 40] } },
+        { "t": 0.42, "root": [0.25, 0.056, -0.109], "bones": { "arm_r": [-105, 3, 30], "forearm_r": [0, 0, 0], "hand_r": [80, 49, 40] } },
+        { "t": 0.52, "root": [0.25, 0.005, -0.116], "bones": { "arm_r": [-110, 58, 30], "forearm_r": [-68, 0, 0], "hand_r": [80, 28, 30] } },
+        { "t": 0.64, "root": [-0.021, 0.049, -0.042], "bones": { "arm_r": [-66, 40, 29], "forearm_r": [-65, 0, 0], "hand_r": [41, -6, -9] } },
+        { "t": 0.78, "root": [0, 0, 0], "bones": { "arm_r": [-70, 22, 0], "forearm_r": [-40, 0, 0], "hand_r": [10, 0, 0] } }
+      ]
+    },
+    "fp_slash_overhead": {
+      "$comment": "The sword's overhead cut (WORK_QUEUE item 35; `dwell:sword` `clips.vertical`), timed as the level slash: the hilt raised over the head with the blade back over it over 0.3 s, then cut straight down in front through the crosshair at contact (0.355 s) to the hands low before the waist, and back. Fitted with `clip_probe --fit`, pinned by the clip_probe sword tests.",
+      "rig": "biped",
+      "space": "arms",
+      "layer": "action",
+      "duration": 0.78,
+      "loop": false,
+      "ease": "spline",
+      "keys": [
+        { "t": 0, "root": [0, 0, 0], "bones": { "arm_r": [-70, 22, 0], "forearm_r": [-40, 0, 0], "hand_r": [10, 0, 0] } },
+        { "t": 0.12, "root": [-0.06, -0.083, -0.128], "bones": { "arm_r": [-119, -28, 30], "forearm_r": [0, 0, 0], "hand_r": [67, -4, 16] } },
+        { "t": 0.3, "root": [0.028, 0.128, -0.079], "bones": { "arm_r": [-128, -27, 30], "forearm_r": [0, 0, 0], "hand_r": [80, -1, 38] } },
+        { "t": 0.355, "root": [0.054, 0.161, -0.103], "bones": { "arm_r": [-74, -17, 30], "forearm_r": [0, 0, 0], "hand_r": [80, -4, 40] } },
+        { "t": 0.42, "root": [0.041, 0.2, -0.145], "bones": { "arm_r": [-30, -13, 30], "forearm_r": [0, 0, 0], "hand_r": [80, -6, 40] } },
+        { "t": 0.52, "root": [0.017, 0.2, -0.182], "bones": { "arm_r": [-18, -11, 30], "forearm_r": [0, 0, 0], "hand_r": [80, -5, 40] } },
         { "t": 0.64, "root": [-0.005, 0.044, -0.014], "bones": { "arm_r": [-14, 25, 7], "forearm_r": [-64, 0, 0], "hand_r": [27, 1, 0] } },
         { "t": 0.78, "root": [0, 0, 0], "bones": { "arm_r": [-70, 22, 0], "forearm_r": [-40, 0, 0], "hand_r": [10, 0, 0] } }
       ]

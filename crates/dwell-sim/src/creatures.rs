@@ -193,6 +193,64 @@ pub struct CreatureDef {
     pub drops: &'static [(&'static str, u32, u32)],
     /// An NPC's behaviour and looks; None: an animal.
     pub npc: Option<NpcDef>,
+    /// Its attack on the player that struck it (the wolf's bite); None: it hurts no one.
+    pub attack: Option<AttackDef>,
+    /// How a hit that connects shows on the clients (the flash and flinch).
+    pub hurt_look: HurtLook,
+}
+
+/// A hit creature's look on the clients (shared/creatures `hurtLook`; WORK_QUEUE item 35, round
+/// 2): for `seconds` after a hit that connects its body flashes `tint` (sRGB 0..1) at up to
+/// `strength`, fading, and flinches `flinch_m` away from the blow and `flinch_deg` round.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct HurtLook {
+    pub seconds: f64,
+    pub tint: [f64; 3],
+    pub strength: f64,
+    pub flinch_m: f64,
+    pub flinch_deg: f64,
+}
+
+impl HurtLook {
+    /// The look `t` s after the hit: (the tint's strength, the flinch's share), both 0 outside
+    /// `0..seconds`. The flinch snaps out over its first fifth and eases back; the flash fades.
+    pub fn at(&self, t: f64) -> (f64, f64) {
+        if !(0.0..self.seconds).contains(&t) {
+            return (0.0, 0.0);
+        }
+        let u = t / self.seconds;
+        let flinch = if u < 0.2 {
+            u / 0.2
+        } else {
+            ((1.0 - u) / 0.8).powi(2)
+        };
+        (self.strength * (1.0 - u) * (1.0 - u), flinch)
+    }
+}
+
+/// How a creature hurts the player that struck it (shared/creatures `attack`; WORK_QUEUE item 35,
+/// round 2: wolves bite): for `angry_s` after that player's last hit, while the player stands within
+/// `reach_m` of its body and `front_deg` in front of it, every `cooldown_s` it takes `damage` health
+/// and pushes the player away along the ground at `knockback_mps` and up at `lift_mps`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct AttackDef {
+    pub reach_m: f64,
+    pub cooldown_s: f64,
+    pub damage: f64,
+    pub knockback_mps: f64,
+    pub lift_mps: f64,
+    pub angry_s: f64,
+    pub front_deg: f64,
+}
+
+/// A creature's attack landing on a player this tick ([`Creatures::step_attacks`]).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Bite {
+    pub creature: u32,
+    pub player: u16,
+    pub attack: AttackDef,
+    /// The creature's feet (world): the push is away from it.
+    pub from: [f64; 3],
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -321,6 +379,12 @@ pub struct Creature {
     /// A defeated NPC (docs/CHARACTERS.md §11.13: humans never die): kneeling where it fell, then
     /// standing up at a shrine; ticks left in that phase.
     pub defeat: Option<(NpcDefeat, u32)>,
+    /// The player it attacks (its kind's `attack`, after that player struck it) and ticks left.
+    pub angry: Option<(u16, u32)>,
+    /// Ticks until its next attack may land.
+    pub attack_wait: u32,
+    /// Where (world feet) the player it attacks stands now: its hurt reaction closes on it.
+    pub chase_to: Option<[f64; 3]>,
     rng: u64,
 }
 
@@ -690,6 +754,9 @@ impl Creatures {
             fight_wait: 0,
             own_swing: None,
             defeat: None,
+            angry: None,
+            attack_wait: 0,
+            chase_to: None,
             rng,
         });
         Some(self.next_id)
@@ -848,6 +915,9 @@ impl Creatures {
                     fight_wait: 0,
                     own_swing: None,
                     defeat: None,
+                    angry: None,
+                    attack_wait: 0,
+                    chase_to: None,
                     rng: mix(seed, [x + dx, yy, z + dz], 99),
                 };
                 c.look_base = c.yaw;
@@ -890,6 +960,67 @@ impl Creatures {
             }
             _ => false,
         }
+    }
+
+    /// Player `player` struck creature `id` (after [`Self::strike`]): a kind with an `attack`
+    /// turns on that player for its `angry_s` (each new strike starts it again).
+    pub fn provoke(&mut self, id: u32, player: u16) {
+        let table = self.table;
+        if let Some(c) = self.get_mut(id)
+            && c.defeat.is_none()
+            && let Some(a) = table.creatures[c.kind].attack
+        {
+            c.angry = Some((player, (a.angry_s * f64::from(SIM_HZ)).ceil() as u32));
+        }
+    }
+
+    /// The creatures' attacks, a tick (WORK_QUEUE item 35, round 2: wolves bite): each one angry at
+    /// a player (`provoke`) follows where that player stands (`feet_of`: world feet, None: gone or
+    /// down, and it calms), and bites when the player is within its `reach_m` of its body, in front
+    /// of it, its cooldown over. Face-local through `FaceFrame`: only a player on its own face.
+    pub fn step_attacks(&mut self, feet_of: &dyn Fn(u16) -> Option<[f64; 3]>) -> Vec<Bite> {
+        let table = self.table;
+        let mut bites = Vec::new();
+        for c in &mut self.list {
+            c.attack_wait = c.attack_wait.saturating_sub(1);
+            let Some((player, left)) = c.angry else {
+                continue;
+            };
+            let def = &table.creatures[c.kind];
+            let Some(a) = def.attack else {
+                c.angry = None;
+                continue;
+            };
+            let f = FaceFrame::at_height(c.position[1]);
+            let feet = feet_of(player).filter(|p| FaceFrame::at_height(p[1]) == f);
+            let (Some(feet), true) = (feet, left > 0 && c.defeat.is_none()) else {
+                c.angry = None;
+                c.chase_to = None;
+                continue;
+            };
+            c.angry = Some((player, left - 1));
+            c.chase_to = Some(feet);
+            if c.attack_wait > 0 {
+                continue;
+            }
+            let (me, them) = (f.point(c.position), f.point(feet));
+            let reach = (them[0] - me[0]).hypot(them[2] - me[2]) - def.body_radius_m;
+            let rise = them[1] - me[1];
+            let tall = f64::from(def.rows) * 0.5;
+            if reach <= a.reach_m
+                && (-tall..=tall).contains(&rise)
+                && attack_in_front(c.yaw, me, them, a.front_deg)
+            {
+                c.attack_wait = (a.cooldown_s * f64::from(SIM_HZ)).ceil() as u32;
+                bites.push(Bite {
+                    creature: c.id,
+                    player,
+                    attack: a,
+                    from: c.position,
+                });
+            }
+        }
+        bites
     }
 
     /// The player who struck NPC `id` (after [`Self::strike`]): the one its fight rules watch.
@@ -1446,6 +1577,21 @@ pub struct Hurt {
     pub killed: bool,
     /// A human (an NPC) brought to 0 health: defeated, kneeling (never killed, §11.13).
     pub defeated: bool,
+}
+
+/// Whether `them` (face-local) is within `front_deg` round the facing `yaw` (degrees, 0 faces +z)
+/// of one at `me` (face-local); one standing right on it is in front.
+fn attack_in_front(yaw: f64, me: [f64; 3], them: [f64; 3], front_deg: f64) -> bool {
+    let (dx, dz) = (them[0] - me[0], them[2] - me[2]);
+    if dx.hypot(dz) < 1e-6 || front_deg >= 360.0 {
+        return true;
+    }
+    let to = dz.atan2(dx);
+    let y = yaw.to_radians();
+    let facing = y.cos().atan2(y.sin());
+    let off = (to - facing + std::f64::consts::PI).rem_euclid(std::f64::consts::TAU)
+        - std::f64::consts::PI;
+    off.abs().to_degrees() <= front_deg / 2.0
 }
 
 /// Ticks a defeated `name` (an NPC kind) kneels before it stands up at a shrine.

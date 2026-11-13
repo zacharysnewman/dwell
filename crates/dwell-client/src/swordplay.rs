@@ -129,6 +129,15 @@ pub struct ClashShow {
     pub recoil: bool,
 }
 
+/// The creature clash `c` hurt, if one: a defender creature struck past its block (the hit
+/// connected or glanced), which shows its kind's hurt look (shared/creatures `hurtLook`).
+pub fn hurt_creature(c: &ClashNet) -> Option<u32> {
+    match (c.defender, c.outcome) {
+        (Fighter::Creature(id), Clash::Connected | Clash::Glanced) => Some(id),
+        _ => None,
+    }
+}
+
 /// What clash `c` shows to the client of player `me`, by the striker's weapon's `guard.clash` data.
 pub fn show(c: &ClashNet, me: u16) -> ClashShow {
     let none = ClashShow {
@@ -236,6 +245,20 @@ mod tests {
             striker_vertical: false,
             defender_vertical: true,
         }
+    }
+
+    // WORK_QUEUE item 35, round 2: the hit event drives the hurt look, past a block only.
+    #[test]
+    fn a_creature_struck_past_its_block_is_hurt_never_a_blocked_one_or_a_player() {
+        let p = Fighter::Player(2);
+        assert_eq!(hurt_creature(&clash(Clash::Connected, p)), Some(4));
+        assert_eq!(hurt_creature(&clash(Clash::Glanced, p)), Some(4));
+        assert_eq!(hurt_creature(&clash(Clash::Blocked, p)), None);
+        let on_player = ClashNet {
+            defender: Fighter::Player(1),
+            ..clash(Clash::Connected, Fighter::Creature(4))
+        };
+        assert_eq!(hurt_creature(&on_player), None);
     }
 
     #[test]

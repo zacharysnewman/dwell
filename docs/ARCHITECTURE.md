@@ -3440,7 +3440,14 @@ into the striker's view): blocked (nothing lands, the striker's next swing waits
 connected; what lands takes `damage` × its share from the creature's `health` (shared/creatures, per
 creature with its `hitRadiusM` and `drops`; none: it can't be hurt), slides it `knockbackM` away along
 walkable ground (`KNOCK_SPEED_MPS`) and sets its `hurt_from` for the near ecology's reaction
-(docs/ECOLOGY.md §8.1). A creature killed is removed (the clients told) and drops its `drops` as loose
+(docs/ECOLOGY.md §8.1). A creature with an `attack` (shared/creatures; the wolf's bite, round 2)
+turns on its striker for `angryS` (`Creatures::provoke`), its near mind closing on where that
+player stands (`Creature::chase_to`), and bites them in `reachM` and `frontDeg` every `cooldownS`
+(`Creatures::step_attacks`, `Server::step_creature_attacks`): `damage` through the damage rules,
+cause `Weapon`, and a push; at 0 health the player is defeated (CHARACTERS.md §11.13). Only the
+striker is bitten; players still never strike players. A connecting hit shows on clients as the
+creature's `hurtLook` (a fading tint flash and a flinch from the blow, by data; the skinned
+instance's `light.w` carries the packed tint). A creature killed is removed (the clients told) and drops its `drops` as loose
 items; the weapon wears once a creature struck. The client's sweep treats a wood as a bounce for a
 weapon. **Swordplay [built: server, wire, client logic; the raised poses' clips and drawing local]**
 (round 2), behind the `weapons.clash` capability: (1) each strike on a creature goes as `Swordplay`'s

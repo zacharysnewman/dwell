@@ -215,13 +215,30 @@ pub struct Bodies {
     held_swing: Option<(Swing, f32)>,
     /// Each remote player's raised-block role this frame (the server's guards; WORK_QUEUE item 35).
     pub guards: HashMap<u16, &'static str>,
+    /// Each remote player's tool in hand (`HeldTools`), by player id: its swings play the tool's
+    /// clip roles (`clips`: the sword's slashes, WORK_QUEUE item 35).
+    pub tools: HashMap<u16, &'static str>,
+    /// The tool in your hand (its swings' clip roles on your arms, as [`Self::tools`]).
+    pub own_tool: Option<&'static str>,
+}
+
+/// The role swing `s` plays with `tool` in hand: a chop plays the tool's `clips` role for its
+/// kind (the sword's `slash_level`), anything else its own role.
+pub fn swing_role(s: Swing, tool: Option<&str>) -> &'static str {
+    let t = tool.and_then(dwell_protocol::chopping::tool);
+    match (s, t) {
+        (Swing::ChopLevel, Some(t)) => t.swing_role(false),
+        (Swing::ChopVertical, Some(t)) => t.swing_role(true),
+        _ => s.role(),
+    }
 }
 
 /// Plays swing `s` on `a` held at clip time `t` (starting it if another action or none plays).
-pub fn hold_swing_on(a: &mut Animator, held: Option<(Swing, f32)>) {
+pub fn hold_swing_on(a: &mut Animator, held: Option<(Swing, f32)>, tool: Option<&str>) {
     if let Some((s, t)) = held {
-        if a.action() != Some(s.role()) {
-            a.swing(s);
+        let role = swing_role(s, tool);
+        if a.action().is_none_or(|r| r != role && r != s.role()) {
+            a.swing_as(s, role);
         }
         a.drive_action(Some(t));
     }
@@ -240,6 +257,8 @@ impl Default for Bodies {
             max_lift: f64::from(config.max_step_lift()),
             held_swing: None,
             guards: HashMap::default(),
+            tools: HashMap::default(),
+            own_tool: None,
         }
     }
 }
@@ -306,10 +325,11 @@ impl Bodies {
                 was_defeated: false,
                 standing_s: 0.0,
             });
+        let tool = self.tools.get(&v.player_id).copied();
         if let Some(s) = swing_of(body.swing, v.swing, v.swing_kind) {
-            body.animator.swing(s);
+            body.animator.swing_as(s, swing_role(s, tool));
         }
-        hold_swing_on(&mut body.animator, self.held_swing);
+        hold_swing_on(&mut body.animator, self.held_swing, tool);
         body.swing = Some(v.swing);
         let f = v.face();
         let local = f.point(v.feet);
@@ -441,7 +461,7 @@ impl Bodies {
 
     /// Your arms this frame.
     pub fn arms(&mut self, input: &MoveInput, held: Held, dt: f64) -> ArmsView {
-        hold_swing_on(&mut self.arms, self.held_swing);
+        hold_swing_on(&mut self.arms, self.held_swing, self.own_tool);
         ArmsView {
             pose: self.arms.update(input, dt as f32),
             held,
@@ -468,7 +488,7 @@ impl Bodies {
 
     /// Your arms swing (an edit sent).
     pub fn swing_arms(&mut self, s: Swing) {
-        self.arms.swing(s);
+        self.arms.swing_as(s, swing_role(s, self.own_tool));
     }
 
     /// Your arms' swing driven by a melee swing under way (its hit-stop and pull-back,
