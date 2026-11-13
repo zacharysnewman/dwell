@@ -131,6 +131,8 @@ pub struct Geology {
     pub erosion: Erosion,
     /// Relief on the erosion's mesa tops and floors.
     pub mesa_relief: MesaRelief,
+    /// The ground blocks' ordered blends by stack.
+    pub blends: &'static [Blend],
     /// The tectonic provinces' stacks (T5, `rocks.json` `tectonic`): a volcano's, the old core's.
     pub volcanic_stack: &'static str,
     pub core_stack: &'static str,
@@ -142,6 +144,74 @@ pub struct Geology {
     pub plate_provinces: PlateProvinces,
     /// What arid ground is, for the rocks' `capBy` (`rocks.json` `arid`).
     pub arid: Arid,
+}
+
+/// An ordered blend of ground blocks (rocks.json `blends`; owner, 2026-11-13, Monument Valley: "a
+/// blend of red, brown and tan, with brown leading to tan, always smooth color changes"): where a
+/// column's biome stack is one of `stacks`, a ground or under block among `blocks` takes the blend's
+/// tone there, picked by a low-frequency noise (`wavelength` m) plus `slope` × the ground's slope
+/// (which never pushes into the last, palest tone),
+/// dithered by a fine noise (± `dither`, at `dither_wavelength` m), the tones in order with their
+/// `shares` of the range: neighbours are at most one tone apart.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Blend {
+    pub name: &'static str,
+    pub stacks: &'static [&'static str],
+    pub blocks: &'static [&'static str],
+    pub shares: &'static [f64],
+    pub wavelength: f64,
+    pub slope: f64,
+    pub dither: f64,
+    pub dither_wavelength: f64,
+}
+
+impl Blend {
+    /// The tone (index into `blocks`) at face-local (x, z) whose ground slopes `slope` (m per m).
+    pub fn tone(&self, seed: u32, x: i64, z: i64, slope: f64) -> usize {
+        let n = |s: u32, w: f64, o: u32| {
+            f64::from(crate::noise::fbm2(
+                crate::noise::seed_word(u64::from(seed), s),
+                x,
+                z,
+                w.max(1.0) as i32,
+                o,
+                None,
+            ))
+        };
+        // A 3-octave fbm's spread is about 0.17: its normal CDF makes `t` near uniform, so each
+        // tone covers about its share of the ground (the slope's push aside).
+        let mut t = normal_cdf(n(0x6E01_0200, self.wavelength, 3) / FBM3_SD);
+        // The slope pushes toward the later tones but never into the last (a talus is red sand,
+        // never the blend's palest patches): a continuous push, so neighbours stay a tone apart.
+        let below_last: f64 = self.shares[..self.shares.len() - 1].iter().sum();
+        if t < below_last {
+            t = (t + self.slope * slope).min(below_last - 1e-6);
+        }
+        if self.dither > 0.0 {
+            t += self.dither * 2.0 * n(0x6E01_0201, self.dither_wavelength, 1);
+        }
+        let mut acc = 0.0;
+        for (k, s) in self.shares.iter().enumerate() {
+            acc += s;
+            if t < acc {
+                return k;
+            }
+        }
+        self.blocks.len() - 1
+    }
+}
+
+/// A 3-octave `fbm2`'s standard deviation (measured over 160 000 points: 0.1725).
+const FBM3_SD: f64 = 0.1725;
+
+/// The standard normal CDF (Abramowitz and Stegun 26.2.17, |error| < 7.5e-8).
+fn normal_cdf(x: f64) -> f64 {
+    let t = 1.0 / (1.0 + 0.231_641_9 * x.abs());
+    let d = 0.398_942_3 * (-x * x / 2.0).exp();
+    let p = d
+        * t
+        * (0.319_381_5 + t * (-0.356_563_8 + t * (1.781_478 + t * (-1.821_256 + t * 1.330_274))));
+    if x >= 0.0 { 1.0 - p } else { p }
 }
 
 /// Where notched ramps go (rocks.json `shaping.notched`; code vocabulary). Owner, 2026-11-13 ("I'd

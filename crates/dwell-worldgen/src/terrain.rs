@@ -685,6 +685,15 @@ pub struct BiomeSet {
     rock_palette: Vec<u16>,
     /// Per rock, the palette of its first `capBy` tread (the rest follow in order; BUGS.md #134).
     cap_by_palette: Vec<u16>,
+    /// Per blend (rocks.json `blends`) and palette: the first of that palette's blended variants
+    /// (one per tone, in order), `u16::MAX` where neither its ground nor its under is blended.
+    blend_first: Vec<Vec<u16>>,
+    /// Per stack, the blend whose `stacks` name it.
+    stack_blend: Vec<Option<usize>>,
+    /// The palette each blended variant was made from (variants from `blend_start` on), so a
+    /// variant reads as its band's biome.
+    blend_start: u16,
+    blend_origin: Vec<u16>,
     /// The drainage seen from above (T4), built only where a biome erodes.
     drainage: Option<crate::geology::DrainageField>,
     /// Each stack's lowest soft layer's top (m within its period; T4's base level).
@@ -730,7 +739,12 @@ impl BiomeSet {
                 &self.params,
                 &self.geology,
                 &self.biome_stack,
-                (self.rock_first, &self.rock_palette, &self.cap_by_palette),
+                (
+                    self.rock_first,
+                    &self.rock_palette,
+                    &self.cap_by_palette,
+                    (&self.blend_first, &self.stack_blend, self.blend_start)
+                ),
                 self.drainage.is_some(),
                 &self.soft_tops,
                 (&self.snow, &self.biome_snow),
@@ -759,6 +773,11 @@ impl BiomeSet {
     /// The biome whose band palette `p` is, its soil palettes too (None for the rocks' and the
     /// snow's palettes).
     pub fn biome_of_palette(&self, p: u16) -> Option<usize> {
+        let p = if p >= self.blend_start {
+            *self.blend_origin.get(usize::from(p - self.blend_start))?
+        } else {
+            p
+        };
         if p < self.rock_first {
             return Some(self.first.partition_point(|&f| f <= p) - 1);
         }
@@ -972,10 +991,55 @@ impl BiomeSet {
                 first
             })
             .collect();
+        // The blends' variants of every palette they reach (0.62), after all those.
+        let blend_start = palettes.len() as u16;
+        let mut blend_origin = Vec::new();
+        let blend_first = geology
+            .blends
+            .iter()
+            .map(|b| {
+                let tones: Vec<StateId> =
+                    b.blocks.iter().map(|n| dwell_blocks::require(n)).collect();
+                let n = palettes.len();
+                (0..n)
+                    .map(|p| {
+                        let base = palettes[p];
+                        let (g, u) = (tones.contains(&base.ground), tones.contains(&base.under));
+                        if !(g || u) {
+                            return u16::MAX;
+                        }
+                        let f = palettes.len() as u16;
+                        for &t in &tones {
+                            blend_origin.push(p as u16);
+                            palettes.push(Bands {
+                                ground: if g { t } else { base.ground },
+                                under: if u { t } else { base.under },
+                                ..base
+                            });
+                        }
+                        f
+                    })
+                    .collect()
+            })
+            .collect();
+        let stack_blend = geology
+            .stacks
+            .iter()
+            .map(|s| {
+                geology
+                    .blends
+                    .iter()
+                    .position(|b| b.stacks.contains(&s.name))
+            })
+            .collect();
         Self {
             list: list.to_vec(),
             palettes,
             first,
+            blend_first,
+            stack_blend,
+            blend_start,
+            blend_origin,
             field,
             params,
             geology: crate::geology::Resolved::new(geology, world_seed)
@@ -1564,6 +1628,49 @@ impl TerrainGenerator {
             Cut::Standing => rock.or(own.map(|r| (r, Part::Tread))),
         };
         (out, rock)
+    }
+
+    /// `palette` with its ground and under blocks taken by the blend of the column's stack (its
+    /// biome's `rockStack`, else the province's), at the tone the blend picks there (`slope` m per
+    /// m, at most 1, adds to it); `palette` unchanged where no blend holds.
+    fn blended(&self, mix: &crate::biomemap::Mix, x: i64, z: i64, palette: u16, slope: f64) -> u16 {
+        let set = &self.biomes;
+        if set.blend_first.is_empty() {
+            return palette;
+        }
+        let stack = match set.biome_stack[usize::from(mix.chosen)] {
+            Some(k) => k,
+            None => set.geology.province(x, z).0,
+        };
+        let Some(b) = set.stack_blend[stack] else {
+            return palette;
+        };
+        let Some(&first) = set.blend_first[b].get(usize::from(palette)) else {
+            return palette;
+        };
+        if first == u16::MAX {
+            return palette;
+        }
+        let blend = &set.geology.geology.blends[b];
+        first + blend.tone(self.world_seed as u32, x, z, slope.min(1.0)) as u16
+    }
+
+    /// The tone index (into its blend's blocks) the column at face-local (x, z) shows, if its
+    /// ground is blended (rocks.json `blends`): for tests and the map's views.
+    pub fn blend_tone_at(&self, x: i32, z: i32) -> Option<(usize, &'static str)> {
+        let col = self.column_at(x, z);
+        let set = &self.biomes;
+        for (b, firsts) in set.blend_first.iter().enumerate() {
+            for (p, &f) in firsts.iter().enumerate() {
+                let n = set.geology.geology.blends[b].blocks.len() as u16;
+                if f != u16::MAX && (f..f + n).contains(&col.palette) {
+                    let _ = p;
+                    let k = usize::from(col.palette - f);
+                    return Some((k, set.geology.geology.blends[b].blocks[k]));
+                }
+            }
+        }
+        None
     }
 
     /// The mesa relief at face-local (x, z) whose cut-back margin is `margin` (rocks.json
@@ -2607,6 +2714,11 @@ impl TerrainGenerator {
             {
                 palette = p;
             }
+        }
+        // The ground's ordered blend by stack (rocks.json `blends`, 0.62): mesa country's red
+        // dirt, red sand and tan in order, no hard bands.
+        if snow != Some(None) {
+            palette = self.blended(&mix, x, z, palette, gx.hypot(gz));
         }
         let mut shore = FAR_WATER;
         if let Some(r) = &river {

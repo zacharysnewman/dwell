@@ -9,6 +9,7 @@
     "bedrock": "bedrock",
     "sand": "sand",
     "redSand": "red_sand",
+    "redDirt": "red_dirt",
     "water": "water",
     "logSide": "bark",
     "logTop": "log_end",
@@ -233,6 +234,16 @@
         { "kind": "fill", "color": "@base" },
         { "kind": "streak", "count": 7, "colors": ["@light"], "width": [2.5, 3.5], "length": [12, 20], "angle": 0, "angleJitter": 7, "bend": [-1.5, 1.5], "opacity": 0.5 },
         { "kind": "streak", "count": 6, "colors": ["@shadow"], "width": [1.5, 2.2], "length": [10, 16], "angle": 0, "angleJitter": 7, "bend": [-1.5, 1.5], "opacity": 0.3, "seed": 1 }
+      ]
+    },
+    "red_dirt": {
+      "$comment": "Red-brown desert dirt (0.62): the soil's dabs and slabs in the red_dirt ramp.",
+      "use": "block", "ramp": "red_dirt", "overlay": 1,
+      "layers": [
+        { "kind": "fill", "color": "@base" },
+        { "kind": "dab", "count": 8, "colors": ["@shadow"], "width": [6, 9], "length": [8, 12], "angle": 10, "angleJitter": 30, "opacity": 0.4, "softness": 2.5 },
+        { "kind": "dab", "count": 7, "colors": ["@light"], "width": [3, 5], "length": [5, 8], "angle": 10, "angleJitter": 20, "opacity": 0.35, "softness": 1.5 },
+        { "kind": "slab", "count": 3, "colors": ["@light"], "width": [2, 2.5], "length": [3, 4], "angle": 15, "angleJitter": 40, "opacity": 0.45, "seed": 5 }
       ]
     },
     "red_sand": {

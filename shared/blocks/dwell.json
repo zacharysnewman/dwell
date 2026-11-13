@@ -16,7 +16,8 @@
     "obsidian",
     "moon_dust",
     "moon_mare_dust",
-    "red_sand"
+    "red_sand",
+    "red_dirt"
   ],
   "fluids": {
     "dwell:water": {
@@ -676,7 +677,7 @@
       "shape": "full",
       "placeable": true,
       "properties": { "flooded": ["false", "true"] },
-      "color": "#b8653f",
+      "color": "#8e4430",
       "textures": "redSandstone"
     },
     {
@@ -845,6 +846,26 @@
       "damage": { "default": 11, "shovel": 7, "look": { "kind": "scoops", "size": 0.38, "color": "#9a5434", "crack": "#5e3020", "depth": 0.12, "cracks": { "set": "soil", "stages": [0.2, 0.45, 0.65, 0.85], "strength": 0.6 } }, "chips": { "count": 6, "shards": 3, "piece": "dwell:dirt_clump", "color": "#c27a4e", "speed": 1.6, "size": 0.04 } },
       "family": "ramp",
       "of": "red_sand"
+    },
+    {
+      "$comment": "Red-brown desert dirt (0.62; owner, 2026-11-13, of a Monument Valley photo: \"Mostly reddish dirt though.\"): the main surface of mesa country's floors (the red rock mesa's bands, the red siltstone's floors in shared/worldgen/rocks.json), blended with red sand and tan sand by the mesa floor's ordered blend (rocks.json `blends`). Dirt's tools, drops and sound in the palette's red_dirt ramp. Its ramps are stored (`rampFamilies`). Prototype content.",
+      "name": "red_dirt",
+      "damage": { "default": 11, "shovel": 7, "look": { "kind": "scoops", "size": 0.38, "color": "#6e3322", "crack": "#4a2418", "depth": 0.14, "cracks": { "set": "soil", "stages": [0.2, 0.45, 0.65, 0.85], "strength": 0.6 } }, "chips": { "count": 6, "shards": 3, "piece": "dwell:dirt_clump", "color": "#8a4a30", "speed": 1.8, "size": 0.06 } },
+      "drops": [{"item": "dwell:dirt_clump", "count": 8}, {"item": "dwell:rock", "chance": 0.5}],
+      "sound": "dwell:dirt",
+      "density": 1500,
+      "shape": "full",
+      "placeable": true,
+      "properties": { "flooded": ["false", "true"] },
+      "color": "#ad6038",
+      "textures": "redDirt",
+      "moldable": "dirt"
+    },
+    {
+      "name": "red_dirt_ramp",
+      "damage": { "default": 11, "shovel": 7, "look": { "kind": "scoops", "size": 0.38, "color": "#6e3322", "crack": "#4a2418", "depth": 0.14, "cracks": { "set": "soil", "stages": [0.2, 0.45, 0.65, 0.85], "strength": 0.6 } }, "chips": { "count": 6, "shards": 3, "piece": "dwell:dirt_clump", "color": "#8a4a30", "speed": 1.8, "size": 0.06 } },
+      "family": "ramp",
+      "of": "red_dirt"
     }
   ]
 }

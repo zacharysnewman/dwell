@@ -622,6 +622,7 @@ pub fn geology_from_json(v: &Value) -> Result<Geology, String> {
         },
         erosion: erosion_from_json(v.get("erosion"))?,
         mesa_relief: mesa_relief_from_json(v.get("mesaRelief"))?,
+        blends: blends_from_json(v.get("blends"))?,
         // The tectonic provinces' stacks (T5); absent (an edit stored before T5): the build's.
         volcanic_stack: v
             .get("tectonic")
@@ -755,6 +756,56 @@ fn plate_provinces_from_json(v: Option<&Value>) -> Result<crate::geology::PlateP
 
 /// The erosion (rocks.json `erosion`, systemic terrain T4); absent (an edit stored before T4):
 /// the build's.
+/// rocks.json `blends`; absent (an edit stored before 0.62): none.
+fn blends_from_json(v: Option<&Value>) -> Result<&'static [crate::geology::Blend], String> {
+    let Some(list) = v.and_then(Value::as_array) else {
+        return Ok(&[]);
+    };
+    let names = |b: &Value, k: &str| -> Result<&'static [&'static str], String> {
+        let l = b
+            .get(k)
+            .and_then(Value::as_array)
+            .ok_or(format!("rocks.json: blends: {k} must be a list"))?;
+        let v: Vec<&'static str> = l.iter().filter_map(Value::as_str).map(leak).collect();
+        Ok(Box::leak(v.into_boxed_slice()))
+    };
+    let mut out = Vec::new();
+    for b in list {
+        let g = |k: &str| num(b, k).map_err(|e| format!("rocks.json: blends.{e}"));
+        let shares: Vec<f64> = b
+            .get("shares")
+            .and_then(Value::as_array)
+            .ok_or("rocks.json: blends: shares must be a list")?
+            .iter()
+            .filter_map(Value::as_f64)
+            .collect();
+        let blocks = names(b, "blocks")?;
+        if shares.len() != blocks.len() || blocks.len() < 2 {
+            return Err("rocks.json: blends: one share per block, two blocks at least".into());
+        }
+        for n in blocks {
+            if dwell_blocks::find_block(n).is_none() {
+                return Err(format!("rocks.json: blends: {n} is not in the registry"));
+            }
+        }
+        out.push(crate::geology::Blend {
+            name: b
+                .get("name")
+                .and_then(Value::as_str)
+                .map(leak)
+                .unwrap_or("blend"),
+            stacks: names(b, "stacks")?,
+            blocks,
+            shares: Box::leak(shares.into_boxed_slice()),
+            wavelength: g("wavelength")?,
+            slope: g("slope")?,
+            dither: g("dither")?,
+            dither_wavelength: g("ditherWavelength")?,
+        });
+    }
+    Ok(Box::leak(out.into_boxed_slice()))
+}
+
 /// rocks.json `mesaRelief`; absent (an edit stored before 0.62): none, flat as before.
 fn mesa_relief_from_json(v: Option<&Value>) -> Result<crate::geology::MesaRelief, String> {
     let Some(v) = v else {

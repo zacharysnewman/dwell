@@ -862,6 +862,7 @@ export function validateRocks(data, blocks) {
         "shaping",
         "erosion",
         "mesaRelief",
+        "blends",
         "tectonic",
         "plateProvinces",
         "arid",
@@ -992,6 +993,39 @@ export function validateRocks(data, blocks) {
     }
   };
   groups(data);
+  // The ground blocks' ordered blends by stack (0.62, Monument Valley): each its stacks, 2–6 full
+  // blocks in order with their shares (summing to 1), the noise and the dither.
+  if (data.blends !== undefined) {
+    if (!Array.isArray(data.blends)) fail("blends must be a list");
+    const seen = new Set();
+    const stackNames = new Set(data.stacks.map((s) => s.name));
+    data.blends.forEach((b, i) => {
+      const bf = (m) => fail(`blends[${i}]${typeof b?.name === "string" ? ` (${b.name})` : ""}: ${m}`);
+      const keys = ["$comment", "name", "stacks", "blocks", "shares", "wavelength", "slope", "dither", "ditherWavelength"];
+      const ex = Object.keys(b).filter((k) => !keys.includes(k));
+      if (ex.length) bf(`unknown ${ex.join(", ")}`);
+      if (typeof b.name !== "string" || !/^[a-z0-9_]+:[a-z0-9_]+$/.test(b.name)) bf("name must be namespaced");
+      if (seen.has(b.name)) bf("listed twice");
+      seen.add(b.name);
+      if (!Array.isArray(b.stacks) || b.stacks.length === 0) bf("stacks must be a list of stack names");
+      for (const s of b.stacks) if (!stackNames.has(s)) bf(`stack ${JSON.stringify(s)} is not a stack`);
+      if (!Array.isArray(b.blocks) || b.blocks.length < 2 || b.blocks.length > 6) bf("blocks must be 2–6 blocks, in order");
+      for (const n of b.blocks) {
+        const bl = blocks.get(n);
+        if (!bl) bf(`block ${JSON.stringify(n)} is not in the registry`);
+        if (bl.shape !== "full") bf(`block ${n} must be a full block`);
+      }
+      if (!Array.isArray(b.shares) || b.shares.length !== b.blocks.length || !b.shares.every((s) => isNum(s) && s > 0))
+        bf("shares must be one positive share per block");
+      if (Math.abs(b.shares.reduce((a, s) => a + s, 0) - 1) > 1e-6) bf("shares must sum to 1");
+      if (!between(b.wavelength, 4, 100_000)) bf("wavelength must be in [4, 100000] m");
+      if (!between(b.slope, 0, 2)) bf("slope must be in [0, 2]");
+      if (!between(b.dither, 0, 0.5)) bf("dither must be in [0, 0.5]");
+      if (!between(b.ditherWavelength, 1, 1000)) bf("ditherWavelength must be in [1, 1000] m");
+      // Neighbours at most one tone apart: the dither may not span a tone.
+      if (2 * b.dither >= Math.min(...b.shares)) bf("dither must be under half the smallest share");
+    });
+  }
   // The tectonic provinces (systemic terrain T5): the stacks of the volcanoes and the old core.
   const t = data.tectonic;
   if (typeof t !== "object" || t === null) fail("tectonic must be an object");

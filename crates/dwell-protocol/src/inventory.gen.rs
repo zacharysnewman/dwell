@@ -109,4 +109,6 @@ pub static DROPS: &[BlockDrops] = &[
     BlockDrops { block: "dwell:moon_dust_ramp", cost: "dwell:moon_dust", drops: &[DropRule { chance: 1.0, when: &[], choices: &[DropChoice { item: "dwell:moon_dust", min: 1, max: 1, weight: 1.0 }] }] },
     BlockDrops { block: "dwell:moon_mare_dust_ramp", cost: "dwell:moon_mare_dust", drops: &[DropRule { chance: 1.0, when: &[], choices: &[DropChoice { item: "dwell:moon_mare_dust", min: 1, max: 1, weight: 1.0 }] }] },
     BlockDrops { block: "dwell:red_sand_ramp", cost: "dwell:red_sand", drops: &[DropRule { chance: 1.0, when: &[], choices: &[DropChoice { item: "dwell:red_sand", min: 1, max: 1, weight: 1.0 }] }] },
+    BlockDrops { block: "dwell:red_dirt", cost: "dwell:red_dirt", drops: &[DropRule { chance: 1.0, when: &[], choices: &[DropChoice { item: "dwell:dirt_clump", min: 8, max: 8, weight: 1.0 }] }, DropRule { chance: 0.5, when: &[], choices: &[DropChoice { item: "dwell:rock", min: 1, max: 1, weight: 1.0 }] }] },
+    BlockDrops { block: "dwell:red_dirt_ramp", cost: "dwell:red_dirt", drops: &[DropRule { chance: 1.0, when: &[], choices: &[DropChoice { item: "dwell:dirt_clump", min: 8, max: 8, weight: 1.0 }] }, DropRule { chance: 0.5, when: &[], choices: &[DropChoice { item: "dwell:rock", min: 1, max: 1, weight: 1.0 }] }] },
 ];

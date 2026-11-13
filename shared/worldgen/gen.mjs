@@ -621,7 +621,7 @@ export function rocksRust(data) {
     `// ${rocksHeader}`,
     "",
     "use crate::geology::{",
-    "    Arid, CapClimate, CapRule, Erosion, Geology, Jointing, Layer, MesaRelief, Mixing, Notched,",
+    "    Arid, Blend, CapClimate, CapRule, Erosion, Geology, Jointing, Layer, MesaRelief, Mixing, Notched,",
     "    PlateMix, PlateProvinces, PlateRule, PlateSetting, Rock, Stack,",
     "};",
     "",
@@ -686,6 +686,13 @@ export function rocksRust(data) {
   for (const k of Object.keys(GEOLOGY.erosion))
     rs.push(`        ${snake(k)}: ${rf(data.erosion[k])},`);
   rs.push("    },");
+  rs.push("    blends: &[");
+  for (const b of data.blends ?? []) {
+    rs.push(
+      `        Blend { name: ${JSON.stringify(b.name)}, stacks: &[${b.stacks.map((s) => JSON.stringify(s)).join(", ")}], blocks: &[${b.blocks.map((s) => JSON.stringify(s)).join(", ")}], shares: &[${b.shares.map(rf).join(", ")}], wavelength: ${rf(b.wavelength)}, slope: ${rf(b.slope)}, dither: ${rf(b.dither)}, dither_wavelength: ${rf(b.ditherWavelength)} },`,
+    );
+  }
+  rs.push("    ],");
   rs.push("    mesa_relief: MesaRelief {");
   for (const k of Object.keys(GEOLOGY.mesaRelief))
     rs.push(`        ${snake(k)}: ${rf(data.mesaRelief[k])},`);

@@ -8,7 +8,7 @@
     { "name": "dwell:limestone", "hardness": 0.55, "jointing": "bedded", "bed": 8, "solubility": 0.8, "face": "dwell:stone", "cap": "dwell:stone", "scree": "dwell:stone", "color": "#d8d2b8" },
     { "name": "dwell:andesite", "hardness": 0.8, "jointing": "vertical", "bed": 16, "solubility": 0, "face": "dwell:basalt", "cap": "dwell:basalt", "scree": "dwell:stone", "color": "#5a5652" },
     { "name": "dwell:shield_basalt", "hardness": 0.85, "jointing": "vertical", "bed": 12, "solubility": 0, "face": "dwell:basalt", "cap": "dwell:basalt", "scree": "dwell:basalt", "color": "#2c2c32" },
-    { "name": "dwell:siltstone", "hardness": 0.2, "jointing": "bedded", "bed": 6, "solubility": 0, "face": "dwell:red_sand", "cap": "dwell:red_sandstone", "capBy": [{ "arid": "dwell:red_sand" }], "scree": "dwell:red_sand", "color": "#b0603e" },
+    { "name": "dwell:siltstone", "hardness": 0.2, "jointing": "bedded", "bed": 6, "solubility": 0, "face": "dwell:red_sandstone", "cap": "dwell:red_dirt", "scree": "dwell:red_sand", "color": "#b0603e" },
     { "name": "dwell:schist", "hardness": 0.75, "jointing": "bedded", "bed": 10, "solubility": 0, "face": "dwell:stone", "cap": "dwell:stone", "scree": "dwell:stone", "color": "#7f8a86" }
   ],
   "stacks": [
@@ -26,6 +26,7 @@
   "arid": { "$comment": "What arid ground is, for a rock's `capBy` (BUGS.md #134; owner, 2026-11-13: \"We need a red brown sand for the red desert areas\"): the biomes' own climate values, as the red rock mesa's `where` (rain in mm where the world has a climate, any without one; the geography's wetness, 0..1; celsius at least, so a hot desert, not the boreal's or the tundra's dry ground). A rock's `capBy` lists {\"<climate>\": block} (the code's vocabulary: arid), the first whose climate holds giving its treads' block, else its `cap`: sandstone's treads are red sand where it is arid, red sandstone elsewhere.", "rain": 450, "wetness": 0.3, "celsius": 6 },
   "provinces": { "wavelength": 12000 },
   "shaping": { "strength": 0, "tread": 1.5, "sheer": 2, "ledge": 2, "ledgeEvery": 1, "treadRelief": 0.08, "notched": "mesaEdges" },
+  "blends": [ { "name": "dwell:mesa_country", "$comment": "Monument Valley's floors (owner, 2026-11-13): mostly red dirt, red sand on the slopes, washes and patches, paler tan patches blended in; on the red desert beds (the red rock mesa's own stack).", "stacks": ["dwell:red_desert_beds"], "blocks": ["dwell:red_dirt", "dwell:red_sand", "dwell:sand"], "shares": [0.68, 0.24, 0.08], "wavelength": 90, "slope": 0.3, "dither": 0.035, "ditherWavelength": 3} ],
   "erosion": { "strength": 1, "reach": 450, "valley": 0.35, "resist": 0.6, "relief": 3, "threshold": 6, "snap": 0, "wall": 2, "talusWidth": 14, "talusShare": 0.2, "outline": 0.45, "outlineWavelength": 260, "gullyWavelength": 40, "gullyDepth": 5 },
   "mesaRelief": { "topAmplitude": 3.5, "topWavelength": 220, "dip": 0.012, "dipWavelength": 1400, "knobSpacing": 420, "knobChance": 0.18, "knobHeight": 7, "knobRadius": 45, "floorSlope": 0.012, "floorRise": 9, "moundHeight": 3, "moundWavelength": 120, "fanHeight": 3.5, "fanWidth": 70, "washDepth": 2, "washWavelength": 180 },
   "plateProvinces": {
