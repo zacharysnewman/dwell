@@ -129,6 +129,7 @@ fields, ranges and names fail with the entry named):
 | `herd {kind?, back?}` | the finder (WORK_QUEUE item 46): logs the far herds nearest first (`__dwell.herds`) and stands the player `back` m (40) short of the nearest of `kind` (`deer`, `wolf`; either) on the ground (`goToHerd`, a local world); fails when there is none. Scenario `herds` |
 | `lava {op, args?}` | the local server's lava (`__dwell.lava(op, args)`, VOLCANOES.md §6.3), its JSON printed: `report` its fields (face, centre, origin, `molten` columns, deepest m, vents, the world's worldgen, `steamCells` sent so far), `rate` [k] every vent's rate × k (fill a lake in seconds), `vent` [x, y, z, rateM3s, depthM] a lake vent at a world point, `ventNear` [dx, dz, rateM3s, depthM] one off the player's feet; `lava-lake` shoots the starter's summit lake and lava meeting the sea. A scenario's `query` (e.g. `{"worldgen": "test:starter", "seed": "0", "at": "x,y,z"}`) opens a test world at a point for steps of its own |
 | `flyTo {to, face?, landM?, maxS?}` | the moon trip ([The moon](#the-moon-__dwellmoon-the-flyto-step); `__dwell.flyTo`, a local world): `to: "moon"` moves the player just outside the moon's capture sphere over its face `face` (`a`, `b`) with the dev move, flies it in for real until captured, down to `landM` m (40) over the moon's ground, measures the fall with flight off (**failing the run unless it is the moon's gravity within 25 %**) and lands; `to: "home"` flies up past the release sphere, back to where the trip started, and waits until the client holds home's chunk under the feet. Each leg at most `maxS` s (120); saved in `report.json`'s `trips`. Scenario `moon-trip` |
+| `sunLand {face?, maxS?, waitS?}` | `moonLand` onto the sun's dry crust (`__dwell.sunLand`, its stand point away from lava; SUN_WORLD.md). Scenario `sun-draw` (face A: `sun-a-across`, `sun-a-down`) |
 | `moonLand {face?, maxS?, waitS?}` | teleports onto the moon's ground on face `face` (`a`, `b`; `__dwell.moonLand`, a local world), no flight, waits until standing there with its chunk held and `waitS` (3) s more, and prints the frame's draw calls, triangles and mesh bytes (saved in `report.json`'s `trips`). Scenario `moon-draw` |
 | `give {item, count}` | gives the local player `count` of `item` (`__dwell.give`, a local world that uses items, e.g. `?mode=adventure`): `pieces-combine` fills the backpack with pieces to shoot its Combine section |
 | `mark` | forgets the telemetry so far: the next `record` measures from here |
@@ -528,6 +529,11 @@ waits until the player stands there with the chunk under the feet held. `flyTo('
 bytes (saved in `trips`); `npm run bench -- --warm moon-draw` lands on face A, shoots `moon-a-across` and
 `moon-a-down`, goes home, lands on face B and shoots `moon-b-across`. A moon whose ground draws shows hundreds of
 calls, not tens (BUGS.md #123: 16–17).
+
+**`__dwell.sunLand({face?, maxS?})`** is the same onto the sun (`LocalCore::grid_land("dwell:sun", …)`: 1.5 m over
+its stand point, dry crust away from lava), with `__dwell.sun()` its report (the moon report's fields for
+`dwell:sun`); the worker also takes `sunApproach` [margin, face]. `npm run bench -- --warm sun-draw` lands on face A
+and shoots `sun-a-across` and `sun-a-down` with the frame's draw calls and triangles.
 
 `npm run bench -- --warm moon-trip` flies there, lands, shoots `on-the-moon` and `moon-sky` at noon, flies
 back and shoots `home-again`; the capture, descent, landing and return seconds and the fall are printed and saved in

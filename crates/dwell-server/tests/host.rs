@@ -53,6 +53,7 @@ fn world_saved_by(path: &str, version: &str) {
         app_version_created: version.into(),
         app_version_last: version.into(),
         settings: None,
+        spawn_grid: None,
     };
     db.save(&SaveBatch {
         meta: Some(meta),
