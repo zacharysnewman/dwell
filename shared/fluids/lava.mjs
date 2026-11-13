@@ -28,10 +28,9 @@ export const TOP_RANGES = {
 export const FLUID_RANGES = {
   viscosityM2s: [0.01, 1000, false],
   yieldDepthM: [0, 2, false],
-  coolingSeconds: [1, 86400, false],
-  edgeCooling: [0, 20, false],
-  thinDepthM: [0, 4, false],
-  tubeSpeedMs: [0.0001, 1000, false],
+  restSeconds: [0.1, 86400, false],
+  stillM3s: [0, 10, false],
+  sourceKeepM: [0, 64, false],
   breakoutDepthM: [0, 100, false],
   light: [0, 15, true],
   damagePerSecond: [0, 1000, false],
