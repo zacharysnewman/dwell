@@ -299,6 +299,8 @@ struct Inner {
     reduced_motion: bool,
     /// The Show your arms setting (docs/CHARACTERS.md §5).
     show_arms: bool,
+    /// The targeted block's outline drawn (a dev view switch, BUGS.md #113).
+    show_outline: bool,
     /// The Camera sway setting (Settings → Motion).
     camera_sway: bool,
     /// How long the camera rolls upright across the midplane (s; 0 snaps): `?crossingroll=` or
@@ -458,6 +460,7 @@ impl Client {
             fov_setting: dwell_lod::frustum::VERTICAL_FOV,
             reduced_motion: false,
             show_arms: true,
+            show_outline: true,
             camera_sway: true,
             crossing_roll,
             shaping: Shaping::NotAsked,
@@ -657,6 +660,7 @@ impl Client {
             game.fov_setting = s.fov_setting;
             game.reduced_motion = s.reduced_motion;
             game.show_arms = s.show_arms;
+            game.show_outline = s.show_outline;
             game.camera_sway = s.camera_sway;
             let touch = s.touch_used.then_some(s.touch.state);
             let perf = web_sys::window().and_then(|w| w.performance());
@@ -2426,6 +2430,11 @@ impl Client {
     #[wasm_bindgen(js_name = setShowArms)]
     pub fn set_show_arms(&self, shown: bool) {
         self.inner.borrow_mut().show_arms = shown;
+    }
+    /// The targeted block's outline drawn or not (a dev view switch for clean recordings, BUGS.md #113).
+    #[wasm_bindgen(js_name = setTargetOutline)]
+    pub fn set_target_outline(&self, shown: bool) {
+        self.inner.borrow_mut().show_outline = shown;
     }
     /// The Camera sway setting (Settings → Motion; docs/CHARACTERS.md §5.2): the view's sway with
     /// a swing of the axe. Off: the view holds still (the aim never sways either way).

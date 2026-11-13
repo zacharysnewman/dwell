@@ -16,7 +16,7 @@ const KEYS = {
   video: ['formatVersion', 'name', 'description', 'world', 'capture', 'audio', 'splice', 'shots'],
   world: ['url', 'storage'],
   capture: ['size', 'fps'],
-  splice: ['fade', 'crf'],
+  splice: ['fade', 'crf', 'gainDb'],
   shot: ['id', 'note', 'kind', 'path', 'script', 'args', 'setup', 'capture', 'audio', 'splice'],
   setup: ['reload', 'url', 'timeOfDay', 'view', 'hud', 'warmS', 'eval'],
   part: ['label', 'from', 'to', 'speed', 'vf', 'cut', 'audio'],
@@ -47,6 +47,7 @@ export function validate(m, base = SKILL) {
   if (m.splice !== undefined && keys(m.splice, 'splice', 'video.splice')) {
     if (m.splice.fade !== undefined) num(m.splice.fade, 'video.splice.fade');
     if (m.splice.crf !== undefined) num(m.splice.crf, 'video.splice.crf');
+    if (m.splice.gainDb !== undefined && !(typeof m.splice.gainDb === 'number' && m.splice.gainDb >= 0 && m.splice.gainDb <= 40)) errs.push('video.splice.gainDb: expected a number of dB from 0 to 40 (the whole sound lifted, limited)');
   }
   if (!Array.isArray(m.shots) || m.shots.length === 0) errs.push('video.shots: expected a non-empty list');
   const ids = new Set(), labels = new Set();
@@ -174,6 +175,7 @@ export function splicePlan(m, cache) {
   const plan = { out: join(cache, m.name, `${m.name}.mp4`), size: m.capture.size, fps: m.capture.fps };
   if (m.splice?.fade !== undefined) plan.fade = m.splice.fade;
   if (m.splice?.crf !== undefined) plan.crf = m.splice.crf;
+  if (m.splice?.gainDb !== undefined) plan.gainDb = m.splice.gainDb;
   plan.audio = m.shots.some((s) => shotAudio(m, s));
   plan.clips = m.shots.flatMap((s) => s.splice.map(({ label: _, audio, ...p }) => ({
     src: clipPath(cache, m, s.id), from: p.from ?? 0, ...p,

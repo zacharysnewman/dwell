@@ -6,14 +6,6 @@ pins it.
 
 ## Open
 
-### 113. First-person recordings show the block-target box; no dev toggle hides it
-
-Found recording showcase video 2 (water, 2026-11-12): wading in off seed 7's beach, the thin black box round the
-targeted cell (the sand under shallow water, within reach) draws in the first-person frames, over the water and the
-caustics. Hiding the DOM HUD doesn't remove it, and `d.setView` has no option for it. Suspect: the target box is
-drawn by the renderer, not the DOM HUD. Wanted: a dev/theater switch (e.g. `d.setView({ target: false })`, or off
-whenever the theater HUD is off) so clean first-person takes have no box.
-
 ### 100. Volumetric clouds look like "crazy triangles"
 
 Owner, 2026-11-12: "the clouds look ridiculous at least the volumetric ones. Look like crazy triangles. Find a
@@ -481,6 +473,18 @@ shallow ramp, maybe same problem with steep ramps too?" Not investigated yet: ta
 face, or the placement check against its shape.
 
 ## Fixed
+
+### 113. First-person recordings show the block-target box; no dev toggle hides it (fixed after 0.57.4)
+
+Found recording showcase video 2 (water, 2026-11-12): wading in off seed 7's beach, the thin black box round the
+targeted cell (the sand under shallow water, within reach) draws in the first-person frames, over the water and the
+caustics. Hiding the DOM HUD doesn't remove it, and `d.setView` has no option for it. Suspect: the target box is
+drawn by the renderer, not the DOM HUD. Wanted: a dev/theater switch (e.g. `d.setView({ target: false })`, or off
+whenever the theater HUD is off) so clean first-person takes have no box.
+Fixed: a dev view switch, `__dwell.setView({ targetOutline: false })` (`Client.setTargetOutline`, the game's
+`show_outline`): the block stays targeted, its outline isn't drawn. The water manifest's shots set it.
+`game_local.rs` `the_target_outline_can_be_hidden_for_recordings`: red with the switch ignored ("but not
+outlined"), green with it.
 
 ### 114. The starter world's terrain pin failed on main since the 0.55 line (fixed after 0.56.4)
 

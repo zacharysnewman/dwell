@@ -1,6 +1,6 @@
 { "formatVersion": 1, "name": "water s1: golden-hour coast, a low glide over the sea toward the shore",
   "keyframes": [
-    { "t": 0, "position": [11700, 40, 19900], "look": [200, -6], "fov": 60, "timeOfDay": 0.8 },
-    { "t": 11, "position": [11668, 36, 19640], "look": [200, -5], "fov": 60, "timeOfDay": 0.8 }
+    { "t": 0, "position": [11700, 40, 19900], "look": [200, -6], "fov": 60, "timeOfDay": 0.815 },
+    { "t": 11, "position": [11668, 36, 19640], "look": [200, -5], "fov": 60, "timeOfDay": 0.815 }
   ],
   "segments": [ { "move": "ease", "easing": "inOutSine" } ] }

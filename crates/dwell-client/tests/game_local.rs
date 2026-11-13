@@ -4078,3 +4078,34 @@ dwell_world::both_faces!(
         assert!(back, "home's chunks stream again after the release");
     }
 );
+
+/// BUGS.md #113: a clean recording can hide the targeted block's outline (`setView({ targetOutline:
+/// false })`); the block stays targeted, and the outline comes back when switched on again.
+#[test]
+fn the_target_outline_can_be_hidden_for_recordings() {
+    let mut rig = Rig::new();
+    assert!(
+        rig.run_until(60 * 30, |r| r
+            .game
+            .as_ref()
+            .is_some_and(|g| g.debug_state().terrain_ready)),
+        "the player is placed and the terrain around them arrives"
+    );
+    rig.input.look.pitch = -60.0;
+    assert!(
+        rig.run_until(60, |r| r.scene.borrow().outline.is_some()),
+        "the ground in front is targeted and outlined"
+    );
+    rig.game.as_mut().unwrap().show_outline = false;
+    rig.run_until(5, |_| false);
+    assert!(
+        rig.game.as_ref().unwrap().debug_state().target.is_some(),
+        "still targeted"
+    );
+    assert!(rig.scene.borrow().outline.is_none(), "but not outlined");
+    rig.game.as_mut().unwrap().show_outline = true;
+    assert!(
+        rig.run_until(5, |r| r.scene.borrow().outline.is_some()),
+        "outlined again"
+    );
+}

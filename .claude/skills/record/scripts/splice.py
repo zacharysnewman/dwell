@@ -52,9 +52,10 @@ def concat_args(paths, audio, out):
             '-c:v', 'libx264', '-crf', '18', out]
 
 
-def join_graph(durations, fade, audio):
+def join_graph(durations, fade, audio, gain_db=0):
     """The cross-fades between the groups (xfade, and acrossfade for the sound: both shorten the video by `fade`
-    a join) and the fade out of the last second. Returns (filter graph, total seconds)."""
+    a join) and the fade out of the last second; `gain_db` lifts the whole sound (the tap records the game's mix
+    quietly, ~-50 dB mean), with a limiter so it can't clip. Returns (filter graph, total seconds)."""
     parts, prev, aprev, t = [], '[0:v]', '[0:a]', durations[0]
     for i in range(1, len(durations)):
         parts.append(f'{prev}[{i}:v]xfade=transition=fade:duration={fade}:offset={t - fade:.3f}[x{i}]')
@@ -64,7 +65,8 @@ def join_graph(durations, fade, audio):
         prev, t = f'[x{i}]', t + durations[i] - fade
     parts.append(f'{prev}fade=t=out:st={t - 1:.3f}:d=1[out]')
     if audio:
-        parts.append(f'{aprev}afade=t=out:st={t - 1:.3f}:d=1,atrim=0:{t:.3f}[aout]')
+        lift = f'volume={gain_db}dB,alimiter=limit=0.9,' if gain_db else ''
+        parts.append(f'{aprev}{lift}afade=t=out:st={t - 1:.3f}:d=1,atrim=0:{t:.3f}[aout]')
     return ';'.join(parts), t
 
 
@@ -135,7 +137,7 @@ def main(argv):
         run(*concat_args([p for p, _ in group], audio, joined))
         segs.append((joined, sum(d for _, d in group)))
     inputs = sum((['-i', p] for p, _ in segs), [])
-    graph, t = join_graph([d for _, d in segs], X, audio)
+    graph, t = join_graph([d for _, d in segs], X, audio, plan.get('gainDb', 0))
     run(*inputs, '-filter_complex', graph, '-map', '[out]', *(['-map', '[aout]', *AUDIO] if audio else ['-an']),
         '-r', str(FPS), '-c:v', 'libx264', '-crf', str(plan.get('crf', 21)),
         '-preset', 'slow', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', out)
