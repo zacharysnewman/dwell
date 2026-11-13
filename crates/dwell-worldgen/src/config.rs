@@ -695,9 +695,18 @@ fn plate_provinces_from_json(v: Option<&Value>) -> Result<crate::geology::PlateP
         let name = text(r, "setting").map_err(at)?;
         let setting = PlateSetting::parse(name)
             .ok_or_else(|| at(format!("rules: {name} is not a setting")))?;
+        // The stacks the setting mixes in (absent: none, as before 0.61).
+        let mut mix = Vec::new();
+        for m in r.get("mix").and_then(Value::as_array).into_iter().flatten() {
+            mix.push(crate::geology::PlateMix {
+                stack: text(m, "stack").map_err(at)?,
+                weight: num(m, "weight").map_err(at)?.max(0.0),
+            });
+        }
         rules.push(PlateRule {
             setting,
             stack: text(r, "stack").map_err(at)?,
+            mix: Box::leak(mix.into_boxed_slice()),
         });
     }
     Ok(PlateProvinces {
@@ -710,6 +719,24 @@ fn plate_provinces_from_json(v: Option<&Value>) -> Result<crate::geology::PlateP
         edge_fade: match v.get("edgeFade") {
             None => 0.0,
             Some(_) => num(v, "edgeFade").map_err(at)?,
+        },
+        // Absent (an edit stored before 0.61): one stack per setting, edges at their widths.
+        mixing: match v.get("mixing") {
+            None => crate::geology::Mixing::default(),
+            Some(m) => {
+                let g = |k: &str| num(m, k).map_err(|e| at(format!("mixing.{e}")));
+                crate::geology::Mixing {
+                    wavelength: g("wavelength")?,
+                    warp: g("warp")?,
+                    warp_wavelength: g("warpWavelength")?,
+                    edge_shift: g("edgeShift")?,
+                    edge_wavelength: g("edgeWavelength")?,
+                    fade: match m.get("fade") {
+                        None => 0.0,
+                        Some(_) => g("fade")?,
+                    },
+                }
+            }
         },
         rules: Box::leak(rules.into_boxed_slice()),
     })

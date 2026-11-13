@@ -13,10 +13,13 @@
 use super::HydrologyParams;
 use super::flood::{Grid, NONE, flood, shore};
 use super::math::pow;
+use crate::plates::FlowRouting;
 
 /// One erosion run over `h` (m above sea level) where `sea` is false; the sea never changes. `uplift` is the
 /// uplift rate per cell (m/yr), `erodibility` K per cell, `rain` the relative rain per cell, `cell`
-/// the cell size (m).
+/// the cell size (m). `routing` how each step sends a cell's water down: to the cell it was
+/// flooded from (D8), or to a lower neighbour drawn by slope (a Realistic world's, plates.json
+/// `variety.flow`), so the channels do not all run along the grid's 45° and 90° lines.
 #[allow(clippy::too_many_arguments)]
 pub fn erode(
     grid: Grid,
@@ -27,6 +30,7 @@ pub fn erode(
     rain: &[f64],
     sea: &[bool],
     p: &HydrologyParams,
+    routing: FlowRouting,
 ) {
     let len = grid.len();
     let cell_area = cell * cell;
@@ -41,7 +45,10 @@ pub fn erode(
             crate::progress::MapStep::Erosion,
             f64::from(it) / f64::from(p.iterations.max(1)),
         );
-        let f = flood(grid, h, sea, &shore);
+        let mut f = flood(grid, h, sea, &shore);
+        if let FlowRouting::Random { exponent } = routing {
+            reroute(grid, cell, &mut f, sea, exponent, it);
+        }
         // Drainage area (m², rain-weighted), donors before receivers.
         for &c in &f.order {
             area[c as usize] = rain[c as usize] * cell_area;
@@ -88,6 +95,56 @@ pub fn erode(
         talus(grid, cell, h, sea, &land, p);
     }
     crate::progress::report(crate::progress::MapStep::Erosion, 1.0);
+}
+
+/// Randomized single-flow routing: each land cell above its depression's water sends its water to
+/// one neighbour strictly lower than its level, drawn with a weight of its slope to the power
+/// `exponent` by a hash of the cell and the step `it` (so the draw changes every step and the
+/// channels average over the lower neighbours, not one grid direction). A strictly lower level was
+/// flooded earlier (the flood pops levels in order), so the order stays receivers first.
+fn reroute(
+    grid: Grid,
+    cell: f64,
+    f: &mut super::flood::Flood,
+    sea: &[bool],
+    exponent: f64,
+    it: u32,
+) {
+    let diag = cell * std::f64::consts::SQRT_2;
+    let mut cand = [(0usize, 0.0f64); 8];
+    for &c in &f.order {
+        let c = c as usize;
+        let lc = f.level[c];
+        let mut k = 0;
+        let mut total = 0.0;
+        for (j, d) in grid.neighbours(c) {
+            let lj = if sea[j] { 0.0 } else { f.level[j] };
+            if lj < lc {
+                let w = pow((lc - lj) / if d { diag } else { cell }, exponent);
+                if w > 0.0 && w.is_finite() {
+                    cand[k] = (j, w);
+                    total += w;
+                    k += 1;
+                }
+            }
+        }
+        if k < 2 {
+            continue;
+        }
+        let hash = crate::noise::mix32(
+            (c as u32).wrapping_mul(0x9E37_79B9) ^ crate::noise::mix32(it.wrapping_add(0x51A7)),
+        );
+        let mut u = f64::from(hash) / f64::from(u32::MAX) * total;
+        let mut pick = cand[k - 1].0;
+        for &(j, w) in &cand[..k] {
+            if u < w {
+                pick = j;
+                break;
+            }
+            u -= w;
+        }
+        f.parent[c] = pick as u32;
+    }
 }
 
 fn is_diagonal(grid: Grid, a: usize, b: usize) -> bool {

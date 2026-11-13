@@ -224,6 +224,17 @@
       "widen": 0.12
     }
   },
+  "variety": {
+    "$comment": "The Realistic world's variety (WORK_QUEUE item 15, the realistic batch part B; owner, 2026-11-13: \"horizontal slices of noise\", \"the same terrain almost looks tiled\"). `flow`: how the map's erosion routes each cell's water down (the code's vocabulary: `d8`, every cell to the one neighbour it was flooded from, which hatches the slopes along the grid's 45° and 90° lines at 100–300 m; `random`, each erosion step to one strictly lower neighbour drawn by its slope to the power `exponent`, so the channels wander off the grid and the hatching averages out). `relief`: the base field's interior on the plates' land: its sample point warped by a noise `warp.amplitude` m at `warp.wavelength` m; `swells`, basins and swells of about ±`height` m at `wavelength` m (`octaves`); the hills' and bumps' amplitude × a regional noise at `hillVary.wavelength` m between `hillVary.min` and `max`; every octave of the hills, bumps and swells `rotate`° turned from the last and `lacunarity` × finer (not 2: no octave's lattice lines up with the last's).",
+    "flow": { "routing": "random", "exponent": 1 },
+    "relief": {
+      "warp": { "amplitude": 1200, "wavelength": 7000 },
+      "swells": { "height": 150, "wavelength": 5500, "octaves": 2 },
+      "hillVary": { "min": 0.35, "max": 1.6, "wavelength": 13000 },
+      "rotate": 37,
+      "lacunarity": 2.13
+    }
+  },
   "fixtures": [
     {
       "name": "ocean_under_continent",

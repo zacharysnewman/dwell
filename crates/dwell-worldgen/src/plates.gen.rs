@@ -6,6 +6,7 @@ use crate::plate_tectonics::{
 use crate::plates::{
     BoundaryKind, FixturePlate, KindRule, PlateFixture, PlateKind, PlateRules, RimRule,
 };
+use crate::plates::{FlowRouting, InteriorRelief, PlateVariety};
 
 /// The plate layout's rules (shared/worldgen/plates.json).
 pub const PLATES: PlateRules = PlateRules {
@@ -50,6 +51,23 @@ pub const UPLIFT: PlateUplift = PlateUplift {
     rift: RiftRule { segment_length: [8000.0, 15000.0], depth: [0.7, 1.3], width: [0.7, 1.3], sill: [0.1, 0.45], step_over: 1500.0 },
     arc: ArcRule { distance: 9000.0, min_distance: 2000.0, spacing: 10000.0, min_length: 6000.0, max_cones: 4, cone_height: 900.0, cone_radius: 3500.0, crater_radius: 350.0, crater_depth: 60.0, hardness: 0.6 },
     hotspot: ChainRule { islands: 4, spacing: 5000.0, height: 420.0, radius: 2600.0, decay: 0.65, widen: 0.12 },
+};
+
+/// The Realistic world's variety (plates.json `variety`, WORK_QUEUE item 15).
+pub const VARIETY: PlateVariety = PlateVariety {
+    flow: FlowRouting::Random { exponent: 1.0 },
+    relief: InteriorRelief {
+        warp_amplitude: 1200.0,
+        warp_wavelength: 7000.0,
+        swell_height: 150.0,
+        swell_wavelength: 5500.0,
+        swell_octaves: 2,
+        hill_min: 0.35,
+        hill_max: 1.6,
+        hill_wavelength: 13000.0,
+        rotate: 37.0,
+        lacunarity: 2.13,
+    },
 };
 
 /// Two-plate layouts and the boundary each must give (plates.json `fixtures`).

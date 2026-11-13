@@ -11,7 +11,9 @@ use dwell_protocol::world_size::WorldSize;
 use dwell_world::WorldBounds;
 
 use crate::island::IslandLayout;
-use crate::noise::{clamp01, fbm2, noise_offset, octaves_resolved, seed_word, smooth_step};
+use crate::noise::{
+    clamp01, fbm2, fbm2_turned, noise_offset, octaves_resolved, seed_word, smooth_step,
+};
 use crate::plates::{PLATES, PlateLayout};
 use crate::terrain::{HEIGHT, HeightField};
 
@@ -31,6 +33,9 @@ pub struct BaseField {
     /// A Realistic world's plate layout (`tectonics.plates` 1, R2): its coast is the field's
     /// (oceanic plate = sea, continental = land, a sea margin at the edge) in place of the island's.
     plates: Option<Arc<PlateLayout>>,
+    /// A Realistic world's relief noises (plates.json `variety.relief`): the warp's two, the
+    /// hills' regional amplitude, the basins and swells.
+    variety_seeds: [u32; 4],
 }
 
 impl BaseField {
@@ -74,6 +79,7 @@ impl BaseField {
             offset_x: noise_offset(seed_word(seed, 3)),
             offset_z: noise_offset(seed_word(seed, 4)),
             island: IslandLayout::new(seed),
+            variety_seeds: [0, 1, 2, 3].map(|k| seed_word(seed, 0x7A11_0E00 + k)),
         }
     }
 
@@ -127,6 +133,9 @@ impl BaseField {
             );
             coast = coast.min(h.island_cap) + h.island_amplitude * 2.0 * n;
         }
+        if self.plates.is_some() {
+            return Some(self.plates_relief(x, z, coast, cell));
+        }
         let hills = fbm2(
             self.hills_seed,
             nx,
@@ -155,5 +164,100 @@ impl BaseField {
             (dwell_world::SEA_LEVEL_M as f32 + relief)
                 .max((dwell_world::MIDPLANE_M + dwell_world::CORE_M) as f32),
         )
+    }
+
+    /// A Realistic world's height (m, face-local) at (x, z) over its plates' `coast` distance
+    /// (plates.json `variety.relief`, WORK_QUEUE item 15: no "horizontal slices", no "tiled"
+    /// look): the inland rise as the default world's, its hills and bumps read at a domain-warped
+    /// point with turned, off-lattice octaves and an amplitude varying by region, and basins and
+    /// swells over the interior. Octaves finer than `cell` m dropped.
+    fn plates_relief(&self, x: i64, z: i64, coast: f32, cell: i64) -> f32 {
+        let h = &self.h;
+        let r = crate::plates::VARIETY.relief;
+        let [_, _, vary_seed, _] = self.variety_seeds;
+        let (fx, fz) = ((x + self.offset_x) as f64, (z + self.offset_z) as f64);
+        let (wx, wz) = self.warped(x, z);
+        let kept = cell as f64;
+        let turned = |seed, w: i32, o| {
+            fbm2_turned(seed, wx, wz, f64::from(w), o, r.lacunarity, r.rotate, kept)
+        };
+        let hills = turned(self.hills_seed, h.hill_wavelength, h.hill_octaves);
+        let bumps = turned(self.bumps_seed, h.bump_wavelength, h.bump_octaves);
+        let t = (0.5
+            + 1.6
+                * fbm2_turned(
+                    vary_seed,
+                    fx,
+                    fz,
+                    r.hill_wavelength,
+                    2,
+                    r.lacunarity,
+                    r.rotate,
+                    0.0,
+                ))
+        .clamp(0.0, 1.0);
+        let vary = (r.hill_min + (r.hill_max - r.hill_min) * f64::from(t)) as f32;
+        let base = if coast > 0.0 {
+            h.inland_rise * (coast / (coast + h.rise_half))
+        } else {
+            h.sea_floor * clamp01(-coast * (1.0 / h.shelf))
+        };
+        let land = smooth_step(h.hill_fade_from, h.hill_fade_to, coast);
+        let relief =
+            base + land * vary * h.hill_height * 2.0 * hills + vary * h.bump_height * 2.0 * bumps;
+        (dwell_world::SEA_LEVEL_M as f32 + relief)
+            .max((dwell_world::MIDPLANE_M + dwell_world::CORE_M) as f32)
+    }
+
+    /// A Realistic world's warped sample point (plates.json `variety.relief.warp`; noise lattice m).
+    fn warped(&self, x: i64, z: i64) -> (f64, f64) {
+        let r = crate::plates::VARIETY.relief;
+        let (fx, fz) = ((x + self.offset_x) as f64, (z + self.offset_z) as f64);
+        let warp = |seed| {
+            r.warp_amplitude
+                * 2.0
+                * f64::from(fbm2_turned(
+                    seed,
+                    fx,
+                    fz,
+                    r.warp_wavelength,
+                    2,
+                    r.lacunarity,
+                    r.rotate,
+                    0.0,
+                ))
+        };
+        (
+            fx + warp(self.variety_seeds[0]),
+            fz + warp(self.variety_seeds[1]),
+        )
+    }
+
+    /// A Realistic world's basins and swells (m) at (x, z) on land (plates.json
+    /// `variety.relief.swells`), faded in from the coast as the hills are; 0 without plates. The
+    /// map adds them whole, as it does the boundaries' landforms (not scaled by the uplift layer's
+    /// `keepRelief`).
+    pub fn swell_at(&self, x: i64, z: i64) -> f64 {
+        if self.plates.is_none() {
+            return 0.0;
+        }
+        let r = crate::plates::VARIETY.relief;
+        let (wx, wz) = self.warped(x, z);
+        let swell = fbm2_turned(
+            self.variety_seeds[3],
+            wx,
+            wz,
+            r.swell_wavelength,
+            r.swell_octaves,
+            r.lacunarity,
+            r.rotate,
+            0.0,
+        );
+        let land = smooth_step(
+            self.h.hill_fade_from,
+            self.h.hill_fade_to,
+            self.coast_at(x, z),
+        );
+        f64::from(land) * r.swell_height * 2.0 * f64::from(swell)
     }
 }

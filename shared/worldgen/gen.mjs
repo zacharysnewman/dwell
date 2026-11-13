@@ -621,8 +621,8 @@ export function rocksRust(data) {
     `// ${rocksHeader}`,
     "",
     "use crate::geology::{",
-    "    Arid, CapClimate, CapRule, Erosion, Geology, Jointing, Layer, PlateProvinces, PlateRule,",
-    "    PlateSetting, Rock, Stack,",
+    "    Arid, CapClimate, CapRule, Erosion, Geology, Jointing, Layer, Mixing, PlateMix, PlateProvinces,",
+    "    PlateRule, PlateSetting, Rock, Stack,",
     "};",
     "",
   ];
@@ -704,11 +704,19 @@ export function rocksRust(data) {
   rs.push(`        rift_width: ${rf(pp.riftWidth)},`);
   rs.push(`        basin_distance: ${rf(pp.basinDistance)},`);
   rs.push(`        edge_fade: ${rf(pp.edgeFade ?? 0)},`);
+  const mx = pp.mixing ?? {};
+  rs.push(
+    `        mixing: Mixing { wavelength: ${rf(mx.wavelength ?? 0)}, warp: ${rf(mx.warp ?? 0)}, warp_wavelength: ${rf(mx.warpWavelength ?? 0)}, edge_shift: ${rf(mx.edgeShift ?? 0)}, edge_wavelength: ${rf(mx.edgeWavelength ?? 0)}, fade: ${rf(mx.fade ?? 0)} },`,
+  );
   rs.push("        rules: &[");
-  for (const r of pp.rules)
+  for (const r of pp.rules) {
+    const mix = (r.mix ?? [])
+      .map((m) => `PlateMix { stack: ${JSON.stringify(m.stack)}, weight: ${rf(m.weight)} }`)
+      .join(", ");
     rs.push(
-      `            PlateRule { setting: PlateSetting::${setting(r.setting)}, stack: ${JSON.stringify(r.stack)} },`,
+      `            PlateRule { setting: PlateSetting::${setting(r.setting)}, stack: ${JSON.stringify(r.stack)}, mix: &[${mix}] },`,
     );
+  }
   rs.push("        ],");
   rs.push("    },");
   const arid = data.arid ?? { rain: 0, wetness: 0, celsius: 100 };
@@ -2609,6 +2617,7 @@ const PLATES_TOP = [
   "hotspots",
   "rim",
   "uplift",
+  "variety",
   "fixtures",
 ];
 /** plates.json `uplift.pairs`' code vocabulary (`plate_tectonics.rs`): the landforms' sides and
@@ -2616,6 +2625,8 @@ const PLATES_TOP = [
 export const PAIR_SIDES = ["over", "under", "astride", "continental", "oceanic"];
 export const PAIR_SHAPES = ["bump", "rift", "shoulder"];
 export const ARC_MODES = ["none", "crest", "island"];
+/** plates.json `variety.flow.routing`: the erosion's routing vocabulary (`hydrology/erosion.rs`). */
+const FLOW_ROUTINGS = ["d8", "random"];
 const UPLIFT_ARC = [
   "distance",
   "minDistance",
@@ -2815,6 +2826,27 @@ export function validatePlates(data) {
   num("uplift.hotspot.radius", u.hotspot.radius, 1, 20_000);
   num("uplift.hotspot.decay", u.hotspot.decay, 0, 1);
   num("uplift.hotspot.widen", u.hotspot.widen, 0, 2);
+  // The Realistic world's variety (WORK_QUEUE item 15, part B): the erosion's routing, the relief.
+  const v = data.variety;
+  obj("variety", v, ["flow", "relief"]);
+  obj("variety.flow", v.flow, ["routing", "exponent"]);
+  if (!FLOW_ROUTINGS.includes(v.flow.routing))
+    fail(`variety.flow.routing must be one of ${FLOW_ROUTINGS.join(", ")}`);
+  num("variety.flow.exponent", v.flow.exponent, 0, 8);
+  const r = v.relief;
+  obj("variety.relief", r, ["warp", "swells", "hillVary", "rotate", "lacunarity"]);
+  obj("variety.relief.warp", r.warp, ["amplitude", "wavelength"]);
+  num("variety.relief.warp.amplitude", r.warp.amplitude, 0, 20_000);
+  num("variety.relief.warp.wavelength", r.warp.wavelength, 100, 100_000);
+  obj("variety.relief.swells", r.swells, ["height", "wavelength", "octaves"]);
+  num("variety.relief.swells.height", r.swells.height, 0, 2000);
+  num("variety.relief.swells.wavelength", r.swells.wavelength, 100, 100_000);
+  num("variety.relief.swells.octaves", r.swells.octaves, 1, 8, true);
+  obj("variety.relief.hillVary", r.hillVary, ["min", "max", "wavelength"]);
+  range("variety.relief.hillVary [min, max]", [r.hillVary.min, r.hillVary.max], 0, 4);
+  num("variety.relief.hillVary.wavelength", r.hillVary.wavelength, 100, 100_000);
+  num("variety.relief.rotate", r.rotate, 0, 180);
+  num("variety.relief.lacunarity", r.lacunarity, 1.1, 4);
   if (!Array.isArray(data.fixtures)) fail("fixtures must be a list");
   const seen = new Set();
   data.fixtures.forEach((f, i) => {
@@ -2863,6 +2895,7 @@ export function platesRust(data) {
     "use crate::plates::{",
     "    BoundaryKind, FixturePlate, KindRule, PlateFixture, PlateKind, PlateRules, RimRule,",
     "};",
+    "use crate::plates::{FlowRouting, InteriorRelief, PlateVariety};",
     "",
     "/// The plate layout's rules (shared/worldgen/plates.json).",
     "pub const PLATES: PlateRules = PlateRules {",
@@ -2937,6 +2970,32 @@ export function platesRust(data) {
     rs.push(`    ${k}: ${v},`);
   rs.push("};");
   rs.push("");
+  const v = data.variety;
+  const rr = v.relief;
+  const flow =
+    v.flow.routing === "d8"
+      ? "FlowRouting::D8"
+      : `FlowRouting::Random { exponent: ${rf(v.flow.exponent)} }`;
+  rs.push("/// The Realistic world's variety (plates.json `variety`, WORK_QUEUE item 15).");
+  rs.push("pub const VARIETY: PlateVariety = PlateVariety {");
+  rs.push(`    flow: ${flow},`);
+  rs.push("    relief: InteriorRelief {");
+  for (const [k, val] of [
+    ["warp_amplitude", rf(rr.warp.amplitude)],
+    ["warp_wavelength", rf(rr.warp.wavelength)],
+    ["swell_height", rf(rr.swells.height)],
+    ["swell_wavelength", rf(rr.swells.wavelength)],
+    ["swell_octaves", `${rr.swells.octaves}`],
+    ["hill_min", rf(rr.hillVary.min)],
+    ["hill_max", rf(rr.hillVary.max)],
+    ["hill_wavelength", rf(rr.hillVary.wavelength)],
+    ["rotate", rf(rr.rotate)],
+    ["lacunarity", rf(rr.lacunarity)],
+  ])
+    rs.push(`        ${k}: ${val},`);
+  rs.push("    },");
+  rs.push("};");
+  rs.push("");
   rs.push("/// Two-plate layouts and the boundary each must give (plates.json `fixtures`).");
   rs.push("pub const FIXTURES: &[PlateFixture] = &[");
   for (const f of data.fixtures) {
@@ -2975,6 +3034,7 @@ const CLIMATE_TOP = [
   "maxGridBytes",
   "discharge",
   "biomes",
+  "variety",
 ];
 const CLIMATE_BIOMES = ["maxRainMm", "wetMm", "moistureShare"];
 const CLIMATE_RAIN = [
@@ -3074,6 +3134,17 @@ export function validateClimate(data) {
   num("biomes.maxRainMm", data.biomes.maxRainMm, 1, 50_000);
   num("biomes.wetMm", data.biomes.wetMm, 1, 50_000);
   num("biomes.moistureShare", data.biomes.moistureShare, 0, 1);
+  // Regional and local variety (WORK_QUEUE item 15, part B): rain factors and °C offsets by noise.
+  obj("variety", data.variety, ["rain", "rainMm", "celsius"]);
+  for (const k of ["rain", "rainMm", "celsius"]) {
+    const list = data.variety[k];
+    if (!(Array.isArray(list) && list.length <= 4)) fail(`variety.${k} must be a list of at most 4 noises`);
+    for (const [i, n] of list.entries()) {
+      obj(`variety.${k}[${i}]`, n, ["amplitude", "wavelength"]);
+      num(`variety.${k}[${i}].amplitude`, n.amplitude, 0, { rain: 3, rainMm: 5000, celsius: 20 }[k]);
+      num(`variety.${k}[${i}].wavelength`, n.wavelength, 100, 100_000);
+    }
+  }
   return data;
 }
 
@@ -3083,7 +3154,7 @@ export function climateRust(data) {
   const rs = [
     `// ${climateHeader}`,
     "",
-    "use crate::climate::{Band, BiomeRain, ClimateRules, RainRules, WindCell};",
+    "use crate::climate::{Band, BiomeRain, ClimateRules, RainRules, VarietyNoise, WindCell};",
     "",
     "/// The climate's rules (shared/worldgen/climate.json).",
     "pub const CLIMATE: ClimateRules = ClimateRules {",
@@ -3120,6 +3191,17 @@ export function climateRust(data) {
     `        wet_mm: ${rf(data.biomes.wetMm)},`,
     `        moisture_share: ${rf(data.biomes.moistureShare)},`,
     "    },",
+    ...[
+      ["rain", "rain"],
+      ["rainMm", "rain_mm"],
+      ["celsius", "celsius"],
+    ].flatMap(([k, rk]) => [
+      `    ${rk}_variety: &[`,
+      ...data.variety[k].map(
+        (n) => `        VarietyNoise { amplitude: ${rf(n.amplitude)}, wavelength: ${rf(n.wavelength)} },`,
+      ),
+      "    ],",
+    ]),
     "};",
     "",
   ];
