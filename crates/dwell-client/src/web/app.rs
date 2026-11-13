@@ -3705,6 +3705,10 @@ impl Inner {
         if let Some(bake) = crate::render::moon::bake_for(world_seed) {
             self.renderer.borrow_mut().set_moon(&bake);
         }
+        // The sun's disc from the sun world's face A (docs/proposals/SUN_WORLD.md S-3; ~60 ms natively).
+        if let Some(bake) = crate::render::moon::sun_bake_for(world_seed) {
+            self.renderer.borrow_mut().set_sun(&bake);
+        }
         game.vent_plumes = crate::vent_plumes::VentPlumes::from_worldgen(
             self.session.as_ref().map_or("", |s| s.worldgen_config()),
         );
@@ -3718,6 +3722,13 @@ impl Inner {
             game.set_structures(s.structures());
             game.set_structure_ops(
                 s.capability(dwell_protocol::capability_names::STRUCTURES_PLACE),
+            );
+            game.set_grid_capabilities(
+                dwell_protocol::capability_names::ALL
+                    .iter()
+                    .filter(|c| s.capability(c))
+                    .map(|c| c.to_string())
+                    .collect(),
             );
             game.set_grid_frames(s.capability(dwell_protocol::capability_names::GRID_FRAMES));
             game.set_swordplay(s.capability(dwell_protocol::capability_names::WEAPONS_CLASH));

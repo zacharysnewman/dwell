@@ -1867,6 +1867,25 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    **"Players can land there."**; **"Lava has the same function on the sun as the earth world."** (same damage,
    burn, flow and cooling rules); **"Its gravity will be the same as earth world for now."** Queued after the moon's
    client side (M-7c) so it reuses the finished travel.
+   **First slice S-1..S-3 built (2026-11-13, brief: "the sun as a grid in the grids data with its own frame, size
+   and place on the sun's existing path … a volcanic generator by data … the far-body bake so the sky's sun disc
+   is drawn from the sun world's surface (its glow kept) … capture/release and travel by the moon's rules if
+   they generalise by data (say what doesn't)"; docs/proposals/SUN_WORLD.md):** `dwell:sun` in grids.json
+   (`sunPath` frame on today's sun path at 954.7 km, 25 km radius at the disc's 1.5°, gravity 1), the `volcanic`
+   generator (lava oceans, rift rivers, cones with crater lakes, basalt and obsidian; both faces), its bake
+   shading the sky's sun disc (`sun.surface`; size, glow and sunlight unchanged), travel by the moon's rules
+   natively. **Left:** the sky disc's look on a GPU (a local check); constant lava flow on the sun (lava fields
+   on its rivers and lakes, damage there), its sky, spawns, its LOD.
+   **Kept additive (orchestrator, 2026-11-13: "to keep this additive (no new line), gate the sun's travel on the
+   client: add a capability (e.g. "grid.sun", or a grid count in the capability exchange) and have the server
+   never capture a client that doesn't declare it into the sun's grid (it flies on as before, the sun stays a far
+   body for it); a test that an old client (no capability) near the sun isn't captured and a new one is"):** a
+   grid's optional `capability` in grids.json (the sun's `grid.sun`); the server captures only sessions that
+   declare it, and the client's travel map holds only those grids.
+   **The sun's sky** (owner, 2026-11-13: "Sun and moon should be space, the same as night sky. Could perhaps just
+   make space a more general skybox and have 'day' be a closer atmosphere skybox so it can fade out as you leave
+   earth."): the general sky is built by the moon session (claude/moon-m5), not here; the sun only declares in its
+   grid data that it has no atmosphere, once that field exists.
 
 ## Done
 

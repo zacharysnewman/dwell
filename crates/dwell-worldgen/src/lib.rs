@@ -32,6 +32,7 @@ pub mod species;
 pub mod tectonics;
 pub mod terrain;
 pub mod vegetation;
+pub mod volcanic;
 pub mod volume;
 pub mod worldmap;
 

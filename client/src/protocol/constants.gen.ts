@@ -341,5 +341,5 @@ export const WorldSizes = {
 export const Capabilities = {
   maxNames: 64,
   maxNameBytes: 48,
-  names: ['structures.place', 'grid.frames', 'damage.chunks', 'creatures.npcs', 'weapons.clash', 'creatures.poses', 'npcs.swings', 'theater.viewpoint', 'hits.at_contact', 'markers.private'],
+  names: ['structures.place', 'grid.frames', 'damage.chunks', 'creatures.npcs', 'weapons.clash', 'creatures.poses', 'npcs.swings', 'theater.viewpoint', 'hits.at_contact', 'markers.private', 'grid.sun'],
 } as const;

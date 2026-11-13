@@ -203,7 +203,7 @@ fn dwell_moon(dir: vec3f, day: DaySky, px: f32) -> vec4f {
 }
 
 // The sun's disc toward `dir` (rgb) and its coverage (w): limb-darkened, larger and in the
-// keyframes' warmer colour near the horizon.
+// keyframes' warmer colour near the horizon, shaded by the sun world's surface.
 fn dwell_sun_disc(dir: vec3f, up: vec3f, day: DaySky, px: f32) -> vec4f {
     let sun = day.sun.xyz;
     // In space no air swells it at the horizon (docs/DAY_NIGHT.md §15).
@@ -218,6 +218,14 @@ fn dwell_sun_disc(dir: vec3f, up: vec3f, day: DaySky, px: f32) -> vec4f {
     var core = mix(day.disc.rgb, vec3f(1.0), 0.45 + 0.5 * mu * mu);
     // Whiter in space: no air reddens it.
     core = mix(core, vec3f(1.0), day.space.x * SUN_WHITENESS);
+    // The sun world's face A (docs/proposals/SUN_WORLD.md S-3): its baked ground over its brightest (the lava
+    // 1, the basalt and obsidian crusts darker) shades the disc by `sun.surface`, in the disc's frame
+    // as the moon's (x along the sun's path); the halo and the sunlight are not touched.
+    let sx = normalize(cross(day.axis.xyz, sun));
+    let sy = cross(sun, sx);
+    let sp = vec2f(dot(dir, sx), dot(dir, sy)) / sin(radius);
+    let ground = dwell_sun_ground(sp / max(length(sp), 1.0), px / radius);
+    core = core * mix(1.0, ground, SUN_SURFACE);
     return vec4f(core * limb, edge);
 }
 

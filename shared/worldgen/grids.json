@@ -1,5 +1,5 @@
 {
-  "$comment": "The world's voxel grids (docs/proposals/MOON_WORLD.md): every buildable two-faced disc a world has, each with its own frame (where it sits and how it turns: `rest` is the home world, the grid everything else is placed against; `orbit` follows the sky's moon path, docs/DAY_NIGHT.md), its disc radius (`radiusM`, or `world` for the world's own size, docs/proposals/BIG_MAP.md), its seed (`seedSalt` mixed into the world seed; none keeps the world seed), its surface gravity (`gravityScale` × the home world's), the distance from its centre inside which a flying player is captured into its frame (`captureM`, moving grids only) and the distance past which it is drawn as a far body from its baked maps (`farM`), how high its ground reaches over its midplane (`surfaceM`, far flight's slab) and its generator by kind (`terrain`: today's home generator, crates/dwell-worldgen TerrainGenerator; `cratered`: the moon rules below). Heights are face-local metres (+y up from the grid's midplane, the same frame as the home terrain's), and each face is generated from its own seed stream like the home world's (bifacial::face_seed). Read by crates/dwell-worldgen/src/grids.rs, which validates every entry with a message. The content is prototype (ARCHITECTURE.md §6.1).",
+  "$comment": "The world's voxel grids (docs/proposals/MOON_WORLD.md): every buildable two-faced disc a world has, each with its own frame (where it sits and how it turns: `rest` is the home world, the grid everything else is placed against; `orbit` follows the sky's moon path, docs/DAY_NIGHT.md; `sunPath` sits on the sky's sun path at daynight.json `sun.distanceM`, its face A toward home, docs/proposals/SUN_WORLD.md), its disc radius (`radiusM`, or `world` for the world's own size, docs/proposals/BIG_MAP.md), its seed (`seedSalt` mixed into the world seed; none keeps the world seed), its surface gravity (`gravityScale` × the home world's), the distance from its centre inside which a flying player is captured into its frame (`captureM`, moving grids only) and the distance past which it is drawn as a far body from its baked maps (`farM`), how high its ground reaches over its midplane (`surfaceM`, far flight's slab) and the capability a client must say to be captured into it (`capability`, optional: a client without it flies on through and sees the grid as a far body; the sun's `grid.sun`, docs/proposals/SUN_WORLD.md §5), its generator by kind (`terrain`: today's home generator, crates/dwell-worldgen TerrainGenerator; `cratered`: the moon rules below; `volcanic`: the sun's, below). Heights are face-local metres (+y up from the grid's midplane, the same frame as the home terrain's), and each face is generated from its own seed stream like the home world's (bifacial::face_seed). Read by crates/dwell-worldgen/src/grids.rs, which validates every entry with a message. The content is prototype (ARCHITECTURE.md §6.1).",
   "travel": {
     "$comment": "Travel between the grids (MOON_WORLD.md §7). Far flight: farther than `aboveM` from every grid's slab (its disc, `surfaceM` thick each side of its midplane) a flier goes at least `perS` × that distance m/s, up to `maxMps`, so the moon's ~597 km take about a minute and a half and the speed falls smoothly toward either surface. A player captured inside a grid's `captureM` is released past `captureM` × `releaseFactor`.",
     "farFlight": { "aboveM": 2000, "perS": 0.12, "maxMps": 20000 },
@@ -61,6 +61,40 @@
             { "radiusM": [700, 1500], "perKm2": 0.004 }
           ]
         },
+        "bake": { "size": 256 }
+      }
+    },
+    {
+      "name": "dwell:sun",
+      "frame": "sunPath",
+      "radiusM": 25000,
+      "seedSalt": 1398099489,
+      "gravityScale": 1,
+      "captureM": 60000,
+      "farM": 300000,
+      "surfaceM": 420,
+      "capability": "grid.sun",
+      "generator": {
+        "kind": "volcanic",
+        "$comment": "The sun as a volcano world (docs/proposals/SUN_WORLD.md, WORK_QUEUE item 42; owner 2026-11-12: \"The sun is a volcano world. Constant flowing lava, oceans of lava.\"). Face-local heights over its midplane, each face from its own seed stream. The ground is `datumM` + fbm `plains` + broad fbm `basins`; wherever it lies under `lava.seaM` it is a lava ocean's floor, lava (`lava.fluid`, the lava fields' block) up to that level. Rifts follow ridged noise's zero lines, carved `rifts.depthM` deep across `width` of the noise's range, their bottom `fill` of that depth a lava river (its surface follows the land, so it runs downhill). Cones: one candidate a jittered `cones.cellM` cell (`chance`), radius and height drawn in their ranges, the flank `(1 - d/R)^profile` over the ground at its centre, a summit crater `craterRatio` x R wide and `craterDepthM` deep holding a lava lake `lakeBelowRimM` under its rim. The ground is `crust` (basalt), and a dry column at most `shore.bandM` over the lava it borders is `shore.block` (obsidian, the quench glass). Heights never go under `minM`. Generated still: the always-flowing lava simulation on the sun is a later slice. `bake.size` is the far bake's texels a side per face (the sky's sun disc is drawn from face A's).",
+        "crust": "dwell:basalt",
+        "datumM": 100,
+        "minM": 16,
+        "plains": { "amplitudeM": 8, "wavelengthM": 700, "octaves": 4 },
+        "basins": { "amplitudeM": 45, "wavelengthM": 6000, "octaves": 3 },
+        "lava": { "fluid": "dwell:lava", "seaM": 92 },
+        "shore": { "block": "dwell:obsidian", "bandM": 2.5 },
+        "cones": {
+          "cellM": 3200,
+          "chance": 0.55,
+          "radiusM": [350, 1300],
+          "heightM": [60, 240],
+          "profile": 1.6,
+          "craterRatio": 0.18,
+          "craterDepthM": 30,
+          "lakeBelowRimM": 6
+        },
+        "rifts": { "amplitudeM": 0, "wavelengthM": 4500, "octaves": 2, "width": 0.06, "depthM": 16, "fill": 0.45 },
         "bake": { "size": 256 }
       }
     }

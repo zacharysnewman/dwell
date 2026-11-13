@@ -27,6 +27,7 @@ use crate::travel::{
     GRID_CENTRE, GridSpace, Transfer, carry, grid_frame_at, grid_generator, slab_distance,
 };
 use dwell_look::celestial::Celestial;
+use dwell_protocol::capabilities::Capabilities;
 use dwell_protocol::capability_names::GRID_FRAMES;
 use dwell_world::GridFrame;
 use dwell_worldgen::grids::{GridDef, TravelRules};
@@ -137,10 +138,13 @@ impl Grids {
         grid_frame_at(&self.celestial, self.slots[slot].space.def, world_s)
     }
 
-    /// The far-flight speed at world point `p` (0 near every grid's slab).
-    pub fn far_speed(&self, p: V3, world_s: f64) -> f64 {
+    /// The far-flight speed at world point `p` (0 near every grid's slab) for a client with the
+    /// capabilities `caps`: the grids it can't be captured into (`GridDef::open_to`) don't count, so
+    /// it flies on past them as its own build predicts.
+    pub fn far_speed(&self, p: V3, world_s: f64, caps: &Capabilities) -> f64 {
         let home = slab_distance(self.home_radius_m, self.home.surface_m, p);
         let d = (0..self.slots.len())
+            .filter(|&i| self.slots[i].space.def.open_to(|c| caps.has(c)))
             .map(|i| {
                 let s = &self.slots[i].space;
                 slab_distance(
@@ -153,9 +157,13 @@ impl Grids {
         self.rules.far_speed(d)
     }
 
-    /// The slot whose capture sphere holds world point `p`.
-    fn capturing(&self, p: V3, world_s: f64) -> Option<usize> {
+    /// The slot whose capture sphere holds world point `p`, among those a client with the
+    /// capabilities `caps` may be captured into (a grid's `capability`, docs/proposals/SUN_WORLD.md §5).
+    fn capturing(&self, p: V3, world_s: f64, caps: &Capabilities) -> Option<usize> {
         (0..self.slots.len()).find(|&i| {
+            if !self.slots[i].space.def.open_to(|c| caps.has(c)) {
+                return false;
+            }
             let local = self.frame(i, world_s).to_grid(p);
             let d = sub(local, GRID_CENTRE);
             self.slots[i]
@@ -254,7 +262,7 @@ impl Server {
                         .velocity(&self.physics, h)
                         .as_dvec3()
                         .to_array();
-                    if let Some(slot) = self.grids.capturing(p, world_s) {
+                    if let Some(slot) = self.grids.capturing(p, world_s, &s.capabilities) {
                         let (lp, lv) = self.grids.frame(slot, world_s).capture(p, v);
                         let space = &mut self.grids.slots[slot].space;
                         let scale = space.def.gravity_scale as f32;
@@ -309,7 +317,7 @@ impl Server {
             let (Some((p, _)), true) = (self.world_state_of(pid), s.joined()) else {
                 continue;
             };
-            let far = self.grids.far_speed(p, world_s) as f32;
+            let far = self.grids.far_speed(p, world_s, &s.capabilities) as f32;
             let s = &self.sessions[&id];
             match (s.handle, s.away) {
                 (Some(h), _) => self.players.set_far_fly_speed(&mut self.physics, h, far),

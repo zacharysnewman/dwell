@@ -2940,6 +2940,18 @@ impl Renderer {
             );
         }
     }
+    /// The sun world's far-body maps (docs/proposals/SUN_WORLD.md S-3): its face A's albedo shading the sky's
+    /// sun disc, written after the moon's in the same buffer.
+    pub fn set_sun(&mut self, bake: &dwell_worldgen::grids::FarBake) {
+        let words = moon::pack(bake, false, 1.0);
+        if !self.frame_bindings.moon.write_sun(&self.queue, &words) {
+            debug_assert!(
+                false,
+                "the sun bake ({}²) is bigger than its room",
+                bake.size
+            );
+        }
+    }
     /// The Anti-aliasing setting's FXAA post pass and the Anisotropic filtering setting
     /// (shared/render/antialias.json), live; the sample count is the renderer's (`with_samples`).
     pub fn set_antialias(&mut self, fxaa: bool, anisotropy: u16) {
