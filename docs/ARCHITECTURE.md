@@ -3927,12 +3927,13 @@ surface, open or a wall), keyed by tile, with its vents and its schedule (V2, VO
   outflow limited to what a column holds, and each face's flow to its stable share of the two
   surfaces' difference (`cfl / 4`: it binds only in ponds deeper than `stepDepthM`, which level instead
   of ringing or shrinking every substep).
-- **Heat and cooling:** heat carried upwind with the flow; a column loses it at `1 / coolingSeconds`,
-  faster per dry neighbour (`edgeCooling`) and by `thinDepthM / depth` (its top's share), slower by
-  `1 + speed / tubeSpeedMs` while it moves (a crust roofs a running river over: a tube, V2); at 0 its lava
-  joins its bed as the fluid's `rock` (`dwell:basalt`), and the rows whose centres it covers are a
-  `LavaEvent::Rock`: a river crusts behind its front and builds land. A lake vent keeps the molten
-  columns joined to it below its level hot (a lake convects); what overflows the rim cools.
+- **Hardening by rule (2026-11-13, VOLCANOES.md §6.6):** a column's heat is its rest clock. Lava moving
+  faster than `stillMs` (its throughflow over twice its depth) is flowing and held at heat 1; at rest it
+  loses heat at `1 / restSeconds`, and at 0 its lava joins its bed as the fluid's `rock` (`dwell:basalt`),
+  the rows it filled a `LavaEvent::Rock`: lava hardens where it stops, never while it flows, its volume
+  kept as land. Sources never harden by rest: each vent's column, the lava joined to it through at most
+  `sourceKeepM` m of lava columns (breadth first along the connected lava), and a lake vent's columns
+  below its level (a lake convects) are held hot. Water quenches any lava, a source's included.
 - **Breakouts (V2):** a column remembers the rock its own lava laid (`crust`); molten lava
   `breakoutDepthM` deep beside a dry column of it standing over its bed melts it down to the bed again
   (`LavaEvent::Melt`, cleared to air by the server before the lava is written), so a pond behind a

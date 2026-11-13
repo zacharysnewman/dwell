@@ -10,6 +10,14 @@
       ]
     },
     {
+      "version": "0.60.18",
+      "changes": [
+        "Lava no longer hardens while it flows: a river fed by its vent stays molten its whole length.",
+        "Lava that stops moving darkens and hardens into basalt where it lies, keeping its volume as new rock.",
+        "Lava at a vent, and within a few metres of one, stays molten; water still turns any lava to obsidian at once."
+      ]
+    },
+    {
       "version": "0.60.17",
       "changes": [
         "Hold Break with an empty hand (or holding a block or any non-tool item) to keep punching: dig dirt by hand without clicking every hit",
