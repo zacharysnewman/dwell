@@ -1306,6 +1306,18 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    a distance), a plainer leaf mesh past the cards' fade (no chamfer, merged faces). Also seen: the bench's
    shots in `test:forest` came out flat grey at every spot (clouds off too), so they show nothing to compare;
    and `flood_tests::open_terrain_takes_the_full_sky::a` fails on main (3 dark vertices), unrelated.
+   **Round 2, the leaf shadows (2026-11-13, local, `claude/forest-shadows`):** the grey shots were your own body:
+   the bench's `spot` shot stands the player at the camera, and a placed camera drew the whole body around it, so
+   every `test:forest` number before this measured a view covered by its inside, and the body, a moving caster,
+   redrew a far cascade every `refreshFrames` with the canopy's leaves in it (the edge's `gpu.shadows` 7.1 ms was
+   that, not the nearest cascade). Fixed: a placed camera within 1 m of your eyes draws you as first person
+   (`own_body_draw`, test red → green), and a far cascade is drawn again only for moving casters touching its box
+   (a player anywhere in the world redrew every far cascade every 4 frames at High; `moving_casters`, test red →
+   green). No look change; real shots now. `forest-perf`, M1 Air, High, `--unthrottled`, p50 / p95 ms, covered →
+   real: `gpu.frame` inside 13.6 / 17.0 → 14.1 / 15.4, **edge 21.5 / 25.7 → 20.6 / 25.4**, above 10.3 / 12.6 →
+   12.5 / 14.2; `gpu.shadows` edge 1.0 / 9.0 → 0.8 / 1.1 (inside 3.0 / 6.1 → 0.7 / 1.2). With the shadows ~1 ms,
+   no leaf caster change was made (a plainer caster or a near-only leaf distance would save under 1 ms). The
+   edge's real frame: `gpu.near` 16.0 (the leaf blocks), `composite` 6.5, `clouds` 5.4 p50; next levers are those.
 33. **Licensed music replaces the generated music** (owner 2026-11-12: "I downloaded a big music set as a Unity
    asset, I'd like the casual game music setup in a prototype and make it play randomly in the game. Probably
    needs compression. It'll replace the current music which is AI generated."). The pack: *Andrew Sitkov Music*

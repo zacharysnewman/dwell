@@ -1271,13 +1271,32 @@ fn piece_shadow_tag(id: u32, part: usize) -> u64 {
     shadows::mix(u64::from(id) ^ 0x9ec3_0000_0000 ^ (part as u64) << 32)
 }
 
-/// Whether the shadows have moving casters (`shadows::Cache::wants`'s `moving`): other players,
-/// or falling pieces. Loose items (ADR 0066) are not: they only spin and bob in place, for
-/// minutes, too small to show in a far cascade; the nearest, drawn every frame, holds them. Until
-/// 0.50.35 any item lying anywhere redrew every far cascade every `refreshFrames`.
-fn casters_moving(players: bool, poses: &[(u32, V3, [f32; 4])]) -> bool {
+/// A body's box as a moving shadow caster (half-size, m, about its feet: up or down, either face).
+const BODY_CASTER_HALF: V3 = [1.0, 2.0, 1.0];
+
+/// The shadows' moving casters (`shadows::Cache::wants`'s `moving`), each a box (world centre,
+/// half-size): other players' bodies (`players`, their feet), and falling pieces (`radius` of
+/// each). Loose items (ADR 0066) are not: they only spin and bob in place, for minutes, too small
+/// to show in a far cascade; the nearest, drawn every frame, holds them. Until 0.50.35 any item
+/// lying anywhere redrew every far cascade every `refreshFrames`; a far cascade is drawn again
+/// for the moving casters touching its box only (WORK_QUEUE item 32).
+fn moving_casters(
+    players: impl Iterator<Item = V3>,
+    poses: &[(u32, V3, [f32; 4])],
+    radius: &dyn Fn(u32) -> Option<f64>,
+) -> Vec<(V3, V3)> {
     use crate::loose_items::ID_BASE;
-    players || poses.iter().any(|&(id, ..)| id & ID_BASE != ID_BASE)
+    let pieces = poses
+        .iter()
+        .filter(|&&(id, ..)| id & ID_BASE != ID_BASE)
+        .map(|&(id, origin, _)| {
+            let r = radius(id).unwrap_or(1.0);
+            (origin, [r; 3])
+        });
+    players
+        .map(|feet| (feet, BODY_CASTER_HALF))
+        .chain(pieces)
+        .collect()
 }
 
 /// Whether a candidate's kind casts into cascade `i` at all: plants into the nearest
@@ -4437,13 +4456,23 @@ impl Renderer {
             .map(|_| self.shadow_candidates(chunk_fade))
             .unwrap_or_default();
         let shadow_frame = shadow_plan.as_ref().map(|p| {
-            let moving = casters_moving(!self.players.is_empty(), &self.piece_poses);
+            let moving = moving_casters(
+                self.players.values().map(|v| v.feet),
+                &self.piece_poses,
+                &|id| self.terrain.pieces.get(&id).map(|p| p.radius),
+            );
+            let eye = self.eye;
+            let touched = |c: &shadows::Cascade| {
+                moving.iter().any(|&(centre, half)| {
+                    c.touches(std::array::from_fn(|k| centre[k] - eye[k]), half)
+                })
+            };
             let wants = self.shadow_cache.wants(
                 &SHADOWS,
                 p,
                 self.eye,
                 self.shadow_frame,
-                moving,
+                &touched,
                 &mut |i, c| caster_signature(&candidates, c, i, &p.tier),
             );
             self.shadow_cache.schedule(p, &wants, self.eye)
@@ -6701,13 +6730,22 @@ mod tests {
             [0.0, 0.0, 0.0, 1.0],
         );
         let body = (42, [0.0; 3], [0.0, 0.0, 0.0, 1.0]);
-        assert!(!casters_moving(false, &[]));
+        let none = |_: u32| None;
+        assert!(moving_casters(std::iter::empty(), &[], &none).is_empty());
         assert!(
-            !casters_moving(false, &[item]),
+            moving_casters(std::iter::empty(), &[item], &none).is_empty(),
             "a loose item is not a moving caster"
         );
-        assert!(casters_moving(false, &[item, body]), "a falling body is");
-        assert!(casters_moving(true, &[item]), "another player is");
+        assert_eq!(
+            moving_casters(std::iter::empty(), &[item, body], &|_| Some(3.0)),
+            vec![([0.0; 3], [3.0; 3])],
+            "a falling body is, its box its radius"
+        );
+        assert_eq!(
+            moving_casters([[5.0, 1.0, 2.0]].into_iter(), &[item], &none),
+            vec![([5.0, 1.0, 2.0], BODY_CASTER_HALF)],
+            "another player is, a box about the feet"
+        );
     }
 
     #[test]

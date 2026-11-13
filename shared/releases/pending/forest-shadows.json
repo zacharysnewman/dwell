@@ -1,0 +1,1 @@
+{ "changes": ["Smoother frames with other players online: a player far away no longer makes the sun shadows redraw every few frames", "Behind the scenes: a camera placed at your own eyes no longer draws your whole body around it, which hid the view in every forest benchmark"] }
