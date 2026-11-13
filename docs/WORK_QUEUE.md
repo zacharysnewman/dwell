@@ -2071,6 +2071,12 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
   `shore.bandSoftness` (0.75) (`shared/look/waterflow.json`, WATER_RENDERING.md §20). The mirror
   `dwell_look::waterflow::shore_foam` pins the profile: no step over 0.08 between samples 5 mm apart (0.52.6's
   stepped 0.28) and never under half strength along the edge's first 0.1 m. Outstanding: the owner's look.
+  Follow-up (owner, 2026-11-13, after the screenshots): "Can you make it smoother or thicker around corners, so it
+  doesn't looks so squared off." Done (`claude/foam-corners`): the foam's distance to the shore is now also measured
+  across the surface from each water top's solid neighbours (the mesher packs them over the fluid id): round, a
+  quarter circle, at an outer corner, and filleted by `shore.cornerRadiusM` (0.4 m) into an inner one, so the band
+  thickens into it instead of a sharp L (WATER_RENDERING.md §21; `?waterdbg=corners` turns it off to compare).
+  Outstanding: the owner's look.
 
 - **The full-sky flood test on main (2026-11-13, `claude/flood-sky-test`), done.** Owner: "`cargo test -p dwell-mesh --lib
   flood_tests::open_terrain_takes_the_full_sky` fails on main (face a: 3 dark vertices) … find which merge broke it, decide
