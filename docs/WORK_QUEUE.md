@@ -1924,6 +1924,26 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    body: chunks streamed around it from the same budget, creatures spawned and kept, the near ecology, lava and
    water stepped there; animals don't flee it. Tests on both faces (creative streams and simulates, adventure
    ignores, no capability ignored, a clear ends it). Not yet run in a browser. Next, locally: T-2, T-3.
+   **The rest (owner-approved brief, 2026-11-13):** the host's `theaterGuests` setting (the host can disable theater
+   for guests), following a creature (an animal or NPC: orbit/track it, the target smoothed), offline frame-exact
+   recording (each frame rendered at the chosen rate whatever the page's speed), phone touch controls; T-5's MCP
+   server skipped (a nice-to-have).
+   Owner, 2026-11-13: **"Improve the UI on the theater mode. It's really bad, it doesn't even have a proper X button or
+   responsive layout."** Done first, ahead of the rest: the panel redone in the menu design system (#892, item 23) —
+   a real close X (labelled, focus ring; Esc closes through the Panels owner, #902), responsive (a compact docked
+   panel on desktop, a bottom sheet with large targets on phones in portrait, a side sheet in landscape, no
+   horizontal scroll at 360 px), grouped sections (Presets: target and move, then sliders; Keyframes: list, add,
+   delete, preview, play; Recording: aspect, frame rate, record or stop, download), a collapsible Advanced section,
+   clear states (recording: a red dot and a timer; playing: a pause button), controller navigable.
+   **Built (2026-11-13, cloud; branch `claude/theater-rest`):** the panel (THEATER_MODE.md §2.1: one of the panels
+   `ui/panels.ts` owns, the X and Esc close it, docked / bottom sheet / side sheet by the viewport, 360 px checked in
+   headless Chromium, Advanced folds, a REC badge with a timer, Pause, the d-pad); `theaterGuests` (`WorldSettings`
+   0x87, optional; Host… → Theater for guests; the host — the loopback session or an op — always may; the server
+   ignores a guest's viewpoint while off); following a creature or NPC (a list nearest first or the crosshair, aimed
+   by id, its position smoothed: the path's `followSmoothingS`); frame-exact path takes (one frame of the rate per
+   drawn frame, WebCodecs VP8 in a WebM; `exact: true` on the dev API's take); a phone's stick and Up/Down buttons.
+   Outstanding: the owner's look on a GPU and a phone (the screenshots), a dedicated server's switch for
+   `theaterGuests`, T-5.
 
 42. **The sun as a real world** (owner 2026-11-12: "Add this feature to the queue, the sun is an actual world like
    the moon. Follow similar concepts as the moon. The sun is a volcano world. Constant flowing lava, oceans of

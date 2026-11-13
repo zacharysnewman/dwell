@@ -1370,6 +1370,21 @@ impl Client {
             g.stop_theater();
         }
     }
+    /// Frame-exact recording on or off (THEATER_MODE.md §6): on, the path moves only by
+    /// `theaterAdvance`'s steps, one a drawn frame.
+    #[wasm_bindgen(js_name = theaterExact)]
+    pub fn theater_exact(&self, on: bool) {
+        if let Some(g) = &mut self.inner.borrow_mut().game {
+            g.set_theater_exact(on);
+        }
+    }
+    /// The next frame's step of the path in frame-exact recording (s: 1 / the take's rate).
+    #[wasm_bindgen(js_name = theaterAdvance)]
+    pub fn theater_advance(&self, dt_s: f64) {
+        if let Some(g) = &mut self.inner.borrow_mut().game {
+            g.theater_advance(dt_s);
+        }
+    }
     /// Pauses or resumes the camera path.
     #[wasm_bindgen(js_name = theaterPause)]
     pub fn theater_pause(&self, paused: bool) {
@@ -1392,6 +1407,27 @@ impl Client {
         o.into()
     }
     /// The presets file (`shared/theater/presets.json`) as the build has it.
+    /// Whether the world lets guests use theater mode (THEATER_MODE.md §7; the host always may):
+    /// true before joining and on a server that never sets it.
+    #[wasm_bindgen(js_name = theaterGuests)]
+    pub fn theater_guests(&self) -> bool {
+        self.inner
+            .borrow()
+            .session
+            .as_ref()
+            .is_none_or(|s| s.theater_guests())
+    }
+    /// Theater mode's subjects to follow (THEATER_MODE.md §2): the creatures and NPCs this
+    /// client sees, as JSON `[{ "id", "name", "npc", "at": [x, y, z] }]` (world metres, the feet),
+    /// by id. A path aims at one as `{"creature": id}` or `{"npc": id}`.
+    #[wasm_bindgen(js_name = theaterSubjects)]
+    pub fn theater_subjects(&self) -> String {
+        let s = self.inner.borrow();
+        let Some(g) = &s.game else {
+            return "[]".to_owned();
+        };
+        crate::game::subjects_json(&g.creatures.subjects())
+    }
     #[wasm_bindgen(js_name = theaterPresets)]
     pub fn theater_presets(&self) -> String {
         dwell_theater::preset::PRESETS_JSON.to_owned()

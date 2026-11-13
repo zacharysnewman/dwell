@@ -60,6 +60,13 @@ pub mod tag {
     /// fields and join are byte-identical to before; a build before it skips it and draws today's
     /// sky (a look). A later version may append fields: this build reads its nine.
     pub const CELESTIAL: u8 = 0x86;
+    /// Whether guests may use theater mode (docs/THEATER_MODE.md §7; owner, 2026-11-12: "the host
+    /// can disable it for guests"): `u8` 0 off, 1 on. Optional: a world without it (every world
+    /// before it) lets everyone, and a world that lets everyone writes none, so its fields and join
+    /// are byte-identical to before; a build before it skips it (and offers the mode to all). The
+    /// host (the hosting page's own player, or an op) may always use it; the guests' clients don't
+    /// offer it, and the server ignores a guest's camera viewpoint while it is off.
+    pub const THEATER_GUESTS: u8 = 0x87;
 }
 
 /// The most fields, and the longest field.
@@ -182,6 +189,8 @@ pub struct WorldSettings {
     pub moon_phase: Option<f32>,
     /// The world's rolled orbit (`tag::CELESTIAL`; None: today's).
     pub orbit: Option<WorldOrbit>,
+    /// Whether guests may use theater mode (`tag::THEATER_GUESTS`; true when the tag is absent).
+    pub theater_guests: bool,
 }
 
 impl WorldSettings {
@@ -313,6 +322,13 @@ impl SettingsFields {
         if let Some(b) = self.get(tag::CELESTIAL) {
             s.orbit = Some(WorldOrbit::read(b).ok_or(SettingsError::Invalid(tag::CELESTIAL))?);
         }
+        if let Some(b) = self.get(tag::THEATER_GUESTS) {
+            s.theater_guests = match b {
+                [0] => false,
+                [1] => true,
+                _ => return Err(SettingsError::Invalid(tag::THEATER_GUESTS)),
+            };
+        }
         Ok(s)
     }
 
@@ -372,6 +388,7 @@ impl SettingsFields {
                     tag::MOON_PHASE,
                     tag::CAPABILITIES,
                     tag::CELESTIAL,
+                    tag::THEATER_GUESTS,
                 ]
                 .contains(t)
             })
@@ -404,6 +421,9 @@ impl SettingsFields {
         if let Some(o) = s.orbit {
             out.push((tag::CELESTIAL, field(&|w| o.write(w))));
         }
+        if !s.theater_guests {
+            out.push((tag::THEATER_GUESTS, vec![0]));
+        }
         out.sort_by_key(|(t, _)| *t);
         Self(out)
     }
@@ -424,7 +444,39 @@ mod tests {
         size: crate::world_size::WorldSize::DEFAULT,
         moon_phase: None,
         orbit: None,
+        theater_guests: true,
     };
+
+    #[test]
+    fn theater_guests_is_an_optional_field_written_only_when_off() {
+        assert_eq!(tag::THEATER_GUESTS & tag::OPTIONAL, tag::OPTIONAL);
+        // On (the default): no field, byte-identical to a world before it.
+        let plain = SettingsFields::default().with(D);
+        assert!(plain.get(tag::THEATER_GUESTS).is_none());
+        assert_eq!(plain.settings(D).map(|s| s.theater_guests), Ok(true));
+        // Off: one byte that round-trips.
+        let off = WorldSettings {
+            theater_guests: false,
+            ..D
+        };
+        let f = SettingsFields::default().with(off);
+        assert_eq!(f.get(tag::THEATER_GUESTS), Some(&[0u8][..]));
+        let back = SettingsFields::from_bytes(&f.to_bytes()).expect("the tagged form");
+        assert_eq!(back.settings(D), Ok(off));
+        // Switched back on, the field goes again.
+        assert!(f.with(D).get(tag::THEATER_GUESTS).is_none());
+        // A bad value is refused with its tag.
+        let mut bad = f.clone();
+        for (t, b) in &mut bad.0 {
+            if *t == tag::THEATER_GUESTS {
+                *b = vec![2];
+            }
+        }
+        assert_eq!(
+            bad.settings(D),
+            Err(SettingsError::Invalid(tag::THEATER_GUESTS))
+        );
+    }
 
     const ORBIT: WorldOrbit = WorldOrbit {
         pole_deg: 41.5,
@@ -524,6 +576,7 @@ mod tests {
             size: crate::world_size::WorldSize::DEFAULT,
             moon_phase: Some(0.25),
             orbit: Some(ORBIT),
+            theater_guests: false,
         };
         let f = SettingsFields::default().with(s);
         let back = SettingsFields::from_bytes(&f.to_bytes()).expect("the tagged form");

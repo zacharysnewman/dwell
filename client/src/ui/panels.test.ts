@@ -10,6 +10,7 @@ function rig() {
     inventory: false,
     menu: false,
     map: false,
+    theater: false,
   };
   const missing = new Set<Panel>();
   let gesture = false;

@@ -85,6 +85,10 @@ export function enableHosting(
       if (now !== before) onModeChanged(now);
       return now;
     },
+    theaterGuests: local.loopback.theaterGuests,
+    setTheaterGuests: (on) => {
+      local.loopback.setTheaterGuests(on);
+    },
   });
   settings.addHostPanel(panel.element);
 

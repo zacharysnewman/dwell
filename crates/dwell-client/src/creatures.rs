@@ -296,6 +296,21 @@ impl ClientCreatures {
         v.into_iter().map(|(_, p, y, s, n)| (p, y, s, n)).collect()
     }
 
+    /// Theater mode's subjects (THEATER_MODE.md §2): each creature's id, what it is (an NPC's
+    /// kind, else its model's name), its drawn feet (world m) and whether it is an NPC, by id.
+    pub fn subjects(&self) -> Vec<(u32, &str, [f64; 3], bool)> {
+        let mut v: Vec<_> = self
+            .seen
+            .values()
+            .map(|s| {
+                let name = s.npc.as_ref().map_or(s.model, |(_, l)| l.kind.as_str());
+                (s.net.id, name, s.shown, s.npc.is_some())
+            })
+            .collect();
+        v.sort_by_key(|x| x.0);
+        v
+    }
+
     /// A creature's drawn feet (world m) by id, and whether it is an NPC (theater mode's targets).
     pub fn feet_of(&self, id: u32) -> Option<([f64; 3], bool)> {
         self.seen.get(&id).map(|s| (s.shown, s.npc.is_some()))
