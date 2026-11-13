@@ -16,6 +16,8 @@ import {
   pickMarker,
   waypointAlpha,
   waypointOnScreen,
+  waypointShown,
+  bigMapPins,
 } from './markers';
 import { AUTO_MARKERS, MARKER_ICONS, MARKER_LIMITS, MARKER_WORLD } from './markers.gen';
 import { PickerDraft } from './markerPicker';
@@ -227,5 +229,42 @@ describe('the world waypoint', () => {
     const behindLeft = waypointOnScreen(-0.2, 0.1, -5, 800, 600, 20);
     expect(behindLeft.x).toBeLessThan(400);
     expect(behindLeft.y).toBeGreaterThanOrEqual(300);
+  });
+});
+
+// BUGS.md #116: standing on the spawn, its waypoint read "1 m" pinned to the top of the screen.
+describe('a waypoint at or under the camera', () => {
+  it('is hidden within hideWithinM, from the eye or across the ground', () => {
+    const near = MARKER_WORLD.hideWithinM;
+    expect(near).toBeGreaterThan(0);
+    // On the spawn: the spot 1.5 m over the feet is about the eye.
+    expect(waypointShown(0.9, 0.2)).toBe(false);
+    // Straight below a cliff top: far by the eye, but under the camera.
+    expect(waypointShown(40, near * 0.5)).toBe(false);
+    expect(waypointShown(near + 10, near + 5)).toBe(true);
+  });
+});
+
+// BUGS.md #117: the picker open for a new marker drew nothing at the clicked spot.
+describe('the big map pins', () => {
+  const placed = {
+    id: 1,
+    icon: 'star',
+    rgb: '#ff0000',
+    label: 'a',
+    face: 0,
+    x: 1,
+    y: 0,
+    z: 2,
+    auto: '',
+  };
+  it('include a pending pin at the clicked spot while the picker is open for it', () => {
+    const pending = { face: 0, x: 50, z: -20, icon: 'flag', rgb: '#00ff00' };
+    const pins = bigMapPins([placed], 0, pending);
+    expect(pins).toContainEqual({ icon: 'flag', rgb: '#00ff00', x: 50, z: -20, pending: true });
+    expect(pins).toContainEqual({ icon: 'star', rgb: '#ff0000', x: 1, z: 2, pending: false });
+    // Saved or cancelled: gone; another face's: not drawn on this one.
+    expect(bigMapPins([placed], 0, null).some((p) => p.pending)).toBe(false);
+    expect(bigMapPins([placed], 1, { ...pending, face: 0 })).toEqual([]);
   });
 });

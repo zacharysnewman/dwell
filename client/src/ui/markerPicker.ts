@@ -137,6 +137,14 @@ export class MarkerPicker {
     return b;
   }
 
+  /** Called when the draft's look changes (the map redraws the pending pin). */
+  onChange: (() => void) | null = null;
+
+  /** The draft's look now (the pending pin's icon and colour). */
+  get look(): MarkerLook {
+    return this.draft.look();
+  }
+
   get open(): boolean {
     return !this.root.hidden;
   }
@@ -167,6 +175,7 @@ export class MarkerPicker {
 
   /** The buttons as the draft is: each icon in the draft's colour, the picked ones marked. */
   private show(): void {
+    this.onChange?.();
     for (const [id, b] of this.iconButtons) {
       b.replaceChildren(iconSvg(this.doc, id, this.draft.rgb, 22));
       b.classList.toggle('on', id === this.draft.icon);

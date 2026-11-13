@@ -14,6 +14,7 @@ import { changesFor } from '../version/changes';
 import { changesView } from './changesView';
 import {
   cleanName,
+  parseSeed,
   typeLabel,
   WORLD_TYPES,
   type WorldIndex,
@@ -23,7 +24,7 @@ import type { ListedServer, Lobby, LobbyQuery, Nearby } from '../net/master';
 import { looksLikeAddress, pastedCode, pastedInvite } from './launch';
 import type { RecentServer } from './recentServers';
 import { ServerBrowser } from './serverBrowser';
-import { playAdvancedPanel, spawnChoices } from './playAdvanced';
+import { moreOptionsFields, playAdvancedPanel, spawnChoices } from './playAdvanced';
 import { WORLD_SIZES } from '../local/world';
 import { prefersTouch } from './touchControls';
 import { World } from '../protocol/constants.gen';
@@ -221,6 +222,22 @@ export function newWorldRoute(v: NewWorldValues): Record<string, string> {
   };
 }
 
+/**
+ * More options' Play (a one-off visit, `?local=1`): the New world form's Type or World, Seed and
+ * Spawn as Play advanced's parameters, so each is asked once (BUGS.md). A text seed is the number
+ * the form's world would get; an offered world file (Realistic) goes as `worldgen` with its Sky.
+ */
+export function moreOptionsRoute(v: NewWorldValues): Record<string, string> {
+  const worldgen = v.worldgen ?? '';
+  return {
+    seed: String(parseSeed(v.seed)),
+    ...(worldgen === '' && v.type !== 'terrain' ? { world: v.type } : {}),
+    ...(v.spawn ? { spawn: v.spawn } : {}),
+    ...(worldgen ? { worldgen } : {}),
+    ...skyOptions(worldgen, v.sky),
+  };
+}
+
 /** A page's title row: Back, the title, and actions at the end. */
 function pageHead(title: string, onBack: () => void, ...actions: HTMLElement[]): HTMLElement {
   const head = document.createElement('div');
@@ -257,6 +274,14 @@ export class MainMenu {
   private readonly shell = document.createElement('div');
   /** The Worlds page's own New world, hidden while the empty state offers its big one. */
   private newWorldHead!: HTMLButtonElement;
+  /** The New world form's values as the player left them (its submit and More options' Play). */
+  private formValues: () => NewWorldValues = () => ({
+    name: '',
+    seed: '',
+    type: 'terrain',
+    mode: '',
+    spawn: '',
+  });
   /** New world → More options' World size (BIG_MAP.md M2b); none on a touch page. */
   private sizeField: HTMLLabelElement | null = null;
   /** New world → More options' Sky (REALISTIC_WORLD.md §8): shown for a world that rolls an orbit. */
@@ -482,9 +507,14 @@ export class MainMenu {
     summary.id = 'play-advanced-toggle';
     summary.textContent = 'More options';
     // Play advanced: a one-off world by link with overrides (ui/playAdvanced.ts).
-    const advanced = playAdvancedPanel((route) => {
-      this.deps.go(route);
-    });
+    // Its fields less the form's (Type, World, Seed, Spawn), which its Play takes from the form.
+    const advanced = playAdvancedPanel(
+      (route) => {
+        this.deps.go(route);
+      },
+      moreOptionsFields(),
+      () => moreOptionsRoute(this.formValues()),
+    );
     advanced.hidden = false;
     more.append(
       summary,
@@ -734,21 +764,20 @@ export class MainMenu {
       this.sizeField.id = 'world-size-field';
       this.sizeField.title = 'A bigger world takes longer to create. Desktop only for now.';
     }
+    this.formValues = () => ({
+      name: name.value,
+      seed: seed.value,
+      type: type.value,
+      mode: mode.value,
+      spawn: spawn.value,
+      worldgen: world.value,
+      ...(sizes.length ? { size: size.value } : {}),
+      sky: sky.value,
+    });
     f.addEventListener('submit', (e) => {
       e.preventDefault();
       // The build that opens it creates it (its generator, its version).
-      this.deps.go(
-        newWorldRoute({
-          name: name.value,
-          seed: seed.value,
-          type: type.value,
-          mode: mode.value,
-          spawn: spawn.value,
-          worldgen: world.value,
-          ...(sizes.length ? { size: size.value } : {}),
-          sky: sky.value,
-        }),
-      );
+      this.deps.go(newWorldRoute(this.formValues()));
     });
   }
 

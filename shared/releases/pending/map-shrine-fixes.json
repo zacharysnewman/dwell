@@ -1,0 +1,8 @@
+{
+  "changes": [
+    "The big map shows shrines across the whole view, merged into counts when zoomed out instead of a glowing block",
+    "A marker's waypoint no longer sticks to the top of the screen while you stand on it",
+    "The map shows a pin where your new marker will go while you pick its look",
+    "New world \u2192 More options no longer repeats World type, Seed and Spawn; it uses the choices above, Realistic included"
+  ]
+}
