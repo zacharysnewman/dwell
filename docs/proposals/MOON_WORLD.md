@@ -343,9 +343,18 @@ Proposed: positions as data (`shared/look/sky_bodies.json`, or an `orbit` block 
   scale everywhere the controller applies it, the jump's take-off speed kept, so a jump on the moon
   rises 6× as high and lasts 6× as long (`dwell-physics` `tests/grid_gravity.rs`; scale 1 the same
   bits).
-- **Far flight**: `grids.json` `travel.farFlight` (`aboveM` 2000, `perS` 0.12, `maxMps` 20 000):
-  past `aboveM` from every grid's slab (its disc, `surfaceM` each side of its midplane) the server
-  sets `Players::set_far_fly_speed(perS × d)`, which flight takes as its least speed.
+- **Far flight**: `grids.json` `travel.farFlight` (`aboveM` 2000, `perS` 0.8, `maxMps` 30 000 since
+  2026-11-13): past `aboveM` from every grid's slab (its disc, `surfaceM` each side of its midplane) the
+  server sets `Players::set_far_fly_speed(min(perS × d, maxMps × space))`, which flight takes as its
+  least speed; `space` is how far into space the flier is (`travel::space_at`: the atmosphere's thinning,
+  the sky's value, at its height over home's face and its distance past home's rim). Owner, 2026-11-13:
+  "If you can actually fly to the moon/sun, we need a much faster fly speed for creative. But only in
+  space." So in home's air the speed is the slider's alone, in space up to 30 km/s, easing down toward
+  every body's ground: the face A trip takes 36 s (was ~90 s). The client's `TravelMap` and the server's
+  `Grids` read the same rules (`dwell-sim` `tests/grids.rs`
+  `far_flight_is_space_speed_in_space_only_and_server_and_client_agree`, both faces); a fast arrival
+  (closing over 5 km/s) is captured without a snap (`game_local`
+  `the_moon_report_steers_a_flight_into_its_capture`).
 - **The look across** (`look_across`): a face-local look continued onto another grid's face with the
   same world direction (for the client's view, then rolled upright as at a midplane crossing).
 - **Tests** (`dwell-sim` `tests/travel.rs`): a scripted flight from 300 m over home to the moon's
@@ -487,6 +496,7 @@ the moon's unedited chunks never evicted, tier 1 bodies in the moon's space (non
     over `motion.json` `gridCrossingRollS` (0.6 s; BUGS.md #138).
   - **The maps on the moon**: hidden off home with a label ("No map on the moon", named by the grid): the
     simpler of the two (the moon's own map would need its generator in the map's workers and tile store).
+  - **Faster flight in space**: far flight scaled by how far into space the flier is (§7.1), one system.
   - **Landing under the ground** (BUGS.md #139): the report's `groundM`, not the landing: it read the smooth
     height, not the cells' top.
 - **Not yet:** the browser checks (`moon-draw`, `moon-trip`, on a GPU, local); home seen from the moon (M-6's

@@ -4378,12 +4378,21 @@ dwell_world::both_faces!(
 
         // Steer by the report, as `flyTo` does (moonTrip.ts `aim`).
         let mut captured = false;
+        // A fast arrival (space flight, owner 2026-11-13: "a much faster fly speed … only in
+        // space"): the closing speed on the moon, and no snap through the capture.
+        let snaps0 = rig.game.as_ref().unwrap().debug_state().stats.snaps;
+        let mut last_d: Option<f64> = None;
+        let mut closing: f64 = 0.0;
         for _ in 0..60 * 60 {
             let m = rig.game.as_ref().unwrap().moon_report().unwrap();
             if m.grid == "moon" {
                 captured = true;
                 break;
             }
+            if let Some(d) = last_d {
+                closing = closing.max((d - m.distance) / 0.1);
+            }
+            last_d = Some(m.distance);
             let (yaw, pitch) = m.look;
             rig.input.look.yaw = yaw;
             rig.input.look.pitch = pitch;
@@ -4396,6 +4405,16 @@ dwell_world::both_faces!(
             rig.input.set_key(k, false);
         }
         assert!(captured, "captured flying along the report's look");
+        assert!(
+            closing > 5000.0,
+            "a fast arrival: closing at {closing:.0} m/s"
+        );
+        rig.run_until(30, |_| false);
+        assert_eq!(
+            rig.game.as_ref().unwrap().debug_state().stats.snaps,
+            snaps0,
+            "no snap through a fast capture"
+        );
         let m = rig.game.as_ref().unwrap().moon_report().unwrap();
         assert_eq!(rig.game.as_ref().unwrap().grid(), m.index);
         assert!(
