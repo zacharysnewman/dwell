@@ -893,7 +893,14 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
 22. **Settings and version buttons look like web links** (owner 2026-11-11: "I thought we had settings and
    version buttons changed queued, is that true?" — it wasn't recorded anywhere; then "The buttons should be
    aligned to match the design of the others instead of looking like web links"). Restyle them as the menu's
-   own buttons, aligned with the others.
+   own buttons, aligned with the others. **Built 2026-11-13** (branch `claude/menu-buttons-goikyd`): Settings
+   and Versions are the home's paper block buttons (`mm-action mm-action-secondary`, since 0.53.x) side by
+   side under Worlds and Play with others; the last link-styled controls are buttons now: Versions' All
+   versions is a page-head button beside Back (`mm-head-button`), About's Third-party notices a small menu
+   button; Back, All versions and the world card's ⋯ gained hover and pressed states; the unused underlined
+   `.menu-link` style is gone. `mainMenuButtons.test.ts` pins that every main-menu button and link carries a
+   class of `MENU_BUTTON_CLASSES` (links only through `linkButton`), that no menu control is underlined, and
+   that each class has hover and pressed rules. Left: the owner's look.
 
 23. **Expandable sections in the main menu** (owner 2026-11-12: "Our main menu has some expandable sections that
    don't have good UI best practices to indicate they can expand and collapse. Improve these."). Built
@@ -980,11 +987,11 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    the fall checked against ⅙ g, landing; `home`: out past the release, home's chunks back) and the `moon-trip`
    scenario (DEV_TOOLS.md "The moon"). **Left:** running `moon-trip` on a GPU (local).
    **First browser flight (owner's findings, 0.58 on e4220fcd, M1, seed 7, both faces; branch
-   `claude/moon-chunks-culling-pfqgty`, 2026-11-13):** "the moon's ground is not drawn" (232 chunks held and meshed, 16–17
+   `claude/moon-chunks-culling-pfqgty`, 2026-11-13; BUGS.md #123–#125, #136):** "the moon's ground is not drawn" (232 chunks held and meshed, 16–17
    draw calls; sky above, starfield below); "(b) snaps … after the face A landing 2 snaps + 1 reset (last correction
    34 m); face B trip snaps 3 → 11 (last 18.7 m); (c) mesh memory grows across trips: 44 MB first moon visit, 164 MB
    back home, 256 MB second visit … (d) home's blue sky and clouds show on the moon … leave unless trivial: at least
-   hide home's clouds on the moon." Fixed (BUGS.md #123–#125, #126 partly; MOON_WORLD.md §7.3): chunks drawn off
+   hide home's clouds on the moon." Fixed (BUGS.md #123–#125, #136, #126 partly; MOON_WORLD.md §7.3): chunks drawn off
    home, home's LOD dropped at each crossing, carries' clock-slip corrections smoothed, home's clouds hidden on the
    moon. **Left:** re-running `moon-trip` on a GPU (local); the moon's sky.
    **Second browser flight (0.58.8 on facaaaf1, seed 7, M1; brief 2026-11-13, branch `claude/moon-trip-fixes-df1uke`):**
@@ -995,6 +1002,12 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    169 MB over three trips, not dropping at home (one page; may not be a leak)." Fixed: 1 (BUGS.md #129: `placeHome`
    asked again until the server's release, a home saved only on home ground), 2 (#130: a cross-grid correction
    measured in world coordinates). 3: not reproduced natively, open with its suspects (BUGS.md #131). 4: recorded, not chased (one page's reading).
+   **Teleport for the drawing check:** owner, 2026-11-13 (via the orchestrator): **"We should just teleport to the moon to see if ground draws,
+   flying there is an inefficient test of drawing. Fine if testing the flight itself."** So the drawing test
+   teleports onto the moon (`LocalCore::moon_land`, a dev move onto its ground captured the next tick), which found
+   #136 (the moon's chunks sent before the client crossed were dropped; now held for the crossing); the bench has a
+   `moonLand` step and a `moon-draw` scenario (draw calls, triangles, mesh bytes, shots on both faces). **Left:**
+   `npm run bench -- --warm moon-draw` on a GPU (local); the moon's sky.
    **Left:** the browser flight (local, GPU), the roll upright at a crossing, M-5 (the moon's LOD), M-8. Earlier
    **M-7c status (2026-11-12, branch `claude/moon-m7c-x07vsc`, local):** owner, 2026-11-12: "Do we have the real physical moon yet?" (no: the client doesn't draw the moon
    up close yet (M-5) and there are no moon spawns (M-8)). **Built:** `carry` moved into `dwell-physics`; a
