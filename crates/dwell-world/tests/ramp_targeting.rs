@@ -1,4 +1,4 @@
-//! The pick ray against a ramp at a cliff edge (BUGS.md #124): the ray meets the wedge's sloped
+//! The pick ray against a ramp at a cliff edge (BUGS.md #128): the ray meets the wedge's sloped
 //! face, its real shape, from every angle that face is seen, not passing over it into the drop.
 //! Each ray is checked against an oracle that marches it through the cells' solids in small steps.
 

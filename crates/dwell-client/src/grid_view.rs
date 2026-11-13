@@ -1,14 +1,14 @@
 //! The view on another grid (docs/proposals/MOON_WORLD.md §7.3, M-7c): while the player is on the
 //! moon the game holds the moon's chunks in its own grid-local coordinates and draws in that frame,
 //! so the sky's directions (the sun, the moon, the stars' axis) are turned into it, and the moon's
-//! own far disc is not drawn (the viewer stands on it).
+//! own far disc is not drawn (the viewer stands on it), nor home's clouds (the moon has no air).
 
 use dwell_look::daynight::DayState;
 use dwell_world::GridFrame;
 
 /// The day as seen from grid `frame` (its local frame): the sun, the moon's direction and the
-/// sky's axis turned into it; the moon's far disc hidden off home (the viewer is on a grid that is
-/// not home, the only one with a moon disc). Home's frame returns `day` as it is.
+/// sky's axis turned into it; the moon's far disc and home's clouds hidden off home (the viewer is
+/// on a grid that is not home, the only one with a moon disc and a cloud deck). Home's frame returns `day` as it is.
 pub fn day_on_grid(day: &DayState, frame: &GridFrame, grid: u8) -> DayState {
     if grid == 0 {
         return *day;
@@ -23,6 +23,7 @@ pub fn day_on_grid(day: &DayState, frame: &GridFrame, grid: u8) -> DayState {
         moon: turn(day.moon),
         axis: turn(day.axis),
         moon_shown: false,
+        clouds_shown: false,
         ..*day
     }
 }
@@ -60,6 +61,10 @@ mod tests {
             };
             let on = day_on_grid(&day, &frame, 1);
             assert!(!on.moon_shown && day.moon_shown);
+            assert!(
+                !on.clouds_shown && day.clouds_shown,
+                "no home clouds on the moon"
+            );
             let world_up = frame.up(f);
             let local_up = f.vector([0.0, 1.0, 0.0]);
             let rise_world = dot(day.sun, world_up);

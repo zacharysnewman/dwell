@@ -32,13 +32,13 @@ time"). Notes ride with real changes (no notes-only PRs; CI skips docs-only chan
   the 0.56 line raised by the owner; (3) the moon's client side M-7c (item 27) — built on `claude/moon-client-m7c-mxftge` (the browser flight a local check);
   (4) ~~browser check of Realistic worlds~~ (done 2026-11-12: R6's exit met, item 15); (5) the forest edge (~9 ms over at
   High on the M1; impostors save ~4 ms, #848); (6) the in-game cloud check (#822 shapes/colour, #790, #801, #823).
-- **Creative hit fixes (brief, 2026-11-13; BUGS.md #123, #124):** (1) "Fix so Creative breaks every block, slopes
+- **Creative hit fixes (brief, 2026-11-13; BUGS.md #127, #128):** (1) "Fix so Creative breaks every block, slopes
   included, in one hit": not slope-specific, a held tool keeps its hits in creative by the owner's 2026-11-11 rule
   (BLOCK_DAMAGE.md §7). Orchestrator: "The creative question goes to the owner; until answered keep the rule … and fix
   only the form text": creative's description now reads "without a tool any block breaks in one hit (held tools keep
   their hits)". **Open for the owner:** should a held tool also break in one hit in creative? (2) "The pick ray must
   hit the wedge's sloped face … targetable from every angle its face is visible": not reproduced natively (BUGS.md
-  #124); a both-faces guard test added; needs the screenshot's world, position and look.
+  #128); a both-faces guard test added; needs the screenshot's world, position and look.
 - **Starter pin (brief, 2026-11-13):** "`the_starter_worlds_terrain_is_unchanged` fails on main … find which merge
   after the 0.55 re-pin changed the starter world's terrain … If intended … re-pin with the commit cited; if it was
   NOT meant to change the starter … fix the leak." Done (BUGS.md #114): no merge changed it; the 0.55 line's
@@ -938,6 +938,14 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    the player's grid, on-moon gravity), the `flyTo` step (`moon`: dev move near the capture, a real flight in, descent,
    the fall checked against ⅙ g, landing; `home`: out past the release, home's chunks back) and the `moon-trip`
    scenario (DEV_TOOLS.md "The moon"). **Left:** running `moon-trip` on a GPU (local).
+   **First browser flight (owner's findings, 0.58 on e4220fcd, M1, seed 7, both faces; branch
+   `claude/moon-chunks-culling-pfqgty`, 2026-11-13):** "the moon's ground is not drawn" (232 chunks held and meshed, 16–17
+   draw calls; sky above, starfield below); "(b) snaps … after the face A landing 2 snaps + 1 reset (last correction
+   34 m); face B trip snaps 3 → 11 (last 18.7 m); (c) mesh memory grows across trips: 44 MB first moon visit, 164 MB
+   back home, 256 MB second visit … (d) home's blue sky and clouds show on the moon … leave unless trivial: at least
+   hide home's clouds on the moon." Fixed (BUGS.md #123–#125, #126 partly; MOON_WORLD.md §7.3): chunks drawn off
+   home, home's LOD dropped at each crossing, carries' clock-slip corrections smoothed, home's clouds hidden on the
+   moon. **Left:** re-running `moon-trip` on a GPU (local); the moon's sky.
    **Left:** the browser flight (local, GPU), the roll upright at a crossing, M-5 (the moon's LOD), M-8. Earlier
    **M-7c status (2026-11-12, branch `claude/moon-m7c-x07vsc`, local):** owner, 2026-11-12: "Do we have the real physical moon yet?" (no: the client doesn't draw the moon
    up close yet (M-5) and there are no moon spawns (M-8)). **Built:** `carry` moved into `dwell-physics`; a

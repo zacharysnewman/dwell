@@ -2859,8 +2859,12 @@ impl Renderer {
             .map(|t| t.at(self.cloud_near.get()))
     }
     /// The Clouds setting this frame draws (`clouds_for`): the 2D deck (Low) while a volume tier's
-    /// shape noise is still baking (docs/CLOUDS.md §9.4).
+    /// shape noise is still baking (docs/CLOUDS.md §9.4); none off home (the day's `clouds_shown`:
+    /// home's deck isn't the moon's sky, MOON_WORLD.md §7.3).
     fn clouds_now(&self) -> CloudQuality {
+        if !self.day.clouds_shown {
+            return CloudQuality::Off;
+        }
         let q = clouds_for(self.adapter, self.clouds);
         if q.volume(&CLOUDS).steps > 0 && !self.cloud_noise.ready() {
             CloudQuality::Low

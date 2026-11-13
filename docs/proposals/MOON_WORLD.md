@@ -451,8 +451,20 @@ the moon's unedited chunks never evicted, tier 1 bodies in the moon's space (non
   moon"): a dev move to just outside the capture sphere, a real flight in, the descent, the fall measured and a
   landing, then out past the release and home's chunks back; natively `game_local`
   `the_moon_report_steers_a_flight_into_its_capture` (both faces).
-- **Not yet (after M-7c):** the browser flight itself (`moon-trip` on a GPU, a local check; no GPU in cloud sessions); the view's roll upright at the crossing (it is turned at once, keeping the look's direction); the
+- **The first browser flight's fixes** (2026-11-13, BUGS.md #123–#126): off home every chunk held is drawn
+  (`Game::chunk_fade` answers in full: the LOD's selection is home's, in home's coordinates); at each crossing home's
+  LOD is dropped (`LodSystem::drop_all`: its section meshes off the view, the selection cleared; it builds again
+  from the root back home), so the mesh memory doesn't grow per trip; home's clouds are not drawn off home
+  (`DayState::clouds_shown`); and a correction just after a carry (for `CARRY_WINDOW` inputs) up to the grids'
+  relative speed × `CARRY_SLIP_TICKS` ticks is smoothed, not snapped: the server runs an input a few ticks off the
+  predictor's guess, and the carry then used the moon's frame at another moment of its ~1 km/s orbit (~17 m a
+  tick). Tests (`game_local`, both faces): `on_the_moon_its_chunks_are_drawn_and_homes_lod_meshes_dropped` (LOD on:
+  the moon's chunks under the player drawn, no home section held on the moon, home's LOD back after the release)
+  and `a_moon_trip_on_a_jittery_device_makes_no_snap` (6 ticks of latency, a 4-tick frame every 7th: no snap
+  through the capture, landing and release).
+- **Not yet (after M-7c):** the browser flight's re-check after #123–#125 (`moon-trip` on a GPU, a local check; no GPU in cloud sessions); the view's roll upright at the crossing (it is turned at once, keeping the look's direction); the
   moon's own LOD and home's far disc from the moon (M-5, M-6's drawing); the sky's colours and air on the moon
+  (home's clouds already hidden, #126)
   (home's face samples, `at_eye` by the grid-local height); remote players on another grid (sent at world
   positions); the other systems for away players listed in §7.2.
 

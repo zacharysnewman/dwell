@@ -24,7 +24,7 @@ test("the build's data validates: creative is the default, adventure is experime
   assert.match(modesTs(d), /export const GAME_MODES/);
 });
 
-test("creative's description says what its breaks do: tools keep their hits (BUGS.md #123)", () => {
+test("creative's description says what its breaks do: tools keep their hits (BUGS.md #127)", () => {
   // BLOCK_DAMAGE.md §7: without a tool any block breaks in one hit; a held tool keeps its hits. The
   // New world form shows this text, and "any block ... in one hit" read as tools too.
   const creative = validateModes(loadModes()).modes.find((m) => m.name === 'creative');
