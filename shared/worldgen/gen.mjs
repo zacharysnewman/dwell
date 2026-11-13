@@ -1471,6 +1471,17 @@ export function hydrologyRust(data) {
   );
   rs.push(`pub const DEFAULT: &str = ${JSON.stringify(data.default)};`);
   rs.push("");
+  const b = data.bigWorlds;
+  rs.push(
+    "/// How a bigger world's map scales with its radius (hydrology.json `bigWorlds`, BUGS.md #77).",
+  );
+  rs.push("pub const BIG_WORLDS: super::BigWorlds = super::BigWorlds {");
+  rs.push(`    range_coast_exponent: ${b.rangeCoastExponent},`);
+  rs.push(`    lake_area_exponent: ${b.lakeAreaExponent},`);
+  rs.push(`    lake_depth_exponent: ${b.lakeDepthExponent},`);
+  rs.push(`    lips_linear_to: ${rf(b.lipsLinearTo)},`);
+  rs.push("};");
+  rs.push("");
   rs.push(
     "/// The hydrology profiles (shared/worldgen/hydrology.json), in their file order.",
   );

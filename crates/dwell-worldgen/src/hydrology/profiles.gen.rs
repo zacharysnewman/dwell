@@ -9,6 +9,14 @@ use super::{
 /// The profile tools use when none is named (hydrology.json `default`).
 pub const DEFAULT: &str = "uplift";
 
+/// How a bigger world's map scales with its radius (hydrology.json `bigWorlds`, BUGS.md #77).
+pub const BIG_WORLDS: super::BigWorlds = super::BigWorlds {
+    range_coast_exponent: 1,
+    lake_area_exponent: 2,
+    lake_depth_exponent: 1,
+    lips_linear_to: 100.0,
+};
+
 /// The hydrology profiles (shared/worldgen/hydrology.json), in their file order.
 pub static PROFILES: [HydrologyParams; 6] = [
     HydrologyParams {
