@@ -3216,6 +3216,11 @@ impl<S: Scene> Game<S> {
     /// position at the latest snapshot's clock, the way and distance to it, the player's grid and
     /// the gravity; `None` before the travel rules (a server without `grid.frames`) or with no moon.
     pub fn moon_report(&self) -> Option<crate::moon_probe::MoonReport> {
+        self.grid_report("dwell:moon")
+    }
+
+    /// [`Self::moon_report`] for any grid by name (`dwell:sun`: `__dwell.sun()`).
+    pub fn grid_report(&self, name: &str) -> Option<crate::moon_probe::MoonReport> {
         let map = self.travel.as_ref()?;
         let viewer = crate::moon_probe::Viewer {
             grid: self.grid_drawn,
@@ -3224,7 +3229,7 @@ impl<S: Scene> Game<S> {
             world_s: f64::from(self.last_snapshot_tick) / SIM_HZ as f64,
             gravity: f64::from(self.predictor.config().body.gravity),
         };
-        let mut r = crate::moon_probe::moon_report(map, self.world_seed, viewer)?;
+        let mut r = crate::moon_probe::grid_report(map, self.world_seed, name, viewer)?;
         let f = FaceFrame::at_height(viewer.feet[1]);
         let below = f.point({
             let l = f.point(viewer.feet);

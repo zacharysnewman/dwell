@@ -243,8 +243,13 @@ dwell_world::both_faces!(
         let p = lava
             .fields
             .iter()
-            .find(|p| p.face == f && p.field.vents.first().is_some())
-            .unwrap();
+            .find(|p| {
+                let v = p.field.origin;
+                p.face == f
+                    && (f64::from(v[0]) - head[0]).abs() < 1.5
+                    && (f64::from(v[1]) - head[2]).abs() < 1.5
+            })
+            .expect("the head's field still placed");
         let molten = p.field.depth.iter().filter(|d| **d > 0.0).count();
         assert!(
             molten > molten0 + 20,

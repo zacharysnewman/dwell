@@ -66,7 +66,18 @@ fn len(v: V3) -> f64 {
 
 /// The moon from `viewer`, or `None` in a world with no moon grid (`map` holds no `dwell:moon`).
 pub fn moon_report(map: &TravelMap, world_seed: u64, viewer: Viewer) -> Option<MoonReport> {
-    let &(index, def, _) = map.grids.iter().find(|g| g.1.name == "dwell:moon")?;
+    grid_report(map, world_seed, "dwell:moon", viewer)
+}
+
+/// [`moon_report`] for any grid of the map by name (`dwell:sun`: `__dwell.sun()`, SUN_WORLD.md):
+/// its height over the ground from the grid's own stand-point generator.
+pub fn grid_report(
+    map: &TravelMap,
+    world_seed: u64,
+    name: &str,
+    viewer: Viewer,
+) -> Option<MoonReport> {
+    let &(index, def, _) = map.grids.iter().find(|g| g.1.name == name)?;
     let moon = map.frame(index, viewer.world_s);
     let here: GridFrame = map.frame(viewer.grid, viewer.world_s);
     let position = moon.to_world(GRID_CENTRE);
@@ -86,12 +97,8 @@ pub fn moon_report(map: &TravelMap, world_seed: u64, viewer: Viewer) -> Option<M
         n.split_once(':').map_or(n.as_str(), |(_, s)| s).to_owned()
     };
     let ground_m = (viewer.grid == index)
-        .then(|| dwell_worldgen::grids::CrateredTerrain::new(def, world_seed))
-        .flatten()
-        .map(|t| {
-            let local = f.point(viewer.feet);
-            local[1] - t.height(f.face, local[0], local[2])
-        });
+        .then(|| ground_height(def, world_seed, f, viewer.feet))
+        .flatten();
     let capture_m = def.capture_m.unwrap_or(0.0);
     Some(MoonReport {
         index,
@@ -134,14 +141,45 @@ impl MoonReport {
     }
 }
 
+/// The ground's face-local height under grid-local `feet` on face `f` of grid `def`.
+fn ground_height(
+    def: &dwell_worldgen::grids::GridDef,
+    world_seed: u64,
+    f: FaceFrame,
+    feet: V3,
+) -> Option<f64> {
+    let l = f.point(feet);
+    let h = match &def.generator {
+        dwell_worldgen::grids::GridGenerator::Cratered(_) => {
+            dwell_worldgen::grids::CrateredTerrain::new(def, world_seed)?.height(f.face, l[0], l[2])
+        }
+        dwell_worldgen::grids::GridGenerator::Volcanic(_) => {
+            dwell_worldgen::volcanic::VolcanicTerrain::new(def, world_seed)?
+                .height(f.face, l[0], l[2])
+        }
+        _ => return None,
+    };
+    Some(l[1] - h)
+}
+
 /// Where the dev tools put a player before a short flight into the moon's capture (the bench's
 /// `flyTo`): `margin_m` outside the capture sphere, over the moon's spawn on its face `f` (the
 /// grid-local point), so flying straight at the moon's centre is captured within a few seconds of
 /// far flight and descending from there lands by the spawn.
 pub fn approach_point(map: &TravelMap, world_seed: u64, f: FaceFrame, margin_m: f64) -> Option<V3> {
-    let &(_, def, _) = map.grids.iter().find(|g| g.1.name == "dwell:moon")?;
-    let terrain = dwell_worldgen::grids::CrateredTerrain::new(def, world_seed)?;
-    let s = terrain.spawn_point(f.face);
+    grid_approach_point(map, world_seed, "dwell:moon", f, margin_m)
+}
+
+/// [`approach_point`] for any grid by name, over its stand point (`stand_point`).
+pub fn grid_approach_point(
+    map: &TravelMap,
+    world_seed: u64,
+    name: &str,
+    f: FaceFrame,
+    margin_m: f64,
+) -> Option<V3> {
+    let &(_, def, _) = map.grids.iter().find(|g| g.1.name == name)?;
+    let s = dwell_worldgen::grids::stand_point(def, world_seed, f.face)?;
     let r = def.capture_m? + margin_m;
     // Along the face's up over the spawn column, `r` from the centre.
     let at = |up: f64| f.point([s[0], s[1] + up, s[2]]);
@@ -154,9 +192,20 @@ pub fn approach_point(map: &TravelMap, world_seed: u64, f: FaceFrame, margin_m: 
 /// The point `up_m` over the moon's spawn on face `f` (grid-local m): where the dev teleport onto
 /// the moon (`LocalCore::moon_land`) puts the capsule's centre, inside the capture sphere.
 pub fn landing_point(map: &TravelMap, world_seed: u64, f: FaceFrame, up_m: f64) -> Option<V3> {
-    let &(_, def, _) = map.grids.iter().find(|g| g.1.name == "dwell:moon")?;
-    let terrain = dwell_worldgen::grids::CrateredTerrain::new(def, world_seed)?;
-    let s = terrain.spawn_point(f.face);
+    grid_landing_point(map, world_seed, "dwell:moon", f, up_m)
+}
+
+/// [`landing_point`] for any grid by name: `up_m` over its stand point (the sun's dry crust away
+/// from lava, `sunLand`).
+pub fn grid_landing_point(
+    map: &TravelMap,
+    world_seed: u64,
+    name: &str,
+    f: FaceFrame,
+    up_m: f64,
+) -> Option<V3> {
+    let &(_, def, _) = map.grids.iter().find(|g| g.1.name == name)?;
+    let s = dwell_worldgen::grids::stand_point(def, world_seed, f.face)?;
     Some(f.point([s[0], s[1] + up_m, s[2]]))
 }
 

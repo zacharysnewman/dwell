@@ -347,6 +347,14 @@ interface DwellDebug {
    * ground draws (bench `moonLand`). `flyTo('home')` comes back.
    */
   moonLand(options?: Pick<TripOptions, 'face' | 'maxS'>): Promise<MoonLanding>;
+  /**
+   * Teleports onto the sun's dry crust (SUN_WORLD.md; local.rs `grid_land`: 1.5 m over its stand
+   * point, away from lava), no flight, and waits until standing there with its chunk held (bench
+   * `sunLand`, scenario `sun-draw`). `flyTo('home')` comes back.
+   */
+  sunLand(options?: Pick<TripOptions, 'face' | 'maxS'>): Promise<MoonLanding>;
+  /** The sun from the player (`__dwell.moon()`'s fields for the sun grid), or null. */
+  sun(): MoonReport | null;
   /** Plants' wind scale (0 still, 1 the data's) and whether cutout meshes draw (cost A/B). */
   plants(wind: number, shown: boolean): void;
   /** The last frame's draw calls and triangles. */
@@ -1436,6 +1444,12 @@ async function start(): Promise<App | null> {
       if (trip.home) tripStart = trip.home;
       return trip;
     },
+    sunLand: async (options) => {
+      const trip = await teleportToMoon(tripHost(app, 'sun'), options, 'sun');
+      if (trip.home) tripStart = trip.home;
+      return trip;
+    },
+    sun: () => gridOf(app, 'dwell:sun'),
     plants: (wind, shown) => {
       client.setPlants(wind, shown);
     },
@@ -1699,14 +1713,23 @@ function moonOf(app: App): MoonReport | null {
   return j === undefined ? null : (JSON.parse(j) as MoonReport);
 }
 
-/** The page's side of the bench's moon trip (debug/moonTrip.ts). */
-function tripHost(app: App): TripHost {
+/** A grid's report by name (`dwell:sun`), as `moonOf`'s. */
+function gridOf(app: App, name: string): MoonReport | null {
+  const j = app.client.gridReport(name);
+  return j === undefined ? null : (JSON.parse(j) as MoonReport);
+}
+
+/** The page's side of the bench's moon trip (debug/moonTrip.ts), or the sun's (`sunLand`). */
+function tripHost(app: App, grid: 'moon' | 'sun' = 'moon'): TripHost {
   const { client } = app;
   return {
-    moon: () => moonOf(app),
+    moon: () => (grid === 'sun' ? gridOf(app, 'dwell:sun') : moonOf(app)),
     approach: (margin, face) =>
-      app.loopback?.lavaDev('moonApproach', [margin, face]) ?? Promise.resolve(null),
-    land: (face) => app.loopback?.lavaDev('moonLand', [face]) ?? Promise.resolve(null),
+      app.loopback?.lavaDev(grid === 'sun' ? 'sunApproach' : 'moonApproach', [margin, face]) ??
+      Promise.resolve(null),
+    land: (face) =>
+      app.loopback?.lavaDev(grid === 'sun' ? 'sunLand' : 'moonLand', [face]) ??
+      Promise.resolve(null),
     placeHome: (feet) => app.loopback?.lavaDev('placeHome', [...feet]) ?? Promise.resolve(null),
     press: (code, down) => {
       client.press(code, down);

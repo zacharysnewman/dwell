@@ -1901,6 +1901,12 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    far-flight player can be captured without a snap"; the sky stays the moon session's):** SUN_WORLD.md §6.
    **Spawns on the moon and the sun** (owner, 2026-11-13: "Im not seeing a moon spawn or sun spawn in my new world
    settings"): one spawn choice for any grid, by the grids data (item 27's M-8), in this slice.
+   **Built natively (2026-11-13, SUN_WORLD.md §6):** lava burns on any grid (a field's or any hot fluid's cell, by
+   lava.json's names; a death there takes the player home or to the spawn grid); the sun's `flow` rules place a river
+   vent at each cell's river head near a player there (at most 12 fields of 192 tiles, run only near players);
+   `__dwell.sunLand` / `sun()` and the `sun-draw` scenario; the capture at the sun's > 3 km/s checked snap-free on a
+   jittery device; spawns on the moon and the sun (MOON_WORLD.md §8). **Left:** `sun-draw` and a sun spawn run in a
+   browser on a GPU (a local check); shrines on other grids; the sun's sky (the moon session's).
 
 ## Done
 
