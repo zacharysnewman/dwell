@@ -32,6 +32,39 @@ export interface Mixer {
   setVolumes(v: Volumes): void;
   /** Muffles the data's buses (the eye under water) or opens them, gliding from `now`. */
   setUnderwater(under: boolean, now: number): void;
+  /**
+   * A parallel tap of the mix into `dest` (a recording, docs/THEATER_MODE.md §6): only `buses`, through
+   * the tap's own master level, underwater muffle and limiter, so the speakers are unchanged. `close()`
+   * disconnects it.
+   */
+  tap(dest: AudioNode, buses: readonly Bus[]): MixTap;
+}
+
+/** A tap of the mix (`Mixer.tap`). */
+export interface MixTap {
+  readonly buses: readonly Bus[];
+  close(): void;
+}
+
+/** Which buses a tap carries (`__dwell.audioTap`): true includes a bus. */
+export interface TapOptions {
+  effects?: boolean;
+  ambience?: boolean;
+  /** Off unless asked: showcases never carry the music (owner, WORK_QUEUE item 40). */
+  music?: boolean;
+  /** Off unless asked: menu clicks don't belong in a recording. */
+  ui?: boolean;
+}
+
+/** The buses a tap with `o` carries: effects and ambience unless turned off, music and UI only if asked. */
+export function tapBuses(o: TapOptions = {}): Bus[] {
+  const on: Record<Bus, boolean> = {
+    effects: o.effects ?? true,
+    ambience: o.ambience ?? true,
+    music: o.music ?? false,
+    ui: o.ui ?? false,
+  };
+  return (['effects', 'ambience', 'music', 'ui'] as const).filter((b) => on[b]);
 }
 
 /** What the underwater muffle aims at: the filter's cutoff and the muffled buses' level. */
@@ -182,24 +215,32 @@ export function buildMixer(
   volumes: Volumes = DEFAULT_VOLUMES,
   underwater: UnderwaterDef = SOUND_DATA.underwater,
 ): Mixer {
-  const master = ctx.createGain();
-  const into = ctx.createGain();
-  into.gain.value = 1 / LIMIT_RANGE;
-  const limiter = ctx.createWaveShaper();
-  limiter.curve = softClipCurve();
-  // No oversampling: its filters could overshoot full scale; the knee is rarely reached.
-  limiter.oversample = 'none';
-  master.connect(into);
-  into.connect(limiter);
-  limiter.connect(ctx.destination);
-  // The underwater muffle: one low-pass and one level shared by the buses it lists.
-  const lowpass = ctx.createBiquadFilter();
-  lowpass.type = 'lowpass';
-  lowpass.Q.value = underwater.q;
-  const muffled = ctx.createGain();
-  lowpass.connect(muffled);
-  muffled.connect(master);
-  const muffle = new Muffle(underwater, lowpass.frequency, muffled.gain);
+  // The master level, the limiter and the underwater muffle into `out`: the speakers' chain, and
+  // each tap's own copy of it.
+  const chain = (
+    out: AudioNode,
+  ): { master: GainNode; lowpass: BiquadFilterNode; muffle: Muffle } => {
+    const master = ctx.createGain();
+    const into = ctx.createGain();
+    into.gain.value = 1 / LIMIT_RANGE;
+    const limiter = ctx.createWaveShaper();
+    limiter.curve = softClipCurve();
+    // No oversampling: its filters could overshoot full scale; the knee is rarely reached.
+    limiter.oversample = 'none';
+    master.connect(into);
+    into.connect(limiter);
+    limiter.connect(out);
+    // The underwater muffle: one low-pass and one level shared by the buses it lists.
+    const lowpass = ctx.createBiquadFilter();
+    lowpass.type = 'lowpass';
+    lowpass.Q.value = underwater.q;
+    const muffled = ctx.createGain();
+    lowpass.connect(muffled);
+    muffled.connect(master);
+    return { master, lowpass, muffle: new Muffle(underwater, lowpass.frequency, muffled.gain) };
+  };
+  const { master, lowpass, muffle } = chain(ctx.destination);
+  const taps = new Set<{ master: GainNode; muffle: Muffle }>();
   const bus = (name: Bus): GainNode => {
     const g = ctx.createGain();
     g.connect(muffles(underwater, name) ? lowpass : master);
@@ -218,8 +259,10 @@ export function buildMixer(
   reverb.connect(room);
   room.connect(wet);
   wet.connect(effects);
+  const buses: Record<Bus, GainNode> = { effects, ui, music, ambience };
   const setVolumes = (v: Volumes): void => {
     master.gain.value = v.master;
+    for (const t of taps) t.master.gain.value = v.master;
     effects.gain.value = v.effects;
     ui.gain.value = v.ui;
     music.gain.value = v.music;
@@ -228,8 +271,28 @@ export function buildMixer(
   setVolumes(volumes);
   const setUnderwater = (under: boolean, now: number): void => {
     muffle.set(under, now);
+    for (const t of taps) t.muffle.set(under, now);
   };
-  return { effects, ui, music, ambience, reverb, master, setVolumes, setUnderwater };
+  const tap = (dest: AudioNode, want: readonly Bus[]): MixTap => {
+    const t = chain(dest);
+    t.master.gain.value = master.gain.value;
+    if (muffle.underwater) t.muffle.set(true, 0);
+    taps.add(t);
+    const links = want.map((b) => {
+      const to = muffles(underwater, b) ? t.lowpass : t.master;
+      buses[b].connect(to);
+      return [buses[b], to] as const;
+    });
+    return {
+      buses: [...want],
+      close: () => {
+        if (!taps.delete(t)) return;
+        for (const [from, to] of links) from.disconnect(to);
+        t.master.disconnect();
+      },
+    };
+  };
+  return { effects, ui, music, ambience, reverb, master, setVolumes, setUnderwater, tap };
 }
 
 /** The node a play goes into: the bus, with a send to the room for its `reverb` share. */

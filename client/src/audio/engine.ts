@@ -3,7 +3,15 @@
 // volumes, muting while the tab is hidden, plays on the effects or UI bus, spatial plays for other
 // players through a PannerNode, and the listener at the camera. Plain TS: the main menu (the
 // launcher, no WASM) uses it too.
-import { buildMixer, DEFAULT_VOLUMES, soundInput, type Mixer, type Volumes } from './mixer';
+import {
+  buildMixer,
+  DEFAULT_VOLUMES,
+  soundInput,
+  tapBuses,
+  type Mixer,
+  type TapOptions,
+  type Volumes,
+} from './mixer';
 import { SOUND_DATA } from './sounds.gen';
 import { makeNoise, playSound, startLoop, type LoopVoice, type NoiseBank } from './synth';
 import { SampleBank } from './samples';
@@ -173,6 +181,27 @@ export class AudioEngine {
   onVolumes(fn: (v: Volumes) => void): void {
     this.volumeListeners.push(fn);
     fn(this.volumes);
+  }
+
+  /**
+   * The mix as a MediaStream for a recording (`__dwell.audioTap`, docs/THEATER_MODE.md §6): effects and
+   * ambience, never the music or UI unless asked, on a parallel tap (the speakers unchanged). Starts the
+   * context if it can (a recording page runs Chrome with no gesture needed); null without Web Audio.
+   */
+  tapStream(o: TapOptions = {}): { stream: MediaStream; buses: string[]; close(): void } | null {
+    this.unlock();
+    const { ctx, mixer } = this;
+    if (!ctx || !mixer || typeof ctx.createMediaStreamDestination !== 'function') return null;
+    const dest = ctx.createMediaStreamDestination();
+    const tap = mixer.tap(dest, tapBuses(o));
+    return {
+      stream: dest.stream,
+      buses: [...tap.buses],
+      close: () => {
+        tap.close();
+        for (const t of dest.stream.getTracks()) t.stop();
+      },
+    };
   }
 
   /** The eye under a fluid's surface or not (§3a): the world's buses muffle or open. */

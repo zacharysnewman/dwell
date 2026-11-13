@@ -33,6 +33,9 @@ export interface TheaterConfig {
     defaultFps: number;
     bitsPerSecond: number;
     mimeTypes: string[];
+    /** The same with a sound track (a take with audio), tried in order. */
+    audioMimeTypes: string[];
+    audioBitsPerSecond: number;
   };
 }
 
@@ -67,6 +70,9 @@ export function parseTheaterConfig(raw: unknown): TheaterConfig {
     throw new Error('theater.json: record.defaultHeight is not one of heights');
   if (!r.fps.includes(r.defaultFps))
     throw new Error('theater.json: record.defaultFps is not one of fps');
+  if (!Array.isArray(r.audioMimeTypes) || r.audioMimeTypes.length === 0)
+    throw new Error('theater.json: record.audioMimeTypes is empty');
+  positive(r.audioBitsPerSecond, 'record.audioBitsPerSecond');
   return c;
 }
 

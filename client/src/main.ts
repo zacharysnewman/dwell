@@ -124,6 +124,7 @@ import {
 } from './debug/find';
 import type { ServerStats } from './local/messages';
 import { audio } from './audio/engine';
+import type { TapOptions } from './audio/mixer';
 import { decodeSounds, EventPlayer } from './audio/events';
 import { AmbiencePlayer, decodeSurroundings } from './audio/ambience';
 import { installPageSounds } from './audio/page';
@@ -283,10 +284,16 @@ interface DwellDebug {
   /**
    * Theater mode in game (src/theater/mode.ts): `state` → `{active, keys, duration}`, `enter`,
    * `exit`, `keys {path}` (loads a path into the keyframe editor), `record {path?, aspect?,
-   * height?, fps?, download?}` → a promise of `{bytes (base64), mime, width, height}`; with no
-   * path, `endTake` ends it.
+   * height?, fps?, download?, audio?}` → a promise of `{bytes (base64), mime, width, height}`; with no
+   * path, `endTake` ends it. `audio: true` adds the game's sound (effects and ambience, no music).
    */
   theaterMode(op: string, args?: Record<string, unknown>): unknown;
+  /**
+   * The game's mix as a MediaStream for a recording (the record skill's driver, theater mode's takes):
+   * effects and ambience by default, the music and UI buses only if asked (`{ music: true }`), on a
+   * parallel tap (the speakers unchanged). `close()` disconnects it; null without Web Audio.
+   */
+  audioTap(o?: TapOptions): { stream: MediaStream; buses: string[]; close(): void } | null;
   /**
    * The placed camera (`placeCamera`, `goto`), or null while the view is the player's eyes
    * (`view()` is the player's look, not a placed camera's).
@@ -1368,6 +1375,7 @@ async function start(): Promise<App | null> {
     },
     theater: (op, args) => theaterOp(client, document, op, args),
     theaterMode: (op, args = {}) => theaterModeOp(app, op, args),
+    audioTap: (o) => audio().tapStream(o ?? {}),
     camera: () => client.camera() as Camera | null,
     find: (query, options) => findPlace(findHost(app), query, options),
     goto: (query, options) => gotoPlace(findHost(app), query, options),
@@ -1579,6 +1587,7 @@ async function start(): Promise<App | null> {
       resize();
     },
     where: () => (app.world ? { seed: app.world.seed.toString() } : {}),
+    audioTap: () => audio().tapStream({ music: false, ui: false }),
   });
   app.theater = theater;
   settings.addTheaterPage(
@@ -1919,6 +1928,7 @@ function theaterModeOp(app: App, op: string, args: Record<string, unknown>): unk
           height: args.height as number | undefined,
           fps: args.fps as number | undefined,
           download: args.download as boolean | undefined,
+          audio: args.audio as boolean | undefined,
         })
         .then(async (r) => {
           if (!r) return null;

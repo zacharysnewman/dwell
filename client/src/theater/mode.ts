@@ -44,6 +44,8 @@ export interface TheaterModeHost {
   canvasSize(size: { width: number; height: number } | null): void;
   /** Where the path is made (saved with it as a hint). */
   where(): { world?: string; seed?: string };
+  /** The game's sound for a take (effects and ambience, no music or UI), or null without audio. */
+  audioTap(): { stream: MediaStream; close(): void } | null;
 }
 
 interface Preset {
@@ -342,6 +344,8 @@ export class TheaterMode {
       height?: number | undefined;
       fps?: number | undefined;
       download?: boolean | undefined;
+      /** The game's sound on the take (effects and ambience, never the music): off by default. */
+      audio?: boolean | undefined;
     } = {},
   ): Promise<TakeResult | null> {
     if (typeof MediaRecorder === 'undefined') {
@@ -363,11 +367,17 @@ export class TheaterMode {
       width: `${String(fit.width)}px`,
       height: `${String(fit.height)}px`,
     });
+    const tap = opts.audio ? this.host.audioTap() : null;
     this.take = startTake(
       this.host.canvas,
       fps,
       THEATER.record.mimeTypes,
       THEATER.record.bitsPerSecond,
+      tap && {
+        ...tap,
+        mimeTypes: THEATER.record.audioMimeTypes,
+        bitsPerSecond: THEATER.record.audioBitsPerSecond,
+      },
     );
     this.takeEndsWithPath = path !== null;
     this.takeSize = size;
