@@ -1525,6 +1525,12 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    uses face B's own up (upright, `up: "auto"`).
    v5 (one-command tool #853; full record ~5 min, a one-shot fix 2 min 34 s): owner **"Bifacial v5 looks great saved
    it."** — video 1 done; its clip cache cleared. Next: video 2 (water and underwater), shot plan first.
+   Showcase audio (owner 2026-11-12: "Can you record audio output from an application directly? Instead of trying to
+   record via microphone?" → explained: the game's WebAudio master can feed a recorder inside the page; owner:
+   **"Yeah showcases shouldn't have music, but sound effects and ambiance are good."**). Build: the recorders capture
+   the game's mix with the music bus muted (effects + ambience kept) — the in-game recorder as a second track, the
+   screencast takes via a MediaRecorder of the master (minus music) written alongside the frames and aligned in the
+   splice; the manifest's audio on by default for showcases. Queued after video 2 and the Realistic steps.
    Video 2 plan given (coast glide, river to the sea, wading in, the transition, underwater swim, surfacing at
    sunset). Owner sent a look reference: **"Underwater reference photo from the game abzu for pretty underwater with
    transparent surface, light rays etc."** (ABZÛ: bright turquoise water with a long clear view, a bright see-through
