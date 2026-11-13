@@ -2016,6 +2016,14 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
 
 ## Smaller items, after the queue
 
+- **The inventory opened the game menu too (BUGS.md #137, 2026-11-13, `claude/inventory-lock`), done.** Owner: "Opening
+  your inventory currently opens the menu too, on top of your inventory. Which isn't correct. Should just open your
+  inventory and free your mouse. Closing it, should immediately lock your mouse again, same for menuz". One owner of
+  which panel is open (`client/src/ui/panels.ts`: playing, inventory, menu, big map) holds the pointer lock with it:
+  opening frees the mouse and opens nothing else, closing (key, Esc, Resume, Back, controller) re-locks from that
+  gesture, a refused re-lock waits for the next click; a lock the browser takes (Esc, alt-tab) still opens the menu.
+  Next (local): a check in Chrome on the GPU (E, Esc, Resume, M).
+
 - **The full-sky flood test on main (2026-11-13, `claude/flood-sky-test`), done.** Owner: "`cargo test -p dwell-mesh --lib
   flood_tests::open_terrain_takes_the_full_sky` fails on main (face a: 3 dark vertices) … find which merge broke it, decide
   whether the 3 dark vertices are a real lighting bug or a fixture made stale by an intended change. Check face b too."
