@@ -560,8 +560,8 @@ export function validateDamage(blocks, items, breaking, crackSets = loadCracks()
 /** Validates `breaking` (the right tool's break speed): each block in one class, every tool item
  * known with a known class and tier, every tier's speed above 0. None: no tool speeds a break. */
 export function validateBreaking(b, items, blocks) {
-  if (b === undefined) return { classes: [], tools: [] };
-  known(b, ['tiers', 'classes', 'tools'], 'breaking');
+  if (b === undefined) return { classes: [], tools: [], hand: { repeatS: null } };
+  known(b, ['$comment', 'tiers', 'classes', 'tools', 'hand'], 'breaking');
   known(b.tiers, [...Object.keys(b.tiers ?? {})], 'breaking.tiers');
   for (const [t, v] of Object.entries(b.tiers)) {
     if (t[0] === '$') continue;
@@ -609,7 +609,23 @@ export function validateBreaking(b, items, blocks) {
     if (repeatS !== null && (typeof repeatS !== 'number' || !(repeatS >= Math.max(contactS, 0.1) && repeatS <= 5))) fail(`${at}: repeatS is seconds in [max(contactS, 0.1), 5]`);
     return { item: t.item, class: t.class, tier: t.tier, ...tierOf(t.tier), contactS, repeatS };
   });
-  return { classes, tools };
+  return { classes, tools, hand: validateHand(b.hand) };
+}
+
+/** Validates `breaking.hand` (WORK_QUEUE item 17; owner, 2026-11-13: "You should also be able to hold
+ * 'punch' to dig with your hand."): a punch (a break holding no breaking or chopping tool) repeats
+ * while held when `repeatOnHold`, every `repeatS` (default 0.5 s), and the server takes a damage hit
+ * by hand no faster. None: one punch per press, at the edit rate. */
+export function validateHand(h) {
+  if (h === undefined) return { repeatS: null };
+  if (typeof h !== 'object' || h === null || Array.isArray(h)) fail('breaking.hand must be an object { repeatOnHold, repeatS }');
+  known(h, ['repeatOnHold', 'repeatS'], 'breaking.hand');
+  const repeatOnHold = h.repeatOnHold ?? false;
+  if (typeof repeatOnHold !== 'boolean') fail('breaking.hand: repeatOnHold must be true or false');
+  if (!repeatOnHold && h.repeatS !== undefined) fail('breaking.hand: repeatS without repeatOnHold');
+  const repeatS = repeatOnHold ? (h.repeatS ?? 0.5) : null;
+  if (repeatS !== null && (typeof repeatS !== 'number' || !(repeatS >= 0.1 && repeatS <= 5))) fail('breaking.hand: repeatS is seconds in [0.1, 5]');
+  return { repeatS };
 }
 
 /** The items a hand can show (shared/characters/characters.json's `items`). */
@@ -735,6 +751,9 @@ export function toolsRust(d) {
   rs.push('pub static BREAK_TOOLS: &[BreakTool] = &[');
   for (const t of d.breaking.tools) rs.push(`    BreakTool { item: "${t.item}", class: "${t.class}", tier: "${t.tier}", speed: ${f64(t.speed)}, contact_s: ${f64(t.contactS)}, repeat_s: ${t.repeatS === null ? 'None' : `Some(${f64(t.repeatS)})`} },`);
   rs.push('];');
+  rs.push("/// A punch (a break holding no tool) held repeats this often (s; `breaking.hand`), and the server");
+  rs.push('/// takes damage hits by hand no faster; none: one per press.');
+  rs.push(`pub const HAND_REPEAT_S: Option<f64> = ${d.breaking.hand.repeatS === null ? 'None' : `Some(${f64(d.breaking.hand.repeatS)})`};`);
   rs.push('');
   return rs.join('\n');
 }
