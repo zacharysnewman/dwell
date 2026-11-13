@@ -67,8 +67,8 @@ fn bad_grids_fail_with_a_message() {
         ("\"captureM\": 40000,", "", "needs a `captureM`"),
         ("\"atmosphere\": false", "\"atmosphere\": 0", "atmosphere"),
         ("\"atmosphere\": false,", "", "`atmosphere` is missing"),
-        ("\"cells\": 160", "\"cells\": 2", "nearMesh.cells"),
-        ("\"sinkM\": 6", "\"sinkM\": -1", "nearMesh.sinkM"),
+        ("\"cells\": 96", "\"cells\": 2", "nearMesh.cells"),
+        ("\"sinkM\": 8", "\"sinkM\": -1", "nearMesh.sinkM"),
     ];
     for (from, to, want) in cases {
         assert!(

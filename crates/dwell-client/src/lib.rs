@@ -17,6 +17,7 @@ pub mod far_herds;
 pub mod find;
 pub mod flecks;
 pub mod game;
+pub mod grid_bodies;
 pub mod grid_view;
 pub mod held_use;
 pub mod hit_feedback;

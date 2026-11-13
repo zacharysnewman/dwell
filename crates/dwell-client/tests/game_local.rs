@@ -56,6 +56,9 @@ struct Recorder {
     uploads_waiting: bool,
     frame_bytes: u64,
     frame_chunks: usize,
+    /// The pieces' meshes held (by id) and the last frame's poses.
+    pieces: std::collections::HashSet<u32>,
+    poses: Vec<(u32, [f64; 3], [f32; 4])>,
 }
 
 impl TerrainRenderer for Recorder {
@@ -101,6 +104,16 @@ impl TerrainRenderer for Recorder {
 }
 
 impl Scene for Recorder {
+    fn set_piece(&mut self, id: u32, meshes: Option<(&[ChunkMeshes], f64)>) {
+        if meshes.is_some() {
+            self.pieces.insert(id);
+        } else {
+            self.pieces.remove(&id);
+        }
+    }
+    fn show_pieces(&mut self, poses: Vec<(u32, [f64; 3], [f32; 4])>) {
+        self.poses = poses;
+    }
     fn set_player(&mut self, id: u32, view: Option<PlayerView>) {
         match view {
             Some(v) => self.players.insert(id, v),
@@ -4076,6 +4089,75 @@ dwell_world::both_faces!(
                     .is_some()
         });
         assert!(back, "home's chunks stream again after the release");
+    }
+);
+
+dwell_world::both_faces!(
+    /// M-5 (MOON_WORLD.md §5): the moon seen up close while approaching is its coarse surface mesh
+    /// at its orbit's pose (where its frame puts it), its far disc then not drawn; captured and on
+    /// it, the same mesh is drawn at the identity under its chunks (nothing swapped: no pop).
+    fn the_moon_up_close_is_its_surface_mesh_then_under_its_chunks(f: FaceFrame) {
+        let mut rig = Rig::with_generator(GENERATOR_SANDBOX);
+        assert!(rig.run_until(60 * 20, |r| {
+            r.game
+                .as_ref()
+                .is_some_and(|g| g.debug_state().terrain_ready)
+        }));
+        let moon_id = dwell_client::grid_bodies::id(1);
+        assert!(
+            !rig.scene.borrow().poses.iter().any(|p| p.0 == moon_id),
+            "at home's ground (~600 km) the moon is the sky's far disc"
+        );
+        assert!(rig.scene.borrow().day.unwrap().moon_shown);
+        rig.input.flight.set_allowed(true);
+        rig.input.flight.set(true);
+        rig.run_until(30, |_| false);
+        let face = if f == dwell_world::FaceFrame::A {
+            1.0
+        } else {
+            -1.0
+        };
+        // 2 km outside the capture sphere (42 km from its centre), over its face `f`.
+        let r = rig.core.moon_approach(2000.0, face);
+        assert!(!r.contains("error"), "{r}");
+        rig.run_until(20, |_| false);
+        assert_eq!(rig.game.as_ref().unwrap().grid(), 0, "not captured yet");
+        {
+            let scene = rig.scene.borrow();
+            assert!(scene.pieces.contains(&moon_id), "the moon's mesh built");
+            let pose = scene.poses.iter().find(|p| p.0 == moon_id);
+            let pose = pose.expect("the moon drawn as its mesh up close");
+            let t = f64::from(rig.core.server().tick()) / 60.0;
+            let moon = rig.core.server().grids().frame(0, t);
+            let d = (0..3)
+                .map(|k| (pose.1[k] - moon.origin[k]).powi(2))
+                .sum::<f64>()
+                .sqrt();
+            // The moon moves ~1 km/s: a frame or two of the clock apart.
+            assert!(
+                d < 200.0,
+                "at the moon's frame: {:?} vs {:?}",
+                pose.1,
+                moon.origin
+            );
+            assert!(!scene.day.unwrap().moon_shown, "no far disc over the mesh");
+        }
+        // Onto its ground (the dev teleport): captured the next tick.
+        let r = rig.core.moon_land(face);
+        assert!(!r.contains("error"), "{r}");
+        assert!(
+            rig.run_until(120, |r| r.game.as_ref().unwrap().grid() == 1),
+            "captured"
+        );
+        rig.run_until(10, |_| false);
+        let scene = rig.scene.borrow();
+        let pose = scene.poses.iter().find(|p| p.0 == moon_id);
+        assert_eq!(
+            pose.map(|p| (p.1, p.2)),
+            Some(([0.0; 3], [0.0, 0.0, 0.0, 1.0])),
+            "on the moon its mesh is drawn in its own frame"
+        );
+        assert!(!scene.day.unwrap().moon_shown);
     }
 );
 

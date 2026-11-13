@@ -798,6 +798,9 @@ pub struct Game<S: Scene> {
     remote_contacts: dwell_game::sound::RemoteContacts,
     /// The world seed (Welcome), the ground items' scatter's (ADR 0071).
     world_seed: u64,
+    /// The grids whose coarse surface mesh the scene holds (`grid_bodies.rs`, MOON_WORLD.md §5
+    /// M-5), built the first time each is drawn.
+    grid_meshes: std::collections::HashSet<u8>,
     /// The server carries players onto other grids and says which (`grid.frames`, MOON_WORLD.md
     /// §7.3): the predictor then runs the grids' travel rules, and the game follows it.
     grid_frames: bool,
@@ -1262,6 +1265,7 @@ impl<S: Scene> Game<S> {
             contact_sounds: Default::default(),
             remote_contacts: Default::default(),
             world_seed: 0,
+            grid_meshes: Default::default(),
             grid_frames: false,
             travel: None,
             grid_drawn: 0,
@@ -3191,6 +3195,63 @@ impl<S: Scene> Game<S> {
         };
         self.predictor.set_travel(Box::new(map()));
         self.travel = Some(map());
+        for g in std::mem::take(&mut self.grid_meshes) {
+            self.scene
+                .borrow_mut()
+                .set_piece(crate::grid_bodies::id(g), None);
+        }
+    }
+
+    /// The travel rules' clock (s): the latest snapshot's tick, as the predictor's carries use.
+    fn travel_s(&self) -> f64 {
+        f64::from(self.last_snapshot_tick) / SIM_HZ as f64
+    }
+
+    /// The other grids drawn as their coarse surface mesh this frame (`grid_bodies.rs`): each
+    /// grid with a `nearMesh` nearer the eye (in the drawn grid's frame) than its `farM`, or the
+    /// grid the view is on; its piece id, pose (in the drawn grid's frame) and rotation.
+    fn grid_bodies_at(&self, world_s: f64, eye: [f64; 3]) -> Vec<(u8, [f64; 3], [f32; 4])> {
+        let Some(m) = &self.travel else {
+            return Vec::new();
+        };
+        let with: Vec<_> = m
+            .grids
+            .iter()
+            .filter(|(_, def, _)| def.near_mesh.is_some())
+            .map(|&(g, def, _)| (g, m.frame(g, world_s), def.far_m))
+            .collect();
+        crate::grid_bodies::shown(
+            self.grid_drawn,
+            &m.frame(self.grid_drawn, world_s),
+            eye,
+            &with,
+            dwell_sim::travel::GRID_CENTRE,
+        )
+    }
+
+    /// The grids' meshes' poses for the pieces drawn this frame, each mesh built the first time.
+    fn grid_body_poses(&mut self) -> Vec<(u32, [f64; 3], [f32; 4])> {
+        // By the player's place, not the eye's (which eases after a dev move).
+        let shown = self.grid_bodies_at(self.travel_s(), self.current.position);
+        for &(g, ..) in &shown {
+            if self.grid_meshes.insert(g) {
+                let def = dwell_worldgen::grids::grids().get(usize::from(g));
+                let built = def.and_then(|d| {
+                    let t = dwell_worldgen::grids::CrateredTerrain::new(d, self.world_seed)?;
+                    Some(crate::grid_bodies::near_mesh(&t, d.near_mesh?))
+                });
+                if let Some((mesh, radius)) = built {
+                    self.scene.borrow_mut().set_piece(
+                        crate::grid_bodies::id(g),
+                        Some((std::slice::from_ref(&mesh), radius)),
+                    );
+                }
+            }
+        }
+        shown
+            .into_iter()
+            .map(|(g, origin, q)| (crate::grid_bodies::id(g), origin, q))
+            .collect()
     }
 
     /// The moon from the player (`__dwell.moon()`, docs/DEV_TOOLS.md "The moon"): its world
@@ -4932,6 +4993,8 @@ impl<S: Scene> Game<S> {
         let mut poses = self.pieces.poses(now_ms);
         poses.extend(self.glides.poses(now_ms));
         poses.extend(self.loose.poses(now_ms));
+        // The other grids up close, and the one the view is on under its chunks (M-5).
+        poses.extend(self.grid_body_poses());
         let (fragments, gone) = self.hit_shards.step(now_ms / 1000.0);
         poses.extend(fragments);
         for id in gone {
@@ -5042,6 +5105,15 @@ impl<S: Scene> Game<S> {
         if let Some(m) = self.travel.as_ref().filter(|_| self.grid_drawn != 0) {
             let frame = m.frame(self.grid_drawn, world_s);
             self.day = crate::grid_view::day_on_grid(&self.day, &frame, self.grid_drawn);
+        }
+        // The moon drawn up close as its mesh (M-5): its far disc in the sky not drawn too.
+        let eye = self.current.position;
+        if self
+            .grid_bodies_at(self.travel_s(), eye)
+            .iter()
+            .any(|&(g, ..)| g != self.grid_drawn)
+        {
+            self.day.moon_shown = false;
         }
         self.scene
             .borrow_mut()
