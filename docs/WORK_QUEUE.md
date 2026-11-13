@@ -2472,9 +2472,13 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    look in the browser: the picker, the minimap icons and the world waypoints were not drawn on a GPU here).
    Built: the data, generator and validator; the record (`dwell_protocol::markers`, golden vector); the
    world's `markers` table; the `markers.private` capability and `Markers` 0x6C; the big map's place / edit /
-   drag / delete; the minimap; the world waypoints (a HUD part); spawn and last-death auto markers. **Left:**
-   a list view of the markers; portals (the `portal` kind is data, nothing notes one until portals exist);
-   a marker placed on the big map takes the player's height on that face, not the ground's under the click. Owner 2026-11-12:
+   drag / delete; the minimap; the world waypoints (a HUD part); spawn and last-death auto markers. The rest
+   **built 2026-11-13** (branch `claude/markers-rest`, the brief "map markers, the rest"): the big map's
+   **markers list** (a side panel: icon, label, distance and the way from the player, nearest first; a row centres
+   the map on it, edit, delete; the filters apply); **portal auto markers** (each opening the player comes within
+   the render radius of, on its face, standing on its rim); a marker placed or dragged on the big map **stands on
+   the ground there** (the loaded column's top, else the map's height, face-local). Needs the owner's look in the
+   browser (no GPU here). Owner 2026-11-12:
    **"Let's use non-Unicode vector style symbols to let you annotate your own map so you can find your way
    around."** / **"Add that to the queue."** Answers: shown on the **big map (M), the minimap and in the world** (a
    waypoint over its spot with its distance); **private to the player** (saved with the world for that player); a

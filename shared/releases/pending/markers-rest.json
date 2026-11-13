@@ -1,0 +1,7 @@
+{
+  "changes": [
+    "The big map has a markers list: each marker's distance and direction, nearest first; click one to show it, edit or delete it",
+    "Portals you come near are marked on your map",
+    "A marker placed on the big map now stands on the ground there"
+  ]
+}
