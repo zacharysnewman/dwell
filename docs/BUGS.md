@@ -547,7 +547,7 @@ face, or the placement check against its shape.
 
 ## Fixed
 
-### 153. A tree's shadows flip between two looks as you move (fixed after 0.63.2; the owner's GPU check outstanding)
+### 153. A tree's shadows flip between two looks as you move (fixed after 0.63.4; the owner's GPU check outstanding)
 
 Owner, 2026-11-13: "Also for trees the shadows seem to flip flop between two shadow types even on close trees as you
 move. Where shadows cast by the tree are only below, or they're both below the tree and on top of the tree. Like the
