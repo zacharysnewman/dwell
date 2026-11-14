@@ -6,6 +6,18 @@ pins it.
 
 ## Open
 
+### 169. Realistic terrain from the air: harsh bands, straight strips and lines of terrain types
+
+Owner, 2026-11-14 00:05, iPhone, the live site (0.64.x or 0.65.0), a Realistic world seen flying high: **"Still seeing
+harsh bands of terrain types, strips, lines, etc"**. The screenshot, looking down: long, perfectly straight dark-brown
+strips (dirt / red-dirt colour) a few blocks wide crossing the land in a lattice of straight lines at a few angles,
+like roads; straight grey stone strips, and straight green grass strips along some of them; large patches of speckled
+tan/brown/cream noise (the palette dither) with hard straight edges; rivers with straight channel edges and a stepped,
+pixelated blue fringe. Suspects (orchestrator): erosion drainage lines or washes carved as straight segments; the mesa
+palette's ordered blend; province or plate edges straight at this scale; biome bands following map cells. Top priority
+of the 0.66 follow-up (WORK_QUEUE item 15). **Owner should see:** from the air, Realistic terrain types meet along
+natural, irregular, blended edges; no straight strips, lines or lattices of dirt, stone or grass. Open.
+
 ### 165. The first-person vertical block leans the blade back toward the eye
 
 Found fixing #87 (2026-11-13), not reported: `clip_probe guard_vertical --item dwell:sword` draws the arms view's

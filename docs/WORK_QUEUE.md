@@ -901,6 +901,11 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    **The 0.66 follow-up (owner, 2026-11-13, approving 0.65 with the remaining issues as a follow-up: "Yes merge now.";
    branch `claude/realistic-066`).** A GPU before/after check of 0.65 (maps of seeds 2741893632, 1, 7, 42, 274005646,
    both faces) found these still wrong; each gets a test on both faces over those seeds:
+   (0, top priority) **Straight strips from the air** (BUGS.md #169; owner, 2026-11-14 00:05, iPhone, flying high over
+   a Realistic world): **"Still seeing harsh bands of terrain types, strips, lines, etc"** (straight dark-brown strips in
+   a lattice like roads, straight grey stone and green grass strips, hard-edged patches of the palette dither, rivers
+   with straight edges and a stepped fringe). **Owner should see:** from the air, Realistic terrain types meet along
+   natural, irregular, blended edges. No straight strips, lines or lattices of dirt, stone or grass.
    (1) **Ramps.** Owner, on the stepped look of diagonal slopes: **'Im not sure I want to "fix" the step look yet. Isn't
    that the original rule showing?'** (it is: the default world's straight-edge rule), then: **"Let's put it back in for
    everything not excluding mesa edges"**. So the original straight-edge rule everywhere in Realistic, mesa edges
