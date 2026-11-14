@@ -206,9 +206,14 @@ async function recordCinematic(m, shot, size, s) {
   const path = JSON.parse(readFileSync(resolve(SKILL, shot.path), 'utf8'));
   const started = await post(`/cine/start?name=${shot.id}`); console.log(' ', started);
   const settings = { ...(shot.cinematic ?? {}), ...(shotAudio(m, shot) ? {} : { audio: { on: false } }) };
-  const report = JSON.parse(await post('/eval', `(async () => { d.theater('hud', { shown: false });
-    return JSON.stringify(await d.cinematic({ path: ${JSON.stringify(path)}, size: ${JSON.stringify(size)}, settings: ${JSON.stringify(settings)} })); })()`));
-  const r = typeof report === 'string' ? JSON.parse(report) : report;
+  // Started, then polled: a take runs for minutes, past fetch's 300 s wait for a reply's headers.
+  await post('/eval', `(d.theater('hud', { shown: false }), globalThis.__cine = null,
+    d.cinematic({ path: ${JSON.stringify(path)}, size: ${JSON.stringify(size)}, settings: ${JSON.stringify(settings)} })
+      .then((r) => { globalThis.__cine = { ok: JSON.stringify(r) }; }, (e) => { globalThis.__cine = { error: String(e?.stack ?? e) }; }), 'started')`);
+  let done = null;
+  while (!done) { await sleep(2000); done = JSON.parse(await post('/eval', 'globalThis.__cine')); }
+  if (done.error) throw new Error(`cinematic take failed: ${done.error}`);
+  const r = JSON.parse(done.ok);
   const a = r.audio;
   console.log(`  ${shot.id}: ${r.frames} frames (${r.seconds.toFixed(2)} s at ${r.fps} fps) in ${r.wallS.toFixed(0)} s (pre-roll ${r.prerollS.toFixed(0)} s);`
     + ` settle mean ${r.settle.meanMs.toFixed(0)} ms, p95 ${r.settle.p95Ms.toFixed(0)}, max ${r.settle.maxMs.toFixed(0)}, capped ${r.settle.capped.length ? r.settle.capped.join(',') : 'none'};`
