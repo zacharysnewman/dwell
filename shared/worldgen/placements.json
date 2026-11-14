@@ -160,6 +160,56 @@
           "on": ["dwell:red_dirt", "dwell:red_sand", "dwell:red_sandstone"]
         }
       ]
+    },
+    {
+      "$comment": "Bushes (0.69; owner, 2026-11-14: \"We also need more shrubbery/bushes etc.\"): leafy clumps in clusters (`groves`: a 70 m noise, a third of the ground, few outside), on temperate and tropical ground, listed by the Realistic world's grassy and forest biomes with a density each (worlds/realistic.json `trees`), the climate's moisture ruling them (vegetation.json `dwell:shrubs`).",
+      "name": "bushes",
+      "structures": { "dwell:bush": 1 },
+      "on": ["dwell:grass", "dwell:dirt"],
+      "footprint": "anchor",
+      "grid": 4,
+      "density": 0.5,
+      "groves": { "wavelength": 70, "coverage": 0.35, "outside": 0.05 },
+      "height": [1, 1600],
+      "maxSlopeDeg": 40,
+      "spacing": 0,
+      "rotate": [0, 90, 180, 270]
+    },
+    {
+      "$comment": "Low shrubs (0.69): small leafy shrubs in clusters on boreal and alpine ground, snowy at the snow line as the pines are (`variants` `on`).",
+      "name": "cold_shrubs",
+      "structures": { "dwell:low_shrub": 1 },
+      "on": ["dwell:grass", "dwell:snowy_grass", "dwell:dirt"],
+      "footprint": "anchor",
+      "grid": 4,
+      "density": 0.5,
+      "groves": { "wavelength": 60, "coverage": 0.35, "outside": 0.05 },
+      "height": [1, 2500],
+      "maxSlopeDeg": 40,
+      "spacing": 0,
+      "rotate": [0, 90, 180, 270],
+      "variants": [
+        {
+          "name": "snowy",
+          "replace": { "dwell:leaves": "dwell:snowy_leaves" },
+          "height": [1050, 1250],
+          "on": ["dwell:snowy_grass", "dwell:snow"]
+        }
+      ]
+    },
+    {
+      "$comment": "Scrub (0.69): grey-green scrub bushes in loose clusters on dry grassland and Mediterranean-like ground (steppe, savanna, badlands, coastal cliffs).",
+      "name": "scrub",
+      "structures": { "dwell:scrub": 1 },
+      "on": ["dwell:grass", "dwell:dirt", "dwell:red_dirt"],
+      "footprint": "anchor",
+      "grid": 5,
+      "density": 0.4,
+      "groves": { "wavelength": 90, "coverage": 0.4, "outside": 0.1 },
+      "height": [1, 2000],
+      "maxSlopeDeg": 35,
+      "spacing": 0,
+      "rotate": [0, 90, 180, 270]
     }
   ]
 }
