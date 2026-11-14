@@ -438,12 +438,53 @@ impl BiomeField {
         }
     }
 
+    /// Where [`BiomeField::mix`] reads the weights for face-local (x, z): the point warped at three
+    /// scales (`ditherWarp` m at 4 × the dither's wavelength, a fifth of it at half, a twentieth at
+    /// an eighth; 0.69), so a border wanders and breaks into fingers by a set distance, however
+    /// slowly the climate changes across it. (x, z) itself without a warp.
+    pub fn mix_point(&self, x: i64, z: i64) -> (i64, i64) {
+        let p = &self.params;
+        if p.dither_warp <= 0.0 {
+            return (x, z);
+        }
+        let l = p.dither_wavelength;
+        let mut d = [0.0f64; 2];
+        for (k, (amp, wl)) in [(1.0, 4 * l), (0.2, l / 2), (0.05, l / 8)]
+            .iter()
+            .enumerate()
+        {
+            for (a, out) in d.iter_mut().enumerate() {
+                *out += p.dither_warp
+                    * amp
+                    * 2.0
+                    * f64::from(fbm2(
+                        self.dither_seed ^ (0x6A57_0690 + (2 * k + a) as u32),
+                        x,
+                        z,
+                        (*wl).max(4),
+                        1,
+                        None,
+                    ));
+            }
+        }
+        (x + d[0] as i64, z + d[1] as i64)
+    }
+
+    /// The geography where [`BiomeField::mix`] reads the weights for (x, z) (its warped point):
+    /// what decides the biome there.
+    pub fn mix_geography(&self, x: i64, z: i64, elevation: f64) -> Geography {
+        let (wx, wz) = self.mix_point(x, z);
+        self.geography(wx, wz, elevation)
+    }
+
     /// The biomes' weights at (x, z) (`biomes[0]` the world's default, which takes a column no
     /// biome fits), and the one whose surface the column takes: the cumulative weights against a
     /// threshold dithered by a noise and a per-column hash, so a border is a ragged, gradual
     /// mingling, never a line.
     pub fn mix(&self, biomes: &[Biome], x: i64, z: i64, elevation: f64) -> Mix {
-        let g = self.geography(x, z, elevation);
+        let p = &self.params;
+        let (gx, gz) = self.mix_point(x, z);
+        let g = self.geography(gx, gz, elevation);
         let mut ws = fallback_weights(biomes, &g);
         ws.retain(|&(_, w)| w > 0.0);
         ws.sort_by(|a, b| b.1.total_cmp(&a.1).then(a.0.cmp(&b.0)));
@@ -459,7 +500,6 @@ impl BiomeField {
         for (k, &(i, w)) in ws.iter().enumerate() {
             mix.weights[k] = (i, (w / total) as f32);
         }
-        let p = &self.params;
         let hash = f64::from(hash2(self.dither_seed, x as i32, z as i32)) / f64::from(u32::MAX);
         // The noise's sample point warped (`ditherWarp`; 0 in the default world: unchanged).
         let (wx, wz) = if p.dither_warp > 0.0 {

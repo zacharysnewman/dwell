@@ -979,6 +979,27 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    lowland bare lava 6.4 % / 8.8 % → 0.7 % / 1.8 % (`tests/realistic_volcanoes.rs`); the straight red strip not
    yet found. Held (orchestrator, 2026-11-14, the realism audit): island spacing and variety (2). Not yet: (0c) shrubs
    and talus, (0d) placement bleed and snowy leaves, (6).
+   **0.69 follow-up (orchestrator, 2026-11-14, after the owner approved merging 0.68: "Go ahead and just merge away. No
+   need to wait."; branch `claude/realistic-069`):** everything not built in 0.68, and from the map check: soft fingered
+   edges (no straight or smooth-curved hard edges; "the long straight dirt→grass line"), "brown contour stripes on stone
+   hills" (bedded steps reading as stripes), shrub and bush species, cliff talus including underwater, placement bleed
+   across edges, snowy leaves at the snow line, mesa wall fins and the grey lake band, the straight red strip on dormant
+   islands, "pasted-looking red-dirt/stone blobs on the sand desert", "mesa patches reading as flat blobs". **Owner
+   should see:** each as its item above says; stone hills without brown contour stripes; the sand desert without pasted
+   blobs of red dirt or stone; mesa country reading as relief, not flat blobs.
+   **Built on `claude/realistic-069` (the 0.69 line; awaiting the maps):** contour stripes: wet bedded hills are
+   grassy steps with rock risers (`rocks.json` `shaping.coverRain` 260 ± 60 mm; wet ground showing a bedded rock's
+   stone or dirt 31 % / 34 % → 0.6 % / 0.7 %, `tests/realistic_cover.rs`); soft edges (`biomeMap.rockEdge`,
+   `shaping.edgeJitter`, `shaping.edgeFade`: fine straight runs 3.3 % / 0.8 % → 0.0 % / 0.3 %, axis runs over 4 m
+   14.6 % / 15.2 % → 13.2 % / 12.8 %, `tests/realistic_bands.rs`); biome borders as one wandering, fingered line instead of
+   a km-wide camouflage (`biomeMap` dither 0.06 at 160 m, the weights read at a point warped at three scales); the
+   sand desert without pasted blobs (its core's non-sand 3.2 % → 0, dunes sand throughout,
+   `tests/realistic_deserts.rs`); washes and scarps meander (`erosion.warp`); mesa country's tones follow the
+   relief (the blend's slope into red sand, 220 m patches); snowy leaves on every pine standing on snowy grass or
+   snow (placements' variant `on`; red 157 / 804 and 37 / 302 snowy, green all, `tests/realistic_snowy_leaves.rs`).
+   Not yet: shrub and bush species, cliff talus (and underwater), placement bleed, the mesa wall fins, the grey
+   lake band, the straight red strip on dormant islands (the straight washes found here may be it; not confirmed),
+   the owner's "~4 m" axis-run ideal.
    (1) **Ramps.** Owner, on the stepped look of diagonal slopes: **'Im not sure I want to "fix" the step look yet. Isn't
    that the original rule showing?'** (it is: the default world's straight-edge rule), then: **"Let's put it back in for
    everything not excluding mesa edges"**. So the original straight-edge rule everywhere in Realistic, mesa edges

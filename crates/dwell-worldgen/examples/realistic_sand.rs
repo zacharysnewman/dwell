@@ -32,6 +32,8 @@ fn main() {
                 .with_biomes_and_geology(&e.biomes, e.map, e.geology)
                 .with_vegetation(e.vegetation);
             let mut counts = BTreeMap::<String, usize>::new();
+            let mut desert = BTreeMap::<String, usize>::new();
+            let di = e.biomes.iter().position(|b| b.name == "preset:sand_desert");
             let mut land = 0;
             for z in (-40_000..40_000).step_by(97) {
                 for x in (-40_000..40_000).step_by(97) {
@@ -42,6 +44,20 @@ fn main() {
                     land += 1;
                     let Some(y) = g.ground_y(x, z) else { continue };
                     let name = dwell_blocks::info(g.state_at(x, y, z)).name;
+                    let mix = g.biome_mix(x.into(), z.into());
+                    if Some(usize::from(mix.chosen)) == di && c.water == Water::None {
+                        let top = name.split('[').next().unwrap_or(name);
+                        let why = if g.is_rock_palette(&c) {
+                            format!(
+                                "rock {} {:?}",
+                                g.province_at(x.into(), z.into()),
+                                g.rock_at_surface(x.into(), z.into()).1
+                            )
+                        } else {
+                            "biome".to_string()
+                        };
+                        *desert.entry(format!("{top} ({why})")).or_default() += 1;
+                    }
                     if !name.starts_with("dwell:sand[") && !name.starts_with("dwell:sand_ramp") {
                         continue;
                     }
@@ -60,6 +76,10 @@ fn main() {
             }
             println!("seed {world} {face:?}: {land} land columns");
             for (k, v) in counts {
+                println!("  {v:6} {k}");
+            }
+            println!("  the sand desert's dry tops:");
+            for (k, v) in desert {
                 println!("  {v:6} {k}");
             }
         }

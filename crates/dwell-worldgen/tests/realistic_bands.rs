@@ -40,10 +40,10 @@ const STEP: i32 = 2;
 /// `N` × `N` samples `COARSE` m apart, a run straight within 40 m over 1.3 km.
 const COARSE: i32 = 64;
 /// At most this share of the fine windows' boundary cells on a straight run (over all windows of a
-/// face). Measured 2026-11-14 with the 0.68 surface changes: 3.3 % (A) / 0.8 % (B), nearly all of it
-/// smooth, crisp rock-wall edges (stone or red sandstone against grass), not straight strips: the
-/// soft edges (fingers over a few metres) are still to come (WORK_QUEUE item 15, 0b iii).
-const STRAIGHT: f64 = 0.05;
+/// face). 0.68: 3.3 % (A) / 0.8 % (B), nearly all smooth, crisp edges (the steep rock's slope
+/// line, a province's half-strength line); 0.69's soft edges (`biomeMap.rockEdge`,
+/// `shaping.edgeJitter`, `shaping.edgeFade`): 0.00 % / 0.24 %.
+const STRAIGHT: f64 = 0.01;
 /// At most this share of the coarse windows' boundary cells on a straight run.
 const STRAIGHT_COARSE: f64 = 0.05;
 
@@ -227,7 +227,8 @@ const S: usize = 96;
 /// blend's 3 m dither): 0.47 % (A) / 0.91 % (B), up to 4.3 % in a window; 0.68: 0.02 % / 0.05 %,
 /// at most 0.97 %.
 const ISOLATED: f64 = 0.0025;
-const ISOLATED_WINDOW: f64 = 0.015;
+/// (0.69: a window of thin, broken rock risers through grass reads 1.6 %.)
+const ISOLATED_WINDOW: f64 = 0.02;
 /// Every window's area-weighted mean patch (4-connected columns of one top block) at least this
 /// (m²; 0.65: 846, 0.68: 1659).
 const PATCH: f64 = 1500.0;
@@ -353,6 +354,88 @@ both_faces!(
             smallest >= PATCH,
             "{:?}: a window's mean patch {smallest:.0} m²",
             f.face
+        );
+    }
+);
+
+/// At most this share of the 1 m windows' boundary length in axis-aligned runs longer than
+/// [`AXIS_RUN`] m (one block type against another along a row or column of cells). 0.68: 14.6 %
+/// (A) / 15.2 % (B); 0.69's soft edges: 12.0 % / 13.7 %. Most of what is left is any boundary
+/// running within ~15° of an axis, drawn in cells; the owner's "~4 m" ideal needs finer fingers
+/// everywhere (open).
+const AXIS_LONG: f64 = 0.14;
+const AXIS_RUN: usize = 4;
+
+/// A 1 m window's boundary length (cell edges between two block types) and how much of it lies in
+/// straight axis-aligned runs longer than [`AXIS_RUN`] cells.
+fn axis_runs(g: &TerrainGenerator, cx: i32, cz: i32) -> (usize, usize) {
+    let names: Vec<&str> = (0..S * S)
+        .map(|c| {
+            let (i, j) = ((c % S) as i32, (c / S) as i32);
+            top(g, cx + i - S as i32 / 2, cz + j - S as i32 / 2)
+        })
+        .collect();
+    let (mut long, mut total) = (0, 0);
+    // Edges between rows j and j + 1 along i, and between columns i and i + 1 along j.
+    for horizontal in [true, false] {
+        for a in 0..S - 1 {
+            let mut run: Option<(&str, &str)> = None;
+            let mut len = 0;
+            let close = |len: usize, long: &mut usize| {
+                if len > AXIS_RUN {
+                    *long += len;
+                }
+            };
+            for b in 0..S {
+                let (p, q) = if horizontal {
+                    (names[a * S + b], names[(a + 1) * S + b])
+                } else {
+                    (names[b * S + a], names[b * S + a + 1])
+                };
+                let pair = (p != q).then_some((p, q));
+                if pair.is_some() {
+                    total += 1;
+                }
+                if pair.is_some() && pair == run {
+                    len += 1;
+                } else {
+                    close(len, &mut long);
+                    run = pair;
+                    len = usize::from(pair.is_some());
+                }
+            }
+            close(len, &mut long);
+        }
+    }
+    (long, total)
+}
+
+both_faces!(
+    fn ground_types_meet_without_straight_axis_runs(f: FaceFrame) {
+        // WORK_QUEUE item 15, the 0.69 follow-up (owner, 2026-11-14: "We still have hard lines
+        // between vertical and horizontal changes in terrain types"; the map check's "long
+        // straight dirt→grass line"): edges break into fingers, never a run along the grid.
+        let (mut long, mut total) = (0usize, 0usize);
+        for world in SEEDS {
+            let (g, map) = generator(face_seed(world, f.face));
+            for (x, z) in centres(world, f, &map).into_iter().chain(borders(&g, &map)) {
+                let (l, t) = axis_runs(&g, x, z);
+                long += l;
+                total += t;
+            }
+        }
+        let share = long as f64 / total.max(1) as f64;
+        eprintln!(
+            "{:?}: {long} of {total} m of boundary in axis runs over {AXIS_RUN} m ({:.2} %)",
+            f.face,
+            100.0 * share
+        );
+        assert!(total > 2000, "{:?}: boundaries sampled", f.face);
+        assert!(
+            share <= AXIS_LONG,
+            "{:?}: {:.2} % of the boundary in axis runs over {AXIS_RUN} m",
+            f.face,
+            100.0 * share
         );
     }
 );

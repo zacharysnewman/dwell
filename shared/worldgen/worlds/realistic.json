@@ -8,16 +8,24 @@
   "cliffs": 0,
   "biomeMap": {
     "ditherSpeckle": 0,
-    "ditherWavelength": 48,
-    "ditherWarp": 60,
-    "treesSharpen": 4
+    "ditherWavelength": 160,
+    "ditherWarp": 150,
+    "dither": 0.06,
+    "treesSharpen": 4,
+    "rockEdge": 0.3
   },
   "geology": {
     "shaping": {
-      "strength": 1
+      "strength": 1,
+      "coverRain": 260,
+      "coverNoise": 60,
+      "edgeJitter": 3,
+      "edgeFade": 0.35
     },
     "erosion": {
-      "strength": 1
+      "strength": 1,
+      "warp": 60,
+      "warpWavelength": 240
     },
     "surfaces": {
       "replace": [{ "block": "dwell:sand", "with": "dwell:dirt", "except": ["dwell:dune_sand"] }]
@@ -40,7 +48,7 @@
     "preset:mixed_forest",
     "preset:old_growth",
     "preset:red_rock_mesa",
-    { "biome": "preset:sand_desert", "rockStack": "dwell:dune_sands", "trees": { "boulders": 0.25, "sagebrush": 0.012 } },
+    { "biome": "preset:sand_desert", "rockStack": "dwell:dune_sands", "bands": [{ "name": "dunes", "ground": "dwell:sand", "under": "dwell:sand", "rock": "dwell:sand", "shoreBlock": "dwell:sand" }], "trees": { "boulders": 0.25, "sagebrush": 0.012 } },
     "preset:savanna",
     "preset:snowfield",
     "preset:steppe",
